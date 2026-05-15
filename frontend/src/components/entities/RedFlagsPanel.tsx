@@ -28,23 +28,23 @@ interface RedFlagsPanelProps {
 const SEVERITY_CONFIG = {
   high: {
     icon: AlertTriangle,
-    bgColor: 'bg-red-500/20',
-    borderColor: 'border-red-500/30',
-    textColor: 'text-red-400',
+    bgColor: 'bg-[var(--hf-status-red-badge)]',
+    borderColor: 'border-[color:var(--hf-status-red-badge)]',
+    textColor: 'text-[var(--hf-status-red)]',
     label: 'Критический'
   },
   medium: {
     icon: AlertCircle,
-    bgColor: 'bg-orange-500/20',
-    borderColor: 'border-orange-500/30',
-    textColor: 'text-orange-400',
+    bgColor: 'bg-[var(--hf-status-orange-badge)]',
+    borderColor: 'border-[color:var(--hf-status-orange-badge)]',
+    textColor: 'text-[var(--hf-status-orange)]',
     label: 'Средний'
   },
   low: {
     icon: Info,
-    bgColor: 'bg-yellow-500/20',
-    borderColor: 'border-yellow-500/30',
-    textColor: 'text-yellow-400',
+    bgColor: 'bg-[var(--hf-status-yellow-badge)]',
+    borderColor: 'border-[color:var(--hf-status-yellow-badge)]',
+    textColor: 'text-[var(--hf-status-yellow)]',
     label: 'Низкий'
   }
 };
@@ -52,9 +52,9 @@ const SEVERITY_CONFIG = {
 // Risk score indicator
 function RiskScoreIndicator({ score }: { score: number }) {
   const getColor = () => {
-    if (score >= 60) return 'from-red-500 to-red-600';
-    if (score >= 30) return 'from-orange-500 to-orange-600';
-    return 'from-green-500 to-green-600';
+    if (score >= 60) return 'bg-[linear-gradient(to_bottom_right,var(--hf-risk-high-gradient-from),var(--hf-risk-high-gradient-to))]';
+    if (score >= 30) return 'bg-[linear-gradient(to_bottom_right,var(--hf-risk-medium-gradient-from),var(--hf-risk-medium-gradient-to))]';
+    return 'bg-[linear-gradient(to_bottom_right,var(--hf-risk-low-gradient-from),var(--hf-risk-low-gradient-to))]';
   };
 
   const getIcon = () => {
@@ -67,21 +67,21 @@ function RiskScoreIndicator({ score }: { score: number }) {
 
   return (
     <div className="flex items-center gap-3 p-4 glass-light rounded-xl">
-      <div className={clsx('p-3 rounded-xl bg-gradient-to-br', getColor())}>
-        <Icon size={24} className="text-white" />
+      <div className={clsx('p-3 rounded-xl', getColor())}>
+        <Icon size={24} className="text-[var(--hf-white)]" />
       </div>
       <div>
-        <div className="text-2xl font-bold text-white">{score}</div>
-        <div className="text-sm text-white/60">Риск-скор</div>
+        <div className="text-2xl font-bold text-[var(--hf-white)]">{score}</div>
+        <div className="text-sm text-[color:var(--hf-white-alpha-60)]">Риск-скор</div>
       </div>
       <div className="ml-auto text-right">
         <div className={clsx(
           'text-sm font-medium',
-          score >= 60 ? 'text-red-400' : score >= 30 ? 'text-orange-400' : 'text-green-400'
+          score >= 60 ? 'text-[var(--hf-status-red)]' : score >= 30 ? 'text-[var(--hf-status-orange)]' : 'text-[var(--hf-status-green)]'
         )}>
           {score >= 60 ? 'Высокий риск' : score >= 30 ? 'Средний риск' : 'Низкий риск'}
         </div>
-        <div className="text-xs text-white/40 mt-1">
+        <div className="text-xs text-[color:var(--hf-white-alpha-40)] mt-1">
           {score >= 60
             ? 'Требуется детальная проверка'
             : score >= 30
@@ -115,7 +115,7 @@ function RedFlagCard({ flag, isExpanded, onToggle }: {
       {/* Header */}
       <button
         onClick={onToggle}
-        className="w-full p-4 flex items-start gap-3 text-left hover:bg-dark-800/50 transition-colors"
+        className="w-full p-4 flex items-start gap-3 text-left hover:bg-[var(--hf-dark-panel-alpha-50)] transition-colors"
       >
         <Icon size={20} className={clsx('flex-shrink-0 mt-0.5', config.textColor)} />
         <div className="flex-1 min-w-0">
@@ -131,11 +131,11 @@ function RedFlagCard({ flag, isExpanded, onToggle }: {
               {config.label}
             </span>
           </div>
-          <p className="text-sm text-white/80 mt-1 line-clamp-2">
+          <p className="text-sm text-[color:var(--hf-white-alpha-80)] mt-1 line-clamp-2">
             {flag.description}
           </p>
         </div>
-        <div className="flex-shrink-0 text-white/40">
+        <div className="flex-shrink-0 text-[color:var(--hf-white-alpha-40)]">
           {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
         </div>
       </button>
@@ -150,23 +150,23 @@ function RedFlagCard({ flag, isExpanded, onToggle }: {
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 pt-0 space-y-3 border-t border-white/10">
+            <div className="px-4 pb-4 pt-0 space-y-3 border-t border-[color:var(--hf-white-alpha-10)]">
               {/* Evidence */}
               {flag.evidence && (
-                <div className="mt-3 p-3 bg-black/20 rounded-lg">
+                <div className="mt-3 p-3 bg-[var(--hf-black-alpha-20)] rounded-lg">
                   <div className="flex items-start gap-2">
-                    <Quote size={14} className="text-white/40 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-white/60 italic">{flag.evidence}</p>
+                    <Quote size={14} className="text-[color:var(--hf-white-alpha-40)] flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-[color:var(--hf-white-alpha-60)] italic">{flag.evidence}</p>
                   </div>
                 </div>
               )}
 
               {/* Suggestion */}
               <div className="mt-3">
-                <h4 className="text-xs font-medium text-white/40 uppercase tracking-wide mb-1">
+                <h4 className="text-xs font-medium text-[color:var(--hf-white-alpha-40)] uppercase tracking-wide mb-1">
                   Рекомендация
                 </h4>
-                <p className="text-sm text-white/80">{flag.suggestion}</p>
+                <p className="text-sm text-[color:var(--hf-white-alpha-80)]">{flag.suggestion}</p>
               </div>
             </div>
           </motion.div>
@@ -226,10 +226,10 @@ export default function RedFlagsPanel({ entityId, vacancyId, className }: RedFla
   if (loading) {
     return (
       <div className={clsx('p-6 flex flex-col items-center justify-center gap-4', className)}>
-        <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+        <Loader2 className="w-8 h-8 text-[var(--hf-cyan-400)] animate-spin" />
         <div className="text-center">
-          <p className="text-white/80">Анализ кандидата...</p>
-          <p className="text-sm text-white/40 mt-1">Это может занять несколько секунд</p>
+          <p className="text-[color:var(--hf-white-alpha-80)]">Анализ кандидата...</p>
+          <p className="text-sm text-[color:var(--hf-white-alpha-40)] mt-1">Это может занять несколько секунд</p>
         </div>
       </div>
     );
@@ -238,11 +238,11 @@ export default function RedFlagsPanel({ entityId, vacancyId, className }: RedFla
   if (error) {
     return (
       <div className={clsx('p-6 text-center', className)}>
-        <AlertCircle className="mx-auto mb-3 text-red-400" size={40} />
-        <p className="text-white/80 mb-4">{error}</p>
+        <AlertCircle className="mx-auto mb-3 text-[var(--hf-status-red)]" size={40} />
+        <p className="text-[color:var(--hf-white-alpha-80)] mb-4">{error}</p>
         <button
           onClick={loadAnalysis}
-          className="flex items-center gap-2 px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition-colors mx-auto"
+          className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-status-cyan-badge)] text-[var(--hf-cyan-400)] rounded-lg hover:bg-[var(--hf-status-cyan-badge)] transition-colors mx-auto"
         >
           <RefreshCw size={16} />
           Повторить
@@ -267,7 +267,7 @@ export default function RedFlagsPanel({ entityId, vacancyId, className }: RedFla
 
       {/* Summary */}
       <div className="p-4 glass-light rounded-xl">
-        <p className="text-white/80">{analysis.summary}</p>
+        <p className="text-[color:var(--hf-white-alpha-80)]">{analysis.summary}</p>
       </div>
 
       {/* Flags count summary */}
@@ -275,26 +275,26 @@ export default function RedFlagsPanel({ entityId, vacancyId, className }: RedFla
         <div className="flex items-center gap-4">
           {analysis.high_severity_count > 0 && (
             <div className="flex items-center gap-1.5">
-              <AlertTriangle size={16} className="text-red-400" />
-              <span className="text-sm text-red-400">{analysis.high_severity_count}</span>
+              <AlertTriangle size={16} className="text-[var(--hf-status-red)]" />
+              <span className="text-sm text-[var(--hf-status-red)]">{analysis.high_severity_count}</span>
             </div>
           )}
           {analysis.medium_severity_count > 0 && (
             <div className="flex items-center gap-1.5">
-              <AlertCircle size={16} className="text-orange-400" />
-              <span className="text-sm text-orange-400">{analysis.medium_severity_count}</span>
+              <AlertCircle size={16} className="text-[var(--hf-status-orange)]" />
+              <span className="text-sm text-[var(--hf-status-orange)]">{analysis.medium_severity_count}</span>
             </div>
           )}
           {analysis.low_severity_count > 0 && (
             <div className="flex items-center gap-1.5">
-              <Info size={16} className="text-yellow-400" />
-              <span className="text-sm text-yellow-400">{analysis.low_severity_count}</span>
+              <Info size={16} className="text-[var(--hf-status-yellow)]" />
+              <span className="text-sm text-[var(--hf-status-yellow)]">{analysis.low_severity_count}</span>
             </div>
           )}
           {analysis.flags_count === 0 && (
             <div className="flex items-center gap-1.5">
-              <ShieldCheck size={16} className="text-green-400" />
-              <span className="text-sm text-green-400">Нет замечаний</span>
+              <ShieldCheck size={16} className="text-[var(--hf-status-green)]" />
+              <span className="text-sm text-[var(--hf-status-green)]">Нет замечаний</span>
             </div>
           )}
         </div>
@@ -303,14 +303,14 @@ export default function RedFlagsPanel({ entityId, vacancyId, className }: RedFla
           <div className="flex items-center gap-2">
             <button
               onClick={expandAll}
-              className="text-xs text-white/40 hover:text-white/60 transition-colors"
+              className="text-xs text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)] transition-colors"
             >
               Развернуть все
             </button>
-            <span className="text-white/20">|</span>
+            <span className="text-[color:var(--hf-white-alpha-20)]">|</span>
             <button
               onClick={collapseAll}
-              className="text-xs text-white/40 hover:text-white/60 transition-colors"
+              className="text-xs text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)] transition-colors"
             >
               Свернуть все
             </button>
@@ -375,7 +375,7 @@ export default function RedFlagsPanel({ entityId, vacancyId, className }: RedFla
       <div className="flex justify-center pt-2">
         <button
           onClick={loadAnalysis}
-          className="flex items-center gap-2 text-sm text-white/40 hover:text-white/60 transition-colors"
+          className="flex items-center gap-2 text-sm text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)] transition-colors"
         >
           <RefreshCw size={14} />
           Обновить анализ

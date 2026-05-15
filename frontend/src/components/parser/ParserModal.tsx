@@ -37,13 +37,13 @@ interface SourceInfo {
 }
 
 const SOURCE_PATTERNS: Record<string, SourceInfo> = {
-  'hh.ru': { domain: 'hh.ru', name: 'HeadHunter', color: 'bg-red-500/20 text-red-300' },
-  'linkedin.com': { domain: 'linkedin.com', name: 'LinkedIn', color: 'bg-blue-500/20 text-blue-300' },
-  'superjob.ru': { domain: 'superjob.ru', name: 'SuperJob', color: 'bg-green-500/20 text-green-300' },
-  'career.habr.com': { domain: 'career.habr.com', name: 'Хабр Карьера', color: 'bg-purple-500/20 text-purple-300' },
-  'zarplata.ru': { domain: 'zarplata.ru', name: 'Zarplata.ru', color: 'bg-yellow-500/20 text-yellow-300' },
-  'rabota.ru': { domain: 'rabota.ru', name: 'Rabota.ru', color: 'bg-orange-500/20 text-orange-300' },
-  'indeed.com': { domain: 'indeed.com', name: 'Indeed', color: 'bg-indigo-500/20 text-indigo-300' },
+  'hh.ru': { domain: 'hh.ru', name: 'HeadHunter', color: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-red-300)]' },
+  'linkedin.com': { domain: 'linkedin.com', name: 'LinkedIn', color: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]' },
+  'superjob.ru': { domain: 'superjob.ru', name: 'SuperJob', color: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' },
+  'career.habr.com': { domain: 'career.habr.com', name: 'Хабр Карьера', color: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]' },
+  'zarplata.ru': { domain: 'zarplata.ru', name: 'Zarplata.ru', color: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
+  'rabota.ru': { domain: 'rabota.ru', name: 'Rabota.ru', color: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]' },
+  'indeed.com': { domain: 'indeed.com', name: 'Indeed', color: 'bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)]' },
 };
 
 const detectSource = (url: string): SourceInfo | null => {
@@ -353,7 +353,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -367,10 +367,10 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         className="glass rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10 flex-shrink-0">
+        <div className="flex items-center justify-between p-4 border-b border-[color:var(--hf-white-alpha-10)] flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-cyan-500/20 rounded-lg">
-              <Search className="w-5 h-5 text-cyan-400" aria-hidden="true" />
+            <div className="p-2 bg-[var(--hf-status-cyan-badge)] rounded-lg">
+              <Search className="w-5 h-5 text-[var(--hf-cyan-400)]" aria-hidden="true" />
             </div>
             <h2 id="parser-modal-title" className="text-lg font-semibold">
               {isResume ? 'Парсинг резюме' : 'Парсинг вакансии'}
@@ -378,7 +378,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
             aria-label="Закрыть окно"
           >
             <X className="w-5 h-5" aria-hidden="true" />
@@ -386,7 +386,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         </div>
 
         {/* Tabs - only show file tab for resume */}
-        <div className="flex border-b border-white/10 flex-shrink-0" role="tablist" aria-label="Способ загрузки">
+        <div className="flex border-b border-[color:var(--hf-white-alpha-10)] flex-shrink-0" role="tablist" aria-label="Способ загрузки">
           <button
             onClick={() => {
               setActiveTab('url');
@@ -396,8 +396,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
             className={clsx(
               'flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors',
               activeTab === 'url'
-                ? 'glass-light text-white border-b-2 border-cyan-500'
-                : 'text-white/60 hover:text-white hover:bg-dark-800/50'
+                ? 'glass-light text-[var(--hf-white)] border-b-2 border-[color:var(--hf-cyan-500)]'
+                : 'text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-dark-panel-alpha-50)]'
             )}
             role="tab"
             aria-selected={activeTab === 'url'}
@@ -417,8 +417,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
               className={clsx(
                 'flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors',
                 activeTab === 'file'
-                  ? 'glass-light text-white border-b-2 border-cyan-500'
-                  : 'text-white/60 hover:text-white hover:bg-dark-800/50'
+                  ? 'glass-light text-[var(--hf-white)] border-b-2 border-[color:var(--hf-cyan-500)]'
+                  : 'text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-dark-panel-alpha-50)]'
               )}
               role="tab"
               aria-selected={activeTab === 'file'}
@@ -443,7 +443,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                   id="parser-url-panel"
                   aria-labelledby="parser-url-tab"
                 >
-                  <label htmlFor="parser-url-input" className="block text-sm text-white/60 mb-2">
+                  <label htmlFor="parser-url-input" className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-2">
                     Ссылка на {isResume ? 'резюме' : 'вакансию'}
                   </label>
                   <div className="relative">
@@ -468,7 +468,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                       }
                       className={clsx(
                         'w-full px-4 py-3 glass-light border rounded-lg focus:outline-none text-sm pr-24',
-                        error ? 'border-red-500/50' : 'border-white/10 focus:border-cyan-500'
+                        error ? 'border-[color:var(--hf-status-red-badge)]' : 'border-[color:var(--hf-white-alpha-10)] focus:border-[color:var(--hf-cyan-500)]'
                       )}
                       disabled={loading}
                       aria-invalid={error ? 'true' : 'false'}
@@ -484,7 +484,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                     )}
                   </div>
                   {error && (
-                    <p id="parser-url-error" className="text-xs text-red-400 mt-2 flex items-center gap-1" role="alert">
+                    <p id="parser-url-error" className="text-xs text-[var(--hf-status-red)] mt-2 flex items-center gap-1" role="alert">
                       <AlertCircle className="w-3 h-3" aria-hidden="true" />
                       {error}
                     </p>
@@ -512,8 +512,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                     className={clsx(
                       'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
                       isDragging
-                        ? 'border-cyan-500 bg-cyan-500/10'
-                        : 'border-white/20 hover:border-white/40 hover:bg-dark-800/50'
+                        ? 'border-[color:var(--hf-cyan-500)] bg-[var(--hf-status-cyan-bg)]'
+                        : 'border-[color:var(--hf-white-alpha-20)] hover:border-[color:var(--hf-white-alpha-40)] hover:bg-[var(--hf-dark-panel-alpha-50)]'
                     )}
                     role="button"
                     tabIndex={0}
@@ -529,19 +529,19 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                     />
                     <Upload className={clsx(
                       'w-10 h-10 mx-auto mb-4',
-                      isDragging ? 'text-cyan-400' : 'text-white/40'
+                      isDragging ? 'text-[var(--hf-cyan-400)]' : 'text-[color:var(--hf-white-alpha-40)]'
                     )} aria-hidden="true" />
-                    <p className="text-white/60 mb-2">
+                    <p className="text-[color:var(--hf-white-alpha-60)] mb-2">
                       {isDragging
                         ? 'Отпустите файл для загрузки'
                         : 'Перетащите файл сюда или нажмите для выбора'
                       }
                     </p>
-                    <p className="text-xs text-white/40">
+                    <p className="text-xs text-[color:var(--hf-white-alpha-40)]">
                       PDF, DOC, DOCX или TXT (максимум 10 МБ)
                     </p>
                     {error && (
-                      <p className="text-xs text-red-400 mt-4 flex items-center justify-center gap-1" role="alert">
+                      <p className="text-xs text-[var(--hf-status-red)] mt-4 flex items-center justify-center gap-1" role="alert">
                         <AlertCircle className="w-3 h-3" aria-hidden="true" />
                         {error}
                       </p>
@@ -558,8 +558,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                   className={clsx(
                     'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-colors',
                     loading || !isUrlValid
-                      ? 'glass-light text-white/40 cursor-not-allowed'
-                      : 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                      ? 'glass-light text-[color:var(--hf-white-alpha-40)] cursor-not-allowed'
+                      : 'bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-500)] text-[var(--hf-white)]'
                   )}
                   aria-busy={loading}
                 >
@@ -579,7 +579,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
 
               {/* Loading indicator for file */}
               {activeTab === 'file' && loading && (
-                <div className="flex items-center justify-center gap-2 py-4 text-cyan-400" role="status" aria-live="polite">
+                <div className="flex items-center justify-center gap-2 py-4 text-[var(--hf-cyan-400)]" role="status" aria-live="polite">
                   <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
                   <span>Обработка файла...</span>
                 </div>
@@ -598,15 +598,15 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                   Для URL-резюме сначала открывается форма редактирования карточки,
                   поэтому пикер тут не имеет смысла. */}
               {isResume && uploadedFile && (
-                <div className="border-t border-white/10 pt-4">
-                  <label className="block text-sm font-medium text-white/70 mb-2 flex items-center gap-2">
+                <div className="border-t border-[color:var(--hf-white-alpha-10)] pt-4">
+                  <label className="block text-sm font-medium text-[color:var(--hf-white-alpha-70)] mb-2 flex items-center gap-2">
                     <Briefcase className="w-4 h-4" />
                     Добавить на воронку (опционально)
                   </label>
                   <select
                     value={selectedVacancyId}
                     onChange={(e) => setSelectedVacancyId(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full px-3 py-2.5 glass-light border border-white/10 rounded-lg text-sm focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3 py-2.5 glass-light border border-[color:var(--hf-white-alpha-10)] rounded-lg text-sm focus:outline-none focus:border-[color:var(--hf-cyan-500)]"
                     disabled={isCreating}
                   >
                     <option value="">— без воронки —</option>
@@ -615,20 +615,20 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                     ))}
                   </select>
                   {vacancyOptions.length === 0 && (
-                    <p className="text-xs text-white/40 mt-1.5">У вас нет открытых воронок</p>
+                    <p className="text-xs text-[color:var(--hf-white-alpha-40)] mt-1.5">У вас нет открытых воронок</p>
                   )}
                 </div>
               )}
 
               {/* Matched candidates section for resume */}
               {isResume && (isSearchingCandidates || matchedCandidates.length > 0) && (
-                <div className="border-t border-white/10 pt-4">
-                  <h3 className="text-sm font-medium text-white/70 mb-3 flex items-center gap-2">
+                <div className="border-t border-[color:var(--hf-white-alpha-10)] pt-4">
+                  <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-70)] mb-3 flex items-center gap-2">
                     <UserCheck className="w-4 h-4" />
                     {isSearchingCandidates ? 'Поиск совпадений...' : `Найденные кандидаты (${matchedCandidates.length})`}
                   </h3>
                   {isSearchingCandidates ? (
-                    <div className="flex items-center gap-2 text-white/40 text-sm py-2">
+                    <div className="flex items-center gap-2 text-[color:var(--hf-white-alpha-40)] text-sm py-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Поиск существующих кандидатов...
                     </div>
@@ -640,15 +640,15 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                           className="flex items-center justify-between p-3 glass-light rounded-lg"
                         >
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-white truncate">{candidate.name}</p>
-                            <p className="text-xs text-white/40 truncate">
+                            <p className="text-sm font-medium text-[var(--hf-white)] truncate">{candidate.name}</p>
+                            <p className="text-xs text-[color:var(--hf-white-alpha-40)] truncate">
                               {[candidate.email, candidate.phone, candidate.position].filter(Boolean).join(' · ')}
                             </p>
                           </div>
                           <button
                             onClick={() => handleAttachToCandidate(candidate.id)}
                             disabled={isAttaching}
-                            className="flex-shrink-0 ml-3 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                            className="flex-shrink-0 ml-3 px-3 py-1.5 text-xs font-medium bg-[var(--hf-green-600)] hover:bg-[var(--hf-green-500)] text-[var(--hf-white)] rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
                           >
                             {isAttaching ? (
                               <Loader2 className="w-3 h-3 animate-spin" />
@@ -668,10 +668,10 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-4 border-t border-white/10 flex-shrink-0">
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-[color:var(--hf-white-alpha-10)] flex-shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] transition-colors"
           >
             Отмена
           </button>
@@ -679,7 +679,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
             <button
               onClick={handleCreate}
               disabled={isCreating}
-              className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-500)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--hf-white)] rounded-lg transition-colors"
             >
               {isCreating ? (
                 <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />

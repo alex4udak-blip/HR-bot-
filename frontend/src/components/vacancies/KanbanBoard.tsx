@@ -490,7 +490,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   if (isKanbanLoading) {
     return (
       <div className="h-full flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
+        <div className="flex items-center justify-between p-4 border-b border-[color:var(--hf-white-alpha-10)]">
           <div className="flex items-center gap-4">
             <Skeleton variant="text" className="h-6 w-32" />
             <Skeleton variant="text" className="h-4 w-24" />
@@ -501,7 +501,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
           <div className="flex gap-4 h-full min-w-max">
             {VISIBLE_STAGES.slice(0, 5).map((stage) => (
               <div key={stage} className="w-72 flex-shrink-0 flex flex-col rounded-xl glass-light">
-                <div className="p-3 border-b border-white/10">
+                <div className="p-3 border-b border-[color:var(--hf-white-alpha-10)]">
                   <Skeleton variant="text" className="h-5 w-24" />
                 </div>
                 <div className="flex-1 p-2 space-y-2">
@@ -530,7 +530,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
 
   if (!kanbanBoard) {
     return (
-      <div className="flex items-center justify-center h-full text-white/40">
+      <div className="flex items-center justify-center h-full text-[color:var(--hf-white-alpha-40)]">
         Не удалось загрузить доску
       </div>
     );
@@ -540,14 +540,14 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   if (kanbanBoard.total_count === 0) {
     return (
       <div className="h-full flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
+        <div className="flex items-center justify-between p-4 border-b border-[color:var(--hf-white-alpha-10)]">
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold">Kanban доска</h2>
-            <span className="text-white/40 text-sm">0 кандидатов</span>
+            <span className="text-[color:var(--hf-white-alpha-40)] text-sm">0 кандидатов</span>
           </div>
           <button
             onClick={() => setShowAddCandidate(true)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] rounded-lg text-sm transition-colors"
           >
             <Plus className="w-4 h-4" />
             Добавить кандидата
@@ -569,11 +569,11 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="border-b border-white/10">
+      <div className="border-b border-[color:var(--hf-white-alpha-10)]">
         <div className="flex items-center justify-between p-3 sm:p-4">
           <div className="flex items-center gap-2 sm:gap-4">
             <h2 className="text-base sm:text-lg font-semibold">Kanban доска</h2>
-            <span className="text-white/40 text-xs sm:text-sm">
+            <span className="text-[color:var(--hf-white-alpha-40)] text-xs sm:text-sm">
               {kanbanBoard.total_count} кандидатов
             </span>
           </div>
@@ -581,7 +581,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
             {isAdmin && (
               <button
                 onClick={() => setShowStagesConfig(true)}
-                className="p-1.5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white/60 transition-colors"
+                className="p-1.5 hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)] transition-colors"
                 title="Настройка этапов воронки"
               >
                 <Settings className="w-4 h-4" />
@@ -592,19 +592,19 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
               className={clsx(
                 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs sm:text-sm transition-colors',
                 hasActiveFilters
-                  ? 'bg-blue-600/30 text-blue-400 border border-blue-500/50'
-                  : 'bg-white/5 hover:bg-white/10 text-white/60'
+                  ? 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] border border-[color:var(--hf-status-blue-badge)]'
+                  : 'bg-[var(--hf-white-alpha-05)] hover:bg-[var(--hf-white-alpha-10)] text-[color:var(--hf-white-alpha-60)]'
               )}
             >
               <Filter className="w-4 h-4" />
               <span className="hidden sm:inline">Фильтры</span>
               {hasActiveFilters && (
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--hf-status-blue)]" />
               )}
             </button>
             <button
               onClick={() => setShowAddCandidate(true)}
-              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs sm:text-sm transition-colors"
+              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] rounded-lg text-xs sm:text-sm transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Добавить кандидата</span>
@@ -626,11 +626,11 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
               <div className="px-3 sm:px-4 pb-3 flex flex-wrap items-end gap-3">
                 {/* Recruiter filter */}
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs text-white/40">Рекрутер</label>
+                  <label className="text-xs text-[color:var(--hf-white-alpha-40)]">Рекрутер</label>
                   <select
                     value={filterRecruiter ?? ''}
                     onChange={(e) => setFilterRecruiter(e.target.value ? Number(e.target.value) : undefined)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 min-w-[160px] focus:border-blue-500/50 focus:outline-none"
+                    className="bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-white-alpha-10)] rounded-lg px-3 py-1.5 text-sm text-[color:var(--hf-white-alpha-80)] min-w-[160px] focus:border-[color:var(--hf-status-blue-badge)] focus:outline-none"
                   >
                     <option value="">Все</option>
                     {recruiters.map((r) => (
@@ -641,23 +641,23 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
 
                 {/* Date from */}
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs text-white/40">Дата от</label>
+                  <label className="text-xs text-[color:var(--hf-white-alpha-40)]">Дата от</label>
                   <input
                     type="date"
                     value={filterDateFrom}
                     onChange={(e) => setFilterDateFrom(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-blue-500/50 focus:outline-none"
+                    className="bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-white-alpha-10)] rounded-lg px-3 py-1.5 text-sm text-[color:var(--hf-white-alpha-80)] focus:border-[color:var(--hf-status-blue-badge)] focus:outline-none"
                   />
                 </div>
 
                 {/* Date to */}
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs text-white/40">Дата до</label>
+                  <label className="text-xs text-[color:var(--hf-white-alpha-40)]">Дата до</label>
                   <input
                     type="date"
                     value={filterDateTo}
                     onChange={(e) => setFilterDateTo(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-blue-500/50 focus:outline-none"
+                    className="bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-white-alpha-10)] rounded-lg px-3 py-1.5 text-sm text-[color:var(--hf-white-alpha-80)] focus:border-[color:var(--hf-status-blue-badge)] focus:outline-none"
                   />
                 </div>
 
@@ -665,14 +665,14 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={applyFilters}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors"
+                    className="px-3 py-1.5 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] rounded-lg text-sm transition-colors"
                   >
                     Применить
                   </button>
                   {hasActiveFilters && (
                     <button
                       onClick={clearFilters}
-                      className="flex items-center gap-1 px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-sm text-white/60 transition-colors"
+                      className="flex items-center gap-1 px-2 py-1.5 bg-[var(--hf-white-alpha-05)] hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-sm text-[color:var(--hf-white-alpha-60)] transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
                       Сбросить
@@ -707,8 +707,8 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                 className={clsx(
                   'w-64 sm:w-72 flex-shrink-0 flex flex-col rounded-xl border transition-all duration-200',
                   isDropping
-                    ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
-                    : 'border-white/10 glass-light'
+                    ? 'border-[color:var(--hf-cyan-500)] bg-[var(--hf-status-blue-bg)] shadow-[var(--hf-shadow-lg)] shadow-[0_10px_15px_-3px_var(--hf-status-blue-badge)]'
+                    : 'border-[color:var(--hf-white-alpha-10)] glass-light'
                 )}
                 onDragOver={(e) => {
                   handleColumnDragOver(e, stage);
@@ -720,12 +720,12 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
               >
                 {/* Column Header */}
                 <div className={clsx(
-                  'p-2 sm:p-3 border-b border-white/10 flex items-center justify-between',
+                  'p-2 sm:p-3 border-b border-[color:var(--hf-white-alpha-10)] flex items-center justify-between',
                   APPLICATION_STAGE_COLORS[stage]
                 )}>
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-sm sm:text-base">{stageLabels[stage]}</span>
-                    <span className="text-xs px-2 py-0.5 bg-black/20 rounded-full">
+                    <span className="text-xs px-2 py-0.5 bg-[var(--hf-black-alpha-20)] rounded-full">
                       {apps.length}
                     </span>
                   </div>
@@ -757,7 +757,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                               initial={{ opacity: 0, height: 0 }}
                               animate={{ opacity: 1, height: 4 }}
                               exit={{ opacity: 0, height: 0 }}
-                              className="bg-blue-500 rounded-full mb-2"
+                              className="bg-[var(--hf-cyan-600)] rounded-full mb-2"
                             />
                           )}
 
@@ -774,24 +774,24 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                             onDragStart={(e) => handleDragStart(e as unknown as React.DragEvent, app)}
                             onDragEnd={handleDragEnd}
                             className={clsx(
-                              'p-3 glass-light hover:bg-white/10 border rounded-xl cursor-grab active:cursor-grabbing transition-all duration-200 group touch-manipulation',
+                              'p-3 glass-light hover:bg-[var(--hf-white-alpha-10)] border rounded-xl cursor-grab active:cursor-grabbing transition-all duration-200 group touch-manipulation',
                               draggedApp?.id === app.id
-                                ? 'border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-500/20'
-                                : 'border-white/10',
+                                ? 'border-[color:var(--hf-status-blue-badge)] bg-[var(--hf-status-blue-bg)] shadow-[var(--hf-shadow-lg)] shadow-[0_10px_15px_-3px_var(--hf-status-blue-badge)]'
+                                : 'border-[color:var(--hf-white-alpha-10)]',
                               isDragging && draggedApp?.id !== app.id && 'pointer-events-none'
                             )}
                           >
                             {/* Card Header */}
                             <div className="flex items-start gap-2 mb-2">
                               {/* Drag handle */}
-                              <GripVertical className="w-4 h-4 text-white/20 flex-shrink-0 mt-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" />
+                              <GripVertical className="w-4 h-4 text-[color:var(--hf-white-alpha-20)] flex-shrink-0 mt-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" />
 
                               <div className="flex-1 min-w-0">
-                                <h4 className="font-medium truncate text-sm sm:text-base group-hover:text-white transition-colors">
+                                <h4 className="font-medium truncate text-sm sm:text-base group-hover:text-[var(--hf-white)] transition-colors">
                                   {app.entity_name}
                                 </h4>
                                 {app.entity_position && (
-                                  <p className="text-xs text-white/40 truncate">{app.entity_position}</p>
+                                  <p className="text-xs text-[color:var(--hf-white-alpha-40)] truncate">{app.entity_position}</p>
                                 )}
                               </div>
 
@@ -802,7 +802,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                     e.stopPropagation();
                                     setSelectedApplication(app);
                                   }}
-                                  className="p-1.5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all active:scale-90"
+                                  className="p-1.5 hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-[color:var(--hf-white-alpha-40)] hover:text-[var(--hf-white)] transition-all active:scale-90"
                                   title="Детали"
                                 >
                                   <Edit className="w-3.5 h-3.5" />
@@ -812,7 +812,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                     e.stopPropagation();
                                     handleViewCandidate(app);
                                   }}
-                                  className="p-1.5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all active:scale-90"
+                                  className="p-1.5 hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-[color:var(--hf-white-alpha-40)] hover:text-[var(--hf-white)] transition-all active:scale-90"
                                   title="Профиль"
                                 >
                                   <ExternalLink className="w-3.5 h-3.5" />
@@ -822,7 +822,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                     e.stopPropagation();
                                     handleDeleteClick(app);
                                   }}
-                                  className="p-1.5 hover:bg-red-500/20 text-red-400 rounded-lg transition-all active:scale-90"
+                                  className="p-1.5 hover:bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] rounded-lg transition-all active:scale-90"
                                   title="Удалить"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -831,7 +831,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                             </div>
 
                             {/* Contact Info */}
-                            <div className="space-y-1.5 text-xs text-white/50 ml-6">
+                            <div className="space-y-1.5 text-xs text-[color:var(--hf-white-alpha-50)] ml-6">
                               {app.entity_email && (
                                 <div className="flex items-center gap-2 truncate">
                                   <Mail className="w-3 h-3 flex-shrink-0" />
@@ -847,7 +847,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                             </div>
 
                             {/* Footer / Scoring */}
-                            <div className="mt-3 pt-2 border-t border-white/5 ml-6 flex items-center justify-between">
+                            <div className="mt-3 pt-2 border-t border-[color:var(--hf-white-alpha-05)] ml-6 flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 {(() => {
                                   const { score, isLoading, error } = getScoreState(app);
@@ -863,7 +863,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                   );
                                 })()}
                                 {app.rating && (
-                                  <div className="flex items-center gap-1 text-yellow-400">
+                                  <div className="flex items-center gap-1 text-[var(--hf-status-yellow)]">
                                     <Star className="w-3 h-3 fill-current" />
                                     <span className="text-xs font-medium">{app.rating}</span>
                                   </div>
@@ -871,7 +871,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                               </div>
 
                               <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-1 text-[10px] text-white/30">
+                                <div className="flex items-center gap-1 text-[10px] text-[color:var(--hf-white-alpha-30)]">
                                   <Clock className="w-3 h-3" />
                                   {new Date(app.applied_at).toLocaleDateString('ru-RU', {
                                     day: 'numeric',
@@ -909,7 +909,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                                       }
                                     }}
                                     className={clsx(
-                                      "p-1 hover:bg-white/10 rounded-lg text-white/30 hover:text-blue-400 transition-all active:scale-90",
+                                      "p-1 hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-[color:var(--hf-white-alpha-30)] hover:text-[var(--hf-status-blue)] transition-all active:scale-90",
                                       movingApps.has(app.id) && "opacity-50 cursor-not-allowed"
                                     )}
                                     title={`В "${stageLabels[nextStage]}"`}
@@ -931,7 +931,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 4 }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="bg-blue-500 rounded-full"
+                      className="bg-[var(--hf-cyan-600)] rounded-full"
                     />
                   )}
 
@@ -939,10 +939,10 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                   {apps.length === 0 && !isDropping && (
                     <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 text-center">
                       <div className="w-12 h-12 rounded-full glass-light flex items-center justify-center mb-3">
-                        <Users className="w-6 h-6 text-white/20" />
+                        <Users className="w-6 h-6 text-[color:var(--hf-white-alpha-20)]" />
                       </div>
-                      <p className="text-sm font-medium text-white/30">Пусто</p>
-                      <p className="text-xs text-white/20 mt-1 max-w-[140px]">
+                      <p className="text-sm font-medium text-[color:var(--hf-white-alpha-30)]">Пусто</p>
+                      <p className="text-xs text-[color:var(--hf-white-alpha-20)] mt-1 max-w-[140px]">
                         Перетащите сюда кандидата или добавьте нового
                       </p>
                     </div>
@@ -953,7 +953,7 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="h-32 flex flex-col items-center justify-center border-2 border-dashed border-blue-500/50 rounded-xl bg-blue-500/5 text-blue-400/80 text-sm"
+                      className="h-32 flex flex-col items-center justify-center border-2 border-dashed border-[color:var(--hf-status-blue-badge)] rounded-xl bg-[var(--hf-status-blue-bg)] text-[color:var(--hf-status-blue)] text-sm"
                     >
                       <Plus className="w-6 h-6 mb-2 animate-bounce" />
                       <span className="font-medium">Отпустите здесь</span>

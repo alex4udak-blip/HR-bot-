@@ -20,10 +20,10 @@ interface RecommendedVacanciesProps {
 
 // Match score colors based on percentage
 const getScoreColor = (score: number): string => {
-  if (score >= 80) return 'text-green-400 bg-green-500/20 border-green-500/30';
-  if (score >= 60) return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30';
-  if (score >= 40) return 'text-orange-400 bg-orange-500/20 border-orange-500/30';
-  return 'text-red-400 bg-red-500/20 border-red-500/30';
+  if (score >= 80) return 'text-[var(--hf-status-green)] bg-[var(--hf-status-green-badge)] border-[color:var(--hf-status-green-badge)]';
+  if (score >= 60) return 'text-[var(--hf-status-yellow)] bg-[var(--hf-status-yellow-badge)] border-[color:var(--hf-status-yellow-badge)]';
+  if (score >= 40) return 'text-[var(--hf-status-orange)] bg-[var(--hf-status-orange-badge)] border-[color:var(--hf-status-orange-badge)]';
+  return 'text-[var(--hf-status-red)] bg-[var(--hf-status-red-badge)] border-[color:var(--hf-status-red-badge)]';
 };
 
 // Match score label
@@ -87,8 +87,8 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
   if (loading) {
     return (
       <div className="space-y-3">
-        <div className="flex items-center gap-2 text-white/60 mb-4">
-          <Sparkles size={18} className="text-purple-400" />
+        <div className="flex items-center gap-2 text-[color:var(--hf-white-alpha-60)] mb-4">
+          <Sparkles size={18} className="text-[var(--hf-status-purple)]" />
           <span className="text-sm font-medium">Подбираем подходящие вакансии...</span>
         </div>
         <ListSkeleton count={3} />
@@ -111,8 +111,8 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-white/60 mb-2">
-        <Sparkles size={16} className="text-purple-400" />
+      <div className="flex items-center gap-2 text-[color:var(--hf-white-alpha-60)] mb-2">
+        <Sparkles size={16} className="text-[var(--hf-status-purple)]" />
         <span className="text-sm">
           Найдено {recommendations.length} подходящих вакансий
         </span>
@@ -129,8 +129,8 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
             className={clsx(
               'glass-light rounded-xl border transition-all duration-200',
               expandedId === rec.vacancy_id
-                ? 'border-purple-500/50 bg-white/8'
-                : 'border-white/10 hover:border-white/20'
+                ? 'border-[color:var(--hf-status-purple-badge)] bg-[var(--hf-white-alpha-08)]'
+                : 'border-[color:var(--hf-white-alpha-10)] hover:border-[color:var(--hf-white-alpha-20)]'
             )}
           >
             {/* Main card content */}
@@ -154,10 +154,10 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h4 className="font-medium text-white truncate">
+                      <h4 className="font-medium text-[var(--hf-white)] truncate">
                         {rec.vacancy_title}
                       </h4>
-                      <p className="text-xs text-white/40 mt-0.5">
+                      <p className="text-xs text-[color:var(--hf-white-alpha-40)] mt-0.5">
                         {getScoreLabel(rec.match_score)}
                       </p>
                     </div>
@@ -165,7 +165,7 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                     <ChevronRight
                       size={18}
                       className={clsx(
-                        'flex-shrink-0 text-white/40 transition-transform duration-200',
+                        'flex-shrink-0 text-[color:var(--hf-white-alpha-40)] transition-transform duration-200',
                         expandedId === rec.vacancy_id && 'rotate-90'
                       )}
                     />
@@ -174,20 +174,20 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                   {/* Quick info */}
                   <div className="flex flex-wrap items-center gap-2 mt-2">
                     {rec.salary_min || rec.salary_max ? (
-                      <span className="flex items-center gap-1 text-xs text-white/60">
+                      <span className="flex items-center gap-1 text-xs text-[color:var(--hf-white-alpha-60)]">
                         <DollarSign size={12} />
                         {formatSalaryUtil(rec.salary_min, rec.salary_max, rec.salary_currency)}
                       </span>
                     ) : null}
 
                     {rec.location && (
-                      <span className="flex items-center gap-1 text-xs text-white/60">
+                      <span className="flex items-center gap-1 text-xs text-[color:var(--hf-white-alpha-60)]">
                         <MapPin size={12} />
                         {rec.location}
                       </span>
                     )}
 
-                    <span className="flex items-center gap-1 text-xs text-white/40">
+                    <span className="flex items-center gap-1 text-xs text-[color:var(--hf-white-alpha-40)]">
                       <Users size={12} />
                       {rec.applications_count} откликов
                     </span>
@@ -196,12 +196,12 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                   {/* Compatibility indicators */}
                   <div className="flex flex-wrap items-center gap-2 mt-2">
                     {rec.salary_compatible ? (
-                      <span className="flex items-center gap-1 text-xs text-green-400/80 bg-green-500/10 px-2 py-0.5 rounded-full">
+                      <span className="flex items-center gap-1 text-xs text-[color:var(--hf-status-green)] bg-[var(--hf-status-green-bg)] px-2 py-0.5 rounded-full">
                         <Check size={12} />
                         Зарплата
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-xs text-red-400/80 bg-red-500/10 px-2 py-0.5 rounded-full">
+                      <span className="flex items-center gap-1 text-xs text-[color:var(--hf-status-red)] bg-[var(--hf-status-red-bg)] px-2 py-0.5 rounded-full">
                         <X size={12} />
                         Зарплата
                       </span>
@@ -221,17 +221,17 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                   transition={{ duration: 0.2 }}
                   className="overflow-hidden"
                 >
-                  <div className="px-4 pb-4 pt-2 border-t border-white/10 space-y-3">
+                  <div className="px-4 pb-4 pt-2 border-t border-[color:var(--hf-white-alpha-10)] space-y-3">
                     {/* Match reasons */}
                     {rec.match_reasons.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium text-green-400 mb-1 flex items-center gap-1">
+                        <p className="text-xs font-medium text-[var(--hf-status-green)] mb-1 flex items-center gap-1">
                           <Check size={12} />
                           Почему подходит:
                         </p>
                         <ul className="space-y-1">
                           {rec.match_reasons.map((reason, i) => (
-                            <li key={i} className="text-xs text-white/70 pl-4">
+                            <li key={i} className="text-xs text-[color:var(--hf-white-alpha-70)] pl-4">
                               {reason}
                             </li>
                           ))}
@@ -242,13 +242,13 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                     {/* Missing requirements */}
                     {rec.missing_requirements.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium text-yellow-400 mb-1 flex items-center gap-1">
+                        <p className="text-xs font-medium text-[var(--hf-status-yellow)] mb-1 flex items-center gap-1">
                           <AlertCircle size={12} />
                           Чего не хватает:
                         </p>
                         <ul className="space-y-1">
                           {rec.missing_requirements.map((req, i) => (
-                            <li key={i} className="text-xs text-white/70 pl-4">
+                            <li key={i} className="text-xs text-[color:var(--hf-white-alpha-70)] pl-4">
                               {req}
                             </li>
                           ))}
@@ -259,17 +259,17 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                     {/* Additional info */}
                     <div className="flex flex-wrap gap-2 text-xs">
                       {rec.employment_type && (
-                        <span className="px-2 py-1 glass-light rounded text-white/60">
+                        <span className="px-2 py-1 glass-light rounded text-[color:var(--hf-white-alpha-60)]">
                           {rec.employment_type}
                         </span>
                       )}
                       {rec.experience_level && (
-                        <span className="px-2 py-1 glass-light rounded text-white/60">
+                        <span className="px-2 py-1 glass-light rounded text-[color:var(--hf-white-alpha-60)]">
                           {rec.experience_level}
                         </span>
                       )}
                       {rec.department_name && (
-                        <span className="px-2 py-1 glass-light rounded text-white/60">
+                        <span className="px-2 py-1 glass-light rounded text-[color:var(--hf-white-alpha-60)]">
                           {rec.department_name}
                         </span>
                       )}
@@ -286,8 +286,8 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                         className={clsx(
                           'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
                           appliedIds.has(rec.vacancy_id)
-                            ? 'bg-green-500/20 text-green-400 cursor-default'
-                            : 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300'
+                            ? 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] cursor-default'
+                            : 'bg-[var(--hf-status-purple-badge)] hover:bg-[var(--hf-status-purple-bg)] text-[var(--hf-status-purple)]'
                         )}
                       >
                         {applyingTo === rec.vacancy_id ? (
@@ -313,7 +313,7 @@ export default function RecommendedVacancies({ entityId, onApply }: RecommendedV
                           e.stopPropagation();
                           handleNavigateToVacancy(rec.vacancy_id);
                         }}
-                        className="px-4 py-2 glass-light hover:bg-white/10 rounded-lg text-sm text-white/70 hover:text-white transition-colors"
+                        className="px-4 py-2 glass-light hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-sm text-[color:var(--hf-white-alpha-70)] hover:text-[var(--hf-white)] transition-colors"
                       >
                         Открыть
                       </button>

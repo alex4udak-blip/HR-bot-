@@ -3,7 +3,7 @@ Basic CRUD operations for vacancies.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, or_, text
+from sqlalchemy import select, func, or_, text, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from datetime import datetime
@@ -147,14 +147,15 @@ async def list_vacancies(
     creator_names = {uid: user_names.get(uid) for uid in creator_ids}
 
     # Bulk load application counts by stage for all vacancies
+    stage_value = cast(VacancyApplication.stage, String)
     stage_counts_result = await db.execute(
         select(
             VacancyApplication.vacancy_id,
-            VacancyApplication.stage,
+            stage_value.label("stage"),
             func.count(VacancyApplication.id)
         )
         .where(VacancyApplication.vacancy_id.in_(vacancy_ids))
-        .group_by(VacancyApplication.vacancy_id, VacancyApplication.stage)
+        .group_by(VacancyApplication.vacancy_id, stage_value)
     )
     # Build nested dict: {vacancy_id: {stage: count}}
     all_stage_counts = {}
@@ -162,7 +163,7 @@ async def list_vacancies(
         vac_id, stage, count = row
         if vac_id not in all_stage_counts:
             all_stage_counts[vac_id] = {}
-        all_stage_counts[vac_id][str(stage.value)] = count
+        all_stage_counts[vac_id][str(stage)] = count
 
     # Build response using pre-loaded data
     responses = []

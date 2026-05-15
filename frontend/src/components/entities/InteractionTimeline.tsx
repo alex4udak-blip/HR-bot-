@@ -84,44 +84,44 @@ interface InteractionTimelineProps {
 const eventTypeConfig = {
   chat_message: {
     icon: MessageSquare,
-    color: 'text-blue-400',
-    bgColor: 'bg-blue-500/20',
+    color: 'text-[var(--hf-status-blue)]',
+    bgColor: 'bg-[var(--hf-status-blue-badge)]',
     label: 'Сообщение'
   },
   call: {
     icon: Phone,
-    color: 'text-green-400',
-    bgColor: 'bg-green-500/20',
+    color: 'text-[var(--hf-status-green)]',
+    bgColor: 'bg-[var(--hf-status-green-badge)]',
     label: 'Звонок'
   },
   file_upload: {
     icon: FileText,
-    color: 'text-purple-400',
-    bgColor: 'bg-purple-500/20',
+    color: 'text-[var(--hf-status-purple)]',
+    bgColor: 'bg-[var(--hf-status-purple-badge)]',
     label: 'Файл'
   },
   vacancy_applied: {
     icon: Briefcase,
-    color: 'text-orange-400',
-    bgColor: 'bg-orange-500/20',
+    color: 'text-[var(--hf-status-orange)]',
+    bgColor: 'bg-[var(--hf-status-orange-badge)]',
     label: 'Вакансия'
   },
   stage_change: {
     icon: ArrowRight,
-    color: 'text-cyan-400',
-    bgColor: 'bg-cyan-500/20',
+    color: 'text-[var(--hf-cyan-400)]',
+    bgColor: 'bg-[var(--hf-status-cyan-badge)]',
     label: 'Этап'
   },
   note: {
     icon: FileText,
-    color: 'text-gray-400',
-    bgColor: 'bg-gray-500/20',
+    color: 'text-[var(--hf-status-gray)]',
+    bgColor: 'bg-[var(--hf-status-gray-badge)]',
     label: 'Заметка'
   },
   status_change: {
     icon: CheckCircle,
-    color: 'text-yellow-400',
-    bgColor: 'bg-yellow-500/20',
+    color: 'text-[var(--hf-status-yellow)]',
+    bgColor: 'bg-[var(--hf-status-yellow-badge)]',
     label: 'Статус'
   }
 };
@@ -298,9 +298,9 @@ export default function InteractionTimeline({
   if (events.length === 0) {
     return (
       <div className="p-6 text-center">
-        <HistoryIcon className="w-10 h-10 mx-auto mb-3 text-white/20" />
-        <p className="text-white/40 text-sm">Пока нет взаимодействий</p>
-        <p className="text-white/20 text-xs mt-1">
+        <HistoryIcon className="w-10 h-10 mx-auto mb-3 text-[color:var(--hf-white-alpha-20)]" />
+        <p className="text-[color:var(--hf-white-alpha-40)] text-sm">Пока нет взаимодействий</p>
+        <p className="text-[color:var(--hf-white-alpha-20)] text-xs mt-1">
           Здесь будет отображаться история сообщений, звонков и изменений
         </p>
       </div>
@@ -313,12 +313,12 @@ export default function InteractionTimeline({
       <div className="flex items-center justify-between">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-2 text-lg font-semibold hover:text-white/80 transition-colors"
+          className="flex items-center gap-2 text-lg font-semibold hover:text-[color:var(--hf-white-alpha-80)] transition-colors"
         >
           {expanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-          <HistoryIcon size={18} className="text-purple-400" />
+          <HistoryIcon size={18} className="text-[var(--hf-status-purple)]" />
           История взаимодействий
-          <span className="text-sm font-normal text-white/40">({events.length})</span>
+          <span className="text-sm font-normal text-[color:var(--hf-white-alpha-40)]">({events.length})</span>
         </button>
 
         {expanded && (
@@ -329,7 +329,7 @@ export default function InteractionTimeline({
                 onClick={() => setFilter(null)}
                 className={clsx(
                   'px-2 py-1 text-xs rounded transition-colors',
-                  filter === null ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'
+                  filter === null ? 'bg-[var(--hf-white-alpha-10)] text-[var(--hf-white)]' : 'text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)]'
                 )}
               >
                 Все
@@ -338,7 +338,7 @@ export default function InteractionTimeline({
                 onClick={() => setFilter('chat_message')}
                 className={clsx(
                   'p-1.5 rounded transition-colors',
-                  filter === 'chat_message' ? 'bg-blue-500/20 text-blue-400' : 'text-white/40 hover:text-white/60'
+                  filter === 'chat_message' ? 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]' : 'text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)]'
                 )}
                 title="Сообщения"
               >
@@ -348,7 +348,7 @@ export default function InteractionTimeline({
                 onClick={() => setFilter('call')}
                 className={clsx(
                   'p-1.5 rounded transition-colors',
-                  filter === 'call' ? 'bg-green-500/20 text-green-400' : 'text-white/40 hover:text-white/60'
+                  filter === 'call' ? 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' : 'text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)]'
                 )}
                 title="Звонки"
               >
@@ -358,7 +358,7 @@ export default function InteractionTimeline({
                 onClick={() => setFilter('file_upload')}
                 className={clsx(
                   'p-1.5 rounded transition-colors',
-                  filter === 'file_upload' ? 'bg-purple-500/20 text-purple-400' : 'text-white/40 hover:text-white/60'
+                  filter === 'file_upload' ? 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]' : 'text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)]'
                 )}
                 title="Файлы"
               >
@@ -368,7 +368,7 @@ export default function InteractionTimeline({
                 onClick={() => setFilter('vacancy_applied')}
                 className={clsx(
                   'p-1.5 rounded transition-colors',
-                  filter === 'vacancy_applied' ? 'bg-orange-500/20 text-orange-400' : 'text-white/40 hover:text-white/60'
+                  filter === 'vacancy_applied' ? 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]' : 'text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)]'
                 )}
                 title="Вакансии"
               >
@@ -392,17 +392,17 @@ export default function InteractionTimeline({
               <div key={date} className="relative">
                 {/* Date header */}
                 <div className="flex items-center gap-3 mb-3">
-                  <Calendar size={14} className="text-white/30" />
-                  <span className="text-sm font-medium text-white/60">
+                  <Calendar size={14} className="text-[color:var(--hf-white-alpha-30)]" />
+                  <span className="text-sm font-medium text-[color:var(--hf-white-alpha-60)]">
                     {formatDateHeader(date)}
                   </span>
-                  <div className="flex-1 h-px bg-white/10" />
+                  <div className="flex-1 h-px bg-[var(--hf-white-alpha-10)]" />
                 </div>
 
                 {/* Events */}
                 <div className="relative pl-6 space-y-3">
                   {/* Timeline line */}
-                  <div className="absolute left-[11px] top-2 bottom-2 w-px bg-white/10" />
+                  <div className="absolute left-[11px] top-2 bottom-2 w-px bg-[var(--hf-white-alpha-10)]" />
 
                   {dateEvents.map((event, idx) => {
                     const config = eventTypeConfig[event.type];
@@ -428,16 +428,16 @@ export default function InteractionTimeline({
                         <div className="flex-1 min-w-0 pb-2">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-white truncate">
+                              <p className="text-sm font-medium text-[var(--hf-white)] truncate">
                                 {event.title}
                               </p>
                               {event.description && (
-                                <p className="text-xs text-white/50 mt-0.5 line-clamp-2">
+                                <p className="text-xs text-[color:var(--hf-white-alpha-50)] mt-0.5 line-clamp-2">
                                   {event.description}
                                 </p>
                               )}
                             </div>
-                            <span className="text-xs text-white/30 flex-shrink-0">
+                            <span className="text-xs text-[color:var(--hf-white-alpha-30)] flex-shrink-0">
                               {formatDate(event.timestamp, 'HH:mm')}
                             </span>
                           </div>
@@ -447,7 +447,7 @@ export default function InteractionTimeline({
                             const sender = event.metadata?.sender;
                             if (sender && typeof sender === 'string') {
                               return (
-                                <div className="flex items-center gap-1 mt-1 text-xs text-white/30">
+                                <div className="flex items-center gap-1 mt-1 text-xs text-[color:var(--hf-white-alpha-30)]">
                                   <User size={10} />
                                   {sender}
                                 </div>
@@ -467,7 +467,7 @@ export default function InteractionTimeline({
             {filteredEvents.length > 10 && !showAllEvents && (
               <button
                 onClick={() => setShowAllEvents(true)}
-                className="w-full py-3 text-center text-sm text-purple-400 hover:text-purple-300 glass-light hover:bg-white/10 rounded-lg transition-colors"
+                className="w-full py-3 text-center text-sm text-[var(--hf-status-purple)] hover:text-[var(--hf-status-purple)] glass-light hover:bg-[var(--hf-white-alpha-10)] rounded-lg transition-colors"
               >
                 Показать ещё {filteredEvents.length - 10} событий
               </button>
@@ -476,7 +476,7 @@ export default function InteractionTimeline({
             {showAllEvents && filteredEvents.length > 10 && (
               <button
                 onClick={() => setShowAllEvents(false)}
-                className="w-full py-2 text-center text-xs text-white/40 hover:text-white/60 transition-colors"
+                className="w-full py-2 text-center text-xs text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)] transition-colors"
               >
                 Свернуть
               </button>

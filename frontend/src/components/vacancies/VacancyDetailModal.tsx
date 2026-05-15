@@ -65,7 +65,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <motion.div
@@ -76,21 +76,21 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
         className="glass rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-start justify-between p-4 border-b border-white/10">
+        <div className="flex items-start justify-between p-4 border-b border-[color:var(--hf-white-alpha-10)]">
           <div className="flex-1 min-w-0 pr-4">
             <div className="flex items-center gap-2 mb-2">
               <span className={`text-xs px-2 py-1 rounded ${VACANCY_STATUS_COLORS[vacancy.status]}`}>
                 {VACANCY_STATUS_LABELS[vacancy.status]}
               </span>
               {vacancy.priority && vacancy.priority > 1 && (
-                <span className="text-xs px-2 py-1 rounded bg-yellow-500/20 text-yellow-400">
+                <span className="text-xs px-2 py-1 rounded bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]">
                   Приоритет: {vacancy.priority}
                 </span>
               )}
             </div>
             <h2 className="text-xl font-semibold">{vacancy.title}</h2>
             {vacancy.department_name && (
-              <p className="text-sm text-white/50 mt-1 flex items-center gap-1.5">
+              <p className="text-sm text-[color:var(--hf-white-alpha-50)] mt-1 flex items-center gap-1.5">
                 <Building2 className="w-4 h-4" />
                 {vacancy.department_name}
               </p>
@@ -100,7 +100,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
             {canShare && (
               <button
                 onClick={() => setShowShareModal(true)}
-                className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
+                className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
                 title="Поделиться"
               >
                 <Share2 className="w-5 h-5" />
@@ -108,14 +108,14 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
             )}
             <button
               onClick={onEdit}
-              className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
+              className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
               title="Редактировать"
             >
               <Edit className="w-5 h-5" />
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
+              className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -127,28 +127,28 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           {/* Stats Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 glass-light rounded-lg">
-              <div className="flex items-center gap-1.5 text-white/60 mb-1">
+              <div className="flex items-center gap-1.5 text-[color:var(--hf-white-alpha-60)] mb-1">
                 <Users className="w-4 h-4" />
                 <span className="text-xs">Всего</span>
               </div>
               <p className="text-xl font-bold">{totalCandidates}</p>
             </div>
             <div className="p-3 glass-light rounded-lg">
-              <div className="flex items-center gap-1.5 text-blue-400 mb-1">
+              <div className="flex items-center gap-1.5 text-[var(--hf-status-blue)] mb-1">
                 <TrendingUp className="w-4 h-4" />
                 <span className="text-xs">В процессе</span>
               </div>
               <p className="text-xl font-bold">{inProgressCount}</p>
             </div>
             <div className="p-3 glass-light rounded-lg">
-              <div className="flex items-center gap-1.5 text-green-400 mb-1">
+              <div className="flex items-center gap-1.5 text-[var(--hf-status-green)] mb-1">
                 <CheckCircle className="w-4 h-4" />
                 <span className="text-xs">Наняты</span>
               </div>
               <p className="text-xl font-bold">{hiredCount}</p>
             </div>
             <div className="p-3 glass-light rounded-lg">
-              <div className="flex items-center gap-1.5 text-red-400 mb-1">
+              <div className="flex items-center gap-1.5 text-[var(--hf-status-red)] mb-1">
                 <XCircle className="w-4 h-4" />
                 <span className="text-xs">Отклонены</span>
               </div>
@@ -160,7 +160,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {(vacancy.salary_min || vacancy.salary_max) && (
               <div className="p-3 glass-light rounded-lg">
-                <div className="flex items-center gap-1.5 text-green-400 mb-1">
+                <div className="flex items-center gap-1.5 text-[var(--hf-status-green)] mb-1">
                   <DollarSign className="w-4 h-4" />
                   <span className="text-xs">Зарплата</span>
                 </div>
@@ -171,7 +171,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
             )}
             {vacancy.location && (
               <div className="p-3 glass-light rounded-lg">
-                <div className="flex items-center gap-1.5 text-white/60 mb-1">
+                <div className="flex items-center gap-1.5 text-[color:var(--hf-white-alpha-60)] mb-1">
                   <MapPin className="w-4 h-4" />
                   <span className="text-xs">Локация</span>
                 </div>
@@ -180,7 +180,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
             )}
             {vacancy.employment_type && (
               <div className="p-3 glass-light rounded-lg">
-                <div className="flex items-center gap-1.5 text-white/60 mb-1">
+                <div className="flex items-center gap-1.5 text-[color:var(--hf-white-alpha-60)] mb-1">
                   <Clock className="w-4 h-4" />
                   <span className="text-xs">Занятость</span>
                 </div>
@@ -191,7 +191,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
             )}
             {vacancy.experience_level && (
               <div className="p-3 glass-light rounded-lg">
-                <div className="flex items-center gap-1.5 text-white/60 mb-1">
+                <div className="flex items-center gap-1.5 text-[color:var(--hf-white-alpha-60)] mb-1">
                   <TrendingUp className="w-4 h-4" />
                   <span className="text-xs">Уровень</span>
                 </div>
@@ -202,7 +202,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
             )}
             {vacancy.hiring_manager_name && (
               <div className="p-3 glass-light rounded-lg">
-                <div className="flex items-center gap-1.5 text-white/60 mb-1">
+                <div className="flex items-center gap-1.5 text-[color:var(--hf-white-alpha-60)] mb-1">
                   <User className="w-4 h-4" />
                   <span className="text-xs">Ответственный</span>
                 </div>
@@ -210,7 +210,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
               </div>
             )}
             <div className="p-3 glass-light rounded-lg">
-              <div className="flex items-center gap-1.5 text-white/60 mb-1">
+              <div className="flex items-center gap-1.5 text-[color:var(--hf-white-alpha-60)] mb-1">
                 <Calendar className="w-4 h-4" />
                 <span className="text-xs">Создана</span>
               </div>
@@ -221,7 +221,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           {/* Pipeline progress */}
           {Object.entries(vacancy.stage_counts || {}).length > 0 && (
             <div className="p-4 glass-light rounded-lg">
-              <h3 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-1.5">
+              <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-60)] mb-3 flex items-center gap-1.5">
                 <TrendingUp className="w-4 h-4" />
                 Воронка найма
               </h3>
@@ -232,13 +232,13 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
                     <div key={stage} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
                         <span>{APPLICATION_STAGE_LABELS[stage as keyof typeof APPLICATION_STAGE_LABELS] || stage}</span>
-                        <span className="text-white/60">{count} ({percentage}%)</span>
+                        <span className="text-[color:var(--hf-white-alpha-60)]">{count} ({percentage}%)</span>
                       </div>
                       <div className="h-1.5 glass-light rounded-full overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${percentage}%` }}
-                          className="h-full bg-cyan-500 rounded-full"
+                          className="h-full bg-[var(--hf-cyan-500)] rounded-full"
                         />
                       </div>
                     </div>
@@ -251,20 +251,20 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           {/* Assigned Recruiters */}
           {recruiterStats.length > 0 && (
             <div className="p-4 glass-light rounded-lg">
-              <h3 className="text-sm font-medium text-white/60 mb-3 flex items-center gap-1.5">
+              <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-60)] mb-3 flex items-center gap-1.5">
                 <UserCheck className="w-4 h-4" />
                 Назначенные рекрутеры
               </h3>
               <div className="space-y-2">
                 {recruiterStats.map((r) => (
-                  <div key={r.user_id} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/5">
+                  <div key={r.user_id} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-[var(--hf-white-alpha-05)]">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400 text-xs font-medium">
+                      <div className="w-7 h-7 rounded-full bg-[var(--hf-status-cyan-badge)] flex items-center justify-center text-[var(--hf-cyan-400)] text-xs font-medium">
                         {r.name.charAt(0).toUpperCase()}
                       </div>
                       <span className="text-sm">{r.name}</span>
                     </div>
-                    <span className="text-xs text-white/50 bg-white/5 px-2 py-0.5 rounded-full">
+                    <span className="text-xs text-[color:var(--hf-white-alpha-50)] bg-[var(--hf-white-alpha-05)] px-2 py-0.5 rounded-full">
                       {r.candidate_count} {r.candidate_count === 1 ? 'кандидат' : r.candidate_count < 5 ? 'кандидата' : 'кандидатов'}
                     </span>
                   </div>
@@ -276,19 +276,19 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           {/* Description */}
           {vacancy.description && (
             <div className="p-4 glass-light rounded-lg">
-              <h3 className="text-sm font-medium text-white/60 mb-2 flex items-center gap-1.5">
+              <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-60)] mb-2 flex items-center gap-1.5">
                 <FileText className="w-4 h-4" />
                 Описание
               </h3>
-              <p className="text-sm text-white/80 whitespace-pre-wrap">{vacancy.description}</p>
+              <p className="text-sm text-[color:var(--hf-white-alpha-80)] whitespace-pre-wrap">{vacancy.description}</p>
             </div>
           )}
 
           {/* Requirements */}
           {vacancy.requirements && (
             <div className="p-4 glass-light rounded-lg">
-              <h3 className="text-sm font-medium text-white/60 mb-2">Требования</h3>
-              <div className="prose prose-invert prose-sm max-w-none text-white/80 prose-li:marker:text-white/60">
+              <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-60)] mb-2">Требования</h3>
+              <div className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]">
                 <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.requirements}</ReactMarkdown>
               </div>
             </div>
@@ -297,8 +297,8 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           {/* Responsibilities */}
           {vacancy.responsibilities && (
             <div className="p-4 glass-light rounded-lg">
-              <h3 className="text-sm font-medium text-white/60 mb-2">Обязанности</h3>
-              <div className="prose prose-invert prose-sm max-w-none text-white/80 prose-li:marker:text-white/60">
+              <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-60)] mb-2">Обязанности</h3>
+              <div className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]">
                 <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.responsibilities}</ReactMarkdown>
               </div>
             </div>
@@ -307,7 +307,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           {/* Tags */}
           {vacancy.tags && vacancy.tags.length > 0 && (
             <div className="p-4 glass-light rounded-lg">
-              <h3 className="text-sm font-medium text-white/60 mb-2 flex items-center gap-1.5">
+              <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-60)] mb-2 flex items-center gap-1.5">
                 <Tag className="w-4 h-4" />
                 Навыки и технологии
               </h3>
@@ -315,7 +315,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
                 {vacancy.tags.map(tag => (
                   <span
                     key={tag}
-                    className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs"
+                    className="px-2 py-1 bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] rounded-full text-xs"
                   >
                     {tag}
                   </span>
@@ -327,12 +327,12 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           {/* Source URL */}
           {vacancy.source_url && (
             <div className="p-4 glass-light rounded-lg">
-              <h3 className="text-sm font-medium text-white/60 mb-2">Источник</h3>
+              <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-60)] mb-2">Источник</h3>
               <a
                 href={vacancy.source_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 text-blue-400 hover:text-blue-300 text-sm truncate"
+                className="flex items-center gap-2 text-[var(--hf-status-blue)] hover:text-[var(--hf-status-blue)] text-sm truncate"
               >
                 <ExternalLink className="w-4 h-4 flex-shrink-0" />
                 <span className="truncate">{vacancy.source_url}</span>
@@ -342,11 +342,11 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-white/10 flex justify-end gap-2">
+        <div className="p-4 border-t border-[color:var(--hf-white-alpha-10)] flex justify-end gap-2">
           {canShare && (
             <button
               onClick={() => setShowShareModal(true)}
-              className="px-4 py-2 glass-light hover:bg-white/10 rounded-lg text-sm transition-colors flex items-center gap-2"
+              className="px-4 py-2 glass-light hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-sm transition-colors flex items-center gap-2"
             >
               <Share2 className="w-4 h-4" />
               Поделиться
@@ -354,13 +354,13 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           )}
           <button
             onClick={onClose}
-            className="px-4 py-2 glass-light hover:bg-white/10 rounded-lg text-sm transition-colors"
+            className="px-4 py-2 glass-light hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-sm transition-colors"
           >
             Закрыть
           </button>
           <button
             onClick={onEdit}
-            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-500)] rounded-lg text-sm transition-colors flex items-center gap-2"
           >
             <Edit className="w-4 h-4" />
             Редактировать

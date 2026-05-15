@@ -1,28 +1,24 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
+import { useSearchParams } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
-  Loader2,
   X,
-  RefreshCw,
-  Settings2,
+  ShieldCheck,
   Save,
   GripVertical,
   Users,
-  Plus,
+  PlusCircle,
   Paperclip,
   Mail,
   Calendar,
   ThumbsUp,
-  XCircle,
   FileText,
   Eye,
   Printer,
   Download,
-  CheckSquare,
-  Square,
   Pencil,
+  PenSquare,
   Phone,
   Send,
   Check,
@@ -30,45 +26,324 @@ import {
   MapPin,
   Trash2,
   ChevronDown,
-  ArrowRightLeft,
-} from 'lucide-react';
-import clsx from 'clsx';
-import toast from 'react-hot-toast';
+  ChevronLeft,
+  ChevronRight,
+  MessageCircle,
+  MessageSquareText,
+  ClipboardList,
+  Maximize2,
+  Type,
+  List,
+  ListOrdered,
+  Link as LinkIcon,
+  AtSign,
+  Video,
+  Upload,
+} from "lucide-react";
+import clsx from "clsx";
+import toast from "react-hot-toast";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
-  getCandidateRecruiters,
-} from '@/services/api/candidates';
+} from "@/services/api/candidates";
 import type {
   KanbanBoardResponse,
   KanbanCard,
   KanbanColumn,
-  RecruiterOption,
-} from '@/services/api/candidates';
-import { updateEntity, uploadEntityFile, getEntityFiles, downloadEntityFile, deleteEntity, getEntity, addEntityNote, updateEntityNote, deleteEntityNote } from '@/services/api/entities';
-import { getOrgStages, updateOrgStages } from '@/services/api/auth';
-import SendEmailModal from '@/components/entities/SendEmailModal';
-import type { EntityFile } from '@/services/api/entities';
-import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
-import ParserModal from '@/components/parser/ParserModal';
-import { useAuthStore } from '@/stores/authStore';
+} from "@/services/api/candidates";
+import {
+  updateEntity,
+  createEntity,
+  uploadEntityFile,
+  getEntityFiles,
+  downloadEntityFile,
+  deleteEntity,
+  getEntity,
+  addEntityNote,
+  updateEntityNote,
+  deleteEntityNote,
+} from "@/services/api/entities";
+import { getOrgStages, updateOrgStages } from "@/services/api/auth";
+import SendEmailModal from "@/components/entities/SendEmailModal";
+import type { EntityFile } from "@/services/api/entities";
+import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
+import ParserModal from "@/components/parser/ParserModal";
+import { useAuthStore } from "@/stores/authStore";
 
 // ---------- constants ----------
 
-const STATUS_COLORS: Record<string, { dot: string; text: string; bg: string; badge: string }> = {
-  new:            { dot: 'bg-blue-400',    text: 'text-blue-400',    bg: 'bg-blue-500/10',    badge: 'bg-blue-500/15 text-blue-400' },
-  screening:      { dot: 'bg-cyan-400',    text: 'text-cyan-400',    bg: 'bg-cyan-500/10',    badge: 'bg-cyan-500/15 text-cyan-400' },
-  practice:       { dot: 'bg-purple-400',  text: 'text-purple-400',  bg: 'bg-purple-500/10',  badge: 'bg-purple-500/15 text-purple-400' },
-  tech_practice:  { dot: 'bg-indigo-400',  text: 'text-indigo-400',  bg: 'bg-indigo-500/10',  badge: 'bg-indigo-500/15 text-indigo-400' },
-  is_interview:   { dot: 'bg-orange-400',  text: 'text-orange-400',  bg: 'bg-orange-500/10',  badge: 'bg-orange-500/15 text-orange-400' },
-  offer:          { dot: 'bg-yellow-400',  text: 'text-yellow-400',  bg: 'bg-yellow-500/10',  badge: 'bg-yellow-500/15 text-yellow-400' },
-  hired:          { dot: 'bg-green-400',   text: 'text-green-400',   bg: 'bg-green-500/10',   badge: 'bg-green-500/15 text-green-400' },
-  rejected:       { dot: 'bg-red-400',     text: 'text-red-400',     bg: 'bg-red-500/10',     badge: 'bg-red-500/15 text-red-400' },
+const STATUS_COLORS: Record<
+  string,
+  { dot: string; text: string; bg: string; badge: string }
+> = {
+  new: {
+    dot: "bg-[var(--hf-status-blue)]",
+    text: "text-[var(--hf-status-blue)]",
+    bg: "bg-[var(--hf-status-blue-bg)]",
+    badge: "bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]",
+  },
+  screening: {
+    dot: "bg-[var(--hf-status-cyan)]",
+    text: "text-[var(--hf-status-cyan)]",
+    bg: "bg-[var(--hf-status-cyan-bg)]",
+    badge: "bg-[var(--hf-status-cyan-badge)] text-[var(--hf-status-cyan)]",
+  },
+  practice: {
+    dot: "bg-[var(--hf-status-purple)]",
+    text: "text-[var(--hf-status-purple)]",
+    bg: "bg-[var(--hf-status-purple-bg)]",
+    badge: "bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]",
+  },
+  tech_practice: {
+    dot: "bg-[var(--hf-status-indigo)]",
+    text: "text-[var(--hf-status-indigo)]",
+    bg: "bg-[var(--hf-status-indigo-bg)]",
+    badge: "bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)]",
+  },
+  is_interview: {
+    dot: "bg-[var(--hf-status-orange)]",
+    text: "text-[var(--hf-status-orange)]",
+    bg: "bg-[var(--hf-status-orange-bg)]",
+    badge: "bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]",
+  },
+  offer: {
+    dot: "bg-[var(--hf-status-yellow)]",
+    text: "text-[var(--hf-status-yellow)]",
+    bg: "bg-[var(--hf-status-yellow-bg)]",
+    badge: "bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]",
+  },
+  hired: {
+    dot: "bg-[var(--hf-status-green)]",
+    text: "text-[var(--hf-status-green)]",
+    bg: "bg-[var(--hf-status-green-bg)]",
+    badge: "bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]",
+  },
+  rejected: {
+    dot: "bg-[var(--hf-status-red)]",
+    text: "text-[var(--hf-status-red)]",
+    bg: "bg-[var(--hf-status-red-bg)]",
+    badge: "bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]",
+  },
 };
 
-const FALLBACK_COLOR = { dot: 'bg-gray-400', text: 'text-gray-400', bg: 'bg-gray-500/10', badge: 'bg-gray-500/15 text-gray-400' };
+const FALLBACK_COLOR = {
+  dot: "bg-[var(--hf-status-gray)]",
+  text: "text-[var(--hf-status-gray)]",
+  bg: "bg-[var(--hf-status-gray-bg)]",
+  badge: "bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]",
+};
 
 // ---------- helpers ----------
+
+const HUNTFLOW_EMPTY_STAGE_GROUPS: Record<string, string[]> = {
+  "middle-before-offer": [
+    "Резюме у заказчика",
+    "Интервью с HR",
+    "Интервью с заказчиком",
+    "Принятие решения/ СБ",
+    "Выставлен оффер",
+  ],
+  "middle-after-offer": [
+    "Вышел на работу",
+    "Резерв",
+    "Выполняет тз",
+    "Онбординг - 1 неделя работы",
+    "Онбординг - 1,5 месяца работы",
+    "Онбординг - 3 месяца работы",
+    "Закрывающий фидбек по онбордингу от лида",
+    "Закрытие испытательного срока",
+  ],
+};
+
+const HUNTFLOW_STAGE_LAYOUT_TRANSITION = {
+  duration: 0.42,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
+const HUNTFLOW_STAGE_REVEAL_TRANSITION = {
+  duration: 0.36,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
+
+const getEmptyStageTooltip = (stages: string[]) => stages.join(", ");
+
+function HuntflowClose28Icon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 28 28"
+      className={className}
+      fill="none"
+    >
+      <path
+        d="M19.833 8.167 8.167 19.833m0-11.666 11.666 11.666"
+        stroke="var(--hf-ui-close-icon)"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HuntflowRemoveIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 14 14"
+      className={className}
+      fill="none"
+    >
+      <rect width="14" height="14" fill="currentColor" rx="7" />
+      <path
+        d="M9 5 5 9m0-4 4 4"
+        stroke="var(--hf-white)"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HuntflowClip18Icon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 18 18"
+      className={className}
+      fill="none"
+    >
+      <path
+        d="m15.866 8.173-6.761 6.762a3.938 3.938 0 0 1-5.569-5.569l6.762-6.761a2.625 2.625 0 0 1 3.712 3.712l-6.496 6.497a1.312 1.312 0 1 1-1.857-1.857l5.701-5.7"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HuntflowXClose16Icon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+    >
+      <path
+        d="m12 4-8 8m0-8 8 8"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HuntflowChevronDown24Icon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+    >
+      <path
+        d="M7.5 10.5 12 15l4.5-4.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+const normalizeStageLabel = (value: string) =>
+  value.toLowerCase().replace(/\s+/g, " ").trim();
+
+const TIMELINE_ACTION_FILTERS = [
+  "Сопроводительное письмо",
+  "Смена этапа подбора",
+  "Комментарий",
+  "Письмо кандидату",
+  "Интервью",
+  "SMS",
+  "Телефонный звонок",
+  "Форма обратной связи",
+  "Анкета кандидата",
+  "Файл",
+  "Оффер",
+  "Отказ",
+  "Оценка рекрутмента",
+];
+
+const getTimelineFilterAliases = (filter: string) => {
+  const aliases: Record<string, string[]> = {
+    "Смена этапа подбора": ["смен", "этап", "перенес", "новый", "отказ"],
+    "Письмо кандидату": ["письм", "email", "почт"],
+    SMS: ["sms", "смс"],
+    "Телефонный звонок": ["телефон", "звон"],
+    "Форма обратной связи": ["обратн", "связ"],
+    "Сопроводительное письмо": ["сопровод"],
+  };
+  return [filter, ...(aliases[filter] || [])].map((value) =>
+    value.toLowerCase(),
+  );
+};
+
+function TimelineUserGlyph({
+  surface = "stage",
+  align = "stage",
+}: {
+  surface?: "stage" | "white";
+  align?: "stage" | "notes";
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={clsx(
+        "hf-timeline-user-glyph",
+        align === "stage"
+          ? "hf-timeline-user-glyph-stage"
+          : "hf-timeline-user-glyph-notes",
+        surface === "white"
+          ? "hf-timeline-user-glyph-white-surface"
+          : "hf-timeline-user-glyph-stage-surface",
+      )}
+    >
+      <span className="hf-timeline-user-head" />
+      <span className="hf-timeline-user-body" />
+    </span>
+  );
+}
+
+function TimelineDot({ align = "stage" }: { align?: "stage" | "notes" }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={clsx(
+        "hf-timeline-dot",
+        align === "stage" ? "hf-timeline-dot-stage" : "hf-timeline-dot-notes",
+      )}
+    />
+  );
+}
+
+function TimelineMetaIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      className="hf-timeline-meta-icon"
+    >
+      <span className="hf-timeline-meta-eye-left" />
+      <span className="hf-timeline-meta-eye-right" />
+      <span className="hf-timeline-meta-mouth" />
+    </span>
+  );
+}
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -82,18 +357,216 @@ function useDebounce<T>(value: T, delay: number): T {
 function getInitials(name: string): string {
   const p = name.trim().split(/\s+/);
   if (p.length >= 2) return (p[0][0] + p[1][0]).toUpperCase();
-  return (p[0]?.[0] || '?').toUpperCase();
+  return (p[0]?.[0] || "?").toUpperCase();
 }
 
 function formatDateShort(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('ru');
+  return new Date(dateStr).toLocaleDateString("ru");
 }
 
 function formatDateFull(dateStr: string): string {
-  return new Date(dateStr).toLocaleString('ru', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+  return new Date(dateStr).toLocaleString("ru", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
+}
+
+function formatInputDateRu(dateStr: string): string {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split("-");
+  if (!year || !month || !day) return dateStr;
+  return `${day}.${month}.${year}`;
+}
+
+function parseRuDateInput(value: string): string {
+  const match = value.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!match) return "";
+  const [, day, month, year] = match;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+function formatDateLongRu(dateStr: string): string {
+  if (!dateStr) return "";
+  const date = new Date(`${dateStr}T00:00:00`);
+  return date.toLocaleDateString("ru", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).replace(/\s*г\.$/, "");
+}
+
+function formatTimelineDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const months = [
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+  ];
+  const day = date.getDate();
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${day} ${month} ${year}, ${hours}:${minutes}`;
+}
+
+function formatResumeSaved(dateStr: string): string {
+  const date = new Date(dateStr);
+  const months = [
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+  ];
+  const day = date.getDate();
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${day} ${month} ${year} в ${hours}:${minutes}`;
+}
+
+function formatPhoneDisplay(phone?: string): string {
+  if (!phone) return "";
+  const digits = phone.replace(/\D/g, "");
+  const match = digits.match(/^7(\d{3})(\d{3})(\d{4})$/);
+  if (match) return `+7 ${match[1]} ${match[2]} ${match[3]}`;
+  return phone;
+}
+
+function formatPhoneForEdit(phone?: string): string {
+  if (!phone) return "";
+  let digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) digits = `7${digits}`;
+  if (digits.length === 11 && digits.startsWith("8")) {
+    digits = `7${digits.slice(1)}`;
+  }
+  const match = digits.match(/^7(\d{3})(\d{3})(\d{4})$/);
+  if (match) return `+7 (${match[1]}) ${match[2]}${match[3]}`;
+  return phone;
+}
+
+function getVacancyStageLabel(card: KanbanCard): string | undefined {
+  if (!card.vacancy_name) return undefined;
+  const department =
+    typeof card.extra_data?.vacancy_department === "string"
+      ? card.extra_data.vacancy_department.trim()
+      : "";
+  return department
+    ? `${card.vacancy_name} (${department})`
+    : card.vacancy_name;
+}
+
+function getInterviewVacancyLabel(card: KanbanCard): string {
+  const vacancyName = card.vacancy_name || card.position || "Вакансия";
+  const department =
+    typeof card.extra_data?.vacancy_department === "string"
+      ? card.extra_data.vacancy_department.trim()
+      : "";
+  return department ? `${vacancyName} / ${department}` : vacancyName;
+}
+
+function HfLoadingSpinner({
+  size,
+  stroke,
+  className,
+}: {
+  size?: number | string;
+  stroke?: number | string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={clsx("hf-loading-spinner", className)}
+      style={
+        size || stroke
+          ? {
+              width: size,
+              height: size,
+              borderWidth: stroke,
+            }
+          : undefined
+      }
+      aria-hidden="true"
+    />
+  );
+}
+
+const TIMELINE_EXPAND_DELAY_MS = 420;
+
+function HfSkeletonBlock({
+  className,
+}: {
+  className: string;
+}) {
+  return <div className={clsx("hf-loading-skeleton", className)} />;
+}
+
+function HfCandidatesLoadingLayout() {
+  return (
+    <div className="flex-1 flex overflow-hidden pl-0 pr-hf-s pb-hf-s gap-hf-s">
+      <div className="hf-candidates-loading-list">
+        <div className="hf-candidates-loading-list-inner">
+          {Array.from({ length: 9 }).map((_, index) => (
+            <div
+              key={index}
+              className="hf-candidates-loading-row"
+            >
+              <HfSkeletonBlock className="hf-candidates-loading-avatar" />
+              <div className="hf-candidates-loading-lines">
+                <HfSkeletonBlock className="hf-candidates-loading-title" />
+                <HfSkeletonBlock className="hf-candidates-loading-role" />
+                <HfSkeletonBlock className="hf-candidates-loading-company" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="hf-candidates-loading-detail">
+        <div className="hf-candidates-loading-head">
+          <div className="hf-candidates-loading-head-copy">
+            <div className="hf-candidates-loading-actions">
+              <HfSkeletonBlock className="hf-candidates-loading-action hf-candidates-loading-action-1" />
+              <HfSkeletonBlock className="hf-candidates-loading-action hf-candidates-loading-action-2" />
+              <HfSkeletonBlock className="hf-candidates-loading-action hf-candidates-loading-action-3" />
+            </div>
+            <HfSkeletonBlock className="hf-candidates-loading-name" />
+            <HfSkeletonBlock className="hf-candidates-loading-subtitle" />
+            <div className="hf-candidates-loading-meta">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="hf-candidates-loading-meta-row">
+                  <HfSkeletonBlock className="hf-candidates-loading-meta-label" />
+                  <HfSkeletonBlock className="hf-candidates-loading-meta-value" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <HfSkeletonBlock className="hf-candidates-loading-photo" />
+        </div>
+        <HfSkeletonBlock className="hf-candidates-loading-panel" />
+      </div>
+    </div>
+  );
 }
 
 // ================================================================
@@ -102,44 +575,105 @@ function formatDateFull(dateStr: string): string {
 
 export default function AllCandidatesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [showNewCandidateModal, setShowNewCandidateModal] = useState(false);
   const [showParserModal, setShowParserModal] = useState(false);
   const { user } = useAuthStore();
   const [board, setBoard] = useState<KanbanBoardResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [recruiters, setRecruiters] = useState<RecruiterOption[]>([]);
 
-  const [searchText, setSearchText] = useState('');
+  const [searchText, setSearchText] = useState("");
   const debouncedSearch = useDebounce(searchText, 400);
-  const [activeTab, setActiveTab] = useState('all');
-  const [recruiterId, setRecruiterId] = useState<number | undefined>();
+  const [showTopSearch, setShowTopSearch] = useState(false);
+  const topSearchRef = useRef<HTMLInputElement>(null);
+  const topStageScrollRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState("all");
+  const [expandedEmptyStageGroups, setExpandedEmptyStageGroups] = useState<
+    Record<string, boolean>
+  >({});
+  const [hoveredEmptyStageGroup, setHoveredEmptyStageGroup] = useState<{
+    key: string;
+    stages: string[];
+  } | null>(null);
+  const [topStageCanScroll, setTopStageCanScroll] = useState({
+    left: false,
+    right: false,
+  });
 
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
-  const [selectedStatus, setSelectedStatus] = useState('');
-  const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [detailTab, setDetailTab] = useState<"info" | "resume">("resume");
+  const [showListSettings, setShowListSettings] = useState(false);
   const [showStageSettings, setShowStageSettings] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
+  const [addToVacancyAnchor, setAddToVacancyAnchor] = useState<{
+    left: number;
+    bottom: number;
+  } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const VISIBLE_STEP = 50;
   const [visibleCount, setVisibleCount] = useState(VISIBLE_STEP);
-
-  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+  const isAdmin =
+    user?.role === "superadmin" ||
+    user?.org_role === "owner" ||
+    user?.org_role === "admin";
   const anySelected = selectedIds.size > 0;
 
-  useEffect(() => { getCandidateRecruiters().then(setRecruiters).catch(() => {}); }, []);
+  const toggleEmptyStageGroup = useCallback((key: string) => {
+    setExpandedEmptyStageGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const updateTopStageScrollState = useCallback(() => {
+    const el = topStageScrollRef.current;
+    if (!el) return;
+    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    setTopStageCanScroll({
+      left: el.scrollLeft > 1,
+      right: el.scrollLeft < maxScrollLeft - 1,
+    });
+  }, []);
+
+  const scrollTopStageTabs = useCallback(
+    (direction: "left" | "right") => {
+      const el = topStageScrollRef.current;
+      if (!el) return;
+      el.scrollBy({
+        left: direction === "left" ? -520 : 520,
+        behavior: "smooth",
+      });
+      window.setTimeout(updateTopStageScrollState, 320);
+    },
+    [updateTopStageScrollState],
+  );
 
   const fetchBoard = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getCandidatesKanban({ q: debouncedSearch || undefined, recruiter_id: recruiterId });
+      const data = await getCandidatesKanban({
+        q: debouncedSearch || undefined,
+      });
       setBoard(data);
-    } catch { /* ignore */ } finally { setLoading(false); }
-  }, [debouncedSearch, recruiterId]);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSearch]);
 
-  useEffect(() => { fetchBoard(); }, [fetchBoard]);
+  useEffect(() => {
+    fetchBoard();
+  }, [fetchBoard]);
+
+  useEffect(() => {
+    if (showTopSearch) {
+      requestAnimationFrame(() => topSearchRef.current?.focus());
+    }
+  }, [showTopSearch]);
 
   // Reset visible count when filters change
-  useEffect(() => { setVisibleCount(VISIBLE_STEP); }, [activeTab, debouncedSearch, recruiterId]);
+  useEffect(() => {
+    setVisibleCount(VISIBLE_STEP);
+  }, [activeTab, debouncedSearch]);
 
   // useMemo чтобы фильтрация была реактивной и не пересчитывалась лишний раз
   // (без него были репорты что переключение таба не обновляет список).
@@ -147,32 +681,56 @@ export default function AllCandidatesPage() {
     if (!board) return [];
     const items: { card: KanbanCard; status: string; label: string }[] = [];
     for (const col of board.columns) {
-      if (activeTab === 'all' || col.status === activeTab) {
-        for (const c of col.cards) items.push({ card: c, status: col.status, label: col.label });
+      if (activeTab === "all" || col.status === activeTab) {
+        for (const c of col.cards)
+          items.push({ card: c, status: col.status, label: col.label });
       }
+    }
+    if (activeTab === "all") {
+      return items.sort(
+        (a, b) =>
+          new Date(b.card.created_at).getTime() -
+          new Date(a.card.created_at).getTime(),
+      );
     }
     return items;
   }, [board, activeTab]);
 
+  const displayedCards = filteredCards;
+
+  const selectedBulkCards = useMemo(() => {
+    if (!board) return [];
+    const byId = new Map<number, KanbanCard>();
+    for (const column of board.columns) {
+      for (const card of column.cards) {
+        byId.set(card.id, card);
+      }
+    }
+    return Array.from(selectedIds)
+      .reverse()
+      .map((id) => byId.get(id))
+      .filter((card): card is KanbanCard => Boolean(card));
+  }, [board, selectedIds]);
+
   // Открыть форму добавления при ?add=resume в URL (триггер из FAB-кнопки)
   useEffect(() => {
-    if (searchParams.get('add') === 'resume') {
-      setShowParserModal(true);
+    if (searchParams.get("add") === "resume") {
+      setShowNewCandidateModal(true);
       const next = new URLSearchParams(searchParams);
-      next.delete('add');
+      next.delete("add");
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, setSearchParams]);
 
   // Auto-select from URL ?entity=ID or first card
-  const entityParam = searchParams.get('entity');
+  const entityParam = searchParams.get("entity");
   // Чтобы не тянуть entity повторно после неудачной попытки селекта.
   const entityFetchTriedRef = useRef<number | null>(null);
   useEffect(() => {
     if (!board) return;
     if (entityParam) {
       const entityId = parseInt(entityParam);
-      const match = filteredCards.find(fc => fc.card.id === entityId);
+      const match = filteredCards.find((fc) => fc.card.id === entityId);
       if (match) {
         setSelectedCard(match.card);
         setSelectedStatus(match.status);
@@ -185,20 +743,23 @@ export default function AllCandidatesPage() {
         getEntity(entityId)
           .then((entity) => {
             if (entity?.name) {
-              setActiveTab('all');
+              setActiveTab("all");
               setSearchText(entity.name);
             } else {
-              toast.error('Кандидат не найден');
+              toast.error("Кандидат не найден");
             }
           })
-          .catch(() => toast.error('Не удалось открыть кандидата (нет доступа?)'));
+          .catch(() =>
+            toast.error("Не удалось открыть кандидата (нет доступа?)"),
+          );
         return;
       }
     }
     // Fallback: auto-select first
     if (filteredCards.length > 0 && !selectedCard) {
-      setSelectedCard(filteredCards[0].card);
-      setSelectedStatus(filteredCards[0].status);
+      const initial = filteredCards[0];
+      setSelectedCard(initial.card);
+      setSelectedStatus(initial.status);
     }
   }, [filteredCards.length, entityParam, board]);
 
@@ -206,19 +767,37 @@ export default function AllCandidatesPage() {
     if (!selectedCard || newStatus === selectedStatus) return;
     const old = selectedStatus;
     const name = selectedCard.name;
-    setBoard(prev => {
+    setBoard((prev) => {
       if (!prev) return prev;
-      return { ...prev, columns: prev.columns.map(col => {
-        if (col.status === old) return { ...col, cards: col.cards.filter(c => c.id !== selectedCard.id), count: col.count - 1 };
-        if (col.status === newStatus) return { ...col, cards: [selectedCard, ...col.cards], count: col.count + 1 };
-        return col;
-      })};
+      return {
+        ...prev,
+        columns: prev.columns.map((col) => {
+          if (col.status === old)
+            return {
+              ...col,
+              cards: col.cards.filter((c) => c.id !== selectedCard.id),
+              count: col.count - 1,
+            };
+          if (col.status === newStatus)
+            return {
+              ...col,
+              cards: [selectedCard, ...col.cards],
+              count: col.count + 1,
+            };
+          return col;
+        }),
+      };
     });
     setSelectedStatus(newStatus);
     try {
       await changeCandidateStatus(selectedCard.id, newStatus);
-      toast.success(`${name} → ${board?.columns.find(c => c.status === newStatus)?.label}`);
-    } catch { toast.error('Ошибка'); fetchBoard(); }
+      toast.success(
+        `${name} → ${board?.columns.find((c) => c.status === newStatus)?.label}`,
+      );
+    } catch {
+      toast.error("Ошибка");
+      fetchBoard();
+    }
   };
 
   // After editing candidate, update the card in state
@@ -227,61 +806,29 @@ export default function AllCandidatesPage() {
     const newCard = { ...selectedCard, ...updated };
     setSelectedCard(newCard);
     // Also update in board
-    setBoard(prev => {
+    setBoard((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        columns: prev.columns.map(col => ({
+        columns: prev.columns.map((col) => ({
           ...col,
-          cards: col.cards.map(c => c.id === newCard.id ? newCard : c),
+          cards: col.cards.map((c) => (c.id === newCard.id ? newCard : c)),
         })),
       };
     });
   };
 
-  const [bulkStatusDD, setBulkStatusDD] = useState(false);
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [showBulkAddToVacancy, setShowBulkAddToVacancy] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
-  const bulkStatusRef = useRef<HTMLDivElement>(null);
 
   const toggleSelection = (id: number) => {
-    setSelectedIds(prev => {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
-
-  // Close bulk status dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (bulkStatusRef.current && !bulkStatusRef.current.contains(e.target as Node)) setBulkStatusDD(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const handleBulkStatusChange = async (newStatus: string) => {
-    setBulkStatusDD(false);
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
-    setBulkProcessing(true);
-    const label = board?.columns.find(c => c.status === newStatus)?.label || newStatus;
-    try {
-      for (const id of ids) {
-        await changeCandidateStatus(id, newStatus);
-      }
-      toast.success(`${ids.length} кандидат(ов) перемещено в "${label}"`);
-      setSelectedIds(new Set());
-      fetchBoard();
-    } catch {
-      toast.error('Ошибка при массовом изменении статуса');
-      fetchBoard();
-    } finally {
-      setBulkProcessing(false);
-    }
   };
 
   const handleBulkDelete = async () => {
@@ -300,199 +847,551 @@ export default function AllCandidatesPage() {
       }
       fetchBoard();
     } catch {
-      toast.error('Ошибка при удалении');
+      toast.error("Ошибка при удалении");
       fetchBoard();
     } finally {
       setBulkProcessing(false);
     }
   };
 
-  const totalCount = board?.total || 0;
+  const totalCandidateCount =
+    board?.columns.reduce(
+      (sum, column) => sum + (column.count ?? column.cards.length),
+      0,
+    ) ?? 0;
+  const topStageItems = useMemo(() => {
+    const columns = board?.columns || [];
+    const getColumnCount = (column: KanbanColumn) =>
+      column.count ?? column.cards.length;
+    const findStageColumn = (stage: string) =>
+      columns.find(
+        (column) =>
+          normalizeStageLabel(column.label) === normalizeStageLabel(stage),
+      );
+    const newColumn = columns.find(
+      (column) => column.status === "new" || /^нов/i.test(column.label),
+    );
+    const hiredColumn = columns.find(
+      (column) => column.status === "hired" || /прин/i.test(column.label),
+    );
+    const rejectedColumn = columns.find(
+      (column) => column.status === "rejected" || /отклон/i.test(column.label),
+    );
+    const items: Array<
+      | { type: "stage"; column: KanbanColumn }
+      | { type: "empty-group"; count: number; key: string; stages: string[] }
+    > = [];
+    const pushStageGroup = (key: string) => {
+      const emptyStages: string[] = [];
+      for (const stage of HUNTFLOW_EMPTY_STAGE_GROUPS[key] || []) {
+        const column = findStageColumn(stage);
+        if (column && getColumnCount(column) > 0) {
+          items.push({ type: "stage", column });
+        } else {
+          emptyStages.push(stage);
+        }
+      }
+      if (emptyStages.length > 0) {
+        items.push({
+          type: "empty-group",
+          count: emptyStages.length,
+          key,
+          stages: emptyStages,
+        });
+      }
+    };
+
+    if (newColumn) {
+      items.push({ type: "stage", column: newColumn });
+    }
+
+    pushStageGroup("middle-before-offer");
+
+    if (hiredColumn) {
+      items.push({ type: "stage", column: hiredColumn });
+    }
+
+    pushStageGroup("middle-after-offer");
+
+    if (rejectedColumn) {
+      items.push({ type: "stage", column: rejectedColumn });
+    }
+
+    return items;
+  }, [board?.columns]);
+
+  const getTopStageLabel = (column: KanbanColumn) => {
+    if (/^нов/i.test(column.label)) return "Новые";
+    if (/прин/i.test(column.label)) return "Оффер принят";
+    if (/отклон/i.test(column.label) || column.status === "rejected")
+      return "Отказ";
+    return column.label;
+  };
+
+  const getTopStageCount = (column: KanbanColumn) => {
+    if (/прин/i.test(column.label) && column.count === 0) return "0/1";
+    return String(column.count);
+  };
+
+  const isTopStageDisabled = (column: KanbanColumn) =>
+    column.status === "new" ||
+    column.status === "hired" ||
+    column.status === "rejected" ||
+    /^нов/i.test(column.label) ||
+    /прин/i.test(column.label) ||
+    /отклон/i.test(column.label);
+
+  const hasExpandedEmptyStageGroups = Object.values(
+    expandedEmptyStageGroups,
+  ).some(Boolean);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(updateTopStageScrollState);
+    const timer = window.setTimeout(updateTopStageScrollState, 260);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [
+    expandedEmptyStageGroups,
+    showTopSearch,
+    topStageItems.length,
+    updateTopStageScrollState,
+  ]);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* ===== TOP: Stage tabs ===== */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-white/[0.06] overflow-x-auto no-scrollbar flex-shrink-0">
-        <button
-          onClick={() => { setActiveTab('all'); setSelectedCard(null); }}
+    <div className="hf-all-candidates-page hf-all-candidates-page-root font-hf-body">
+      {/* Stage tabs island — huntflow tabs pattern: white island radius 16 h52,
+          inline stage labels + counter pills bg var(--hf-bg-panel) var(--hf-main-600) 12/16/500 radius 56 pad 2-6.
+          Активная вкладка: cyan-500 underline. */}
+      <div className="hf-top-stage-shell">
+        {/* Stage tabs */}
+        <div
+          ref={topStageScrollRef}
+          onScroll={updateTopStageScrollState}
           className={clsx(
-            'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-            activeTab === 'all' ? 'bg-accent-500 text-white' : 'text-dark-400 hover:bg-white/[0.06]',
+            "hf-top-stage-tabs no-scrollbar",
+            !showTopSearch && "hf-top-stage-tabs-padded",
           )}
         >
-          Все <span className="ml-1 text-xs opacity-70">{totalCount}</span>
-        </button>
-
-        {board?.columns.map(col => (
-          <button
-            key={col.status}
-            onClick={() => { setActiveTab(col.status); setSelectedCard(null); }}
+          <motion.button
+            layout="position"
+            transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
+            type="button"
+            onClick={() => setShowTopSearch((value) => !value)}
             className={clsx(
-              'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-              activeTab === col.status ? 'bg-accent-500 text-white' : 'text-dark-400 hover:bg-white/[0.06]',
+              "hf-top-stage-search-toggle",
+              (showTopSearch || searchText) && "hf-top-stage-search-toggle-active",
             )}
+            title={showTopSearch ? "Скрыть поиск" : "Открыть поиск"}
+            aria-pressed={showTopSearch}
           >
-            {col.label} <span className="ml-1 text-xs opacity-70">{col.count}</span>
-          </button>
-        ))}
+            <Search className="h-[var(--hf-candidates-search-icon)] w-[var(--hf-candidates-search-icon)]" />
+          </motion.button>
 
-        <div className="ml-auto flex items-center gap-2 flex-shrink-0 pl-4">
-          <select
-            value={recruiterId || ''}
-            onChange={(e) => setRecruiterId(e.target.value ? Number(e.target.value) : undefined)}
-            className="px-2 py-1 bg-white/[0.04] border border-white/[0.08] rounded-md text-xs text-white/60"
-          >
-            <option value="">Все рекрутеры</option>
-            {recruiters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          <button onClick={fetchBoard} disabled={loading} className="p-1.5 text-white/30 hover:text-white/60">
-            <RefreshCw className={clsx('w-4 h-4', loading && 'animate-spin')} />
-          </button>
-          {isAdmin && (
-            <button onClick={() => setShowStageSettings(true)} className="p-1.5 text-white/30 hover:text-amber-400" title="Настроить этапы">
-              <Settings2 className="w-4 h-4" />
-            </button>
+          {showTopSearch ? (
+            <div className="hf-top-stage-search">
+              <input
+                ref={topSearchRef}
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    if (searchText) setSearchText("");
+                    else setShowTopSearch(false);
+                  }
+                }}
+                placeholder="Поиск по имени, должности..."
+                className="hf-top-stage-search-input"
+              />
+              {searchText && loading ? (
+                <span className="hf-top-stage-search-action">
+                  <HfLoadingSpinner />
+                </span>
+              ) : searchText ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchText("");
+                    topSearchRef.current?.focus();
+                  }}
+                  className="hf-top-stage-search-action hf-top-stage-search-clear"
+                  title="Очистить поиск"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <motion.button
+                layout="position"
+                transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
+                onClick={() => {
+                  setActiveTab("all");
+                  setSelectedCard(null);
+                }}
+                className={clsx(
+                  "hf-top-stage-item hf-top-stage-all",
+                  activeTab === "all"
+                    ? "hf-top-stage-item-active"
+                    : "hf-top-stage-item-idle",
+                )}
+              >
+                Все
+                <span
+                  className={clsx(
+                    "hf-top-stage-badge",
+                    activeTab === "all"
+                      ? "hf-top-stage-badge-active"
+                      : "",
+                  )}
+                >
+                  {totalCandidateCount}
+                </span>
+                {activeTab === "all" && (
+                  <span className="hf-top-stage-underline-all" />
+                )}
+              </motion.button>
+
+              {topStageItems.map((item) => {
+                if (item.type === "empty-group") {
+                  const stages = item.stages;
+                  const expanded = expandedEmptyStageGroups[item.key];
+
+                  if (expanded) {
+                    return stages.map((stage) => (
+                      <motion.button
+                        key={`${item.key}-${stage}`}
+                        layout="position"
+                        type="button"
+                        disabled
+                        initial={{ opacity: 0.16, x: -18 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{
+                          opacity: HUNTFLOW_STAGE_REVEAL_TRANSITION,
+                          x: HUNTFLOW_STAGE_LAYOUT_TRANSITION,
+                          layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION,
+                        }}
+                        className="hf-top-stage-item hf-top-stage-expanded"
+                      >
+                        {stage}
+                      </motion.button>
+                    ));
+                  }
+
+                  return (
+                    <motion.button
+                      key={item.key}
+                      layout="position"
+                      type="button"
+                      onClick={() => toggleEmptyStageGroup(item.key)}
+                      onMouseEnter={() =>
+                        setHoveredEmptyStageGroup({
+                          key: item.key,
+                          stages: item.stages,
+                        })
+                      }
+                      onMouseLeave={() => setHoveredEmptyStageGroup(null)}
+                      onFocus={() =>
+                        setHoveredEmptyStageGroup({
+                          key: item.key,
+                          stages: item.stages,
+                        })
+                      }
+                      onBlur={() => setHoveredEmptyStageGroup(null)}
+                      transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
+                      className="hf-top-stage-empty-group"
+                    >
+                      • • {item.count} этапов без кандидатов • •
+                    </motion.button>
+                  );
+                }
+
+                const col = item.column;
+                const isActive = activeTab === col.status;
+                const showTopStageCounter = /прин/i.test(col.label);
+                const disabled = isTopStageDisabled(col);
+                return (
+                  <motion.button
+                    key={col.status}
+                    layout="position"
+                    transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
+                    type="button"
+                    disabled={disabled}
+                    onClick={
+                      disabled
+                        ? undefined
+                        : () => {
+                            setActiveTab(col.status);
+                            setSelectedCard(null);
+                          }
+                    }
+                    className={clsx(
+                      "hf-top-stage-item",
+                      disabled
+                        ? "hf-top-stage-item-disabled"
+                        : isActive
+                        ? "hf-top-stage-item-active"
+                        : "hf-top-stage-item-idle",
+                    )}
+                  >
+                    {getTopStageLabel(col)}
+                    {showTopStageCounter && (
+                      <span className="hf-top-stage-badge hf-top-stage-badge-muted">
+                        {getTopStageCount(col)}
+                      </span>
+                    )}
+                    {isActive && !disabled && (
+                      <span className="hf-top-stage-underline" />
+                    )}
+                  </motion.button>
+                );
+              })}
+            </>
           )}
         </div>
+        <div className="hf-top-stage-action-cell">
+          <button
+            type="button"
+            onClick={() => setShowListSettings(true)}
+            className="hf-top-stage-action-btn"
+            title="Настройки"
+            aria-label="Настройки списков кандидатов"
+            aria-expanded={showListSettings}
+          >
+            <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
+          </button>
+        </div>
+        {isAdmin ? (
+          <div className="hf-top-stage-action-cell">
+            <button
+              type="button"
+              onClick={() => setShowStageSettings(true)}
+              className="hf-top-stage-admin-btn"
+              title="Админ: настройка этапов"
+            >
+              <ShieldCheck className="hf-top-stage-admin-icon" />
+            </button>
+          </div>
+        ) : null}
+        {hasExpandedEmptyStageGroups &&
+        !showTopSearch &&
+        topStageCanScroll.left ? (
+          <button
+            type="button"
+            onClick={() => scrollTopStageTabs("left")}
+            className="hf-top-stage-arrow hf-top-stage-arrow-left"
+            title="Прокрутить этапы влево"
+          >
+            <ChevronLeft className="hf-top-stage-arrow-icon" />
+          </button>
+        ) : null}
+        {hasExpandedEmptyStageGroups &&
+        !showTopSearch &&
+        topStageCanScroll.right ? (
+          <button
+            type="button"
+            onClick={() => scrollTopStageTabs("right")}
+            className={clsx(
+              "hf-top-stage-arrow",
+              isAdmin ? "hf-top-stage-arrow-right-admin" : "hf-top-stage-arrow-right",
+            )}
+            title="Прокрутить этапы вправо"
+          >
+            <ChevronRight className="hf-top-stage-arrow-icon" />
+          </button>
+        ) : null}
+        {hoveredEmptyStageGroup &&
+        !expandedEmptyStageGroups[hoveredEmptyStageGroup.key] &&
+        !showTopSearch ? (
+          <div
+            className={clsx(
+              "hf-top-stage-tooltip",
+              hoveredEmptyStageGroup.key === "middle-before-offer"
+                ? "hf-top-stage-tooltip-middle"
+                : "hf-top-stage-tooltip-late",
+            )}
+          >
+            {getEmptyStageTooltip(hoveredEmptyStageGroup.stages)}
+          </div>
+        ) : null}
       </div>
 
-      {/* ===== MASTER-DETAIL ===== */}
+      {/* ===== MASTER-DETAIL (huntflow style) ===== */}
       {loading && !board ? (
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-accent-400" />
-        </div>
+        <HfCandidatesLoadingLayout />
       ) : (
-        <div className="flex-1 flex overflow-hidden">
-          {/* LEFT: Candidate list */}
-          <div className="w-[350px] flex-shrink-0 border-r border-white/[0.06] overflow-hidden flex flex-col relative">
-            {/* Search */}
-            <div className="p-3 border-b border-white/[0.04]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
-                <input
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Поиск по имени, должности, компании..."
-                  className="w-full pl-9 pr-8 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-sm text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
-                />
-                {/* Спиннер пока идёт fetch с введённым searchText (визуальный feedback) */}
-                {searchText && loading && (
-                  <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-400 animate-spin" />
-                )}
-                {searchText && !loading && (
-                  <button onClick={() => setSearchText('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dark-500 hover:text-dark-300">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
+        <div className="hf-candidates-master">
+          {/* LEFT: Candidate list — white card */}
+          <div className="hf-candidates-list-panel">
             {/* List */}
-            <div className="flex-1 overflow-y-auto">
-              {filteredCards.length === 0 ? (
-                <div className="flex items-center justify-center h-40 text-dark-500 text-sm">Нет кандидатов</div>
-              ) : (<>
-                {filteredCards.slice(0, visibleCount).map(({ card, status }) => {
-                  const isSelected = selectedCard?.id === card.id;
-                  const isChecked = selectedIds.has(card.id);
-                  const initials = getInitials(card.name);
-                  const statusColor = STATUS_COLORS[status] || FALLBACK_COLOR;
-                  return (
-                    <div
-                      key={card.id}
-                      onClick={() => { setSelectedCard(card); setSelectedStatus(status); setDetailTab('info'); }}
-                      className={clsx(
-                        'flex items-start gap-2 px-3 py-3 cursor-pointer border-b border-white/[0.04] transition-all group/card border-l-[3px]',
-                        isChecked || isSelected
-                          ? 'bg-accent-500/10 border-l-accent-500'
-                          : clsx('hover:bg-white/[0.03]', statusColor.dot.replace('bg-', 'border-l-')),
-                      )}
-                    >
-                      <div
-                        onClick={(e) => { e.stopPropagation(); toggleSelection(card.id); }}
-                        className={clsx(
-                          'flex items-center justify-center w-4 h-4 mt-2.5 flex-shrink-0 cursor-pointer transition-opacity',
-                          anySelected ? 'opacity-100' : 'opacity-0 group-hover/card:opacity-100',
-                        )}
-                      >
-                        {isChecked ? <CheckSquare className="w-4 h-4 text-accent-400" /> : <Square className="w-4 h-4 text-dark-500 hover:text-dark-300" />}
-                      </div>
-                      {card.photo_url ? (
-                        <img
-                          src={card.photo_url}
-                          alt={card.name}
-                          referrerPolicy="no-referrer"
-                          className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-accent-500/20"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                        />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm font-medium flex-shrink-0">
-                          {initials}
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <div className="text-sm font-medium text-dark-100 truncate">{card.name}</div>
-                          <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', statusColor.dot)} title={status} />
-                        </div>
-                        {card.position && <div className="text-xs text-dark-500 truncate mt-0.5">{card.position}</div>}
-                        <div className="text-xs text-dark-600 mt-0.5 flex items-center gap-1.5">
-                          {card.vacancy_name && (
-                            <span className="text-dark-500 truncate max-w-[140px]" title={card.vacancy_name}>{card.vacancy_name}</span>
+            <div className="hf-candidates-list-scroll">
+              {displayedCards.length === 0 ? (
+                <div className="flex items-center justify-center h-40 text-hf-xxs text-[var(--hf-main-500)] dark:text-[color:var(--hf-white-alpha-40)]">
+                  Нет кандидатов
+                </div>
+              ) : (
+                <>
+                  {displayedCards
+                    .slice(0, visibleCount)
+                    .map(({ card, status }) => {
+                      const isSelected = selectedCard?.id === card.id;
+                      const isChecked = selectedIds.has(card.id);
+                      const listMetaPrimary = card.company || card.vacancy_name;
+                      const showListDate = !card.company;
+                      return (
+                        <div
+                          key={card.id}
+                          onClick={() => {
+                            setSelectedCard(card);
+                            setSelectedStatus(status);
+                            setDetailTab("resume");
+                          }}
+                          className={clsx(
+                            "hf-candidate-row",
+                            isChecked || isSelected
+                              ? "hf-candidate-row-selected"
+                              : "hf-candidate-row-idle",
                           )}
-                          {card.vacancy_name && (card.source || card.created_at) && <span className="text-dark-700">&middot;</span>}
-                          {card.source || ''}{card.created_at && <span className="ml-1">{formatDateShort(card.created_at)}</span>}
+                        >
+                          {/* Avatar / checkmark zone (LEFT) — hover ONLY on avatar shows checkmark and cancels card border */}
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSelection(card.id);
+                            }}
+                            className="hf-candidate-avatar-zone"
+                          >
+                            {isChecked ? (
+                              card.photo_url ? (
+                                <div className="hf-candidate-avatar-check">
+                                  <img
+                                    src={card.photo_url}
+                                    alt={card.name}
+                                    referrerPolicy="no-referrer"
+                                    className="hf-candidate-avatar-check-img"
+                                    onError={(e) => {
+                                      (
+                                        e.currentTarget as HTMLImageElement
+                                      ).style.display = "none";
+                                    }}
+                                  />
+                                  <div className="hf-candidate-avatar-check-overlay">
+                                    <Check className="hf-candidate-check-icon" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="hf-candidate-avatar-check">
+                                  <Check className="hf-candidate-check-icon" />
+                                </div>
+                              )
+                            ) : (
+                              <>
+                                {card.photo_url ? (
+                                  <img
+                                    src={card.photo_url}
+                                    alt={card.name}
+                                    referrerPolicy="no-referrer"
+                                    className="hf-candidate-avatar"
+                                    onError={(e) => {
+                                      (
+                                        e.currentTarget as HTMLImageElement
+                                      ).style.display = "none";
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="hf-candidate-avatar-fallback">
+                                    <span className="hf-candidate-avatar-head" />
+                                    <span className="hf-candidate-avatar-body" />
+                                  </div>
+                                )}
+                                <div className="hf-candidate-avatar-hover">
+                                  <Check className="hf-candidate-check-icon" />
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          {/* Text column (RIGHT) — name, position, company/date */}
+                          <div className="hf-candidate-row-copy">
+                            <div className="flex items-center min-w-0">
+                              <div className="hf-candidate-row-name">
+                                {card.name}
+                              </div>
+                            </div>
+                            {card.position && (
+                              <div className="hf-candidate-row-subtitle">
+                                {card.position}
+                              </div>
+                            )}
+                            <div className="hf-candidate-row-meta">
+                              {listMetaPrimary && (
+                                <span
+                                  className="hf-candidate-row-meta-text"
+                                  title={listMetaPrimary}
+                                >
+                                  {listMetaPrimary}
+                                </span>
+                              )}
+                              {listMetaPrimary &&
+                                showListDate &&
+                                card.created_at && (
+                                  <span className="hf-candidate-row-meta-dot">
+                                    ·
+                                  </span>
+                                )}
+                              {showListDate && card.created_at && (
+                                <span className="hf-candidate-row-date">
+                                  {formatDateShort(card.created_at)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {filteredCards.length > visibleCount && (
-                  <button
-                    onClick={() => setVisibleCount(prev => prev + VISIBLE_STEP)}
-                    className="w-full py-3 text-sm text-accent-400 hover:bg-white/[0.04] transition-colors border-b border-white/[0.04]"
-                  >
-                    Показать ещё ({filteredCards.length - visibleCount})
-                  </button>
-                )}
-              </>)}
+                      );
+                    })}
+                  {displayedCards.length > visibleCount && (
+                    <button
+                      onClick={() =>
+                        setVisibleCount((prev) => prev + VISIBLE_STEP)
+                      }
+                      className="w-full py-hf-m text-hf-xxs text-[var(--hf-cyan-700)] dark:text-[var(--hf-cyan-400)] hover:bg-[var(--hf-main-50)] dark:hover:bg-[var(--hf-white-alpha-05)] transition-colors border-b border-[var(--hf-main-100)] dark:border-[color:var(--hf-white-alpha-05)]"
+                    >
+                      Показать ещё ({displayedCards.length - visibleCount})
+                    </button>
+                  )}
+                </>
+              )}
             </div>
-
           </div>
 
           {/* RIGHT: Detail panel */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 bg-[var(--hf-white)] dark:bg-[var(--hf-bg-dark)] rounded-hf-l flex flex-col overflow-hidden">
             {selectedCard ? (
-              <>
-                <div className="flex items-center border-b border-white/[0.06] px-5 flex-shrink-0">
-                  <button onClick={() => setDetailTab('info')} className={clsx('px-4 py-3 text-sm font-medium border-b-2 transition-colors', detailTab === 'info' ? 'border-accent-500 text-dark-100' : 'border-transparent text-dark-400 hover:text-dark-200')}>
-                    Личные заметки
-                  </button>
-                  <button onClick={() => setDetailTab('resume')} className={clsx('px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5', detailTab === 'resume' ? 'border-accent-500 text-dark-100' : 'border-transparent text-dark-400 hover:text-dark-200')}>
-                    <FileText className="w-3.5 h-3.5" /> Резюме
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  {detailTab === 'info' ? (
-                    <InfoTab
-                      card={selectedCard}
-                      status={selectedStatus}
-                      statusLabel={board?.columns.find(c => c.status === selectedStatus)?.label || selectedStatus}
-                      columns={board?.columns || []}
-                      onStatusChange={handleStatusChange}
-                      onAddToVacancy={() => setShowAddToVacancy(true)}
-                      onEdit={() => setShowEditModal(true)}
-                    />
-                  ) : (
-                    <ResumeTab card={selectedCard} />
-                  )}
-                </div>
-              </>
+              <div className="flex-1 overflow-y-auto">
+                <InfoTab
+                  card={selectedCard}
+                  status={selectedStatus}
+                  statusLabel={
+                    board?.columns.find((c) => c.status === selectedStatus)
+                      ?.label || selectedStatus
+                  }
+                  columns={board?.columns || []}
+                  detailSection={detailTab}
+                  onDetailSectionChange={setDetailTab}
+                  onStatusChange={handleStatusChange}
+                onAddToVacancy={(rect) => {
+                  setAddToVacancyAnchor(rect ?? null);
+                  setShowAddToVacancy(true);
+                }}
+                  onEdit={() => setShowEditModal(true)}
+                />
+              </div>
             ) : (
-              <div className="flex items-center justify-center h-full text-dark-500">
-                <div className="text-center">
-                  <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">Выберите кандидата из списка</p>
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center text-[var(--hf-main-500)] dark:text-[color:var(--hf-white-alpha-40)]">
+                  <Users className="w-12 h-12 mx-auto mb-hf-m text-[var(--hf-main-400)] dark:text-[color:var(--hf-white-alpha-30)]" />
+                  <p className="text-hf-xxs">Выберите кандидата из списка</p>
                 </div>
               </div>
             )}
@@ -500,81 +1399,127 @@ export default function AllCandidatesPage() {
         </div>
       )}
 
-      {/* ===== BULK ACTIONS BAR ===== */}
+      {/* ===== BULK ACTIONS DRAWER ===== */}
       <AnimatePresence>
         {anySelected && (
           <motion.div
-            initial={{ y: 60, opacity: 0 }}
+            initial={{ y: 28, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 60, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="flex-shrink-0 border-t border-white/[0.08] bg-dark-800 px-5 py-3 flex items-center gap-3"
+            exit={{ y: 28, opacity: 0 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute bottom-0 left-[560px] right-[320px] z-[85] min-h-[198px] max-w-[1320px] overflow-hidden rounded-t-[12px] rounded-b-[8px] border border-[var(--hf-ui-divider-soft)] border-t-[3px] border-t-[var(--hf-main-900)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[20px] shadow-[0_18px_60px_var(--hf-alpha-300)] dark:border-[color:var(--hf-white-alpha-10)] dark:border-t-white dark:bg-[var(--hf-bg-dark)]"
           >
-            <span className="text-sm font-medium text-dark-200">
-              Выбрано: {selectedIds.size}
-            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="absolute right-[22px] top-[20px] inline-flex h-[28px] w-[28px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-06)] dark:hover:text-[var(--hf-white)]"
+              title="Закрыть"
+            >
+              <X className="h-[20px] w-[20px]" strokeWidth={1.75} />
+            </button>
 
-            {/* Status change dropdown */}
-            <div className="relative" ref={bulkStatusRef}>
+            <div className="flex items-center gap-[10px] pr-[54px]">
+              <span className="text-[length:var(--hf-fs-m)] leading-[26px] font-medium text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+                Выбрано кандидатов: {selectedIds.size}
+                <span className="ml-[2px] text-[var(--hf-main-500)]">/1000</span>
+              </span>
               <button
-                onClick={() => setBulkStatusDD(!bulkStatusDD)}
-                disabled={bulkProcessing}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-500/15 border border-accent-500/25 rounded-lg text-sm text-accent-400 hover:bg-accent-500/25 transition-colors disabled:opacity-50"
+                type="button"
+                onClick={() =>
+                  setSelectedIds(
+                    new Set(
+                      filteredCards.slice(0, 1000).map(({ card }) => card.id),
+                    ),
+                  )
+                }
+                className="inline-flex h-[28px] items-center rounded-full bg-[var(--hf-bg-panel)] px-[10px] text-[length:var(--hf-fs-2xs)] leading-[18px] font-medium text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-main-200)] active:bg-[var(--hf-ui-muted-8)]"
               >
-                <ArrowRightLeft className="w-3.5 h-3.5" />
-                Изменить статус
-                <ChevronDown className="w-3.5 h-3.5" />
+                Выбрать всех
               </button>
-              {bulkStatusDD && (
-                <div className="absolute left-0 bottom-full mb-1 z-50 w-56 py-1 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-                  <div className="px-3 py-1.5 text-[10px] text-dark-500 uppercase tracking-wider font-semibold">Перенести в</div>
-                  {board?.columns.map(col => {
-                    const colSc = STATUS_COLORS[col.status] || FALLBACK_COLOR;
-                    return (
-                      <button
-                        key={col.status}
-                        onClick={() => handleBulkStatusChange(col.status)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm text-dark-300 hover:bg-white/[0.04]"
-                      >
-                        <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', colSc.dot)} />
-                        <span className="flex-1">{col.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="inline-flex h-[28px] items-center rounded-full bg-[var(--hf-bg-panel)] px-[10px] text-[length:var(--hf-fs-2xs)] leading-[18px] font-medium text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-main-200)] active:bg-[var(--hf-ui-muted-8)]"
+              >
+                Сбросить
+              </button>
             </div>
 
-            {/* Add to vacancy */}
-            <button
-              onClick={() => setShowBulkAddToVacancy(true)}
-              disabled={bulkProcessing}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Добавить на вакансию
-            </button>
+            <div className="mt-[22px] flex h-[58px] items-center">
+              <div className="flex items-center">
+                <AnimatePresence initial={false}>
+                  {selectedBulkCards.slice(0, 12).map((card, index) => (
+                    <motion.div
+                      key={card.id}
+                      layout
+                      transition={{
+                        layout: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+                      }}
+                      className={clsx(
+                        "relative h-[56px] w-[56px] rounded-full",
+                        index > 0 && "-ml-[15px]",
+                      )}
+                      style={{ zIndex: selectedBulkCards.length - index }}
+                      title={card.name}
+                    >
+                      <motion.div
+                        initial={{ opacity: 0, x: -22 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -16 }}
+                        transition={{
+                          duration: 0.26,
+                          ease: [0.22, 1, 0.36, 1],
+                        }}
+                        className="relative h-full w-full overflow-hidden rounded-full border-[2px] border-[color:var(--hf-white)] bg-[var(--hf-ui-hover)] dark:border-[var(--hf-bg-dark)] dark:bg-[var(--hf-white-alpha-10)]"
+                      >
+                        {card.photo_url ? (
+                          <img
+                            src={card.photo_url}
+                            alt={card.name}
+                            referrerPolicy="no-referrer"
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                              (
+                                e.currentTarget as HTMLImageElement
+                              ).style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <>
+                            <span className="absolute left-1/2 top-[13px] h-[14px] w-[14px] -translate-x-1/2 rounded-full bg-[var(--hf-ui-border)]" />
+                            <span className="absolute left-1/2 top-[32px] h-[9px] w-[26px] -translate-x-1/2 rounded-[50%] bg-[var(--hf-ui-border)]" />
+                          </>
+                        )}
+                      </motion.div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            </div>
 
-            {/* Delete */}
-            <button
-              onClick={() => setShowBulkDeleteConfirm(true)}
-              disabled={bulkProcessing}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-red-500/20 rounded-lg text-sm text-red-400/70 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Удалить
-            </button>
-
-            <div className="flex-1" />
-
-            {bulkProcessing && <Loader2 className="w-4 h-4 animate-spin text-accent-400" />}
-
-            <button
-              onClick={() => setSelectedIds(new Set())}
-              className="px-3 py-1.5 text-sm text-dark-400 hover:text-dark-200 hover:bg-white/[0.06] rounded-lg transition-colors"
-            >
-              Очистить выбор
-            </button>
+            <div className="mt-[24px] flex items-center gap-[var(--hf-space-s)]">
+              <button
+                onClick={() => setShowBulkAddToVacancy(true)}
+                disabled={bulkProcessing}
+                className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium text-[var(--hf-main-900)] shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] disabled:opacity-50 dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-white-alpha-10)] dark:text-[var(--hf-white)]"
+              >
+                <PlusCircle className="h-[20px] w-[20px]" strokeWidth={1.8} />
+                Взять на вакансию
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  toast(
+                    "Отправка для нескольких кандидатов пока не реализована",
+                  )
+                }
+                disabled={bulkProcessing}
+                className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium text-[var(--hf-main-900)] shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] disabled:opacity-50 dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-white-alpha-10)] dark:text-[var(--hf-white)]"
+              >
+                <Send className="h-[20px] w-[20px]" strokeWidth={1.8} />
+                Отправить
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -583,24 +1528,40 @@ export default function AllCandidatesPage() {
       <AnimatePresence>
         {showBulkDeleteConfirm && (
           <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-30)]"
             onClick={() => setShowBulkDeleteConfirm(false)}
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-dark-800 border border-white/10 rounded-xl w-full max-w-sm p-6 shadow-2xl"
+              className="w-full max-w-[420px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-bg-muted)] shadow-[0_18px_60px_var(--hf-black-alpha-30)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)]"
             >
-              <h3 className="text-lg font-bold text-dark-100 mb-3">Удалить кандидатов?</h3>
-              <p className="text-sm text-dark-400 mb-5">
-                Вы уверены, что хотите удалить {selectedIds.size} кандидат(ов)? Это действие необратимо.
-              </p>
-              <div className="flex justify-end gap-3">
-                <button onClick={() => setShowBulkDeleteConfirm(false)} className="px-4 py-2 text-sm text-dark-400 hover:text-dark-200">Отмена</button>
+              <div className="border-b border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] py-[18px] dark:border-[color:var(--hf-white-alpha-10)]">
+                <h3 className="text-[20px] font-semibold leading-[var(--hf-lh-h2)] text-[var(--hf-ui-text-strong)] dark:text-[var(--hf-white)]">
+                  Удалить кандидатов?
+                </h3>
+              </div>
+              <div className="px-[var(--hf-space-xxl)] py-[18px]">
+                <p className="text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-ui-text-muted)] dark:text-[color:var(--hf-white-alpha-60)]">
+                  Вы уверены, что хотите удалить {selectedIds.size}{" "}
+                  кандидат(ов)? Это действие необратимо.
+                </p>
+              </div>
+              <div className="flex h-[72px] items-center justify-end gap-[12px] border-t border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(false)}
+                  className="inline-flex h-[40px] items-center rounded-[var(--hf-radius-s)] px-[var(--hf-space-xxl)] text-[length:var(--hf-fs-xs)] font-medium text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] dark:text-[color:var(--hf-white-alpha-55)] dark:hover:bg-[var(--hf-white-alpha-06)] dark:hover:text-[var(--hf-white)]"
+                >
+                  Отмена
+                </button>
                 <button
                   onClick={handleBulkDelete}
-                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors"
+                  className="inline-flex h-[40px] items-center rounded-[var(--hf-radius-s)] bg-[var(--hf-red-500)] px-[18px] text-[length:var(--hf-fs-xs)] font-semibold text-[var(--hf-white)] transition-colors duration-[100ms] hover:bg-[var(--hf-red-600)] active:bg-[var(--hf-red-700)]"
                 >
                   Удалить ({selectedIds.size})
                 </button>
@@ -611,6 +1572,19 @@ export default function AllCandidatesPage() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {showNewCandidateModal && (
+          <NewCandidateModal
+            onClose={() => setShowNewCandidateModal(false)}
+            onSaved={() => {
+              setShowNewCandidateModal(false);
+              fetchBoard();
+            }}
+            onOpenParser={() => {
+              setShowNewCandidateModal(false);
+              setShowParserModal(true);
+            }}
+          />
+        )}
         {showParserModal && (
           <ParserModal
             type="resume"
@@ -618,13 +1592,16 @@ export default function AllCandidatesPage() {
             onParsed={() => {
               setShowParserModal(false);
               fetchBoard();
-              toast.success('Кандидат добавлен');
+              toast.success("Кандидат добавлен");
             }}
             onAttachedToEntity={() => {
               setShowParserModal(false);
               fetchBoard();
             }}
           />
+        )}
+        {showListSettings && (
+          <ListSettingsModal onClose={() => setShowListSettings(false)} />
         )}
         {showStageSettings && (
           <StageSettingsModal
@@ -647,7 +1624,12 @@ export default function AllCandidatesPage() {
             entityId={selectedCard.id}
             entityName={selectedCard.name}
             onClose={() => setShowAddToVacancy(false)}
-            onSuccess={() => { setShowAddToVacancy(false); fetchBoard(); toast.success('Кандидат добавлен на вакансию'); }}
+            onSuccess={() => {
+              setShowAddToVacancy(false);
+              fetchBoard();
+              toast.success("Кандидат добавлен на вакансию");
+            }}
+            anchorRect={addToVacancyAnchor}
           />
         )}
         {showBulkAddToVacancy && (
@@ -657,7 +1639,9 @@ export default function AllCandidatesPage() {
             onClose={() => setShowBulkAddToVacancy(false)}
             onSuccess={async () => {
               setShowBulkAddToVacancy(false);
-              toast.success(`${selectedIds.size} кандидат(ов) добавлено на вакансию`);
+              toast.success(
+                `${selectedIds.size} кандидат(ов) добавлено на вакансию`,
+              );
               setSelectedIds(new Set());
               fetchBoard();
             }}
@@ -669,86 +1653,286 @@ export default function AllCandidatesPage() {
   );
 }
 
-
 // ================================================================
 // INFO TAB — Huntflow-style detail panel with working actions
 // ================================================================
 
-const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onStatusChange, onAddToVacancy, onEdit }: {
+type DetailSection = "info" | "resume";
+
+const InfoTab = memo(function InfoTab({
+  card,
+  status,
+  statusLabel,
+  columns,
+  detailSection,
+  onDetailSectionChange,
+  onStatusChange,
+  onAddToVacancy,
+  onEdit,
+}: {
   card: KanbanCard;
   status: string;
   statusLabel: string;
   columns: KanbanColumn[];
+  detailSection: DetailSection;
+  onDetailSectionChange: (section: DetailSection) => void;
   onStatusChange: (s: string) => void;
-  onAddToVacancy: () => void;
+  onAddToVacancy: (rect?: { left: number; bottom: number }) => void;
   onEdit: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
-  const isAdmin = currentUser?.role === 'superadmin'
-    || currentUser?.org_role === 'owner'
-    || currentUser?.org_role === 'admin';
+  const isAdmin =
+    currentUser?.role === "superadmin" ||
+    currentUser?.org_role === "owner" ||
+    currentUser?.org_role === "admin";
   const [showStageDD, setShowStageDD] = useState(false);
-  const [comment, setComment] = useState('');
+  const [pendingStage, setPendingStage] = useState(status);
+  const [stageChangeComment, setStageChangeComment] = useState("");
+  const [showActionMenu, setShowActionMenu] = useState(false);
+  const [actionMenuPlacement, setActionMenuPlacement] = useState<
+    "above" | "below"
+  >("above");
+  const [actionSearch, setActionSearch] = useState("");
+  const [timelineActionFilter, setTimelineActionFilter] = useState<
+    string | null
+  >(null);
+  const [comment, setComment] = useState("");
+  const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showTagInput, setShowTagInput] = useState(false);
-  const [tagInput, setTagInput] = useState('');
+  const [tagInput, setTagInput] = useState("");
   const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
+  const [showAllTimeline, setShowAllTimeline] = useState(false);
+  const [timelineExpanding, setTimelineExpanding] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
-  const sc = STATUS_COLORS[status] || FALLBACK_COLOR;
+  const actionSearchRef = useRef<HTMLInputElement>(null);
+  const timelineExpandTimerRef = useRef<number | null>(null);
+  const timelineEvents = Array.isArray(card.extra_data?.timeline_events)
+    ? (card.extra_data.timeline_events as Array<{
+        date?: string;
+        title?: string;
+        body?: string;
+        author?: string;
+      }>)
+    : [];
+  const timelineItems =
+    timelineEvents.length > 0
+      ? timelineEvents
+      : [{ date: card.created_at, title: "Кандидат добавлен", author: "Я" }];
+  const normalizedTimelineItems = timelineItems
+    .filter(
+      (event) =>
+        !String(event.title || "")
+          .trim()
+          .startsWith("Рекрутер:"),
+    )
+    .map((event) => ({
+      ...event,
+      author: event.author ? "Я" : event.author,
+    }));
+  const filteredTimelineItems = useMemo(() => {
+    if (!timelineActionFilter) return normalizedTimelineItems;
+    const aliases = getTimelineFilterAliases(timelineActionFilter);
+    return normalizedTimelineItems.filter((event) => {
+      const haystack = `${event.title || ""} ${event.body || ""}`.toLowerCase();
+      return aliases.some((alias) => haystack.includes(alias));
+    });
+  }, [normalizedTimelineItems, timelineActionFilter]);
+  const visibleTimelineItems = showAllTimeline
+    ? filteredTimelineItems
+    : filteredTimelineItems.slice(0, 5);
+  const hasHiddenTimelineItems = filteredTimelineItems.length > 5;
+  const visibleActionFilters = TIMELINE_ACTION_FILTERS.filter((item) =>
+    item.toLowerCase().includes(actionSearch.trim().toLowerCase()),
+  );
+  const isCommentComposerOpen =
+    commentComposerOpen || comment.trim().length > 0;
+  const stageTitle =
+    status === "rejected" && card.rejection_reason
+      ? `Отказ. ${card.rejection_reason}`
+      : statusLabel;
+  const stagePickerOptions = useMemo(() => {
+    const labels = [
+      "Новые",
+      "Резюме у заказчика",
+      "Интервью с HR",
+      "Интервью с заказчиком",
+      "Принятие решения/ СБ",
+      "Выставлен оффер",
+      "Оффер",
+      "Оффер принят",
+      "Вышел на работу",
+      "Резерв",
+      "Выполняет тз",
+      "Онбординг - 1 неделя работы",
+      "Онбординг - 1,5 месяца работы",
+      "Онбординг - 3 месяца работы",
+      "Закрывающий фидбек по онбордингу от лида",
+      "Закрытие испытательного срока",
+      "Отказ",
+    ];
+    const normalizedColumns = new Map(
+      columns.map((col) => [normalizeStageLabel(col.label), col]),
+    );
+    return labels.map((label) => {
+      const column = normalizedColumns.get(normalizeStageLabel(label));
+      return {
+        label,
+        status: column?.status ?? label,
+        isRealStage: Boolean(column),
+      };
+    });
+  }, [columns]);
+
+  useEffect(() => {
+    setTimelineExpanding(false);
+    if (timelineExpandTimerRef.current) {
+      window.clearTimeout(timelineExpandTimerRef.current);
+      timelineExpandTimerRef.current = null;
+    }
+    return () => {
+      if (timelineExpandTimerRef.current) {
+        window.clearTimeout(timelineExpandTimerRef.current);
+        timelineExpandTimerRef.current = null;
+      }
+    };
+  }, [card.id, timelineActionFilter]);
+
+  const handleTimelineMoreToggle = useCallback(() => {
+    if (timelineExpanding) return;
+    if (!hasHiddenTimelineItems) return;
+    if (showAllTimeline) {
+      setShowAllTimeline(false);
+      return;
+    }
+
+    setTimelineExpanding(true);
+    if (timelineExpandTimerRef.current) {
+      window.clearTimeout(timelineExpandTimerRef.current);
+    }
+    timelineExpandTimerRef.current = window.setTimeout(() => {
+      setShowAllTimeline(true);
+      setTimelineExpanding(false);
+      timelineExpandTimerRef.current = null;
+    }, TIMELINE_EXPAND_DELAY_MS);
+  }, [hasHiddenTimelineItems, showAllTimeline, timelineExpanding]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (stageRef.current && !stageRef.current.contains(e.target as Node)) setShowStageDD(false);
+      if (stageRef.current && !stageRef.current.contains(e.target as Node))
+        setShowStageDD(false);
+      if (
+        actionMenuRef.current &&
+        !actionMenuRef.current.contains(e.target as Node)
+      )
+        setShowActionMenu(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  useEffect(() => {
+    if (showStageDD) {
+      setPendingStage(status);
+      setStageChangeComment("");
+    }
+  }, [showStageDD, status]);
+
+  useEffect(() => {
+    if (showActionMenu) {
+      requestAnimationFrame(() => actionSearchRef.current?.focus());
+    }
+  }, [showActionMenu]);
 
   // --- Action handlers ---
 
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailAnchorRect, setEmailAnchorRect] = useState<DOMRect | null>(null);
 
   // Inline interview-date picker
   const [showInterviewModal, setShowInterviewModal] = useState(false);
-  const [interviewDateTime, setInterviewDateTime] = useState('');
+  const [interviewDateTime, setInterviewDateTime] = useState("");
+  const [interviewDate, setInterviewDate] = useState("");
+  const [interviewStartTime, setInterviewStartTime] = useState("18:00");
+  const [interviewEndTime, setInterviewEndTime] = useState("19:00");
+  const [interviewComment, setInterviewComment] = useState("");
+  const [interviewLocation, setInterviewLocation] = useState("");
+  const [interviewPrivate, setInterviewPrivate] = useState(true);
   const [interviewSaving, setInterviewSaving] = useState(false);
 
-  const handleEmail = () => {
+  const handleEmail: React.MouseEventHandler<HTMLButtonElement> = (event) => {
+    setEmailAnchorRect(event.currentTarget.getBoundingClientRect());
+    setShowInterviewModal(false);
+    setShowActionMenu(false);
     setShowEmailModal(true);
   };
 
   const handleInterview = () => {
-    const cur = (card.extra_data as Record<string, unknown> | undefined)?.next_interview_at;
-    if (typeof cur === 'string' && cur) {
+    setShowEmailModal(false);
+    setShowActionMenu(false);
+    const cur = (card.extra_data as Record<string, unknown> | undefined)
+      ?.next_interview_at;
+    if (typeof cur === "string" && cur) {
       const d = new Date(cur);
       const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-        .toISOString().slice(0, 16);
+        .toISOString()
+        .slice(0, 16);
       setInterviewDateTime(local);
+      setInterviewDate(local.slice(0, 10));
+      setInterviewStartTime(local.slice(11, 16));
+      const end = new Date(d.getTime() + 60 * 60 * 1000);
+      const localEnd = new Date(end.getTime() - end.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(11, 16);
+      setInterviewEndTime(localEnd);
     } else {
-      setInterviewDateTime('');
+      const base = new Date();
+      const local = new Date(base.getTime() - base.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 10);
+      setInterviewDate(local);
+      setInterviewStartTime("18:00");
+      setInterviewEndTime("19:00");
+      setInterviewDateTime(`${local}T18:00`);
     }
     setShowInterviewModal(true);
   };
 
   const handleSaveInterview = async () => {
-    if (!interviewDateTime) {
-      toast.error('Выберите дату и время');
+    const composedDateTime =
+      interviewDate && interviewStartTime
+        ? `${interviewDate}T${interviewStartTime}`
+        : interviewDateTime;
+    if (!composedDateTime) {
+      toast.error("Выберите дату и время");
       return;
     }
     setInterviewSaving(true);
     try {
-      const iso = new Date(interviewDateTime).toISOString();
+      const iso = new Date(composedDateTime).toISOString();
       await updateEntity(card.id, {
-        extra_data: { ...(card.extra_data || {}), next_interview_at: iso },
+        extra_data: {
+          ...(card.extra_data || {}),
+          next_interview_at: iso,
+          interview_end_time: interviewEndTime,
+          interview_comment: interviewComment,
+          interview_location: interviewLocation,
+          interview_private: interviewPrivate,
+        },
       });
       if (!card.extra_data) card.extra_data = {};
       card.extra_data.next_interview_at = iso;
-      toast.success('Интервью назначено');
+      card.extra_data.interview_end_time = interviewEndTime;
+      card.extra_data.interview_comment = interviewComment;
+      card.extra_data.interview_location = interviewLocation;
+      card.extra_data.interview_private = interviewPrivate;
+      toast.success("Интервью назначено");
       setShowInterviewModal(false);
     } catch {
-      toast.error('Не удалось назначить интервью');
+      toast.error("Не удалось назначить интервью");
     } finally {
       setInterviewSaving(false);
     }
@@ -756,7 +1940,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
 
   const handleComment = async () => {
     if (!comment.trim()) {
-      toast.error('Введите комментарий');
+      toast.error("Введите комментарий");
       return;
     }
     try {
@@ -770,20 +1954,22 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
       });
       // Update card in-place so block обновляется immediately
       if (!card.extra_data) card.extra_data = {};
-      const existingNotes: Array<Record<string, unknown>> = Array.isArray(card.extra_data.notes)
+      const existingNotes: Array<Record<string, unknown>> = Array.isArray(
+        card.extra_data.notes,
+      )
         ? card.extra_data.notes
         : [];
       card.extra_data.notes = [...existingNotes, resp.note];
-      toast.success('Комментарий сохранён');
-      setComment('');
+      toast.success("Комментарий сохранён");
+      setComment("");
     } catch (err) {
-      console.error('Failed to save comment:', err);
-      toast.error('Ошибка сохранения комментария');
+      console.error("Failed to save comment:", err);
+      toast.error("Ошибка сохранения комментария");
     }
   };
 
   const handleOffer = () => {
-    onStatusChange('offer');
+    onStatusChange("offer");
     toast.success(`${card.name} → Оффер`);
   };
 
@@ -792,53 +1978,55 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
     if (!file) return;
     setUploading(true);
     try {
-      await uploadEntityFile(card.id, file, 'resume');
+      await uploadEntityFile(card.id, file, "resume");
       toast.success(`Файл "${file.name}" загружен`);
     } catch {
-      toast.error('Ошибка загрузки файла');
+      toast.error("Ошибка загрузки файла");
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  };
-
-  const handleReject = () => {
-    onStatusChange('rejected');
   };
 
   const handleAddTag = async () => {
     const tag = tagInput.trim();
     if (!tag) return;
     if (localTags.includes(tag)) {
-      toast.error('Метка уже существует');
+      toast.error("Метка уже существует");
       return;
     }
     const newTags = [...localTags, tag];
     try {
       await updateEntity(card.id, { tags: newTags });
       setLocalTags(newTags);
-      setTagInput('');
+      setTagInput("");
       toast.success(`Метка "${tag}" добавлена`);
     } catch {
-      toast.error('Ошибка добавления метки');
+      toast.error("Ошибка добавления метки");
     }
   };
 
   const handleRemoveTag = async (tag: string) => {
-    const newTags = localTags.filter(t => t !== tag);
+    const newTags = localTags.filter((t) => t !== tag);
     try {
       await updateEntity(card.id, { tags: newTags });
       setLocalTags(newTags);
       toast.success(`Метка "${tag}" удалена`);
     } catch {
-      toast.error('Ошибка удаления метки');
+      toast.error("Ошибка удаления метки");
     }
   };
 
   return (
-    <div className="p-5 max-w-3xl">
+    <div className="p-[24px] max-w-[1200px]">
       {/* Hidden file input */}
-      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileUpload}
+        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+      />
 
       {/* Send Email Modal */}
       <AnimatePresence>
@@ -847,6 +2035,7 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
             entityId={card.id}
             entityName={card.name}
             entityEmail={card.email}
+            anchorRect={emailAnchorRect}
             onClose={() => setShowEmailModal(false)}
           />
         )}
@@ -855,41 +2044,290 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
       {/* Interview scheduling modal */}
       {showInterviewModal && (
         <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="hf-interview-overlay"
           onClick={() => !interviewSaving && setShowInterviewModal(false)}
         >
           <div
-            className="glass rounded-xl p-5 w-full max-w-sm space-y-4"
+            className="hf-interview-modal"
             onClick={(e) => e.stopPropagation()}
           >
-            <div>
-              <h3 className="text-base font-semibold text-white mb-1">Назначить интервью</h3>
-              <p className="text-xs text-dark-400">{card.name}</p>
+            <div className="hf-interview-header">
+              <div className="hf-interview-header-main">
+                {card.photo_url && (
+                  <img
+                    src={card.photo_url}
+                    alt={card.name}
+                    className="hf-interview-avatar"
+                  />
+                )}
+                <div>
+                  <h3 className="hf-interview-title">
+                    {card.name}
+                  </h3>
+                  <p className="hf-interview-subtitle">
+                    По вакансии: {getInterviewVacancyLabel(card)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInterviewModal(false)}
+                disabled={interviewSaving}
+                className="hf-interview-close disabled:opacity-50"
+                aria-label="Закрыть"
+              >
+                <X className="hf-interview-close-icon" />
+              </button>
             </div>
-            <input
-              type="datetime-local"
-              value={interviewDateTime}
-              onChange={(e) => setInterviewDateTime(e.target.value)}
-              className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-dark-100 focus:outline-none focus:border-blue-500"
-              autoFocus
-            />
-            <p className="text-[11px] text-dark-500">
-              Сохранится как пометка по кандидату. Привязать интервью к конкретной вакансии можно в разделе «Мои вакансии».
-            </p>
-            <div className="flex justify-end gap-2">
+
+            <div className="hf-interview-tabs">
+              <button className="hf-interview-tab hf-interview-tab-active">
+                Интервью
+              </button>
+              <button className="hf-interview-tab">
+                Другое
+              </button>
+            </div>
+
+            <div className="hf-interview-body">
+              <div className="hf-interview-main">
+                <label className="block">
+                  <span className="hf-interview-field-label">
+                    Тип интервью
+                  </span>
+                  <span className="hf-interview-select-wrap">
+                    <select
+                      value="interview"
+                      onChange={() => undefined}
+                      className="hf-interview-control hf-interview-select"
+                    >
+                      <option value="interview">Интервью</option>
+                    </select>
+                    <ChevronDown className="hf-interview-chevron" />
+                  </span>
+                </label>
+
+                <div>
+                  <div className="hf-interview-date-grid">
+                    <label className="block">
+                      <span className="hf-interview-field-label">
+                        Дата
+                      </span>
+                      <input
+                        type="text"
+                        value={formatInputDateRu(interviewDate)}
+                        onChange={(e) => {
+                          const value = parseRuDateInput(e.target.value);
+                          setInterviewDate(value);
+                          setInterviewDateTime(
+                            `${value}T${interviewStartTime}`,
+                          );
+                        }}
+                        className="hf-interview-control"
+                        placeholder="дд.мм.гггг"
+                      />
+                    </label>
+                    <div className="block">
+                      <span className="hf-interview-field-label">
+                        Время
+                      </span>
+                      <div className="hf-interview-time-row">
+                        <input
+                          type="text"
+                          value={interviewStartTime}
+                          onChange={(e) => {
+                            setInterviewStartTime(e.target.value);
+                            setInterviewDateTime(
+                              `${interviewDate}T${e.target.value}`,
+                            );
+                          }}
+                          className="hf-interview-control hf-interview-time-input"
+                        />
+                        <span className="hf-interview-time-dash">
+                          –
+                        </span>
+                        <input
+                          type="text"
+                          value={interviewEndTime}
+                          onChange={(e) => setInterviewEndTime(e.target.value)}
+                          className="hf-interview-control hf-interview-time-input"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="hf-interview-timezone"
+                    >
+                      GMT+03:00
+                      <ChevronDown className="hf-interview-timezone-icon" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="hf-interview-zoom">
+                  <div className="hf-interview-zoom-inner">
+                  <button
+                    type="button"
+                    className="hf-interview-zoom-button"
+                  >
+                    <span className="hf-interview-zoom-icon-box">
+                      <Video className="hf-interview-zoom-icon" />
+                    </span>
+                    Прикрепить видеовстречу Zoom
+                  </button>
+                  <button
+                    type="button"
+                    className="hf-interview-zoom-chevron-button"
+                    aria-label="Выбрать тип видеовстречи"
+                  >
+                    <ChevronDown className="hf-interview-zoom-chevron" />
+                  </button>
+                  </div>
+                </div>
+
+                <label className="block">
+                  <span className="hf-interview-field-label">
+                    Комментарий
+                  </span>
+                  <textarea
+                    value={interviewComment}
+                    onChange={(e) => setInterviewComment(e.target.value)}
+                    className="hf-interview-control hf-interview-textarea"
+                  />
+                </label>
+
+                <div className="hf-interview-stack">
+                  <span className="hf-interview-field-label">
+                    Прикрепить резюме
+                  </span>
+                  <button
+                    type="button"
+                    className="hf-interview-control hf-interview-select-btn hf-interview-select-btn-first"
+                  >
+                    Резюме — 13.03.2026
+                    <ChevronDown className="h-[var(--hf-interview-chevron-size)] w-[var(--hf-interview-chevron-size)]" />
+                  </button>
+                  <button
+                    type="button"
+                    className="hf-interview-control hf-interview-select-btn hf-interview-select-btn-second"
+                  >
+                    Текст резюме
+                    <ChevronDown className="h-[var(--hf-interview-chevron-size)] w-[var(--hf-interview-chevron-size)]" />
+                  </button>
+                  <label className="hf-interview-checkbox hf-interview-checkbox-offset">
+                    <input type="checkbox" className="hf-interview-checkbox-input" />
+                    Скрыть зарплату
+                  </label>
+                </div>
+
+                <label className="block">
+                  <span className="hf-interview-field-label">
+                    Место
+                  </span>
+                  <input
+                    value={interviewLocation}
+                    onChange={(e) => setInterviewLocation(e.target.value)}
+                    className="hf-interview-control"
+                  />
+                </label>
+
+                <label className="hf-interview-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={interviewPrivate}
+                    onChange={(e) => setInterviewPrivate(e.target.checked)}
+                    className="hf-interview-checkbox-input"
+                  />
+                  Приватное событие
+                </label>
+              </div>
+
+              <aside className="hf-interview-sidebar">
+                <section>
+                  <h4 className="hf-interview-side-title">
+                    Участники
+                  </h4>
+                  <div className="hf-interview-participant">
+                    <span className="hf-interview-participant-avatar">
+                      {getInitials(currentUser?.email || "Я").slice(0, 1)}
+                    </span>
+                    <span className="hf-interview-participant-name">
+                      {currentUser?.email || "tatsiana.kochubei@sol..."}
+                    </span>
+                  </div>
+                  <input
+                    className="hf-interview-control placeholder:text-[var(--hf-main-600)]"
+                    placeholder="Эл. почта"
+                  />
+                </section>
+
+                <section className="hf-interview-reminder">
+                  <h4 className="hf-interview-side-title">
+                    Напоминание
+                  </h4>
+                  <div className="hf-interview-reminder-row">
+                    <input
+                      value="15"
+                      readOnly
+                      className="hf-interview-control hf-interview-reminder-input"
+                    />
+                    <button
+                      type="button"
+                      className="hf-interview-control hf-interview-reminder-select"
+                    >
+                      минут
+                      <ChevronDown className="h-[var(--hf-interview-chevron-size)] w-[var(--hf-interview-chevron-size)]" />
+                    </button>
+                    <button
+                      type="button"
+                      className="hf-interview-remove"
+                      aria-label="Удалить напоминание"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <button className="hf-interview-link hf-interview-link-offset">
+                    + Добавить
+                  </button>
+                </section>
+
+                <section className="hf-interview-email-section">
+                  <h4 className="hf-interview-side-title">
+                    Уведомление по эл. почте
+                  </h4>
+                  <button className="hf-interview-link">
+                    + Добавить
+                  </button>
+                </section>
+              </aside>
+            </div>
+
+            <div className="hf-interview-availability">
+              <button
+                type="button"
+                className="hf-interview-link text-[length:var(--hf-interview-modal-fs)] leading-[18px]"
+              >
+                Проверить доступность участников{" "}
+                {formatDateLongRu(interviewDate)}
+              </button>
+            </div>
+
+            <div className="hf-interview-footer">
+              <button
+                onClick={handleSaveInterview}
+                disabled={
+                  interviewSaving || !interviewDate || !interviewStartTime
+                }
+                className="hf-interview-btn hf-interview-btn-primary"
+              >
+                {interviewSaving ? "Сохраняем…" : "Сохранить"}
+              </button>
               <button
                 onClick={() => setShowInterviewModal(false)}
                 disabled={interviewSaving}
-                className="px-3 py-1.5 text-sm text-dark-300 hover:text-white transition-colors disabled:opacity-50"
+                className="hf-interview-btn hf-interview-btn-secondary"
               >
                 Отмена
-              </button>
-              <button
-                onClick={handleSaveInterview}
-                disabled={interviewSaving || !interviewDateTime}
-                className="px-4 py-1.5 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50"
-              >
-                {interviewSaving ? 'Сохраняем…' : 'Назначить'}
               </button>
             </div>
           </div>
@@ -897,258 +2335,894 @@ const InfoTab = memo(function InfoTab({ card, status, statusLabel, columns, onSt
       )}
 
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="hf-profile-action-bar">
         <button
-          onClick={onAddToVacancy}
-          className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setShowEmailModal(false);
+            setShowInterviewModal(false);
+            setShowActionMenu(false);
+            onAddToVacancy({ left: rect.left, bottom: rect.bottom });
+          }}
+          className="hf-profile-action-btn"
         >
-          <Plus className="w-4 h-4" /> Добавить на вакансию
+          <PlusCircle className="hf-profile-action-icon" /> Взять на вакансию
+        </button>
+        <button
+          onClick={handleEmail}
+          className="hf-profile-action-btn"
+        >
+          <Send className="hf-profile-action-icon" /> Отправить
         </button>
         <button
           onClick={onEdit}
-          className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.1] rounded-lg text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+          className="hf-profile-action-btn"
         >
-          <Pencil className="w-4 h-4" /> Редактировать
+          <PenSquare className="hf-profile-action-icon" /> Редактировать
         </button>
       </div>
 
-      {/* ---- Name + Avatar (Huntflow layout: name left, photo right) ---- */}
-      <div className="flex items-start gap-4 mb-1">
+      {/* ---- Name + Contact info (left column) | Photo (right column) ---- */}
+      <div className="flex items-start gap-hf-2xl mb-hf-l">
         <div className="flex-1 min-w-0">
-          <h2 className="text-2xl font-semibold text-dark-100">{card.name}</h2>
+          <h2 className="-m-[4px] overflow-hidden p-[4px] text-[30px] leading-[40px] font-medium text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+            {card.name}
+          </h2>
           {(card.position || card.company) && (
-            <p className="text-dark-400 mt-1">
+            <p className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] dark:text-[color:var(--hf-white-alpha-60)] mt-0 mb-[18px]">
               {card.position}
-              {card.position && card.company && <span className="mx-1.5 text-dark-600">&bull;</span>}
+              {card.position && card.company && (
+                <span className="mx-1.5 text-[color:var(--hf-alpha-400)] dark:text-[color:var(--hf-white-alpha-30)]">
+                  &bull;
+                </span>
+              )}
               {card.company}
             </p>
           )}
+          {card.phone && (
+            <InfoRow label="Телефон">
+              <div className="flex items-center gap-2">
+                <a
+                  href={`tel:${card.phone}`}
+                  className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] dark:hover:text-[var(--hf-white)] transition-colors"
+                >
+                  {formatPhoneDisplay(card.phone)}
+                </a>
+                {/* Messenger icons */}
+                <a
+                  href={`https://wa.me/${card.phone.replace(/\D/g, "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-whatsapp)] flex items-center justify-center hover:opacity-80"
+                  title="WhatsApp"
+                >
+                  <Phone className="w-[11px] h-[11px] text-[var(--hf-white)]" />
+                </a>
+                <a
+                  href={`https://t.me/${card.telegram_username || card.phone}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-telegram)] flex items-center justify-center hover:opacity-80"
+                  title="Telegram"
+                >
+                  <Send className="w-[11px] h-[11px] text-[var(--hf-white)]" />
+                </a>
+                <a
+                  href={`viber://chat?number=${card.phone.replace(/\D/g, "")}`}
+                  rel="noopener noreferrer"
+                  className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-viber)] flex items-center justify-center hover:opacity-80"
+                  title="Viber"
+                >
+                  <MessageCircle className="w-[11px] h-[11px] text-[var(--hf-white)]" />
+                </a>
+              </div>
+            </InfoRow>
+          )}
+          {card.email && (
+            <InfoRow label="Эл. почта">
+              <a
+                href={`mailto:${card.email}`}
+                className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] dark:hover:text-[var(--hf-white)] transition-colors"
+              >
+                {card.email}
+              </a>
+            </InfoRow>
+          )}
+          {card.telegram_username && (
+            <InfoRow label="Telegram">
+              <a
+                href={`https://t.me/${card.telegram_username}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] dark:hover:text-[var(--hf-white)] transition-colors"
+              >
+                {card.telegram_username}
+              </a>
+            </InfoRow>
+          )}
+          {card.age && (
+            <InfoRow label="Возраст">
+              <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)]">
+                {card.age}
+              </span>
+            </InfoRow>
+          )}
+          {card.city && (
+            <InfoRow label="Город">
+              <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] inline-flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-[var(--hf-main-500)] dark:text-[var(--hf-dark-500)]" />
+                {card.city}
+              </span>
+            </InfoRow>
+          )}
+          {card.salary && (
+            <InfoRow label="Зарплата">
+              <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)]">
+                {card.salary}
+              </span>
+            </InfoRow>
+          )}
+          {card.total_experience && (
+            <InfoRow label="Опыт">
+              <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)]">
+                {card.total_experience}
+              </span>
+            </InfoRow>
+          )}
+          {(card.source || card.source_url) && (
+            <InfoRow label="Источник">
+              {card.source_url ? (
+                <a
+                  href={card.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[var(--hf-cyan-700)] dark:text-[var(--hf-accent)] hover:text-[var(--hf-red-500)] dark:hover:text-[var(--hf-accent-hover)] transition-colors inline-flex items-center gap-1"
+                >
+                  {card.source || "Ссылка"} <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : (
+                <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)]">
+                  {card.source}
+                </span>
+              )}
+            </InfoRow>
+          )}
+
+          {/* Tags row */}
+          <InfoRow label="Метки">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {localTags.map((t) => (
+                <span
+                  key={t}
+                  className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--hf-cyan-50)] dark:bg-[var(--hf-accent-bg-15)] text-[var(--hf-cyan-700)] dark:text-[var(--hf-accent)] border border-[var(--hf-cyan-200)] dark:border-[color:var(--hf-accent-border-20)]"
+                >
+                  {t}
+                  <button
+                    onClick={() => handleRemoveTag(t)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-[var(--hf-status-red)]"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+              {showTagInput ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleAddTag();
+                  }}
+                  className="inline-flex items-center gap-1"
+                >
+                  <input
+                    ref={tagInputRef}
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onBlur={() => {
+                      if (!tagInput.trim()) setShowTagInput(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        setShowTagInput(false);
+                        setTagInput("");
+                      }
+                    }}
+                    placeholder="Метка..."
+                    autoFocus
+                    className="w-24 px-2 py-0.5 rounded text-xs bg-[var(--hf-white)] dark:bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-10)] text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] placeholder:text-[var(--hf-main-500)] dark:placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[var(--hf-cyan-500)]"
+                  />
+                </form>
+              ) : (
+                <button
+                  onClick={() => setShowTagInput(true)}
+                  className="inline-flex h-[20px] items-center rounded-[var(--hf-radius-xs)] bg-[var(--hf-bg-panel)] px-[var(--hf-space-s)] text-[length:var(--hf-fs-xxs)] font-normal leading-[var(--hf-lh-secondary)] text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-main-200)] hover:text-[var(--hf-main-900)] dark:bg-[var(--hf-white-alpha-06)] dark:text-[color:var(--hf-white-alpha-45)] dark:hover:bg-[var(--hf-white-alpha-10)] dark:hover:text-[var(--hf-white)]"
+                >
+                  Добавить
+                </button>
+              )}
+            </div>
+          </InfoRow>
         </div>
-        {/* Avatar photo */}
+        {/* Avatar photo (right column) */}
         {card.photo_url ? (
           <img
             src={card.photo_url}
             alt={card.name}
             referrerPolicy="no-referrer"
-            className="w-[120px] h-[150px] rounded-xl object-cover flex-shrink-0 bg-accent-500/20"
+            className="w-[200px] h-[200px] rounded-hf-l object-cover flex-shrink-0 bg-[var(--hf-main-100)] dark:bg-[var(--hf-accent-bg-20)]"
             onError={(e) => {
               const el = e.currentTarget as HTMLImageElement;
-              el.style.display = 'none';
-              el.nextElementSibling?.classList.remove('hidden');
+              el.style.display = "none";
+              el.nextElementSibling?.classList.remove("hidden");
             }}
           />
         ) : null}
-        <div className={clsx(
-          'w-[120px] h-[150px] rounded-xl bg-accent-500/20 flex items-center justify-center text-accent-400 text-4xl font-bold flex-shrink-0',
-          card.photo_url && 'hidden'
-        )}>
+        <div
+          className={clsx(
+            "w-[200px] h-[200px] rounded-hf-l bg-[var(--hf-ui-avatar-dark)] dark:bg-[var(--hf-accent-bg-20)] flex items-center justify-center text-[var(--hf-ui-text-avatar-blue)] dark:text-[var(--hf-accent)] text-4xl font-bold flex-shrink-0",
+            card.photo_url && "hidden",
+          )}
+        >
           {getInitials(card.name)}
         </div>
       </div>
 
-      {/* ---- Contact info (Huntflow: dotted-line rows) ---- */}
-      <div className="mt-4 mb-5">
-        {card.phone && (
-          <InfoRow label="Телефон">
-            <div className="flex items-center gap-2">
-              <a href={`tel:${card.phone}`} className="text-dark-200 hover:text-white transition-colors">{card.phone}</a>
-              {/* Messenger icons */}
-              <a href={`https://wa.me/${card.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
-                className="w-[22px] h-[22px] rounded-full bg-[#25D366] flex items-center justify-center hover:opacity-80" title="WhatsApp">
-                <Phone className="w-[11px] h-[11px] text-white" />
-              </a>
-              <a href={`https://t.me/${card.telegram_username || card.phone}`} target="_blank" rel="noopener noreferrer"
-                className="w-[22px] h-[22px] rounded-full bg-[#229ED9] flex items-center justify-center hover:opacity-80" title="Telegram">
-                <Send className="w-[11px] h-[11px] text-white" />
-              </a>
+      <div className="hf-stage-card">
+        {/* ---- Stage block (Huntflow: colored bg + vacancy name + change button) ---- */}
+        <div className="hf-stage-card-head">
+          <div className="hf-stage-card-head-row">
+            <div>
+              <div className="hf-stage-card-title">
+                {stageTitle}
+              </div>
+              {getVacancyStageLabel(card) && (
+                <div className="hf-stage-card-subtitle">
+                  {getVacancyStageLabel(card)}
+                </div>
+              )}
             </div>
-          </InfoRow>
-        )}
-        {card.email && (
-          <InfoRow label="Эл. почта">
-            <a href={`mailto:${card.email}`} className="text-dark-200 hover:text-white transition-colors">{card.email}</a>
-          </InfoRow>
-        )}
-        {card.telegram_username && (
-          <InfoRow label="Telegram">
-            <a href={`https://t.me/${card.telegram_username}`} target="_blank" rel="noopener noreferrer" className="text-dark-200 hover:text-white transition-colors">
-              {card.telegram_username}
-            </a>
-          </InfoRow>
-        )}
-        {card.age && <InfoRow label="Возраст"><span className="text-dark-200">{card.age}</span></InfoRow>}
-        {card.city && <InfoRow label="Город"><span className="text-dark-200 inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-dark-500" />{card.city}</span></InfoRow>}
-        {card.salary && <InfoRow label="Зарплата"><span className="text-dark-200">{card.salary}</span></InfoRow>}
-        {card.total_experience && <InfoRow label="Опыт"><span className="text-dark-200">{card.total_experience}</span></InfoRow>}
-        {(card.source || card.source_url) && (
-          <InfoRow label="Источник">
-            {card.source_url ? (
-              <a href={card.source_url} target="_blank" rel="noopener noreferrer" className="text-accent-400 hover:text-accent-300 transition-colors inline-flex items-center gap-1">
-                {card.source || 'Ссылка'} <ExternalLink className="w-3 h-3" />
-              </a>
-            ) : (
-              <span className="text-dark-200">{card.source}</span>
-            )}
-          </InfoRow>
-        )}
-
-        {/* Tags row */}
-        <InfoRow label="Метки">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {localTags.map(t => (
-              <span key={t} className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-accent-500/15 text-accent-400 border border-accent-500/20">
-                {t}
-                <button onClick={() => handleRemoveTag(t)} className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-400">
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-            {showTagInput ? (
-              <form
-                onSubmit={(e) => { e.preventDefault(); handleAddTag(); }}
-                className="inline-flex items-center gap-1"
-              >
-                <input
-                  ref={tagInputRef}
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onBlur={() => { if (!tagInput.trim()) setShowTagInput(false); }}
-                  onKeyDown={(e) => { if (e.key === 'Escape') { setShowTagInput(false); setTagInput(''); } }}
-                  placeholder="Метка..."
-                  autoFocus
-                  className="w-24 px-2 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/50"
-                />
-              </form>
-            ) : (
+            <div className="relative" ref={stageRef}>
               <button
-                onClick={() => setShowTagInput(true)}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-dark-400 border border-white/[0.1] hover:border-white/[0.2] hover:text-dark-300 transition-colors"
+                onClick={() => setShowStageDD(!showStageDD)}
+                className="hf-stage-change-btn"
               >
-                Добавить
+                Сменить этап подбора
               </button>
-            )}
+              {showStageDD && (
+                <div className="hf-stage-picker">
+                  <div className="hf-stage-picker-list huntflow-scrollbar">
+                    {stagePickerOptions.map((option) => {
+                      const isSelected =
+                        pendingStage === option.status ||
+                        normalizeStageLabel(statusLabel) ===
+                          normalizeStageLabel(option.label);
+                      return (
+                        <button
+                          type="button"
+                          key={`${option.status}-${option.label}`}
+                          onClick={() => setPendingStage(option.status)}
+                          className={clsx(
+                            "hf-stage-picker-option",
+                            isSelected
+                              ? "hf-stage-picker-option-active"
+                              : "hf-stage-picker-option-idle",
+                          )}
+                        >
+                          <span className="truncate">{option.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="hf-stage-picker-editor-wrap">
+                    <div className="hf-stage-picker-editor">
+                      <div className="hf-stage-picker-toolbar">
+                        <button
+                          type="button"
+                          className="hf-editor-icon-btn"
+                        >
+                          <HuntflowEditorIcon name="bold" />
+                        </button>
+                        <button
+                          type="button"
+                          className="hf-editor-icon-btn"
+                        >
+                          <HuntflowEditorIcon name="italic" />
+                        </button>
+                        <button
+                          type="button"
+                          className="hf-editor-icon-btn"
+                        >
+                          <HuntflowEditorIcon name="bullet-list" />
+                        </button>
+                        <button
+                          type="button"
+                          className="hf-editor-icon-btn"
+                        >
+                          <HuntflowEditorIcon name="numbered-list" />
+                        </button>
+                        <button
+                          type="button"
+                          className="hf-editor-icon-btn"
+                        >
+                          <HuntflowEditorIcon name="link" />
+                        </button>
+                        <button
+                          type="button"
+                          className="hf-editor-icon-btn"
+                        >
+                          <HuntflowEditorIcon name="at" />
+                        </button>
+                      </div>
+                      <textarea
+                        value={stageChangeComment}
+                        onChange={(event) =>
+                          setStageChangeComment(event.target.value)
+                        }
+                        placeholder="Записать комментарий"
+                        className="hf-stage-picker-textarea"
+                      />
+                      <div className="hf-stage-picker-actions">
+                        <ActionChip
+                          icon={Mail}
+                          label="Письмо"
+                          onClick={handleEmail}
+                        />
+                        <ActionChip
+                          icon={Calendar}
+                          label="Интервью"
+                          onClick={handleInterview}
+                        />
+                        <ActionChip icon={MessageCircle} label="СМС" />
+                        <ActionChip
+                          icon={MessageSquareText}
+                          label="Обратная связь"
+                        />
+                        <ActionChip
+                          icon={ClipboardList}
+                          label="Анкета"
+                          hasNotification
+                        />
+                        <ActionChip
+                          icon={ThumbsUp}
+                          label="Оффер"
+                          onClick={handleOffer}
+                        />
+                        <ActionChip
+                          icon={Paperclip}
+                          label="Файл"
+                          onClick={() => fileInputRef.current?.click()}
+                          loading={uploading}
+                        />
+                      </div>
+                    </div>
+                    <div className="hf-stage-picker-footer">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const selectedOption = stagePickerOptions.find(
+                            (option) => option.status === pendingStage,
+                          );
+                          if (
+                            pendingStage !== status &&
+                            selectedOption?.isRealStage
+                          )
+                            onStatusChange(pendingStage);
+                          setShowStageDD(false);
+                        }}
+                        className="inline-flex h-[33px] min-w-[74px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)]"
+                      >
+                        Сохранить
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowStageDD(false)}
+                        className="inline-flex h-[33px] min-w-[65px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-white-alpha-05)] dark:text-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </InfoRow>
-      </div>
+        </div>
 
-      {/* ---- Stage block (Huntflow: colored bg + vacancy name + change button) ---- */}
-      <div className="mb-5 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-xs text-dark-500 mb-1">Текущий этап</div>
-            <div className={clsx('text-base font-semibold', sc.text)}>{statusLabel}</div>
-            {card.vacancy_name && <div className="text-xs text-dark-600 mt-1">{card.vacancy_name}</div>}
-            {card.rejection_reason && <div className="text-xs text-red-400/80 mt-1">{card.rejection_reason}</div>}
-          </div>
-          <div className="relative" ref={stageRef}>
+        {/* ---- Comment textarea (Huntflow: "Написать комментарий") ---- */}
+        <div className="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[6px] relative">
+          {isCommentComposerOpen ? (
+            <div className="w-full overflow-hidden rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent text-[var(--hf-main-900)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)] dark:text-[var(--hf-white)]">
+              <div className="flex h-[45px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[10px] dark:border-[color:var(--hf-white-alpha-10)]">
+                <button
+                  type="button"
+                  className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] font-medium leading-none hover:bg-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+                >
+                  B
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] italic leading-none hover:bg-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+                >
+                  I
+                </button>
+                <button
+                  type="button"
+                  className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                >
+                  <List className="h-[16px] w-[16px]" />
+                </button>
+                <button
+                  type="button"
+                  className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                >
+                  <ListOrdered className="h-[16px] w-[16px]" />
+                </button>
+                <button
+                  type="button"
+                  className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                >
+                  <LinkIcon className="h-[16px] w-[16px]" />
+                </button>
+                <button
+                  type="button"
+                  className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                >
+                  <AtSign className="h-[16px] w-[16px]" />
+                </button>
+              </div>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                onFocus={() => setCommentComposerOpen(true)}
+                placeholder="Написать комментарий"
+                rows={1}
+                className="block h-[56px] w-full resize-none border-0 bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] dark:text-[var(--hf-white)]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                    handleComment();
+                }}
+              />
+              <div className="flex h-[53px] items-start gap-[var(--hf-space-s)] px-[var(--hf-space-xxl)] pb-[16px] pt-[8px]">
+                <ActionChip
+                  icon={Mail}
+                  label="Письмо"
+                  onClick={handleEmail}
+                />
+                <ActionChip
+                  icon={Calendar}
+                  label="Интервью"
+                  onClick={handleInterview}
+                />
+                <ActionChip icon={MessageCircle} label="СМС" />
+                <ActionChip icon={MessageSquareText} label="Обратная связь" />
+                <ActionChip
+                  icon={ClipboardList}
+                  label="Анкета"
+                  hasNotification
+                />
+                <ActionChip
+                  icon={ThumbsUp}
+                  label="Оффер"
+                  onClick={handleOffer}
+                />
+                <ActionChip
+                  icon={Paperclip}
+                  label="Файл"
+                  onClick={() => fileInputRef.current?.click()}
+                  loading={uploading}
+                />
+                {comment.trim() && (
+                  <button
+                    onClick={handleComment}
+                    className="ml-auto inline-flex h-[28px] items-center rounded-[6px] bg-[var(--hf-main-900)] px-[12px] text-[length:var(--hf-fs-2xs)] font-medium text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] dark:bg-[var(--hf-white)] dark:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-90)]"
+                  >
+                    Отправить
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              onFocus={() => setCommentComposerOpen(true)}
+              placeholder="Написать комментарий"
+              rows={1}
+              className="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] pr-20 text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none dark:border-[color:var(--hf-white-alpha-06)] dark:text-[var(--hf-dark-200)] dark:placeholder:text-[var(--hf-dark-500)] dark:focus:border-[color:var(--hf-status-blue-badge)]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                  handleComment();
+              }}
+            />
+          )}
+          {isCommentComposerOpen && (
+            <div className="mt-[10px] flex h-[26px] items-start gap-[var(--hf-space-s)]">
+              <button
+                type="button"
+                onClick={handleComment}
+                disabled={!comment.trim()}
+                className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-05)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[color:var(--hf-black-alpha-25)] transition-colors enabled:bg-[var(--hf-main-900)] enabled:text-[var(--hf-white)] enabled:hover:bg-[var(--hf-main-800)] disabled:cursor-default dark:bg-[var(--hf-white-alpha-06)] dark:text-[color:var(--hf-white-alpha-35)] dark:enabled:bg-[var(--hf-white)] dark:enabled:text-[var(--hf-main-900)]"
+              >
+                Сохранить
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setComment("");
+                  setCommentComposerOpen(false);
+                }}
+                className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-06)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-08)] dark:bg-[var(--hf-white-alpha-06)] dark:text-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+              >
+                Отмена
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл | Отказ) ---- */}
+        <div className="px-[var(--hf-space-xxl)] pb-hf-l flex items-center gap-[var(--hf-space-s)] border-b border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-06)] flex-wrap">
+          {!isCommentComposerOpen && (
+            <>
+              <ActionChip
+                icon={Mail}
+                label="Письмо"
+                onClick={handleEmail}
+              />
+              <ActionChip
+                icon={Calendar}
+                label="Интервью"
+                onClick={handleInterview}
+              />
+              <ActionChip icon={MessageCircle} label="СМС" />
+              <ActionChip icon={MessageSquareText} label="Обратная связь" />
+              <ActionChip icon={ClipboardList} label="Анкета" hasNotification />
+              <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
+              <ActionChip
+                icon={Paperclip}
+                label="Файл"
+                onClick={() => fileInputRef.current?.click()}
+                loading={uploading}
+              />
+            </>
+          )}
+        </div>
+
+        {/* ---- Комментарии: отдельный блок, фон по стадии в момент комментария ---- */}
+        {Array.isArray(card.extra_data?.notes) &&
+          card.extra_data.notes.length > 0 && (
+            <div className="mb-6">
+              <div className="text-xs text-[var(--hf-main-600)] dark:text-[var(--hf-dark-500)] mb-3 uppercase tracking-wider">
+                Комментарии
+              </div>
+              <div className="space-y-2">
+                {(card.extra_data.notes as any[])
+                  .slice()
+                  .sort((a, b) => {
+                    const ta = a?.date ? new Date(a.date).getTime() : 0;
+                    const tb = b?.date ? new Date(b.date).getTime() : 0;
+                    return tb - ta;
+                  })
+                  .map((note, i) => (
+                    <CommentCard
+                      key={note.id || `note-${note.date || i}`}
+                      card={card}
+                      note={note}
+                      currentUserId={currentUser?.id}
+                      isAdmin={isAdmin}
+                    />
+                  ))}
+              </div>
+            </div>
+          )}
+
+        {/* ---- История: только смена стадий, без комментариев ---- */}
+        <div className="px-[var(--hf-space-xxl)] pt-[7px]">
+          <div className="relative mb-hf-l inline-block" ref={actionMenuRef}>
             <button
-              onClick={() => setShowStageDD(!showStageDD)}
-              className="px-3.5 py-2 rounded-lg text-xs font-medium bg-accent-500 text-white hover:bg-accent-600 transition-colors"
+              type="button"
+              onClick={() => {
+                setActionMenuPlacement("above");
+                setShowActionMenu((value) => !value);
+              }}
+              className="inline-flex h-[32px] items-center rounded-hf-s border border-transparent bg-[var(--hf-black-alpha-10)] pl-hf-m pr-[6px] text-hf-xxs font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-10)] focus:outline-none focus-visible:outline-none active:bg-[var(--hf-black-alpha-14)] dark:bg-[var(--hf-white-alpha-05)] dark:text-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+              aria-expanded={showActionMenu}
             >
-              Сменить этап подбора
+              Действия: {timelineActionFilter || "Все"}{" "}
+              <ChevronDown
+                className={clsx(
+                  "ml-[4px] h-[20px] w-[20px] transition-transform",
+                  showActionMenu && "rotate-180",
+                )}
+              />
             </button>
-            {showStageDD && (
-              <div className="absolute right-0 top-full mt-1 z-50 w-56 py-1 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-                <div className="px-3 py-1.5 text-[10px] text-dark-500 uppercase tracking-wider font-semibold">Перенести в</div>
-                {columns.map(col => {
-                  const colSc = STATUS_COLORS[col.status] || FALLBACK_COLOR;
-                  return (
+            {showActionMenu ? (
+              <div
+                className={clsx(
+                  "absolute left-0 z-[220] w-[400px] overflow-hidden rounded-[var(--hf-radius-s)] bg-[var(--hf-white)] leading-[var(--hf-lh-field)] shadow-[0_0_40px_var(--hf-alpha-300)] dark:bg-[var(--hf-bg-dark)]",
+                  actionMenuPlacement === "below"
+                    ? "top-full mt-[10px]"
+                    : "bottom-full mb-[10px]",
+                )}
+              >
+                <div className="p-[16px] pb-[8px]">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-[10px] top-1/2 h-[16px] w-[16px] -translate-y-1/2 text-[var(--hf-main-500)]" />
+                    <input
+                      ref={actionSearchRef}
+                      value={actionSearch}
+                      onChange={(event) => setActionSearch(event.target.value)}
+                      placeholder="Поиск..."
+                      className="h-[40px] w-full rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-[var(--hf-white)] pl-[32px] pr-[16px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] dark:bg-transparent dark:text-[var(--hf-white)]"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTimelineActionFilter(null);
+                    setActionSearch("");
+                    setShowActionMenu(false);
+                  }}
+                  className="block h-[34px] w-full px-[var(--hf-space-xxl)] text-left text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-bg-panel)] hover:text-[var(--hf-main-700)] dark:hover:bg-[var(--hf-white-alpha-05)]"
+                >
+                  Сбросить выбор
+                </button>
+                <div className="h-[322px] overflow-y-auto border-t border-[var(--hf-main-200)] py-[6px] dark:border-[color:var(--hf-white-alpha-06)]">
+                  {visibleActionFilters.length > 0 ? (
+                    visibleActionFilters.map((item, index) => {
+                      const isSelected = item === timelineActionFilter;
+                      const isDefaultHighlighted =
+                        !timelineActionFilter &&
+                        actionSearch.trim().length === 0 &&
+                        index === 0;
+                      const iconClass = "h-[18px] w-[18px] shrink-0";
+                      return (
+                        <button
+                          type="button"
+                          key={item}
+                          onClick={() => {
+                            setTimelineActionFilter(item);
+                            setActionSearch("");
+                            setShowActionMenu(false);
+                          }}
+                          className="group flex h-[42px] w-full items-center px-[var(--hf-space-s)] text-left text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]"
+                        >
+                          <span
+                            className={clsx(
+                              "flex h-[41.333px] w-full items-center transition-colors group-hover:bg-[var(--hf-black-alpha-07)] dark:group-hover:bg-[var(--hf-white-alpha-10)]",
+                              (isSelected || isDefaultHighlighted) &&
+                                "bg-[var(--hf-black-alpha-07)] dark:bg-[var(--hf-white-alpha-10)]",
+                            )}
+                          >
+                            <span className="flex h-full w-[32px] shrink-0 items-center justify-center">
+                              {isSelected ? (
+                                <Check className="h-[16px] w-[16px]" />
+                              ) : null}
+                            </span>
+                            <span className="flex h-full min-w-0 flex-1 items-center gap-[4px] py-[var(--hf-space-s)] pr-[8px]">
+                              {item === "Письмо кандидату" ? (
+                                <Mail className={iconClass} />
+                              ) : null}
+                              {item === "Интервью" ? (
+                                <Calendar className={iconClass} />
+                              ) : null}
+                              {item === "SMS" ? (
+                                <MessageCircle className={iconClass} />
+                              ) : null}
+                              {item === "Телефонный звонок" ? (
+                                <Phone className={iconClass} />
+                              ) : null}
+                              {item === "Форма обратной связи" ? (
+                                <MessageSquareText className={iconClass} />
+                              ) : null}
+                              {item === "Анкета кандидата" ? (
+                                <ClipboardList className={iconClass} />
+                              ) : null}
+                              {item === "Оффер" ? (
+                                <ThumbsUp className={iconClass} />
+                              ) : null}
+                              {item === "Файл" ? (
+                                <Paperclip className={iconClass} />
+                              ) : null}
+                              <span>{item}</span>
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="px-[var(--hf-space-xxl)] py-[10px] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-600)]">
+                      Ничего не найдено
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <div className="relative ml-[17px] w-[calc(100%-11px)] border-l border-[var(--hf-main-300)] pl-[38.667px] dark:border-[color:var(--hf-white-alpha-08)]">
+            {visibleTimelineItems.length > 0 ? (
+              visibleTimelineItems.map((event, i) => (
+                <div
+                  key={`${event.date || card.created_at}-${i}`}
+                  className="relative first:mt-0 mt-[20px]"
+                >
+                  {i === 0 ? <TimelineUserGlyph /> : <TimelineDot />}
+                  <div className="flex items-center gap-0 text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] dark:text-[color:var(--hf-white-alpha-45)]">
+                    {event.author && (
+                      <span className="mr-[8px] min-w-[10px] font-medium text-[color:var(--hf-alpha-600)] dark:text-[color:var(--hf-white-alpha-45)]">
+                        {event.author}
+                      </span>
+                    )}
+                    <span>
+                      {formatTimelineDate(event.date || card.created_at)}
+                    </span>
                     <button
-                      key={col.status}
-                      onClick={() => { onStatusChange(col.status); setShowStageDD(false); }}
-                      className={clsx(
-                        'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm',
-                        col.status === status ? 'bg-white/[0.06] text-dark-100' : 'text-dark-300 hover:bg-white/[0.04]',
-                      )}
+                      type="button"
+                      className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none dark:hover:bg-[var(--hf-white-alpha-06)]"
                     >
-                      <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', colSc.dot)} />
-                      <span className="flex-1">{col.label}</span>
-                      {col.status === status && <Check className="w-3.5 h-3.5 text-accent-400" />}
+                      <TimelineMetaIcon />
                     </button>
-                  );
-                })}
+                    <button
+                      type="button"
+                      className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none dark:hover:bg-[var(--hf-white-alpha-06)]"
+                    >
+                      <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] dark:text-[color:var(--hf-white-alpha-25)]" />
+                    </button>
+                  </div>
+                  <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)] whitespace-pre-wrap">
+                    {event.title || "Событие"}
+                    {event.body && (
+                      <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+                        {event.body}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="relative text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-45)]">
+                <TimelineDot />
+                Нет действий по выбранным фильтрам
               </div>
             )}
           </div>
         </div>
-      </div>
-
-      {/* ---- Comment textarea (Huntflow: "Написать комментарий") ---- */}
-      <div className="mb-4 relative">
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder="Написать комментарий..."
-          rows={2}
-          className="w-full px-4 py-3 pr-20 bg-white/[0.02] border border-white/[0.06] rounded-lg text-sm text-dark-200 placeholder-dark-500 resize-none focus:outline-none focus:border-accent-500/30"
-          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleComment(); }}
-        />
-        {comment.trim() && (
+        {hasHiddenTimelineItems ? (
           <button
-            onClick={handleComment}
-            className="absolute right-3 bottom-3 px-3 py-1 bg-accent-500 text-white text-xs rounded-md hover:bg-accent-600"
+            type="button"
+            onClick={handleTimelineMoreToggle}
+            disabled={timelineExpanding}
+            aria-busy={timelineExpanding}
+            className="mt-[25px] flex h-[49.333px] w-full items-center justify-center border-t border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-06)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)] transition-colors"
           >
-            Отправить
+            {timelineExpanding ? (
+              <HfLoadingSpinner
+                className="hf-timeline-more-spinner"
+                size="var(--hf-loading-spinner-size-sm)"
+                stroke="var(--hf-loading-spinner-border)"
+              />
+            ) : (
+              <>
+                {showAllTimeline ? "Свернуть" : "Показать еще"}{" "}
+                <ChevronDown
+                  className={clsx(
+                    "ml-hf-xs h-3.5 w-3.5 transition-transform",
+                    showAllTimeline && "rotate-180",
+                  )}
+                />
+              </>
+            )}
           </button>
+        ) : (
+          <div className="mt-[25px] h-[49.333px] border-t border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-06)]" />
         )}
       </div>
 
-      {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл | Отказ) ---- */}
-      <div className="flex items-center gap-1.5 mb-6 pb-5 border-b border-white/[0.06] flex-wrap">
-        <ActionChip icon={Mail} label="Письмо" onClick={handleEmail} />
-        <ActionChip icon={Calendar} label="Интервью" onClick={handleInterview} />
-        <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
-        <ActionChip icon={Paperclip} label="Файл" onClick={() => fileInputRef.current?.click()} loading={uploading} />
-        <ActionChip icon={XCircle} label="Отказ" onClick={handleReject} danger />
-      </div>
-
-      {/* ---- Комментарии: отдельный блок, фон по стадии в момент комментария ---- */}
-      {Array.isArray(card.extra_data?.notes) && card.extra_data.notes.length > 0 && (
-        <div className="mb-6">
-          <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">Комментарии</div>
-          <div className="space-y-2">
-            {(card.extra_data.notes as any[])
-              .slice()
-              .sort((a, b) => {
-                const ta = a?.date ? new Date(a.date).getTime() : 0;
-                const tb = b?.date ? new Date(b.date).getTime() : 0;
-                return tb - ta;
-              })
-              .map((note, i) => (
-                <CommentCard
-                  key={note.id || `note-${note.date || i}`}
-                  card={card}
-                  note={note}
-                  currentUserId={currentUser?.id}
-                  isAdmin={isAdmin}
-                />
-              ))}
-          </div>
+      <div className="mt-[30px]">
+        <div className="flex h-[49.333px] items-start gap-[var(--hf-space-xxl)] border-b border-[var(--hf-main-300)] pb-[20px] dark:border-[color:var(--hf-white-alpha-06)]">
+          <button
+            type="button"
+            onClick={() => onDetailSectionChange("info")}
+            className={clsx(
+              "h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+              detailSection === "info"
+                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] dark:border-[color:var(--hf-white)] dark:text-[var(--hf-white)]"
+                : "border-transparent text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)]",
+            )}
+          >
+            Личные заметки
+          </button>
+          <button
+            type="button"
+            onClick={() => onDetailSectionChange("resume")}
+            className={clsx(
+              "h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+              detailSection === "resume"
+                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] dark:border-[color:var(--hf-white)] dark:text-[var(--hf-white)]"
+                : "border-transparent text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)]",
+            )}
+          >
+            Резюме
+          </button>
         </div>
-      )}
-
-      {/* ---- История: только смена стадий, без комментариев ---- */}
-      <div>
-        <div className="text-xs text-dark-500 mb-3 uppercase tracking-wider">История</div>
-        <div className="relative pl-6 border-l border-white/[0.08]">
-          <div className="relative pb-5">
-            <div className={clsx('absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800', sc.dot)} />
-            <div className="text-xs text-dark-600 mb-1">{formatDateFull(card.created_at)}</div>
-            <div className="text-sm text-dark-300">Кандидат добавлен</div>
-          </div>
-          {card.recruiter_name && (
-            <div className="relative pb-5">
-              <div className="absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800 bg-gray-500" />
-              <div className="text-xs text-dark-600 mb-1">{formatDateFull(card.created_at)}</div>
-              <div className="text-sm text-dark-300">Рекрутер: {card.recruiter_name}</div>
-            </div>
-          )}
-        </div>
+        {detailSection === "info" && (
+          <PersonalNotesTab
+            card={card}
+            onEmail={handleEmail}
+            onSms={() => undefined}
+            onFile={() => fileInputRef.current?.click()}
+            uploading={uploading}
+          />
+        )}
+        {detailSection === "resume" && <ResumeTab card={card} />}
       </div>
     </div>
   );
 });
 
+const PersonalNotesTab = memo(function PersonalNotesTab({
+  card,
+  onEmail,
+  onSms,
+  onFile,
+  uploading,
+}: {
+  card: KanbanCard;
+  onEmail: React.MouseEventHandler<HTMLButtonElement>;
+  onSms: () => void;
+  onFile: () => void;
+  uploading: boolean;
+}) {
+  const [note, setNote] = useState("");
+  const noteCreatedAt =
+    (card.extra_data?.resume_demo as { saved_at?: string } | undefined)
+      ?.saved_at ||
+    card.created_at ||
+    new Date().toISOString();
+
+  return (
+    <div className="pt-[35px] pb-[28px]">
+      <textarea
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+        placeholder="Написать заметку"
+        rows={1}
+        className="block h-[58px] w-full resize-none rounded-hf-s border border-[var(--hf-main-300)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[14px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none dark:border-[color:var(--hf-white-alpha-06)] dark:bg-transparent dark:text-[var(--hf-white)] dark:placeholder:text-[color:var(--hf-white-alpha-35)]"
+      />
+
+      <div className="mt-[12px] flex items-center gap-[6px]">
+        <ActionChip
+          icon={Mail}
+          label="Письмо"
+          onClick={onEmail}
+        />
+        <ActionChip icon={MessageCircle} label="СМС" onClick={onSms} />
+        <ActionChip
+          icon={Paperclip}
+          label="Файл"
+          onClick={onFile}
+          loading={uploading}
+        />
+      </div>
+
+      <div className="mt-[28px] relative ml-[22px] border-l border-[var(--hf-main-300)] pl-[48px] dark:border-[color:var(--hf-white-alpha-08)]">
+        <div className="relative pb-[4px]">
+          <TimelineUserGlyph surface="white" align="notes" />
+          <div className="flex items-center gap-0 text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] dark:text-[color:var(--hf-white-alpha-45)]">
+            <span className="mr-[8px] min-w-[10px] font-medium text-[color:var(--hf-alpha-600)] dark:text-[color:var(--hf-white-alpha-45)]">
+              Я
+            </span>
+            <span>{formatTimelineDate(noteCreatedAt)}</span>
+            <TimelineMetaIcon />
+            <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] dark:text-[color:var(--hf-white-alpha-25)]" />
+          </div>
+          <div className="mt-[2px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+            Кандидат добавлен
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 // ================================================================
 // COMMENT CARD — отдельный коммент с edit/delete для автора/админа
@@ -1182,49 +3256,65 @@ const CommentCard = memo(function CommentCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const noteStage = note.stage;
-  const noteSc = noteStage ? (STATUS_COLORS[noteStage] || FALLBACK_COLOR) : FALLBACK_COLOR;
-  const initials = (note.author_name || '?')[0].toUpperCase();
+  const noteSc = noteStage
+    ? STATUS_COLORS[noteStage] || FALLBACK_COLOR
+    : FALLBACK_COLOR;
+  const initials = (note.author_name || "?")[0].toUpperCase();
   // Можно править/удалить если: я автор, либо админ. Legacy-комменты без
   // author_id трогать может только админ.
-  const canModify = isAdmin
-    || (note.author_id !== undefined && currentUserId !== undefined && Number(note.author_id) === Number(currentUserId));
+  const canModify =
+    isAdmin ||
+    (note.author_id !== undefined &&
+      currentUserId !== undefined &&
+      Number(note.author_id) === Number(currentUserId));
   // ID для API: новые имеют uuid, у legacy используем "date:<iso>" фолбэк
   // (бэкенд понимает оба).
   const noteId = note.id || (note.date ? `date:${note.date}` : null);
 
   const save = async () => {
-    if (!noteId) { toast.error('Не удалось определить коммент'); return; }
+    if (!noteId) {
+      toast.error("Не удалось определить коммент");
+      return;
+    }
     const t = editText.trim();
-    if (!t) { toast.error('Текст не может быть пустым'); return; }
+    if (!t) {
+      toast.error("Текст не может быть пустым");
+      return;
+    }
     setBusy(true);
     try {
       const resp = await updateEntityNote(card.id, noteId, t);
       // Обновляем in-place — заметка та же по reference, поправим её поля
       Object.assign(note, resp.note);
       setEditing(false);
-      toast.success('Коммент обновлён');
+      toast.success("Коммент обновлён");
     } catch (err) {
-      console.error('Update note failed:', err);
-      toast.error('Не удалось обновить коммент');
+      console.error("Update note failed:", err);
+      toast.error("Не удалось обновить коммент");
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async () => {
-    if (!noteId) { toast.error('Не удалось определить коммент'); return; }
+    if (!noteId) {
+      toast.error("Не удалось определить коммент");
+      return;
+    }
     setBusy(true);
     try {
       await deleteEntityNote(card.id, noteId);
       // Убираем из массива по ссылке
       if (Array.isArray(card.extra_data?.notes)) {
-        const idx = card.extra_data.notes.findIndex((n: NoteShape) => n === note);
+        const idx = card.extra_data.notes.findIndex(
+          (n: NoteShape) => n === note,
+        );
         if (idx >= 0) card.extra_data.notes.splice(idx, 1);
       }
-      toast.success('Коммент удалён');
+      toast.success("Коммент удалён");
     } catch (err) {
-      console.error('Delete note failed:', err);
-      toast.error('Не удалось удалить коммент');
+      console.error("Delete note failed:", err);
+      toast.error("Не удалось удалить коммент");
     } finally {
       setBusy(false);
       setConfirmDelete(false);
@@ -1232,41 +3322,56 @@ const CommentCard = memo(function CommentCard({
   };
 
   return (
-    <div className={clsx('group rounded-lg border border-white/[0.06] p-3 relative', noteSc.bg)}>
+    <div
+      className={clsx(
+        "group rounded-lg border border-[color:var(--hf-white-alpha-06)] p-3 relative",
+        noteSc.bg,
+      )}
+    >
       <div className="flex items-center justify-between mb-1.5 gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className={clsx(
-            'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0',
-            noteSc.badge,
-          )}>
+          <div
+            className={clsx(
+              "w-6 h-6 rounded-full flex items-center justify-center text-[length:var(--hf-fs-5xs)] font-semibold flex-shrink-0",
+              noteSc.badge,
+            )}
+          >
             {initials}
           </div>
-          <span className="text-xs font-medium text-dark-200 truncate">
-            {note.author_name || 'Аноним'}
+          <span className="text-xs font-medium text-[var(--hf-dark-200)] truncate">
+            {note.author_name || "Аноним"}
           </span>
           {noteStage && (
-            <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0', noteSc.badge)}>
+            <span
+              className={clsx(
+                "text-[length:var(--hf-fs-5xs)] px-1.5 py-0.5 rounded-full flex-shrink-0",
+                noteSc.badge,
+              )}
+            >
               {note.stage_label || noteStage}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-[10px] text-dark-500">
-            {note.date ? formatDateFull(note.date) : ''}
-            {note.edited_at && ' · изм.'}
+          <span className="text-[length:var(--hf-fs-5xs)] text-[var(--hf-dark-500)]">
+            {note.date ? formatDateFull(note.date) : ""}
+            {note.edited_at && " · изм."}
           </span>
           {canModify && !editing && !confirmDelete && (
             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
               <button
-                onClick={() => { setEditText(note.text); setEditing(true); }}
-                className="p-1 rounded hover:bg-white/[0.1] text-dark-400 hover:text-white"
+                onClick={() => {
+                  setEditText(note.text);
+                  setEditing(true);
+                }}
+                className="p-1 rounded hover:bg-[var(--hf-white-alpha-10)] text-[var(--hf-dark-400)] hover:text-[var(--hf-white)]"
                 title="Редактировать"
               >
                 <Pencil className="w-3 h-3" />
               </button>
               <button
                 onClick={() => setConfirmDelete(true)}
-                className="p-1 rounded hover:bg-red-500/20 text-dark-400 hover:text-red-400"
+                className="p-1 rounded hover:bg-[var(--hf-status-red-badge)] text-[var(--hf-dark-400)] hover:text-[var(--hf-status-red)]"
                 title="Удалить"
               >
                 <Trash2 className="w-3 h-3" />
@@ -1283,55 +3388,54 @@ const CommentCard = memo(function CommentCard({
             onChange={(e) => setEditText(e.target.value)}
             disabled={busy}
             rows={3}
-            className="w-full px-2 py-1.5 rounded-md bg-white/[0.05] border border-white/[0.1] text-sm text-dark-100 focus:outline-none focus:border-blue-500 resize-y disabled:opacity-50"
+            className="w-full px-2 py-1.5 rounded-md bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-100)] focus:outline-none focus:border-[var(--hf-status-blue)] resize-y disabled:opacity-50"
             autoFocus
           />
           <div className="flex justify-end gap-2">
             <button
               onClick={() => setEditing(false)}
               disabled={busy}
-              className="px-2 py-1 text-xs text-dark-300 hover:text-white disabled:opacity-50"
+              className="px-2 py-1 text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] disabled:opacity-50"
             >
               Отмена
             </button>
             <button
               onClick={save}
               disabled={busy}
-              className="px-3 py-1 text-xs font-medium bg-blue-500 hover:bg-blue-600 text-white rounded-md disabled:opacity-50"
+              className="inline-flex items-center h-[28px] px-hf-m text-hf-3xs font-medium bg-[var(--hf-main-900)] dark:bg-[var(--hf-white)] text-[var(--hf-white)] dark:text-[var(--hf-main-900)] rounded-hf-s hover:bg-[var(--hf-main-800)] dark:hover:bg-[var(--hf-white-alpha-90)] transition-colors duration-[100ms] disabled:cursor-not-allowed disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] dark:disabled:bg-[var(--hf-white-alpha-08)] dark:disabled:text-[color:var(--hf-white-alpha-35)]"
             >
-              {busy ? 'Сохраняем…' : 'Сохранить'}
+              {busy ? "Сохраняем…" : "Сохранить"}
             </button>
           </div>
         </div>
       ) : confirmDelete ? (
-        <div className="flex items-center justify-between gap-3 p-2 rounded-md bg-red-500/10 border border-red-500/20">
-          <span className="text-xs text-red-300">Удалить этот коммент?</span>
+        <div className="flex items-center justify-between gap-3 p-2 rounded-md bg-[var(--hf-status-red-bg)] border border-[color:var(--hf-status-red-badge)]">
+          <span className="text-xs text-[var(--hf-red-300)]">Удалить этот коммент?</span>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => setConfirmDelete(false)}
               disabled={busy}
-              className="px-2 py-1 text-xs text-dark-300 hover:text-white disabled:opacity-50"
+              className="px-2 py-1 text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] disabled:opacity-50"
             >
               Нет
             </button>
             <button
               onClick={remove}
               disabled={busy}
-              className="px-2.5 py-1 text-xs font-medium bg-red-500 hover:bg-red-600 text-white rounded-md disabled:opacity-50"
+              className="px-2.5 py-1 text-xs font-medium bg-[var(--hf-red-500)] hover:bg-[var(--hf-red-600)] text-[var(--hf-white)] rounded-md disabled:opacity-50"
             >
-              {busy ? 'Удаляем…' : 'Удалить'}
+              {busy ? "Удаляем…" : "Удалить"}
             </button>
           </div>
         </div>
       ) : (
-        <div className="text-sm text-dark-200 whitespace-pre-wrap break-words">
+        <div className="text-sm text-[var(--hf-dark-200)] whitespace-pre-wrap break-words">
           {note.text}
         </div>
       )}
     </div>
   );
 });
-
 
 // ================================================================
 // RESUME TAB
@@ -1341,6 +3445,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   const [files, setFiles] = useState<EntityFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
+  const [currentResumeIndex, setCurrentResumeIndex] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -1348,52 +3453,97 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       .then((data) => {
         setFiles(data);
         // Generate preview URLs for image files
-        data.filter(f => f.mime_type?.startsWith('image/')).forEach(async (f) => {
-          try {
-            const blob = await downloadEntityFile(card.id, f.id);
-            setPreviewUrls(prev => ({ ...prev, [f.id]: URL.createObjectURL(blob) }));
-          } catch { /* ignore */ }
-        });
+        data
+          .filter((f) => f.mime_type?.startsWith("image/"))
+          .forEach(async (f) => {
+            try {
+              const blob = await downloadEntityFile(card.id, f.id);
+              setPreviewUrls((prev) => ({
+                ...prev,
+                [f.id]: URL.createObjectURL(blob),
+              }));
+            } catch {
+              /* ignore */
+            }
+          });
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [card.id]);
 
-  const resumeFiles = files.filter(f => f.file_type === 'resume');
-  const pdfFile = resumeFiles.find(f => f.mime_type === 'application/pdf');
-  const imageFiles = resumeFiles.filter(f => f.mime_type?.startsWith('image/'));
+  const resumeFiles = files.filter((f) => f.file_type === "resume");
+  const pdfFile = resumeFiles.find((f) => f.mime_type === "application/pdf");
+  const imageFiles = resumeFiles.filter((f) =>
+    f.mime_type?.startsWith("image/"),
+  );
+  type ResumeDemoData = {
+    title?: string;
+    subtitle?: string;
+    salary?: string;
+    saved_at?: string;
+    vacancy_title?: string;
+    sections?: Array<{ title: string; lines: string[] }>;
+  };
+  const resumeDemo = card.extra_data?.resume_demo as ResumeDemoData | undefined;
+  const resumeDemos = (
+    Array.isArray(card.extra_data?.resume_demos)
+      ? (card.extra_data.resume_demos as ResumeDemoData[])
+      : resumeDemo
+        ? [resumeDemo]
+        : []
+  ).filter(Boolean);
+  const resumeCarouselLength = resumeDemos.length > 0 ? 3 : imageFiles.length || 1;
+  const hasPreviousResume = currentResumeIndex > 0;
+  const hasNextResume = currentResumeIndex < resumeCarouselLength - 1;
+
+  useEffect(() => {
+    setCurrentResumeIndex(0);
+  }, [card.id]);
+
+  useEffect(() => {
+    setCurrentResumeIndex((index) =>
+      Math.min(index, Math.max(0, resumeCarouselLength - 1)),
+    );
+  }, [resumeCarouselLength]);
 
   const handleDownload = async (file: EntityFile) => {
     try {
       const blob = await downloadEntityFile(card.id, file.id);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = file.file_name;
-      a.style.display = 'none';
+      a.style.display = "none";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       // Освобождаем URL чуть позже, чтобы Safari/Firefox успели запустить загрузку.
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      console.error('PDF download failed:', err);
+      console.error("PDF download failed:", err);
       const e = err as Error & { code?: string };
-      if (e.code === 'file_content_lost') {
-        toast.error('Файл утерян на сервере. Перезагрузите резюме кандидата.', { duration: 6000 });
+      if (e.code === "file_content_lost") {
+        toast.error("Файл утерян на сервере. Перезагрузите резюме кандидата.", {
+          duration: 6000,
+        });
       } else {
-        toast.error('Не удалось скачать файл');
+        toast.error("Не удалось скачать файл");
       }
     }
   };
 
   const handlePrint = () => {
     if (imageFiles.length > 0) {
-      const urls = imageFiles.map(f => previewUrls[f.id]).filter(Boolean);
-      if (urls.length === 0) { toast.error('Загрузка...'); return; }
-      const w = window.open('', '_blank');
+      const urls = imageFiles.map((f) => previewUrls[f.id]).filter(Boolean);
+      if (urls.length === 0) {
+        toast.error("Загрузка...");
+        return;
+      }
+      const w = window.open("", "_blank");
       if (w) {
-        w.document.write(`<html><body style="margin:0">${urls.map(u => `<img src="${u}" style="width:100%;page-break-after:always"/>`).join('')}</body></html>`);
+        w.document.write(
+          `<html><body style="margin:0">${urls.map((u) => `<img src="${u}" style="width:100%;page-break-after:always"/>`).join("")}</body></html>`,
+        );
         w.document.close();
         w.onload = () => w.print();
       }
@@ -1404,48 +3554,312 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-5 h-5 animate-spin text-dark-400" />
+      <div className="space-y-[16px] px-[var(--hf-space-xxl)] py-[24px]">
+        <HfSkeletonBlock className="h-[18px] w-[180px] rounded-[var(--hf-radius-xs)]" />
+        <HfSkeletonBlock className="h-[720px] w-full rounded-[var(--hf-radius-s)]" />
       </div>
     );
   }
 
-  if (resumeFiles.length === 0) {
+  if (resumeFiles.length === 0 && !resumeDemo) {
     return (
       <div className="p-5 max-w-3xl">
-        <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-8 text-center text-dark-500 text-sm min-h-[200px] flex flex-col items-center justify-center gap-2">
+        <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-[var(--hf-dark-500)] text-sm min-h-[200px] flex flex-col items-center justify-center gap-2">
           <FileText className="w-8 h-8 opacity-30" />
           <p>Резюме ещё не сгенерировано</p>
-          <p className="text-xs text-dark-600">Резюме создаётся автоматически после добавления кандидата через Волшебную кнопку</p>
+          <p className="text-xs text-[var(--hf-dark-600)]">
+            Резюме создаётся автоматически после добавления кандидата через
+            Волшебную кнопку
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (resumeDemos.length > 0) {
+    const currentDemo = resumeDemos[0];
+    const currentResumePage = currentResumeIndex + 1;
+    const savedAt = currentDemo.saved_at || card.created_at;
+    const vacancyTitle = currentDemo.vacancy_title || card.vacancy_name || card.position || "Вакансия";
+    const desiredTitle = currentDemo.title || card.position || "Кандидат";
+    const salary = currentDemo.salary || card.salary || "";
+    const birthDate = card.extra_data?.birth_date as string | undefined;
+    const candidateDetails = [
+      card.age,
+      birthDate ? `родился(лась) ${birthDate}` : "",
+    ].filter(Boolean).join(", ");
+    const contactLines = [
+      formatPhoneDisplay(card.phone),
+      card.email,
+      card.telegram_username
+        ? `telegram: @${card.telegram_username.replace(/^@/, "")}`
+        : "",
+    ].filter(Boolean);
+    const profileLines = [
+      card.city ? `Проживает: ${card.city}` : "",
+      card.source ? `Источник: ${card.source}` : "",
+    ].filter(Boolean);
+    const resumeSections = currentDemo.sections || [];
+    const renderResumeSection = (
+      section: { title: string; lines: string[] },
+      index: number,
+      className = index === 0 ? "mt-[40px]" : "mt-[34px]",
+    ) => (
+      <section key={`${section.title}-${index}`} className={className}>
+        <h4 className="border-b border-[var(--hf-ui-line)] pb-[2px] text-[length:var(--hf-fs-m)] font-normal leading-[var(--hf-lh-primary)] text-[var(--hf-ui-resume-muted)]">
+          {section.title}
+        </h4>
+        <div className="mt-[10px] space-y-[4px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)]">
+          {(section.lines || []).map((line, lineIndex) => (
+            <p key={`${section.title}-${lineIndex}`}>{line}</p>
+          ))}
+        </div>
+      </section>
+    );
+
+    return (
+      <div className="pt-[var(--hf-space-xxl)] max-w-[1180px]">
+        <div className="overflow-hidden rounded-[16px] border border-[color:var(--hf-black-alpha-10)] bg-[var(--hf-white)] dark:bg-[var(--hf-white-alpha-04)] dark:border-[color:var(--hf-white-alpha-08)]">
+          <div className="rounded-t-[16px] bg-[var(--hf-main-50)] px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[27px] dark:bg-[var(--hf-white-alpha-03)]">
+            <p className="mb-[20px] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] dark:text-[color:var(--hf-white-alpha-45)]">
+              Сохранено {formatResumeSaved(savedAt)}
+            </p>
+            <div className="flex items-center gap-[var(--hf-space-s)]">
+              <button
+                type="button"
+                className="hf-resume-action-btn"
+              >
+                <Type className="hf-resume-action-icon" />
+                <span className="hf-resume-action-label">Показать текст</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePrint}
+                className="hf-resume-action-btn"
+              >
+                <Printer className="hf-resume-action-icon" />
+                <span className="hf-resume-action-label">Распечатать</span>
+              </button>
+              <button
+                type="button"
+                className="hf-resume-action-btn"
+              >
+                <Download className="hf-resume-action-icon" />
+                <span className="hf-resume-action-label">Скачать</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="relative bg-transparent px-[100px] pt-[36px] pb-[58px] dark:bg-[var(--hf-white-alpha-02)]">
+            <button
+              type="button"
+              aria-label="Предыдущее резюме"
+              onClick={() =>
+                setCurrentResumeIndex((index) => Math.max(0, index - 1))
+              }
+              disabled={!hasPreviousResume}
+              className={clsx(
+                "absolute left-[36px] top-[52%] flex h-[38px] w-[38px] -translate-y-1/2 items-center justify-center rounded-full bg-[var(--hf-white-alpha-90)] shadow-[0_1px_2px_var(--hf-alpha-150)] transition-colors",
+                hasPreviousResume
+                  ? "text-[var(--hf-ui-resume-arrow)] hover:bg-[var(--hf-white)] hover:text-[var(--hf-main-900)] active:bg-[var(--hf-main-200)]"
+                  : "cursor-default text-[var(--hf-ui-resume-arrow-off)] opacity-70",
+              )}
+            >
+              <ChevronLeft className="h-[20px] w-[20px]" />
+            </button>
+            <button
+              type="button"
+              aria-label="Следующее резюме"
+              onClick={() =>
+                setCurrentResumeIndex((index) =>
+                  Math.min(resumeCarouselLength - 1, index + 1),
+                )
+              }
+              disabled={!hasNextResume}
+              className={clsx(
+                "absolute right-[36px] top-[52%] flex h-[38px] w-[38px] -translate-y-1/2 items-center justify-center rounded-full bg-[var(--hf-white-alpha-90)] shadow-[0_1px_2px_var(--hf-alpha-150)] transition-colors",
+                hasNextResume
+                  ? "text-[var(--hf-ui-resume-arrow)] hover:bg-[var(--hf-white)] hover:text-[var(--hf-main-900)] active:bg-[var(--hf-main-200)]"
+                  : "cursor-default text-[var(--hf-ui-resume-arrow-off)] opacity-70",
+              )}
+            >
+              <ChevronRight className="h-[20px] w-[20px]" />
+            </button>
+            <button
+              type="button"
+              aria-label="Развернуть"
+              className="absolute right-[52px] top-[42px] rounded-[6px] p-[4px] text-[var(--hf-ui-expand-icon)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] active:bg-[var(--hf-black-alpha-07)]"
+            >
+              <Maximize2 className="h-[21px] w-[21px]" />
+            </button>
+
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={currentResumePage}
+                initial={{ opacity: 0, x: 28 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -28 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="mx-auto min-h-[880px] w-full max-w-[980px] bg-[var(--hf-white)] text-[var(--hf-main-900)] shadow-[0_12px_30px_var(--hf-alpha-200)]"
+              >
+              <div className="flex h-[66px] items-center justify-between bg-[var(--hf-ui-divider)] px-[66px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-ui-resume-text)]">
+                <div>
+                  <div>Отклик на вакансию: «{vacancyTitle}»</div>
+                  <div className="mt-[4px] text-[length:var(--hf-fs-2xs)] text-[var(--hf-ui-resume-muted)]">
+                    {formatResumeSaved(savedAt)}
+                  </div>
+                </div>
+                <span className="inline-flex h-[32px] w-[32px] items-center justify-center rounded-full bg-[var(--hf-red-600)] text-[length:var(--hf-fs-xs)] font-bold text-[var(--hf-white)]">
+                  hh
+                </span>
+              </div>
+
+              <div className="px-[66px] pb-[64px] pt-[34px]">
+                {currentResumePage === 1 ? (
+                  <>
+                <div className="flex gap-[var(--hf-space-xxl)]">
+                  {card.photo_url ? (
+                    <img
+                      src={card.photo_url}
+                      alt=""
+                      className="mt-[2px] h-[92px] w-[92px] flex-shrink-0 rounded-[2px] object-cover"
+                    />
+                  ) : (
+                    <div className="mt-[2px] flex h-[92px] w-[92px] flex-shrink-0 items-center justify-center rounded-[2px] bg-[var(--hf-ui-avatar-dark)] text-[24px] font-semibold text-[var(--hf-ui-text-avatar-blue)]">
+                      {getInitials(card.name)}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="text-[40px] font-bold leading-[46px] tracking-normal">
+                      {card.name}
+                    </h3>
+                    <p className="mt-[2px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)] text-[var(--hf-ui-resume-secondary)]">
+                      {candidateDetails}
+                    </p>
+                    <div className="mt-[16px] space-y-[1px] text-[length:var(--hf-fs-s)] leading-[21px]">
+                      {contactLines.map((line) => (
+                        <p key={line}>{line}</p>
+                      ))}
+                    </div>
+                    <div className="mt-[18px] space-y-[1px] text-[length:var(--hf-fs-s)] leading-[21px]">
+                      {profileLines.map((line) => (
+                        <p key={line}>{line}</p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <section className="mt-[42px]">
+                  <h4 className="border-b border-[var(--hf-ui-line)] pb-[2px] text-[length:var(--hf-fs-m)] font-normal leading-[var(--hf-lh-primary)] text-[var(--hf-ui-resume-muted)]">
+                    Желаемая должность и зарплата
+                  </h4>
+                  <div className="mt-[8px] flex items-start justify-between gap-[var(--hf-space-xxl)]">
+                    <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)]">
+                      <p className="text-[20px] font-bold leading-[26px]">
+                        {desiredTitle}
+                      </p>
+                      <p className="mt-[6px]">Специализации:</p>
+                      <p className="pl-[30px]">— Тестировщик</p>
+                      <p className="mt-[6px]">
+                        Тип занятости: полная занятость
+                      </p>
+                      <p>Формат работы: на месте работодателя</p>
+                      <p>
+                        Желательное время в пути до работы: не имеет значения
+                      </p>
+                    </div>
+                    <div className="flex-shrink-0 pt-[2px] text-right">
+                      {salary ? (
+                        <>
+                          <span className="text-[24px] font-bold leading-[30px]">
+                            {salary}
+                          </span>
+                          <span className="ml-[4px] text-[length:var(--hf-fs-xxs)] leading-[18px]">
+                            на руки
+                          </span>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
+
+                {resumeSections
+                  .slice(0, 2)
+                  .map((section, index) => renderResumeSection(section, index))}
+
+                  </>
+                ) : currentResumePage === 2 ? (
+                  <>
+                    {resumeSections
+                      .slice(2)
+                      .map((section, index) =>
+                        renderResumeSection(
+                          section,
+                          index + 2,
+                          index === 0 ? "" : "mt-[34px]",
+                        ),
+                      )}
+                  </>
+                ) : (
+                  <>
+                    <section>
+                      <h4 className="border-b border-[var(--hf-ui-line)] pb-[2px] text-[length:var(--hf-fs-m)] font-normal leading-[var(--hf-lh-primary)] text-[var(--hf-ui-resume-muted)]">
+                        Данные резюме
+                      </h4>
+                      <div className="mt-[16px] space-y-[8px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)]">
+                        <p>{card.name}</p>
+                        {card.position ? <p>{card.position}</p> : null}
+                        {card.company ? <p>{card.company}</p> : null}
+                        {card.source ? <p>Источник: {card.source}</p> : null}
+                      </div>
+                    </section>
+                    <section className="mt-[42px]">
+                      <h4 className="border-b border-[var(--hf-ui-line)] pb-[2px] text-[length:var(--hf-fs-m)] font-normal leading-[var(--hf-lh-primary)] text-[var(--hf-ui-resume-muted)]">
+                        Резюме обновлено {formatResumeSaved(savedAt)}
+                      </h4>
+                      <div className="mt-[18px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)]">
+                        <p>{card.name} • Резюме обновлено {formatResumeSaved(savedAt)}</p>
+                      </div>
+                    </section>
+                  </>
+                )}
+                <div className="mt-[36px] text-right text-[length:var(--hf-fs-2xs)] leading-[18px] text-[var(--hf-ui-resume-muted)]">
+                  Страница {currentResumePage}/{resumeCarouselLength}
+                </div>
+              </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-5 max-w-3xl">
-      <p className="text-xs text-dark-600 text-center mb-3">
-        Сохранено {formatDateFull(resumeFiles[0]?.created_at || card.created_at)}
+    <div className="py-hf-l max-w-[1180px]">
+      <p className="text-hf-3xs text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-40)] mb-hf-m">
+        Сохранено{" "}
+        {formatDateFull(resumeFiles[0]?.created_at || card.created_at)}
       </p>
-      <div className="flex items-center justify-center gap-3 mb-4">
+      <div className="flex items-center gap-hf-s mb-hf-l">
         {card.source_url && (
           <button
-            onClick={() => window.open(card.source_url!, '_blank')}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors"
+            onClick={() => window.open(card.source_url!, "_blank")}
+            className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] dark:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)] transition-colors"
           >
             <Eye className="w-3.5 h-3.5" /> Открыть источник
           </button>
         )}
         <button
           onClick={handlePrint}
-          className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors"
+          className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] dark:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)] transition-colors"
         >
           <Printer className="w-3.5 h-3.5" /> Распечатать
         </button>
         {pdfFile && (
           <button
             onClick={() => handleDownload(pdfFile)}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-white/[0.08] rounded-lg text-xs text-dark-400 hover:text-dark-200 transition-colors"
+            className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] dark:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)] transition-colors"
           >
             <Download className="w-3.5 h-3.5" /> Скачать PDF
           </button>
@@ -1455,80 +3869,250 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       {imageFiles.length > 0 ? (
         <div className="space-y-3">
           {imageFiles.map((f) => (
-            <div key={f.id} className="bg-white/[0.02] border border-white/[0.06] rounded-lg overflow-hidden">
+            <div
+              key={f.id}
+              className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg overflow-hidden"
+            >
               {previewUrls[f.id] ? (
-                <img src={previewUrls[f.id]} alt={f.file_name} className="w-full" />
+                <img
+                  src={previewUrls[f.id]}
+                  alt={f.file_name}
+                  className="w-full"
+                />
               ) : (
-                <div className="p-8 text-center text-dark-500 text-sm">Загрузка...</div>
+                <div className="p-8 text-center text-[var(--hf-dark-500)] text-sm">
+                  Загрузка...
+                </div>
               )}
             </div>
           ))}
         </div>
       ) : pdfFile ? (
-        <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-6 text-center">
-          <FileText className="w-10 h-10 mx-auto mb-3 text-dark-400" />
-          <p className="text-sm text-dark-300 mb-2">{pdfFile.file_name}</p>
-          <p className="text-xs text-dark-500 mb-3">{(pdfFile.file_size / 1024).toFixed(0)} КБ</p>
+        <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-6 text-center">
+          <FileText className="w-10 h-10 mx-auto mb-3 text-[var(--hf-dark-400)]" />
+          <p className="text-sm text-[var(--hf-dark-300)] mb-2">{pdfFile.file_name}</p>
+          <p className="text-xs text-[var(--hf-dark-500)] mb-3">
+            {(pdfFile.file_size / 1024).toFixed(0)} КБ
+          </p>
           <button
             onClick={() => handleDownload(pdfFile)}
-            className="px-4 py-2 bg-accent-500/20 text-accent-400 rounded-lg text-sm hover:bg-accent-500/30 transition-colors"
+            className="px-4 py-2 bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] rounded-lg text-sm hover:bg-[var(--hf-accent-bg-30)] transition-colors"
           >
             <Download className="w-4 h-4 inline mr-1.5" /> Скачать
           </button>
         </div>
       ) : (
-        <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-8 text-center text-dark-500 text-sm">
-          {resumeFiles.map(f => <p key={f.id}>{f.file_name}</p>)}
+        <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-[var(--hf-dark-500)] text-sm">
+          {resumeFiles.map((f) => (
+            <p key={f.id}>{f.file_name}</p>
+          ))}
         </div>
       )}
     </div>
   );
 });
 
-
 // ================================================================
 // SUB-COMPONENTS
 // ================================================================
 
-/** Huntflow info row with dotted line separator */
-function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+function HuntflowOptionsIcon({ className }: { className?: string }) {
   return (
-    <div className="flex items-start py-[7px] group">
-      <span className="text-[13px] text-dark-500 w-[100px] flex-shrink-0">{label}</span>
-      <span className="flex-1 border-b border-dotted border-white/[0.06] mx-2 mb-2 self-end" />
-      <div className="text-[13px] flex-shrink-0 max-w-[420px]">{children}</div>
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M3 8h12m0 0a3 3 0 1 0 6 0 3 3 0 0 0-6 0Zm-6 8h12M9 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Huntflow info row with dotted line separator */
+function InfoRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start py-[4px] group">
+      <span className="flex h-[24px] w-[96.833px] flex-shrink-0 items-center pr-[4px]">
+        <span className="whitespace-nowrap bg-[var(--hf-white)] text-[length:var(--hf-fs-xs)] font-normal leading-[var(--hf-lh-primary)] text-[color:var(--hf-alpha-600)] dark:bg-[var(--hf-bg-dark)] dark:text-[color:var(--hf-white-alpha-50)]">
+          {label}
+        </span>
+        <span className="mb-[5px] ml-[4px] h-0 flex-1 border-b border-dotted border-[var(--hf-main-300)] dark:border-[color:var(--hf-white-alpha-10)]" />
+      </span>
+      <div className="text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] flex-1 min-w-0">
+        {children}
+      </div>
     </div>
   );
 }
 
+const HUNTFLOW_ACTION_ICON_BY_LABEL: Record<
+  string,
+  { id: string; viewBox: string; label: string }
+> = {
+  Письмо: { id: "mail-usage", viewBox: "0 0 18 18", label: "mail" },
+  Интервью: {
+    id: "calendar-usage",
+    viewBox: "0 0 20 20",
+    label: "calendar",
+  },
+  СМС: { id: "message-2-usage", viewBox: "0 0 18 18", label: "message-2" },
+  "Обратная связь": {
+    id: "feedback-usage",
+    viewBox: "0 0 18 18",
+    label: "feedback",
+  },
+  Анкета: {
+    id: "clipboard-usage",
+    viewBox: "0 0 18 18",
+    label: "clipboard",
+  },
+  Оффер: {
+    id: "thumbs-up-usage",
+    viewBox: "0 0 18 18",
+    label: "thumbs-up",
+  },
+  Файл: { id: "clip-usage", viewBox: "0 0 18 18", label: "clip" },
+};
+
+const HUNTFLOW_EDITOR_ICON_BY_LABEL: Record<
+  string,
+  { id: string; viewBox: string; label: string }
+> = {
+  bold: { id: "bold-usage", viewBox: "0 0 20 20", label: "bold" },
+  italic: { id: "italic-usage", viewBox: "0 0 20 20", label: "italic" },
+  "bullet-list": {
+    id: "bullet-list-usage",
+    viewBox: "0 0 20 20",
+    label: "bullet-list",
+  },
+  "numbered-list": {
+    id: "numbered-list-usage",
+    viewBox: "0 0 20 20",
+    label: "numbered-list",
+  },
+  link: { id: "link-usage", viewBox: "0 0 20 20", label: "link" },
+  at: { id: "at-usage", viewBox: "0 0 20 20", label: "at" },
+};
+
+function HuntflowActionIcon({ label }: { label: string }) {
+  const icon = HUNTFLOW_ACTION_ICON_BY_LABEL[label];
+
+  if (!icon) return null;
+
+  return (
+    <svg
+      aria-label={icon.label}
+      className="h-[18px] w-[18px]"
+      viewBox={icon.viewBox}
+      role="img"
+    >
+      <use
+        href={`/huntflow-sprite.svg#${icon.id}`}
+        xlinkHref={`/huntflow-sprite.svg#${icon.id}`}
+      />
+    </svg>
+  );
+}
+
+function HuntflowUnavailableIcon() {
+  return (
+    <svg
+      aria-label="unavailable"
+      className="h-[8px] w-[12px]"
+      viewBox="0 0 11 13"
+      role="img"
+    >
+      <use
+        href="/huntflow-sprite.svg#unavailable-usage"
+        xlinkHref="/huntflow-sprite.svg#unavailable-usage"
+      />
+    </svg>
+  );
+}
+
+function HuntflowEditorIcon({ name }: { name: string }) {
+  const icon = HUNTFLOW_EDITOR_ICON_BY_LABEL[name];
+
+  if (!icon) return null;
+
+  return (
+    <svg
+      aria-label={icon.label}
+      className="h-[20px] w-[20px]"
+      viewBox={icon.viewBox}
+      role="img"
+    >
+      <use
+        href={`/huntflow-sprite.svg#${icon.id}`}
+        xlinkHref={`/huntflow-sprite.svg#${icon.id}`}
+      />
+    </svg>
+  );
+}
+
 /** Action chip button (Huntflow: bordered pill with icon + text) */
-function ActionChip({ icon: Icon, label, onClick, danger, loading }: {
+function ActionChip({
+  icon: Icon,
+  label,
+  onClick,
+  danger,
+  loading,
+  hasNotification,
+}: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   danger?: boolean;
   loading?: boolean;
+  hasNotification?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={loading}
       className={clsx(
-        'flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-all',
-        danger
-          ? 'border-red-500/20 text-red-400/70 hover:bg-red-500/10 hover:text-red-400'
-          : 'border-white/[0.08] text-dark-400 hover:bg-white/[0.04] hover:text-dark-200',
-        loading && 'opacity-50 cursor-wait',
+        "hf-action-chip",
+        danger && "hf-action-chip-danger",
+        loading && "hf-action-chip-loading",
       )}
     >
-      {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Icon className="w-3.5 h-3.5" />}
+      <span className="hf-action-chip-icon">
+        {loading ? (
+          <HfLoadingSpinner
+            size="var(--hf-loading-spinner-size-md)"
+            stroke="var(--hf-loading-spinner-border)"
+          />
+        ) : HUNTFLOW_ACTION_ICON_BY_LABEL[label] ? (
+          <HuntflowActionIcon label={label} />
+        ) : (
+          <Icon className="hf-action-chip-lucide" />
+        )}
+        {hasNotification && (
+          <span className="hf-action-chip-unavailable">
+            <HuntflowUnavailableIcon />
+          </span>
+        )}
+      </span>
       {label}
     </button>
   );
 }
 
 // ================================================================
-// EDIT CANDIDATE MODAL
+// NEW / EDIT CANDIDATE MODALS
 // ================================================================
 
 // ФИО — минимум 2 слова, буквы/дефисы/апострофы, допускаем кириллицу и латиницу
@@ -1540,15 +4124,15 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const TELEGRAM_REGEX = /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/;
 
 function normalizePhone(raw: string): string {
-  return raw.replace(/[\s\-()]/g, '');
+  return raw.replace(/[\s\-()]/g, "");
 }
 
 function validateName(value: string): string | null {
   const v = value.trim();
-  if (!v) return 'Обязательное поле';
-  if (v.length < 2) return 'Минимум 2 символа';
-  if (v.length > 200) return 'Максимум 200 символов';
-  if (!NAME_REGEX.test(v)) return 'Только буквы, пробелы, дефис и апостроф';
+  if (!v) return "Обязательное поле";
+  if (v.length < 2) return "Минимум 2 символа";
+  if (v.length > 200) return "Максимум 200 символов";
+  if (!NAME_REGEX.test(v)) return "Только буквы, пробелы, дефис и апостроф";
   return null;
 }
 
@@ -1557,7 +4141,7 @@ function validatePhone(value: string): string | null {
   if (!v) return null;
   const normalized = normalizePhone(v);
   if (!PHONE_DIGITS_REGEX.test(normalized)) {
-    return 'Формат: +7 999 123 4567 (7–15 цифр)';
+    return "Формат: +7 999 123 4567 (7–15 цифр)";
   }
   return null;
 }
@@ -1565,16 +4149,16 @@ function validatePhone(value: string): string | null {
 function validateEmail(value: string): string | null {
   const v = value.trim();
   if (!v) return null;
-  if (v.length > 254) return 'Слишком длинный email';
-  if (!EMAIL_REGEX.test(v)) return 'Некорректный email';
+  if (v.length > 254) return "Слишком длинный email";
+  if (!EMAIL_REGEX.test(v)) return "Некорректный email";
   return null;
 }
 
 function validateTelegram(value: string): string | null {
-  const v = value.trim().replace(/^@/, '');
+  const v = value.trim().replace(/^@/, "");
   if (!v) return null;
   if (!TELEGRAM_REGEX.test(v)) {
-    return '5–32 символа, буквы/цифры/_, начинается с буквы';
+    return "5–32 символа, буквы/цифры/_, начинается с буквы";
   }
   return null;
 }
@@ -1585,22 +4169,57 @@ function validateFreeText(value: string, maxLen = 200): string | null {
   return null;
 }
 
-function EditCandidateModal({ card, onClose, onSaved }: {
-  card: KanbanCard;
+const CANDIDATE_SOURCE_OPTIONS = [
+  "Агентство",
+  "Зарплата.ру",
+  "Отклик с Хабр Карьеры",
+  "Отклик с Avito",
+  "Отклик с Farpost.ru",
+  "Отклик с HeadHunter",
+  "Отклик с Rabota.by",
+  "Отклик с Rabota.ru",
+  "Отклик с SuperJob",
+  "Рекомендация",
+  "Хабр Карьера",
+  "AmazingHiring",
+  "Artstation",
+  "Avito",
+  "Другой источник",
+];
+
+function NewCandidateModal({
+  onClose,
+  onSaved,
+  onOpenParser,
+}: {
   onClose: () => void;
-  onSaved: (updated: Partial<KanbanCard>) => void;
+  onSaved: () => void;
+  onOpenParser: () => void;
 }) {
-  const [name, setName] = useState(card.name);
-  const [phone, setPhone] = useState(card.phone || '');
-  const [email, setEmail] = useState(card.email || '');
-  const [telegram, setTelegram] = useState(card.telegram_username || '');
-  const [position, setPosition] = useState(card.position || '');
-  const [company, setCompany] = useState(card.company || '');
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [middleName, setMiddleName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [telegram, setTelegram] = useState("");
+  const [position, setPosition] = useState("");
+  const [company, setCompany] = useState("");
+  const [salary, setSalary] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [source, setSource] = useState("Другой источник");
+  const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
+  const [sourceSearch, setSourceSearch] = useState("");
+  const [resumeText, setResumeText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const fullName = [lastName, firstName, middleName]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" ");
 
   const errors = {
-    name: validateName(name),
+    name: validateName(fullName),
     phone: validatePhone(phone),
     email: validateEmail(email),
     telegram: validateTelegram(telegram),
@@ -1608,38 +4227,53 @@ function EditCandidateModal({ card, onClose, onSaved }: {
     company: validateFreeText(company, 200),
   };
   const hasErrors = Object.values(errors).some((e) => e !== null);
+  const filteredSources = useMemo(() => {
+    const needle = sourceSearch.trim().toLowerCase();
+    if (!needle) return CANDIDATE_SOURCE_OPTIONS;
+    return CANDIDATE_SOURCE_OPTIONS.filter((option) =>
+      option.toLowerCase().includes(needle),
+    );
+  }, [sourceSearch]);
 
-  const markTouched = (field: string) => setTouched((t) => ({ ...t, [field]: true }));
+  const markTouched = (_field: string) => undefined;
 
   const handleSave = async () => {
-    setTouched({ name: true, phone: true, email: true, telegram: true, position: true, company: true });
+    setTouched({
+      name: true,
+      phone: true,
+      email: true,
+      telegram: true,
+      position: true,
+      company: true,
+    });
     if (hasErrors) {
-      toast.error('Исправьте ошибки в форме');
+      toast.error("Исправьте ошибки в форме");
       return;
     }
+
     setSaving(true);
     try {
       const normalizedPhone = phone.trim() ? normalizePhone(phone) : undefined;
-      const cleanTelegram = telegram.trim().replace(/^@/, '');
-      await updateEntity(card.id, {
-        name: name.trim(),
+      const cleanTelegram = telegram.trim().replace(/^@/, "");
+      await createEntity({
+        type: "candidate",
+        name: fullName,
+        status: "new",
         phone: normalizedPhone,
         email: email.trim() || undefined,
         telegram_usernames: cleanTelegram ? [cleanTelegram] : undefined,
         position: position.trim() || undefined,
         company: company.trim() || undefined,
+        extra_data: {
+          birth_date: birthDate.trim() || undefined,
+          resume_text: resumeText.trim() || undefined,
+          source: source.trim() || undefined,
+        },
       });
-      toast.success('Кандидат обновлён');
-      onSaved({
-        name: name.trim(),
-        phone: normalizedPhone,
-        email: email.trim() || undefined,
-        telegram_username: cleanTelegram || undefined,
-        position: position.trim() || undefined,
-        company: company.trim() || undefined,
-      });
+      toast.success("Кандидат добавлен");
+      onSaved();
     } catch {
-      toast.error('Ошибка сохранения');
+      toast.error("Ошибка создания кандидата");
     } finally {
       setSaving(false);
     }
@@ -1647,44 +4281,251 @@ function EditCandidateModal({ card, onClose, onSaved }: {
 
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="hf-candidate-modal-overlay font-hf-body"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-candidate-modal-title"
     >
       <motion.div
-        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+        initial={{ scale: 0.985, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.985, opacity: 0 }}
+        transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-dark-800 border border-white/10 rounded-xl w-full max-w-lg p-6 shadow-2xl"
+        className="hf-candidate-modal"
       >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-bold text-dark-100">Редактировать кандидата</h3>
-          <button onClick={onClose} className="text-dark-400 hover:text-dark-200"><X className="w-5 h-5" /></button>
+        <div className="hf-candidate-modal-header">
+          <div className="hf-candidate-header-content">
+            <div className="hf-candidate-avatar">
+              <span className="hf-candidate-avatar-head" />
+              <span className="hf-candidate-avatar-body" />
+            </div>
+            <div className="hf-candidate-title-stack">
+              <h3 id="new-candidate-modal-title" className="hf-candidate-title">
+                Новый кандидат
+              </h3>
+              <div className="hf-candidate-import-row">
+                <button
+                  type="button"
+                  className="hf-candidate-import-btn"
+                  onClick={() =>
+                    toast("Импорт из почты пока недоступен в HR-bot")
+                  }
+                >
+                  <Mail className="hf-candidate-import-icon" />
+                  Импорт из почты
+                </button>
+                <div className="hf-candidate-upload-wrap">
+                  <button
+                    type="button"
+                    className="hf-candidate-import-btn"
+                    onClick={() => {
+                      setSourceMenuOpen(false);
+                      setUploadMenuOpen((value) => !value);
+                    }}
+                    aria-expanded={uploadMenuOpen}
+                  >
+                    <Upload className="hf-candidate-import-icon" />
+                    Загрузка из файла
+                    <HuntflowChevronDown24Icon className="hf-candidate-import-chevron" />
+                  </button>
+                  {uploadMenuOpen && (
+                    <div className="hf-candidate-upload-menu">
+                      <button
+                        type="button"
+                        className="hf-candidate-upload-option"
+                        onClick={onOpenParser}
+                      >
+                        Из pdf, docx, rtf и др.
+                      </button>
+                      <button
+                        type="button"
+                        className="hf-candidate-upload-option"
+                        onClick={() =>
+                          toast("Импорт кандидатов из xlsx пока недоступен в HR-bot")
+                        }
+                      >
+                        Из xlsx
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="hf-candidate-close-btn"
+            aria-label="Закрыть"
+          >
+            <HuntflowClose28Icon className="hf-candidate-close-icon" />
+          </button>
         </div>
 
-        <div className="space-y-3">
-          <EditField label="ФИО" value={name} onChange={setName} required
-            error={touched.name ? errors.name : null} onBlur={() => markTouched('name')} />
-          <EditField label="Телефон" value={phone} onChange={setPhone} placeholder="+7 999 123 4567" type="tel"
-            error={touched.phone ? errors.phone : null} onBlur={() => markTouched('phone')} />
-          <EditField label="Email" value={email} onChange={setEmail} placeholder="email@example.com" type="email"
-            error={touched.email ? errors.email : null} onBlur={() => markTouched('email')} />
-          <EditField label="Telegram" value={telegram} onChange={setTelegram} placeholder="@username"
-            error={touched.telegram ? errors.telegram : null} onBlur={() => markTouched('telegram')} />
-          <EditField label="Должность" value={position} onChange={setPosition} placeholder="Frontend Developer"
-            error={touched.position ? errors.position : null} onBlur={() => markTouched('position')} />
-          <EditField label="Компания" value={company} onChange={setCompany} placeholder="Google"
-            error={touched.company ? errors.company : null} onBlur={() => markTouched('company')} />
+        <div className="hf-candidate-modal-body">
+          <div className="hf-candidate-left-col">
+            <CandidateField
+              label="Фамилия"
+              value={lastName}
+              onChange={setLastName}
+              required
+              error={touched.name ? errors.name : null}
+              onBlur={() => markTouched("name")}
+              autoFocus
+            />
+            <CandidateField
+              label="Имя"
+              value={firstName}
+              onChange={setFirstName}
+              error={touched.name ? errors.name : null}
+              onBlur={() => markTouched("name")}
+            />
+            <CandidateField
+              label="Отчество"
+              value={middleName}
+              onChange={setMiddleName}
+              error={touched.name ? errors.name : null}
+              onBlur={() => markTouched("name")}
+            />
+            <CandidateField
+              label="Телефон"
+              value={phone}
+              onChange={setPhone}
+              type="tel"
+              error={touched.phone ? errors.phone : null}
+              onBlur={() => markTouched("phone")}
+            />
+            <CandidateField
+              label="Электронная почта"
+              value={email}
+              onChange={setEmail}
+              type="email"
+              error={touched.email ? errors.email : null}
+              onBlur={() => markTouched("email")}
+            />
+            <CandidateField
+              label="Telegram"
+              value={telegram}
+              onChange={setTelegram}
+              error={touched.telegram ? errors.telegram : null}
+              onBlur={() => markTouched("telegram")}
+            />
+            <CandidateField
+              label="Кем и где работает"
+              value={position}
+              onChange={setPosition}
+              placeholder="Должность"
+              error={touched.position ? errors.position : null}
+              onBlur={() => markTouched("position")}
+              compactGap
+            />
+            <CandidateField
+              label="Компания"
+              value={company}
+              onChange={setCompany}
+              placeholder="Компания"
+              error={touched.company ? errors.company : null}
+              hideLabel
+            />
+            <CandidateField
+              label="Зарплатные ожидания"
+              value={salary}
+              onChange={setSalary}
+            />
+            <CandidateField
+              label="Дата рождения"
+              value={birthDate}
+              onChange={setBirthDate}
+            />
+          </div>
+
+          <div className="hf-candidate-right-col">
+            <div className="hf-candidate-source-block">
+              <label className="hf-candidate-label">Источник</label>
+              <button
+                type="button"
+                className="hf-candidate-select-btn"
+                onClick={() => {
+                  setUploadMenuOpen(false);
+                  setSourceMenuOpen((value) => !value);
+                }}
+                aria-expanded={sourceMenuOpen}
+              >
+                <span
+                  className={clsx(
+                    "truncate",
+                    !source && "hf-candidate-select-placeholder",
+                  )}
+                >
+                  {source || "Источник"}
+                </span>
+                <HuntflowChevronDown24Icon className="hf-candidate-select-chevron" />
+              </button>
+              {sourceMenuOpen && (
+                <div className="hf-candidate-source-menu">
+                  <div className="hf-candidate-source-search">
+                    <Search className="hf-candidate-source-search-icon" />
+                    <input
+                      value={sourceSearch}
+                      onChange={(e) => setSourceSearch(e.target.value)}
+                      className="hf-candidate-source-search-input"
+                      placeholder="Поиск..."
+                      autoFocus
+                    />
+                  </div>
+                  <div className="hf-candidate-source-list">
+                    {filteredSources.length > 0 ? (
+                      filteredSources.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className="hf-candidate-source-option"
+                          onClick={() => {
+                            setSource(option);
+                            setSourceSearch("");
+                            setSourceMenuOpen(false);
+                          }}
+                        >
+                          {option}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="hf-candidate-source-empty">Ничего не найдено</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="hf-candidate-label">Текст резюме</label>
+              <textarea
+                value={resumeText}
+                onChange={(e) => setResumeText(e.target.value)}
+                className="hf-candidate-resume-textarea"
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-dark-400 hover:text-dark-200">Отмена</button>
+        <div className="hf-candidate-modal-footer">
           <button
             onClick={handleSave}
-            disabled={saving || hasErrors}
-            className="flex items-center gap-2 px-5 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={saving}
+            className="hf-candidate-primary-btn"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Сохранить
+            {saving ? (
+              <HfLoadingSpinner
+                size="var(--hf-loading-spinner-size-sm)"
+                stroke="var(--hf-loading-spinner-border)"
+              />
+            ) : "Сохранить"}
+          </button>
+          <button onClick={onClose} className="hf-candidate-secondary-btn">
+            Отмена
           </button>
         </div>
       </motion.div>
@@ -1692,7 +4533,19 @@ function EditCandidateModal({ card, onClose, onSaved }: {
   );
 }
 
-function EditField({ label, value, onChange, placeholder, type, required, error, onBlur }: {
+function CandidateField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type,
+  required,
+  error,
+  onBlur,
+  hideLabel,
+  compactGap,
+  autoFocus,
+}: {
   label: string;
   value: string;
   onChange: (v: string) => void;
@@ -1701,65 +4554,730 @@ function EditField({ label, value, onChange, placeholder, type, required, error,
   required?: boolean;
   error?: string | null;
   onBlur?: () => void;
+  hideLabel?: boolean;
+  compactGap?: boolean;
+  autoFocus?: boolean;
 }) {
   return (
-    <div>
-      <label className="block text-xs text-dark-500 mb-1">
-        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
+    <div className={clsx("hf-candidate-field", compactGap && "hf-candidate-field-compact")}>
+      {!hideLabel && (
+        <label className="hf-candidate-label">
+          {label}
+          {required && <span className="sr-only"> *</span>}
+        </label>
+      )}
       <input
-        type={type || 'text'}
+        type={type || "text"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
         placeholder={placeholder}
+        autoFocus={autoFocus}
         aria-invalid={!!error}
-        className={clsx(
-          'w-full px-3 py-2 bg-white/[0.03] border rounded-lg text-sm text-dark-200 placeholder-dark-600 focus:outline-none',
-          error
-            ? 'border-red-500/60 focus:border-red-500'
-            : 'border-white/[0.08] focus:border-accent-500/40'
-        )}
+        className={clsx("hf-candidate-input", error && "hf-candidate-input-error")}
       />
-      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+      {error && <p className="hf-candidate-error">{error}</p>}
     </div>
   );
 }
 
+type EditResumeDemoData = {
+  saved_at?: string;
+  vacancy_title?: string;
+  sections?: Array<{ title: string; lines?: string[] }>;
+};
+
+function buildEditResumeText(
+  card: KanbanCard,
+  resumeDemo?: EditResumeDemoData,
+): string {
+  if (!resumeDemo) return "";
+
+  return [
+    `Отклик на вакансию: «${resumeDemo.vacancy_title || card.vacancy_name || card.position || "Вакансия"}»`,
+    resumeDemo.saved_at ? formatResumeSaved(resumeDemo.saved_at) : "",
+    card.name,
+    card.position,
+    card.company,
+    formatPhoneForEdit(card.phone),
+    card.email,
+    card.telegram_username ? `telegram: @${card.telegram_username.replace(/^@/, "")}` : "",
+    card.city ? `Проживает: ${card.city}` : "",
+    card.salary ? `Зарплатные ожидания: ${card.salary}` : "",
+    ...(resumeDemo.sections || []).map(
+      (section) => `${section.title}\n${(section.lines || []).join("\n")}`,
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function EditCandidateModal({
+  card,
+  onClose,
+  onSaved,
+}: {
+  card: KanbanCard;
+  onClose: () => void;
+  onSaved: (updated: Partial<KanbanCard>) => void;
+}) {
+  const initialNameParts = card.name.trim().split(/\s+/);
+  const [lastName, setLastName] = useState(initialNameParts[0] || "");
+  const [firstName, setFirstName] = useState(initialNameParts[1] || "");
+  const [middleName, setMiddleName] = useState(
+    initialNameParts.slice(2).join(" "),
+  );
+  const [phone, setPhone] = useState(formatPhoneForEdit(card.phone));
+  const [email, setEmail] = useState(card.email || "");
+  const [telegram, setTelegram] = useState(card.telegram_username || "");
+  const [position, setPosition] = useState(card.position || "");
+  const [company, setCompany] = useState(card.company || "");
+  const [salary, setSalary] = useState(card.salary || "");
+  const [birthDate, setBirthDate] = useState(
+    (card.extra_data?.birth_date as string | undefined) || "",
+  );
+  const resumeDemo = card.extra_data?.resume_demo as
+    | EditResumeDemoData
+    | undefined;
+  const [resumeText, setResumeText] = useState(
+    buildEditResumeText(card, resumeDemo),
+  );
+  const [saving, setSaving] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const fullName = [lastName, firstName, middleName]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" ");
+
+  const errors = {
+    name: validateName(fullName),
+    phone: validatePhone(phone),
+    email: validateEmail(email),
+    telegram: validateTelegram(telegram),
+    position: validateFreeText(position, 200),
+    company: validateFreeText(company, 200),
+  };
+  const hasErrors = Object.values(errors).some((e) => e !== null);
+
+  const markTouched = (field: string) =>
+    setTouched((t) => ({ ...t, [field]: true }));
+
+  const handleSave = async () => {
+    setTouched({
+      name: true,
+      phone: true,
+      email: true,
+      telegram: true,
+      position: true,
+      company: true,
+    });
+    if (hasErrors) {
+      toast.error("Исправьте ошибки в форме");
+      return;
+    }
+    setSaving(true);
+    try {
+      const normalizedPhone = phone.trim() ? normalizePhone(phone) : undefined;
+      const cleanTelegram = telegram.trim().replace(/^@/, "");
+      await updateEntity(card.id, {
+        name: fullName,
+        phone: normalizedPhone,
+        email: email.trim() || undefined,
+        telegram_usernames: cleanTelegram ? [cleanTelegram] : undefined,
+        position: position.trim() || undefined,
+        company: company.trim() || undefined,
+      });
+      toast.success("Кандидат обновлён");
+      onSaved({
+        name: fullName,
+        phone: normalizedPhone,
+        email: email.trim() || undefined,
+        telegram_username: cleanTelegram || undefined,
+        position: position.trim() || undefined,
+        company: company.trim() || undefined,
+      });
+    } catch {
+      toast.error("Ошибка сохранения");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const resumeFileName =
+    (card.extra_data?.resume_file_name as string | undefined) ||
+    `${card.name}.pdf`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[var(--hf-edit-overlay-z)] flex items-start justify-center overflow-auto bg-[var(--hf-black-alpha-30)] pt-[var(--hf-edit-overlay-top)] font-hf-body"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.985, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.985, opacity: 0 }}
+        transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+        onClick={(e) => e.stopPropagation()}
+        className="mb-[var(--hf-space-xxl)] flex h-[var(--hf-edit-modal-h)] w-[var(--hf-edit-modal-w)] max-w-[var(--hf-edit-modal-max-w)] flex-col overflow-hidden rounded-[var(--hf-edit-modal-radius)] bg-transparent text-[length:var(--hf-fs-s)] leading-[var(--hf-edit-modal-lh)] text-[var(--hf-main-900)] shadow-none dark:text-[var(--hf-white)]"
+      >
+        <div className="relative flex h-[var(--hf-edit-header-h)] flex-shrink-0 items-start justify-between rounded-t-[var(--hf-edit-modal-radius)] border-b-[length:var(--hf-edit-header-border)] border-[var(--hf-ui-divider)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[var(--hf-space-xl)] pr-[var(--hf-edit-header-pr)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)]">
+          <div className="flex min-w-0 items-center gap-[var(--hf-space-l)]">
+            <div className="h-[var(--hf-edit-avatar)] w-[var(--hf-edit-avatar)] flex-shrink-0 overflow-hidden rounded-full bg-[var(--hf-bg-muted)]">
+              {card.photo_url ? (
+                <img
+                  src={card.photo_url}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-[length:var(--hf-fs-xxs)] font-medium text-[var(--hf-main-600)]">
+                  {getInitials(card.name)}
+                </div>
+              )}
+            </div>
+            <h3 className="truncate text-[length:var(--hf-edit-title-fs)] font-medium leading-[var(--hf-edit-title-lh)] tracking-normal text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+              {card.name}
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="absolute right-[var(--hf-edit-close-right)] top-[var(--hf-edit-close-top)] inline-flex h-[var(--hf-edit-close-h)] w-[var(--hf-edit-close-w)] flex-shrink-0 items-center justify-center rounded-[var(--hf-radius-s)] text-[var(--hf-ui-close)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-700)] dark:text-[color:var(--hf-white-alpha-70)] dark:hover:bg-[var(--hf-white-alpha-06)]"
+            aria-label="Закрыть"
+          >
+            <HuntflowClose28Icon className="h-[var(--hf-edit-close-icon)] w-[var(--hf-edit-close-icon)]" />
+          </button>
+        </div>
+
+        <div className="flex h-[var(--hf-edit-body-h)] flex-shrink-0 overflow-hidden bg-[var(--hf-white)] px-[var(--hf-space-xxl)] dark:bg-[var(--hf-bg-dark)]">
+          <div className="w-[var(--hf-edit-left-w)] flex-shrink-0 overflow-visible py-[var(--hf-edit-column-py)] pr-[var(--hf-space-xxl)]">
+            <EditField
+              label="Фамилия"
+              value={lastName}
+              onChange={setLastName}
+              required
+              error={touched.name ? errors.name : null}
+              onBlur={() => markTouched("name")}
+              autoFocus
+            />
+            <EditField
+              label="Имя"
+              value={firstName}
+              onChange={setFirstName}
+              error={touched.name ? errors.name : null}
+              onBlur={() => markTouched("name")}
+            />
+            <EditField
+              label="Отчество"
+              value={middleName}
+              onChange={setMiddleName}
+              error={touched.name ? errors.name : null}
+              onBlur={() => markTouched("name")}
+            />
+            <EditField
+              label="Телефон"
+              value={phone}
+              onChange={setPhone}
+              placeholder="+7 999 123 4567"
+              type="tel"
+              error={touched.phone ? errors.phone : null}
+              onBlur={() => markTouched("phone")}
+            />
+            <EditField
+              label="Электронная почта"
+              value={email}
+              onChange={setEmail}
+              placeholder="email@example.com"
+              type="email"
+              error={touched.email ? errors.email : null}
+              onBlur={() => markTouched("email")}
+            />
+            <EditField
+              label="Telegram"
+              value={telegram}
+              onChange={setTelegram}
+              placeholder="@username"
+              error={touched.telegram ? errors.telegram : null}
+              onBlur={() => markTouched("telegram")}
+            />
+            <EditField
+              label="Кем и где работает"
+              value={position}
+              onChange={setPosition}
+              placeholder="QA engineer"
+              error={touched.position ? errors.position : null}
+              onBlur={() => markTouched("position")}
+              compactGap
+            />
+            <EditField
+              label="Компания"
+              value={company}
+              onChange={setCompany}
+              placeholder="ООО"
+              error={touched.company ? errors.company : null}
+              onBlur={() => markTouched("company")}
+              hideLabel
+            />
+            <EditField
+              label="Зарплатные ожидания"
+              value={salary}
+              onChange={setSalary}
+              placeholder=""
+            />
+            <EditField
+              label="Дата рождения"
+              value={birthDate}
+              onChange={setBirthDate}
+              placeholder="17.12.1995"
+              clearable
+            />
+          </div>
+
+          <div className="min-w-0 flex-1 overflow-y-auto border-l border-[var(--hf-ui-divider)] py-[var(--hf-edit-column-py)] pl-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+            <div className="mb-[var(--hf-space-l)]">
+              <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-semibold leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+                Источник
+              </label>
+              <button
+                type="button"
+                className="flex h-[var(--hf-edit-field-h)] w-full items-center justify-between rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-[var(--hf-white)] px-[var(--hf-edit-field-px)] pr-[var(--hf-space-s)] text-left text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] text-[var(--hf-main-900)] transition-colors hover:border-[var(--hf-ui-border-strong)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-transparent dark:text-[var(--hf-white)]"
+              >
+                <span className="truncate">
+                  {card.source || "Другой источник"}
+                </span>
+                <HuntflowChevronDown24Icon className="h-[var(--hf-edit-source-icon)] w-[var(--hf-edit-source-icon)] flex-shrink-0 text-[var(--hf-main-900)]" />
+              </button>
+            </div>
+            <div>
+              <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-semibold leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+                Текст резюме
+              </label>
+              <textarea
+                value={resumeText}
+                onChange={(e) => setResumeText(e.target.value)}
+                className="h-[var(--hf-edit-resume-h)] w-full resize-none rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-transparent p-[var(--hf-space-l)] text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] tracking-normal text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-500)] focus:border-[var(--hf-cyan-500)] dark:border-[color:var(--hf-white-alpha-10)] dark:text-[var(--hf-white)]"
+                placeholder="Текст резюме"
+              />
+              <div className="mt-[var(--hf-edit-file-mt)] flex">
+                <button
+                  type="button"
+                  className="inline-flex h-[var(--hf-edit-file-h)] max-w-full items-center gap-[var(--hf-space-s)] rounded-full border border-[color:var(--hf-black-alpha-08)] bg-[var(--hf-white)] px-[var(--hf-space-s)] py-[var(--hf-space-xxs)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] shadow-[0_1px_1px_var(--hf-alpha-100)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-transparent dark:text-[var(--hf-white)]"
+                >
+                  <HuntflowClip18Icon className="h-[var(--hf-edit-file-icon)] w-[var(--hf-edit-file-icon)] flex-shrink-0" />
+                  <span className="min-w-[var(--hf-edit-file-name-min-w)] truncate font-medium">
+                    {resumeFileName}
+                  </span>
+                  <HuntflowXClose16Icon className="h-[var(--hf-edit-file-close-icon)] w-[var(--hf-edit-file-close-icon)] flex-shrink-0 text-[var(--hf-ui-muted-2)]" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex h-[var(--hf-edit-footer-h)] flex-shrink-0 items-center justify-between rounded-b-[var(--hf-edit-modal-radius)] border-t-[length:var(--hf-edit-footer-border)] border-[var(--hf-ui-divider)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[var(--hf-edit-footer-py)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)]">
+          <div className="flex items-center gap-[var(--hf-space-s)]">
+            <button
+              onClick={handleSave}
+              disabled={saving || hasErrors}
+              className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-save-min-w)] items-center justify-center rounded-[var(--hf-edit-btn-radius)] border-[length:var(--hf-edit-btn-border)] border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-semibold leading-[var(--hf-edit-btn-lh)] text-[var(--hf-white)] transition-colors duration-[100ms] hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:border-[var(--hf-btn-disabled-bg)] disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] dark:bg-[var(--hf-white)] dark:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-90)] dark:disabled:bg-[var(--hf-white-alpha-08)] dark:disabled:text-[color:var(--hf-white-alpha-35)]"
+            >
+              {saving ? (
+                <HfLoadingSpinner
+                  size="var(--hf-loading-spinner-size-sm)"
+                  stroke="var(--hf-loading-spinner-border)"
+                />
+              ) : "Сохранить"}
+            </button>
+            <button
+              onClick={onClose}
+              className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-cancel-min-w)] items-center rounded-[var(--hf-edit-btn-radius)] border border-[var(--hf-ui-divider)] bg-[var(--hf-white)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-04)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-transparent dark:text-[color:var(--hf-white-alpha-80)] dark:hover:bg-[var(--hf-white-alpha-06)]"
+            >
+              Отмена
+            </button>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-delete-min-w)] items-center rounded-[var(--hf-edit-btn-radius)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-ui-delete)] transition-colors hover:text-[var(--hf-red-500)]"
+          >
+            Удалить
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function EditField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type,
+  required,
+  error,
+  onBlur,
+  className,
+  hideLabel,
+  clearable,
+  compactGap,
+  autoFocus,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  required?: boolean;
+  error?: string | null;
+  onBlur?: () => void;
+  className?: string;
+  hideLabel?: boolean;
+  clearable?: boolean;
+  compactGap?: boolean;
+  autoFocus?: boolean;
+}) {
+  return (
+    <div className={clsx(compactGap ? "mb-[var(--hf-space-s)]" : "mb-[var(--hf-space-l)]", className)}>
+      {!hideLabel && (
+        <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-medium leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+          {label}
+          {required && <span className="sr-only"> *</span>}
+        </label>
+      )}
+      <div className="relative">
+        <input
+          type={type || "text"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
+          placeholder={placeholder}
+          autoFocus={autoFocus}
+          aria-invalid={!!error}
+          className={clsx(
+            "h-[var(--hf-edit-field-h)] w-full rounded-[var(--hf-edit-field-radius)] border bg-[var(--hf-white)] px-[var(--hf-edit-field-px)] pb-[var(--hf-border-xs)] text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] tracking-normal text-[var(--hf-main-900)] [align-items:center] placeholder:text-[var(--hf-main-500)] focus:outline-none dark:bg-transparent dark:text-[var(--hf-white)]",
+            clearable && value ? "pr-[var(--hf-edit-field-pr-clear)]" : "",
+            error
+              ? "border-[color:var(--hf-red-500)] focus:border-[var(--hf-red-500)]"
+              : "border-[color:var(--hf-black-alpha-16)] focus:border-[var(--hf-cyan-500)] dark:border-[color:var(--hf-white-alpha-10)] dark:focus:border-[var(--hf-cyan-500)]",
+          )}
+        />
+        {clearable && value && (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="absolute right-[var(--hf-edit-clear-offset)] top-[var(--hf-edit-clear-offset)] inline-flex h-[var(--hf-edit-clear-h)] w-[var(--hf-edit-clear-w)] items-center justify-center bg-transparent text-[var(--hf-ui-muted-1)]"
+            aria-label={`Очистить ${label}`}
+          >
+            <HuntflowRemoveIcon className="h-[var(--hf-edit-clear-icon)] w-[var(--hf-edit-clear-icon)] text-[var(--hf-ui-muted-7)]" />
+          </button>
+        )}
+      </div>
+      {error && (
+        <p className="mt-[var(--hf-space-xs)] text-[length:var(--hf-edit-error-fs)] leading-[var(--hf-edit-error-lh)] text-[var(--hf-red-500)]">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ================================================================
+// LIST SETTINGS MODAL (Huntflow user settings)
+// ================================================================
+
+function ListSettingsModal({ onClose }: { onClose: () => void }) {
+  const [scope, setScope] = useState<"mine" | "all">("mine");
+  const [fields, setFields] = useState({
+    name: true,
+    desiredPosition: false,
+    desiredSalary: false,
+    age: false,
+    experience: false,
+    lastPosition: true,
+    lastCompany: true,
+    source: false,
+    vacanciesCount: false,
+    tags: false,
+  });
+
+  const setField = (key: keyof typeof fields, checked: boolean) => {
+    if (key === "name") return;
+    setFields((prev) => ({ ...prev, [key]: checked }));
+  };
+
+  const handleSave = () => {
+    toast.success("Настройки списка сохранены");
+    onClose();
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[var(--hf-list-settings-z)] flex items-start justify-center bg-transparent pt-[var(--hf-list-settings-top)]"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: -8, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -8, scale: 0.985 }}
+        transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-[var(--hf-list-settings-w)] overflow-hidden rounded-[var(--hf-list-settings-radius)] bg-[var(--hf-white)] text-[var(--hf-main-900)] leading-[var(--hf-list-settings-lh)] dark:bg-[var(--hf-bg-dark)] dark:text-[var(--hf-white)]"
+      >
+        <div className="flex h-[var(--hf-list-settings-header-h)] items-center justify-between border-b border-[var(--hf-ui-divider)] px-[var(--hf-list-settings-x)] pr-[var(--hf-list-settings-x)] dark:border-[color:var(--hf-white-alpha-10)]">
+          <h3 className="text-[length:var(--hf-list-settings-title-fs)] font-medium leading-[var(--hf-list-settings-title-lh)] tracking-normal">
+            Настройка списков кандидатов
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-[var(--hf-list-settings-close)] w-[var(--hf-list-settings-close)] items-center justify-center rounded-[var(--hf-list-settings-close-radius)] text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-bg-panel)] hover:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-10)] dark:hover:text-[var(--hf-white)]"
+            aria-label="Закрыть"
+          >
+            <X className="h-[var(--hf-list-settings-close-icon)] w-[var(--hf-list-settings-close-icon)]" />
+          </button>
+        </div>
+
+        <div className="px-[var(--hf-list-settings-x)] py-[var(--hf-space-xxl)] leading-[var(--hf-list-settings-lh)]">
+          <section className="pb-[var(--hf-space-xxl)]">
+            <h4 className="mb-[var(--hf-list-settings-heading-mb)] text-[length:var(--hf-list-settings-heading-fs)] font-normal leading-[var(--hf-list-settings-heading-lh)] tracking-normal">
+              Показывать всех кандидатов на этапах
+            </h4>
+            <ListSettingRadio
+              label="Только по моим вакансиям"
+              checked={scope === "mine"}
+              onChange={() => setScope("mine")}
+            />
+            <ListSettingRadio
+              label="По всем открытым вакансиям"
+              checked={scope === "all"}
+              onChange={() => setScope("all")}
+              className="mt-[var(--hf-space-xs)]"
+            />
+          </section>
+
+          <section className="border-t border-[var(--hf-ui-divider)] pt-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+            <h4 className="mb-[var(--hf-list-settings-heading-mb-sm)] text-[length:var(--hf-list-settings-heading-fs)] font-normal leading-[var(--hf-list-settings-heading-lh)] tracking-normal">
+              Отображать в списках кандидатов
+            </h4>
+            <ListSettingCheckbox
+              label="ФИО кандидата"
+              checked={fields.name}
+              disabled
+              onChange={(value) => setField("name", value)}
+            />
+            <ListSettingCheckbox
+              label="Желаемая должность"
+              checked={fields.desiredPosition}
+              onChange={(value) => setField("desiredPosition", value)}
+            />
+            <ListSettingCheckbox
+              label="Желаемая зарплата"
+              checked={fields.desiredSalary}
+              onChange={(value) => setField("desiredSalary", value)}
+            />
+            <ListSettingCheckbox
+              label="Возраст и дата рождения"
+              checked={fields.age}
+              onChange={(value) => setField("age", value)}
+            />
+            <ListSettingCheckbox
+              label="Общий стаж"
+              checked={fields.experience}
+              onChange={(value) => setField("experience", value)}
+            />
+            <ListSettingCheckbox
+              label="Должность на последнем месте работы"
+              checked={fields.lastPosition}
+              onChange={(value) => setField("lastPosition", value)}
+            />
+            <ListSettingCheckbox
+              label="Последнее место работы"
+              checked={fields.lastCompany}
+              onChange={(value) => setField("lastCompany", value)}
+            />
+            <ListSettingCheckbox
+              label="Источник"
+              checked={fields.source}
+              onChange={(value) => setField("source", value)}
+            />
+            <ListSettingCheckbox
+              label="Число вакансий, на которых кандидат в работе"
+              checked={fields.vacanciesCount}
+              onChange={(value) => setField("vacanciesCount", value)}
+            />
+            <ListSettingCheckbox
+              label="Метки"
+              checked={fields.tags}
+              onChange={(value) => setField("tags", value)}
+            />
+          </section>
+        </div>
+
+        <div className="flex h-[var(--hf-list-settings-footer-h)] items-center gap-[var(--hf-space-s)] border-t border-[var(--hf-ui-divider)] px-[var(--hf-list-settings-x)] py-[var(--hf-edit-footer-py)] dark:border-[color:var(--hf-white-alpha-10)]">
+          <button
+            type="button"
+            onClick={handleSave}
+            className="inline-flex h-[var(--hf-edit-btn-h)] items-center justify-center rounded-[var(--hf-edit-btn-radius)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] active:bg-[var(--hf-black)] disabled:cursor-not-allowed disabled:!bg-[var(--hf-btn-disabled-bg)] disabled:!text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:!bg-[var(--hf-btn-disabled-bg)] dark:disabled:!bg-[var(--hf-white-alpha-08)] dark:disabled:!text-[color:var(--hf-white-alpha-35)]"
+          >
+            Сохранить
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-cancel-min-w)] items-center justify-center rounded-[var(--hf-edit-btn-radius)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)] active:bg-[var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-white-alpha-05)] dark:text-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+          >
+            Отмена
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function ListSettingCheckbox({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      className={clsx(
+        "mb-[var(--hf-space-s)] flex h-[var(--hf-list-settings-option-h)] w-max items-center gap-[var(--hf-list-settings-option-gap)] text-[length:var(--hf-list-settings-option-fs)] font-normal leading-[var(--hf-list-settings-option-lh)] last:mb-0",
+        disabled
+          ? "cursor-default text-[var(--hf-main-600)]"
+          : "cursor-pointer text-[var(--hf-main-900)] dark:text-[var(--hf-white)]",
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="peer sr-only"
+      />
+      <span
+        className={clsx(
+          "relative inline-flex h-[var(--hf-list-settings-check)] w-[var(--hf-list-settings-check)] flex-shrink-0 items-center justify-center rounded-[var(--hf-list-settings-check-radius)] border",
+          disabled && checked
+            ? "border-[var(--hf-main-400)] bg-[var(--hf-main-400)]"
+            : checked
+              ? "border-[var(--hf-cyan-600)] bg-[var(--hf-cyan-600)]"
+              : "border-[var(--hf-main-300)] bg-[var(--hf-white)]",
+        )}
+        aria-hidden="true"
+      >
+        {checked ? (
+          <svg
+            viewBox="0 0 12 12"
+            className="h-[var(--hf-list-settings-check-icon)] w-[var(--hf-list-settings-check-icon)] text-[var(--hf-white)]"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M2.4 6.2 4.8 8.5 9.7 3.5"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : null}
+      </span>
+      {label}
+    </label>
+  );
+}
+
+function ListSettingRadio({
+  label,
+  checked,
+  onChange,
+  className,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: () => void;
+  className?: string;
+}) {
+  return (
+    <label
+      className={clsx(
+        "flex h-[var(--hf-list-settings-option-h)] w-max cursor-pointer items-center gap-[var(--hf-list-settings-option-gap)] text-[length:var(--hf-list-settings-option-fs)] leading-[var(--hf-list-settings-option-lh)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]",
+        className,
+      )}
+    >
+      <input
+        type="radio"
+        checked={checked}
+        onChange={onChange}
+        className="peer sr-only"
+      />
+      <span
+        className="relative inline-flex h-[var(--hf-list-settings-check)] w-[var(--hf-list-settings-check)] flex-shrink-0 items-center justify-center rounded-full border border-[var(--hf-main-300)] bg-[var(--hf-white)] peer-checked:border-[var(--hf-cyan-600)]"
+        aria-hidden="true"
+      >
+        {checked ? (
+          <span className="h-[var(--hf-list-settings-dot)] w-[var(--hf-list-settings-dot)] rounded-full bg-[var(--hf-cyan-600)]" />
+        ) : null}
+      </span>
+      {label}
+    </label>
+  );
+}
 
 // ================================================================
 // STAGE SETTINGS MODAL (admin only)
 // ================================================================
 
-function StageSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved?: () => void }) {
-  const [stages, setStages] = useState<Array<{ key: string; label: string; color: string }>>([]);
+function StageSettingsModal({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved?: () => void;
+}) {
+  const [stages, setStages] = useState<
+    Array<{ key: string; label: string; color: string }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     getOrgStages()
       .then((r) => setStages(r.stages))
-      .catch(() => toast.error('Не удалось загрузить настройки'))
+      .catch(() => toast.error("Не удалось загрузить настройки"))
       .finally(() => setLoading(false));
   }, []);
 
   const handleSave = async () => {
     if (stages.some((s) => !s.label.trim())) {
-      toast.error('Названия этапов не могут быть пустыми');
+      toast.error("Названия этапов не могут быть пустыми");
       return;
     }
     setSaving(true);
     try {
-      await updateOrgStages(stages.map((s) => ({
-        key: s.key,
-        label: s.label.trim(),
-        color: s.color,
-      })));
-      toast.success('Этапы сохранены');
+      await updateOrgStages(
+        stages.map((s) => ({
+          key: s.key,
+          label: s.label.trim(),
+          color: s.color,
+        })),
+      );
+      toast.success("Этапы сохранены");
       onSaved?.();
       onClose();
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || 'Не удалось сохранить';
+      const msg = err?.response?.data?.detail || "Не удалось сохранить";
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -1768,61 +5286,109 @@ function StageSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved
 
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-30)]"
       onClick={onClose}
     >
       <motion.div
-        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-dark-800 border border-white/10 rounded-xl w-full max-w-lg p-6 shadow-2xl"
+        className="flex max-h-[92vh] w-full max-w-[672px] flex-col overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-bg-muted)] shadow-[0_18px_60px_var(--hf-black-alpha-30)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)]"
       >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-bold text-dark-100">Настройка этапов</h3>
-          <button onClick={onClose} className="text-dark-400 hover:text-dark-200"><X className="w-5 h-5" /></button>
+        <div className="flex h-[68px] flex-shrink-0 items-center justify-between border-b border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+          <div className="flex items-center gap-[12px]">
+            <span className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] bg-[var(--hf-white)] text-[var(--hf-cyan-500)] shadow-[0_1px_2px_var(--hf-alpha-100)] dark:bg-[var(--hf-white-alpha-10)]">
+              <ShieldCheck className="h-[20px] w-[20px]" />
+            </span>
+            <h3 className="text-[20px] font-semibold leading-[var(--hf-lh-h2)] text-[var(--hf-ui-text-strong)] dark:text-[var(--hf-white)]">
+              Настройка этапов
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] text-[var(--hf-ui-text-strong)] transition-colors hover:bg-[var(--hf-black-alpha-04)] dark:text-[color:var(--hf-white-alpha-70)] dark:hover:bg-[var(--hf-white-alpha-06)]"
+            aria-label="Закрыть"
+          >
+            <X className="h-[22px] w-[22px]" />
+          </button>
         </div>
-        <p className="text-xs text-dark-500 mb-4">
-          Настройте названия и цвета этапов воронки. Применится ко всей организации.
-        </p>
-        {loading ? (
-          <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-accent-400" /></div>
-        ) : (
-          <>
-            <div className="space-y-1.5 mb-6">
+        <div className="overflow-y-auto px-[var(--hf-space-xxl)] py-[var(--hf-space-l)]">
+          <p className="mb-[16px] text-[length:var(--hf-fs-2xs)] leading-[18px] text-[var(--hf-ui-text-muted)] dark:text-[color:var(--hf-white-alpha-50)]">
+            Настройте названия и цвета этапов воронки. Применится ко всей
+            организации.
+          </p>
+          {loading ? (
+            <div className="space-y-[8px] py-[var(--hf-space-s)]">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <HfSkeletonBlock
+                  key={index}
+                  className="h-[48px] w-full rounded-[var(--hf-radius-s)]"
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-[8px]">
               {stages.map((s, i) => (
-                <div key={s.key} className="flex items-center gap-3 p-2.5 bg-white/[0.02] rounded-lg border border-white/[0.05]">
-                  <GripVertical className="w-4 h-4 text-dark-600 cursor-grab" />
+                <div
+                  key={s.key}
+                  className="flex h-[48px] items-center gap-[10px] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-transparent px-[10px] transition-colors hover:border-[var(--hf-ui-border-hover)] dark:border-[color:var(--hf-white-alpha-10)] dark:hover:border-[color:var(--hf-white-alpha-20)]"
+                >
+                  <GripVertical className="h-[16px] w-[16px] cursor-grab text-[var(--hf-main-600)]" />
                   <input
                     type="color"
                     value={s.color}
                     disabled={saving}
-                    onChange={(e) => setStages((p) => p.map((x, j) => (j === i ? { ...x, color: e.target.value } : x)))}
-                    className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent"
+                    onChange={(e) =>
+                      setStages((p) =>
+                        p.map((x, j) =>
+                          j === i ? { ...x, color: e.target.value } : x,
+                        ),
+                      )
+                    }
+                    className="h-[28px] w-[28px] cursor-pointer rounded border-0 bg-transparent disabled:opacity-50"
                   />
                   <input
                     type="text"
                     value={s.label}
                     disabled={saving}
-                    onChange={(e) => setStages((p) => p.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
-                    className="flex-1 bg-transparent text-sm text-dark-200 focus:outline-none"
+                    onChange={(e) =>
+                      setStages((p) =>
+                        p.map((x, j) =>
+                          j === i ? { ...x, label: e.target.value } : x,
+                        ),
+                      )
+                    }
+                    className="h-full flex-1 bg-transparent text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-ui-text-strong)] focus:outline-none disabled:opacity-50 dark:text-[var(--hf-white)]"
                   />
-                  <span className="text-[10px] text-dark-600 font-mono">{s.key}</span>
+                  <span className="font-mono text-[length:var(--hf-fs-4xs)] text-[var(--hf-main-600)]">
+                    {s.key}
+                  </span>
                 </div>
               ))}
             </div>
-            <div className="flex justify-end gap-3">
-              <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-dark-400 hover:text-dark-200 disabled:opacity-50">Отмена</button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-2 px-5 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                {saving ? 'Сохраняем…' : 'Сохранить'}
-              </button>
-            </div>
-          </>
-        )}
+          )}
+        </div>
+        <div className="flex h-[72px] flex-shrink-0 items-center justify-end gap-[12px] border-t border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="inline-flex h-[40px] items-center rounded-[var(--hf-radius-s)] px-[var(--hf-space-xxl)] text-[length:var(--hf-fs-xs)] font-medium text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] disabled:opacity-50 dark:text-[color:var(--hf-white-alpha-55)] dark:hover:bg-[var(--hf-white-alpha-06)] dark:hover:text-[var(--hf-white)]"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] bg-[var(--hf-main-900)] px-[18px] text-[length:var(--hf-fs-xs)] font-semibold text-[var(--hf-white)] transition-colors duration-[100ms] hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] dark:bg-[var(--hf-white)] dark:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-90)] dark:disabled:bg-[var(--hf-white-alpha-08)] dark:disabled:text-[color:var(--hf-white-alpha-35)]"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? "Сохраняем…" : "Сохранить"}
+          </button>
+        </div>
       </motion.div>
     </motion.div>
   );

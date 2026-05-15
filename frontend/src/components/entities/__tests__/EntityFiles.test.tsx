@@ -380,9 +380,9 @@ describe('EntityFiles', () => {
           },
         });
 
-        // Should have highlighted state (border-blue-500)
+        // Should have highlighted state (border-[color:var(--hf-cyan-500)])
         await waitFor(() => {
-          expect(dropZone.className).toContain('border-blue-500');
+          expect(dropZone.className).toContain('border-[color:var(--hf-cyan-500)]');
         });
       }
     });

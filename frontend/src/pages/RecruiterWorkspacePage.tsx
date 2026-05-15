@@ -28,18 +28,18 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badge: string }> = {
-  applied:      { bg: 'bg-blue-500/10',   text: 'text-blue-400',    dot: 'bg-blue-400',    badge: 'bg-blue-500/15 text-blue-400' },
-  screening:    { bg: 'bg-cyan-500/10',    text: 'text-cyan-400',    dot: 'bg-cyan-400',    badge: 'bg-cyan-500/15 text-cyan-400' },
-  phone_screen: { bg: 'bg-purple-500/10',  text: 'text-purple-400',  dot: 'bg-purple-400',  badge: 'bg-purple-500/15 text-purple-400' },
-  interview:    { bg: 'bg-indigo-500/10',  text: 'text-indigo-400',  dot: 'bg-indigo-400',  badge: 'bg-indigo-500/15 text-indigo-400' },
-  assessment:   { bg: 'bg-orange-500/10',  text: 'text-orange-400',  dot: 'bg-orange-400',  badge: 'bg-orange-500/15 text-orange-400' },
-  offer:        { bg: 'bg-yellow-500/10',  text: 'text-yellow-400',  dot: 'bg-yellow-400',  badge: 'bg-yellow-500/15 text-yellow-400' },
-  hired:        { bg: 'bg-green-500/10',   text: 'text-green-400',   dot: 'bg-green-400',   badge: 'bg-green-500/15 text-green-400' },
-  rejected:     { bg: 'bg-red-500/10',     text: 'text-red-400',     dot: 'bg-red-400',     badge: 'bg-red-500/15 text-red-400' },
-  withdrawn:    { bg: 'bg-gray-500/10',    text: 'text-gray-400',    dot: 'bg-gray-400',    badge: 'bg-gray-500/15 text-gray-400' },
+  applied:      { bg: 'bg-[var(--hf-status-blue-bg)]',   text: 'text-[var(--hf-status-blue)]',    dot: 'bg-[var(--hf-status-blue)]',    badge: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]' },
+  screening:    { bg: 'bg-[var(--hf-status-cyan-bg)]',    text: 'text-[var(--hf-cyan-400)]',    dot: 'bg-[var(--hf-status-cyan)]',    badge: 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-cyan-400)]' },
+  phone_screen: { bg: 'bg-[var(--hf-status-purple-bg)]',  text: 'text-[var(--hf-status-purple)]',  dot: 'bg-[var(--hf-status-purple)]',  badge: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]' },
+  interview:    { bg: 'bg-[var(--hf-status-indigo-bg)]',  text: 'text-[var(--hf-status-indigo)]',  dot: 'bg-[var(--hf-status-indigo)]',  badge: 'bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)]' },
+  assessment:   { bg: 'bg-[var(--hf-status-orange-bg)]',  text: 'text-[var(--hf-status-orange)]',  dot: 'bg-[var(--hf-status-orange)]',  badge: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]' },
+  offer:        { bg: 'bg-[var(--hf-status-yellow-bg)]',  text: 'text-[var(--hf-status-yellow)]',  dot: 'bg-[var(--hf-status-yellow)]',  badge: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
+  hired:        { bg: 'bg-[var(--hf-status-green-bg)]',   text: 'text-[var(--hf-status-green)]',   dot: 'bg-[var(--hf-status-green)]',   badge: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' },
+  rejected:     { bg: 'bg-[var(--hf-status-red-bg)]',     text: 'text-[var(--hf-status-red)]',     dot: 'bg-[var(--hf-status-red)]',     badge: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]' },
+  withdrawn:    { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
 };
 
-const fallbackColor = { bg: 'bg-dark-400/10', text: 'text-dark-300', dot: 'bg-dark-400', badge: 'bg-dark-400/15 text-dark-300' };
+const fallbackColor = { bg: 'bg-[var(--hf-white-alpha-10)]', text: 'text-[var(--hf-dark-300)]', dot: 'bg-[var(--hf-dark-400)]', badge: 'bg-[var(--hf-white-alpha-15)] text-[var(--hf-dark-300)]' };
 
 // --------------- types ---------------
 
@@ -255,12 +255,12 @@ export default function RecruiterWorkspacePage() {
   return (
     <div className="h-full flex overflow-hidden">
       {/* ========== LEFT SIDEBAR ========== */}
-      <aside className="w-[260px] flex-shrink-0 border-r border-white/[0.06] bg-white/[0.01] flex flex-col overflow-hidden">
+      <aside className="w-[260px] flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] flex flex-col overflow-hidden">
         {/* Sidebar header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-          <span className="text-xs font-semibold text-dark-400 uppercase tracking-wider">Spaces</span>
-          <button className="p-1 hover:bg-white/[0.06] rounded transition-colors" title="Добавить">
-            <Plus className="w-3.5 h-3.5 text-dark-400" />
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--hf-white-alpha-06)]">
+          <span className="text-xs font-semibold text-[var(--hf-dark-400)] uppercase tracking-wider">Spaces</span>
+          <button className="p-1 hover:bg-[var(--hf-white-alpha-06)] rounded transition-colors" title="Добавить">
+            <Plus className="w-3.5 h-3.5 text-[var(--hf-dark-400)]" />
           </button>
         </div>
 
@@ -268,10 +268,10 @@ export default function RecruiterWorkspacePage() {
         <div className="flex-1 overflow-y-auto py-1">
           {sidebarLoading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="w-5 h-5 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-5 h-5 border-2 border-[var(--hf-accent)] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : spaces.length === 0 ? (
-            <div className="px-4 py-8 text-center text-dark-500 text-xs">
+            <div className="px-4 py-8 text-center text-[var(--hf-dark-500)] text-xs">
               Нет рекрутеров
             </div>
           ) : (
@@ -280,18 +280,18 @@ export default function RecruiterWorkspacePage() {
                 {/* Space (folder) header */}
                 <button
                   onClick={() => toggleSpace(space.recruiterId)}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-white/[0.04] transition-colors group"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--hf-white-alpha-04)] transition-colors group"
                 >
                   {space.expanded ? (
-                    <ChevronDown className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" />
+                    <ChevronDown className="w-3.5 h-3.5 text-[var(--hf-dark-500)] flex-shrink-0" />
                   ) : (
-                    <ChevronRight className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" />
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--hf-dark-500)] flex-shrink-0" />
                   )}
-                  <FolderOpen className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                  <span className="text-sm text-dark-200 truncate flex-1 text-left font-medium">
+                  <FolderOpen className="w-4 h-4 text-[var(--hf-status-purple)] flex-shrink-0" />
+                  <span className="text-sm text-[var(--hf-dark-200)] truncate flex-1 text-left font-medium">
                     {space.name}
                   </span>
-                  <span className="text-[10px] text-dark-500 flex-shrink-0">
+                  <span className="text-[10px] text-[var(--hf-dark-500)] flex-shrink-0">
                     {space.vacancies.length}
                   </span>
                 </button>
@@ -300,7 +300,7 @@ export default function RecruiterWorkspacePage() {
                 {space.expanded && (
                   <div className="ml-3">
                     {space.vacancies.length === 0 ? (
-                      <div className="px-6 py-2 text-xs text-dark-500">Нет воронок</div>
+                      <div className="px-6 py-2 text-xs text-[var(--hf-dark-500)]">Нет воронок</div>
                     ) : (
                       space.vacancies.map((v) => {
                         const isSelected = selectedVacancyId === v.id && selectedRecruiterId === space.recruiterId;
@@ -311,15 +311,15 @@ export default function RecruiterWorkspacePage() {
                             className={clsx(
                               'w-full flex items-center gap-2 pl-6 pr-3 py-1.5 text-left transition-colors',
                               isSelected
-                                ? 'bg-accent-500/10 text-accent-400'
-                                : 'hover:bg-white/[0.04] text-dark-300',
+                                ? 'bg-[var(--hf-accent-bg-10)] text-[var(--hf-accent)]'
+                                : 'hover:bg-[var(--hf-white-alpha-04)] text-[var(--hf-dark-300)]',
                             )}
                           >
                             <Briefcase className="w-3.5 h-3.5 flex-shrink-0 opacity-60" />
                             <span className="text-sm truncate flex-1">{v.title}</span>
                             <span className={clsx(
                               'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
-                              isSelected ? 'bg-accent-500/20 text-accent-400' : 'bg-white/[0.06] text-dark-400',
+                              isSelected ? 'bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)]' : 'bg-[var(--hf-white-alpha-06)] text-[var(--hf-dark-400)]',
                             )}>
                               {v.candidate_count}
                             </span>
@@ -338,23 +338,23 @@ export default function RecruiterWorkspacePage() {
       {/* ========== MAIN CONTENT ========== */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {!selectedVacancy ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-dark-500">
+          <div className="flex-1 flex flex-col items-center justify-center text-[var(--hf-dark-500)]">
             <Briefcase className="w-12 h-12 mb-3 opacity-30" />
             <p className="text-sm">Выберите воронку в меню слева</p>
           </div>
         ) : (
           <>
             {/* Top bar: breadcrumb + view tabs */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] bg-white/[0.01]">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)]">
               {/* Breadcrumb */}
               <div className="flex items-center gap-1.5 text-sm min-w-0">
-                <span className="text-dark-500">HR отдел</span>
-                <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0" />
-                <span className="text-dark-400 truncate max-w-[180px]">
+                <span className="text-[var(--hf-dark-500)]">HR отдел</span>
+                <ChevronRight className="w-3.5 h-3.5 text-[var(--hf-dark-600)] flex-shrink-0" />
+                <span className="text-[var(--hf-dark-400)] truncate max-w-[180px]">
                   {selectedSpace?.name}
                 </span>
-                <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0" />
-                <span className="text-dark-200 font-medium truncate max-w-[200px]">
+                <ChevronRight className="w-3.5 h-3.5 text-[var(--hf-dark-600)] flex-shrink-0" />
+                <span className="text-[var(--hf-dark-200)] font-medium truncate max-w-[200px]">
                   {selectedVacancy.title}
                 </span>
               </div>
@@ -362,21 +362,21 @@ export default function RecruiterWorkspacePage() {
               {/* View tabs + search */}
               <div className="flex items-center gap-3 flex-shrink-0">
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--hf-dark-500)]" />
                   <input
                     type="text"
                     placeholder="Поиск..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
+                    className="w-44 pl-8 pr-3 py-1.5 bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-06)] rounded-lg text-xs text-[var(--hf-dark-200)] placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[color:var(--hf-accent-border-40)]"
                   />
                 </div>
-                <div className="flex items-center bg-white/[0.03] rounded-lg border border-white/[0.06] p-0.5">
+                <div className="flex items-center bg-[var(--hf-white-alpha-03)] rounded-lg border border-[color:var(--hf-white-alpha-06)] p-0.5">
                   <button
                     onClick={() => setView('list')}
                     className={clsx(
                       'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                      view === 'list' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
+                      view === 'list' ? 'bg-[var(--hf-accent-bg-15)] text-[var(--hf-accent)]' : 'text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]',
                     )}
                   >
                     <LayoutList className="w-3.5 h-3.5" />
@@ -386,7 +386,7 @@ export default function RecruiterWorkspacePage() {
                     onClick={() => setView('board')}
                     className={clsx(
                       'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors',
-                      view === 'board' ? 'bg-accent-500/15 text-accent-400' : 'text-dark-400 hover:text-dark-200',
+                      view === 'board' ? 'bg-[var(--hf-accent-bg-15)] text-[var(--hf-accent)]' : 'text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]',
                     )}
                   >
                     <Columns3 className="w-3.5 h-3.5" />
@@ -400,13 +400,13 @@ export default function RecruiterWorkspacePage() {
             <div className="flex-1 overflow-y-auto">
               {contentLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-[var(--hf-accent)] border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : view === 'list' ? (
                 /* ===== LIST VIEW: grouped by stage ===== */
                 <div className="px-5 py-3 space-y-1">
                   {groupedByStage.length === 0 ? (
-                    <div className="text-center py-16 text-dark-500 text-sm">
+                    <div className="text-center py-16 text-[var(--hf-dark-500)] text-sm">
                       {searchQuery ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
                     </div>
                   ) : (
@@ -441,7 +441,7 @@ export default function RecruiterWorkspacePage() {
                           {!collapsed && (
                             <div className="mt-0.5">
                               {/* Column headers */}
-                              <div className="grid grid-cols-[1fr_120px_100px_140px_120px] gap-2 px-3 py-1.5 text-[11px] text-dark-500 font-medium uppercase tracking-wide">
+                              <div className="grid grid-cols-[1fr_120px_100px_140px_120px] gap-2 px-3 py-1.5 text-[11px] text-[var(--hf-dark-500)] font-medium uppercase tracking-wide">
                                 <span>Имя</span>
                                 <span>Статус</span>
                                 <span>Дата</span>
@@ -453,14 +453,14 @@ export default function RecruiterWorkspacePage() {
                                 <div
                                   key={`${c.id}-${c.vacancy_id}`}
                                   onClick={() => navigate(`/all-candidates?entity=${c.id}`)}
-                                  className="grid grid-cols-[1fr_120px_100px_140px_120px] gap-2 px-3 py-2 hover:bg-white/[0.03] rounded-lg cursor-pointer transition-colors border-b border-white/[0.03] last:border-b-0 group"
+                                  className="grid grid-cols-[1fr_120px_100px_140px_120px] gap-2 px-3 py-2 hover:bg-[var(--hf-white-alpha-03)] rounded-lg cursor-pointer transition-colors border-b border-[color:var(--hf-white-alpha-03)] last:border-b-0 group"
                                 >
                                   {/* Name */}
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
+                                    <div className="w-6 h-6 rounded-full bg-[var(--hf-accent-bg-10)] flex items-center justify-center text-[10px] text-[var(--hf-accent)] font-medium flex-shrink-0">
                                       {c.name.charAt(0).toUpperCase()}
                                     </div>
-                                    <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors">
+                                    <span className="text-sm text-[var(--hf-dark-100)] truncate group-hover:text-[var(--hf-accent)] transition-colors">
                                       {c.name}
                                     </span>
                                   </div>
@@ -471,22 +471,22 @@ export default function RecruiterWorkspacePage() {
                                     </span>
                                   </div>
                                   {/* Date */}
-                                  <span className="text-xs text-dark-400 flex items-center">
+                                  <span className="text-xs text-[var(--hf-dark-400)] flex items-center">
                                     {formatDate(c.applied_at)}
                                   </span>
                                   {/* Telegram */}
-                                  <span className="text-xs text-dark-400 truncate flex items-center">
+                                  <span className="text-xs text-[var(--hf-dark-400)] truncate flex items-center">
                                     {c.telegram ? `@${c.telegram}` : ''}
                                   </span>
                                   {/* Source */}
-                                  <span className="text-xs text-dark-400 truncate flex items-center">
+                                  <span className="text-xs text-[var(--hf-dark-400)] truncate flex items-center">
                                     {c.source || ''}
                                   </span>
                                 </div>
                               ))}
 
                               {/* Add candidate row */}
-                              <button className="flex items-center gap-2 px-3 py-2 text-xs text-dark-500 hover:text-dark-300 transition-colors w-full">
+                              <button className="flex items-center gap-2 px-3 py-2 text-xs text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)] transition-colors w-full">
                                 <Plus className="w-3.5 h-3.5" />
                                 <span>Добавить кандидата</span>
                               </button>
@@ -501,7 +501,7 @@ export default function RecruiterWorkspacePage() {
                 /* ===== BOARD VIEW (kanban-style columns) ===== */
                 <div className="flex gap-3 px-5 py-3 overflow-x-auto h-full">
                   {groupedByStage.length === 0 ? (
-                    <div className="flex-1 flex items-center justify-center text-dark-500 text-sm">
+                    <div className="flex-1 flex items-center justify-center text-[var(--hf-dark-500)] text-sm">
                       {searchQuery ? 'Ничего не найдено' : 'Нет кандидатов в этой воронке'}
                     </div>
                   ) : (
@@ -510,10 +510,10 @@ export default function RecruiterWorkspacePage() {
                       return (
                         <div
                           key={stage}
-                          className="w-[280px] flex-shrink-0 flex flex-col bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-hidden"
+                          className="w-[280px] flex-shrink-0 flex flex-col bg-[var(--hf-white-alpha-02)] rounded-xl border border-[color:var(--hf-white-alpha-06)] overflow-hidden"
                         >
                           {/* Column header */}
-                          <div className={clsx('flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]', colors.bg)}>
+                          <div className={clsx('flex items-center gap-2 px-3 py-2.5 border-b border-[color:var(--hf-white-alpha-06)]', colors.bg)}>
                             <span className={clsx('w-2 h-2 rounded-full', colors.dot)} />
                             <span className={clsx('text-sm font-semibold', colors.text)}>
                               {STAGE_LABELS[stage] || stage}
@@ -529,22 +529,22 @@ export default function RecruiterWorkspacePage() {
                               <div
                                 key={`${c.id}-${c.vacancy_id}`}
                                 onClick={() => navigate(`/all-candidates?entity=${c.id}`)}
-                                className="glass-card rounded-lg p-3 cursor-pointer hover:border-accent-500/30 transition-all group"
+                                className="glass-card rounded-lg p-3 cursor-pointer hover:border-[color:var(--hf-accent-border-30)] transition-all group"
                               >
                                 <div className="flex items-center gap-2 mb-2">
-                                  <div className="w-6 h-6 rounded-full bg-accent-500/10 flex items-center justify-center text-[10px] text-accent-400 font-medium flex-shrink-0">
+                                  <div className="w-6 h-6 rounded-full bg-[var(--hf-accent-bg-10)] flex items-center justify-center text-[10px] text-[var(--hf-accent)] font-medium flex-shrink-0">
                                     {c.name.charAt(0).toUpperCase()}
                                   </div>
-                                  <span className="text-sm text-dark-100 truncate group-hover:text-accent-400 transition-colors font-medium">
+                                  <span className="text-sm text-[var(--hf-dark-100)] truncate group-hover:text-[var(--hf-accent)] transition-colors font-medium">
                                     {c.name}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-2 text-[11px] text-dark-400">
+                                <div className="flex items-center gap-2 text-[11px] text-[var(--hf-dark-400)]">
                                   {c.telegram && <span>@{c.telegram}</span>}
                                   {c.source && <span className="ml-auto">{c.source}</span>}
                                 </div>
                                 {c.applied_at && (
-                                  <div className="text-[10px] text-dark-500 mt-1.5">
+                                  <div className="text-[10px] text-[var(--hf-dark-500)] mt-1.5">
                                     {formatDate(c.applied_at)}
                                   </div>
                                 )}
@@ -553,7 +553,7 @@ export default function RecruiterWorkspacePage() {
                           </div>
 
                           {/* Add candidate button */}
-                          <button className="flex items-center gap-1.5 px-3 py-2 text-xs text-dark-500 hover:text-dark-300 hover:bg-white/[0.03] transition-colors border-t border-white/[0.06]">
+                          <button className="flex items-center gap-1.5 px-3 py-2 text-xs text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-03)] transition-colors border-t border-[color:var(--hf-white-alpha-06)]">
                             <Plus className="w-3.5 h-3.5" />
                             Добавить
                           </button>

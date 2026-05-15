@@ -196,14 +196,14 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+        <Loader2 className="w-8 h-8 text-[var(--hf-status-blue)] animate-spin" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="text-center py-12 text-white/40">
+      <div className="text-center py-12 text-[color:var(--hf-white-alpha-40)]">
         <FolderOpen className="mx-auto mb-2" size={40} />
         <p>{error}</p>
       </div>
@@ -223,18 +223,18 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
           className={clsx(
             'border-2 border-dashed rounded-xl p-6 text-center transition-colors',
             isDragging
-              ? 'border-blue-500 bg-blue-500/10'
-              : 'border-white/20 hover:border-white/40'
+              ? 'border-[color:var(--hf-cyan-500)] bg-[var(--hf-status-blue-bg)]'
+              : 'border-[color:var(--hf-white-alpha-20)] hover:border-[color:var(--hf-white-alpha-40)]'
           )}
         >
           <Upload className={clsx(
             'w-8 h-8 mx-auto mb-2',
-            isDragging ? 'text-blue-400' : 'text-white/40'
+            isDragging ? 'text-[var(--hf-status-blue)]' : 'text-[color:var(--hf-white-alpha-40)]'
           )} />
-          <p className="text-white/60 mb-2">
+          <p className="text-[color:var(--hf-white-alpha-60)] mb-2">
             {isDragging ? 'Отпустите файл для загрузки' : 'Перетащите файл сюда или'}
           </p>
-          <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg cursor-pointer transition-colors">
+          <label className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] rounded-lg cursor-pointer transition-colors">
             <Upload size={16} />
             <span>Выбрать файл</span>
             <input
@@ -257,7 +257,7 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
             onClick={() => {
               setShowUploadForm(false);
               setSelectedFile(null);
@@ -277,7 +277,7 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
                     setShowUploadForm(false);
                     setSelectedFile(null);
                   }}
-                  className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
+                  className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
                 >
                   <X size={20} />
                 </button>
@@ -285,20 +285,20 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
 
               {/* Selected file info */}
               <div className="p-3 glass-light rounded-lg mb-4 flex items-center gap-3">
-                <File className="w-8 h-8 text-blue-400" />
+                <File className="w-8 h-8 text-[var(--hf-status-blue)]" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{selectedFile.name}</p>
-                  <p className="text-sm text-white/40">{formatFileSize(selectedFile.size)}</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-40)]">{formatFileSize(selectedFile.size)}</p>
                 </div>
               </div>
 
               {/* File type selector */}
               <div className="mb-4">
-                <label className="block text-sm text-white/60 mb-1">Тип файла</label>
+                <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Тип файла</label>
                 <select
                   value={fileType}
                   onChange={(e) => setFileType(e.target.value)}
-                  className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)]"
                 >
                   {FILE_TYPE_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -308,13 +308,13 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
 
               {/* Description */}
               <div className="mb-4">
-                <label className="block text-sm text-white/60 mb-1">Описание (опционально)</label>
+                <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Описание (опционально)</label>
                 <input
                   type="text"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Добавьте описание файла..."
-                  className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)]"
                 />
               </div>
 
@@ -325,14 +325,14 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
                     setShowUploadForm(false);
                     setSelectedFile(null);
                   }}
-                  className="px-4 py-2 text-white/60 hover:text-white transition-colors"
+                  className="px-4 py-2 text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] transition-colors"
                 >
                   Отмена
                 </button>
                 <button
                   onClick={handleUpload}
                   disabled={uploading}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] disabled:opacity-50 rounded-lg transition-colors"
                 >
                   {uploading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -361,14 +361,14 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
                 animate={{ opacity: 1, y: 0 }}
                 className="p-3 glass-light rounded-lg flex items-center gap-3 group"
               >
-                <div className="p-2 bg-blue-500/20 rounded-lg flex-shrink-0">
-                  <FileIcon size={20} className="text-blue-400" />
+                <div className="p-2 bg-[var(--hf-status-blue-badge)] rounded-lg flex-shrink-0">
+                  <FileIcon size={20} className="text-[var(--hf-status-blue)]" />
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{file.file_name}</p>
-                  <div className="flex items-center gap-2 text-xs text-white/40">
-                    <span className="px-1.5 py-0.5 bg-white/10 rounded">
+                  <div className="flex items-center gap-2 text-xs text-[color:var(--hf-white-alpha-40)]">
+                    <span className="px-1.5 py-0.5 bg-[var(--hf-white-alpha-10)] rounded">
                       {FILE_TYPE_LABELS[file.file_type] || file.file_type}
                     </span>
                     <span>{formatFileSize(file.file_size)}</span>
@@ -376,25 +376,25 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
                     <span>{formatDate(file.created_at, 'medium')}</span>
                   </div>
                   {file.description && (
-                    <p className="text-xs text-white/50 mt-1 truncate">{file.description}</p>
+                    <p className="text-xs text-[color:var(--hf-white-alpha-50)] mt-1 truncate">{file.description}</p>
                   )}
                 </div>
 
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                   <button
                     onClick={() => handleDownload(file)}
-                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                    className="p-2 hover:bg-[var(--hf-white-alpha-10)] rounded-lg transition-colors"
                     title="Скачать"
                   >
-                    <Download size={16} className="text-white/60" />
+                    <Download size={16} className="text-[color:var(--hf-white-alpha-60)]" />
                   </button>
                   {canEdit && (
                     <button
                       onClick={() => handleDelete(file.id)}
-                      className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
+                      className="p-2 hover:bg-[var(--hf-status-red-badge)] rounded-lg transition-colors"
                       title="Удалить"
                     >
-                      <Trash2 size={16} className="text-red-400" />
+                      <Trash2 size={16} className="text-[var(--hf-status-red)]" />
                     </button>
                   )}
                 </div>

@@ -43,7 +43,7 @@ export default function VacancyCardSkeleton() {
       </div>
 
       {/* Footer: Candidates count and stage indicators */}
-      <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+      <div className="mt-4 pt-3 border-t border-[color:var(--hf-white-alpha-10)] flex items-center justify-between">
         {/* Candidates count */}
         <div className="flex items-center gap-2">
           <Skeleton variant="circular" width={16} height={16} />

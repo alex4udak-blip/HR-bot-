@@ -1,68 +1,85 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import AddToVacancyModal from '../AddToVacancyModal';
-import * as api from '@/services/api';
-import type { Vacancy } from '@/types';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import AddToVacancyModal from "../AddToVacancyModal";
+import * as api from "@/services/api";
+import type { Vacancy } from "@/types";
 
 // Mock dependencies
-vi.mock('@/services/api', () => ({
+vi.mock("@/services/api", () => ({
   getVacancies: vi.fn(),
   applyEntityToVacancy: vi.fn(),
 }));
 
-vi.mock('react-hot-toast', () => ({
+vi.mock("@/stores/authStore", () => ({
+  useAuthStore: () => ({
+    user: { id: 1, role: "superadmin", org_role: "owner" },
+  }),
+}));
+
+vi.mock("react-hot-toast", () => ({
   default: {
     success: vi.fn(),
     error: vi.fn(),
   },
 }));
 
-vi.mock('framer-motion', () => ({
+vi.mock("framer-motion", () => ({
   motion: {
-    div: ({ children, onClick, className, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
-      <div onClick={onClick as React.MouseEventHandler} className={className as string} {...props}>
+    div: ({
+      children,
+      onClick,
+      className,
+      ...props
+    }: React.PropsWithChildren<Record<string, unknown>>) => (
+      <div
+        onClick={onClick as React.MouseEventHandler}
+        className={className as string}
+        {...props}
+      >
         {children}
       </div>
     ),
   },
-  AnimatePresence: ({ children }: React.PropsWithChildren<object>) => <>{children}</>,
+  AnimatePresence: ({ children }: React.PropsWithChildren<object>) => (
+    <>{children}</>
+  ),
 }));
 
 const mockVacancies: Vacancy[] = [
   {
     id: 1,
-    title: 'Senior Python Developer',
-    description: 'Backend development',
-    status: 'open',
+    title: "Senior Python Developer",
+    description: "Backend development",
+    status: "open",
     salary_min: 150000,
     salary_max: 250000,
-    salary_currency: 'RUB',
-    location: 'Moscow',
-    employment_type: 'full-time',
-    experience_level: 'senior',
+    salary_currency: "RUB",
+    location: "Moscow",
+    employment_type: "full-time",
+    experience_level: "senior",
     priority: 1,
-    tags: ['python', 'fastapi'],
+    tags: ["python", "fastapi"],
     extra_data: {},
     applications_count: 5,
     stage_counts: {},
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    department_name: 'Engineering',
+    department_name: "Engineering",
   },
   {
     id: 2,
-    title: 'Frontend Developer',
-    description: 'React development',
-    status: 'open',
+    title: "Frontend Developer",
+    description: "React development",
+    status: "open",
     salary_min: 100000,
     salary_max: 180000,
-    salary_currency: 'RUB',
-    location: 'Remote',
-    employment_type: 'full-time',
-    experience_level: 'middle',
+    salary_currency: "RUB",
+    location: "Remote",
+    employment_type: "full-time",
+    experience_level: "middle",
     priority: 2,
-    tags: ['react', 'typescript'],
+    tags: ["react", "typescript"],
     extra_data: {},
     applications_count: 3,
     stage_counts: {},
@@ -71,35 +88,46 @@ const mockVacancies: Vacancy[] = [
   },
 ];
 
-describe('AddToVacancyModal', () => {
+describe("AddToVacancyModal", () => {
   const mockOnClose = vi.fn();
   const mockOnSuccess = vi.fn();
 
   const defaultProps = {
     entityId: 1,
-    entityName: 'John Doe',
+    entityName: "John Doe",
     onClose: mockOnClose,
     onSuccess: mockOnSuccess,
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (api.getVacancies as ReturnType<typeof vi.fn>).mockResolvedValue(mockVacancies);
+    (api.getVacancies as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockVacancies,
+    );
   });
 
-  describe('Modal Open/Close', () => {
-    it('should render modal with header', async () => {
+  describe("Modal Open/Close", () => {
+    it("should render Huntflow-style popover header", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
-      // Russian text: "Dobavit' v vakansiyu" (Add to vacancy)
-      expect(screen.getByText(/добавить в вакансию/i)).toBeInTheDocument();
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
+      expect(screen.getByText(/подразделение: все/i)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/поиск/i)).toBeInTheDocument();
     });
 
-    it('should close modal when Cancel button is clicked', async () => {
+    it("should close modal when Cancel button is clicked", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
-      // Russian text: "Otmena" (Cancel)
+      await waitFor(() => {
+        expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
+      });
+
+      const vacancyButton = screen
+        .getByText("Senior Python Developer")
+        .closest("button");
+      if (vacancyButton) {
+        await userEvent.click(vacancyButton);
+      }
+
       const cancelButton = screen.getByText(/отмена/i);
       await userEvent.click(cancelButton);
 
@@ -107,30 +135,33 @@ describe('AddToVacancyModal', () => {
     });
   });
 
-  describe('Vacancy Loading', () => {
-    it('should load vacancies on mount', async () => {
+  describe("Vacancy Loading", () => {
+    it("should load vacancies on mount", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
         expect(api.getVacancies).toHaveBeenCalledWith({
-          status: 'open',
+          status: "open",
           search: undefined,
         });
       });
     });
 
-    it('should display loading spinner while loading', async () => {
+    it("should display loading spinner while loading", async () => {
       // Delay the response to show loading state
       let resolvePromise: (value: Vacancy[]) => void;
       (api.getVacancies as ReturnType<typeof vi.fn>).mockImplementation(
-        () => new Promise(resolve => { resolvePromise = resolve; })
+        () =>
+          new Promise((resolve) => {
+            resolvePromise = resolve;
+          }),
       );
 
       const { container } = render(<AddToVacancyModal {...defaultProps} />);
 
       // Check for spinner (animate-spin class)
       await waitFor(() => {
-        const spinner = container.querySelector('.animate-spin');
+        const spinner = container.querySelector(".animate-spin");
         expect(spinner).toBeInTheDocument();
       });
 
@@ -138,233 +169,204 @@ describe('AddToVacancyModal', () => {
       resolvePromise!(mockVacancies);
     });
 
-    it('should display vacancies after loading', async () => {
+    it("should display vacancies after loading", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Senior Python Developer')).toBeInTheDocument();
-        expect(screen.getByText('Frontend Developer')).toBeInTheDocument();
+        expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
+        expect(screen.getByText("Frontend Developer")).toBeInTheDocument();
       });
     });
 
-    it('should display vacancy location', async () => {
+    it("should display vacancy department in Huntflow-style row", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Moscow')).toBeInTheDocument();
+        expect(screen.getByText("Engineering")).toBeInTheDocument();
       });
     });
 
-    it('should display department name when available', async () => {
+    it("should display department name when available", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Engineering')).toBeInTheDocument();
+        expect(screen.getByText("Engineering")).toBeInTheDocument();
       });
     });
 
-    it('should display applications count', async () => {
+    it("should hide card-only application count in Huntflow-style row", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        // Russian text: "5 kandidatov" (5 candidates)
-        expect(screen.getByText(/5 кандидатов/i)).toBeInTheDocument();
+        expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
       });
+      expect(screen.queryByText(/5 кандидатов/i)).not.toBeInTheDocument();
     });
   });
 
-  describe('Vacancy Selection', () => {
-    it('should allow selecting a vacancy', async () => {
+  describe("Vacancy Selection", () => {
+    it("should allow selecting a vacancy", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Senior Python Developer')).toBeInTheDocument();
+        expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
       });
 
-      const vacancyButton = screen.getByText('Senior Python Developer').closest('button');
+      const vacancyButton = screen
+        .getByText("Senior Python Developer")
+        .closest("button");
       if (vacancyButton) {
         await userEvent.click(vacancyButton);
 
-        // Check that vacancy is selected (has border-blue-500 class)
-        expect(vacancyButton.className).toContain('border-blue-500');
+        expect(vacancyButton.className).toContain("bg-[var(--hf-ui-selected)]");
       }
     });
 
-    it('should allow changing selected vacancy', async () => {
+    it("should allow changing selected vacancy", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Senior Python Developer')).toBeInTheDocument();
+        expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
       });
 
       // Select first vacancy
-      const firstVacancy = screen.getByText('Senior Python Developer').closest('button');
+      const firstVacancy = screen
+        .getByText("Senior Python Developer")
+        .closest("button");
       if (firstVacancy) {
         await userEvent.click(firstVacancy);
-        expect(firstVacancy.className).toContain('border-blue-500');
+        expect(firstVacancy.className).toContain("bg-[var(--hf-ui-selected)]");
       }
 
       // Select second vacancy
-      const secondVacancy = screen.getByText('Frontend Developer').closest('button');
+      const secondVacancy = screen
+        .getByText("Frontend Developer")
+        .closest("button");
       if (secondVacancy) {
         await userEvent.click(secondVacancy);
-        expect(secondVacancy.className).toContain('border-blue-500');
+        expect(secondVacancy.className).toContain("bg-[var(--hf-ui-selected)]");
         // First vacancy should no longer be selected
         if (firstVacancy) {
-          expect(firstVacancy.className).not.toContain('border-blue-500');
+          expect(firstVacancy.className).not.toContain("bg-[var(--hf-ui-selected)]");
         }
       }
     });
   });
 
-  describe('Search Functionality', () => {
-    it('should have search input', async () => {
+  describe("Search Functionality", () => {
+    it("should have search input", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
-      // Russian text: "Poisk vakansii..." (Search vacancy...)
-      const searchInput = screen.getByPlaceholderText(/поиск вакансии/i);
+      const searchInput = screen.getByPlaceholderText(/поиск/i);
       expect(searchInput).toBeInTheDocument();
     });
 
-    it('should filter vacancies when searching (debounced)', async () => {
+    it("should filter vacancies when searching (debounced)", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
-      const searchInput = screen.getByPlaceholderText(/поиск вакансии/i);
-      await userEvent.type(searchInput, 'Python');
+      const searchInput = screen.getByPlaceholderText(/поиск/i);
+      await userEvent.type(searchInput, "Python");
 
       // Wait for debounce
-      await waitFor(() => {
-        expect(api.getVacancies).toHaveBeenCalledWith({
-          status: 'open',
-          search: 'Python',
-        });
-      }, { timeout: 500 });
+      await waitFor(
+        () => {
+          expect(api.getVacancies).toHaveBeenCalledWith({
+            status: "open",
+            search: "Python",
+          });
+        },
+        { timeout: 500 },
+      );
     });
   });
 
-  describe('Source Selection', () => {
-    it('should have source dropdown', async () => {
+  describe("Source Selection", () => {
+    it("should not render the legacy source dropdown in the Huntflow popover", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
-      const sourceSelect = screen.getByRole('combobox');
-      expect(sourceSelect).toBeInTheDocument();
-    });
-
-    it('should allow selecting a source', async () => {
-      render(<AddToVacancyModal {...defaultProps} />);
-
-      const sourceSelect = screen.getByRole('combobox');
-      await userEvent.selectOptions(sourceSelect, 'linkedin');
-
-      expect((sourceSelect as HTMLSelectElement).value).toBe('linkedin');
+      expect(screen.queryByText(/источник/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     });
   });
 
-  describe('Submit Application', () => {
-    it('should disable submit button when no vacancy selected', async () => {
+  describe("Submit Application", () => {
+    it("should hide submit button when no vacancy selected", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
-      // Russian text: "Dobavit'" (Add)
-      const submitButton = screen.getByRole('button', { name: /добавить$/i });
-      expect(submitButton).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: /добавить$/i }),
+      ).not.toBeInTheDocument();
     });
 
-    it('should enable submit button when vacancy is selected', async () => {
+    it("should enable submit button when vacancy is selected", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Senior Python Developer')).toBeInTheDocument();
+        expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
       });
 
-      const vacancyButton = screen.getByText('Senior Python Developer').closest('button');
+      const vacancyButton = screen
+        .getByText("Senior Python Developer")
+        .closest("button");
       if (vacancyButton) {
         await userEvent.click(vacancyButton);
       }
 
-      const submitButton = screen.getByRole('button', { name: /добавить$/i });
+      const submitButton = screen.getByRole("button", { name: /добавить$/i });
       expect(submitButton).not.toBeDisabled();
     });
 
-    it('should submit application and call onSuccess', async () => {
+    it("should submit application and call onSuccess", async () => {
       (api.applyEntityToVacancy as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 1,
         entity_id: 1,
         vacancy_id: 1,
-        stage: 'applied',
+        stage: "applied",
       });
 
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Senior Python Developer')).toBeInTheDocument();
+        expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
       });
 
       // Select vacancy
-      const vacancyButton = screen.getByText('Senior Python Developer').closest('button');
+      const vacancyButton = screen
+        .getByText("Senior Python Developer")
+        .closest("button");
       if (vacancyButton) {
         await userEvent.click(vacancyButton);
       }
 
       // Submit
-      const submitButton = screen.getByRole('button', { name: /добавить$/i });
+      const submitButton = screen.getByRole("button", { name: /добавить$/i });
       await userEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(api.applyEntityToVacancy).toHaveBeenCalledWith(1, 1, undefined);
+        expect(api.applyEntityToVacancy).toHaveBeenCalledWith(1, 1);
         expect(mockOnSuccess).toHaveBeenCalled();
       });
     });
 
-    it('should submit application with source', async () => {
-      (api.applyEntityToVacancy as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 1,
-        entity_id: 1,
-        vacancy_id: 1,
-        stage: 'applied',
-      });
-
-      render(<AddToVacancyModal {...defaultProps} />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Senior Python Developer')).toBeInTheDocument();
-      });
-
-      // Select source
-      const sourceSelect = screen.getByRole('combobox');
-      await userEvent.selectOptions(sourceSelect, 'linkedin');
-
-      // Select vacancy
-      const vacancyButton = screen.getByText('Senior Python Developer').closest('button');
-      if (vacancyButton) {
-        await userEvent.click(vacancyButton);
-      }
-
-      // Submit
-      const submitButton = screen.getByRole('button', { name: /добавить$/i });
-      await userEvent.click(submitButton);
-
-      await waitFor(() => {
-        expect(api.applyEntityToVacancy).toHaveBeenCalledWith(1, 1, 'linkedin');
-      });
-    });
-
-    it('should show loading state during submission', async () => {
+    it("should show loading state during submission", async () => {
       (api.applyEntityToVacancy as ReturnType<typeof vi.fn>).mockImplementation(
-        () => new Promise(resolve => setTimeout(() => resolve({}), 100))
+        () => new Promise((resolve) => setTimeout(() => resolve({}), 100)),
       );
 
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Senior Python Developer')).toBeInTheDocument();
+        expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
       });
 
-      const vacancyButton = screen.getByText('Senior Python Developer').closest('button');
+      const vacancyButton = screen
+        .getByText("Senior Python Developer")
+        .closest("button");
       if (vacancyButton) {
         await userEvent.click(vacancyButton);
       }
 
-      const submitButton = screen.getByRole('button', { name: /добавить$/i });
+      const submitButton = screen.getByRole("button", { name: /добавить$/i });
       await userEvent.click(submitButton);
 
       // Button should show "Dobavlenie..." (Adding...) while loading
@@ -372,10 +374,14 @@ describe('AddToVacancyModal', () => {
     });
   });
 
-  describe('Error Handling', () => {
-    it('should handle API error when loading vacancies', async () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-      (api.getVacancies as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('API Error'));
+  describe("Error Handling", () => {
+    it("should handle API error when loading vacancies", async () => {
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      (api.getVacancies as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("API Error"),
+      );
 
       render(<AddToVacancyModal {...defaultProps} />);
 
@@ -386,34 +392,40 @@ describe('AddToVacancyModal', () => {
       consoleError.mockRestore();
     });
 
-    it('should handle API error when submitting', async () => {
-      const toast = await import('react-hot-toast');
+    it("should handle API error when submitting", async () => {
+      const toast = await import("react-hot-toast");
       (api.applyEntityToVacancy as ReturnType<typeof vi.fn>).mockRejectedValue({
-        response: { data: { detail: 'Entity already applied to this vacancy' } },
+        response: {
+          data: { detail: "Entity already applied to this vacancy" },
+        },
       });
 
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(screen.getByText('Senior Python Developer')).toBeInTheDocument();
+        expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
       });
 
-      const vacancyButton = screen.getByText('Senior Python Developer').closest('button');
+      const vacancyButton = screen
+        .getByText("Senior Python Developer")
+        .closest("button");
       if (vacancyButton) {
         await userEvent.click(vacancyButton);
       }
 
-      const submitButton = screen.getByRole('button', { name: /добавить$/i });
+      const submitButton = screen.getByRole("button", { name: /добавить$/i });
       await userEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(toast.default.error).toHaveBeenCalledWith('Entity already applied to this vacancy');
+        expect(toast.default.error).toHaveBeenCalledWith(
+          "Entity already applied to this vacancy",
+        );
       });
     });
   });
 
-  describe('Empty State', () => {
-    it('should show empty state when no vacancies available', async () => {
+  describe("Empty State", () => {
+    it("should show empty state when no vacancies available", async () => {
       (api.getVacancies as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
       render(<AddToVacancyModal {...defaultProps} />);

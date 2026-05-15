@@ -47,14 +47,14 @@ import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 // ==================== Constants ====================
 
 const TAG_PALETTE = [
-  { color: '#ef4444', label: 'Красный' },
-  { color: '#3b82f6', label: 'Синий' },
-  { color: '#22c55e', label: 'Зелёный' },
-  { color: '#eab308', label: 'Жёлтый' },
-  { color: '#a855f7', label: 'Фиолетовый' },
-  { color: '#f97316', label: 'Оранжевый' },
-  { color: '#ec4899', label: 'Розовый' },
-  { color: '#06b6d4', label: 'Голубой' },
+  { color: 'var(--hf-red-500)', label: 'Красный' },
+  { color: 'var(--hf-status-blue)', label: 'Синий' },
+  { color: 'var(--hf-green-500)', label: 'Зелёный' },
+  { color: 'var(--hf-status-yellow)', label: 'Жёлтый' },
+  { color: 'var(--hf-status-purple)', label: 'Фиолетовый' },
+  { color: 'var(--hf-status-orange)', label: 'Оранжевый' },
+  { color: 'var(--hf-status-pink)', label: 'Розовый' },
+  { color: 'var(--hf-status-cyan)', label: 'Голубой' },
 ];
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; label: string }[] = [
@@ -85,23 +85,23 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badge: string }> = {
-  applied:      { bg: 'bg-blue-500/10',   text: 'text-blue-400',    dot: 'bg-blue-400',    badge: 'bg-blue-500/15 text-blue-400' },
-  screening:    { bg: 'bg-cyan-500/10',    text: 'text-cyan-400',    dot: 'bg-cyan-400',    badge: 'bg-cyan-500/15 text-cyan-400' },
-  phone_screen: { bg: 'bg-purple-500/10',  text: 'text-purple-400',  dot: 'bg-purple-400',  badge: 'bg-purple-500/15 text-purple-400' },
-  interview:    { bg: 'bg-indigo-500/10',  text: 'text-indigo-400',  dot: 'bg-indigo-400',  badge: 'bg-indigo-500/15 text-indigo-400' },
-  assessment:   { bg: 'bg-orange-500/10',  text: 'text-orange-400',  dot: 'bg-orange-400',  badge: 'bg-orange-500/15 text-orange-400' },
-  offer:        { bg: 'bg-yellow-500/10',  text: 'text-yellow-400',  dot: 'bg-yellow-400',  badge: 'bg-yellow-500/15 text-yellow-400' },
-  hired:        { bg: 'bg-green-500/10',   text: 'text-green-400',   dot: 'bg-green-400',   badge: 'bg-green-500/15 text-green-400' },
-  rejected:     { bg: 'bg-red-500/10',     text: 'text-red-400',     dot: 'bg-red-400',     badge: 'bg-red-500/15 text-red-400' },
-  withdrawn:    { bg: 'bg-gray-500/10',    text: 'text-gray-400',    dot: 'bg-gray-400',    badge: 'bg-gray-500/15 text-gray-400' },
+  applied:      { bg: 'bg-[var(--hf-status-blue-bg)]',   text: 'text-[var(--hf-status-blue)]',    dot: 'bg-[var(--hf-status-blue)]',    badge: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]' },
+  screening:    { bg: 'bg-[var(--hf-status-cyan-bg)]',    text: 'text-[var(--hf-cyan-400)]',    dot: 'bg-[var(--hf-status-cyan)]',    badge: 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-cyan-400)]' },
+  phone_screen: { bg: 'bg-[var(--hf-status-purple-bg)]',  text: 'text-[var(--hf-status-purple)]',  dot: 'bg-[var(--hf-status-purple)]',  badge: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]' },
+  interview:    { bg: 'bg-[var(--hf-status-indigo-bg)]',  text: 'text-[var(--hf-status-indigo)]',  dot: 'bg-[var(--hf-status-indigo)]',  badge: 'bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)]' },
+  assessment:   { bg: 'bg-[var(--hf-status-orange-bg)]',  text: 'text-[var(--hf-status-orange)]',  dot: 'bg-[var(--hf-status-orange)]',  badge: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]' },
+  offer:        { bg: 'bg-[var(--hf-status-yellow-bg)]',  text: 'text-[var(--hf-status-yellow)]',  dot: 'bg-[var(--hf-status-yellow)]',  badge: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
+  hired:        { bg: 'bg-[var(--hf-status-green-bg)]',   text: 'text-[var(--hf-status-green)]',   dot: 'bg-[var(--hf-status-green)]',   badge: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' },
+  rejected:     { bg: 'bg-[var(--hf-status-red-bg)]',     text: 'text-[var(--hf-status-red)]',     dot: 'bg-[var(--hf-status-red)]',     badge: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]' },
+  withdrawn:    { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
   // Extra colors for custom stages
-  pink:         { bg: 'bg-pink-500/10',    text: 'text-pink-400',    dot: 'bg-pink-400',    badge: 'bg-pink-500/15 text-pink-400' },
-  teal:         { bg: 'bg-teal-500/10',    text: 'text-teal-400',    dot: 'bg-teal-400',    badge: 'bg-teal-500/15 text-teal-400' },
-  amber:        { bg: 'bg-amber-500/10',   text: 'text-amber-400',   dot: 'bg-amber-400',   badge: 'bg-amber-500/15 text-amber-400' },
-  lime:         { bg: 'bg-lime-500/10',    text: 'text-lime-400',    dot: 'bg-lime-400',    badge: 'bg-lime-500/15 text-lime-400' },
-  rose:         { bg: 'bg-rose-500/10',    text: 'text-rose-400',    dot: 'bg-rose-400',    badge: 'bg-rose-500/15 text-rose-400' },
-  violet:       { bg: 'bg-violet-500/10',  text: 'text-violet-400',  dot: 'bg-violet-400',  badge: 'bg-violet-500/15 text-violet-400' },
-  sky:          { bg: 'bg-sky-500/10',     text: 'text-sky-400',     dot: 'bg-sky-400',     badge: 'bg-sky-500/15 text-sky-400' },
+  pink:         { bg: 'bg-[var(--hf-status-pink-bg)]',    text: 'text-[var(--hf-status-pink)]',    dot: 'bg-[var(--hf-status-pink)]',    badge: 'bg-[var(--hf-status-pink-badge)] text-[var(--hf-status-pink)]' },
+  teal:         { bg: 'bg-[var(--hf-status-teal-bg)]',    text: 'text-[var(--hf-status-teal)]',    dot: 'bg-[var(--hf-status-teal)]',    badge: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)]' },
+  amber:        { bg: 'bg-[var(--hf-status-yellow-bg)]',   text: 'text-[var(--hf-status-yellow)]',   dot: 'bg-[var(--hf-status-yellow)]',   badge: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
+  lime:         { bg: 'bg-[var(--hf-status-lime-bg)]',    text: 'text-[var(--hf-status-lime)]',    dot: 'bg-[var(--hf-status-lime)]',    badge: 'bg-[var(--hf-status-lime-badge)] text-[var(--hf-status-lime)]' },
+  rose:         { bg: 'bg-[var(--hf-status-rose-bg)]',    text: 'text-[var(--hf-status-rose)]',    dot: 'bg-[var(--hf-status-rose)]',    badge: 'bg-[var(--hf-status-rose-badge)] text-[var(--hf-status-rose)]' },
+  violet:       { bg: 'bg-[var(--hf-status-purple-bg)]',  text: 'text-[var(--hf-status-purple)]',  dot: 'bg-[var(--hf-status-purple)]',  badge: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]' },
+  sky:          { bg: 'bg-[var(--hf-status-sky-bg)]',     text: 'text-[var(--hf-status-sky)]',     dot: 'bg-[var(--hf-status-sky)]',     badge: 'bg-[var(--hf-status-sky-badge)] text-[var(--hf-status-sky)]' },
 };
 
 // Map color key to STAGE_COLORS key (some overlap with enum names)
@@ -111,7 +111,7 @@ const colorToStageColor = (colorKey?: string, enumVal?: string): string => {
   return 'screening'; // fallback cyan
 };
 
-const fallbackColor = { bg: 'bg-dark-400/10', text: 'text-dark-300', dot: 'bg-dark-400', badge: 'bg-dark-400/15 text-dark-300' };
+const fallbackColor = { bg: 'bg-[var(--hf-white-alpha-10)]', text: 'text-[var(--hf-dark-300)]', dot: 'bg-[var(--hf-dark-400)]', badge: 'bg-[var(--hf-white-alpha-15)] text-[var(--hf-dark-300)]' };
 
 // ==================== Types ====================
 
@@ -136,10 +136,10 @@ function CopyButton({ value }: { value: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="p-0.5 rounded text-dark-600 hover:text-dark-300 transition-colors opacity-0 group-hover:opacity-100"
+      className="p-0.5 rounded text-[var(--hf-dark-600)] hover:text-[var(--hf-dark-300)] transition-colors opacity-0 group-hover:opacity-100"
       title="Копировать"
     >
-      {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? <Check className="w-3.5 h-3.5 text-[var(--hf-status-green)]" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
   );
 }
@@ -948,14 +948,14 @@ export default function RecruiterFunnelsPage() {
       {/* Mobile sidebar overlay (admin only) */}
       {isHrAdmin && mobileSidebar && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          className="lg:hidden fixed inset-0 bg-[var(--hf-black-alpha-50)] z-40"
           onClick={() => setMobileSidebar(false)}
         />
       )}
 
       {/* ========== LEFT SIDEBAR: Recruiter tree (admin only) ========== */}
       {isHrAdmin && <aside className={clsx(
-        'flex-shrink-0 border-r border-white/[0.06] bg-dark-900/95 backdrop-blur-xl flex flex-col overflow-hidden z-50 transition-all duration-200',
+        'flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-dark-panel-alpha-95)] backdrop-blur-xl flex flex-col overflow-hidden z-50 transition-all duration-200',
         // Desktop: collapsible
         sidebarCollapsed
           ? 'lg:relative lg:translate-x-0 lg:w-0 lg:border-r-0 lg:overflow-hidden'
@@ -965,50 +965,50 @@ export default function RecruiterFunnelsPage() {
         mobileSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
       )}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-          <span className="text-xs font-semibold text-dark-400 uppercase tracking-wider">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--hf-white-alpha-06)]">
+          <span className="text-xs font-semibold text-[var(--hf-dark-400)] uppercase tracking-wider">
             {isHrAdmin ? 'Рекрутеры' : 'Мои воронки'}
           </span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setShowCreateModal(true)}
-              className="p-1 hover:bg-white/[0.06] rounded transition-colors"
+              className="p-1 hover:bg-[var(--hf-white-alpha-06)] rounded transition-colors"
               title="Новая воронка"
             >
-              <Plus className="w-3.5 h-3.5 text-dark-400" />
+              <Plus className="w-3.5 h-3.5 text-[var(--hf-dark-400)]" />
             </button>
             <button
               onClick={() => setSidebarCollapsed(true)}
-              className="hidden lg:block p-1 hover:bg-white/[0.06] rounded transition-colors"
+              className="hidden lg:block p-1 hover:bg-[var(--hf-white-alpha-06)] rounded transition-colors"
               title="Свернуть панель"
             >
-              <PanelLeftClose className="w-3.5 h-3.5 text-dark-400" />
+              <PanelLeftClose className="w-3.5 h-3.5 text-[var(--hf-dark-400)]" />
             </button>
             <button
               onClick={() => setMobileSidebar(false)}
-              className="lg:hidden p-1 hover:bg-white/[0.06] rounded transition-colors"
+              className="lg:hidden p-1 hover:bg-[var(--hf-white-alpha-06)] rounded transition-colors"
             >
-              <X className="w-3.5 h-3.5 text-dark-400" />
+              <X className="w-3.5 h-3.5 text-[var(--hf-dark-400)]" />
             </button>
           </div>
         </div>
 
         {/* Search */}
-        <div className="px-3 py-2 border-b border-white/[0.04]">
+        <div className="px-3 py-2 border-b border-[color:var(--hf-white-alpha-04)]">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--hf-dark-500)]" />
             <input
               type="text"
               placeholder={isHrAdmin ? "Поиск по рекрутеру..." : "Поиск воронок..."}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
+              className="w-full pl-8 pr-3 py-1.5 bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-06)] rounded-lg text-xs text-[var(--hf-dark-200)] placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[color:var(--hf-accent-border-40)]"
             />
           </div>
         </div>
 
         {/* Status filter pills */}
-        <div className="px-3 py-2 border-b border-white/[0.04] flex flex-wrap gap-1">
+        <div className="px-3 py-2 border-b border-[color:var(--hf-white-alpha-04)] flex flex-wrap gap-1">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.id}
@@ -1016,8 +1016,8 @@ export default function RecruiterFunnelsPage() {
               className={clsx(
                 'px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors',
                 statusFilter === f.id
-                  ? 'bg-accent-500/15 text-accent-400'
-                  : 'text-dark-500 hover:text-dark-300 hover:bg-white/[0.04]'
+                  ? 'bg-[var(--hf-accent-bg-15)] text-[var(--hf-accent)]'
+                  : 'text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)]'
               )}
             >
               {f.label}
@@ -1029,10 +1029,10 @@ export default function RecruiterFunnelsPage() {
         <div className="flex-1 overflow-y-auto py-1">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="w-5 h-5 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-5 h-5 border-2 border-[var(--hf-accent)] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : recruiterGroups.length === 0 ? (
-            <div className="px-4 py-8 text-center text-dark-500 text-xs">
+            <div className="px-4 py-8 text-center text-[var(--hf-dark-500)] text-xs">
               {search ? 'Ничего не найдено' : 'Нет воронок'}
             </div>
           ) : (
@@ -1042,18 +1042,18 @@ export default function RecruiterFunnelsPage() {
                 {isHrAdmin && (
                   <button
                     onClick={() => toggleGroup(group.userId)}
-                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.04] transition-colors group"
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-[var(--hf-white-alpha-04)] transition-colors group"
                   >
                     {group.expanded ? (
-                      <ChevronDown className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" />
+                      <ChevronDown className="w-3.5 h-3.5 text-[var(--hf-dark-500)] flex-shrink-0" />
                     ) : (
-                      <ChevronRight className="w-3.5 h-3.5 text-dark-500 flex-shrink-0" />
+                      <ChevronRight className="w-3.5 h-3.5 text-[var(--hf-dark-500)] flex-shrink-0" />
                     )}
-                    <FolderOpen className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                    <span className="text-sm text-dark-200 truncate flex-1 text-left font-medium">
+                    <FolderOpen className="w-4 h-4 text-[var(--hf-status-purple)] flex-shrink-0" />
+                    <span className="text-sm text-[var(--hf-dark-200)] truncate flex-1 text-left font-medium">
                       {group.userName}
                     </span>
-                    <span className="text-[10px] text-dark-500 flex-shrink-0">
+                    <span className="text-[10px] text-[var(--hf-dark-500)] flex-shrink-0">
                       {group.vacancies.length}
                     </span>
                   </button>
@@ -1073,20 +1073,20 @@ export default function RecruiterFunnelsPage() {
                             'w-full flex items-center gap-2 pr-3 py-1.5 text-left transition-colors',
                             isHrAdmin ? 'pl-6' : 'pl-3',
                             isSelected
-                              ? 'bg-accent-500/10 text-accent-400'
-                              : 'hover:bg-white/[0.04] text-dark-300',
+                              ? 'bg-[var(--hf-accent-bg-10)] text-[var(--hf-accent)]'
+                              : 'hover:bg-[var(--hf-white-alpha-04)] text-[var(--hf-dark-300)]',
                           )}
                         >
                           <span className={clsx(
                             'w-1.5 h-1.5 rounded-full flex-shrink-0',
-                            v.status === 'open' ? 'bg-green-400' :
-                            v.status === 'paused' ? 'bg-yellow-400' :
-                            v.status === 'closed' ? 'bg-red-400' : 'bg-dark-500'
+                            v.status === 'open' ? 'bg-[var(--hf-status-green)]' :
+                            v.status === 'paused' ? 'bg-[var(--hf-status-yellow)]' :
+                            v.status === 'closed' ? 'bg-[var(--hf-status-red)]' : 'bg-[var(--hf-dark-500)]'
                           )} />
-                          <span className={clsx('text-sm truncate flex-1', !v.title?.trim() && 'italic text-dark-500')}>{v.title?.trim() || 'Без названия'}</span>
+                          <span className={clsx('text-sm truncate flex-1', !v.title?.trim() && 'italic text-[var(--hf-dark-500)]')}>{v.title?.trim() || 'Без названия'}</span>
                           <span className={clsx(
                             'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
-                            isSelected ? 'bg-accent-500/20 text-accent-400' : 'bg-white/[0.06] text-dark-400',
+                            isSelected ? 'bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)]' : 'bg-[var(--hf-white-alpha-06)] text-[var(--hf-dark-400)]',
                           )}>
                             {count}
                           </span>
@@ -1105,10 +1105,10 @@ export default function RecruiterFunnelsPage() {
       {isHrAdmin && sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
-          className="hidden lg:flex items-center justify-center w-6 flex-shrink-0 border-r border-white/[0.06] bg-dark-900/50 hover:bg-dark-800/80 transition-colors group"
+          className="hidden lg:flex items-center justify-center w-6 flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-dark-panel-alpha-50)] hover:bg-[var(--hf-dark-panel-alpha-80)] transition-colors group"
           title="Развернуть панель"
         >
-          <PanelLeftOpen className="w-4 h-4 text-dark-500 group-hover:text-dark-300 transition-colors" />
+          <PanelLeftOpen className="w-4 h-4 text-[var(--hf-dark-500)] group-hover:text-[var(--hf-dark-300)] transition-colors" />
         </button>
       )}
 
@@ -1122,15 +1122,15 @@ export default function RecruiterFunnelsPage() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setMobileSidebar(true)}
-                  className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-white/[0.06] transition-colors"
+                  className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-[var(--hf-white-alpha-06)] transition-colors"
                 >
-                  <Menu className="w-5 h-5 text-dark-300" />
+                  <Menu className="w-5 h-5 text-[var(--hf-dark-300)]" />
                 </button>
                 <div>
-                <h1 className="text-xl lg:text-2xl font-bold text-dark-50">
+                <h1 className="text-xl lg:text-2xl font-bold text-[var(--hf-dark-50)]">
                   {isHrAdmin ? 'Воронки рекрутеров' : 'Мои воронки'}
                 </h1>
-                <p className="text-sm text-dark-400 mt-0.5">
+                <p className="text-sm text-[var(--hf-dark-400)] mt-0.5">
                   {filteredVacancies.length} воронок
                   {isHrAdmin && ` у ${recruiterGroups.length} рекрутеров`}
                 </p>
@@ -1138,7 +1138,7 @@ export default function RecruiterFunnelsPage() {
               </div>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-accent)] hover:bg-[var(--hf-accent-hover)] text-[var(--hf-white)] text-sm font-medium rounded-lg transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Новая воронка
@@ -1148,14 +1148,14 @@ export default function RecruiterFunnelsPage() {
             {/* Funnels grid */}
             {filteredVacancies.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4">
-                <Briefcase className="w-10 h-10 text-dark-500" />
+                <Briefcase className="w-10 h-10 text-[var(--hf-dark-500)]" />
                 <div className="text-center">
-                  <p className="text-dark-100 font-medium">Пока нет воронок</p>
-                  <p className="text-dark-400 text-sm mt-1">Создайте первую воронку для начала работы</p>
+                  <p className="text-[var(--hf-dark-100)] font-medium">Пока нет воронок</p>
+                  <p className="text-[var(--hf-dark-400)] text-sm mt-1">Создайте первую воронку для начала работы</p>
                 </div>
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-accent-500 hover:bg-accent-600 text-white text-sm font-medium rounded-lg transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-accent)] hover:bg-[var(--hf-accent-hover)] text-[var(--hf-white)] text-sm font-medium rounded-lg transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   Создать воронку
@@ -1173,41 +1173,41 @@ export default function RecruiterFunnelsPage() {
           /* Vacancy selected — show candidates (Huntflow-style master-detail) */
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Top bar: breadcrumb + search */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-2 sm:py-3 gap-2 border-b border-white/[0.06] bg-white/[0.01] flex-shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-2 sm:py-3 gap-2 border-b border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] flex-shrink-0">
               {/* Breadcrumb */}
               <div className="flex items-center gap-1.5 text-sm min-w-0">
                 <button
                   onClick={() => setMobileSidebar(true)}
-                  className="lg:hidden p-1.5 -ml-1 rounded-lg hover:bg-white/[0.06] transition-colors flex-shrink-0"
+                  className="lg:hidden p-1.5 -ml-1 rounded-lg hover:bg-[var(--hf-white-alpha-06)] transition-colors flex-shrink-0"
                 >
-                  <Menu className="w-4 h-4 text-dark-400" />
+                  <Menu className="w-4 h-4 text-[var(--hf-dark-400)]" />
                 </button>
                 <button
                   onClick={deselectVacancy}
-                  className="text-dark-500 hover:text-dark-300 transition-colors hidden sm:inline"
+                  className="text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)] transition-colors hidden sm:inline"
                 >
                   HR отдел
                 </button>
                 {isHrAdmin && selectedRecruiterName && (
                   <>
-                    <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0 hidden sm:block" />
-                    <span className="text-dark-400 truncate max-w-[120px] lg:max-w-[180px] hidden sm:inline">{selectedRecruiterName}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--hf-dark-600)] flex-shrink-0 hidden sm:block" />
+                    <span className="text-[var(--hf-dark-400)] truncate max-w-[120px] lg:max-w-[180px] hidden sm:inline">{selectedRecruiterName}</span>
                   </>
                 )}
-                <ChevronRight className="w-3.5 h-3.5 text-dark-600 flex-shrink-0 hidden sm:block" />
+                <ChevronRight className="w-3.5 h-3.5 text-[var(--hf-dark-600)] flex-shrink-0 hidden sm:block" />
                 <button
                   onClick={deselectVacancy}
-                  className="sm:hidden text-dark-500 hover:text-dark-300 transition-colors text-xs"
+                  className="sm:hidden text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)] transition-colors text-xs"
                 >
                   ← Назад
                 </button>
                 <span className={clsx(
                   'font-medium truncate max-w-[180px] sm:max-w-[250px]',
-                  selectedVacancy.title?.trim() ? 'text-dark-200' : 'text-dark-500 italic',
+                  selectedVacancy.title?.trim() ? 'text-[var(--hf-dark-200)]' : 'text-[var(--hf-dark-500)] italic',
                 )}>
                   {selectedVacancy.title?.trim() || 'Без названия'}
                 </span>
-                <span className="text-xs text-dark-500 ml-1 sm:ml-2 flex-shrink-0">
+                <span className="text-xs text-[var(--hf-dark-500)] ml-1 sm:ml-2 flex-shrink-0">
                   {candidates.length}
                 </span>
               </div>
@@ -1215,18 +1215,18 @@ export default function RecruiterFunnelsPage() {
               {/* Search + Actions */}
               <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                 <div className="relative flex-1 sm:flex-none">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dark-500" />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--hf-dark-500)]" />
                   <input
                     type="text"
                     placeholder="Поиск..."
                     value={candidateSearch}
                     onChange={(e) => setCandidateSearch(e.target.value)}
-                    className="w-full sm:w-44 pl-8 pr-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-accent-500/40"
+                    className="w-full sm:w-44 pl-8 pr-3 py-1.5 bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-06)] rounded-lg text-xs text-[var(--hf-dark-200)] placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[color:var(--hf-accent-border-40)]"
                   />
                 </div>
                 <button
                   onClick={() => setEditingVacancy(selectedVacancy)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-dark-300 hover:text-white hover:bg-white/[0.06] transition-colors"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-white-alpha-06)] transition-colors"
                   title="Редактировать вакансию"
                 >
                   <Pencil className="w-3.5 h-3.5" />
@@ -1234,7 +1234,7 @@ export default function RecruiterFunnelsPage() {
                 {selectedVacancy.status !== 'closed' && (
                   <button
                     onClick={() => handleCloseVacancy(selectedVacancy)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-dark-300 hover:text-amber-300 hover:bg-amber-500/10 transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-status-yellow)] hover:bg-[var(--hf-status-yellow-bg)] transition-colors"
                     title="Закрыть вакансию"
                   >
                     <Archive className="w-3.5 h-3.5" />
@@ -1242,7 +1242,7 @@ export default function RecruiterFunnelsPage() {
                 )}
                 <button
                   onClick={() => handleDeleteVacancy(selectedVacancy)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-dark-300 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)] transition-colors"
                   title="Удалить вакансию"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -1252,20 +1252,20 @@ export default function RecruiterFunnelsPage() {
 
             {candidatesLoading ? (
               <div className="flex items-center justify-center py-16 flex-1">
-                <div className="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+                <div className="w-6 h-6 border-2 border-[var(--hf-accent)] border-t-transparent rounded-full animate-spin" />
               </div>
             ) : (
               /* ===== DETAIL VIEW: Huntflow-style master-detail ===== */
               <>
                 {/* Stage tabs */}
-                <div className="flex items-center gap-1 px-4 py-2 border-b border-white/[0.06] overflow-x-auto no-scrollbar flex-shrink-0">
+                <div className="flex items-center gap-1 px-4 py-2 border-b border-[color:var(--hf-white-alpha-06)] overflow-x-auto no-scrollbar flex-shrink-0">
                   <button
                     onClick={() => { setSelectedTab('all'); setSelectedCandidateId(null); }}
                     className={clsx(
                       'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
                       selectedTab === 'all'
-                        ? 'bg-accent-500 text-white'
-                        : 'text-dark-400 hover:bg-white/[0.06]'
+                        ? 'bg-[var(--hf-accent)] text-[var(--hf-white)]'
+                        : 'text-[var(--hf-dark-400)] hover:bg-[var(--hf-white-alpha-06)]'
                     )}
                   >
                     Все <span className="ml-1 text-xs opacity-70">{filteredCandidates.length}</span>
@@ -1279,8 +1279,8 @@ export default function RecruiterFunnelsPage() {
                         className={clsx(
                           'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
                           selectedTab === key
-                            ? 'bg-accent-500 text-white'
-                            : 'text-dark-400 hover:bg-white/[0.06]'
+                            ? 'bg-[var(--hf-accent)] text-[var(--hf-white)]'
+                            : 'text-[var(--hf-dark-400)] hover:bg-[var(--hf-white-alpha-06)]'
                         )}
                       >
                         {stagesConfig.labels[key]} <span className="ml-1 text-xs opacity-70">{count}</span>
@@ -1292,10 +1292,10 @@ export default function RecruiterFunnelsPage() {
                 {/* Master-Detail split */}
                 <div className="flex-1 flex overflow-hidden">
                   {/* Left: candidate list */}
-                  <div className="w-[350px] flex-shrink-0 border-r border-white/[0.06] overflow-hidden flex flex-col relative">
+                  <div className="w-[350px] flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] overflow-hidden flex flex-col relative">
                     <div className={clsx('flex-1 overflow-y-auto', anySelected && 'pb-14')}>
                     {tabFilteredCandidates.length === 0 ? (
-                      <div className="flex items-center justify-center h-40 text-dark-500 text-sm">
+                      <div className="flex items-center justify-center h-40 text-[var(--hf-dark-500)] text-sm">
                         Нет кандидатов
                       </div>
                     ) : (
@@ -1308,12 +1308,12 @@ export default function RecruiterFunnelsPage() {
                             key={candidate.id}
                             onClick={() => { setSelectedCandidateId(candidate.id); setDetailTab('info'); }}
                             className={clsx(
-                              'flex items-start gap-2 px-3 py-3 cursor-pointer border-b border-white/[0.04] transition-colors group/card',
+                              'flex items-start gap-2 px-3 py-3 cursor-pointer border-b border-[color:var(--hf-white-alpha-04)] transition-colors group/card',
                               isChecked
-                                ? 'bg-accent-500/10 border-l-2 border-l-accent-500'
+                                ? 'bg-[var(--hf-accent-bg-10)] border-l-2 border-l-[var(--hf-accent)]'
                                 : isSelected
-                                  ? 'bg-accent-500/10 border-l-2 border-l-accent-500'
-                                  : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
+                                  ? 'bg-[var(--hf-accent-bg-10)] border-l-2 border-l-[var(--hf-accent)]'
+                                  : 'hover:bg-[var(--hf-white-alpha-03)] border-l-2 border-l-transparent'
                             )}
                           >
                             {/* Checkbox */}
@@ -1325,9 +1325,9 @@ export default function RecruiterFunnelsPage() {
                               )}
                             >
                               {isChecked ? (
-                                <CheckSquare className="w-4 h-4 text-accent-400" />
+                                <CheckSquare className="w-4 h-4 text-[var(--hf-accent)]" />
                               ) : (
-                                <Square className="w-4 h-4 text-dark-500 hover:text-dark-300" />
+                                <Square className="w-4 h-4 text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)]" />
                               )}
                             </div>
                             {(candidate as { entity_photo?: string }).entity_photo ? (
@@ -1335,24 +1335,24 @@ export default function RecruiterFunnelsPage() {
                                 src={(candidate as { entity_photo?: string }).entity_photo}
                                 alt={candidate.entity_name || ''}
                                 referrerPolicy="no-referrer"
-                                className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-accent-500/20"
+                                className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-[var(--hf-accent-bg-20)]"
                                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                               />
                             ) : (
-                              <div className="w-9 h-9 rounded-full bg-accent-500/20 flex items-center justify-center text-accent-400 text-sm font-medium flex-shrink-0">
+                              <div className="w-9 h-9 rounded-full bg-[var(--hf-accent-bg-20)] flex items-center justify-center text-[var(--hf-accent)] text-sm font-medium flex-shrink-0">
                                 {initials}
                               </div>
                             )}
                             <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium text-dark-100 truncate">
+                              <div className="text-sm font-medium text-[var(--hf-dark-100)] truncate">
                                 {candidate.entity_name || 'Без имени'}
                               </div>
                               {candidate.entity_position && (
-                                <div className="text-xs text-dark-500 truncate mt-0.5">
+                                <div className="text-xs text-[var(--hf-dark-500)] truncate mt-0.5">
                                   {candidate.entity_position}
                                 </div>
                               )}
-                              <div className="text-xs text-dark-600 mt-0.5">
+                              <div className="text-xs text-[var(--hf-dark-600)] mt-0.5">
                                 {candidate.source || ''}
                                 {candidate.applied_at && (
                                   <span className="ml-1">{new Date(candidate.applied_at).toLocaleDateString('ru')}</span>
@@ -1367,8 +1367,8 @@ export default function RecruiterFunnelsPage() {
 
                     {/* Bulk actions floating bar */}
                     {anySelected && (
-                      <div className="absolute bottom-0 left-0 right-0 p-3 bg-dark-800 border-t border-white/[0.08] flex items-center justify-between">
-                        <span className="text-xs text-dark-300 font-medium">
+                      <div className="absolute bottom-0 left-0 right-0 p-3 bg-[var(--hf-bg-dark-panel)] border-t border-[color:var(--hf-white-alpha-08)] flex items-center justify-between">
+                        <span className="text-xs text-[var(--hf-dark-300)] font-medium">
                           Выбрано: {selectedIds.size}
                         </span>
                         <div className="flex items-center gap-2">
@@ -1377,14 +1377,14 @@ export default function RecruiterFunnelsPage() {
                             <button
                               onClick={() => setBulkStageDropdownOpen(!bulkStageDropdownOpen)}
                               disabled={bulkMoving}
-                              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-accent-500/15 text-accent-400 hover:bg-accent-500/25 transition-colors disabled:opacity-50"
+                              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-[var(--hf-accent-bg-15)] text-[var(--hf-accent)] hover:bg-[var(--hf-accent-bg-25)] transition-colors disabled:opacity-50"
                             >
                               {bulkMoving ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
                               Переместить
                             </button>
                             {bulkStageDropdownOpen && (
-                              <div className="absolute bottom-full left-0 mb-1 z-50 w-56 py-1 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-                                <div className="px-3 py-1.5 text-[10px] text-dark-500 uppercase tracking-wider font-semibold">
+                              <div className="absolute bottom-full left-0 mb-1 z-50 w-56 py-1 bg-[var(--hf-dark-panel-alpha-95)] backdrop-blur-xl border border-[color:var(--hf-white-alpha-10)] rounded-xl shadow-[var(--hf-shadow-2xl)] overflow-hidden">
+                                <div className="px-3 py-1.5 text-[10px] text-[var(--hf-dark-500)] uppercase tracking-wider font-semibold">
                                   Перенести в
                                 </div>
                                 {STAGE_ORDER.map((stage) => {
@@ -1393,7 +1393,7 @@ export default function RecruiterFunnelsPage() {
                                     <button
                                       key={stage}
                                       onClick={() => handleBulkMove(stage as ApplicationStage)}
-                                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm hover:bg-white/[0.04] text-dark-300 hover:text-dark-100"
+                                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm hover:bg-[var(--hf-white-alpha-04)] text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)]"
                                     >
                                       <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
                                       <span className="flex-1">{stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}</span>
@@ -1407,14 +1407,14 @@ export default function RecruiterFunnelsPage() {
                           <button
                             onClick={handleBulkReject}
                             disabled={bulkMoving}
-                            className="px-2.5 py-1 text-xs font-medium rounded-lg bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors disabled:opacity-50"
+                            className="px-2.5 py-1 text-xs font-medium rounded-lg bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-badge)] transition-colors disabled:opacity-50"
                           >
                             Отказать
                           </button>
                           {/* Deselect */}
                           <button
                             onClick={() => setSelectedIds(new Set())}
-                            className="px-2.5 py-1 text-xs font-medium rounded-lg text-dark-400 hover:bg-white/[0.06] transition-colors"
+                            className="px-2.5 py-1 text-xs font-medium rounded-lg text-[var(--hf-dark-400)] hover:bg-[var(--hf-white-alpha-06)] transition-colors"
                           >
                             Снять
                           </button>
@@ -1428,14 +1428,14 @@ export default function RecruiterFunnelsPage() {
                     {selectedCandidate ? (
                       <>
                         {/* Detail tabs: Личные заметки / Резюме */}
-                        <div className="flex items-center border-b border-white/[0.06] px-5 flex-shrink-0">
+                        <div className="flex items-center border-b border-[color:var(--hf-white-alpha-06)] px-5 flex-shrink-0">
                           <button
                             onClick={() => setDetailTab('info')}
                             className={clsx(
                               'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
                               detailTab === 'info'
-                                ? 'border-accent-500 text-dark-100'
-                                : 'border-transparent text-dark-400 hover:text-dark-200'
+                                ? 'border-[var(--hf-accent)] text-[var(--hf-dark-100)]'
+                                : 'border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]'
                             )}
                           >
                             Личные заметки
@@ -1445,14 +1445,14 @@ export default function RecruiterFunnelsPage() {
                             className={clsx(
                               'px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5',
                               detailTab === 'resume'
-                                ? 'border-accent-500 text-dark-100'
-                                : 'border-transparent text-dark-400 hover:text-dark-200'
+                                ? 'border-[var(--hf-accent)] text-[var(--hf-dark-100)]'
+                                : 'border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]'
                             )}
                           >
                             <FileText className="w-3.5 h-3.5" />
                             Резюме
                             {hasResume && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-500/15 text-accent-400 ml-1">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--hf-accent-bg-15)] text-[var(--hf-accent)] ml-1">
                                 {resumePages.length || 1}
                               </span>
                             )}
@@ -1468,7 +1468,7 @@ export default function RecruiterFunnelsPage() {
                                 {selectedCandidate.entity_id && (
                                   <button
                                     onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}`)}
-                                    className="flex items-center gap-1.5 px-3.5 py-2 border border-white/[0.12] rounded-lg text-sm text-dark-200 hover:bg-white/[0.04] transition-colors"
+                                    className="flex items-center gap-1.5 px-3.5 py-2 border border-[color:var(--hf-white-alpha-12)] rounded-lg text-sm text-[var(--hf-dark-200)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                   >
                                     <Users className="w-4 h-4" /> Открыть профиль
                                   </button>
@@ -1478,7 +1478,7 @@ export default function RecruiterFunnelsPage() {
                                     <button
                                       onClick={() => setShowAddToVacancy(!showAddToVacancy)}
                                       disabled={addingToVacancy}
-                                      className="flex items-center gap-1.5 px-3.5 py-2 border border-white/[0.12] rounded-lg text-sm text-dark-200 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
+                                      className="flex items-center gap-1.5 px-3.5 py-2 border border-[color:var(--hf-white-alpha-12)] rounded-lg text-sm text-[var(--hf-dark-200)] hover:bg-[var(--hf-white-alpha-04)] transition-colors disabled:opacity-50"
                                     >
                                       {addingToVacancy ? (
                                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -1488,18 +1488,18 @@ export default function RecruiterFunnelsPage() {
                                       Переместить
                                     </button>
                                     {showAddToVacancy && (
-                                      <div className="absolute top-full left-0 mt-1 w-72 max-h-64 overflow-y-auto z-50 bg-dark-800 border border-white/[0.1] rounded-xl shadow-xl">
+                                      <div className="absolute top-full left-0 mt-1 w-72 max-h-64 overflow-y-auto z-50 bg-[var(--hf-bg-dark-panel)] border border-[color:var(--hf-white-alpha-10)] rounded-xl shadow-[var(--hf-shadow-xl)]">
                                         {availableVacanciesForCandidate.length === 0 ? (
-                                          <div className="px-4 py-3 text-sm text-dark-400">Нет доступных вакансий</div>
+                                          <div className="px-4 py-3 text-sm text-[var(--hf-dark-400)]">Нет доступных вакансий</div>
                                         ) : (
                                           availableVacanciesForCandidate.map((v) => (
                                             <button
                                               key={v.id}
                                               onClick={() => handleAddToVacancy(v.id)}
                                               disabled={addingToVacancy}
-                                              className="w-full text-left px-4 py-2.5 text-sm text-dark-200 hover:bg-white/[0.06] transition-colors flex items-center gap-2 disabled:opacity-50"
+                                              className="w-full text-left px-4 py-2.5 text-sm text-[var(--hf-dark-200)] hover:bg-[var(--hf-white-alpha-06)] transition-colors flex items-center gap-2 disabled:opacity-50"
                                             >
-                                              <Briefcase className="w-3.5 h-3.5 text-dark-400 flex-shrink-0" />
+                                              <Briefcase className="w-3.5 h-3.5 text-[var(--hf-dark-400)] flex-shrink-0" />
                                               <span className="truncate">{v.title}</span>
                                             </button>
                                           ))
@@ -1510,7 +1510,7 @@ export default function RecruiterFunnelsPage() {
                                 )}
                                 <button
                                   onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}`)}
-                                  className="flex items-center gap-1.5 px-3.5 py-2 border border-white/[0.12] rounded-lg text-sm text-dark-200 hover:bg-white/[0.04] transition-colors"
+                                  className="flex items-center gap-1.5 px-3.5 py-2 border border-[color:var(--hf-white-alpha-12)] rounded-lg text-sm text-[var(--hf-dark-200)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                 >
                                   <Pencil className="w-4 h-4" /> Редактировать
                                 </button>
@@ -1519,11 +1519,11 @@ export default function RecruiterFunnelsPage() {
                               {/* Name + large photo (Huntflow / AllCandidatesPage style) */}
                               <div className="flex items-start justify-between gap-4 mb-5">
                                 <div className="flex-1 min-w-0">
-                                  <h2 className="text-2xl font-bold text-dark-50 mb-1">
+                                  <h2 className="text-2xl font-bold text-[var(--hf-dark-50)] mb-1">
                                     {selectedCandidate.entity_name || 'Без имени'}
                                   </h2>
                                   {(selectedCandidate.entity_position || selectedCandidate.entity_company) && (
-                                    <p className="text-sm text-dark-400">
+                                    <p className="text-sm text-[var(--hf-dark-400)]">
                                       {[selectedCandidate.entity_position, selectedCandidate.entity_company].filter(Boolean).join(' · ')}
                                     </p>
                                   )}
@@ -1533,7 +1533,7 @@ export default function RecruiterFunnelsPage() {
                                     src={(selectedCandidate as { entity_photo?: string }).entity_photo}
                                     alt={selectedCandidate.entity_name || ''}
                                     referrerPolicy="no-referrer"
-                                    className="w-[120px] h-[150px] rounded-xl object-cover flex-shrink-0 bg-accent-500/20"
+                                    className="w-[120px] h-[150px] rounded-xl object-cover flex-shrink-0 bg-[var(--hf-accent-bg-20)]"
                                     onError={(e) => {
                                       const el = e.currentTarget as HTMLImageElement;
                                       el.style.display = 'none';
@@ -1542,7 +1542,7 @@ export default function RecruiterFunnelsPage() {
                                   />
                                 ) : null}
                                 <div className={clsx(
-                                  'w-[120px] h-[150px] rounded-xl bg-accent-500/20 flex items-center justify-center text-accent-400 text-4xl font-bold flex-shrink-0',
+                                  'w-[120px] h-[150px] rounded-xl bg-[var(--hf-accent-bg-20)] flex items-center justify-center text-[var(--hf-accent)] text-4xl font-bold flex-shrink-0',
                                   (selectedCandidate as { entity_photo?: string }).entity_photo && 'hidden'
                                 )}>
                                   {(selectedCandidate.entity_name || '?')[0].toUpperCase()}
@@ -1553,9 +1553,9 @@ export default function RecruiterFunnelsPage() {
                               <div className="space-y-0 mb-6 text-sm">
                                 {selectedCandidate.entity_phone && (
                                   <div className="group flex items-baseline gap-2 py-1.5">
-                                    <span className="text-dark-500 flex-shrink-0">Телефон</span>
-                                    <span className="flex-1 border-b border-dotted border-white/[0.08]" />
-                                    <a href={`tel:${selectedCandidate.entity_phone}`} className="text-dark-200 hover:text-white transition-colors flex-shrink-0">
+                                    <span className="text-[var(--hf-dark-500)] flex-shrink-0">Телефон</span>
+                                    <span className="flex-1 border-b border-dotted border-[color:var(--hf-white-alpha-08)]" />
+                                    <a href={`tel:${selectedCandidate.entity_phone}`} className="text-[var(--hf-dark-200)] hover:text-[var(--hf-white)] transition-colors flex-shrink-0">
                                       {selectedCandidate.entity_phone}
                                     </a>
                                     <CopyButton value={selectedCandidate.entity_phone} />
@@ -1563,9 +1563,9 @@ export default function RecruiterFunnelsPage() {
                                 )}
                                 {selectedCandidate.entity_email && (
                                   <div className="group flex items-baseline gap-2 py-1.5">
-                                    <span className="text-dark-500 flex-shrink-0">Эл. почта</span>
-                                    <span className="flex-1 border-b border-dotted border-white/[0.08]" />
-                                    <a href={`mailto:${selectedCandidate.entity_email}`} className="text-dark-200 hover:text-white transition-colors flex-shrink-0">
+                                    <span className="text-[var(--hf-dark-500)] flex-shrink-0">Эл. почта</span>
+                                    <span className="flex-1 border-b border-dotted border-[color:var(--hf-white-alpha-08)]" />
+                                    <a href={`mailto:${selectedCandidate.entity_email}`} className="text-[var(--hf-dark-200)] hover:text-[var(--hf-white)] transition-colors flex-shrink-0">
                                       {selectedCandidate.entity_email}
                                     </a>
                                     <CopyButton value={selectedCandidate.entity_email} />
@@ -1573,9 +1573,9 @@ export default function RecruiterFunnelsPage() {
                                 )}
                                 {selectedCandidate.entity_telegram && (
                                   <div className="group flex items-baseline gap-2 py-1.5">
-                                    <span className="text-dark-500 flex-shrink-0">Telegram</span>
-                                    <span className="flex-1 border-b border-dotted border-white/[0.08]" />
-                                    <a href={`https://t.me/${selectedCandidate.entity_telegram}`} target="_blank" rel="noopener noreferrer" className="text-dark-200 hover:text-white transition-colors flex-shrink-0">
+                                    <span className="text-[var(--hf-dark-500)] flex-shrink-0">Telegram</span>
+                                    <span className="flex-1 border-b border-dotted border-[color:var(--hf-white-alpha-08)]" />
+                                    <a href={`https://t.me/${selectedCandidate.entity_telegram}`} target="_blank" rel="noopener noreferrer" className="text-[var(--hf-dark-200)] hover:text-[var(--hf-white)] transition-colors flex-shrink-0">
                                       @{selectedCandidate.entity_telegram}
                                     </a>
                                     <CopyButton value={`@${selectedCandidate.entity_telegram}`} />
@@ -1583,19 +1583,19 @@ export default function RecruiterFunnelsPage() {
                                 )}
                                 {selectedCandidate.source && (
                                   <div className="flex items-baseline gap-2 py-1.5">
-                                    <span className="text-dark-500 flex-shrink-0">Источник</span>
-                                    <span className="flex-1 border-b border-dotted border-white/[0.08]" />
-                                    <span className="text-dark-200 flex-shrink-0">{selectedCandidate.source}</span>
+                                    <span className="text-[var(--hf-dark-500)] flex-shrink-0">Источник</span>
+                                    <span className="flex-1 border-b border-dotted border-[color:var(--hf-white-alpha-08)]" />
+                                    <span className="text-[var(--hf-dark-200)] flex-shrink-0">{selectedCandidate.source}</span>
                                   </div>
                                 )}
                               </div>
 
-                              
+
                               {/* Tags / Metki */}
                               <div className="mb-6">
                                 <div className="flex items-center gap-2 mb-2">
-                                  <Tag className="w-3.5 h-3.5 text-dark-500" />
-                                  <span className="text-xs font-medium text-dark-500 uppercase tracking-wider">Метки</span>
+                                  <Tag className="w-3.5 h-3.5 text-[var(--hf-dark-500)]" />
+                                  <span className="text-xs font-medium text-[var(--hf-dark-500)] uppercase tracking-wider">Метки</span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   {entityTags.map(tag => (
@@ -1603,9 +1603,9 @@ export default function RecruiterFunnelsPage() {
                                       key={tag.id}
                                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
                                       style={{
-                                        backgroundColor: tag.color + '20',
+                                        backgroundColor: `color-mix(in srgb, ${tag.color} 12%, transparent)`,
                                         color: tag.color,
-                                        border: `1px solid ${tag.color}40`,
+                                        border: `1px solid color-mix(in srgb, ${tag.color} 25%, transparent)`,
                                       }}
                                     >
                                       {tag.name}
@@ -1620,12 +1620,12 @@ export default function RecruiterFunnelsPage() {
                                   <div className="relative" ref={tagDropdownRef}>
                                     <button
                                       onClick={() => setShowTagDropdown(!showTagDropdown)}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-dark-400 border border-dashed border-white/[0.1] hover:border-white/[0.2] hover:text-dark-300 transition-colors"
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-[var(--hf-dark-400)] border border-dashed border-[color:var(--hf-white-alpha-10)] hover:border-[color:var(--hf-white-alpha-20)] hover:text-[var(--hf-dark-300)] transition-colors"
                                     >
                                       <Plus className="w-3 h-3" />
                                     </button>
                                     {showTagDropdown && (
-                                      <div className="absolute left-0 top-full mt-1 z-50 w-56 bg-dark-800 border border-white/[0.1] rounded-lg shadow-xl overflow-hidden">
+                                      <div className="absolute left-0 top-full mt-1 z-50 w-56 bg-[var(--hf-bg-dark-panel)] border border-[color:var(--hf-white-alpha-10)] rounded-lg shadow-[var(--hf-shadow-xl)] overflow-hidden">
                                         <div className="max-h-48 overflow-y-auto">
                                           {orgTags
                                             .filter(t => !entityTags.find(et => et.id === t.id))
@@ -1633,7 +1633,7 @@ export default function RecruiterFunnelsPage() {
                                               <button
                                                 key={tag.id}
                                                 onClick={() => { handleAddTag(tag.id); setShowTagDropdown(false); }}
-                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-dark-200 hover:bg-white/[0.04] transition-colors text-left"
+                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[var(--hf-dark-200)] hover:bg-[var(--hf-white-alpha-04)] transition-colors text-left"
                                               >
                                                 <span
                                                   className="w-3 h-3 rounded-full flex-shrink-0"
@@ -1643,10 +1643,10 @@ export default function RecruiterFunnelsPage() {
                                               </button>
                                             ))}
                                           {orgTags.filter(t => !entityTags.find(et => et.id === t.id)).length === 0 && (
-                                            <div className="px-3 py-2 text-xs text-dark-500">Нет доступных меток</div>
+                                            <div className="px-3 py-2 text-xs text-[var(--hf-dark-500)]">Нет доступных меток</div>
                                           )}
                                         </div>
-                                        <div className="border-t border-white/[0.06] p-2">
+                                        <div className="border-t border-[color:var(--hf-white-alpha-06)] p-2">
                                           <div className="flex items-center gap-1.5 mb-1.5">
                                             {TAG_PALETTE.map(p => (
                                               <button
@@ -1656,7 +1656,7 @@ export default function RecruiterFunnelsPage() {
                                                 style={{
                                                   backgroundColor: p.color,
                                                   transform: newTagColor === p.color ? 'scale(1.3)' : 'scale(1)',
-                                                  boxShadow: newTagColor === p.color ? `0 0 0 2px ${p.color}60` : 'none',
+                                                  boxShadow: newTagColor === p.color ? `0 0 0 2px color-mix(in srgb, ${p.color} 38%, transparent)` : 'none',
                                                 }}
                                               />
                                             ))}
@@ -1668,12 +1668,12 @@ export default function RecruiterFunnelsPage() {
                                               onChange={e => setNewTagName(e.target.value)}
                                               onKeyDown={e => { if (e.key === 'Enter') handleCreateTag(); }}
                                               placeholder="Новая метка..."
-                                              className="flex-1 px-2 py-1 text-xs bg-dark-700 border border-white/[0.1] rounded text-dark-200 placeholder:text-dark-500 focus:outline-none focus:border-white/[0.2]"
+                                              className="flex-1 px-2 py-1 text-xs bg-[var(--hf-dark-700)] border border-[color:var(--hf-white-alpha-10)] rounded text-[var(--hf-dark-200)] placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[color:var(--hf-white-alpha-20)]"
                                             />
                                             <button
                                               onClick={handleCreateTag}
                                               disabled={creatingTag || !newTagName.trim()}
-                                              className="px-2 py-1 text-xs rounded bg-white/[0.06] text-dark-300 hover:bg-white/[0.1] disabled:opacity-40 transition-colors"
+                                              className="px-2 py-1 text-xs rounded bg-[var(--hf-white-alpha-06)] text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-10)] disabled:opacity-40 transition-colors"
                                             >
                                               {creatingTag ? <Loader2 className="w-3 h-3 animate-spin" /> : '+'}
                                             </button>
@@ -1686,11 +1686,11 @@ export default function RecruiterFunnelsPage() {
                               </div>
 
                               {/* Current stage — Huntflow style block */}
-                              <div className="mb-5 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+                              <div className="mb-5 p-4 rounded-xl border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)]">
                                 <div className="flex items-center justify-between">
                                   <div>
-                                    <div className="text-xs text-dark-500 mb-1">Текущий этап</div>
-                                    <div className="text-base font-semibold text-dark-100">
+                                    <div className="text-xs text-[var(--hf-dark-500)] mb-1">Текущий этап</div>
+                                    <div className="text-base font-semibold text-[var(--hf-dark-100)]">
                                       {stagesConfig.labels[
                                         (stagesConfig.enumToKeys[selectedCandidate.stage] || [])[0] || selectedCandidate.stage
                                       ] || selectedCandidate.stage}
@@ -1706,9 +1706,9 @@ export default function RecruiterFunnelsPage() {
 
                               {/* Compatibility score */}
                               {selectedCandidate.compatibility_score != null && (
-                                <div className="mb-5 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
-                                  <div className="text-xs text-dark-500 mb-1">Совместимость</div>
-                                  <div className="text-lg font-semibold text-accent-400">{selectedCandidate.compatibility_score.overall_score}%</div>
+                                <div className="mb-5 p-4 rounded-xl border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)]">
+                                  <div className="text-xs text-[var(--hf-dark-500)] mb-1">Совместимость</div>
+                                  <div className="text-lg font-semibold text-[var(--hf-accent)]">{selectedCandidate.compatibility_score.overall_score}%</div>
                                 </div>
                               )}
 
@@ -1717,7 +1717,7 @@ export default function RecruiterFunnelsPage() {
                                 <textarea
                                   ref={commentRef}
                                   placeholder="Написать комментарий... (Enter — отправить, Shift+Enter — новая строка)"
-                                  className="w-full px-4 py-3 rounded-xl border border-white/[0.08] bg-white/[0.02] text-sm text-dark-200 placeholder:text-dark-500 focus:outline-none focus:border-white/[0.15] resize-none disabled:opacity-50"
+                                  className="w-full px-4 py-3 rounded-xl border border-[color:var(--hf-white-alpha-08)] bg-[var(--hf-white-alpha-02)] text-sm text-[var(--hf-dark-200)] placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[color:var(--hf-white-alpha-15)] resize-none disabled:opacity-50"
                                   rows={2}
                                   disabled={commentSaving}
                                   onKeyDown={(e) => {
@@ -1731,7 +1731,7 @@ export default function RecruiterFunnelsPage() {
                               </div>
 
                               {/* Action chips — Huntflow outlined style */}
-                              <div className="flex flex-wrap items-center gap-2 mb-5 pb-5 border-b border-white/[0.06]">
+                              <div className="flex flex-wrap items-center gap-2 mb-5 pb-5 border-b border-[color:var(--hf-white-alpha-06)]">
                                 <button
                                   onClick={() => {
                                     if (selectedCandidate.entity_email) {
@@ -1740,7 +1740,7 @@ export default function RecruiterFunnelsPage() {
                                       toast.error('Email кандидата не указан');
                                     }
                                   }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                 >
                                   <Mail className="w-3.5 h-3.5" /> Письмо
                                 </button>
@@ -1758,26 +1758,26 @@ export default function RecruiterFunnelsPage() {
                                       setInterviewDateTime('');
                                     }
                                   }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                 >
                                   <Calendar className="w-3.5 h-3.5" /> Интервью
                                 </button>
                                 <button
                                   onClick={() => commentRef.current?.focus()}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                 >
                                   <MessageSquare className="w-3.5 h-3.5" /> Комментарий
                                 </button>
                                 <button
                                   onClick={() => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                 >
                                   <ThumbsUp className="w-3.5 h-3.5" /> Оффер
                                 </button>
                                 <button
                                   onClick={() => candidateFileInputRef.current?.click()}
                                   disabled={candidateFileUploading}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-sm text-dark-300 hover:bg-white/[0.04] transition-colors disabled:opacity-50"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors disabled:opacity-50"
                                 >
                                   <Paperclip className="w-3.5 h-3.5" /> {candidateFileUploading ? 'Загрузка…' : 'Файл'}
                                 </button>
@@ -1789,7 +1789,7 @@ export default function RecruiterFunnelsPage() {
                                 />
                                 <button
                                   onClick={() => handleStageChange(selectedCandidate.id, 'rejected' as ApplicationStage)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/20 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-status-red-badge)] text-sm text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)] transition-colors"
                                 >
                                   <XCircle className="w-3.5 h-3.5" /> Отказ
                                 </button>
@@ -1799,7 +1799,7 @@ export default function RecruiterFunnelsPage() {
                                   читаются из Entity.extra_data.notes */}
                               {Array.isArray(entityExtraData?.notes) && (entityExtraData!.notes as unknown[]).length > 0 && (
                                 <div className="mb-5">
-                                  <div className="text-xs text-dark-500 mb-2 uppercase tracking-wider">Комментарии</div>
+                                  <div className="text-xs text-[var(--hf-dark-500)] mb-2 uppercase tracking-wider">Комментарии</div>
                                   <div className="space-y-2">
                                     {(entityExtraData!.notes as Array<Record<string, unknown>>)
                                       .slice()
@@ -1820,23 +1820,23 @@ export default function RecruiterFunnelsPage() {
                                         return (
                                           <div
                                             key={(note.id as string) || `note-${i}`}
-                                            className="rounded-lg border border-white/[0.06] bg-white/[0.03] p-3"
+                                            className="rounded-lg border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-03)] p-3"
                                           >
                                             <div className="flex items-center justify-between mb-1.5 gap-2">
                                               <div className="flex items-center gap-2 min-w-0">
-                                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0 bg-white/[0.08] text-white/70">
+                                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0 bg-[var(--hf-white-alpha-08)] text-[color:var(--hf-white-alpha-70)]">
                                                   {(authorName || '?')[0].toUpperCase()}
                                                 </div>
-                                                <span className="text-xs font-medium text-dark-200 truncate">{authorName}</span>
+                                                <span className="text-xs font-medium text-[var(--hf-dark-200)] truncate">{authorName}</span>
                                                 {stageLabel && (
-                                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/[0.06] text-white/60 flex-shrink-0">
+                                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--hf-white-alpha-06)] text-[color:var(--hf-white-alpha-60)] flex-shrink-0">
                                                     {stageLabel}
                                                   </span>
                                                 )}
                                               </div>
-                                              <span className="text-[10px] text-dark-500 flex-shrink-0">{dateStr}</span>
+                                              <span className="text-[10px] text-[var(--hf-dark-500)] flex-shrink-0">{dateStr}</span>
                                             </div>
-                                            <div className="text-sm text-dark-200 whitespace-pre-wrap break-words">
+                                            <div className="text-sm text-[var(--hf-dark-200)] whitespace-pre-wrap break-words">
                                               {String(note.text)}
                                             </div>
                                           </div>
@@ -1849,8 +1849,8 @@ export default function RecruiterFunnelsPage() {
                               {/* Legacy notes (VacancyApplication.notes string) */}
                               {selectedCandidate.notes && (
                                 <div className="mb-5">
-                                  <div className="text-xs text-dark-500 mb-2">Заметки</div>
-                                  <div className="text-sm text-dark-300 whitespace-pre-wrap p-3 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                                  <div className="text-xs text-[var(--hf-dark-500)] mb-2">Заметки</div>
+                                  <div className="text-sm text-[var(--hf-dark-300)] whitespace-pre-wrap p-3 rounded-lg bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)]">
                                     {selectedCandidate.notes}
                                   </div>
                                 </div>
@@ -1859,17 +1859,17 @@ export default function RecruiterFunnelsPage() {
                               {/* History timeline — Huntflow style */}
                               <div className="mt-4">
                                 <div className="flex items-center gap-2 mb-3">
-                                  <span className="text-xs text-dark-500 uppercase tracking-wider font-medium">Действия</span>
-                                  <span className="text-xs text-dark-600">Все</span>
+                                  <span className="text-xs text-[var(--hf-dark-500)] uppercase tracking-wider font-medium">Действия</span>
+                                  <span className="text-xs text-[var(--hf-dark-600)]">Все</span>
                                 </div>
                                 {historyLoading ? (
-                                  <div className="flex items-center gap-2 text-dark-500 text-sm">
+                                  <div className="flex items-center gap-2 text-[var(--hf-dark-500)] text-sm">
                                     <Loader2 className="w-4 h-4 animate-spin" /> Загрузка...
                                   </div>
                                 ) : candidateHistory.length === 0 ? (
-                                  <div className="text-sm text-dark-600">Нет записей</div>
+                                  <div className="text-sm text-[var(--hf-dark-600)]">Нет записей</div>
                                 ) : (
-                                  <div className="relative pl-6 border-l border-white/[0.08]">
+                                  <div className="relative pl-6 border-l border-[color:var(--hf-white-alpha-08)]">
                                     {candidateHistory.map((entry: any, i: number) => {
                                       const toColorKey = colorToStageColor(
                                         stagesConfig.colorKeys[entry.to_stage],
@@ -1888,12 +1888,12 @@ export default function RecruiterFunnelsPage() {
                                         <div key={i} className="relative pb-5 last:pb-0">
                                           {/* Timeline dot */}
                                           <div className={clsx(
-                                            'absolute -left-[25px] w-3 h-3 rounded-full border-2 border-dark-800',
+                                            'absolute -left-[25px] w-3 h-3 rounded-full border-2 border-[color:var(--hf-dark-800)]',
                                             toColors.dot,
                                           )} />
 
                                           {/* Date */}
-                                          <div className="text-xs text-dark-600 mb-1">
+                                          <div className="text-xs text-[var(--hf-dark-600)] mb-1">
                                             {entry.created_at && new Date(entry.created_at).toLocaleString('ru', {
                                               day: 'numeric', month: 'short', year: 'numeric',
                                               hour: '2-digit', minute: '2-digit',
@@ -1906,13 +1906,13 @@ export default function RecruiterFunnelsPage() {
                                               <span className={clsx('px-2 py-0.5 rounded-full', fromColors?.badge)}>
                                                 {stagesConfig.labels[entry.from_stage] || STAGE_LABELS[entry.from_stage] || entry.from_stage}
                                               </span>
-                                              <span className="text-dark-600">&rarr;</span>
+                                              <span className="text-[var(--hf-dark-600)]">&rarr;</span>
                                               <span className={clsx('px-2 py-0.5 rounded-full', toColors.badge)}>
                                                 {stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}
                                               </span>
                                             </div>
                                           ) : (
-                                            <div className="text-sm text-dark-300 mb-1">
+                                            <div className="text-sm text-[var(--hf-dark-300)] mb-1">
                                               <span className={clsx('inline-block px-2 py-0.5 rounded-full text-xs', toColors.badge)}>
                                                 {stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}
                                               </span>
@@ -1921,14 +1921,14 @@ export default function RecruiterFunnelsPage() {
 
                                           {/* Comment */}
                                           {entry.comment && (
-                                            <div className="text-sm text-dark-400 mt-1 whitespace-pre-wrap pl-0.5">
+                                            <div className="text-sm text-[var(--hf-dark-400)] mt-1 whitespace-pre-wrap pl-0.5">
                                               {entry.comment}
                                             </div>
                                           )}
 
                                           {/* Changed by */}
                                           {entry.changed_by && (
-                                            <div className="text-xs text-dark-600 mt-1">{entry.changed_by}</div>
+                                            <div className="text-xs text-[var(--hf-dark-600)] mt-1">{entry.changed_by}</div>
                                           )}
                                         </div>
                                       );
@@ -1942,19 +1942,19 @@ export default function RecruiterFunnelsPage() {
                             <div className="flex-1 flex flex-col h-full">
                               {filesLoading ? (
                                 <div className="flex items-center justify-center py-16">
-                                  <Loader2 className="w-6 h-6 animate-spin text-accent-500" />
+                                  <Loader2 className="w-6 h-6 animate-spin text-[var(--hf-accent)]" />
                                 </div>
                               ) : !hasResume ? (
                                 <div className="flex flex-col items-center justify-center py-16 text-center">
-                                  <FileText className="w-12 h-12 text-dark-600 mb-3" />
-                                  <p className="text-sm text-dark-400">Нет загруженных резюме</p>
-                                  <p className="text-xs text-dark-500 mt-1">
+                                  <FileText className="w-12 h-12 text-[var(--hf-dark-600)] mb-3" />
+                                  <p className="text-sm text-[var(--hf-dark-400)]">Нет загруженных резюме</p>
+                                  <p className="text-xs text-[var(--hf-dark-500)] mt-1">
                                     Загрузите PDF-резюме в профиле кандидата
                                   </p>
                                   {selectedCandidate.entity_id && (
                                     <button
                                       onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}`)}
-                                      className="mt-3 flex items-center gap-1.5 px-3 py-1.5 text-xs text-accent-400 hover:bg-accent-500/10 rounded-lg transition-colors"
+                                      className="mt-3 flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--hf-accent)] hover:bg-[var(--hf-accent-bg-10)] rounded-lg transition-colors"
                                     >
                                       <Users className="w-3.5 h-3.5" />
                                       Открыть профиль
@@ -1964,14 +1964,14 @@ export default function RecruiterFunnelsPage() {
                               ) : (
                                 <div className="flex-1 flex flex-col">
                                   {/* Action bar */}
-                                  <div className="flex items-center justify-between px-5 py-2.5 border-b border-white/[0.06] flex-shrink-0">
+                                  <div className="flex items-center justify-between px-5 py-2.5 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
                                     <div className="flex items-center gap-3">
                                       {resumeOriginal && (
                                         <a
                                           href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download`}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-08)] text-xs text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                         >
                                           <FileText className="w-3.5 h-3.5" />
                                           Скачать
@@ -1979,7 +1979,7 @@ export default function RecruiterFunnelsPage() {
                                       )}
                                       <button
                                         onClick={() => setResumeTextMode(v => !v)}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors ${resumeTextMode ? 'border-accent-500/30 text-accent-400 bg-accent-500/10' : 'border-white/[0.08] text-dark-300 hover:bg-white/[0.04]'}`}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors ${resumeTextMode ? 'border-[color:var(--hf-accent-border-30)] text-[var(--hf-accent)] bg-[var(--hf-accent-bg-10)]' : 'border-[color:var(--hf-white-alpha-08)] text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)]'}`}
                                       >
                                         <FileText className="w-3.5 h-3.5" />
                                         Текст
@@ -1987,7 +1987,7 @@ export default function RecruiterFunnelsPage() {
                                       {Object.keys(resumePageUrls).length > 0 && (
                                         <button
                                           onClick={handlePrintResume}
-                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-dark-300 hover:bg-white/[0.04] transition-colors"
+                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-08)] text-xs text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                         >
                                           <Printer className="w-3.5 h-3.5" />
                                           Печать
@@ -2000,19 +2000,19 @@ export default function RecruiterFunnelsPage() {
                                         <button
                                           onClick={() => setCurrentResumePage(p => Math.max(0, p - 1))}
                                           disabled={currentResumePage === 0}
-                                          className="p-1 rounded hover:bg-white/[0.06] disabled:opacity-30 transition-colors"
+                                          className="p-1 rounded hover:bg-[var(--hf-white-alpha-06)] disabled:opacity-30 transition-colors"
                                         >
-                                          <ChevronRight className="w-4 h-4 text-dark-400 rotate-180" />
+                                          <ChevronRight className="w-4 h-4 text-[var(--hf-dark-400)] rotate-180" />
                                         </button>
-                                        <span className="text-xs text-dark-400">
+                                        <span className="text-xs text-[var(--hf-dark-400)]">
                                           Страница {currentResumePage + 1}/{resumePages.length}
                                         </span>
                                         <button
                                           onClick={() => setCurrentResumePage(p => Math.min(resumePages.length - 1, p + 1))}
                                           disabled={currentResumePage >= resumePages.length - 1}
-                                          className="p-1 rounded hover:bg-white/[0.06] disabled:opacity-30 transition-colors"
+                                          className="p-1 rounded hover:bg-[var(--hf-white-alpha-06)] disabled:opacity-30 transition-colors"
                                         >
-                                          <ChevronRight className="w-4 h-4 text-dark-400" />
+                                          <ChevronRight className="w-4 h-4 text-[var(--hf-dark-400)]" />
                                         </button>
                                       </div>
                                     )}
@@ -2020,12 +2020,12 @@ export default function RecruiterFunnelsPage() {
 
                                   {/* Resume file name */}
                                   {resumeOriginal && (
-                                    <div className="px-5 py-2 border-b border-white/[0.04] flex-shrink-0">
+                                    <div className="px-5 py-2 border-b border-[color:var(--hf-white-alpha-04)] flex-shrink-0">
                                       <a
                                         href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1.5 text-xs text-dark-400 hover:text-accent-400 transition-colors"
+                                        className="inline-flex items-center gap-1.5 text-xs text-[var(--hf-dark-400)] hover:text-[var(--hf-accent)] transition-colors"
                                       >
                                         <Briefcase className="w-3 h-3" />
                                         {resumeOriginal.file_name}
@@ -2034,18 +2034,18 @@ export default function RecruiterFunnelsPage() {
                                   )}
 
                                   {/* Page image / text view / PDF fallback */}
-                                  <div className="flex-1 overflow-y-auto flex justify-center p-4 bg-dark-900/50">
+                                  <div className="flex-1 overflow-y-auto flex justify-center p-4 bg-[var(--hf-dark-panel-alpha-50)]">
                                     {resumeTextMode ? (
                                       <div className="w-full max-w-3xl">
                                         {resumeTextContent ? (
-                                          <pre className="whitespace-pre-wrap font-mono text-sm text-dark-200 leading-relaxed p-6 bg-dark-800/80 rounded-lg border border-white/[0.06]">
+                                          <pre className="whitespace-pre-wrap font-mono text-sm text-[var(--hf-dark-200)] leading-relaxed p-6 bg-[var(--hf-dark-panel-alpha-80)] rounded-lg border border-[color:var(--hf-white-alpha-06)]">
                                             {resumeTextContent}
                                           </pre>
                                         ) : (
                                           <div className="flex flex-col items-center gap-3 py-16 text-center">
-                                            <FileText className="w-10 h-10 text-dark-600" />
-                                            <p className="text-sm text-dark-400">Текстовая версия недоступна</p>
-                                            <p className="text-xs text-dark-500">Данные резюме не были распарсены</p>
+                                            <FileText className="w-10 h-10 text-[var(--hf-dark-600)]" />
+                                            <p className="text-sm text-[var(--hf-dark-400)]">Текстовая версия недоступна</p>
+                                            <p className="text-xs text-[var(--hf-dark-500)]">Данные резюме не были распарсены</p>
                                           </div>
                                         )}
                                       </div>
@@ -2054,22 +2054,22 @@ export default function RecruiterFunnelsPage() {
                                         <img
                                           src={resumePageUrls[currentResumePage]}
                                           alt={`Резюме стр. ${currentResumePage + 1}`}
-                                          className="max-w-full h-auto rounded-lg shadow-2xl border border-white/[0.06]"
+                                          className="max-w-full h-auto rounded-lg shadow-[var(--hf-shadow-2xl)] border border-[color:var(--hf-white-alpha-06)]"
                                         />
                                       ) : (
                                         <div className="flex items-center justify-center py-20">
-                                          <Loader2 className="w-6 h-6 text-dark-500 animate-spin" />
+                                          <Loader2 className="w-6 h-6 text-[var(--hf-dark-500)] animate-spin" />
                                         </div>
                                       )
                                     ) : resumeImageError ? (
                                       <div className="flex flex-col items-center gap-4 py-16 text-center">
-                                        <FileText className="w-12 h-12 text-dark-600" />
-                                        <p className="text-sm text-dark-400">Страницы резюме не загружены</p>
-                                        <p className="text-xs text-dark-500">Файлы изображений отсутствуют в базе</p>
+                                        <FileText className="w-12 h-12 text-[var(--hf-dark-600)]" />
+                                        <p className="text-sm text-[var(--hf-dark-400)]">Страницы резюме не загружены</p>
+                                        <p className="text-xs text-[var(--hf-dark-500)]">Файлы изображений отсутствуют в базе</p>
                                         <button
                                           onClick={handleReconvert}
                                           disabled={reconverting}
-                                          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 transition-colors text-sm font-medium disabled:opacity-50"
+                                          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] hover:bg-[var(--hf-accent-bg-30)] transition-colors text-sm font-medium disabled:opacity-50"
                                         >
                                           {reconverting ? (
                                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -2082,7 +2082,7 @@ export default function RecruiterFunnelsPage() {
                                     ) : resumePdf ? (
                                       <iframe
                                         src={`/api/entities/${resumePdf.entity_id}/files/${resumePdf.id}/download`}
-                                        className="w-full h-full rounded-lg border border-white/[0.06] bg-white min-h-[600px]"
+                                        className="w-full h-full rounded-lg border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white)] min-h-[600px]"
                                         title={resumePdf.file_name}
                                       />
                                     ) : null}
@@ -2094,7 +2094,7 @@ export default function RecruiterFunnelsPage() {
                         </div>
                       </>
                     ) : (
-                      <div className="flex-1 flex items-center justify-center h-full text-dark-500">
+                      <div className="flex-1 flex items-center justify-center h-full text-[var(--hf-dark-500)]">
                         <div className="text-center">
                           <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
                           <p className="text-sm">Выберите кандидата из списка</p>
@@ -2130,7 +2130,7 @@ export default function RecruiterFunnelsPage() {
       {/* Interview scheduling modal — простой datetime-picker */}
       {interviewForCandidate && (
         <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={() => !interviewSaving && setInterviewForCandidate(null)}
         >
           <div
@@ -2138,8 +2138,8 @@ export default function RecruiterFunnelsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div>
-              <h3 className="text-base font-semibold text-white mb-1">Назначить интервью</h3>
-              <p className="text-xs text-dark-400">
+              <h3 className="text-base font-semibold text-[var(--hf-white)] mb-1">Назначить интервью</h3>
+              <p className="text-xs text-[var(--hf-dark-400)]">
                 {interviewForCandidate.entity_name}
               </p>
             </div>
@@ -2147,21 +2147,21 @@ export default function RecruiterFunnelsPage() {
               type="datetime-local"
               value={interviewDateTime}
               onChange={(e) => setInterviewDateTime(e.target.value)}
-              className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-dark-100 focus:outline-none focus:border-accent-500"
+              className="w-full px-3 py-2 bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-08)] rounded-lg text-sm text-[var(--hf-dark-100)] focus:outline-none focus:border-[var(--hf-accent)]"
               autoFocus
             />
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setInterviewForCandidate(null)}
                 disabled={interviewSaving}
-                className="px-3 py-1.5 text-sm text-dark-300 hover:text-white transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 text-sm text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] transition-colors disabled:opacity-50"
               >
                 Отмена
               </button>
               <button
                 onClick={handleSaveInterview}
                 disabled={interviewSaving || !interviewDateTime}
-                className="px-4 py-1.5 text-sm font-medium bg-accent-500 hover:bg-accent-600 text-white rounded-lg transition-colors disabled:opacity-50"
+                className="px-4 py-1.5 text-sm font-medium bg-[var(--hf-accent)] hover:bg-[var(--hf-accent-hover)] text-[var(--hf-white)] rounded-lg transition-colors disabled:opacity-50"
               >
                 {interviewSaving ? 'Сохраняем…' : 'Назначить'}
               </button>
@@ -2173,7 +2173,7 @@ export default function RecruiterFunnelsPage() {
       {/* Confirm modal — close / delete vacancy */}
       {confirmDialog && (
         <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={() => !confirmBusy && setConfirmDialog(null)}
         >
           <div
@@ -2181,14 +2181,14 @@ export default function RecruiterFunnelsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div>
-              <h3 className="text-base font-semibold text-white mb-1">
+              <h3 className="text-base font-semibold text-[var(--hf-white)] mb-1">
                 {confirmDialog.type === 'close' ? 'Закрыть вакансию?' : 'Удалить вакансию?'}
               </h3>
-              <p className="text-sm text-dark-300">
+              <p className="text-sm text-[var(--hf-dark-300)]">
                 «{confirmDialog.vacancy.title?.trim() || 'Без названия'}»
               </p>
               {confirmDialog.type === 'delete' && (
-                <p className="text-xs text-red-400/80 mt-2">
+                <p className="text-xs text-[color:var(--hf-status-red)] mt-2">
                   Действие нельзя отменить. Кандидаты в воронке потеряют связь с этой вакансией.
                 </p>
               )}
@@ -2197,7 +2197,7 @@ export default function RecruiterFunnelsPage() {
               <button
                 onClick={() => setConfirmDialog(null)}
                 disabled={confirmBusy}
-                className="px-3 py-1.5 text-sm text-dark-300 hover:text-white transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 text-sm text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] transition-colors disabled:opacity-50"
               >
                 Отмена
               </button>
@@ -2205,10 +2205,10 @@ export default function RecruiterFunnelsPage() {
                 onClick={runConfirmedAction}
                 disabled={confirmBusy}
                 className={clsx(
-                  'px-4 py-1.5 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50',
+                  'px-4 py-1.5 text-sm font-medium text-[var(--hf-white)] rounded-lg transition-colors disabled:opacity-50',
                   confirmDialog.type === 'delete'
-                    ? 'bg-red-500 hover:bg-red-600'
-                    : 'bg-amber-500 hover:bg-amber-600',
+                    ? 'bg-[var(--hf-red-500)] hover:bg-[var(--hf-red-600)]'
+                    : 'bg-[var(--hf-status-yellow)] hover:bg-[var(--hf-status-yellow)]',
                 )}
               >
                 {confirmBusy
@@ -2260,7 +2260,7 @@ function StageDropdown({
         onClick={() => setOpen(!open)}
         className={clsx(
           'text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer transition-all',
-          'hover:ring-2 hover:ring-white/10',
+          'hover:ring-2 hover:ring-[var(--hf-white-alpha-10)]',
           colors.badge,
         )}
       >
@@ -2268,8 +2268,8 @@ function StageDropdown({
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-56 py-1 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-          <div className="px-3 py-1.5 text-[10px] text-dark-500 uppercase tracking-wider font-semibold">
+        <div className="absolute top-full left-0 mt-1 z-50 w-56 py-1 bg-[var(--hf-dark-panel-alpha-95)] backdrop-blur-xl border border-[color:var(--hf-white-alpha-10)] rounded-xl shadow-[var(--hf-shadow-2xl)] overflow-hidden">
+          <div className="px-3 py-1.5 text-[10px] text-[var(--hf-dark-500)] uppercase tracking-wider font-semibold">
             Перенести в
           </div>
           {STAGE_ORDER.map((stage) => {
@@ -2285,14 +2285,14 @@ function StageDropdown({
                 className={clsx(
                   'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm',
                   isCurrent
-                    ? 'bg-white/[0.06] text-dark-200'
-                    : 'hover:bg-white/[0.04] text-dark-300 hover:text-dark-100',
+                    ? 'bg-[var(--hf-white-alpha-06)] text-[var(--hf-dark-200)]'
+                    : 'hover:bg-[var(--hf-white-alpha-04)] text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)]',
                 )}
               >
                 <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
                 <span className="flex-1">{customLabels?.[stage] || STAGE_LABELS[stage] || stage}</span>
                 {isCurrent && (
-                  <span className="text-[10px] text-dark-500">текущий</span>
+                  <span className="text-[10px] text-[var(--hf-dark-500)]">текущий</span>
                 )}
               </button>
             );
@@ -2314,12 +2314,12 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: 
   return (
     <div
       onClick={onClick}
-      className="p-3 rounded-lg border border-white/[0.06] glass-light hover:border-white/[0.12] cursor-pointer transition-colors group relative"
+      className="p-3 rounded-lg border border-[color:var(--hf-white-alpha-06)] glass-light hover:border-[color:var(--hf-white-alpha-12)] cursor-pointer transition-colors group relative"
     >
       <div className="flex items-start justify-between mb-2">
         <h3 className={clsx(
-          'text-sm font-medium group-hover:text-accent-400 transition-colors line-clamp-2 flex-1 mr-2',
-          vacancy.title?.trim() ? 'text-dark-100' : 'text-dark-500 italic',
+          'text-sm font-medium group-hover:text-[var(--hf-accent)] transition-colors line-clamp-2 flex-1 mr-2',
+          vacancy.title?.trim() ? 'text-[var(--hf-dark-100)]' : 'text-[var(--hf-dark-500)] italic',
         )}>
           {vacancy.title?.trim() || 'Без названия'}
         </h3>
@@ -2328,7 +2328,7 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: 
           <div className="flex items-center gap-0.5 opacity-50 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
-              className="p-1 rounded-md hover:bg-white/[0.1] text-dark-400 hover:text-white transition-colors"
+              className="p-1 rounded-md hover:bg-[var(--hf-white-alpha-10)] text-[var(--hf-dark-400)] hover:text-[var(--hf-white)] transition-colors"
               title="Редактировать"
             >
               <Pencil className="w-3.5 h-3.5" />
@@ -2336,7 +2336,7 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: 
             {vacancy.status !== 'closed' && (
               <button
                 onClick={(e) => { e.stopPropagation(); onClose(); }}
-                className="p-1 rounded-md hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
+                className="p-1 rounded-md hover:bg-[var(--hf-status-red-badge)] text-[var(--hf-dark-400)] hover:text-[var(--hf-status-red)] transition-colors"
                 title="Закрыть вакансию"
               >
                 <Archive className="w-3.5 h-3.5" />
@@ -2344,36 +2344,36 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: 
             )}
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              className="p-1 rounded-md hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
+              className="p-1 rounded-md hover:bg-[var(--hf-status-red-badge)] text-[var(--hf-dark-400)] hover:text-[var(--hf-status-red)] transition-colors"
               title="Удалить воронку"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
-          <ChevronRight className="w-4 h-4 text-dark-500 group-hover:text-accent-400 transition-colors mt-0.5" />
+          <ChevronRight className="w-4 h-4 text-[var(--hf-dark-500)] group-hover:text-[var(--hf-accent)] transition-colors mt-0.5" />
         </div>
       </div>
       <div className="flex items-center gap-2 mb-2">
         <VacancyStatusBadge status={vacancy.status} />
         {vacancy.department_name && (
-          <span className="text-xs text-dark-400 truncate">{vacancy.department_name}</span>
+          <span className="text-xs text-[var(--hf-dark-400)] truncate">{vacancy.department_name}</span>
         )}
       </div>
-      <div className="flex items-center gap-1.5 text-xs text-dark-400 mb-2">
+      <div className="flex items-center gap-1.5 text-xs text-[var(--hf-dark-400)] mb-2">
         <Users className="w-3.5 h-3.5" />
         <span>{count} кандидатов</span>
       </div>
       {total > 0 && (
         <>
           <div
-            className="flex items-center justify-between text-[10px] text-dark-500 mb-1"
+            className="flex items-center justify-between text-[10px] text-[var(--hf-dark-500)] mb-1"
             title="Распределение кандидатов по этапам воронки"
           >
             <span>Этапы</span>
             <span>{Math.round(((stageCounts['hired'] || 0) / total) * 100)}% наняты</span>
           </div>
           <div
-            className="flex gap-0.5 h-1 rounded-full overflow-hidden bg-white/[0.04]"
+            className="flex gap-0.5 h-1 rounded-full overflow-hidden bg-[var(--hf-white-alpha-04)]"
             title="Распределение кандидатов по этапам (наведите на сегмент)"
           >
             {mainStages.map((stage) => {
@@ -2386,13 +2386,13 @@ function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: 
                   key={stage}
                   className={clsx(
                     'h-full rounded-full',
-                    stage === 'applied' && 'bg-blue-500/70',
-                    stage === 'screening' && 'bg-cyan-500/70',
-                    stage === 'phone_screen' && 'bg-purple-500/70',
-                    stage === 'interview' && 'bg-indigo-500/70',
-                    stage === 'assessment' && 'bg-orange-500/70',
-                    stage === 'offer' && 'bg-yellow-500/70',
-                    stage === 'hired' && 'bg-green-500/70',
+                    stage === 'applied' && 'bg-[var(--hf-status-blue-badge)]',
+                    stage === 'screening' && 'bg-[var(--hf-status-cyan-badge)]',
+                    stage === 'phone_screen' && 'bg-[var(--hf-status-purple-badge)]',
+                    stage === 'interview' && 'bg-[var(--hf-status-indigo-badge)]',
+                    stage === 'assessment' && 'bg-[var(--hf-status-orange-badge)]',
+                    stage === 'offer' && 'bg-[var(--hf-status-yellow-badge)]',
+                    stage === 'hired' && 'bg-[var(--hf-status-green-badge)]',
                   )}
                   style={{ width: `${Math.max(pct, 4)}%` }}
                   title={`${stageLabel}: ${c} (${Math.round(pct)}%)`}

@@ -102,7 +102,7 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <motion.div
@@ -113,32 +113,32 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
         className="glass rounded-xl w-full max-w-lg overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
+        <div className="flex items-center justify-between p-4 border-b border-[color:var(--hf-white-alpha-10)]">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-lg">
-              <Sparkles className="w-5 h-5 text-blue-400" />
+            <div className="p-2 rounded-lg bg-[linear-gradient(to_bottom_right,var(--hf-import-icon-gradient-from),var(--hf-import-icon-gradient-to))]">
+              <Sparkles className="w-5 h-5 text-[var(--hf-status-blue)]" />
             </div>
             <div>
               <h2 className="text-lg font-semibold">Импорт вакансии</h2>
-              <p className="text-sm text-white/50">Автоматическое заполнение из ссылки или файла</p>
+              <p className="text-sm text-[color:var(--hf-white-alpha-50)]">Автоматическое заполнение из ссылки или файла</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Mode Tabs */}
-        <div className="flex border-b border-white/10">
+        <div className="flex border-b border-[color:var(--hf-white-alpha-10)]">
           <button
             onClick={() => { setMode('url'); setError(null); }}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors ${
               mode === 'url'
-                ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-500/5'
-                : 'text-white/60 hover:text-white hover:bg-dark-800/50'
+                ? 'text-[var(--hf-status-blue)] border-b-2 border-[color:var(--hf-status-blue)] bg-[var(--hf-status-blue-bg)]'
+                : 'text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-dark-panel-alpha-50)]'
             }`}
           >
             <Link className="w-4 h-4" />
@@ -148,8 +148,8 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
             onClick={() => { setMode('file'); setError(null); }}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors ${
               mode === 'file'
-                ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-500/5'
-                : 'text-white/60 hover:text-white hover:bg-dark-800/50'
+                ? 'text-[var(--hf-status-blue)] border-b-2 border-[color:var(--hf-status-blue)] bg-[var(--hf-status-blue-bg)]'
+                : 'text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-dark-panel-alpha-50)]'
             }`}
           >
             <FileUp className="w-4 h-4" />
@@ -169,7 +169,7 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
                 className="space-y-4"
               >
                 <div>
-                  <label className="block text-sm text-white/60 mb-2">
+                  <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-2">
                     Ссылка на вакансию
                   </label>
                   <input
@@ -177,14 +177,14 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="https://hh.ru/vacancy/12345678"
-                    className="w-full px-4 py-3 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm"
+                    className="w-full px-4 py-3 glass-light rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)] text-sm"
                     disabled={loading}
                     onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
                   />
                 </div>
 
-                <div className="text-xs text-white/40 space-y-1">
-                  <p className="font-medium text-white/60">Поддерживаемые источники:</p>
+                <div className="text-xs text-[color:var(--hf-white-alpha-40)] space-y-1">
+                  <p className="font-medium text-[color:var(--hf-white-alpha-60)]">Поддерживаемые источники:</p>
                   <ul className="list-disc list-inside space-y-0.5">
                     <li>hh.ru (HeadHunter) - через официальный API</li>
                     <li>LinkedIn Jobs</li>
@@ -196,7 +196,7 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
                 <button
                   onClick={handleUrlSubmit}
                   disabled={loading || !url.trim()}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
                 >
                   {loading ? (
                     <>
@@ -227,8 +227,8 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
                   onClick={() => !loading && fileInputRef.current?.click()}
                   className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
                     dragActive
-                      ? 'border-blue-400 bg-blue-500/10'
-                      : 'border-white/20 hover:border-white/40 hover:bg-dark-800/50'
+                      ? 'border-[color:var(--hf-status-blue)] bg-[var(--hf-status-blue-bg)]'
+                      : 'border-[color:var(--hf-white-alpha-20)] hover:border-[color:var(--hf-white-alpha-40)] hover:bg-[var(--hf-dark-panel-alpha-50)]'
                   } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <input
@@ -242,19 +242,19 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
 
                   {loading ? (
                     <div className="flex flex-col items-center gap-3">
-                      <Loader2 className="w-10 h-10 text-blue-400 animate-spin" />
-                      <p className="text-white/60">Распознавание файла...</p>
+                      <Loader2 className="w-10 h-10 text-[var(--hf-status-blue)] animate-spin" />
+                      <p className="text-[color:var(--hf-white-alpha-60)]">Распознавание файла...</p>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-3">
                       <div className="p-4 glass-light rounded-xl">
-                        <FileUp className="w-8 h-8 text-white/40" />
+                        <FileUp className="w-8 h-8 text-[color:var(--hf-white-alpha-40)]" />
                       </div>
                       <div>
                         <p className="font-medium">
                           Перетащите файл сюда
                         </p>
-                        <p className="text-sm text-white/50 mt-1">
+                        <p className="text-sm text-[color:var(--hf-white-alpha-50)] mt-1">
                           или нажмите для выбора
                         </p>
                       </div>
@@ -262,8 +262,8 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
                   )}
                 </div>
 
-                <div className="text-xs text-white/40 space-y-1">
-                  <p className="font-medium text-white/60">Поддерживаемые форматы:</p>
+                <div className="text-xs text-[color:var(--hf-white-alpha-40)] space-y-1">
+                  <p className="font-medium text-[color:var(--hf-white-alpha-60)]">Поддерживаемые форматы:</p>
                   <ul className="list-disc list-inside space-y-0.5">
                     <li>PDF (.pdf)</li>
                     <li>Word (.doc, .docx)</li>
@@ -282,12 +282,12 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="mt-4 flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg"
+                className="mt-4 flex items-start gap-3 p-3 bg-[var(--hf-status-red-bg)] border border-[color:var(--hf-status-red-badge)] rounded-lg"
               >
-                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <AlertCircle className="w-5 h-5 text-[var(--hf-status-red)] flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm text-red-400 font-medium">Ошибка</p>
-                  <p className="text-xs text-red-400/80 mt-1">{error}</p>
+                  <p className="text-sm text-[var(--hf-status-red)] font-medium">Ошибка</p>
+                  <p className="text-xs text-[color:var(--hf-status-red)] mt-1">{error}</p>
                 </div>
               </motion.div>
             )}
@@ -296,9 +296,9 @@ export default function VacancyImportModal({ onClose, onImportSuccess }: Vacancy
 
         {/* Footer info */}
         <div className="px-4 pb-4">
-          <div className="flex items-start gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-            <CheckCircle className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-blue-300/80">
+          <div className="flex items-start gap-2 p-3 bg-[var(--hf-status-blue-bg)] border border-[color:var(--hf-status-blue-badge)] rounded-lg">
+            <CheckCircle className="w-4 h-4 text-[var(--hf-status-blue)] flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-[color:var(--hf-status-blue)]">
               После распознавания вы сможете отредактировать данные перед сохранением.
               Валюта определяется автоматически.
             </p>

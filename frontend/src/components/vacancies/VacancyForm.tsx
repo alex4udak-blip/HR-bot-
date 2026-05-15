@@ -1,20 +1,122 @@
 import { useState, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { X, Save, Briefcase, Sparkles, Loader2, Globe, Check, ChevronDown, PlayCircle } from 'lucide-react';
+import clsx from 'clsx';
+import {
+  Loader2,
+  PlayCircle,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
-import { VACANCY_STATUS_LABELS, EMPLOYMENT_TYPES, EXPERIENCE_LEVELS } from '@/types';
-import { getDepartments, getAssignableUsers, splitVacancyDescription, assignVacancy, takeVacancy } from '@/services/api';
+import { getDepartments, getAssignableUsers, assignVacancy, takeVacancy } from '@/services/api';
 import type { Department, AssignableUser } from '@/services/api';
-import { CurrencySelect } from '@/components/ui';
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
   prefillData?: Partial<Vacancy>;
   onClose: () => void;
   onSuccess: () => void;
+}
+
+type HfSelectOption = {
+  value: string | number;
+  label: string;
+  icon?: ReactNode;
+};
+
+type HfSelectMenuRect = {
+  id: string;
+  left: number;
+  top: number;
+};
+
+function HfSpriteIcon({ id, className }: { id: string; className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" aria-hidden="true">
+      <use href={`/huntflow-sprite.svg#${id}`} />
+    </svg>
+  );
+}
+
+function HuntflowOptionsIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path
+        d="M3 8h12m0 0a3 3 0 1 0 6 0 3 3 0 0 0-6 0Zm-6 8h12M9 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HuntflowClose28Icon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 28 28" className={className} fill="none">
+      <path
+        d="M19.833 8.167 8.167 19.833m0-11.666 11.666 11.666"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HuntflowChevronDown24Icon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className={className} fill="none">
+      <path
+        d="M7.5 10.5 12 15l4.5-4.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HuntflowEyeOffIcon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" className={className} fill="none">
+      <path
+        d="m2.5 2.5 15 15M8.233 8.233A2.083 2.083 0 0 0 10 12.083c.557 0 1.063-.218 1.437-.573M6.821 6.821C4.04 8.116 2.5 10 2.5 10s2.727 5 7.5 5a8.53 8.53 0 0 0 3.179-.595M10 5c4.773 0 7.5 5 7.5 5a13.218 13.218 0 0 1-1.722 2.24"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HuntflowCheckIcon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" className={className} fill="none">
+      <path
+        d="m5 10.25 3.125 3.125L15 6.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HuntflowFlagIcon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" className={className} fill="currentColor">
+      <path d="M5.5 3.75a.75.75 0 0 1 .75-.75h7.27a.75.75 0 0 1 .66 1.106l-1.58 2.925 1.58 2.925a.75.75 0 0 1-.66 1.106H7v5.188a.75.75 0 0 1-1.5 0V3.75Z" />
+    </svg>
+  );
 }
 
 export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }: VacancyFormProps) {
@@ -57,7 +159,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
   const { createVacancy, updateVacancy } = useVacancyStore();
   const [loading, setLoading] = useState(false);
-  const [splitting, setSplitting] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AssignableUser[]>([]);
 
@@ -80,12 +181,14 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     tags: initialData?.tags?.join(', ') || '',
     department_id: vacancy?.department_id || '',
     hiring_manager_id: vacancy?.hiring_manager_id || '',
-    visible_to_all: vacancy?.visible_to_all ?? false,
+    visible_to_all: vacancy?.visible_to_all ?? initialData?.visible_to_all ?? true,
   });
 
   const [selectedRecruiters, setSelectedRecruiters] = useState<number[]>(vacancy?.assigned_to || []);
   const [assignAll, setAssignAll] = useState(vacancy?.assigned_to_all ?? false);
   const [showRecruiterDD, setShowRecruiterDD] = useState(false);
+  const [openSelectId, setOpenSelectId] = useState<string | null>(null);
+  const [selectMenuRect, setSelectMenuRect] = useState<HfSelectMenuRect | null>(null);
 
   useEffect(() => {
     // Load departments and users independently so one failure doesn't block the other
@@ -95,6 +198,19 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     getAssignableUsers()
       .then(setUsers)
       .catch((err) => console.error('Failed to load assignable users:', err));
+  }, []);
+
+  useEffect(() => {
+    const closeSelect = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.closest("[data-hf-select-root]") && !target?.closest("[data-hf-select-menu]")) {
+        setOpenSelectId(null);
+        setSelectMenuRect(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", closeSelect);
+    return () => document.removeEventListener("pointerdown", closeSelect);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -158,55 +274,133 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     }
   };
 
-  /**
-   * Use AI to split description into requirements and responsibilities.
-   * Only works if description has content and requirements/responsibilities are empty.
-   */
-  const handleSplitDescription = async () => {
-    if (!formData.description.trim()) {
-      toast.error('Нет описания для разделения');
-      return;
-    }
+  const hfLabelClass = "hf-vacancy-label";
+  const hfInputClass = "hf-vacancy-input";
+  const hfTextareaClass = "hf-vacancy-textarea";
+  const hfToolbarButtonClass = "hf-vacancy-editor-btn flex items-center justify-center";
 
-    if (formData.description.length < 50) {
-      toast.error('Описание слишком короткое (минимум 50 символов)');
-      return;
-    }
+  const HfSelect = ({
+    id,
+    value,
+    options,
+    disabled,
+    showSelectedIcon,
+    onChange,
+  }: {
+    id: string;
+    value: string | number;
+    options: HfSelectOption[];
+    disabled?: boolean;
+    showSelectedIcon?: boolean;
+    onChange?: (value: string) => void;
+  }) => {
+    const isOpen = openSelectId === id && !disabled;
+    const selectedOption = options.find((option) => String(option.value) === String(value)) || options[0];
+    const menu = isOpen && selectMenuRect?.id === id ? createPortal(
+      <div
+        className="hf-vacancy-select-menu"
+        data-hf-select-menu
+        style={{
+          left: selectMenuRect.left,
+          top: selectMenuRect.top,
+        }}
+      >
+        {options.map((option) => {
+          const isSelected = String(option.value) === String(value);
+          const icon = option.icon || (showSelectedIcon && isSelected ? <HuntflowCheckIcon className="hf-vacancy-select-icon-svg" /> : null);
+          return (
+            <button
+              key={String(option.value)}
+              type="button"
+              className={clsx("hf-vacancy-select-option", isSelected && "hf-vacancy-select-option-active")}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onChange?.(String(option.value));
+                setOpenSelectId(null);
+                setSelectMenuRect(null);
+              }}
+            >
+              <span className="hf-vacancy-select-option-inner">
+                <span className="hf-vacancy-select-option-icon">
+                  {icon}
+                </span>
+                <span className="truncate">{option.label}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>,
+      document.body,
+    ) : null;
 
-    setSplitting(true);
-    try {
-      const result = await splitVacancyDescription(formData.description);
-
-      if (result.success) {
-        setFormData(prev => ({
-          ...prev,
-          description: result.short_description || prev.description,
-          requirements: result.requirements || prev.requirements,
-          responsibilities: result.responsibilities || prev.responsibilities,
-        }));
-        toast.success('Текст успешно разделён');
-      } else {
-        toast.error(result.error || 'Не удалось разделить текст');
-      }
-    } catch (error) {
-      toast.error('Ошибка при разделении текста');
-    } finally {
-      setSplitting(false);
-    }
+    return (
+      <div className="hf-vacancy-select-wrap" data-hf-select-root>
+        <button
+          type="button"
+          disabled={disabled}
+          className={clsx(hfInputClass, "hf-vacancy-select-trigger", isOpen && "hf-vacancy-select-trigger-open")}
+          onClick={(event) => {
+            if (isOpen) {
+              setOpenSelectId(null);
+              setSelectMenuRect(null);
+              return;
+            }
+            const rect = event.currentTarget.getBoundingClientRect();
+            setOpenSelectId(id);
+            setSelectMenuRect({
+              id,
+              left: rect.left,
+              top: rect.bottom + Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hf-vacancy-select-menu-top")),
+            });
+          }}
+        >
+          <span className="hf-vacancy-select-label">
+            <span className="truncate">{selectedOption?.label}</span>
+          </span>
+          <HuntflowChevronDown24Icon className="hf-vacancy-select-chevron" />
+        </button>
+        {menu}
+      </div>
+    );
   };
 
-  // Show split button if description has content but requirements/responsibilities are empty
-  const canSplitDescription =
-    formData.description.trim().length >= 50 &&
-    !formData.requirements.trim() &&
-    !formData.responsibilities.trim();
+  const renderEditor = (
+    value: string,
+    onChange: (value: string) => void,
+  ) => (
+    <div className="hf-vacancy-editor">
+      <div className="hf-vacancy-editor-toolbar flex items-center">
+        <button type="button" className={hfToolbarButtonClass} aria-label="bold">
+          <HfSpriteIcon id="bold" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" className={hfToolbarButtonClass} aria-label="italic">
+          <HfSpriteIcon id="italic" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" className={hfToolbarButtonClass} aria-label="bullet-list">
+          <HfSpriteIcon id="bullet-list" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" className={hfToolbarButtonClass} aria-label="numbered-list">
+          <HfSpriteIcon id="numbered-list" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" className={hfToolbarButtonClass} aria-label="link">
+          <HfSpriteIcon id="link" className="hf-vacancy-editor-icon" />
+        </button>
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={isReadOnlyRequest}
+        className={hfTextareaClass}
+      />
+    </div>
+  );
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4"
+      className="hf-vacancy-modal-overlay font-hf-body"
       onClick={onClose}
     >
       <motion.div
@@ -214,199 +408,147 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="glass rounded-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden"
+        className="hf-vacancy-modal"
       >
-        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-white/10">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="p-1.5 sm:p-2 bg-blue-500/20 rounded-lg">
-              <Briefcase className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
-            </div>
-            <h2 className="text-base sm:text-lg font-semibold">
-              {isReadOnlyRequest ? 'Заявка' : (vacancy ? 'Редактировать вакансию' : 'Новая вакансия')}
-            </h2>
-          </div>
+        <div className="hf-vacancy-modal-header">
+          <h2 className="hf-vacancy-modal-title">
+            {isReadOnlyRequest ? 'Заявка' : (vacancy ? 'Редактировать вакансию' : 'Новая вакансия')}
+          </h2>
+          <div className="hf-vacancy-header-actions">
+            {!vacancy && !isReadOnlyRequest && (
+              <button
+                type="button"
+                className="hf-vacancy-settings-btn"
+                onClick={() => toast("Настройка полей формы Huntflow пока не реализована в HR-bot")}
+              >
+                <HuntflowOptionsIcon className="hf-vacancy-settings-icon" />
+                Настроить поля формы
+              </button>
+            )}
           <button
             onClick={onClose}
-            className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors touch-manipulation"
+              className="hf-vacancy-close-btn"
           >
-            <X className="w-5 h-5" />
+              <HuntflowClose28Icon className="hf-vacancy-close-icon" />
           </button>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-3 sm:p-4 overflow-y-auto max-h-[calc(95vh-140px)] sm:max-h-[calc(90vh-140px)]">
-          <div className="space-y-4">
-            {/* Title */}
-            <div>
-              <label className="block text-sm text-white/60 mb-1">Название *</label>
-              <input
-                type="text"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                disabled={isReadOnlyRequest}
-                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                placeholder="Senior Python Developer"
-              />
-            </div>
-
-            {/* Status and Priority - stack on mobile */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+        <form
+          id="vacancy-form"
+          onSubmit={handleSubmit}
+          className="hf-vacancy-form-scroll"
+        >
+          <div className="hf-vacancy-modal-grid grid min-h-full">
+            <div className="hf-vacancy-modal-main grid">
               <div>
-                <label className="block text-sm text-white/60 mb-1">Статус</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value as VacancyStatus })}
-                  disabled={isReadOnlyRequest}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {Object.entries(VACANCY_STATUS_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-white/60 mb-1">Приоритет</label>
-                <select
-                  value={formData.priority}
-                  onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
-                  disabled={isReadOnlyRequest}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <option value={0}>Обычный</option>
-                  <option value={1}>Важно</option>
-                  <option value={2}>Срочно</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Location and Employment Type - stack on mobile */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <div>
-                <label className="block text-sm text-white/60 mb-1">Локация</label>
+                <label className={hfLabelClass}>Должность</label>
                 <input
                   type="text"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   disabled={isReadOnlyRequest}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                  placeholder="Удалённо / Москва"
+                  className={hfInputClass}
                 />
               </div>
-              <div>
-                <label className="block text-sm text-white/60 mb-1">Тип занятости</label>
-                <select
-                  value={formData.employment_type}
-                  onChange={(e) => setFormData({ ...formData, employment_type: e.target.value })}
-                  disabled={isReadOnlyRequest}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <option value="">Не указан</option>
-                  {EMPLOYMENT_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>{type.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
 
-            {/* Experience and Department - stack on mobile */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <label className="block text-sm text-white/60 mb-1">Уровень опыта</label>
-                <select
-                  value={formData.experience_level}
-                  onChange={(e) => setFormData({ ...formData, experience_level: e.target.value })}
-                  disabled={isReadOnlyRequest}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <option value="">Не указан</option>
-                  {EXPERIENCE_LEVELS.map((level) => (
-                    <option key={level.value} value={level.value}>{level.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-white/60 mb-1">Отдел</label>
-                <select
+                <label className={hfLabelClass}>Отдел, подразделение</label>
+                <HfSelect
+                  id="department"
                   value={formData.department_id}
-                  onChange={(e) => setFormData({ ...formData, department_id: e.target.value })}
+                  options={[
+                    { value: "", label: "Не выбрано" },
+                    ...departments.map((dept) => ({ value: dept.id, label: dept.name })),
+                  ]}
+                  onChange={(value) => setFormData({ ...formData, department_id: value })}
                   disabled={isReadOnlyRequest}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <option value="">Не указан</option>
-                  {departments.map((dept) => (
-                    <option key={dept.id} value={dept.id}>{dept.name}</option>
-                  ))}
-                </select>
+                />
+                <p className="hf-vacancy-hint">
+                  Добавляют, удаляют и настраивают порядок и вложенность пунктов{' '}
+                  <button
+                    type="button"
+                    className="hf-vacancy-hint-link"
+                    onClick={() => toast('Настройки подразделений Huntflow пока не реализованы в HR-bot')}
+                  >
+                    в настройках
+                  </button>
+                </p>
               </div>
-            </div>
 
-            {/* Salary - responsive grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
               <div>
-                <label className="block text-sm text-white/60 mb-1">Зарплата от</label>
+                <label className={hfLabelClass}>Зарплата</label>
                 <input
                   type="number"
                   min={0}
-                  value={formData.salary_min}
+                  value={formData.salary_min || formData.salary_max}
                   onChange={(e) => setFormData({ ...formData, salary_min: e.target.value })}
                   disabled={isReadOnlyRequest}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                  placeholder="100000"
+                  className="hf-vacancy-input hf-vacancy-salary-input"
                 />
               </div>
+
               <div>
-                <label className="block text-sm text-white/60 mb-1">Зарплата до</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={formData.salary_max}
-                  onChange={(e) => setFormData({ ...formData, salary_max: e.target.value })}
-                  disabled={isReadOnlyRequest}
-                  className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                  placeholder="200000"
-                />
+                <label className={hfLabelClass}>Обязанности</label>
+                {renderEditor(
+                  formData.responsibilities,
+                  (value) => setFormData({ ...formData, responsibilities: value }),
+                )}
               </div>
-              <div className="col-span-2 sm:col-span-1">
-                <label className="block text-sm text-white/60 mb-1">Валюта</label>
-                <CurrencySelect
-                  value={formData.salary_currency}
-                  onChange={(currency) => setFormData({ ...formData, salary_currency: currency })}
-                  disabled={isReadOnlyRequest}
-                  className="w-full"
-                />
+
+              <div>
+                <label className={hfLabelClass}>Требования</label>
+                {renderEditor(
+                  formData.requirements,
+                  (value) => setFormData({ ...formData, requirements: value }),
+                )}
+              </div>
+
+              <div>
+                <label className={hfLabelClass}>Условия работы</label>
+                {renderEditor(
+                  formData.description,
+                  (value) => setFormData({ ...formData, description: value }),
+                )}
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  className="hf-vacancy-attach-btn"
+                  onClick={() => toast('Прикрепление файлов к вакансии пока не реализовано в HR-bot')}
+                >
+                  <HfSpriteIcon id="clip" className="hf-vacancy-action-icon" />
+                  Прикрепить файл
+                </button>
               </div>
             </div>
 
-            {/* Recruiter Assignment — admin-only (рекрутёры не назначают других на свои заявки) */}
-            {!isReadOnlyRequest && isAdmin && (
-            <div>
-              <label className="block text-sm text-white/60 mb-1">Назначить рекрутерам</label>
-              {/* Assign all toggle */}
-              <div
-                className="flex items-center gap-2 mb-2 p-2 glass-light rounded-lg cursor-pointer hover:bg-white/5 transition-colors"
-                onClick={() => { setAssignAll(!assignAll); if (!assignAll) setSelectedRecruiters([]); }}
-              >
-                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${assignAll ? 'bg-green-500 border-green-500' : 'border-white/30'}`}>
-                  {assignAll && <Check className="w-3 h-3 text-white" />}
-                </div>
-                <span className="text-sm">Назначить всем рекрутерам</span>
-              </div>
-              {/* Individual recruiter checkboxes */}
-              {!assignAll && (
-                <div className="relative">
+            <aside className="hf-vacancy-modal-aside">
+              {!isReadOnlyRequest && isAdmin && (
+                <div className="hf-vacancy-recruiters">
+                  <label className={hfLabelClass}>Назначенные рекрутеры</label>
+                  <div className="hf-vacancy-recruiter-row">
+                    <span className="hf-vacancy-avatar">Я</span>
+                    <span className="truncate">Я, {user?.name || user?.email || "Super Admin"}</span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setShowRecruiterDD(!showRecruiterDD)}
-                    className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg text-left text-sm sm:text-base flex items-center justify-between"
+                    className="hf-vacancy-side-link hf-vacancy-recruiter-add"
                   >
-                    <span className={selectedRecruiters.length > 0 ? 'text-white' : 'text-white/40'}>
-                      {selectedRecruiters.length > 0
-                        ? `Выбрано: ${selectedRecruiters.length}`
-                        : 'Выберите рекрутеров'}
-                    </span>
-                    <ChevronDown className={`w-4 h-4 text-white/40 transition-transform ${showRecruiterDD ? 'rotate-180' : ''}`} />
+                    + Добавить
                   </button>
                   {showRecruiterDD && (
-                    <div className="absolute z-50 mt-1 w-full bg-dark-800 border border-white/10 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                    <div className="hf-vacancy-dropdown">
+                      <button
+                        type="button"
+                        onClick={() => { setAssignAll(!assignAll); if (!assignAll) setSelectedRecruiters([]); }}
+                        className="hf-vacancy-dropdown-item"
+                      >
+                        <span className={clsx("hf-vacancy-dropdown-check", assignAll && "hf-vacancy-dropdown-check-active")} />
+                        Всем рекрутерам
+                      </button>
                       {users.map((u) => {
                         const isSelected = selectedRecruiters.includes(u.id);
                         return (
@@ -419,170 +561,119 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                                 : [...selectedRecruiters, u.id]
                               );
                             }}
-                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-sm text-left"
+                            className="hf-vacancy-dropdown-item"
                           >
-                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-white/30'}`}>
-                              {isSelected && <Check className="w-3 h-3 text-white" />}
-                            </div>
-                            <span>{u.name}</span>
+                            <span className={clsx("hf-vacancy-dropdown-check", isSelected && "hf-vacancy-dropdown-check-active")} />
+                            <span className="truncate">{u.name}</span>
                           </button>
                         );
                       })}
                     </div>
                   )}
-                  {/* Selected chips */}
-                  {selectedRecruiters.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {selectedRecruiters.map(id => {
-                        const u = users.find(u => u.id === id);
-                        return u ? (
-                          <span
-                            key={id}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs"
-                          >
-                            {u.name}
-                            <button type="button" onClick={() => setSelectedRecruiters(selectedRecruiters.filter(r => r !== id))} className="hover:text-white">
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ) : null;
-                      })}
-                    </div>
-                  )}
                 </div>
               )}
-            </div>
 
-            )}
-
-            {/* Visible to all toggle — admin-only (рекрутёр не управляет видимостью оргой) */}
-            {!isReadOnlyRequest && isAdmin && (
-            <div
-              className="flex items-center gap-3 p-3 glass-light rounded-lg cursor-pointer hover:bg-white/5 transition-colors"
-              onClick={() => setFormData({ ...formData, visible_to_all: !formData.visible_to_all })}
-            >
-              <div className={`p-1.5 rounded-lg transition-colors ${formData.visible_to_all ? 'bg-green-500/20' : 'bg-white/5'}`}>
-                <Globe className={`w-4 h-4 transition-colors ${formData.visible_to_all ? 'text-green-400' : 'text-white/40'}`} />
+              <div className="hf-vacancy-side-stack">
+                <div className="hf-vacancy-side-section">
+                  <label className="hf-vacancy-side-title">Сколько человек нужно нанять</label>
+                  <div className="hf-vacancy-people-grid">
+                    <input className={hfInputClass} defaultValue="1" />
+                    <input
+                      className="hf-vacancy-input"
+                      value="Без дедлайна"
+                      readOnly
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={hfLabelClass}>Видимость</label>
+                  <HfSelect
+                    id="visibility"
+                    value={formData.visible_to_all ? "all" : "private"}
+                    options={[
+                      { value: "all", label: "Видна коллегам" },
+                      { value: "private", label: "Скрыта от коллег", icon: <HuntflowEyeOffIcon className="hf-vacancy-select-icon-svg" /> },
+                    ]}
+                    onChange={(value) => setFormData({ ...formData, visible_to_all: value === "all" })}
+                  />
+                </div>
+                <div>
+                  <label className={hfLabelClass}>Приоритет</label>
+                  <HfSelect
+                    id="priority"
+                    value={formData.priority}
+                    options={[
+                      { value: 0, label: "Обычный" },
+                      { value: 1, label: "Высокий", icon: <HuntflowFlagIcon className="hf-vacancy-select-icon-svg hf-vacancy-select-icon-danger" /> },
+                    ]}
+                    onChange={(value) => setFormData({ ...formData, priority: parseInt(value) })}
+                    disabled={isReadOnlyRequest}
+                  />
+                </div>
+                <div>
+                  <label className={hfLabelClass}>Этапы подбора</label>
+                  <HfSelect
+                    id="stages"
+                    value="all"
+                    options={[{ value: "all", label: "Все этапы" }]}
+                    showSelectedIcon
+                    disabled={isReadOnlyRequest}
+                  />
+                </div>
+                <div>
+                  <label className={hfLabelClass}>Шаблон оффера</label>
+                  <HfSelect
+                    id="offer-template"
+                    value="standard"
+                    options={[{ value: "standard", label: "Стандартный оффер" }]}
+                    showSelectedIcon
+                    disabled={isReadOnlyRequest}
+                  />
+                </div>
               </div>
-              <div className="flex-1">
-                <div className="text-sm font-medium">Видна всем</div>
-                <div className="text-xs text-white/40">Вакансия будет доступна всем сотрудникам организации</div>
-              </div>
-              <div
-                className={`w-10 h-5 rounded-full transition-colors relative ${formData.visible_to_all ? 'bg-green-500' : 'bg-white/20'}`}
-              >
-                <div
-                  className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${formData.visible_to_all ? 'translate-x-5' : 'translate-x-0.5'}`}
-                />
-              </div>
-            </div>
-            )}
-
-            {/* Description */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm text-white/60">Описание</label>
-                {canSplitDescription && (
-                  <button
-                    type="button"
-                    onClick={handleSplitDescription}
-                    disabled={splitting}
-                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded transition-colors disabled:opacity-50"
-                    title="Автоматически разделить описание на требования и обязанности"
-                  >
-                    {splitting ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-3 h-3" />
-                    )}
-                    {splitting ? 'Разделяю...' : 'Авто-разделить'}
-                  </button>
-                )}
-              </div>
-              <textarea
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={3}
-                disabled={isReadOnlyRequest}
-                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                placeholder="Краткое описание вакансии..."
-              />
-              {canSplitDescription && (
-                <p className="text-xs text-white/40 mt-1">
-                  Нажмите "Авто-разделить" чтобы AI разделил описание на требования и обязанности
-                </p>
-              )}
-            </div>
-
-            {/* Requirements */}
-            <div>
-              <label className="block text-sm text-white/60 mb-1">Требования</label>
-              <textarea
-                value={formData.requirements}
-                onChange={(e) => setFormData({ ...formData, requirements: e.target.value })}
-                rows={3}
-                disabled={isReadOnlyRequest}
-                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                placeholder="Необходимые навыки и опыт..."
-              />
-            </div>
-
-            {/* Responsibilities */}
-            <div>
-              <label className="block text-sm text-white/60 mb-1">Обязанности</label>
-              <textarea
-                value={formData.responsibilities}
-                onChange={(e) => setFormData({ ...formData, responsibilities: e.target.value })}
-                rows={3}
-                disabled={isReadOnlyRequest}
-                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                placeholder="Ключевые обязанности..."
-              />
-            </div>
-
-            {/* Tags */}
-            <div>
-              <label className="block text-sm text-white/60 mb-1">Теги (через запятую)</label>
-              <input
-                type="text"
-                value={formData.tags}
-                onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-                disabled={isReadOnlyRequest}
-                className="w-full px-3 py-2.5 sm:py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed"
-                placeholder="python, backend, fastapi"
-              />
-            </div>
+            </aside>
           </div>
         </form>
 
-        <div className="flex items-center justify-end gap-2 sm:gap-3 p-3 sm:p-4 border-t border-white/10">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 sm:px-4 py-2 text-white/60 hover:text-white transition-colors text-sm sm:text-base touch-manipulation"
-          >
-            {isReadOnlyRequest ? 'Закрыть' : 'Отмена'}
-          </button>
+        <div className="hf-vacancy-footer">
           {isReadOnlyRequest ? (
-            !alreadyTaken && (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                className="hf-vacancy-secondary-btn"
+              >
+                Закрыть
+              </button>
+              {!alreadyTaken && (
               <button
                 onClick={handleTake}
                 disabled={taking}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-lg transition-colors text-sm sm:text-base touch-manipulation"
+                  className="hf-vacancy-primary-btn"
               >
-                {taking ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
+                  {taking ? <Loader2 className="hf-vacancy-button-icon animate-spin" /> : <PlayCircle className="hf-vacancy-button-icon" />}
                 {taking ? 'Беру...' : 'Взять в работу'}
               </button>
-            )
+              )}
+            </>
           ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors text-sm sm:text-base touch-manipulation"
-            >
-              <Save className="w-4 h-4" />
-              {loading ? 'Сохранение...' : 'Сохранить'}
-            </button>
+            <>
+              <button
+                type="submit"
+                form="vacancy-form"
+                disabled={loading}
+                className="hf-vacancy-primary-btn"
+              >
+                {loading ? 'Сохранение...' : 'Сохранить'}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="hf-vacancy-secondary-btn"
+              >
+                Отмена
+              </button>
+            </>
           )}
         </div>
       </motion.div>

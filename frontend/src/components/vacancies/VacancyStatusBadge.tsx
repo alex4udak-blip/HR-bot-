@@ -21,12 +21,12 @@ interface VacancyStatusBadgeProps {
  * - cancelled: red
  */
 export const VACANCY_STATUS_BADGE_COLORS: Record<VacancyStatus, string> = {
-  draft: 'bg-gray-100 text-gray-700 dark:bg-gray-500/20 dark:text-gray-300',
-  pending_review: 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300',
-  open: 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300',
-  paused: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-300',
-  closed: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300',
-  cancelled: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300',
+  draft: 'bg-[var(--hf-main-100)] text-[var(--hf-main-700)] dark:bg-[var(--hf-status-gray-badge)] dark:text-[var(--hf-main-300)]',
+  pending_review: 'bg-[var(--hf-status-purple-bg)] text-[var(--hf-status-purple)] dark:bg-[var(--hf-status-purple-badge)] dark:text-[var(--hf-status-purple)]',
+  open: 'bg-[var(--hf-status-green-bg)] text-[var(--hf-status-green)] dark:bg-[var(--hf-status-green-badge)] dark:text-[var(--hf-status-green)]',
+  paused: 'bg-[var(--hf-status-yellow-bg)] text-[var(--hf-status-yellow)] dark:bg-[var(--hf-status-yellow-badge)] dark:text-[var(--hf-status-yellow)]',
+  closed: 'bg-[var(--hf-status-red-bg)] text-[var(--hf-red-700)] dark:bg-[var(--hf-status-red-badge)] dark:text-[var(--hf-red-300)]',
+  cancelled: 'bg-[var(--hf-status-red-bg)] text-[var(--hf-red-700)] dark:bg-[var(--hf-status-red-badge)] dark:text-[var(--hf-red-300)]',
 };
 
 /**

@@ -54,28 +54,28 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
         {/* Overview Cards */}
         <div className="grid grid-cols-4 gap-4">
           <div className="p-4 glass-light rounded-xl">
-            <div className="flex items-center gap-2 text-white/60 mb-2">
+            <div className="flex items-center gap-2 text-[color:var(--hf-white-alpha-60)] mb-2">
               <Users className="w-4 h-4" />
               <span className="text-sm">Всего кандидатов</span>
             </div>
             <p className="text-2xl font-bold">{totalCandidates}</p>
           </div>
           <div className="p-4 glass-light rounded-xl">
-            <div className="flex items-center gap-2 text-blue-400 mb-2">
+            <div className="flex items-center gap-2 text-[var(--hf-status-blue)] mb-2">
               <TrendingUp className="w-4 h-4" />
               <span className="text-sm">В процессе</span>
             </div>
             <p className="text-2xl font-bold">{inProgressCount}</p>
           </div>
           <div className="p-4 glass-light rounded-xl">
-            <div className="flex items-center gap-2 text-green-400 mb-2">
+            <div className="flex items-center gap-2 text-[var(--hf-status-green)] mb-2">
               <CheckCircle className="w-4 h-4" />
               <span className="text-sm">Наняты</span>
             </div>
             <p className="text-2xl font-bold">{hiredCount}</p>
           </div>
           <div className="p-4 glass-light rounded-xl">
-            <div className="flex items-center gap-2 text-red-400 mb-2">
+            <div className="flex items-center gap-2 text-[var(--hf-status-red)] mb-2">
               <XCircle className="w-4 h-4" />
               <span className="text-sm">Отклонены</span>
             </div>
@@ -88,63 +88,63 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
           {/* Details Card */}
           <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-blue-400" />
+              <FileText className="w-5 h-5 text-[var(--hf-status-blue)]" />
               Детали вакансии
             </h3>
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <MapPin className="w-5 h-5 text-white/40" />
+                <MapPin className="w-5 h-5 text-[color:var(--hf-white-alpha-40)]" />
                 <div>
-                  <p className="text-sm text-white/60">Локация</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-60)]">Локация</p>
                   <p>{vacancy.location || 'Не указана'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <DollarSign className="w-5 h-5 text-white/40" />
+                <DollarSign className="w-5 h-5 text-[color:var(--hf-white-alpha-40)]" />
                 <div>
-                  <p className="text-sm text-white/60">Зарплата</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-60)]">Зарплата</p>
                   <p>{formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency)}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Clock className="w-5 h-5 text-white/40" />
+                <Clock className="w-5 h-5 text-[color:var(--hf-white-alpha-40)]" />
                 <div>
-                  <p className="text-sm text-white/60">Тип занятости</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-60)]">Тип занятости</p>
                   <p>{EMPLOYMENT_TYPES.find(t => t.value === vacancy.employment_type)?.label || 'Не указан'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Star className="w-5 h-5 text-white/40" />
+                <Star className="w-5 h-5 text-[color:var(--hf-white-alpha-40)]" />
                 <div>
-                  <p className="text-sm text-white/60">Уровень</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-60)]">Уровень</p>
                   <p>{EXPERIENCE_LEVELS.find(l => l.value === vacancy.experience_level)?.label || 'Не указан'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Building2 className="w-5 h-5 text-white/40" />
+                <Building2 className="w-5 h-5 text-[color:var(--hf-white-alpha-40)]" />
                 <div>
-                  <p className="text-sm text-white/60">Отдел</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-60)]">Отдел</p>
                   <p>{vacancy.department_name || 'Не указан'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <User className="w-5 h-5 text-white/40" />
+                <User className="w-5 h-5 text-[color:var(--hf-white-alpha-40)]" />
                 <div>
-                  <p className="text-sm text-white/60">Ответственный</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-60)]">Ответственный</p>
                   <p>{vacancy.hiring_manager_name || 'Не назначен'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <User className="w-5 h-5 text-white/40" />
+                <User className="w-5 h-5 text-[color:var(--hf-white-alpha-40)]" />
                 <div>
-                  <p className="text-sm text-white/60">Владелец</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-60)]">Владелец</p>
                   <p>{vacancy.created_by_name || 'Не указан'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Calendar className="w-5 h-5 text-white/40" />
+                <Calendar className="w-5 h-5 text-[color:var(--hf-white-alpha-40)]" />
                 <div>
-                  <p className="text-sm text-white/60">Опубликована</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-60)]">Опубликована</p>
                   <p>{formatDate(vacancy.published_at, 'medium') || 'Не указана'}</p>
                 </div>
               </div>
@@ -155,12 +155,12 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
           <div className="p-6 glass-light rounded-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-blue-400" />
+                <TrendingUp className="w-5 h-5 text-[var(--hf-status-blue)]" />
                 Воронка найма
               </h3>
               <button
                 onClick={() => setShowAddCandidate(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] rounded-lg text-sm transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Добавить
@@ -175,13 +175,13 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
                     <div key={stage} className="space-y-1">
                       <div className="flex items-center justify-between text-sm">
                         <span>{APPLICATION_STAGE_LABELS[stage as keyof typeof APPLICATION_STAGE_LABELS] || stage}</span>
-                        <span className="text-white/60">{count} ({percentage}%)</span>
+                        <span className="text-[color:var(--hf-white-alpha-60)]">{count} ({percentage}%)</span>
                       </div>
                       <div className="h-2 glass-light rounded-full overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${percentage}%` }}
-                          className="h-full bg-blue-500 rounded-full"
+                          className="h-full bg-[var(--hf-cyan-600)] rounded-full"
                         />
                       </div>
                     </div>
@@ -198,14 +198,14 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
         {vacancy.description && (
           <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3">Описание</h3>
-            <p className="text-white/80 whitespace-pre-wrap">{vacancy.description}</p>
+            <p className="text-[color:var(--hf-white-alpha-80)] whitespace-pre-wrap">{vacancy.description}</p>
           </div>
         )}
 
         {vacancy.requirements && (
           <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3">Требования</h3>
-            <div className="prose prose-invert prose-sm max-w-none text-white/80 prose-li:marker:text-white/60">
+            <div className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]">
               <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.requirements}</ReactMarkdown>
             </div>
           </div>
@@ -214,7 +214,7 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
         {vacancy.responsibilities && (
           <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3">Обязанности</h3>
-            <div className="prose prose-invert prose-sm max-w-none text-white/80 prose-li:marker:text-white/60">
+            <div className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]">
               <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.responsibilities}</ReactMarkdown>
             </div>
           </div>
@@ -224,14 +224,14 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
         {vacancy.tags.length > 0 && (
           <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-              <Tag className="w-5 h-5 text-blue-400" />
+              <Tag className="w-5 h-5 text-[var(--hf-status-blue)]" />
               Теги
             </h3>
             <div className="flex flex-wrap gap-2">
               {vacancy.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="px-3 py-1 bg-white/10 rounded-full text-sm"
+                  className="px-3 py-1 bg-[var(--hf-white-alpha-10)] rounded-full text-sm"
                 >
                   {tag}
                 </span>

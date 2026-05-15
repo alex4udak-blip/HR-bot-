@@ -75,7 +75,7 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -88,16 +88,16 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
         onClick={(e) => e.stopPropagation()}
         className="glass rounded-xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col"
       >
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
+        <div className="flex items-center justify-between p-4 border-b border-[color:var(--hf-white-alpha-10)]">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <UserPlus className="w-5 h-5 text-blue-400" aria-hidden="true" />
+            <div className="p-2 bg-[var(--hf-status-blue-badge)] rounded-lg">
+              <UserPlus className="w-5 h-5 text-[var(--hf-status-blue)]" aria-hidden="true" />
             </div>
             <h2 id="add-candidate-modal-title" className="text-lg font-semibold">Добавить кандидата</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
             aria-label="Закрыть окно"
           >
             <X className="w-5 h-5" aria-hidden="true" />
@@ -107,25 +107,25 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
         <div className="flex-1 overflow-hidden flex flex-col p-4">
           {/* Search */}
           <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" aria-hidden="true" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[color:var(--hf-white-alpha-40)]" aria-hidden="true" />
             <input
               type="text"
               placeholder="Поиск кандидата..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
+              className="w-full pl-10 pr-4 py-2 glass-light rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)]"
               aria-label="Поиск кандидата по имени"
             />
           </div>
 
           {/* Source */}
           <div className="mb-4">
-            <label htmlFor="candidate-source" className="block text-sm text-white/60 mb-1">Источник</label>
+            <label htmlFor="candidate-source" className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Источник</label>
             <select
               id="candidate-source"
               value={source}
               onChange={(e) => setSource(e.target.value)}
-              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)]"
             >
               <option value="">Не указан</option>
               {SOURCE_OPTIONS.map((opt) => (
@@ -138,11 +138,11 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0" role="listbox" aria-label="Список кандидатов">
             {loadingCandidates ? (
               <div className="flex items-center justify-center py-8" role="status" aria-live="polite">
-                <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full" aria-hidden="true" />
+                <div className="animate-spin w-6 h-6 border-2 border-[color:var(--hf-cyan-500)] border-t-transparent rounded-full" aria-hidden="true" />
                 <span className="sr-only">Загрузка кандидатов...</span>
               </div>
             ) : candidates.length === 0 ? (
-              <div className="text-center py-8 text-white/40">
+              <div className="text-center py-8 text-[color:var(--hf-white-alpha-40)]">
                 <User className="w-12 h-12 mx-auto mb-2" aria-hidden="true" />
                 <p>Кандидаты не найдены</p>
               </div>
@@ -154,8 +154,8 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
                   className={clsx(
                     'w-full p-3 rounded-lg border text-left transition-colors',
                     selectedCandidate?.id === candidate.id
-                      ? 'border-blue-500 bg-blue-500/10'
-                      : 'border-white/10 glass-light hover:bg-white/10'
+                      ? 'border-[color:var(--hf-cyan-500)] bg-[var(--hf-status-blue-bg)]'
+                      : 'border-[color:var(--hf-white-alpha-10)] glass-light hover:bg-[var(--hf-white-alpha-10)]'
                   )}
                   role="option"
                   aria-selected={selectedCandidate?.id === candidate.id}
@@ -163,7 +163,7 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{candidate.name}</p>
-                      <p className="text-sm text-white/60 truncate">
+                      <p className="text-sm text-[color:var(--hf-white-alpha-60)] truncate">
                         {candidate.email || candidate.phone || 'Нет контактов'}
                       </p>
                     </div>
@@ -172,7 +172,7 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
                     </span>
                   </div>
                   {candidate.position && (
-                    <p className="text-xs text-white/40 mt-1 truncate">{candidate.position}</p>
+                    <p className="text-xs text-[color:var(--hf-white-alpha-40)] mt-1 truncate">{candidate.position}</p>
                   )}
                 </button>
               ))
@@ -180,17 +180,17 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 p-4 border-t border-white/10">
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-[color:var(--hf-white-alpha-10)]">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-white/60 hover:text-white transition-colors"
+            className="px-4 py-2 text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] transition-colors"
           >
             Отмена
           </button>
           <button
             onClick={handleSubmit}
             disabled={loading || !selectedCandidate}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] disabled:opacity-50 rounded-lg transition-colors"
             aria-busy={loading}
           >
             <UserPlus className="w-4 h-4" aria-hidden="true" />

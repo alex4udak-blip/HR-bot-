@@ -20,23 +20,23 @@ interface RiskIndicatorProps {
 const RISK_CONFIG = {
   high: {
     icon: ShieldAlert,
-    bgColor: 'bg-red-500/20',
-    textColor: 'text-red-400',
-    borderColor: 'border-red-500/30',
+    bgColor: 'bg-[var(--hf-status-red-badge)]',
+    textColor: 'text-[var(--hf-status-red)]',
+    borderColor: 'border-[color:var(--hf-status-red-badge)]',
     label: 'Высокий'
   },
   medium: {
     icon: Shield,
-    bgColor: 'bg-orange-500/20',
-    textColor: 'text-orange-400',
-    borderColor: 'border-orange-500/30',
+    bgColor: 'bg-[var(--hf-status-orange-badge)]',
+    textColor: 'text-[var(--hf-status-orange)]',
+    borderColor: 'border-[color:var(--hf-status-orange-badge)]',
     label: 'Средний'
   },
   low: {
     icon: ShieldCheck,
-    bgColor: 'bg-green-500/20',
-    textColor: 'text-green-400',
-    borderColor: 'border-green-500/30',
+    bgColor: 'bg-[var(--hf-status-green-badge)]',
+    textColor: 'text-[var(--hf-status-green)]',
+    borderColor: 'border-[color:var(--hf-status-green-badge)]',
     label: 'Низкий'
   }
 };
@@ -108,7 +108,7 @@ export default function RiskIndicator({
       <div className={clsx('inline-flex items-center', className)}>
         <Loader2
           size={sizeConfig.iconSize}
-          className="text-white/40 animate-spin"
+          className="text-[color:var(--hf-white-alpha-40)] animate-spin"
         />
       </div>
     );

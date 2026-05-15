@@ -489,26 +489,26 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
 
 export const STATUS_COLORS: Record<EntityStatus, string> = {
   // HR Pipeline
-  new: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-  screening: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-  practice: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-  tech_practice: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
-  is_interview: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-  offer: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-  hired: 'bg-green-500/20 text-green-300 border-green-500/30',
-  rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
-  withdrawn: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  new: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] border-[color:var(--hf-accent-border-30)]',
+  screening: 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-status-cyan)] border-[color:var(--hf-status-cyan-badge)]',
+  practice: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)] border-[color:var(--hf-status-yellow-badge)]',
+  tech_practice: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)] border-[color:var(--hf-status-orange-badge)]',
+  is_interview: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border-[color:var(--hf-status-purple-badge)]',
+  offer: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
+  hired: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
+  rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
+  withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
   // General/Legacy
-  active: 'bg-green-500/20 text-green-300',
-  paused: 'bg-gray-500/20 text-gray-300',
-  churned: 'bg-red-500/20 text-red-300',
-  converted: 'bg-emerald-500/20 text-emerald-300',
-  ended: 'bg-gray-500/20 text-gray-300',
-  negotiation: 'bg-yellow-500/20 text-yellow-300',
-  interview: 'bg-orange-500/20 text-orange-300',
-  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-  phone_screen: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-  assessment: 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+  active: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]',
+  paused: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]',
+  churned: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]',
+  converted: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]',
+  ended: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]',
+  negotiation: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]',
+  interview: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]',
+  applied: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] border-[color:var(--hf-accent-border-30)]',
+  phone_screen: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)] border-[color:var(--hf-status-yellow-badge)]',
+  assessment: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border-[color:var(--hf-status-purple-badge)]'
 };
 
 export const CALL_STATUS_LABELS: Record<CallStatus, string> = {
@@ -523,14 +523,14 @@ export const CALL_STATUS_LABELS: Record<CallStatus, string> = {
 };
 
 export const CALL_STATUS_COLORS: Record<CallStatus, string> = {
-  pending: 'bg-gray-500/20 text-gray-300',
-  connecting: 'bg-yellow-500/20 text-yellow-300',
-  recording: 'bg-red-500/20 text-red-300',
-  processing: 'bg-blue-500/20 text-blue-300',
-  transcribing: 'bg-purple-500/20 text-purple-300',
-  analyzing: 'bg-cyan-500/20 text-cyan-300',
-  done: 'bg-green-500/20 text-green-300',
-  failed: 'bg-red-500/20 text-red-300'
+  pending: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]',
+  connecting: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]',
+  recording: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]',
+  processing: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]',
+  transcribing: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]',
+  analyzing: 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-status-cyan)]',
+  done: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]',
+  failed: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]'
 };
 
 // === Vacancy Types ===
@@ -720,12 +720,12 @@ export const VACANCY_STATUS_LABELS: Record<VacancyStatus, string> = {
 };
 
 export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
-  draft: 'bg-gray-500/20 text-gray-300',
-  pending_review: 'bg-purple-500/20 text-purple-300',
-  open: 'bg-green-500/20 text-green-300',
-  paused: 'bg-yellow-500/20 text-yellow-300',
-  closed: 'bg-blue-500/20 text-blue-300',
-  cancelled: 'bg-red-500/20 text-red-300'
+  draft: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]',
+  pending_review: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]',
+  open: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]',
+  paused: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]',
+  closed: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]',
+  cancelled: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]'
 };
 
 export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
@@ -744,15 +744,15 @@ export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
 
 export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
   // HR Pipeline stages (using existing PostgreSQL enum values)
-  applied: 'bg-blue-500/20 text-blue-300 border-blue-500/30',      // "Новый"
-  screening: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-  phone_screen: 'bg-purple-500/20 text-purple-300 border-purple-500/30', // "Практика"
-  interview: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',    // "Тех-практика"
-  assessment: 'bg-orange-500/20 text-orange-300 border-orange-500/30',   // "ИС"
-  offer: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
-  hired: 'bg-green-500/20 text-green-300 border-green-500/30',
-  rejected: 'bg-red-500/20 text-red-300 border-red-500/30',
-  withdrawn: 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+  applied: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] border-[color:var(--hf-accent-border-30)]',      // "Новый"
+  screening: 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-status-cyan)] border-[color:var(--hf-status-cyan-badge)]',
+  phone_screen: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border-[color:var(--hf-status-purple-badge)]', // "Практика"
+  interview: 'bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)] border-[color:var(--hf-status-indigo-badge)]',    // "Тех-практика"
+  assessment: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)] border-[color:var(--hf-status-orange-badge)]',   // "ИС"
+  offer: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)] border-[color:var(--hf-status-yellow-badge)]',
+  hired: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
+  rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
+  withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]'
 };
 
 // Map EntityStatus to ApplicationStage for synchronization logic

@@ -70,21 +70,21 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           onClick={() => handleNavigateToVacancy(app.vacancy_id)}
-          className="p-4 glass-light rounded-xl cursor-pointer hover:bg-white/10 transition-colors group"
+          className="p-4 glass-light rounded-xl cursor-pointer hover:bg-[var(--hf-white-alpha-10)] transition-colors group"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 flex-1 min-w-0">
-              <div className="p-2 bg-blue-500/20 rounded-lg flex-shrink-0">
-                <Briefcase size={20} className="text-blue-400" />
+              <div className="p-2 bg-[var(--hf-status-blue-badge)] rounded-lg flex-shrink-0">
+                <Briefcase size={20} className="text-[var(--hf-status-blue)]" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <h4 className="font-medium text-white truncate">
+                  <h4 className="font-medium text-[var(--hf-white)] truncate">
                     {app.vacancy_title || `Вакансия #${app.vacancy_id}`}
                   </h4>
                   <ExternalLink
                     size={14}
-                    className="text-white/40 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                    className="text-[color:var(--hf-white-alpha-40)] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -95,7 +95,7 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
                     {APPLICATION_STAGE_LABELS[app.stage]}
                   </span>
                   {app.source && (
-                    <span className="text-xs px-2 py-0.5 glass-light rounded-full text-white/40">
+                    <span className="text-xs px-2 py-0.5 glass-light rounded-full text-[color:var(--hf-white-alpha-40)]">
                       {app.source}
                     </span>
                   )}
@@ -104,12 +104,12 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
             </div>
 
             <div className="text-right flex-shrink-0">
-              <div className="flex items-center gap-1 text-xs text-white/40">
+              <div className="flex items-center gap-1 text-xs text-[color:var(--hf-white-alpha-40)]">
                 <Clock size={12} />
                 <span>{formatDate(app.applied_at, 'medium')}</span>
               </div>
               {app.rating && (
-                <div className="mt-1 text-xs text-yellow-400">
+                <div className="mt-1 text-xs text-[var(--hf-status-yellow)]">
                   Рейтинг: {app.rating}/5
                 </div>
               )}
@@ -118,14 +118,14 @@ export default function EntityVacancies({ entityId }: EntityVacanciesProps) {
 
           {/* Notes preview */}
           {app.notes && (
-            <div className="mt-3 p-2 glass-light rounded-lg text-sm text-white/60 line-clamp-2">
+            <div className="mt-3 p-2 glass-light rounded-lg text-sm text-[color:var(--hf-white-alpha-60)] line-clamp-2">
               {app.notes}
             </div>
           )}
 
           {/* Next interview indicator */}
           {app.next_interview_at && (
-            <div className="mt-2 text-xs text-cyan-400">
+            <div className="mt-2 text-xs text-[var(--hf-cyan-400)]">
               Следующее собеседование: {formatDate(app.next_interview_at, 'medium')}
             </div>
           )}

@@ -120,40 +120,40 @@ function AssignModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-60)]" onClick={onClose}>
       <div
-        className="w-full max-w-md mx-4 bg-dark-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+        className="w-full max-w-md mx-4 bg-[var(--hf-bg-dark)] border border-[color:var(--hf-white-alpha-10)] rounded-2xl shadow-[var(--hf-shadow-2xl)] overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[color:var(--hf-white-alpha-10)]">
           <h3 className="text-lg font-semibold">Назначить рекрутеров</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/10 transition-colors">
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--hf-white-alpha-10)] transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-5 space-y-4 max-h-96 overflow-y-auto">
           {/* Assign to all toggle */}
-          <label className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] cursor-pointer hover:bg-white/[0.05] transition-colors">
+          <label className="flex items-center gap-3 p-3 rounded-xl bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-06)] cursor-pointer hover:bg-[var(--hf-white-alpha-05)] transition-colors">
             <input
               type="checkbox"
               checked={assignAll}
               onChange={() => setAssignAll(!assignAll)}
-              className="w-4 h-4 rounded border-white/20 text-blue-500 focus:ring-blue-500"
+              className="w-4 h-4 rounded border-[color:var(--hf-white-alpha-20)] text-[var(--hf-cyan-700)] focus:ring-[var(--hf-cyan-500)]"
             />
             <div>
               <span className="text-sm font-medium">Назначить всем</span>
-              <p className="text-xs text-white/40">Все рекрутеры увидят эту заявку</p>
+              <p className="text-xs text-[color:var(--hf-white-alpha-40)]">Все рекрутеры увидят эту заявку</p>
             </div>
           </label>
 
           {/* User list */}
           {!assignAll && (
             <div className="space-y-1">
-              <p className="text-xs font-medium text-white/50 mb-2">Выберите рекрутеров:</p>
+              <p className="text-xs font-medium text-[color:var(--hf-white-alpha-50)] mb-2">Выберите рекрутеров:</p>
               {users.length === 0 ? (
                 <div className="flex items-center justify-center py-6">
-                  <div className="animate-spin w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full" />
+                  <div className="animate-spin w-5 h-5 border-2 border-[color:var(--hf-status-blue)] border-t-transparent rounded-full" />
                 </div>
               ) : (
                 users.map(u => (
@@ -162,15 +162,15 @@ function AssignModal({
                     className={clsx(
                       'flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors',
                       selectedIds.includes(u.id)
-                        ? 'bg-blue-500/15 border border-blue-500/30'
-                        : 'hover:bg-white/[0.03] border border-transparent'
+                        ? 'bg-[var(--hf-status-blue-badge)] border border-[color:var(--hf-status-blue-badge)]'
+                        : 'hover:bg-[var(--hf-white-alpha-03)] border border-transparent'
                     )}
                   >
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(u.id)}
                       onChange={() => toggleUser(u.id)}
-                      className="w-4 h-4 rounded border-white/20 text-blue-500 focus:ring-blue-500"
+                      className="w-4 h-4 rounded border-[color:var(--hf-white-alpha-20)] text-[var(--hf-cyan-700)] focus:ring-[var(--hf-cyan-500)]"
                     />
                     <span className="text-sm">{u.name}</span>
                   </label>
@@ -180,20 +180,20 @@ function AssignModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/10">
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[color:var(--hf-white-alpha-10)]">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg text-white/60 hover:text-white hover:bg-white/[0.06] transition-colors"
+            className="px-4 py-2 text-sm rounded-lg text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-white-alpha-06)] transition-colors"
           >
             Отмена
           </button>
           <button
             onClick={handleSave}
             disabled={loading || (!assignAll && selectedIds.length === 0)}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
           >
             {loading ? (
-              <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+              <div className="animate-spin w-4 h-4 border-2 border-[color:var(--hf-white)] border-t-transparent rounded-full" />
             ) : (
               <UserPlus className="w-4 h-4" />
             )}
@@ -608,11 +608,11 @@ export default function VacanciesPage() {
   return (
     <div className="h-full w-full max-w-full flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-white/10">
+      <div className="p-4 border-b border-[color:var(--hf-white-alpha-10)]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Briefcase className="w-7 h-7 text-blue-400" />
+              <Briefcase className="w-7 h-7 text-[var(--hf-status-blue)]" />
               Заявки
             </h1>
           </div>
@@ -621,7 +621,7 @@ export default function VacanciesPage() {
             {/* Navigation to candidates page */}
             <button
               onClick={() => navigate('/all-candidates')}
-              className="flex items-center gap-2 px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-sm transition-colors"
+              className="flex items-center gap-2 px-3 py-2 bg-[var(--hf-status-purple-badge)] hover:bg-[var(--hf-status-purple-bg)] text-[var(--hf-status-purple)] rounded-lg text-sm transition-colors"
               title="Перейти к базе кандидатов"
             >
               <Users className="w-4 h-4" />
@@ -641,7 +641,7 @@ export default function VacanciesPage() {
                   }}
                   data-tour="create-vacancy"
                   title="Создать вакансию"
-                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-500 hover:bg-blue-400 rounded-xl transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 text-white font-semibold text-sm animate-pulse-subtle"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-400)] rounded-xl transition-all shadow-[var(--hf-shadow-lg)] shadow-[0_10px_15px_-3px_var(--hf-status-blue-badge)] hover:shadow-[0_10px_15px_-3px_var(--hf-status-blue-badge)] text-[var(--hf-white)] font-semibold text-sm animate-pulse-subtle"
                 >
                   <Plus className="w-5 h-5" strokeWidth={2.5} />
                   Новая вакансия
@@ -653,19 +653,19 @@ export default function VacanciesPage() {
         <div className="flex flex-wrap items-center gap-3">
           {/* Search */}
           <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[color:var(--hf-white-alpha-40)]" />
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Поиск по названию..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/[0.03] rounded-lg focus:outline-none focus:border-blue-500 text-sm"
+              className="w-full pl-10 pr-4 py-2 bg-[var(--hf-white-alpha-03)] rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)] text-sm"
             />
           </div>
 
           {/* Status filter */}
-          <div className="flex items-center gap-1 p-1 bg-white/[0.03] rounded-lg">
+          <div className="flex items-center gap-1 p-1 bg-[var(--hf-white-alpha-03)] rounded-lg">
             {STATUS_FILTERS.map((status) => (
               <button
                 key={status.id}
@@ -673,8 +673,8 @@ export default function VacanciesPage() {
                 className={clsx(
                   'px-3 py-1.5 text-sm rounded-md transition-all',
                   statusFilter === status.id
-                    ? 'bg-blue-600 text-white'
-                    : 'text-white/60 hover:text-white'
+                    ? 'bg-[var(--hf-cyan-700)] text-[var(--hf-white)]'
+                    : 'text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)]'
                 )}
               >
                 {status.name}
@@ -686,7 +686,7 @@ export default function VacanciesPage() {
           <select
             value={departmentFilter}
             onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-            className="px-3 py-2 bg-white/[0.03] rounded-lg text-sm focus:outline-none focus:border-blue-500"
+            className="px-3 py-2 bg-[var(--hf-white-alpha-03)] rounded-lg text-sm focus:outline-none focus:border-[var(--hf-cyan-500)]"
           >
             <option value="all">Все отделы</option>
             {departments.map((dept) => (
@@ -702,8 +702,8 @@ export default function VacanciesPage() {
             className={clsx(
               'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border',
               showOnlyMine
-                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
-                : 'border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05]'
+                ? 'bg-[var(--hf-status-blue-badge)] border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
+                : 'border-[color:var(--hf-white-alpha-10)] text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-white-alpha-05)]'
             )}
           >
             <Users className="w-4 h-4" />
@@ -717,8 +717,8 @@ export default function VacanciesPage() {
               className={clsx(
                 'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border',
                 assignmentFilter === 'unassigned'
-                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                  : 'border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05]'
+                  ? 'bg-[var(--hf-status-yellow-badge)] border-[color:var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]'
+                  : 'border-[color:var(--hf-white-alpha-10)] text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-white-alpha-05)]'
               )}
             >
               <UserPlus className="w-4 h-4" />
@@ -733,14 +733,14 @@ export default function VacanciesPage() {
               className={clsx(
                 'flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors',
                 activeFilterCount > 0
-                  ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
+                  ? 'bg-[var(--hf-status-blue-badge)] border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
                   : 'glass-button'
               )}
             >
               <Filter className="w-4 h-4" />
               Фильтры
               {activeFilterCount > 0 && (
-                <span className="flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-xs rounded-full">
+                <span className="flex items-center justify-center w-5 h-5 bg-[var(--hf-cyan-700)] text-[var(--hf-white)] text-xs rounded-full">
                   {activeFilterCount}
                 </span>
               )}
@@ -751,15 +751,15 @@ export default function VacanciesPage() {
             <>
               {showFiltersDropdown && (
                 <div
-                  className="absolute right-0 top-full mt-2 w-80 border border-white/[0.06] bg-white/[0.02] rounded-xl shadow-xl z-50 overflow-hidden"
+                  className="absolute right-0 top-full mt-2 w-80 border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] rounded-xl shadow-[var(--hf-shadow-xl)] z-50 overflow-hidden"
                 >
                   {/* Header */}
-                  <div className="flex items-center justify-between p-3 border-b border-white/10">
+                  <div className="flex items-center justify-between p-3 border-b border-[color:var(--hf-white-alpha-10)]">
                     <span className="font-medium text-sm">Быстрые фильтры</span>
                     {activeFilterCount > 0 && (
                       <button
                         onClick={handleClearAllFilters}
-                        className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+                        className="flex items-center gap-1 text-xs text-[var(--hf-status-red)] hover:text-[var(--hf-red-300)] transition-colors"
                       >
                         <X className="w-3 h-3" />
                         Сбросить
@@ -770,7 +770,7 @@ export default function VacanciesPage() {
                   <div className="p-3 space-y-4 max-h-96 overflow-y-auto">
                     {/* Status Filter (Multi-select) */}
                     <div>
-                      <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
+                      <label className="flex items-center gap-2 text-xs font-medium text-[color:var(--hf-white-alpha-60)] mb-2">
                         <Briefcase className="w-3.5 h-3.5" />
                         Статус
                       </label>
@@ -782,8 +782,8 @@ export default function VacanciesPage() {
                             className={clsx(
                               'flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg transition-colors',
                               quickFilters.statuses.includes(status)
-                                ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300'
-                                : 'glass-button text-white/70'
+                                ? 'bg-[var(--hf-status-blue-badge)] border border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
+                                : 'glass-button text-[color:var(--hf-white-alpha-70)]'
                             )}
                           >
                             {quickFilters.statuses.includes(status) && <Check className="w-3 h-3" />}
@@ -795,7 +795,7 @@ export default function VacanciesPage() {
 
                     {/* Salary Range Filter */}
                     <div>
-                      <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
+                      <label className="flex items-center gap-2 text-xs font-medium text-[color:var(--hf-white-alpha-60)] mb-2">
                         <DollarSign className="w-3.5 h-3.5" />
                         Зарплата
                       </label>
@@ -807,8 +807,8 @@ export default function VacanciesPage() {
                             className={clsx(
                               'px-2.5 py-1.5 text-xs rounded-lg transition-colors',
                               quickFilters.salaryRange === range.id
-                                ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300'
-                                : 'glass-button text-white/70'
+                                ? 'bg-[var(--hf-status-blue-badge)] border border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
+                                : 'glass-button text-[color:var(--hf-white-alpha-70)]'
                             )}
                           >
                             {range.label}
@@ -819,7 +819,7 @@ export default function VacanciesPage() {
 
                     {/* Date Range Filter */}
                     <div>
-                      <label className="flex items-center gap-2 text-xs font-medium text-white/60 mb-2">
+                      <label className="flex items-center gap-2 text-xs font-medium text-[color:var(--hf-white-alpha-60)] mb-2">
                         <Calendar className="w-3.5 h-3.5" />
                         Дата создания
                       </label>
@@ -831,8 +831,8 @@ export default function VacanciesPage() {
                             className={clsx(
                               'px-2.5 py-1.5 text-xs rounded-lg transition-colors',
                               quickFilters.dateRange === range.id
-                                ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300'
-                                : 'glass-button text-white/70'
+                                ? 'bg-[var(--hf-status-blue-badge)] border border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
+                                : 'glass-button text-[color:var(--hf-white-alpha-70)]'
                             )}
                           >
                             {range.label}
@@ -843,8 +843,8 @@ export default function VacanciesPage() {
                   </div>
 
                   {/* Results count */}
-                  <div className="p-3 border-t border-white/10 bg-white/[0.03]">
-                    <span className="text-xs text-white/50">
+                  <div className="p-3 border-t border-[color:var(--hf-white-alpha-10)] bg-[var(--hf-white-alpha-03)]">
+                    <span className="text-xs text-[color:var(--hf-white-alpha-50)]">
                       Показано {filteredVacancies.length} из {vacancies.length} вакансий
                     </span>
                   </div>
@@ -904,7 +904,7 @@ export default function VacanciesPage() {
                   <div
                     onClick={() => handleVacancyClick(vacancy)}
                     className={clsx(
-                      'p-4 border border-white/[0.06] bg-white/[0.02] rounded-xl cursor-pointer group transition-all hover:bg-white/[0.04] hover:border-white/[0.1] border-l-[3px]',
+                      'p-4 border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] rounded-xl cursor-pointer group transition-all hover:bg-[var(--hf-white-alpha-04)] hover:border-[color:var(--hf-white-alpha-10)] border-l-[3px]',
                       STATUS_BORDER_COLORS[vacancy.status] || 'border-l-gray-600'
                     )}
                   >
@@ -912,21 +912,21 @@ export default function VacanciesPage() {
                       <div className="flex-1 min-w-0">
                         <h3 className={clsx(
                           'font-semibold text-lg truncate',
-                          !vacancy.title?.trim() && 'italic text-white/40',
+                          !vacancy.title?.trim() && 'italic text-[color:var(--hf-white-alpha-40)]',
                         )}>{vacancy.title?.trim() || 'Без названия'}</h3>
                         <div className="flex items-center gap-2">
                           <VacancyStatusBadge status={vacancy.status} size="sm" />
                           {(user && vacancy.created_by !== user.id && (vacancy.assigned_to?.includes(user.id) || vacancy.assigned_to_all)) ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border border-[color:var(--hf-status-purple-badge)]">
                               Заявка
                             </span>
                           ) : (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300/70">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--hf-status-blue-bg)] text-[color:var(--hf-status-blue)]">
                               Вакансия
                             </span>
                           )}
                           {vacancy.applications_count > 0 && (
-                            <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400">
+                            <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-[var(--hf-status-blue-bg)] text-[var(--hf-status-blue)]">
                               <Users className="w-3 h-3" />
                               {vacancy.applications_count}
                             </span>
@@ -935,14 +935,14 @@ export default function VacanciesPage() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         {vacancy.visible_to_all && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-300" title="Видна всем сотрудникам">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]" title="Видна всем сотрудникам">
                             Общая
                           </span>
                         )}
                         {vacancy.priority > 0 && (
                           <span className={clsx(
                             'text-xs px-2 py-0.5 rounded-full',
-                            vacancy.priority === 2 ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'
+                            vacancy.priority === 2 ? 'bg-[var(--hf-status-red-badge)] text-[var(--hf-red-300)]' : 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]'
                           )}>
                             {vacancy.priority === 2 ? 'Срочно' : 'Важно'}
                           </span>
@@ -951,7 +951,7 @@ export default function VacanciesPage() {
                     </div>
 
                     {/* Info */}
-                    <div className="space-y-2 text-sm text-white/60">
+                    <div className="space-y-2 text-sm text-[color:var(--hf-white-alpha-60)]">
                       {vacancy.location && (
                         <div className="flex items-center gap-2">
                           <MapPin className="w-4 h-4" />
@@ -974,7 +974,7 @@ export default function VacanciesPage() {
 
                     {/* Owner & Department */}
                     {(vacancy.created_by_name || vacancy.department_name) && (
-                      <div className="mt-3 flex items-center gap-3 text-xs text-white/40">
+                      <div className="mt-3 flex items-center gap-3 text-xs text-[color:var(--hf-white-alpha-40)]">
                         {vacancy.created_by_name && (
                           <span title="Владелец вакансии">👤 {vacancy.created_by_name}</span>
                         )}
@@ -1003,7 +1003,7 @@ export default function VacanciesPage() {
                           {showAdminAssign && (
                             <button
                               onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/20 rounded-lg transition-colors"
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[var(--hf-status-yellow-badge)] hover:bg-[var(--hf-status-yellow-bg)] text-[var(--hf-status-yellow)] border border-[color:var(--hf-status-yellow-badge)] rounded-lg transition-colors"
                             >
                               <UserPlus className="w-3.5 h-3.5" />
                               {isAlreadyAssigned ? 'Переназначить' : 'Назначить'}
@@ -1012,7 +1012,7 @@ export default function VacanciesPage() {
                           {showAdminReassign && (
                             <button
                               onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white/[0.05] hover:bg-white/[0.08] text-white/60 border border-white/[0.1] rounded-lg transition-colors"
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[var(--hf-white-alpha-05)] hover:bg-[var(--hf-white-alpha-08)] text-[color:var(--hf-white-alpha-60)] border border-[color:var(--hf-white-alpha-10)] rounded-lg transition-colors"
                             >
                               <UserPlus className="w-3.5 h-3.5" />
                               Переназначить
@@ -1022,10 +1022,10 @@ export default function VacanciesPage() {
                             <button
                               onClick={(e) => { e.stopPropagation(); handleTakeVacancy(vacancy); }}
                               disabled={takingVacancyId === vacancy.id}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-500/15 hover:bg-green-500/25 text-green-300 border border-green-500/20 rounded-lg transition-colors disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[var(--hf-status-green-badge)] hover:bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border border-[color:var(--hf-status-green-badge)] rounded-lg transition-colors disabled:opacity-50"
                             >
                               {takingVacancyId === vacancy.id ? (
-                                <div className="animate-spin w-3.5 h-3.5 border-2 border-green-300 border-t-transparent rounded-full" />
+                                <div className="animate-spin w-3.5 h-3.5 border-2 border-[color:var(--hf-status-green)] border-t-transparent rounded-full" />
                               ) : (
                                 <PlayCircle className="w-3.5 h-3.5" />
                               )}
@@ -1037,15 +1037,15 @@ export default function VacanciesPage() {
                     })()}
 
                     {/* Stats */}
-                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+                    <div className="mt-4 pt-3 border-t border-[color:var(--hf-white-alpha-10)] flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm">
-                        <Users className="w-4 h-4 text-blue-400" />
+                        <Users className="w-4 h-4 text-[var(--hf-status-blue)]" />
                         <span>{vacancy.applications_count} кандидатов</span>
                       </div>
                       {Object.keys(vacancy.stage_counts).length > 0 && (
                         <div className="flex items-center gap-1">
                           {Object.entries(vacancy.stage_counts).slice(0, 3).map(([stage, count]) => (
-                            <span key={stage} className="text-xs px-1.5 py-0.5 bg-white/[0.03] rounded">
+                            <span key={stage} className="text-xs px-1.5 py-0.5 bg-[var(--hf-white-alpha-03)] rounded">
                               {count}
                             </span>
                           ))}
@@ -1057,12 +1057,12 @@ export default function VacanciesPage() {
                     {vacancy.tags.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1">
                         {vacancy.tags.slice(0, 4).map((tag) => (
-                          <span key={tag} className="text-xs px-2 py-0.5 bg-white/[0.03] rounded-full">
+                          <span key={tag} className="text-xs px-2 py-0.5 bg-[var(--hf-white-alpha-03)] rounded-full">
                             {tag}
                           </span>
                         ))}
                         {vacancy.tags.length > 4 && (
-                          <span className="text-xs px-2 py-0.5 text-white/40">
+                          <span className="text-xs px-2 py-0.5 text-[color:var(--hf-white-alpha-40)]">
                             +{vacancy.tags.length - 4}
                           </span>
                         )}

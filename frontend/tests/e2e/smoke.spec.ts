@@ -7,6 +7,26 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Application Smoke Tests', () => {
   test('should load the application and display login page', async ({ page }) => {
+    await page.context().clearCookies();
+    await page.addInitScript(() => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    });
+    await page.route('**/api/auth/me', async (route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Unauthorized' }),
+      });
+    });
+    await page.route('**/api/auth/refresh', async (route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Unauthorized' }),
+      });
+    });
+
     // Navigate to the app
     await page.goto('/');
 

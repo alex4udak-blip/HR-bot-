@@ -123,10 +123,10 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
       className="glass-light backdrop-blur-sm rounded-xl p-3 mb-4"
     >
       <div className="flex items-center gap-2 mb-3">
-        <FileText className="w-4 h-4 text-cyan-400" />
-        <h3 className="text-sm font-medium text-white">Парсинг резюме</h3>
+        <FileText className="w-4 h-4 text-[var(--hf-cyan-400)]" />
+        <h3 className="text-sm font-medium text-[var(--hf-white)]">Парсинг резюме</h3>
         {(pendingCount > 0 || processingCount > 0) && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--hf-status-cyan-badge)] text-[var(--hf-cyan-400)]">
             {pendingCount + processingCount} в процессе
           </span>
         )}
@@ -142,58 +142,58 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
               exit={{ opacity: 0, x: 20 }}
               className={clsx(
                 'flex items-center gap-3 p-2 rounded-lg',
-                job.status === 'completed' ? 'bg-green-500/10' :
-                job.status === 'failed' ? 'bg-red-500/10' :
+                job.status === 'completed' ? 'bg-[var(--hf-status-green-bg)]' :
+                job.status === 'failed' ? 'bg-[var(--hf-status-red-bg)]' :
                 'glass-light'
               )}
             >
               {/* Status icon */}
               <div className="flex-shrink-0">
                 {job.status === 'pending' && (
-                  <div className="w-5 h-5 rounded-full border-2 border-white/30 flex items-center justify-center">
-                    <div className="w-2 h-2 bg-white/30 rounded-full" />
+                  <div className="w-5 h-5 rounded-full border-2 border-[color:var(--hf-white-alpha-30)] flex items-center justify-center">
+                    <div className="w-2 h-2 bg-[var(--hf-white-alpha-30)] rounded-full" />
                   </div>
                 )}
                 {job.status === 'processing' && (
-                  <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+                  <Loader2 className="w-5 h-5 text-[var(--hf-cyan-400)] animate-spin" />
                 )}
                 {job.status === 'completed' && (
-                  <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
-                    <Check className="w-3 h-3 text-white" />
+                  <div className="w-5 h-5 rounded-full bg-[var(--hf-green-500)] flex items-center justify-center">
+                    <Check className="w-3 h-3 text-[var(--hf-white)]" />
                   </div>
                 )}
                 {job.status === 'failed' && (
-                  <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
-                    <X className="w-3 h-3 text-white" />
+                  <div className="w-5 h-5 rounded-full bg-[var(--hf-red-500)] flex items-center justify-center">
+                    <X className="w-3 h-3 text-[var(--hf-white)]" />
                   </div>
                 )}
               </div>
 
               {/* Job info */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-white truncate">
+                <p className="text-sm text-[var(--hf-white)] truncate">
                   {job.entity_name || job.file_name}
                 </p>
-                <p className="text-xs text-white/50">
+                <p className="text-xs text-[color:var(--hf-white-alpha-50)]">
                   {job.status === 'pending' && 'В очереди...'}
                   {job.status === 'processing' && (
                     <span className="flex items-center gap-1">
                       <span>{job.progress_stage || 'Обработка...'}</span>
-                      <span className="text-cyan-400">{job.progress}%</span>
+                      <span className="text-[var(--hf-cyan-400)]">{job.progress}%</span>
                     </span>
                   )}
                   {job.status === 'completed' && 'Готово'}
                   {job.status === 'failed' && (
-                    <span className="text-red-400">{job.error_message || 'Ошибка'}</span>
+                    <span className="text-[var(--hf-status-red)]">{job.error_message || 'Ошибка'}</span>
                   )}
                 </p>
               </div>
 
               {/* Progress bar for processing */}
               {job.status === 'processing' && (
-                <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div className="w-16 h-1.5 bg-[var(--hf-white-alpha-10)] rounded-full overflow-hidden">
                   <motion.div
-                    className="h-full bg-cyan-500"
+                    className="h-full bg-[var(--hf-cyan-500)]"
                     initial={{ width: 0 }}
                     animate={{ width: `${job.progress}%` }}
                     transition={{ duration: 0.5 }}
@@ -206,7 +206,7 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
                 {job.status === 'pending' && (
                   <button
                     onClick={() => handleCancel(job.id)}
-                    className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-red-400 transition-colors"
+                    className="p-1 rounded hover:bg-[var(--hf-white-alpha-10)] text-[color:var(--hf-white-alpha-50)] hover:text-[var(--hf-status-red)] transition-colors"
                     title="Отменить"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -215,7 +215,7 @@ export default function ParseJobsPanel({ refreshTrigger, onJobComplete }: ParseJ
                 {job.status === 'completed' && job.entity_id && (
                   <button
                     onClick={() => handleNavigateToEntity(job.entity_id!)}
-                    className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-cyan-400 transition-colors"
+                    className="p-1 rounded hover:bg-[var(--hf-white-alpha-10)] text-[color:var(--hf-white-alpha-50)] hover:text-[var(--hf-cyan-400)] transition-colors"
                     title="Открыть контакт"
                   >
                     <ExternalLink className="w-4 h-4" />

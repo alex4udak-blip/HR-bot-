@@ -118,7 +118,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <motion.div
@@ -128,24 +128,24 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
         onClick={(e) => e.stopPropagation()}
         className="glass rounded-xl w-full max-w-lg overflow-hidden"
       >
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
+        <div className="flex items-center justify-between p-4 border-b border-[color:var(--hf-white-alpha-10)]">
           <div>
             <h2 className="text-lg font-semibold">{application.entity_name}</h2>
             {application.entity_position && (
-              <p className="text-sm text-white/60">{application.entity_position}</p>
+              <p className="text-sm text-[color:var(--hf-white-alpha-60)]">{application.entity_position}</p>
             )}
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleViewCandidate}
-              className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
+              className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
               title="Открыть карточку кандидата"
             >
               <ExternalLink className="w-5 h-5" />
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-dark-800/50 rounded-lg transition-colors"
+              className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -153,14 +153,14 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-white/10">
+        <div className="flex border-b border-[color:var(--hf-white-alpha-10)]">
           <button
             onClick={() => setActiveTab('details')}
             className={clsx(
               'flex-1 px-4 py-2.5 text-sm font-medium transition-colors',
               activeTab === 'details'
-                ? 'text-white border-b-2 border-blue-500'
-                : 'text-white/40 hover:text-white/60'
+                ? 'text-[var(--hf-white)] border-b-2 border-[color:var(--hf-cyan-500)]'
+                : 'text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)]'
             )}
           >
             Детали
@@ -170,8 +170,8 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
             className={clsx(
               'flex-1 px-4 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-1.5',
               activeTab === 'history'
-                ? 'text-white border-b-2 border-blue-500'
-                : 'text-white/40 hover:text-white/60'
+                ? 'text-[var(--hf-white)] border-b-2 border-[color:var(--hf-cyan-500)]'
+                : 'text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)]'
             )}
           >
             <History className="w-3.5 h-3.5" />
@@ -183,11 +183,11 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
         <div className="p-4 space-y-4">
           {/* Stage */}
           <div>
-            <label className="block text-sm text-white/60 mb-1">Этап</label>
+            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Этап</label>
             <select
               value={formData.stage}
               onChange={(e) => setFormData({ ...formData, stage: e.target.value as ApplicationStage })}
-              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)]"
             >
               {Object.entries(APPLICATION_STAGE_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
@@ -197,7 +197,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
 
           {/* Rating */}
           <div>
-            <label className="block text-sm text-white/60 mb-1">Рейтинг</label>
+            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Рейтинг</label>
             <div className="flex items-center gap-1">
               {[1, 2, 3, 4, 5].map((value) => (
                 <button
@@ -206,8 +206,8 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
                   className={clsx(
                     'p-1.5 rounded transition-colors',
                     value <= formData.rating
-                      ? 'text-yellow-400'
-                      : 'text-white/20 hover:text-white/40'
+                      ? 'text-[var(--hf-status-yellow)]'
+                      : 'text-[color:var(--hf-white-alpha-20)] hover:text-[color:var(--hf-white-alpha-40)]'
                   )}
                 >
                   <Star className={clsx('w-6 h-6', value <= formData.rating && 'fill-current')} />
@@ -216,7 +216,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
               {formData.rating > 0 && (
                 <button
                   onClick={() => setFormData({ ...formData, rating: 0 })}
-                  className="ml-2 text-xs text-white/40 hover:text-white/60"
+                  className="ml-2 text-xs text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)]"
                 >
                   Сбросить
                 </button>
@@ -226,23 +226,23 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
 
           {/* Next Interview */}
           <div>
-            <label className="block text-sm text-white/60 mb-1">Следующее интервью</label>
+            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Следующее интервью</label>
             <input
               type="datetime-local"
               value={formData.next_interview_at}
               onChange={(e) => setFormData({ ...formData, next_interview_at: e.target.value })}
-              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)]"
             />
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-sm text-white/60 mb-1">Заметки</label>
+            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Заметки</label>
             <textarea
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500 resize-none"
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)] resize-none"
               placeholder="Добавьте заметки о кандидате..."
             />
           </div>
@@ -250,19 +250,19 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
           {/* Rejection Reason (shown when stage is rejected) */}
           {formData.stage === 'rejected' && (
             <div>
-              <label className="block text-sm text-white/60 mb-1">Причина отказа</label>
+              <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Причина отказа</label>
               <input
                 type="text"
                 value={formData.rejection_reason}
                 onChange={(e) => setFormData({ ...formData, rejection_reason: e.target.value })}
-                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)]"
                 placeholder="Укажите причину отказа"
               />
             </div>
           )}
 
           {/* Info */}
-          <div className="text-sm text-white/40 space-y-1">
+          <div className="text-sm text-[color:var(--hf-white-alpha-40)] space-y-1">
             <p>Источник: {application.source || 'Не указан'}</p>
             <p>Добавлен: {new Date(application.applied_at).toLocaleDateString('ru-RU')}</p>
             <p>Последнее изменение: {new Date(application.last_stage_change_at).toLocaleDateString('ru-RU')}</p>
@@ -272,7 +272,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
           <button
             onClick={handleInvitePrometheus}
             disabled={inviting}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/20 rounded-lg text-purple-300 transition-all disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--hf-status-purple-badge)] hover:bg-[var(--hf-status-purple-bg)] border border-[color:var(--hf-status-purple-badge)] rounded-lg text-[var(--hf-status-purple)] transition-all disabled:opacity-50"
           >
             {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
             {inviting ? 'Отправка...' : 'Пригласить в Prometheus'}
@@ -282,17 +282,17 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
         <div className="p-4 max-h-80 overflow-y-auto">
           {historyLoading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin text-white/40" />
-              <span className="ml-2 text-sm text-white/40">Загрузка истории...</span>
+              <Loader2 className="w-5 h-5 animate-spin text-[color:var(--hf-white-alpha-40)]" />
+              <span className="ml-2 text-sm text-[color:var(--hf-white-alpha-40)]">Загрузка истории...</span>
             </div>
           ) : history.length === 0 ? (
-            <div className="text-center py-8 text-white/30 text-sm">
+            <div className="text-center py-8 text-[color:var(--hf-white-alpha-30)] text-sm">
               История переходов пока пуста
             </div>
           ) : (
             <div className="relative pl-6">
               {/* Vertical timeline line */}
-              <div className="absolute left-[9px] top-2 bottom-2 w-px bg-white/10" />
+              <div className="absolute left-[9px] top-2 bottom-2 w-px bg-[var(--hf-white-alpha-10)]" />
 
               <div className="space-y-4">
                 {history
@@ -306,26 +306,26 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
                     return (
                       <div key={entry.id} className="relative">
                         {/* Timeline dot */}
-                        <div className="absolute -left-6 top-1 w-[10px] h-[10px] rounded-full bg-blue-500 border-2 border-[#1a1a2e] z-10" />
+                        <div className="absolute -left-6 top-1 w-[10px] h-[10px] rounded-full bg-[var(--hf-cyan-600)] border-2 border-[color:var(--hf-bg-dark)] z-10" />
 
                         <div className="space-y-1">
                           {/* Stage transition badges */}
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {stageLabelFrom && (
                               <>
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50 border border-white/[0.06]">
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--hf-white-alpha-06)] text-[color:var(--hf-white-alpha-50)] border border-[color:var(--hf-white-alpha-06)]">
                                   {stageLabelFrom}
                                 </span>
-                                <ArrowRight className="w-3 h-3 text-white/30" />
+                                <ArrowRight className="w-3 h-3 text-[color:var(--hf-white-alpha-30)]" />
                               </>
                             )}
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] border border-[color:var(--hf-status-blue-badge)]">
                               {stageLabelTo}
                             </span>
                           </div>
 
                           {/* Meta info */}
-                          <div className="flex items-center gap-2 text-[11px] text-white/30">
+                          <div className="flex items-center gap-2 text-[11px] text-[color:var(--hf-white-alpha-30)]">
                             <span>
                               {new Date(entry.created_at).toLocaleDateString('ru-RU', {
                                 day: 'numeric',
@@ -337,7 +337,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
                             </span>
                             {entry.changed_by && (
                               <>
-                                <span className="text-white/10">|</span>
+                                <span className="text-[color:var(--hf-white-alpha-10)]">|</span>
                                 <span>{entry.changed_by}</span>
                               </>
                             )}
@@ -345,7 +345,7 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
 
                           {/* Comment */}
                           {entry.comment && (
-                            <p className="text-xs text-white/50 mt-0.5">{entry.comment}</p>
+                            <p className="text-xs text-[color:var(--hf-white-alpha-50)] mt-0.5">{entry.comment}</p>
                           )}
                         </div>
                       </div>
@@ -357,11 +357,11 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
         </div>
         )}
 
-        <div className="flex items-center justify-between p-4 border-t border-white/10">
+        <div className="flex items-center justify-between p-4 border-t border-[color:var(--hf-white-alpha-10)]">
           <button
             onClick={handleDelete}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-2 text-red-400 hover:bg-red-500/20 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-3 py-2 text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-badge)] rounded-lg transition-colors"
           >
             <Trash2 className="w-4 h-4" />
             Удалить
@@ -369,14 +369,14 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
           <div className="flex items-center gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-white/60 hover:text-white transition-colors"
+              className="px-4 py-2 text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] transition-colors"
             >
               Отмена
             </button>
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] disabled:opacity-50 rounded-lg transition-colors"
             >
               <Save className="w-4 h-4" />
               {loading ? 'Сохранение...' : 'Сохранить'}

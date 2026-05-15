@@ -1,8 +1,9 @@
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
   Settings,
+  Search,
   LogOut,
   Menu,
   X,
@@ -29,31 +30,39 @@ import {
   AlertTriangle,
   ClipboardList,
   MessageSquare,
-  type LucideIcon
-} from 'lucide-react';
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useAuthStore } from '@/stores/authStore';
-import { useVacancyStore } from '@/stores/vacancyStore';
-import * as notificationsApi from '@/services/api/notifications';
-import type { Notification as AppNotification } from '@/services/api/notifications';
-import BackgroundEffects from './BackgroundEffects';
-import ThemeToggle from './ThemeToggle';
-import { VacancyForm } from '@/components/vacancies';
-import ParserModal from '@/components/parser/ParserModal';
-import TelegramConnectBanner from '@/components/TelegramConnectBanner';
-import { getVacancy } from '@/services/api/vacancies';
-import type { Vacancy } from '@/types';
-import { AnimatePresence, motion } from 'framer-motion';
-import clsx from 'clsx';
-import toast from 'react-hot-toast';
+  Mail,
+  Wand2,
+  Code2,
+  Palette,
+  Filter,
+  Layers,
+  FileText,
+  Link2,
+  type LucideIcon,
+} from "lucide-react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useAuthStore } from "@/stores/authStore";
+import { useVacancyStore } from "@/stores/vacancyStore";
+import * as notificationsApi from "@/services/api/notifications";
+import type { Notification as AppNotification } from "@/services/api/notifications";
+import BackgroundEffects from "./BackgroundEffects";
+import ThemeToggle from "./ThemeToggle";
+import { VacancyForm } from "@/components/vacancies";
+import ParserModal from "@/components/parser/ParserModal";
+import TelegramConnectBanner from "@/components/TelegramConnectBanner";
+import { getVacancy } from "@/services/api/vacancies";
+import type { Vacancy } from "@/types";
+import { AnimatePresence, motion } from "framer-motion";
+import clsx from "clsx";
+import toast from "react-hot-toast";
 
 // Note: iconMap and labelMap removed — using section-based navigation now
 
 // Map paths to data-tour attributes
 const pathToTourAttribute: Record<string, string> = {
-  '/all-candidates': 'candidates-link',
-  '/chats': 'chats-link',
-  '/dashboard': 'dashboard-link',
+  "/all-candidates": "candidates-link",
+  "/chats": "chats-link",
+  "/dashboard": "dashboard-link",
 };
 
 const BLOCK_ICONS: Record<string, LucideIcon> = {
@@ -63,20 +72,327 @@ const BLOCK_ICONS: Record<string, LucideIcon> = {
 };
 
 const BLOCK_ACTIVE_BG: Record<string, string> = {
-  projects: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  hr: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  admin: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  projects: "bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] border-[color:var(--hf-status-blue-badge)]",
+  practice: "bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border-[color:var(--hf-status-purple-badge)]",
+  hr: "bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]",
+  admin: "bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)] border-[color:var(--hf-status-yellow-badge)]",
 };
 
 const BLOCK_ACCENT: Record<string, string> = {
-  projects: 'bg-blue-500/20 text-blue-400',
-  practice: 'bg-purple-500/20 text-purple-400',
-  hr: 'bg-emerald-500/20 text-emerald-400',
-  admin: 'bg-amber-500/20 text-amber-400',
+  projects: "bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]",
+  practice: "bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]",
+  hr: "bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]",
+  admin: "bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]",
 };
 
+const HF_HR_SIDEBAR_WIDTH_STORAGE_KEY = "hf.hrSidebarWidth";
+const HF_HR_SIDEBAR_WIDTH_LEGACY_STORAGE_KEY = "left-menu-width";
+const HF_HR_SIDEBAR_WIDTH_MIN = 266;
+const HF_HR_SIDEBAR_WIDTH_DEFAULT = 266;
+const HF_HR_SIDEBAR_WIDTH_MAX = 416;
+
+function clampHrSidebarWidth(width: number) {
+  return Math.min(
+    HF_HR_SIDEBAR_WIDTH_MAX,
+    Math.max(HF_HR_SIDEBAR_WIDTH_MIN, width),
+  );
+}
+
+function readStoredHrSidebarWidth() {
+  if (typeof window === "undefined") return HF_HR_SIDEBAR_WIDTH_DEFAULT;
+  const stored =
+    window.localStorage.getItem(HF_HR_SIDEBAR_WIDTH_STORAGE_KEY) ??
+    window.localStorage.getItem(HF_HR_SIDEBAR_WIDTH_LEGACY_STORAGE_KEY);
+  const parsed = stored ? Number.parseFloat(stored) : Number.NaN;
+  return Number.isFinite(parsed)
+    ? clampHrSidebarWidth(parsed)
+    : HF_HR_SIDEBAR_WIDTH_DEFAULT;
+}
+
+function persistHrSidebarWidth(width: number) {
+  if (typeof window === "undefined") return;
+  const normalizedWidth = String(Math.round(clampHrSidebarWidth(width)));
+  window.localStorage.setItem(
+    HF_HR_SIDEBAR_WIDTH_STORAGE_KEY,
+    normalizedWidth,
+  );
+  window.localStorage.setItem(
+    HF_HR_SIDEBAR_WIDTH_LEGACY_STORAGE_KEY,
+    normalizedWidth,
+  );
+}
+
+function HfSpriteIcon({
+  id,
+  className,
+}: {
+  id: string;
+  className?: string;
+}) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" aria-hidden="true">
+      <use href={`/huntflow-sprite.svg#${id}`} />
+    </svg>
+  );
+}
+
+type HrSettingsItem = {
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  color: string;
+  path?: string;
+  adminOnly?: boolean;
+  missing?: boolean;
+};
+
+const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
+  {
+    title: "Рекрутеры и заказчики",
+    description: "Добавление пользователей и настройка прав",
+    icon: Users,
+    color: "text-[var(--hf-red-500)]",
+    path: "/users",
+    adminOnly: true,
+  },
+  {
+    title: "Организация",
+    description: "Название, оргструктура, безопасность и уведомления",
+    icon: Building2,
+    color: "text-[var(--hf-status-indigo)]",
+    path: "/departments",
+    adminOnly: true,
+  },
+  {
+    title: "Воронка",
+    description: "Этапы подбора, воронки, отказы и контроль сроков",
+    icon: Filter,
+    color: "text-[var(--hf-status-pink)]",
+    path: "/all-candidates",
+  },
+  {
+    title: "Бизнес-процесс",
+    description: "Заявки, вакансии, справочники, метки и источники резюме",
+    icon: GitBranch,
+    color: "text-[var(--hf-status-green)]",
+    path: "/vacancies",
+  },
+  {
+    title: "Шаблоны, оценка и анкеты",
+    description: "Письма, анкеты, обратная связь и оценка рекрутмента",
+    icon: Layers,
+    color: "text-[var(--hf-status-cyan)]",
+    path: "/email-templates",
+  },
+  {
+    title: "Темы оформления",
+    description: "Сделайте ваш Хантфлоу по‑настоящему уютным",
+    icon: Palette,
+    color: "text-[var(--hf-status-lime)]",
+    missing: true,
+  },
+  {
+    title: "Сбор откликов",
+    description: "Карьерный сайт и публикация вакансий",
+    icon: Link2,
+    color: "text-[var(--hf-status-orange)]",
+    path: "/form-builder",
+  },
+  {
+    title: "API и вебхуки",
+    description: "Интеграция с вашими внутренними ресурсами",
+    icon: Code2,
+    color: "text-[var(--hf-status-blue)]",
+    missing: true,
+  },
+];
+
+const HR_SETTINGS_MY_ITEMS: HrSettingsItem[] = [
+  {
+    title: "Профиль",
+    description: "Обо мне, часовой пояс, аккаунт, язык интерфейса",
+    icon: User,
+    color: "text-[var(--hf-status-yellow)]",
+    path: "/my-profile",
+  },
+  {
+    title: "Почта и календарь",
+    description: "Google, Exchange, Outlook365 и другие",
+    icon: Mail,
+    color: "text-[var(--hf-status-cyan)]",
+    missing: true,
+  },
+  {
+    title: "Волшебная кнопка",
+    description: "Сохранение резюме с 20+ сайтов одним кликом",
+    icon: Wand2,
+    color: "text-[var(--hf-red-400)]",
+    path: "/extension",
+  },
+  {
+    title: "Джоб-сайты",
+    description: "HH, Avito, Хабр Карьера, AmazingHiring и другие",
+    icon: FileText,
+    color: "text-[var(--hf-status-pink)]",
+    missing: true,
+  },
+  {
+    title: "Интеграции",
+    description: "Zoom, MS Teams, Google Meet и другие",
+    icon: Puzzle,
+    color: "text-[var(--hf-status-indigo)]",
+    missing: true,
+  },
+];
+
+function HrSettingsCard({
+  item,
+  onSelect,
+}: {
+  item: HrSettingsItem;
+  onSelect: (item: HrSettingsItem) => void;
+}) {
+  const Icon = item.icon;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      className="hf-hr-settings-card"
+    >
+      <Icon
+        className={clsx(
+          "hf-hr-settings-card-icon",
+          item.color,
+        )}
+      />
+      <span className="hf-hr-settings-card-content">
+        <span className="hf-hr-settings-card-title">
+          {item.title}
+        </span>
+        <span className="hf-hr-settings-card-desc">
+          {item.description}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function HrSettingsModal({
+  canUseAdmin,
+  onClose,
+  onNavigate,
+}: {
+  canUseAdmin: boolean;
+  onClose: () => void;
+  onNavigate: (path: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const filterItems = (items: HrSettingsItem[]) =>
+    normalizedQuery
+      ? items.filter((item) =>
+          `${item.title} ${item.description}`
+            .toLowerCase()
+            .includes(normalizedQuery),
+        )
+      : items;
+  const orgItems = filterItems(HR_SETTINGS_ORG_ITEMS);
+  const myItems = filterItems(HR_SETTINGS_MY_ITEMS);
+
+  const handleSelect = (item: HrSettingsItem) => {
+    if (item.missing) {
+      toast("Этого раздела пока нет в HR-bot, оставляем как отсутствующую фичу Huntflow");
+      return;
+    }
+    if (item.adminOnly && !canUseAdmin) {
+      toast("Раздел доступен только администратору");
+      return;
+    }
+    if (item.path) {
+      onNavigate(item.path);
+    }
+  };
+
+  return (
+    <div
+      className="hf-hr-settings-overlay"
+      onMouseDown={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: -10, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -8, scale: 0.985 }}
+        transition={{ duration: 0.14, ease: "easeOut" }}
+        onMouseDown={(event) => event.stopPropagation()}
+        className="hf-hr-settings-modal"
+      >
+        <div className="hf-hr-settings-header">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть настройки"
+            className="hf-hr-settings-close"
+          >
+            <X className="hf-hr-settings-close-icon" />
+          </button>
+          <h2 className="hf-hr-settings-title">
+            Solva
+          </h2>
+          <p className="hf-hr-settings-subtitle">
+            ID 1398 · Тариф «Профессиональный» до 06.04.2027 · Управляющий рекрутер
+          </p>
+        </div>
+
+        <div className="hf-hr-settings-body">
+          <label className="hf-hr-settings-search">
+            <Search
+              className="hf-hr-settings-search-icon"
+            />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              autoFocus
+              placeholder="Поиск"
+              className="hf-hr-settings-search-input"
+            />
+          </label>
+
+          <div className="hf-hr-settings-grid hf-hr-settings-grid-first">
+            {orgItems.map((item) => (
+              <HrSettingsCard
+                key={item.title}
+                item={item}
+                onSelect={handleSelect}
+              />
+            ))}
+          </div>
+
+          <div className="hf-hr-settings-section">
+            <h3 className="hf-hr-settings-section-title">
+              Мой Хантфлоу
+            </h3>
+            <div className="hf-hr-settings-grid hf-hr-settings-grid-first">
+              {myItems.map((item) => (
+                <HrSettingsCard
+                  key={item.title}
+                  item={item}
+                  onSelect={handleSelect}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // FAB — floating action button for HR block
-function FABButton({ onCreateVacancy, onAddCandidate }: {
+function FABButton({
+  onCreateVacancy,
+  onAddCandidate,
+}: {
   onCreateVacancy: () => void;
   onAddCandidate: () => void;
 }) {
@@ -87,15 +403,21 @@ function FABButton({ onCreateVacancy, onAddCandidate }: {
       {open && (
         <div className="absolute bottom-16 right-0 flex flex-col gap-2 items-end mb-2">
           <button
-            onClick={() => { onCreateVacancy(); setOpen(false); }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
+            onClick={() => {
+              onCreateVacancy();
+              setOpen(false);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[var(--hf-green-600)] hover:bg-[var(--hf-green-500)] text-[var(--hf-white)] text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
           >
             <Briefcase className="w-4 h-4" />
             Добавить вакансию
           </button>
           <button
-            onClick={() => { onAddCandidate(); setOpen(false); }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
+            onClick={() => {
+              onAddCandidate();
+              setOpen(false);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] text-[var(--hf-white)] text-sm font-medium rounded-xl transition-colors whitespace-nowrap"
           >
             <UserPlus className="w-4 h-4" />
             Добавить кандидата
@@ -107,13 +429,19 @@ function FABButton({ onCreateVacancy, onAddCandidate }: {
         onClick={() => setOpen(!open)}
         title="Создать"
         className={clsx(
-          'w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg',
+          "w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-[var(--hf-shadow-lg)]",
           open
-            ? 'bg-red-600 hover:bg-red-500 shadow-red-500/30'
-            : 'bg-blue-500 hover:bg-blue-400 shadow-blue-500/40 animate-pulse-subtle'
+            ? "bg-[var(--hf-red-600)] hover:bg-[var(--hf-red-500)] shadow-[0_10px_15px_-3px_var(--hf-status-red-badge)]"
+            : "bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-status-blue)] shadow-[0_10px_15px_-3px_var(--hf-status-blue-badge)] animate-pulse-subtle",
         )}
       >
-        <Plus className={clsx('w-6 h-6 text-white transition-transform', open && 'rotate-45')} strokeWidth={2.5} />
+        <Plus
+          className={clsx(
+            "w-6 h-6 text-[var(--hf-white)] transition-transform",
+            open && "rotate-45",
+          )}
+          strokeWidth={2.5}
+        />
       </button>
     </div>
   );
@@ -122,19 +450,27 @@ function FABButton({ onCreateVacancy, onAddCandidate }: {
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
-  const { user, logout, isImpersonating, exitImpersonation, fetchPermissions, customRoleName, hasFeature } = useAuthStore();
+  const {
+    user,
+    logout,
+    isImpersonating,
+    exitImpersonation,
+    fetchPermissions,
+    customRoleName,
+    hasFeature,
+  } = useAuthStore();
 
   const defaultBlock = useMemo(() => {
-    if (user?.org_role === 'admin' || user?.org_role === 'hr') return 'hr';
-    return 'projects';
+    if (user?.org_role === "admin" || user?.org_role === "hr") return "hr";
+    return "projects";
   }, [user?.org_role]);
   const [activeBlock, setActiveBlock] = useState<string>(defaultBlock);
 
   // Sync default block when user role becomes available
   useEffect(() => {
-    if (!location.pathname || location.pathname === '/') {
-      if (user?.org_role === 'admin' || user?.org_role === 'hr') {
-        setActiveBlock('hr');
+    if (!location.pathname || location.pathname === "/") {
+      if (user?.org_role === "admin" || user?.org_role === "hr") {
+        setActiveBlock("hr");
       }
     }
   }, [user?.org_role]);
@@ -145,25 +481,97 @@ export default function Layout() {
   const [expandedFunnels, setExpandedFunnels] = useState(false);
   const [expandedRequests, setExpandedRequests] = useState(true);
   const [sidebarVacancy, setSidebarVacancy] = useState<Vacancy | null>(null);
+  const isHrSidebar = activeBlock === "hr";
+  const [hrSidebarWidth, setHrSidebarWidth] = useState(readStoredHrSidebarWidth);
+  const hrSidebarWidthRef = useRef(hrSidebarWidth);
+  const [isHrSidebarResizing, setIsHrSidebarResizing] = useState(false);
 
   // FAB-triggered modals — открываются in-place без навигации
   const [showFabVacancyForm, setShowFabVacancyForm] = useState(false);
   const [showFabParserModal, setShowFabParserModal] = useState(false);
+  const [showHrFabActions, setShowHrFabActions] = useState(false);
+  const [showHrSettingsModal, setShowHrSettingsModal] = useState(false);
+  const [showHrFunnelsPicker, setShowHrFunnelsPicker] = useState(false);
+  const hrFabActionsRef = useRef<HTMLDivElement | null>(null);
+  const hrFunnelsPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (activeBlock === 'hr') {
+    if (activeBlock === "hr") {
       fetchVacancies();
     }
   }, [activeBlock, fetchVacancies]);
 
-  const openVacancyModal = useCallback(async (id: number) => {
-    try {
-      const v = await getVacancy(id);
-      setSidebarVacancy(v);
-    } catch {
-      navigate(`/vacancies/${id}`);
-    }
-  }, [navigate]);
+  useEffect(() => {
+    if (!showHrFabActions) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        hrFabActionsRef.current &&
+        !hrFabActionsRef.current.contains(event.target as Node)
+      ) {
+        setShowHrFabActions(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [showHrFabActions]);
+
+  useEffect(() => {
+    if (!showHrFunnelsPicker) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        hrFunnelsPickerRef.current &&
+        !hrFunnelsPickerRef.current.contains(event.target as Node)
+      ) {
+        setShowHrFunnelsPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [showHrFunnelsPicker]);
+
+  useEffect(() => {
+    hrSidebarWidthRef.current = hrSidebarWidth;
+  }, [hrSidebarWidth]);
+
+  useEffect(() => {
+    if (!isHrSidebarResizing) return;
+    const handleMouseMove = (event: MouseEvent) => {
+      const nextWidth = clampHrSidebarWidth(event.clientX);
+      setHrSidebarWidth(nextWidth);
+      persistHrSidebarWidth(nextWidth);
+    };
+    const handleMouseUp = () => {
+      persistHrSidebarWidth(hrSidebarWidthRef.current);
+      setIsHrSidebarResizing(false);
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isHrSidebarResizing]);
+
+  useEffect(() => {
+    if (!isHrSidebar) return;
+    persistHrSidebarWidth(hrSidebarWidth);
+  }, [hrSidebarWidth, isHrSidebar]);
+
+  const openVacancyModal = useCallback(
+    async (id: number) => {
+      try {
+        const v = await getVacancy(id);
+        setSidebarVacancy(v);
+      } catch {
+        navigate(`/vacancies/${id}`);
+      }
+    },
+    [navigate],
+  );
 
   // Count of vacancies for the "Заявки" badge.
   // Админ — нераспределённые заявки 'На рассмотрении' (+ legacy draft),
@@ -172,22 +580,28 @@ export default function Layout() {
   // Рекрутёр — назначенные ему/всем, ещё не взятые в работу (нет клона).
   const assignedDraftCount = useMemo(() => {
     if (!user) return 0;
-    const isAdmin = user.role === 'superadmin' || user.org_role === 'owner' || user.org_role === 'admin';
+    const isAdmin =
+      user.role === "superadmin" ||
+      user.org_role === "owner" ||
+      user.org_role === "admin";
     if (isAdmin) {
-      return vacancies.filter(v =>
-        (v.status === 'pending_review' || v.status === 'draft') &&
-        v.created_by !== user.id
+      return vacancies.filter(
+        (v) =>
+          (v.status === "pending_review" || v.status === "draft") &&
+          v.created_by !== user.id,
       ).length;
     }
     const myCloneFor = new Set<number>();
-    vacancies.forEach(v => {
+    vacancies.forEach((v) => {
       if (v.created_by !== user.id) return;
-      const src = (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id;
-      if (typeof src === 'number') myCloneFor.add(src);
+      const src = (v.extra_data as Record<string, unknown> | undefined)
+        ?.cloned_from_request_id;
+      if (typeof src === "number") myCloneFor.add(src);
     });
-    return vacancies.filter(v => {
+    return vacancies.filter((v) => {
       if (v.created_by === user.id) return false;
-      const assigned = v.assigned_to_all || (v.assigned_to && v.assigned_to.includes(user.id));
+      const assigned =
+        v.assigned_to_all || (v.assigned_to && v.assigned_to.includes(user.id));
       if (!assigned) return false;
       return !myCloneFor.has(v.id);
     }).length;
@@ -196,7 +610,9 @@ export default function Layout() {
   // Notifications state
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notificationsList, setNotificationsList] = useState<AppNotification[]>([]);
+  const [notificationsList, setNotificationsList] = useState<AppNotification[]>(
+    [],
+  );
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -230,7 +646,9 @@ export default function Layout() {
   const handleMarkRead = async (id: number) => {
     try {
       await notificationsApi.markNotificationRead(id);
-      setNotificationsList((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
+      setNotificationsList((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
+      );
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch {
       // silently ignore
@@ -240,7 +658,9 @@ export default function Layout() {
   const handleMarkAllRead = async () => {
     try {
       await notificationsApi.markAllNotificationsRead();
-      setNotificationsList((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setNotificationsList((prev) =>
+        prev.map((n) => ({ ...n, is_read: true })),
+      );
       setUnreadCount(0);
     } catch {
       // silently ignore
@@ -254,8 +674,8 @@ export default function Layout() {
         setShowNotifications(false);
       }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   // Poll unread count every 30s
@@ -277,21 +697,56 @@ export default function Layout() {
     try {
       await exitImpersonation();
     } catch (error) {
-      console.error('Failed to exit impersonation:', error);
+      console.error("Failed to exit impersonation:", error);
     }
   };
 
   // Auto-switch active block based on current URL
   useEffect(() => {
     const path = location.pathname;
-    if (path.startsWith('/projects') || path.startsWith('/all-tasks') || path.startsWith('/saturn') || path.startsWith('/team') || path.startsWith('/dept-manager') || path.startsWith('/timeoff') || path.startsWith('/blockers')) {
-      setActiveBlock('projects');
-    } else if (path.startsWith('/chats') || path.startsWith('/interns') || path.startsWith('/practice-list') || path.startsWith('/calls')) {
-      setActiveBlock('practice');
-    } else if (['/dashboard', '/all-candidates', '/workspaces', '/my-funnels', '/form-builder', '/document-templates', '/employees', '/my-profile', '/vacancies', '/analytics', '/hr-reports', '/pen', '/extension', '/exports', '/import'].some(p => path.startsWith(p))) {
-      setActiveBlock('hr');
-    } else if (['/users', '/departments', '/settings', '/admin', '/trash'].some(p => path.startsWith(p))) {
-      setActiveBlock('admin');
+    if (
+      path.startsWith("/projects") ||
+      path.startsWith("/all-tasks") ||
+      path.startsWith("/saturn") ||
+      path.startsWith("/team") ||
+      path.startsWith("/dept-manager") ||
+      path.startsWith("/timeoff") ||
+      path.startsWith("/blockers")
+    ) {
+      setActiveBlock("projects");
+    } else if (
+      path.startsWith("/chats") ||
+      path.startsWith("/interns") ||
+      path.startsWith("/practice-list") ||
+      path.startsWith("/calls")
+    ) {
+      setActiveBlock("practice");
+    } else if (
+      [
+        "/dashboard",
+        "/all-candidates",
+        "/workspaces",
+        "/my-funnels",
+        "/form-builder",
+        "/document-templates",
+        "/employees",
+        "/my-profile",
+        "/vacancies",
+        "/analytics",
+        "/hr-reports",
+        "/pen",
+        "/extension",
+        "/exports",
+        "/import",
+      ].some((p) => path.startsWith(p))
+    ) {
+      setActiveBlock("hr");
+    } else if (
+      ["/users", "/departments", "/settings", "/admin", "/trash"].some((p) =>
+        path.startsWith(p),
+      )
+    ) {
+      setActiveBlock("admin");
     }
   }, [location.pathname]);
 
@@ -310,29 +765,43 @@ export default function Layout() {
     // - HR-блок (org_role=admin/hr, но НЕ платформенный админ) — видит ТОЛЬКО HR
     // - обычные сотрудники (member) — видят только Проекты (ограниченные)
     // - Practice-only (член депта 'Практика', не платформ-админ) — видит ТОЛЬКО блок Практика
-    const isPlatformAdmin = user?.role === 'superadmin' || user?.org_role === 'owner';
-    const isHrOnly = !isPlatformAdmin && (user?.org_role === 'admin' || user?.org_role === 'hr');
-    const isPracticeMember = (user?.department_names || []).some(n => n.trim().toLowerCase() === 'практика');
+    const isPlatformAdmin =
+      user?.role === "superadmin" || user?.org_role === "owner";
+    const isHrOnly =
+      !isPlatformAdmin &&
+      (user?.org_role === "admin" || user?.org_role === "hr");
+    const isPracticeMember = (user?.department_names || []).some(
+      (n) => n.trim().toLowerCase() === "практика",
+    );
     const isPracticeOnly = isPracticeMember && !isPlatformAdmin;
 
     // PROJECTS block — скрыт у HR-only и Practice-only
     if (!isHrOnly && !isPracticeOnly) {
-      const projectItems: { path: string; icon: LucideIcon; label: string }[] = [
-        { path: '/projects', icon: FolderKanban, label: isPlatformAdmin ? 'Все проекты' : 'Мои проекты' },
-        { path: '/all-tasks', icon: ListTodo, label: isPlatformAdmin ? 'Все задачи' : 'Мои задачи' },
-      ];
+      const projectItems: { path: string; icon: LucideIcon; label: string }[] =
+        [
+          {
+            path: "/projects",
+            icon: FolderKanban,
+            label: isPlatformAdmin ? "Все проекты" : "Мои проекты",
+          },
+          {
+            path: "/all-tasks",
+            icon: ListTodo,
+            label: isPlatformAdmin ? "Все задачи" : "Мои задачи",
+          },
+        ];
       if (isPlatformAdmin) {
         projectItems.push(
-          { path: '/team', icon: Users, label: 'Команда' },
-          { path: '/timeoff', icon: Calendar, label: 'Отпуска' },
-          { path: '/blockers', icon: AlertTriangle, label: 'Блокеры' },
-          { path: '/dept-manager', icon: Building2, label: 'Отделы' },
-          { path: '/saturn', icon: Cloud, label: 'Saturn' },
+          { path: "/team", icon: Users, label: "Команда" },
+          { path: "/timeoff", icon: Calendar, label: "Отпуска" },
+          { path: "/blockers", icon: AlertTriangle, label: "Блокеры" },
+          { path: "/dept-manager", icon: Building2, label: "Отделы" },
+          { path: "/saturn", icon: Cloud, label: "Saturn" },
         );
       }
       sections.push({
-        id: 'projects',
-        label: 'Проекты',
+        id: "projects",
+        label: "Проекты",
         items: projectItems,
       });
     }
@@ -340,38 +809,55 @@ export default function Layout() {
     // PRACTICE block — superadmin, owner, HR Admin (org_role='admin'),
     // и любой член депта 'Практика'. Содержит: чаты с AI/критериями/отчётами,
     // Созвоны, Практиканты, База практикантов.
-    const isHrAdmin = isPlatformAdmin || user?.org_role === 'admin';
+    const isHrAdmin = isPlatformAdmin || user?.org_role === "admin";
     if (isHrAdmin || isPracticeMember) {
       sections.push({
-        id: 'practice',
-        label: 'Практика',
+        id: "practice",
+        label: "Практика",
         items: [
-          { path: '/chats', icon: MessageSquare, label: 'Чаты' },
-          { path: '/calls', icon: Phone, label: 'Созвоны' },
-          { path: '/interns', icon: GraduationCap, label: 'Практиканты' },
-          { path: '/practice-list', icon: ClipboardList, label: 'База практикантов' },
+          { path: "/chats", icon: MessageSquare, label: "Чаты" },
+          { path: "/calls", icon: Phone, label: "Созвоны" },
+          { path: "/interns", icon: GraduationCap, label: "Практиканты" },
+          {
+            path: "/practice-list",
+            icon: ClipboardList,
+            label: "База практикантов",
+          },
         ],
       });
     }
 
     // HR block — superadmin, owner, admin (HR Admin), hr (рекрутер)
     // member (обычные сотрудники) и Practice-only НЕ видят HR блок
-    const isHrRole = isPlatformAdmin || user?.org_role === 'admin' || user?.org_role === 'hr';
+    const isHrRole =
+      isPlatformAdmin || user?.org_role === "admin" || user?.org_role === "hr";
     if (isHrRole && !isPracticeOnly) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
-      hrItems.push({ path: '/all-candidates', icon: Users, label: 'Все кандидаты' });
-      hrItems.push({ path: '/dashboard', icon: BarChart3, label: 'Аналитика' });
-      hrItems.push({ path: '/my-funnels', icon: Briefcase, label: 'Мои вакансии' });
-      hrItems.push({ path: '/vacancies', icon: GitBranch, label: 'Заявки' });
-      hrItems.push({ path: '/extension', icon: Puzzle, label: 'Волшебная кнопка' });
+      hrItems.push({
+        path: "/all-candidates",
+        icon: Users,
+        label: "Все кандидаты",
+      });
+      hrItems.push({ path: "/dashboard", icon: BarChart3, label: "Аналитика" });
+      hrItems.push({
+        path: "/my-funnels",
+        icon: Briefcase,
+        label: "Мои вакансии",
+      });
+      hrItems.push({ path: "/vacancies", icon: GitBranch, label: "Заявки" });
+      hrItems.push({
+        path: "/extension",
+        icon: Puzzle,
+        label: "Волшебная кнопка",
+      });
       if (isHrAdmin) {
         // У HR-админа в боковом меню оставлено только ПЭН — остальные пункты
         // (Аналитика, Отчёты, Формы, Шаблоны, Сотрудники, CSV) убраны по запросу.
-        hrItems.push({ path: '/pen', icon: TrendingUp, label: 'ПЭН (бонусы)' });
+        hrItems.push({ path: "/pen", icon: TrendingUp, label: "ПЭН (бонусы)" });
       }
       sections.push({
-        id: 'hr',
-        label: 'HR',
+        id: "hr",
+        label: "HR",
         items: hrItems,
       });
     }
@@ -379,16 +865,24 @@ export default function Layout() {
     // ADMIN block — только superadmin/owner, скрыт у HR-only
     if (isPlatformAdmin) {
       const adminItems: { path: string; icon: LucideIcon; label: string }[] = [
-        { path: '/departments', icon: Building2, label: 'Департаменты' },
-        { path: '/settings', icon: Settings, label: 'Настройки' },
+        { path: "/departments", icon: Building2, label: "Департаменты" },
+        { path: "/settings", icon: Settings, label: "Настройки" },
       ];
-      if (user?.role === 'superadmin') {
-        adminItems.unshift({ path: '/users', icon: UserCog, label: 'Пользователи' });
-        adminItems.push({ path: '/admin/simulator', icon: Shield, label: 'Симулятор ролей' });
+      if (user?.role === "superadmin") {
+        adminItems.unshift({
+          path: "/users",
+          icon: UserCog,
+          label: "Пользователи",
+        });
+        adminItems.push({
+          path: "/admin/simulator",
+          icon: Shield,
+          label: "Симулятор ролей",
+        });
       }
       sections.push({
-        id: 'admin',
-        label: 'Управление',
+        id: "admin",
+        label: "Управление",
         items: adminItems,
       });
     }
@@ -403,363 +897,993 @@ export default function Layout() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate("/login");
   };
 
+  const handleHrSettingsNavigate = (path: string) => {
+    setShowHrSettingsModal(false);
+    navigate(path);
+  };
+
+  const isHrSidebarAdmin =
+    user?.role === "superadmin" ||
+    user?.org_role === "owner" ||
+    user?.org_role === "admin";
+  const sidebarOpenVacancies = vacancies
+    .filter((v) => v.status === "open" || v.status === "paused")
+    .filter((v) => isHrSidebarAdmin || (user && v.created_by === user.id));
+  const sidebarRequestVacancies = vacancies
+    .filter(
+      (v) =>
+        v.status === "pending_review" ||
+        v.status === "draft" ||
+        v.status === "open" ||
+        v.status === "paused",
+    )
+    .filter((v) => {
+      if (isHrSidebarAdmin) {
+        if (v.assigned_to_all) return false;
+        if (v.assigned_to && v.assigned_to.length > 0) return false;
+        return true;
+      }
+      if (!user) return false;
+      if (v.created_by === user.id) return false;
+      if (v.assigned_to_all) return true;
+      if (v.assigned_to && v.assigned_to.includes(user.id)) return true;
+      return false;
+    })
+    .slice(0, 2);
+
   return (
-    <div className="h-screen w-full max-w-full flex flex-col lg:flex-row relative overflow-hidden">
+    <div className="hf-hr-layout-shell">
       <BackgroundEffects />
+      <AnimatePresence>
+        {showHrSettingsModal && (
+          <HrSettingsModal
+            canUseAdmin={isHrSidebarAdmin}
+            onClose={() => setShowHrSettingsModal(false)}
+            onNavigate={handleHrSettingsNavigate}
+          />
+        )}
+      </AnimatePresence>
       {/* Desktop Sidebar */}
       <aside
-        className="hidden lg:flex flex-col w-64 h-screen glass border-r border-white/5"
+        style={isHrSidebar ? { width: hrSidebarWidth } : undefined}
+        className={clsx(
+          "hidden lg:flex h-screen min-h-0 flex-col",
+          isHrSidebar
+            ? "hf-hr-sidebar"
+            : "w-64 app-sidebar-default glass border-r border-[color:var(--hf-workspace-divider)]",
+        )}
         role="navigation"
         aria-label="Main navigation"
       >
-        {/* Block switcher — top row of icons */}
-        <div className="p-3 border-b border-white/5">
-          <div className="flex items-center gap-1">
-            {navSections.map((section) => {
-              const Icon = BLOCK_ICONS[section.id] || LayoutDashboard;
-              const isActive = activeBlock === section.id;
-              return (
-                <button
-                  key={section.id}
-                  onClick={() => setActiveBlock(section.id)}
-                  className={clsx(
-                    'flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all duration-200',
-                    isActive
-                      ? clsx('border', BLOCK_ACTIVE_BG[section.id])
-                      : 'text-white/30 hover:text-white/50 hover:bg-white/[0.03] border border-transparent'
-                  )}
-                  title={section.label}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-[9px] font-semibold uppercase tracking-wider">{section.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {isHrSidebar ? (
+          <>
+            <div
+              className="hf-hr-sidebar-card"
+            >
+              <div className="hf-hr-block-tabs">
+                {navSections.map((section) => {
+                  const Icon = BLOCK_ICONS[section.id] || LayoutDashboard;
+                  const isActive = activeBlock === section.id;
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => setActiveBlock(section.id)}
+                      className={clsx(
+                        "hf-hr-block-tab",
+                        isActive && "hf-hr-block-tab-active",
+                      )}
+                      title={section.label}
+                    >
+                      <Icon className="hf-hr-block-icon" />
+                      <span className="max-w-full truncate">
+                        {section.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
 
-        {/* Active block navigation */}
-        <nav className="flex-1 px-3 py-3 overflow-y-auto" aria-label="Primary navigation">
-          {navSections
-            .filter((s) => s.id === activeBlock)
-            .map((section) => (
-              <div key={section.id}>
-                <div className="space-y-0.5">
-                  {section.items.map((item) => {
-                    // "Мои воронки" — expandable with vacancy sub-list
-                    if (item.path === '/my-funnels') {
-                      // Логика та же, что на RecruiterFunnelsPage: HR Admin видит все
-                      // open/paused, рекрутёр — только свои (created_by === user.id).
-                      const isAdminViewer = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
-                      const myVacancies = vacancies
-                        .filter(v => (v.status === 'open' || v.status === 'paused'))
-                        .filter(v => isAdminViewer || (user && v.created_by === user.id))
-                        .slice(0, 10);
-                      return (
-                        <div key={item.path}>
-                          <div className="flex items-center">
-                            <NavLink
-                              to={item.path}
-                              className={({ isActive }) =>
-                                clsx(
-                                  'flex-1 flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm',
-                                  isActive
-                                    ? clsx(BLOCK_ACCENT[activeBlock])
-                                    : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
-                                )
-                              }
-                            >
-                              <item.icon className="w-4 h-4 flex-shrink-0" />
-                              <span className="font-medium truncate">{item.label}</span>
-                            </NavLink>
-                            {myVacancies.length > 0 && (
-                              <button
-                                onClick={() => setExpandedFunnels(!expandedFunnels)}
-                                className="p-1.5 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/5 transition-all"
-                              >
-                                <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', expandedFunnels && 'rotate-180')} />
-                              </button>
+              <nav
+                className={clsx(
+                  "hf-hr-nav",
+                  showHrFunnelsPicker && "hf-hr-nav-popover-open",
+                )}
+                aria-label="Primary navigation"
+              >
+                <div className="hf-hr-nav-list">
+                  <NavLink
+                    to="/all-candidates"
+                    data-tour={pathToTourAttribute["/all-candidates"]}
+                    className={({ isActive }) =>
+                      clsx(
+                        "hf-hr-nav-item",
+                        isActive && "hf-hr-nav-item-active",
+                      )
+                    }
+                  >
+                    <HfSpriteIcon id="home-20" className="hf-hr-nav-icon" />
+                    Все кандидаты
+                  </NavLink>
+                  <NavLink
+                    to="/dashboard"
+                    data-tour={pathToTourAttribute["/dashboard"]}
+                    className={({ isActive }) =>
+                      clsx(
+                        "hf-hr-nav-item",
+                        isActive && "hf-hr-nav-item-active",
+                      )
+                    }
+                  >
+                    <HfSpriteIcon
+                      id="graph-20"
+                      className="hf-hr-nav-icon"
+                    />
+                    Аналитика
+                  </NavLink>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toast("Календарь Huntflow пока не реализован в HR-блоке")
+                    }
+                    className="hf-hr-nav-item w-full"
+                  >
+                    <HfSpriteIcon
+                      id="calendar-20"
+                      className="hf-hr-nav-icon"
+                    />
+                    Календарь
+                  </button>
+                </div>
+
+                <div className="hf-hr-sidebar-divider hf-hr-sidebar-divider-requests" />
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedRequests(!expandedRequests)}
+                    className="hf-hr-nav-item hf-hr-nav-item-white w-full"
+                  >
+                    <HfSpriteIcon
+                      id="edit-2-20"
+                      className="hf-hr-nav-icon"
+                    />
+                    <span className="min-w-0 flex-1">Заявки</span>
+                    <span className="hf-hr-secondary-text">
+                      Свернуть
+                    </span>
+                  </button>
+                  {expandedRequests && (
+                    <div className="hf-hr-request-list">
+                      {(sidebarRequestVacancies.length > 0
+                        ? sidebarRequestVacancies
+                        : sidebarOpenVacancies.slice(0, 2)
+                      ).map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => openVacancyModal(v.id)}
+                          className="group hf-hr-request-item"
+                        >
+                          <span
+                            className={clsx(
+                              "hf-hr-request-dot",
+                              v.status === "paused"
+                                ? "bg-[var(--hf-sidebar-status-paused)]"
+                                : "bg-[var(--hf-sidebar-status-active)]",
                             )}
+                          />
+                          <span className="min-w-0">
+                            <span className="hf-hr-request-title">
+                              {v.title}
+                            </span>
+                            <span className="hf-hr-request-meta">
+                              {v.hiring_manager_name || "Dmitry Gerasimov"}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="hf-hr-sidebar-divider hf-hr-sidebar-divider-funnels" />
+
+                <div className="hf-hr-funnels-picker-wrap" ref={hrFunnelsPickerRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowHrFunnelsPicker((value) => !value)}
+                    className={clsx(
+                      "hf-hr-nav-item hf-hr-funnels-trigger min-w-0",
+                      location.pathname.startsWith("/my-funnels")
+                        ? "hf-hr-nav-item-active"
+                        : "hf-hr-nav-item-white",
+                    )}
+                    aria-expanded={showHrFunnelsPicker}
+                    aria-haspopup="listbox"
+                    >
+                      <HfSpriteIcon
+                        id="business-folder"
+                        className="hf-hr-nav-icon"
+                      />
+                      <span className="truncate">Мои вакансии</span>
+                      <span className="hf-hr-funnels-trigger-caret">
+                        <ChevronDown
+                          className={clsx(
+                            "hf-hr-chevron-icon",
+                            showHrFunnelsPicker && "rotate-180",
+                          )}
+                        />
+                      </span>
+                  </button>
+                  <AnimatePresence>
+                    {showHrFunnelsPicker && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4, scale: 0.985 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -4, scale: 0.985 }}
+                        transition={{ duration: 0.12, ease: "easeOut" }}
+                        className="hf-hr-funnels-picker"
+                        role="listbox"
+                      >
+                        <label className="hf-hr-funnels-search">
+                          <Search className="hf-hr-funnels-search-icon" />
+                          <input
+                            className="hf-hr-funnels-search-input"
+                            placeholder="Поиск..."
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="hf-hr-funnels-option"
+                          onClick={() => {
+                            setShowHrFunnelsPicker(false);
+                            navigate("/my-funnels");
+                          }}
+                          role="option"
+                          aria-selected="true"
+                        >
+                          <Check className="hf-hr-funnels-check" />
+                          <span className="hf-hr-funnels-avatar">
+                            {user?.name?.[0]?.toUpperCase() || "Я"}
+                          </span>
+                          <span className="hf-hr-funnels-option-text">
+                            <span className="hf-hr-funnels-option-title">
+                              Я, {user?.name || "Super Admin"}
+                            </span>
+                            <span className="hf-hr-funnels-option-subtitle">
+                              {user?.email || "—"}
+                            </span>
+                          </span>
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  {sidebarOpenVacancies.length > 0 && (
+                    <div className="hf-hr-subnav">
+                      {sidebarOpenVacancies.slice(0, 1).map((v) => (
+                        <NavLink
+                          key={v.id}
+                          to={`/my-funnels?v=${v.id}`}
+                          className="hf-hr-subnav-link"
+                        >
+                          <span className="hf-hr-request-title">
+                            {v.title}
+                          </span>
+                          <span className="hf-hr-request-meta">
+                            {typeof (
+                              v.extra_data as
+                                | Record<string, unknown>
+                                | undefined
+                            )?.department === "string"
+                              ? ((v.extra_data as Record<string, unknown>)
+                                  .department as string)
+                              : "IT"}
+                          </span>
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="hf-hr-sidebar-divider hf-hr-sidebar-divider-closed" />
+
+                <NavLink
+                  to="/my-funnels?status=closed"
+                  className="hf-hr-nav-item hf-hr-nav-item-white"
+                >
+                  <HfSpriteIcon
+                    id="archive-2-20"
+                    className="hf-hr-nav-icon"
+                  />
+                  <span className="min-w-0 flex-1">Закрытые вакансии</span>
+                </NavLink>
+              </nav>
+
+              <div
+                ref={hrFabActionsRef}
+                className="hf-hr-fab-wrap"
+              >
+                <AnimatePresence>
+                  {showHrFabActions && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                      transition={{ duration: 0.12, ease: "easeOut" }}
+                      className="hf-hr-fab-menu"
+                    >
+                      {[
+                        {
+                          label: "Добавить вакансию",
+                          action: () => setShowFabVacancyForm(true),
+                        },
+                        {
+                          label: "Добавить кандидата",
+                          action: () => navigate("/all-candidates?add=resume"),
+                        },
+                        {
+                          label: "Заявка на подбор",
+                          action: () => navigate("/vacancies"),
+                        },
+                        {
+                          label: "Добавить событие",
+                          action: () =>
+                            toast(
+                              "Добавление события из меню Huntflow пока не реализовано в HR-bot",
+                            ),
+                        },
+                      ].map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => {
+                            item.action();
+                            setShowHrFabActions(false);
+                          }}
+                          className="hf-hr-fab-menu-item"
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <button
+                  type="button"
+                  onClick={() => setShowHrFabActions((open) => !open)}
+                  className="hf-hr-fab"
+                  aria-label="Открыть меню добавления"
+                >
+                  <Plus className="hf-hr-fab-icon" />
+                </button>
+              </div>
+
+              <div className="hf-hr-sidebar-bottom">
+                <div className="relative hf-hr-bottom-row" ref={notifRef}>
+                  <button
+                    type="button"
+                    onClick={handleToggleNotifications}
+                    className="hf-hr-nav-item w-full text-[color:var(--hf-white-alpha-72)]"
+                  >
+                    <Bell className="h-[var(--hf-avatar-3xs)] w-[var(--hf-avatar-3xs)]" strokeWidth={1.8} />
+                    <span className="min-w-0 flex-1 truncate text-left">
+                      Уведомления
+                    </span>
+                    {unreadCount > 0 && (
+                      <span className="flex min-w-[18px] items-center justify-center rounded-full bg-[var(--hf-red-500)] px-[5px] text-[length:var(--hf-fs-5xs)] font-bold leading-[16px] text-[var(--hf-white)]">
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {showNotifications && (
+                    <div className="absolute bottom-full left-0 z-[120] mb-2 w-80 max-h-96 overflow-hidden rounded-xl border border-[color:var(--hf-white-alpha-10)] bg-[var(--hf-dark-panel-alpha-95)] shadow-[var(--hf-shadow-2xl)] backdrop-blur-xl">
+                      <div className="flex items-center justify-between border-b border-[color:var(--hf-white-alpha-05)] px-4 py-3">
+                        <span className="text-sm font-medium text-[var(--hf-white)]">
+                          Уведомления
+                        </span>
+                        {unreadCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleMarkAllRead}
+                            className="flex items-center gap-1 text-xs text-[var(--hf-status-blue)] transition-colors hover:text-[var(--hf-cyan-400)]"
+                          >
+                            <Check className="h-3 w-3" />
+                            Прочитать все
+                          </button>
+                        )}
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {notificationsLoading ? (
+                          <div className="flex items-center justify-center py-8">
+                            <div className="hf-loading-spinner h-5 w-5 border-2" />
                           </div>
-                          {expandedFunnels && myVacancies.length > 0 && (
-                            <div className="ml-4 pl-3 border-l border-white/5 mt-0.5 space-y-0.5">
-                              {myVacancies.map(v => (
+                        ) : notificationsList.length === 0 ? (
+                          <div className="py-8 text-center text-xs text-[color:var(--hf-white-alpha-30)]">
+                            Нет уведомлений
+                          </div>
+                        ) : (
+                          notificationsList.map((notif) => (
+                            <button
+                              key={notif.id}
+                              type="button"
+                              onClick={() => {
+                                if (!notif.is_read) handleMarkRead(notif.id);
+                                if (notif.link) {
+                                  navigate(notif.link);
+                                  setShowNotifications(false);
+                                }
+                              }}
+                              className={clsx(
+                                "w-full border-b border-[color:var(--hf-white-alpha-03)] px-4 py-3 text-left transition-colors hover:bg-[var(--hf-white-alpha-03)]",
+                                !notif.is_read && "bg-[var(--hf-white-alpha-05)]",
+                              )}
+                            >
+                              <div className="flex items-start gap-2">
+                                {!notif.is_read && (
+                                  <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-[var(--hf-status-blue)]" />
+                                )}
+                                <div
+                                  className={clsx(
+                                    "min-w-0 flex-1",
+                                    notif.is_read && "ml-4",
+                                  )}
+                                >
+                                  <p className="truncate text-xs font-medium text-[var(--hf-white)]">
+                                    {notif.title}
+                                  </p>
+                                  {notif.message && (
+                                    <p className="mt-0.5 truncate text-[length:var(--hf-fs-4xs)] text-[color:var(--hf-white-alpha-30)]">
+                                      {notif.message}
+                                    </p>
+                                  )}
+                                  <p className="mt-1 text-[length:var(--hf-fs-5xs)] text-[color:var(--hf-white-alpha-20)]">
+                                    {new Date(notif.created_at).toLocaleString(
+                                      "ru-RU",
+                                      {
+                                        day: "numeric",
+                                        month: "short",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      },
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="hf-hr-user-row hf-hr-bottom-row">
+                  <div className="hf-hr-user-avatar">
+                    {user?.name?.[0]?.toUpperCase() || "U"}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="hf-hr-user-name">
+                      {user?.name}
+                    </p>
+                    <p className="hf-hr-user-email">
+                      {user?.email}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowHrSettingsModal(true)}
+                    aria-label="Открыть настройки HR"
+                    title="Настройки"
+                    className="hf-hr-settings-btn"
+                  >
+                    <Settings className="hf-hr-settings-icon" strokeWidth={1.8} />
+                  </button>
+                </div>
+
+                <ThemeToggle />
+
+                <NavLink
+                  to="/my-profile"
+                  className={({ isActive }) =>
+                    clsx(
+                      "hf-hr-nav-item w-full",
+                      isActive
+                        ? "hf-hr-nav-item-active"
+                        : "text-[color:var(--hf-white-alpha-72)]",
+                    )
+                  }
+                >
+                  <User className="h-[var(--hf-avatar-3xs)] w-[var(--hf-avatar-3xs)]" strokeWidth={1.8} />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    Мой профиль
+                  </span>
+                </NavLink>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="hf-hr-nav-item w-full text-[color:var(--hf-white-alpha-72)] hover:bg-[var(--hf-status-red-bg)] hover:text-[var(--hf-red-300)]"
+                  aria-label="Выйти из аккаунта"
+                >
+                  <LogOut className="h-[var(--hf-avatar-3xs)] w-[var(--hf-avatar-3xs)]" strokeWidth={1.8} />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    Выход
+                  </span>
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Изменить ширину HR-сайдбара"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                setIsHrSidebarResizing(true);
+              }}
+              className={clsx(
+                "hf-hr-resizer",
+                isHrSidebarResizing && "hf-hr-resizer-active",
+              )}
+            >
+              <span className="hf-hr-resizer-line" />
+              <span className="hf-hr-resizer-handle" />
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Block switcher — top row of icons */}
+            <div className="p-3 border-b border-[color:var(--hf-workspace-divider)]">
+              <div className="flex items-center gap-1">
+                {navSections.map((section) => {
+                  const Icon = BLOCK_ICONS[section.id] || LayoutDashboard;
+                  const isActive = activeBlock === section.id;
+                  return (
+                    <button
+                      key={section.id}
+                      onClick={() => setActiveBlock(section.id)}
+                      className={clsx(
+                        "flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all duration-200",
+                        isActive
+                          ? clsx("border", BLOCK_ACTIVE_BG[section.id])
+                          : "text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)] border border-transparent",
+                      )}
+                      title={section.label}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="text-[length:var(--hf-fs-6xs)] font-semibold uppercase tracking-wider">
+                        {section.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Active block navigation */}
+            <nav
+              className="flex-1 min-h-0 px-3 py-3 overflow-y-auto"
+              aria-label="Primary navigation"
+            >
+              {navSections
+                .filter((s) => s.id === activeBlock)
+                .map((section) => (
+                  <div key={section.id}>
+                    <div className="space-y-0.5">
+                      {section.items.map((item) => {
+                        // "Мои воронки" — expandable with vacancy sub-list
+                        if (item.path === "/my-funnels") {
+                          // Логика та же, что на RecruiterFunnelsPage: HR Admin видит все
+                          // open/paused, рекрутёр — только свои (created_by === user.id).
+                          const isAdminViewer =
+                            user?.role === "superadmin" ||
+                            user?.org_role === "owner" ||
+                            user?.org_role === "admin";
+                          const myVacancies = vacancies
+                            .filter(
+                              (v) =>
+                                v.status === "open" || v.status === "paused",
+                            )
+                            .filter(
+                              (v) =>
+                                isAdminViewer ||
+                                (user && v.created_by === user.id),
+                            )
+                            .slice(0, 10);
+                          return (
+                            <div key={item.path}>
+                              <div className="flex items-center">
                                 <NavLink
-                                  key={v.id}
-                                  to={`/my-funnels?v=${v.id}`}
+                                  to={item.path}
                                   className={({ isActive }) =>
                                     clsx(
-                                      'flex items-center gap-2 py-1.5 px-2 rounded-md text-xs transition-all',
+                                      "flex-1 flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm",
                                       isActive
-                                        ? 'text-blue-400 bg-blue-500/10'
-                                        : 'text-white/40 hover:text-white/60 hover:bg-white/[0.03]'
+                                        ? clsx(BLOCK_ACCENT[activeBlock])
+                                        : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]",
                                     )
                                   }
                                 >
-                                  <span className={clsx(
-                                    'w-1.5 h-1.5 rounded-full flex-shrink-0',
-                                    v.status === 'open' ? 'bg-green-400' : 'bg-yellow-400'
-                                  )} />
-                                  <span className="truncate">{v.title}</span>
+                                  <item.icon className="w-4 h-4 flex-shrink-0" />
+                                  <span className="font-medium truncate">
+                                    {item.label}
+                                  </span>
                                 </NavLink>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    // "Заявки" — expandable with vacancy request sub-list
-                    if (item.path === '/vacancies') {
-                      // Админ видит НЕназначенные заявки (нужно распределить).
-                      // Рекрутёр — назначенные на него и ещё не взятые в работу.
-                      const isAdminUser = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
-                      const myClonesFor = new Set<number>();
-                      if (user) {
-                        vacancies.forEach(v => {
-                          if (v.created_by !== user.id) return;
-                          const src = (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id;
-                          if (typeof src === 'number') myClonesFor.add(src);
-                        });
-                      }
-                      const requestVacancies = vacancies.filter(v => {
-                        const statusOk = v.status === 'pending_review' || v.status === 'draft' || v.status === 'open' || v.status === 'paused';
-                        if (!statusOk) return false;
-                        if (isAdminUser) {
-                          if (v.assigned_to_all) return false;
-                          if (v.assigned_to && v.assigned_to.length > 0) return false;
-                          return true;
-                        }
-                        if (!user) return false;
-                        if (v.created_by === user.id) return false;
-                        if (myClonesFor.has(v.id)) return false;
-                        if (v.assigned_to_all) return true;
-                        if (v.assigned_to && v.assigned_to.includes(user.id)) return true;
-                        return false;
-                      }).slice(0, 15);
-                      return (
-                        <div key={item.path}>
-                          <div className="flex items-center">
-                            <NavLink
-                              to={item.path}
-                              className={({ isActive }) =>
-                                clsx(
-                                  'flex-1 flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm',
-                                  isActive
-                                    ? clsx(BLOCK_ACCENT[activeBlock])
-                                    : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
-                                )
-                              }
-                            >
-                              <item.icon className="w-4 h-4 flex-shrink-0" />
-                              <span className="font-medium truncate">{item.label}</span>
-                              {assignedDraftCount > 0 && (
-                                <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-bold bg-orange-500 text-white rounded-full">
-                                  {assignedDraftCount > 99 ? '99+' : assignedDraftCount}
-                                </span>
+                                {myVacancies.length > 0 && (
+                                  <button
+                                    onClick={() =>
+                                      setExpandedFunnels(!expandedFunnels)
+                                    }
+                                    className="p-1.5 rounded-lg text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)] transition-all"
+                                  >
+                                    <ChevronDown
+                                      className={clsx(
+                                        "w-3.5 h-3.5 transition-transform",
+                                        expandedFunnels && "rotate-180",
+                                      )}
+                                    />
+                                  </button>
+                                )}
+                              </div>
+                              {expandedFunnels && myVacancies.length > 0 && (
+                                <div className="ml-4 pl-3 border-l border-[color:var(--hf-white-alpha-05)] mt-0.5 space-y-0.5">
+                                  {myVacancies.map((v) => (
+                                    <NavLink
+                                      key={v.id}
+                                      to={`/my-funnels?v=${v.id}`}
+                                      className={({ isActive }) =>
+                                        clsx(
+                                          "flex items-center gap-2 py-1.5 px-2 rounded-md text-xs transition-all",
+                                          isActive
+                                 ? "text-[var(--hf-status-blue)] bg-[var(--hf-status-blue-bg)]"
+                                            : "text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]",
+                                        )
+                                      }
+                                    >
+                                      <span
+                                        className={clsx(
+                                          "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                                          v.status === "open"
+                                            ? "bg-[var(--hf-status-green)]"
+                                            : "bg-[var(--hf-status-yellow)]",
+                                        )}
+                                      />
+                                      <span className="truncate">
+                                        {v.title}
+                                      </span>
+                                    </NavLink>
+                                  ))}
+                                </div>
                               )}
-                            </NavLink>
-                            {requestVacancies.length > 0 && (
-                              <button
-                                onClick={() => setExpandedRequests(!expandedRequests)}
-                                className="p-1.5 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/5 transition-all"
-                              >
-                                <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', expandedRequests && 'rotate-180')} />
-                              </button>
-                            )}
-                          </div>
-                          {expandedRequests && requestVacancies.length > 0 && (
-                            <div className="ml-4 pl-3 border-l border-white/5 mt-0.5 space-y-0.5">
-                              {requestVacancies.map(v => (
-                                <button
-                                  key={v.id}
-                                  onClick={() => openVacancyModal(v.id)}
-                                  className="w-full flex items-center gap-2 py-1.5 px-2 rounded-md text-xs transition-all text-white/40 hover:text-white/60 hover:bg-white/[0.03]"
-                                >
-                                  <span className={clsx(
-                                    'w-1.5 h-1.5 rounded-full flex-shrink-0',
-                                    v.status === 'pending_review' ? 'bg-purple-400' :
-                                    v.status === 'draft' ? 'bg-orange-400' :
-                                    v.status === 'open' ? 'bg-green-400' : 'bg-yellow-400'
-                                  )} />
-                                  <span className="truncate text-left">{v.title}</span>
-                                  {v.hiring_manager_name && (
-                                    <span className="text-white/20 truncate ml-auto text-[10px]">{v.hiring_manager_name}</span>
-                                  )}
-                                </button>
-                              ))}
                             </div>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <NavLink
-                        key={item.path}
-                        to={item.path}
-                        end={item.path.includes('?')}
-                        data-tour={pathToTourAttribute[item.path]}
-                        className={({ isActive }) =>
-                          clsx(
-                            'flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm',
-                            isActive
-                              ? clsx(BLOCK_ACCENT[activeBlock])
-                              : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
-                          )
+                          );
                         }
-                      >
-                        <item.icon className="w-4 h-4 flex-shrink-0" />
-                        <span className="font-medium truncate">{item.label}</span>
-                      </NavLink>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-        </nav>
 
-        <div className="p-4 border-t border-white/5">
-          {/* Notification bell */}
-          <div className="relative mb-3" ref={notifRef}>
-            <button
-              onClick={handleToggleNotifications}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-dark-300 hover:text-blue-400 hover:bg-blue-500/10 transition-all duration-200 relative"
-            >
-              <Bell className="w-5 h-5" />
-              <span className="font-medium text-sm">Уведомления</span>
-              {unreadCount > 0 && (
-                <span className="absolute top-1.5 left-7 w-4.5 h-4.5 flex items-center justify-center text-[9px] font-bold bg-red-500 text-white rounded-full min-w-[18px] px-1">
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </button>
-
-            {/* Notifications dropdown */}
-            {showNotifications && (
-              <div className="absolute bottom-full left-0 mb-2 w-80 max-h-96 bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-                  <span className="text-sm font-medium text-white">Уведомления</span>
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={handleMarkAllRead}
-                      className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                    >
-                      <Check className="w-3 h-3" />
-                      Прочитать все
-                    </button>
-                  )}
-                </div>
-                <div className="overflow-y-auto max-h-80">
-                  {notificationsLoading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="animate-spin w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full" />
-                    </div>
-                  ) : notificationsList.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-white/30">Нет уведомлений</div>
-                  ) : (
-                    notificationsList.map((notif) => (
-                      <button
-                        key={notif.id}
-                        onClick={() => {
-                          if (!notif.is_read) handleMarkRead(notif.id);
-                          if (notif.link) {
-                            navigate(notif.link);
-                            setShowNotifications(false);
+                        // "Заявки" — expandable with vacancy request sub-list
+                        if (item.path === "/vacancies") {
+                          // Админ видит НЕназначенные заявки (нужно распределить).
+                          // Рекрутёр — назначенные на него и ещё не взятые в работу.
+                          const isAdminUser =
+                            user?.role === "superadmin" ||
+                            user?.org_role === "owner" ||
+                            user?.org_role === "admin";
+                          const myClonesFor = new Set<number>();
+                          if (user) {
+                            vacancies.forEach((v) => {
+                              if (v.created_by !== user.id) return;
+                              const src = (
+                                v.extra_data as
+                                  | Record<string, unknown>
+                                  | undefined
+                              )?.cloned_from_request_id;
+                              if (typeof src === "number") myClonesFor.add(src);
+                            });
                           }
-                        }}
-                        className={clsx(
-                          'w-full text-left px-4 py-3 border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors',
-                          !notif.is_read && 'bg-blue-500/[0.05]'
-                        )}
-                      >
-                        <div className="flex items-start gap-2">
-                          {!notif.is_read && (
-                            <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 mt-1.5" />
-                          )}
-                          <div className={clsx('flex-1 min-w-0', notif.is_read && 'ml-4')}>
-                            <p className="text-xs font-medium text-white truncate">{notif.title}</p>
-                            {notif.message && (
-                              <p className="text-[11px] text-white/30 truncate mt-0.5">{notif.message}</p>
-                            )}
-                            <p className="text-[10px] text-white/20 mt-1">
-                              {new Date(notif.created_at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                          </div>
+                          const requestVacancies = vacancies
+                            .filter((v) => {
+                              const statusOk =
+                                v.status === "pending_review" ||
+                                v.status === "draft" ||
+                                v.status === "open" ||
+                                v.status === "paused";
+                              if (!statusOk) return false;
+                              if (isAdminUser) {
+                                if (v.assigned_to_all) return false;
+                                if (v.assigned_to && v.assigned_to.length > 0)
+                                  return false;
+                                return true;
+                              }
+                              if (!user) return false;
+                              if (v.created_by === user.id) return false;
+                              if (myClonesFor.has(v.id)) return false;
+                              if (v.assigned_to_all) return true;
+                              if (
+                                v.assigned_to &&
+                                v.assigned_to.includes(user.id)
+                              )
+                                return true;
+                              return false;
+                            })
+                            .slice(0, 15);
+                          return (
+                            <div key={item.path}>
+                              <div className="flex items-center">
+                                <NavLink
+                                  to={item.path}
+                                  className={({ isActive }) =>
+                                    clsx(
+                                      "flex-1 flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm",
+                                      isActive
+                                        ? clsx(BLOCK_ACCENT[activeBlock])
+                                        : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]",
+                                    )
+                                  }
+                                >
+                                  <item.icon className="w-4 h-4 flex-shrink-0" />
+                                  <span className="font-medium truncate">
+                                    {item.label}
+                                  </span>
+                                  {assignedDraftCount > 0 && (
+                                    <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[length:var(--hf-fs-5xs)] font-bold bg-[var(--hf-status-orange)] text-[var(--hf-white)] rounded-full">
+                                      {assignedDraftCount > 99
+                                        ? "99+"
+                                        : assignedDraftCount}
+                                    </span>
+                                  )}
+                                </NavLink>
+                                {requestVacancies.length > 0 && (
+                                  <button
+                                    onClick={() =>
+                                      setExpandedRequests(!expandedRequests)
+                                    }
+                                    className="p-1.5 rounded-lg text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)] transition-all"
+                                  >
+                                    <ChevronDown
+                                      className={clsx(
+                                        "w-3.5 h-3.5 transition-transform",
+                                        expandedRequests && "rotate-180",
+                                      )}
+                                    />
+                                  </button>
+                                )}
+                              </div>
+                              {expandedRequests &&
+                                requestVacancies.length > 0 && (
+                                  <div className="ml-4 pl-3 border-l border-[color:var(--hf-white-alpha-05)] mt-0.5 space-y-0.5">
+                                    {requestVacancies.map((v) => (
+                                      <button
+                                        key={v.id}
+                                        onClick={() => openVacancyModal(v.id)}
+                                        className="w-full flex items-center gap-2 py-1.5 px-2 rounded-md text-xs transition-all text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]"
+                                      >
+                                        <span
+                                          className={clsx(
+                                            "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                                            v.status === "pending_review"
+                                              ? "bg-[var(--hf-status-purple)]"
+                                              : v.status === "draft"
+                                                ? "bg-[var(--hf-status-orange)]"
+                                                : v.status === "open"
+                                                  ? "bg-[var(--hf-status-green)]"
+                                                  : "bg-[var(--hf-status-yellow)]",
+                                          )}
+                                        />
+                                        <span className="truncate text-left">
+                                          {v.title}
+                                        </span>
+                                        {v.hiring_manager_name && (
+                                          <span className="text-[var(--hf-dark-500)] truncate ml-auto text-[length:var(--hf-fs-5xs)]">
+                                            {v.hiring_manager_name}
+                                          </span>
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <NavLink
+                            key={item.path}
+                            to={item.path}
+                            end={item.path.includes("?")}
+                            data-tour={pathToTourAttribute[item.path]}
+                            className={({ isActive }) =>
+                              clsx(
+                                "flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm",
+                                isActive
+                                  ? clsx(BLOCK_ACCENT[activeBlock])
+                                  : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]",
+                              )
+                            }
+                          >
+                            <item.icon className="w-4 h-4 flex-shrink-0" />
+                            <span className="font-medium truncate">
+                              {item.label}
+                            </span>
+                          </NavLink>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+            </nav>
+
+            <div className="flex-shrink-0 p-4 border-t border-[color:var(--hf-workspace-divider)]">
+              {/* Notification bell */}
+              <div className="relative mb-3" ref={notifRef}>
+                <button
+                  onClick={handleToggleNotifications}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-[var(--hf-dark-300)] hover:text-[var(--hf-status-blue)] hover:bg-[var(--hf-status-blue-bg)] transition-all duration-200 relative"
+                >
+                  <Bell className="w-5 h-5" />
+                  <span className="font-medium text-sm">Уведомления</span>
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1.5 left-7 w-4.5 h-4.5 flex items-center justify-center text-[length:var(--hf-fs-6xs)] font-bold bg-[var(--hf-red-500)] text-[var(--hf-white)] rounded-full min-w-[18px] px-1">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Notifications dropdown */}
+                {showNotifications && (
+                  <div className="absolute bottom-full left-0 mb-2 w-80 max-h-96 bg-[var(--hf-dark-panel-alpha-95)] backdrop-blur-xl border border-[color:var(--hf-white-alpha-10)] rounded-xl shadow-[var(--hf-shadow-2xl)] overflow-hidden z-50">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--hf-white-alpha-05)]">
+                      <span className="text-sm font-medium text-[var(--hf-white)]">
+                        Уведомления
+                      </span>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={handleMarkAllRead}
+                          className="flex items-center gap-1 text-xs text-[var(--hf-status-blue)] hover:text-[var(--hf-cyan-400)] transition-colors"
+                        >
+                          <Check className="w-3 h-3" />
+                          Прочитать все
+                        </button>
+                      )}
+                    </div>
+                    <div className="overflow-y-auto max-h-80">
+                      {notificationsLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <div className="hf-loading-spinner h-5 w-5 border-2" />
                         </div>
-                      </button>
-                    ))
+                      ) : notificationsList.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-[color:var(--hf-white-alpha-30)]">
+                          Нет уведомлений
+                        </div>
+                      ) : (
+                        notificationsList.map((notif) => (
+                          <button
+                            key={notif.id}
+                            onClick={() => {
+                              if (!notif.is_read) handleMarkRead(notif.id);
+                              if (notif.link) {
+                                navigate(notif.link);
+                                setShowNotifications(false);
+                              }
+                            }}
+                            className={clsx(
+                              "w-full text-left px-4 py-3 border-b border-[color:var(--hf-white-alpha-03)] hover:bg-[var(--hf-white-alpha-03)] transition-colors",
+                              !notif.is_read && "bg-[var(--hf-white-alpha-05)]",
+                            )}
+                          >
+                            <div className="flex items-start gap-2">
+                              {!notif.is_read && (
+                                <span className="w-2 h-2 rounded-full bg-[var(--hf-status-blue)] flex-shrink-0 mt-1.5" />
+                              )}
+                              <div
+                                className={clsx(
+                                  "flex-1 min-w-0",
+                                  notif.is_read && "ml-4",
+                                )}
+                              >
+                                <p className="text-xs font-medium text-[var(--hf-white)] truncate">
+                                  {notif.title}
+                                </p>
+                                {notif.message && (
+                                  <p className="text-[length:var(--hf-fs-4xs)] text-[color:var(--hf-white-alpha-30)] truncate mt-0.5">
+                                    {notif.message}
+                                  </p>
+                                )}
+                                <p className="text-[length:var(--hf-fs-5xs)] text-[color:var(--hf-white-alpha-20)] mt-1">
+                                  {new Date(notif.created_at).toLocaleString(
+                                    "ru-RU",
+                                    {
+                                      day: "numeric",
+                                      month: "short",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    },
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 mb-4 px-2">
+                <div className="w-10 h-10 rounded-full bg-[var(--hf-accent-bg-20)] flex items-center justify-center">
+                  <span className="text-[var(--hf-accent)] font-semibold">
+                    {user?.name?.[0]?.toUpperCase() || "U"}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{user?.name}</p>
+                  <p className="text-xs text-[var(--hf-dark-400)] truncate">
+                    {user?.email}
+                  </p>
+                  {customRoleName && (
+                    <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] rounded-full">
+                      {customRoleName}
+                    </span>
                   )}
                 </div>
               </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3 mb-4 px-2">
-            <div className="w-10 h-10 rounded-full bg-accent-500/20 flex items-center justify-center">
-              <span className="text-accent-400 font-semibold">
-                {user?.name?.[0]?.toUpperCase() || 'U'}
-              </span>
+              <ThemeToggle />
+              <NavLink
+                to="/my-profile"
+                className={({ isActive }) =>
+                  clsx(
+                    "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 mb-1",
+                    isActive
+                      ? "text-[var(--hf-accent)] bg-[var(--hf-accent-bg-10)]"
+                      : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]",
+                  )
+                }
+              >
+                <User className="w-5 h-5" />
+                <span className="font-medium">Мой профиль</span>
+              </NavLink>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[var(--hf-dark-300)] hover:text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)] transition-all duration-200"
+                aria-label="Выйти из аккаунта"
+              >
+                <LogOut className="w-5 h-5" aria-hidden="true" />
+                <span className="font-medium">Выход</span>
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{user?.name}</p>
-              <p className="text-xs text-dark-400 truncate">{user?.email}</p>
-              {customRoleName && (
-                <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-accent-500/20 text-accent-400 rounded-full">
-                  {customRoleName}
-                </span>
-              )}
-            </div>
-          </div>
-          <ThemeToggle />
-          <NavLink
-            to="/my-profile"
-            className={({ isActive }) =>
-              clsx(
-                'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 mb-1',
-                isActive
-                  ? 'text-accent-400 bg-accent-500/10'
-                  : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
-              )
-            }
-          >
-            <User className="w-5 h-5" />
-            <span className="font-medium">Мой профиль</span>
-          </NavLink>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
-            aria-label="Выйти из аккаунта"
-          >
-            <LogOut className="w-5 h-5" aria-hidden="true" />
-            <span className="font-medium">Выход</span>
-          </button>
-        </div>
+          </>
+        )}
       </aside>
 
       {/* Mobile Header */}
-      <header className="lg:hidden glass border-b border-white/5 px-4 py-3 flex items-center justify-between" role="banner">
-        <h1 className="text-lg font-bold bg-gradient-to-r from-accent-400 to-accent-600 bg-clip-text text-transparent">
+      <header
+        className="lg:hidden glass border-b border-[color:var(--hf-white-alpha-05)] px-4 py-3 flex items-center justify-between"
+        role="banner"
+      >
+        <h1 className="text-lg font-bold bg-[linear-gradient(to_right,var(--hf-accent),var(--hf-accent-hover))] bg-clip-text text-transparent">
           Enceladus
         </h1>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 rounded-lg hover:bg-dark-800/50"
+          className="p-2 rounded-lg hover:bg-[var(--hf-bg-dark-panel)]"
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-menu"
-          aria-label={mobileMenuOpen ? 'Закрыть меню' : 'Открыть меню'}
+          aria-label={mobileMenuOpen ? "Закрыть меню" : "Открыть меню"}
         >
-          {mobileMenuOpen ? <X className="w-6 h-6" aria-hidden="true" /> : <Menu className="w-6 h-6" aria-hidden="true" />}
+          {mobileMenuOpen ? (
+            <X className="w-6 h-6" aria-hidden="true" />
+          ) : (
+            <Menu className="w-6 h-6" aria-hidden="true" />
+          )}
         </button>
       </header>
 
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-50 bg-dark-950/80 animate-[fadeIn_0.15s_ease]"
+          className="lg:hidden fixed inset-0 z-50 bg-[var(--hf-black-alpha-80)] animate-[fadeIn_0.15s_ease]"
           onClick={() => setMobileMenuOpen(false)}
           role="dialog"
           aria-modal="true"
@@ -770,7 +1894,10 @@ export default function Layout() {
             onClick={(e) => e.stopPropagation()}
             id="mobile-menu"
           >
-            <nav className="p-3 overflow-y-auto flex-1" aria-label="Mobile navigation">
+            <nav
+              className="p-3 overflow-y-auto flex-1"
+              aria-label="Mobile navigation"
+            >
               {/* Block switcher */}
               <div className="flex gap-1 mb-4">
                 {navSections.map((section) => {
@@ -780,14 +1907,16 @@ export default function Layout() {
                       key={section.id}
                       onClick={() => setActiveBlock(section.id)}
                       className={clsx(
-                        'flex-1 flex flex-col items-center gap-1 py-2 rounded-xl transition-all text-xs',
+                        "flex-1 flex flex-col items-center gap-1 py-2 rounded-xl transition-all text-xs",
                         activeBlock === section.id
-                          ? clsx('border', BLOCK_ACTIVE_BG[section.id])
-                          : 'text-white/30 border border-transparent'
+                          ? clsx("border", BLOCK_ACTIVE_BG[section.id])
+                          : "text-[color:var(--hf-white-alpha-30)] border border-transparent",
                       )}
                     >
                       <Icon className="w-4 h-4" />
-                      <span className="text-[9px] font-semibold uppercase">{section.label}</span>
+                      <span className="text-[length:var(--hf-fs-6xs)] font-semibold uppercase">
+                        {section.label}
+                      </span>
                     </button>
                   );
                 })}
@@ -804,15 +1933,20 @@ export default function Layout() {
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
                           clsx(
-                            'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm',
+                            "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm",
                             isActive
                               ? clsx(BLOCK_ACCENT[activeBlock])
-                              : 'text-dark-300 hover:text-dark-100 hover:bg-dark-800/50'
+                              : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-bg-dark-panel)]",
                           )
                         }
                       >
-                        <item.icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-                        <span className="font-medium truncate">{item.label}</span>
+                        <item.icon
+                          className="w-4 h-4 flex-shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span className="font-medium truncate">
+                          {item.label}
+                        </span>
                       </NavLink>
                     ))}
                   </div>
@@ -820,7 +1954,7 @@ export default function Layout() {
               <ThemeToggle />
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-dark-300 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[var(--hf-dark-300)] hover:text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)] transition-all duration-200"
                 aria-label="Выйти из аккаунта"
               >
                 <LogOut className="w-5 h-5" aria-hidden="true" />
@@ -832,27 +1966,36 @@ export default function Layout() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden flex flex-col" role="main" aria-label="Main content">
+      <main
+        className="flex-1 overflow-hidden flex flex-col bg-[var(--hf-workspace-bg)]"
+        role="main"
+        aria-label="Main content"
+      >
         {/* Telegram bot connect banner — показываем если у юзера не привязан tg */}
         <TelegramConnectBanner />
         {/* Impersonation Banner */}
         {isImpersonating() && user && (
           <div
-            className="bg-yellow-500/20 border-b border-yellow-500/30 px-4 py-3 flex items-center justify-between"
+            className="bg-[var(--hf-status-yellow-badge)] border-b border-[color:var(--hf-status-yellow-badge)] px-4 py-3 flex items-center justify-between"
             role="alert"
             aria-live="polite"
           >
             <div className="flex items-center gap-3">
-              <Shield className="w-5 h-5 text-yellow-400" aria-hidden="true" />
+              <Shield className="w-5 h-5 text-[var(--hf-status-yellow)]" aria-hidden="true" />
               <div>
-                <p className="text-sm font-semibold text-yellow-200">
+                <p className="text-sm font-semibold text-[var(--hf-yellow-300)]">
                   Режим имперсонации
                 </p>
-                <p className="text-xs text-yellow-300">
-                  Вы действуете от имени: <span className="font-medium">{user.name}</span> ({user.email})
+                <p className="text-xs text-[var(--hf-yellow-300)]">
+                  Вы действуете от имени:{" "}
+                  <span className="font-medium">{user.name}</span> ({user.email}
+                  )
                   {user.original_user_name && (
                     <span className="ml-2">
-                      • Вернуться к: <span className="font-medium">{user.original_user_name}</span>
+                      • Вернуться к:{" "}
+                      <span className="font-medium">
+                        {user.original_user_name}
+                      </span>
                     </span>
                   )}
                 </p>
@@ -860,7 +2003,7 @@ export default function Layout() {
             </div>
             <button
               onClick={handleExitImpersonation}
-              className="px-4 py-2 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-200 hover:text-yellow-100 transition-colors text-sm font-medium border border-yellow-500/30"
+              className="px-4 py-2 rounded-lg bg-[var(--hf-status-yellow-badge)] hover:bg-[var(--hf-status-yellow-bg)] text-[var(--hf-yellow-300)] hover:text-[var(--hf-yellow-300)] transition-colors text-sm font-medium border border-[color:var(--hf-status-yellow-badge)]"
               aria-label="Выйти из режима имперсонации"
             >
               Выйти из имперсонации
@@ -868,21 +2011,26 @@ export default function Layout() {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden relative">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden relative bg-[var(--hf-workspace-bg)]">
           <Outlet />
 
           {/* FAB — floating action button for HR block */}
-          {activeBlock === 'hr' && (
-            <FABButton
-              onCreateVacancy={() => setShowFabVacancyForm(true)}
-              onAddCandidate={() => setShowFabParserModal(true)}
-            />
+          {activeBlock === "hr" && (
+            <div className="lg:hidden">
+              <FABButton
+                onCreateVacancy={() => setShowFabVacancyForm(true)}
+                onAddCandidate={() => setShowFabParserModal(true)}
+              />
+            </div>
           )}
         </div>
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden glass border-t border-white/5 px-2 py-2 flex" aria-label="Bottom navigation">
+      <nav
+        className="lg:hidden glass border-t border-[color:var(--hf-white-alpha-05)] px-2 py-2 flex"
+        aria-label="Bottom navigation"
+      >
         {navItems.slice(0, 4).map((item) => (
           <NavLink
             key={item.path}
@@ -890,10 +2038,10 @@ export default function Layout() {
             data-tour={pathToTourAttribute[item.path]}
             className={({ isActive }) =>
               clsx(
-                'flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all duration-200',
+                "flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all duration-200",
                 isActive
-                  ? 'text-accent-400'
-                  : 'text-dark-400 hover:text-dark-200'
+                  ? "text-[var(--hf-accent)]"
+                  : "text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]",
               )
             }
             aria-label={item.label}
@@ -914,14 +2062,14 @@ export default function Layout() {
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
           >
             <div
-              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              className="absolute inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm"
               onClick={() => setSidebarVacancy(null)}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white dark:bg-dark-900 rounded-2xl shadow-2xl"
+              className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-[var(--hf-white)] dark:bg-[var(--hf-bg-dark)] rounded-2xl shadow-[var(--hf-shadow-2xl)]"
             >
               <VacancyForm
                 key={`sidebar-${sidebarVacancy.id}`}
@@ -946,7 +2094,7 @@ export default function Layout() {
             onSuccess={() => {
               setShowFabVacancyForm(false);
               fetchVacancies();
-              toast.success('Вакансия создана');
+              toast.success("Вакансия создана");
             }}
           />
         )}
@@ -960,7 +2108,7 @@ export default function Layout() {
             onClose={() => setShowFabParserModal(false)}
             onParsed={() => {
               setShowFabParserModal(false);
-              toast.success('Кандидат добавлен');
+              toast.success("Кандидат добавлен");
             }}
             onAttachedToEntity={() => {
               setShowFabParserModal(false);

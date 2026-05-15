@@ -83,3 +83,7 @@ frontend/playwright/.cache/
 
 # Visual regression snapshots (optional - remove if you want to track them)
 **/*.spec.ts-snapshots/
+
+# Local-only Codex/reference files
+AGENTS.md
+frontend/public/demo-assets/

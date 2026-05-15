@@ -21,10 +21,10 @@ interface NewVacancyMatcherProps {
 
 // Match score colors based on percentage
 const getScoreColor = (score: number): string => {
-  if (score >= 80) return 'text-green-400 bg-green-500/20 border-green-500/30';
-  if (score >= 60) return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30';
-  if (score >= 40) return 'text-orange-400 bg-orange-500/20 border-orange-500/30';
-  return 'text-red-400 bg-red-500/20 border-red-500/30';
+  if (score >= 80) return 'text-[var(--hf-status-green)] bg-[var(--hf-status-green-badge)] border-[color:var(--hf-status-green-badge)]';
+  if (score >= 60) return 'text-[var(--hf-status-yellow)] bg-[var(--hf-status-yellow-badge)] border-[color:var(--hf-status-yellow-badge)]';
+  if (score >= 40) return 'text-[var(--hf-status-orange)] bg-[var(--hf-status-orange-badge)] border-[color:var(--hf-status-orange-badge)]';
+  return 'text-[var(--hf-status-red)] bg-[var(--hf-status-red-badge)] border-[color:var(--hf-status-red-badge)]';
 };
 
 // Available stages to invite to
@@ -109,8 +109,8 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
   if (loading) {
     return (
       <div className="space-y-3">
-        <div className="flex items-center gap-2 text-white/60 mb-4">
-          <Users size={18} className="text-blue-400" />
+        <div className="flex items-center gap-2 text-[color:var(--hf-white-alpha-60)] mb-4">
+          <Users size={18} className="text-[var(--hf-status-blue)]" />
           <span className="text-sm font-medium">Ищем подходящих кандидатов...</span>
         </div>
         <ListSkeleton count={5} />
@@ -137,8 +137,8 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
     <div className="space-y-4">
       {/* Header with filters */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-white/60">
-          <Users size={16} className="text-blue-400" />
+        <div className="flex items-center gap-2 text-[color:var(--hf-white-alpha-60)]">
+          <Users size={16} className="text-[var(--hf-status-blue)]" />
           <span className="text-sm">
             {candidates.length > 0
               ? `Найдено ${candidates.length} подходящих кандидатов`
@@ -153,8 +153,8 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
             className={clsx(
               'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-colors',
               showFilters
-                ? 'bg-purple-500/20 text-purple-300'
-                : 'glass-light hover:bg-white/10 text-white/60'
+                ? 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]'
+                : 'glass-light hover:bg-[var(--hf-white-alpha-10)] text-[color:var(--hf-white-alpha-60)]'
             )}
           >
             <Filter size={14} />
@@ -164,7 +164,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
           <button
             onClick={loadCandidates}
             disabled={loading}
-            className="p-1.5 glass-light hover:bg-white/10 rounded-lg text-white/60 transition-colors"
+            className="p-1.5 glass-light hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-[color:var(--hf-white-alpha-60)] transition-colors"
             title="Обновить список"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -184,7 +184,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
             <div className="p-4 glass-light rounded-xl space-y-4">
               {/* Min score slider */}
               <div>
-                <label className="text-xs text-white/60 block mb-2">
+                <label className="text-xs text-[color:var(--hf-white-alpha-60)] block mb-2">
                   Минимальный балл совпадения: {minScore}%
                 </label>
                 <input
@@ -193,13 +193,13 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                   max={100}
                   value={minScore}
                   onChange={(e) => setMinScore(Number(e.target.value))}
-                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  className="w-full h-2 bg-[var(--hf-white-alpha-10)] rounded-lg appearance-none cursor-pointer accent-[var(--hf-status-purple)]"
                 />
               </div>
 
               {/* Default stage selector */}
               <div>
-                <label className="text-xs text-white/60 block mb-2">
+                <label className="text-xs text-[color:var(--hf-white-alpha-60)] block mb-2">
                   Этап приглашения по умолчанию:
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -210,8 +210,8 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                       className={clsx(
                         'px-3 py-1.5 rounded-lg text-xs transition-colors',
                         selectedStage === stage.value
-                          ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
-                          : 'glass-light text-white/60 hover:bg-white/10'
+                          ? 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border border-[color:var(--hf-status-purple-badge)]'
+                          : 'glass-light text-[color:var(--hf-white-alpha-60)] hover:bg-[var(--hf-white-alpha-10)]'
                       )}
                     >
                       {stage.label}
@@ -225,7 +225,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                 <button
                   onClick={handleNotifyAll}
                   disabled={notifying}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-sm transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-[var(--hf-status-blue-badge)] hover:bg-[var(--hf-status-cyan-badge)] text-[var(--hf-status-blue)] rounded-lg text-sm transition-colors"
                 >
                   {notifying ? (
                     <>
@@ -267,8 +267,8 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
             className={clsx(
               'glass-light rounded-xl border transition-all duration-200',
               expandedId === candidate.entity_id
-                ? 'border-blue-500/50 bg-white/8'
-                : 'border-white/10 hover:border-white/20'
+                ? 'border-[color:var(--hf-status-blue-badge)] bg-[var(--hf-white-alpha-08)]'
+                : 'border-[color:var(--hf-white-alpha-10)] hover:border-[color:var(--hf-white-alpha-20)]'
             )}
           >
             {/* Main card content */}
@@ -292,11 +292,11 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h4 className="font-medium text-white truncate">
+                      <h4 className="font-medium text-[var(--hf-white)] truncate">
                         {candidate.entity_name}
                       </h4>
                       {candidate.position && (
-                        <p className="text-xs text-white/60 truncate">
+                        <p className="text-xs text-[color:var(--hf-white-alpha-60)] truncate">
                           {candidate.position}
                         </p>
                       )}
@@ -306,7 +306,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                       {candidate.status && (
                         <span className={clsx(
                           'text-xs px-2 py-0.5 rounded-full',
-                          STATUS_COLORS[candidate.status as keyof typeof STATUS_COLORS] || 'bg-gray-500/20 text-gray-300'
+                          STATUS_COLORS[candidate.status as keyof typeof STATUS_COLORS] || 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-main-300)]'
                         )}>
                           {STATUS_LABELS[candidate.status as keyof typeof STATUS_LABELS] || candidate.status}
                         </span>
@@ -314,7 +314,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                       <ChevronRight
                         size={18}
                         className={clsx(
-                          'flex-shrink-0 text-white/40 transition-transform duration-200',
+                          'flex-shrink-0 text-[color:var(--hf-white-alpha-40)] transition-transform duration-200',
                           expandedId === candidate.entity_id && 'rotate-90'
                         )}
                       />
@@ -324,13 +324,13 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                   {/* Quick info */}
                   <div className="flex flex-wrap items-center gap-3 mt-2">
                     {candidate.email && (
-                      <span className="flex items-center gap-1 text-xs text-white/50">
+                      <span className="flex items-center gap-1 text-xs text-[color:var(--hf-white-alpha-50)]">
                         <Mail size={12} />
                         {candidate.email}
                       </span>
                     )}
                     {candidate.phone && (
-                      <span className="flex items-center gap-1 text-xs text-white/50">
+                      <span className="flex items-center gap-1 text-xs text-[color:var(--hf-white-alpha-50)]">
                         <Phone size={12} />
                         {candidate.phone}
                       </span>
@@ -339,7 +339,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
 
                   {/* Salary info */}
                   {(candidate.expected_salary_min || candidate.expected_salary_max) && (
-                    <div className="mt-2 text-xs text-white/40">
+                    <div className="mt-2 text-xs text-[color:var(--hf-white-alpha-40)]">
                       Ожидаемая зарплата: {formatSalaryUtil(
                         candidate.expected_salary_min,
                         candidate.expected_salary_max,
@@ -351,12 +351,12 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                   {/* Compatibility indicator */}
                   <div className="flex flex-wrap items-center gap-2 mt-2">
                     {candidate.salary_compatible ? (
-                      <span className="flex items-center gap-1 text-xs text-green-400/80 bg-green-500/10 px-2 py-0.5 rounded-full">
+                      <span className="flex items-center gap-1 text-xs text-[color:var(--hf-status-green)] bg-[var(--hf-status-green-bg)] px-2 py-0.5 rounded-full">
                         <Check size={12} />
                         Зарплата подходит
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-xs text-yellow-400/80 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                      <span className="flex items-center gap-1 text-xs text-[color:var(--hf-status-yellow)] bg-[var(--hf-status-yellow-bg)] px-2 py-0.5 rounded-full">
                         <AlertCircle size={12} />
                         Зарплата не совпадает
                       </span>
@@ -376,17 +376,17 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                   transition={{ duration: 0.2 }}
                   className="overflow-hidden"
                 >
-                  <div className="px-4 pb-4 pt-2 border-t border-white/10 space-y-3">
+                  <div className="px-4 pb-4 pt-2 border-t border-[color:var(--hf-white-alpha-10)] space-y-3">
                     {/* Match reasons */}
                     {candidate.match_reasons.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium text-green-400 mb-1 flex items-center gap-1">
+                        <p className="text-xs font-medium text-[var(--hf-status-green)] mb-1 flex items-center gap-1">
                           <Check size={12} />
                           Почему подходит:
                         </p>
                         <ul className="space-y-1">
                           {candidate.match_reasons.map((reason, i) => (
-                            <li key={i} className="text-xs text-white/70 pl-4">
+                            <li key={i} className="text-xs text-[color:var(--hf-white-alpha-70)] pl-4">
                               {reason}
                             </li>
                           ))}
@@ -397,7 +397,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                     {/* Missing skills */}
                     {candidate.missing_skills.length > 0 && (
                       <div>
-                        <p className="text-xs font-medium text-yellow-400 mb-1 flex items-center gap-1">
+                        <p className="text-xs font-medium text-[var(--hf-status-yellow)] mb-1 flex items-center gap-1">
                           <AlertCircle size={12} />
                           Недостающие навыки:
                         </p>
@@ -405,7 +405,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                           {candidate.missing_skills.map((skill, i) => (
                             <span
                               key={i}
-                              className="text-xs px-2 py-0.5 bg-yellow-500/10 text-yellow-300/80 rounded"
+                              className="text-xs px-2 py-0.5 bg-[var(--hf-status-yellow-bg)] text-[color:var(--hf-status-yellow)] rounded"
                             >
                               {skill}
                             </span>
@@ -425,8 +425,8 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                         className={clsx(
                           'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
                           invitedIds.has(candidate.entity_id)
-                            ? 'bg-green-500/20 text-green-400 cursor-default'
-                            : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300'
+                            ? 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] cursor-default'
+                            : 'bg-[var(--hf-status-blue-badge)] hover:bg-[var(--hf-status-cyan-badge)] text-[var(--hf-status-blue)]'
                         )}
                       >
                         {invitingId === candidate.entity_id ? (
@@ -452,7 +452,7 @@ export default function NewVacancyMatcher({ vacancyId, onInvite }: NewVacancyMat
                           e.stopPropagation();
                           handleNavigateToEntity(candidate.entity_id);
                         }}
-                        className="px-4 py-2 glass-light hover:bg-white/10 rounded-lg text-sm text-white/70 hover:text-white transition-colors"
+                        className="px-4 py-2 glass-light hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-sm text-[color:var(--hf-white-alpha-70)] hover:text-[var(--hf-white)] transition-colors"
                       >
                         Профиль
                       </button>

@@ -270,18 +270,18 @@ export default function PENDashboardPage() {
   if (isLoading && !metrics) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-[var(--hf-accent)] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error && !metrics) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 text-white">
-        <p className="text-red-400">{error}</p>
+      <div className="h-full flex flex-col items-center justify-center gap-4 text-[var(--hf-white)]">
+        <p className="text-[var(--hf-status-red)]">{error}</p>
         <button
           onClick={loadMetrics}
-          className="px-4 py-2 bg-accent-500 rounded-lg hover:bg-accent-600 transition-colors"
+          className="px-4 py-2 bg-[var(--hf-accent)] rounded-lg hover:bg-[var(--hf-accent-hover)] transition-colors"
         >
           Повторить
         </button>
@@ -301,36 +301,36 @@ export default function PENDashboardPage() {
   const maxFunnel = Math.max(...funnelStages.map((s) => s.value), 1);
 
   return (
-    <div className="h-full flex flex-col bg-dark-900 overflow-auto">
+    <div className="h-full flex flex-col bg-[var(--hf-bg-dark)] overflow-auto">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-dark-700 sticky top-0 bg-dark-900 z-10">
+      <div className="flex items-center justify-between p-4 border-b border-[color:var(--hf-white-alpha-08)] sticky top-0 bg-[var(--hf-bg-dark)] z-10">
         <div className="flex items-center gap-3">
-          <TrendingUp className="w-6 h-6 text-accent-500" />
-          <h1 className="text-xl font-semibold text-white">PEN Dashboard</h1>
+          <TrendingUp className="w-6 h-6 text-[var(--hf-accent)]" />
+          <h1 className="text-xl font-semibold text-[var(--hf-white)]">PEN Dashboard</h1>
         </div>
 
         {/* Filters */}
         <div className="flex items-center gap-3 flex-wrap">
-          <label className="text-sm text-dark-300">Период:</label>
+          <label className="text-sm text-[var(--hf-dark-300)]">Период:</label>
           <input
             type="date"
             value={periodFrom}
             onChange={(e) => setPeriodFrom(e.target.value)}
-            className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
+            className="px-3 py-1.5 bg-[var(--hf-bg-dark-panel)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)]"
           />
-          <span className="text-dark-400">—</span>
+          <span className="text-[var(--hf-dark-400)]">—</span>
           <input
             type="date"
             value={periodTo}
             onChange={(e) => setPeriodTo(e.target.value)}
-            className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
+            className="px-3 py-1.5 bg-[var(--hf-bg-dark-panel)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)]"
           />
-          <div className="w-px h-6 bg-dark-600" />
-          <label className="text-sm text-dark-300">Рекрутер:</label>
+          <div className="w-px h-6 bg-[var(--hf-dark-600)]" />
+          <label className="text-sm text-[var(--hf-dark-300)]">Рекрутер:</label>
           <select
             value={selectedRecruiterId ?? ''}
             onChange={(e) => setSelectedRecruiterId(e.target.value ? Number(e.target.value) : null)}
-            className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500 min-w-[160px]"
+            className="px-3 py-1.5 bg-[var(--hf-bg-dark-panel)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)] min-w-[160px]"
           >
             <option value="">Все рекрутеры</option>
             {recruiters.map((r) => (
@@ -341,7 +341,7 @@ export default function PENDashboardPage() {
           </select>
           <button
             onClick={loadMetrics}
-            className="px-4 py-1.5 bg-accent-500 text-white rounded-lg text-sm hover:bg-accent-600 transition-colors"
+            className="px-4 py-1.5 bg-[var(--hf-accent)] text-[var(--hf-white)] rounded-lg text-sm hover:bg-[var(--hf-accent-hover)] transition-colors"
           >
             Применить
           </button>
@@ -379,10 +379,10 @@ export default function PENDashboardPage() {
 
         {/* ============ CONVERSION FUNNEL ============ */}
         <div
-          className="bg-white/[0.04] rounded-xl p-5 border border-dark-700"
+          className="bg-[var(--hf-white-alpha-04)] rounded-xl p-5 border border-[color:var(--hf-white-alpha-08)]"
         >
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-accent-500" />
+          <h2 className="text-lg font-semibold text-[var(--hf-white)] mb-4 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-[var(--hf-accent)]" />
             Воронка конверсий
           </h2>
 
@@ -400,27 +400,27 @@ export default function PENDashboardPage() {
               return (
                 <div key={stage.key}>
                   {idx > 0 && conversion !== null && (
-                    <div className="flex items-center gap-2 ml-6 my-1 text-sm text-dark-300">
-                      <ArrowRight className="w-4 h-4 text-accent-400" />
-                      <span className="text-accent-400 font-medium">{conversion.toFixed(1)}%</span>
+                    <div className="flex items-center gap-2 ml-6 my-1 text-sm text-[var(--hf-dark-300)]">
+                      <ArrowRight className="w-4 h-4 text-[var(--hf-accent)]" />
+                      <span className="text-[var(--hf-accent)] font-medium">{conversion.toFixed(1)}%</span>
                     </div>
                   )}
                   {idx > 0 && conversion === null && idx < funnelStages.length && (
-                    <div className="flex items-center gap-2 ml-6 my-1 text-sm text-dark-300">
-                      <ArrowRight className="w-4 h-4 text-dark-500" />
+                    <div className="flex items-center gap-2 ml-6 my-1 text-sm text-[var(--hf-dark-300)]">
+                      <ArrowRight className="w-4 h-4 text-[var(--hf-dark-500)]" />
                     </div>
                   )}
                   <div className="flex items-center gap-3">
-                    <div className="w-32 flex items-center gap-2 text-sm text-dark-200 shrink-0">
-                      <Icon className="w-4 h-4 text-accent-400" />
+                    <div className="w-32 flex items-center gap-2 text-sm text-[var(--hf-dark-200)] shrink-0">
+                      <Icon className="w-4 h-4 text-[var(--hf-accent)]" />
                       {stage.label}
                     </div>
-                    <div className="flex-1 h-8 bg-dark-800 rounded-lg overflow-hidden relative">
+                    <div className="flex-1 h-8 bg-[var(--hf-bg-dark-panel)] rounded-lg overflow-hidden relative">
                       <div
                         style={{ width: `${Math.max(pct, 2)}%` }}
-                        className="h-full bg-accent-500 rounded-lg"
+                        className="h-full bg-[var(--hf-accent)] rounded-lg"
                       />
-                      <span className="absolute inset-0 flex items-center px-3 text-sm font-medium text-white">
+                      <span className="absolute inset-0 flex items-center px-3 text-sm font-medium text-[var(--hf-white)]">
                         {stage.value}
                       </span>
                     </div>
@@ -433,16 +433,16 @@ export default function PENDashboardPage() {
 
         {/* ============ RECRUITER TABLE ============ */}
         <div
-          className="bg-white/[0.04] rounded-xl p-5 border border-dark-700"
+          className="bg-[var(--hf-white-alpha-04)] rounded-xl p-5 border border-[color:var(--hf-white-alpha-08)]"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Users className="w-5 h-5 text-accent-500" />
+            <h2 className="text-lg font-semibold text-[var(--hf-white)] flex items-center gap-2">
+              <Users className="w-5 h-5 text-[var(--hf-accent)]" />
               Рекрутеры
             </h2>
             <button
               onClick={() => setShowBonusModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-500 text-white rounded-lg text-sm hover:bg-accent-600 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--hf-accent)] text-[var(--hf-white)] rounded-lg text-sm hover:bg-[var(--hf-accent-hover)] transition-colors"
             >
               <Plus className="w-4 h-4" />
               Добавить бонус
@@ -452,7 +452,7 @@ export default function PENDashboardPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-dark-600">
+                <tr className="border-b border-[color:var(--hf-white-alpha-10)]">
                   {([
                     ['recruiter_name', 'Рекрутер'],
                     ['started_practice', 'Практика'],
@@ -464,7 +464,7 @@ export default function PENDashboardPage() {
                     <th
                       key={field}
                       onClick={() => handleSort(field)}
-                      className="py-2 px-3 text-left text-dark-300 font-medium cursor-pointer hover:text-white transition-colors select-none"
+                      className="py-2 px-3 text-left text-[var(--hf-dark-300)] font-medium cursor-pointer hover:text-[var(--hf-white)] transition-colors select-none"
                     >
                       <span className="inline-flex items-center gap-1">
                         {label}
@@ -483,28 +483,28 @@ export default function PENDashboardPage() {
                     onClick={() => {
                       setSelectedRecruiterId(selectedRecruiterId === r.recruiter_id ? null : r.recruiter_id);
                     }}
-                    className={`border-b border-dark-700/50 hover:bg-white/[0.04] transition-colors cursor-pointer ${
-                      selectedRecruiterId === r.recruiter_id ? 'bg-accent-500/10 border-accent-500/30' : ''
+                    className={`border-b border-[color:var(--hf-white-alpha-05)] hover:bg-[var(--hf-white-alpha-04)] transition-colors cursor-pointer ${
+                      selectedRecruiterId === r.recruiter_id ? 'bg-[var(--hf-accent-bg-10)] border-[color:var(--hf-accent-border-30)]' : ''
                     }`}
                   >
-                    <td className="py-2.5 px-3 text-white font-medium">
+                    <td className="py-2.5 px-3 text-[var(--hf-white)] font-medium">
                       {r.recruiter_name}
                       {selectedRecruiterId === r.recruiter_id && (
-                        <span className="ml-2 text-xs text-accent-400">&#x2713; выбран</span>
+                        <span className="ml-2 text-xs text-[var(--hf-accent)]">&#x2713; выбран</span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 text-dark-200">{r.started_practice}</td>
-                    <td className="py-2.5 px-3 text-dark-200">{r.entered_department}</td>
-                    <td className="py-2.5 px-3 text-dark-200">{r.passed_probation}</td>
-                    <td className="py-2.5 px-3 text-dark-200">{r.working_1year}</td>
-                    <td className="py-2.5 px-3 text-accent-400 font-medium">
+                    <td className="py-2.5 px-3 text-[var(--hf-dark-200)]">{r.started_practice}</td>
+                    <td className="py-2.5 px-3 text-[var(--hf-dark-200)]">{r.entered_department}</td>
+                    <td className="py-2.5 px-3 text-[var(--hf-dark-200)]">{r.passed_probation}</td>
+                    <td className="py-2.5 px-3 text-[var(--hf-dark-200)]">{r.working_1year}</td>
+                    <td className="py-2.5 px-3 text-[var(--hf-accent)] font-medium">
                       {r.total_bonus.toLocaleString('ru-RU')}
                     </td>
                   </tr>
                 ))}
                 {sortedRecruiters.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-dark-400">
+                    <td colSpan={6} className="py-8 text-center text-[var(--hf-dark-400)]">
                       Нет данных за выбранный период
                     </td>
                   </tr>
@@ -516,18 +516,18 @@ export default function PENDashboardPage() {
 
         {/* ============ SALARY SHEET ============ */}
         <div
-          className="bg-white/[0.04] rounded-xl p-5 border border-dark-700"
+          className="bg-[var(--hf-white-alpha-04)] rounded-xl p-5 border border-[color:var(--hf-white-alpha-08)]"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Award className="w-5 h-5 text-accent-500" />
+            <h2 className="text-lg font-semibold text-[var(--hf-white)] flex items-center gap-2">
+              <Award className="w-5 h-5 text-[var(--hf-accent)]" />
               Зарплатный лист
             </h2>
             <div className="flex items-center gap-3">
               <select
                 value={salaryMonth}
                 onChange={(e) => setSalaryMonth(Number(e.target.value))}
-                className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
+                className="px-3 py-1.5 bg-[var(--hf-bg-dark-panel)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)]"
               >
                 {Array.from({ length: 12 }, (_, i) => (
                   <option key={i + 1} value={i + 1}>
@@ -538,7 +538,7 @@ export default function PENDashboardPage() {
               <select
                 value={salaryYear}
                 onChange={(e) => setSalaryYear(Number(e.target.value))}
-                className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
+                className="px-3 py-1.5 bg-[var(--hf-bg-dark-panel)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)]"
               >
                 {Array.from({ length: 5 }, (_, i) => {
                   const y = new Date().getFullYear() - 2 + i;
@@ -551,7 +551,7 @@ export default function PENDashboardPage() {
               </select>
               <button
                 onClick={handleExportCSV}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-700 text-white rounded-lg text-sm hover:bg-dark-600 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--hf-dark-700)] text-[var(--hf-white)] rounded-lg text-sm hover:bg-[var(--hf-dark-600)] transition-colors"
               >
                 <Download className="w-4 h-4" />
                 CSV
@@ -562,12 +562,12 @@ export default function PENDashboardPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-dark-600">
-                  <th className="py-2 px-3 text-left text-dark-300 font-medium">Рекрутер</th>
-                  <th className="py-2 px-3 text-left text-dark-300 font-medium">Кандидат</th>
-                  <th className="py-2 px-3 text-left text-dark-300 font-medium">Направление</th>
-                  <th className="py-2 px-3 text-left text-dark-300 font-medium">Этап</th>
-                  <th className="py-2 px-3 text-right text-dark-300 font-medium">Сумма</th>
+                <tr className="border-b border-[color:var(--hf-white-alpha-10)]">
+                  <th className="py-2 px-3 text-left text-[var(--hf-dark-300)] font-medium">Рекрутер</th>
+                  <th className="py-2 px-3 text-left text-[var(--hf-dark-300)] font-medium">Кандидат</th>
+                  <th className="py-2 px-3 text-left text-[var(--hf-dark-300)] font-medium">Направление</th>
+                  <th className="py-2 px-3 text-left text-[var(--hf-dark-300)] font-medium">Этап</th>
+                  <th className="py-2 px-3 text-right text-[var(--hf-dark-300)] font-medium">Сумма</th>
                 </tr>
               </thead>
               <tbody>
@@ -576,35 +576,35 @@ export default function PENDashboardPage() {
                     entry.candidates.map((c, ci) => (
                       <tr
                         key={`${entry.recruiter_id}-${ci}`}
-                        className="border-b border-dark-700/50 hover:bg-white/[0.02] transition-colors"
+                        className="border-b border-[color:var(--hf-white-alpha-05)] hover:bg-[var(--hf-white-alpha-02)] transition-colors"
                       >
                         {ci === 0 && (
                           <td
                             rowSpan={entry.candidates.length}
-                            className="py-2.5 px-3 text-white font-medium align-top"
+                            className="py-2.5 px-3 text-[var(--hf-white)] font-medium align-top"
                           >
                             {entry.recruiter_name}
-                            <div className="text-xs text-accent-400 mt-1">
+                            <div className="text-xs text-[var(--hf-accent)] mt-1">
                               Итого: {entry.total_bonus.toLocaleString('ru-RU')} руб
                             </div>
                           </td>
                         )}
-                        <td className="py-2.5 px-3 text-dark-200">{c.entity_name}</td>
-                        <td className="py-2.5 px-3 text-dark-200">
+                        <td className="py-2.5 px-3 text-[var(--hf-dark-200)]">{c.entity_name}</td>
+                        <td className="py-2.5 px-3 text-[var(--hf-dark-200)]">
                           {DIRECTION_LABELS[c.direction] || c.direction}
                         </td>
-                        <td className="py-2.5 px-3 text-dark-200">
+                        <td className="py-2.5 px-3 text-[var(--hf-dark-200)]">
                           {STAGE_LABELS[c.stage] || c.stage}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-accent-400 font-medium">
+                        <td className="py-2.5 px-3 text-right text-[var(--hf-accent)] font-medium">
                           {c.amount.toLocaleString('ru-RU')}
                         </td>
                       </tr>
                     ))
                   ) : (
-                    <tr key={entry.recruiter_id} className="border-b border-dark-700/50">
-                      <td className="py-2.5 px-3 text-white font-medium">{entry.recruiter_name}</td>
-                      <td colSpan={4} className="py-2.5 px-3 text-dark-400">
+                    <tr key={entry.recruiter_id} className="border-b border-[color:var(--hf-white-alpha-05)]">
+                      <td className="py-2.5 px-3 text-[var(--hf-white)] font-medium">{entry.recruiter_name}</td>
+                      <td colSpan={4} className="py-2.5 px-3 text-[var(--hf-dark-400)]">
                         Нет бонусов за этот месяц
                       </td>
                     </tr>
@@ -612,7 +612,7 @@ export default function PENDashboardPage() {
                 )}
                 {salarySheet.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-dark-400">
+                    <td colSpan={5} className="py-8 text-center text-[var(--hf-dark-400)]">
                       Нет данных за выбранный месяц
                     </td>
                   </tr>
@@ -626,18 +626,18 @@ export default function PENDashboardPage() {
       {/* ============ ADD BONUS MODAL ============ */}
       {showBonusModal && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-60)] backdrop-blur-sm"
             onClick={() => setShowBonusModal(false)}
           >
             <div
-              className="bg-dark-800 rounded-xl border border-dark-600 p-6 w-full max-w-md"
+              className="bg-[var(--hf-bg-dark-panel)] rounded-xl border border-[color:var(--hf-white-alpha-10)] p-6 w-full max-w-md"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-5">
-                <h3 className="text-lg font-semibold text-white">Добавить бонус</h3>
+                <h3 className="text-lg font-semibold text-[var(--hf-white)]">Добавить бонус</h3>
                 <button
                   onClick={() => setShowBonusModal(false)}
-                  className="text-dark-400 hover:text-white transition-colors"
+                  className="text-[var(--hf-dark-400)] hover:text-[var(--hf-white)] transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -646,13 +646,13 @@ export default function PENDashboardPage() {
               <div className="space-y-4">
                 {/* Recruiter select */}
                 <div>
-                  <label className="block text-sm text-dark-300 mb-1">Рекрутер</label>
+                  <label className="block text-sm text-[var(--hf-dark-300)] mb-1">Рекрутер</label>
                   <select
                     value={bonusForm.recruiter_id}
                     onChange={(e) =>
                       setBonusForm((f) => ({ ...f, recruiter_id: Number(e.target.value) }))
                     }
-                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
+                    className="w-full px-3 py-2 bg-[var(--hf-dark-700)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)]"
                   >
                     <option value={0}>Выберите рекрутера</option>
                     {recruiters.map((r) => (
@@ -665,11 +665,11 @@ export default function PENDashboardPage() {
 
                 {/* Direction */}
                 <div>
-                  <label className="block text-sm text-dark-300 mb-1">Направление</label>
+                  <label className="block text-sm text-[var(--hf-dark-300)] mb-1">Направление</label>
                   <select
                     value={bonusForm.direction}
                     onChange={(e) => setBonusForm((f) => ({ ...f, direction: e.target.value }))}
-                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
+                    className="w-full px-3 py-2 bg-[var(--hf-dark-700)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)]"
                   >
                     <option value="traffic">Трафик</option>
                     <option value="development">Развитие</option>
@@ -679,11 +679,11 @@ export default function PENDashboardPage() {
 
                 {/* Stage */}
                 <div>
-                  <label className="block text-sm text-dark-300 mb-1">Этап</label>
+                  <label className="block text-sm text-[var(--hf-dark-300)] mb-1">Этап</label>
                   <select
                     value={bonusForm.stage}
                     onChange={(e) => setBonusForm((f) => ({ ...f, stage: e.target.value }))}
-                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
+                    className="w-full px-3 py-2 bg-[var(--hf-dark-700)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)]"
                   >
                     <option value="practice">Начал практику</option>
                     <option value="department">Вошёл в отдел</option>
@@ -693,7 +693,7 @@ export default function PENDashboardPage() {
 
                 {/* Amount */}
                 <div>
-                  <label className="block text-sm text-dark-300 mb-1">Сумма (руб)</label>
+                  <label className="block text-sm text-[var(--hf-dark-300)] mb-1">Сумма (руб)</label>
                   <input
                     type="number"
                     value={bonusForm.amount || ''}
@@ -701,19 +701,19 @@ export default function PENDashboardPage() {
                       setBonusForm((f) => ({ ...f, amount: Number(e.target.value) }))
                     }
                     placeholder="0"
-                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
+                    className="w-full px-3 py-2 bg-[var(--hf-dark-700)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)]"
                   />
                 </div>
 
                 {/* Notes */}
                 <div>
-                  <label className="block text-sm text-dark-300 mb-1">Комментарий</label>
+                  <label className="block text-sm text-[var(--hf-dark-300)] mb-1">Комментарий</label>
                   <input
                     type="text"
                     value={bonusForm.notes || ''}
                     onChange={(e) => setBonusForm((f) => ({ ...f, notes: e.target.value }))}
                     placeholder="Необязательно"
-                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-accent-500"
+                    className="w-full px-3 py-2 bg-[var(--hf-dark-700)] border border-[color:var(--hf-white-alpha-10)] rounded-lg text-[var(--hf-white)] text-sm focus:outline-none focus:border-[var(--hf-accent)]"
                   />
                 </div>
               </div>
@@ -721,14 +721,14 @@ export default function PENDashboardPage() {
               <div className="flex justify-end gap-3 mt-6">
                 <button
                   onClick={() => setShowBonusModal(false)}
-                  className="px-4 py-2 bg-dark-700 text-white rounded-lg text-sm hover:bg-dark-600 transition-colors"
+                  className="px-4 py-2 bg-[var(--hf-dark-700)] text-[var(--hf-white)] rounded-lg text-sm hover:bg-[var(--hf-dark-600)] transition-colors"
                 >
                   Отмена
                 </button>
                 <button
                   onClick={handleSubmitBonus}
                   disabled={submittingBonus}
-                  className="px-4 py-2 bg-accent-500 text-white rounded-lg text-sm hover:bg-accent-600 transition-colors disabled:opacity-50"
+                  className="px-4 py-2 bg-[var(--hf-accent)] text-[var(--hf-white)] rounded-lg text-sm hover:bg-[var(--hf-accent-hover)] transition-colors disabled:opacity-50"
                 >
                   {submittingBonus ? 'Сохранение...' : 'Сохранить'}
                 </button>
@@ -745,10 +745,10 @@ export default function PENDashboardPage() {
 // ============================================================
 
 const COLOR_MAP: Record<string, { bg: string; border: string; text: string }> = {
-  blue: { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400' },
-  emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400' },
-  amber: { bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400' },
-  purple: { bg: 'bg-purple-500/10', border: 'border-purple-500/30', text: 'text-purple-400' },
+  blue: { bg: 'bg-[var(--hf-status-blue-bg)]', border: 'border-[color:var(--hf-accent-border-30)]', text: 'text-[var(--hf-status-blue)]' },
+  emerald: { bg: 'bg-[var(--hf-status-green-bg)]', border: 'border-[color:var(--hf-status-green-badge)]', text: 'text-[var(--hf-status-green)]' },
+  amber: { bg: 'bg-[var(--hf-status-yellow-bg)]', border: 'border-[color:var(--hf-status-yellow-badge)]', text: 'text-[var(--hf-status-yellow)]' },
+  purple: { bg: 'bg-[var(--hf-status-purple-bg)]', border: 'border-[color:var(--hf-status-purple-badge)]', text: 'text-[var(--hf-status-purple)]' },
 };
 
 function MetricCard({
@@ -770,15 +770,15 @@ function MetricCard({
     >
       <div className="flex items-center gap-2 mb-3">
         <span className={c.text}>{icon}</span>
-        <span className="text-sm text-dark-300">{title}</span>
+        <span className="text-sm text-[var(--hf-dark-300)]">{title}</span>
       </div>
-      <div className="text-3xl font-bold text-white mb-2">{data.total}</div>
-      <div className="flex items-center gap-4 text-xs text-dark-400">
+      <div className="text-3xl font-bold text-[var(--hf-white)] mb-2">{data.total}</div>
+      <div className="flex items-center gap-4 text-xs text-[var(--hf-dark-400)]">
         <span>
-          Трафик: <span className="text-dark-200">{data.traffic}</span>
+          Трафик: <span className="text-[var(--hf-dark-200)]">{data.traffic}</span>
         </span>
         <span>
-          Развитие: <span className="text-dark-200">{data.development}</span>
+          Развитие: <span className="text-[var(--hf-dark-200)]">{data.development}</span>
         </span>
       </div>
     </div>

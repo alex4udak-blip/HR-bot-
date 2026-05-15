@@ -19,9 +19,9 @@ export interface InterviewSummaryData {
 }
 
 const RECOMMENDATION_OPTIONS = [
-  { value: 'hire', label: 'Нанять', color: 'text-green-400 bg-green-500/20 border-green-500/30' },
-  { value: 'maybe', label: 'Возможно', color: 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30' },
-  { value: 'reject', label: 'Отказ', color: 'text-red-400 bg-red-500/20 border-red-500/30' },
+  { value: 'hire', label: 'Нанять', color: 'text-[var(--hf-status-green)] bg-[var(--hf-status-green-badge)] border-[color:var(--hf-status-green-badge)]' },
+  { value: 'maybe', label: 'Возможно', color: 'text-[var(--hf-status-yellow)] bg-[var(--hf-status-yellow-badge)] border-[color:var(--hf-status-yellow-badge)]' },
+  { value: 'reject', label: 'Отказ', color: 'text-[var(--hf-status-red)] bg-[var(--hf-status-red-badge)] border-[color:var(--hf-status-red-badge)]' },
 ] as const;
 
 export default function InterviewSummaryModal({
@@ -63,7 +63,7 @@ export default function InterviewSummaryModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+        className="fixed inset-0 bg-[var(--hf-black-alpha-60)] backdrop-blur-sm z-[60] flex items-center justify-center p-4"
         onClick={onCancel}
       >
         <motion.div
@@ -72,24 +72,24 @@ export default function InterviewSummaryModal({
           exit={{ scale: 0.95, opacity: 0, y: 20 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-lg rounded-xl border border-white/10 bg-[#1a1a2e] shadow-2xl overflow-hidden"
+          className="w-full max-w-lg rounded-xl border border-[color:var(--hf-white-alpha-10)] bg-[var(--hf-bg-dark)] shadow-[var(--hf-shadow-2xl)] overflow-hidden"
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <div className="flex items-center justify-between p-4 border-b border-[color:var(--hf-white-alpha-10)]">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-500/20 rounded-lg">
-                <FileText className="w-5 h-5 text-purple-400" />
+              <div className="p-2 bg-[var(--hf-status-purple-badge)] rounded-lg">
+                <FileText className="w-5 h-5 text-[var(--hf-status-purple)]" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-white">Итог собеседования</h2>
-                <p className="text-sm text-white/50">
+                <h2 className="text-lg font-semibold text-[var(--hf-white)]">Итог собеседования</h2>
+                <p className="text-sm text-[color:var(--hf-white-alpha-50)]">
                   {application.entity_name} → {APPLICATION_STAGE_LABELS[targetStage]}
                 </p>
               </div>
             </div>
             <button
               onClick={onCancel}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/60 hover:text-white"
+              className="p-2 hover:bg-[var(--hf-white-alpha-10)] rounded-lg transition-colors text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)]"
             >
               <X className="w-5 h-5" />
             </button>
@@ -99,8 +99,8 @@ export default function InterviewSummaryModal({
           <div className="p-4 space-y-4">
             {/* Interview Summary (required) */}
             <div>
-              <label className="block text-sm text-white/70 mb-1.5">
-                Итог собеседования <span className="text-red-400">*</span>
+              <label className="block text-sm text-[color:var(--hf-white-alpha-70)] mb-1.5">
+                Итог собеседования <span className="text-[var(--hf-status-red)]">*</span>
               </label>
               <textarea
                 value={summary}
@@ -110,21 +110,21 @@ export default function InterviewSummaryModal({
                 }}
                 rows={4}
                 className={clsx(
-                  'w-full px-3 py-2.5 bg-white/[0.04] border rounded-lg text-white placeholder-white/30',
-                  'focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 resize-none transition-all',
-                  error && !summary.trim() ? 'border-red-500/50' : 'border-white/[0.06]'
+                  'w-full px-3 py-2.5 bg-[var(--hf-white-alpha-04)] border rounded-lg text-[var(--hf-white)] placeholder:text-[color:var(--hf-white-alpha-30)]',
+                  'focus:outline-none focus:ring-2 focus:ring-[var(--hf-status-purple-badge)] focus:border-[color:var(--hf-status-purple-badge)] resize-none transition-all',
+                  error && !summary.trim() ? 'border-[color:var(--hf-status-red-badge)]' : 'border-[color:var(--hf-white-alpha-06)]'
                 )}
                 placeholder="Опишите ключевые моменты собеседования, впечатления, сильные и слабые стороны кандидата..."
                 autoFocus
               />
               {error && (
-                <p className="text-xs text-red-400 mt-1">{error}</p>
+                <p className="text-xs text-[var(--hf-status-red)] mt-1">{error}</p>
               )}
             </div>
 
             {/* Rating (optional) */}
             <div>
-              <label className="block text-sm text-white/70 mb-1.5">
+              <label className="block text-sm text-[color:var(--hf-white-alpha-70)] mb-1.5">
                 Оценка кандидата
               </label>
               <div className="flex items-center gap-1">
@@ -135,22 +135,22 @@ export default function InterviewSummaryModal({
                     className={clsx(
                       'p-1.5 rounded-lg transition-all',
                       value <= rating
-                        ? 'text-yellow-400'
-                        : 'text-white/20 hover:text-white/40'
+                        ? 'text-[var(--hf-status-yellow)]'
+                        : 'text-[color:var(--hf-white-alpha-20)] hover:text-[color:var(--hf-white-alpha-40)]'
                     )}
                   >
                     <Star className={clsx('w-6 h-6', value <= rating && 'fill-current')} />
                   </button>
                 ))}
                 {rating > 0 && (
-                  <span className="ml-2 text-sm text-white/40">{rating} / 5</span>
+                  <span className="ml-2 text-sm text-[color:var(--hf-white-alpha-40)]">{rating} / 5</span>
                 )}
               </div>
             </div>
 
             {/* Recommendation (optional) */}
             <div>
-              <label className="block text-sm text-white/70 mb-1.5">
+              <label className="block text-sm text-[color:var(--hf-white-alpha-70)] mb-1.5">
                 Рекомендация
               </label>
               <div className="flex items-center gap-2">
@@ -162,7 +162,7 @@ export default function InterviewSummaryModal({
                       'px-3 py-1.5 rounded-lg border text-sm font-medium transition-all',
                       recommendation === opt.value
                         ? opt.color
-                        : 'border-white/[0.06] text-white/40 hover:text-white/60 hover:border-white/10'
+                        : 'border-[color:var(--hf-white-alpha-06)] text-[color:var(--hf-white-alpha-40)] hover:text-[color:var(--hf-white-alpha-60)] hover:border-[color:var(--hf-white-alpha-10)]'
                     )}
                   >
                     {opt.label}
@@ -173,11 +173,11 @@ export default function InterviewSummaryModal({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 p-4 border-t border-white/10">
+          <div className="flex items-center justify-end gap-3 p-4 border-t border-[color:var(--hf-white-alpha-10)]">
             <button
               onClick={onCancel}
               disabled={loading}
-              className="px-4 py-2 text-white/60 hover:text-white transition-colors rounded-lg"
+              className="px-4 py-2 text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] transition-colors rounded-lg"
             >
               Отмена
             </button>
@@ -187,8 +187,8 @@ export default function InterviewSummaryModal({
               className={clsx(
                 'flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all',
                 summary.trim()
-                  ? 'bg-purple-600 hover:bg-purple-500 text-white'
-                  : 'bg-white/[0.04] text-white/30 cursor-not-allowed'
+                  ? 'bg-[var(--hf-status-purple)] hover:bg-[var(--hf-status-purple)] text-[var(--hf-white)]'
+                  : 'bg-[var(--hf-white-alpha-04)] text-[color:var(--hf-white-alpha-30)] cursor-not-allowed'
               )}
             >
               <Send className="w-4 h-4" />

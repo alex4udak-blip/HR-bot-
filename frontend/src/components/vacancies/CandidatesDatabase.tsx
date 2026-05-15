@@ -189,26 +189,26 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="p-4 border-b border-white/10 space-y-3">
+      <div className="p-4 border-b border-[color:var(--hf-white-alpha-10)] space-y-3">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-xl font-bold flex items-center gap-2">
-            <Users className="w-5 h-5 text-purple-400" />
+            <Users className="w-5 h-5 text-[var(--hf-status-purple)]" />
             База кандидатов
-            <span className="text-sm font-medium text-white/40 bg-white/[0.04] px-2 py-0.5 rounded-full">
+            <span className="text-sm font-medium text-[color:var(--hf-white-alpha-40)] bg-[var(--hf-white-alpha-04)] px-2 py-0.5 rounded-full">
               {isLoading ? '...' : (typeCounts?.candidate || entities.length)}
             </span>
           </h2>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowParserModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] rounded-lg text-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] hover:bg-[var(--hf-white-alpha-06)] rounded-lg text-sm transition-colors"
             >
-              <Upload className="w-4 h-4 text-purple-400" />
+              <Upload className="w-4 h-4 text-[var(--hf-status-purple)]" />
               <span className="hidden sm:inline">Резюме</span>
             </button>
             <button
               onClick={() => { setPrefillData(null); setShowCreateModal(true); }}
-              className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 bg-[var(--hf-status-purple)] hover:bg-[var(--hf-status-purple)] rounded-lg text-sm font-medium transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Добавить</span>
@@ -219,17 +219,17 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
         {/* Search + Filter toggle */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[color:var(--hf-white-alpha-40)]" />
             <input
               type="text"
               placeholder="Поиск по имени, email, телефону, Telegram..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+              className="w-full pl-10 pr-4 py-2 bg-[var(--hf-white-alpha-04)] border border-[color:var(--hf-white-alpha-06)] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[var(--hf-status-purple-badge)]"
             />
             {searchQuery && (
               <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-                <X className="w-4 h-4 text-white/40 hover:text-white" />
+                <X className="w-4 h-4 text-[color:var(--hf-white-alpha-40)] hover:text-[var(--hf-white)]" />
               </button>
             )}
           </div>
@@ -238,8 +238,8 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
             className={clsx(
               'flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors',
               showFilters
-                ? 'border-purple-500/50 bg-purple-500/10 text-purple-300'
-                : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06]'
+                ? 'border-[color:var(--hf-status-purple-badge)] bg-[var(--hf-status-purple-bg)] text-[var(--hf-status-purple)]'
+                : 'border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] hover:bg-[var(--hf-white-alpha-06)]'
             )}
           >
             <Filter className="w-4 h-4" />
@@ -253,7 +253,7 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
             <select
               value={selectedSource}
               onChange={(e) => setSelectedSource(e.target.value)}
-              className="px-3 py-1.5 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+              className="px-3 py-1.5 bg-[var(--hf-white-alpha-04)] border border-[color:var(--hf-white-alpha-06)] rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[var(--hf-status-purple-badge)]"
             >
               {sources.map(s => (
                 <option key={s.value} value={s.value}>{s.label}</option>
@@ -262,30 +262,30 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
 
             {/* Date from */}
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-white/40">Дата от</label>
+              <label className="text-xs text-[color:var(--hf-white-alpha-40)]">Дата от</label>
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-purple-500/50 focus:outline-none"
+                className="bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-white-alpha-10)] rounded-lg px-3 py-1.5 text-sm text-[color:var(--hf-white-alpha-80)] focus:border-[color:var(--hf-status-purple-badge)] focus:outline-none"
               />
             </div>
 
             {/* Date to */}
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-white/40">Дата до</label>
+              <label className="text-xs text-[color:var(--hf-white-alpha-40)]">Дата до</label>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:border-purple-500/50 focus:outline-none"
+                className="bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-white-alpha-10)] rounded-lg px-3 py-1.5 text-sm text-[color:var(--hf-white-alpha-80)] focus:border-[color:var(--hf-status-purple-badge)] focus:outline-none"
               />
             </div>
 
             {(selectedSource !== 'all' || dateFrom || dateTo) && (
               <button
                 onClick={() => { setSelectedSource('all'); setDateFrom(''); setDateTo(''); }}
-                className="text-xs text-white/40 hover:text-white"
+                className="text-xs text-[color:var(--hf-white-alpha-40)] hover:text-[var(--hf-white)]"
               >
                 Сбросить фильтры
               </button>
@@ -300,8 +300,8 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
             className={clsx(
               'px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors',
               selectedStage === 'all'
-                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                : 'text-white/50 hover:text-white/70 hover:bg-white/[0.04]'
+                ? 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border border-[color:var(--hf-status-purple-badge)]'
+                : 'text-[color:var(--hf-white-alpha-50)] hover:text-[color:var(--hf-white-alpha-70)] hover:bg-[var(--hf-white-alpha-04)]'
             )}
           >
             Все ({stageCounts.all || 0})
@@ -313,8 +313,8 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
               className={clsx(
                 'px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors',
                 selectedStage === stage
-                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                  : 'text-white/50 hover:text-white/70 hover:bg-white/[0.04]'
+                  ? 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border border-[color:var(--hf-status-purple-badge)]'
+                  : 'text-[color:var(--hf-white-alpha-50)] hover:text-[color:var(--hf-white-alpha-70)] hover:bg-[var(--hf-white-alpha-04)]'
               )}
             >
               {STATUS_LABELS[stage]} ({stageCounts[stage] || 0})
@@ -332,27 +332,27 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
             ))}
           </div>
         ) : filteredCandidates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-white/40">
+          <div className="flex flex-col items-center justify-center h-64 text-[color:var(--hf-white-alpha-40)]">
             <Users className="w-12 h-12 mb-3 opacity-30" />
             <p className="text-sm">
               {searchQuery ? 'Ничего не найдено' : 'Нет кандидатов'}
             </p>
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="mt-2 text-xs text-purple-400 hover:text-purple-300">
+              <button onClick={() => setSearchQuery('')} className="mt-2 text-xs text-[var(--hf-status-purple)] hover:text-[var(--hf-status-purple)]">
                 Сбросить поиск
               </button>
             )}
           </div>
         ) : (
-          <div className="divide-y divide-white/[0.04]">
+          <div className="divide-y divide-[color:var(--hf-white-alpha-04)]">
             {filteredCandidates.map(candidate => (
               <div
                 key={candidate.id}
                 onClick={() => handleCandidateClick(candidate)}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] cursor-pointer group transition-colors"
+                className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--hf-white-alpha-02)] cursor-pointer group transition-colors"
               >
                 {/* Avatar */}
-                <div className="w-9 h-9 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-medium text-xs flex-shrink-0">
+                <div className="w-9 h-9 rounded-full bg-[var(--hf-status-purple-badge)] flex items-center justify-center text-[var(--hf-status-purple)] font-medium text-xs flex-shrink-0">
                   {getAvatarInitials(candidate.name || '??')}
                 </div>
 
@@ -360,39 +360,39 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
                 <div className="flex-1 min-w-0">
                   <h4 className="font-medium text-sm truncate">{candidate.name}</h4>
                   {candidate.position && (
-                    <p className="text-xs text-white/40 truncate">{candidate.position}</p>
+                    <p className="text-xs text-[color:var(--hf-white-alpha-40)] truncate">{candidate.position}</p>
                   )}
                 </div>
 
                 {/* Status */}
                 <span className={clsx(
                   'px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0',
-                  STATUS_COLORS[candidate.status as EntityStatus] || 'bg-white/[0.04] text-white/50'
+                  STATUS_COLORS[candidate.status as EntityStatus] || 'bg-[var(--hf-white-alpha-04)] text-[color:var(--hf-white-alpha-50)]'
                 )}>
                   {STATUS_LABELS[candidate.status as EntityStatus] || 'Новый'}
                 </span>
 
                 {/* Source */}
-                <span className="text-xs text-white/40 w-16 text-center flex-shrink-0 hidden sm:block">
+                <span className="text-xs text-[color:var(--hf-white-alpha-40)] w-16 text-center flex-shrink-0 hidden sm:block">
                   {getSourceLabel(candidate)}
                 </span>
 
                 {/* Date added */}
-                <div className="flex items-center gap-1 text-xs text-white/30 flex-shrink-0 w-20 hidden sm:flex">
+                <div className="flex items-center gap-1 text-xs text-[color:var(--hf-white-alpha-30)] flex-shrink-0 w-20 hidden sm:flex">
                   <Clock className="w-3 h-3" />
                   {formatDate(candidate.created_at, 'short')}
                 </div>
 
                 {/* Owner */}
                 {candidate.owner_name && (
-                  <div className="flex items-center gap-1 text-xs text-white/30 flex-shrink-0 w-24 truncate hidden md:flex">
+                  <div className="flex items-center gap-1 text-xs text-[color:var(--hf-white-alpha-30)] flex-shrink-0 w-24 truncate hidden md:flex">
                     <User className="w-3 h-3 flex-shrink-0" />
                     <span className="truncate">{candidate.owner_name}</span>
                   </div>
                 )}
 
                 {/* Arrow */}
-                <ExternalLink className="w-3.5 h-3.5 text-white/20 group-hover:text-white/50 transition-colors flex-shrink-0" />
+                <ExternalLink className="w-3.5 h-3.5 text-[color:var(--hf-white-alpha-20)] group-hover:text-[color:var(--hf-white-alpha-50)] transition-colors flex-shrink-0" />
               </div>
             ))}
           </div>

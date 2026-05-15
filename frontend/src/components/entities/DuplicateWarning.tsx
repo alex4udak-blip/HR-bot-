@@ -100,15 +100,15 @@ export default function DuplicateWarning({
   };
 
   const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return 'text-red-400';
-    if (confidence >= 60) return 'text-orange-400';
-    return 'text-yellow-400';
+    if (confidence >= 80) return 'text-[var(--hf-status-red)]';
+    if (confidence >= 60) return 'text-[var(--hf-status-orange)]';
+    return 'text-[var(--hf-status-yellow)]';
   };
 
   const getConfidenceBgColor = (confidence: number) => {
-    if (confidence >= 80) return 'bg-red-500/20';
-    if (confidence >= 60) return 'bg-orange-500/20';
-    return 'bg-yellow-500/20';
+    if (confidence >= 80) return 'bg-[var(--hf-status-red-badge)]';
+    if (confidence >= 60) return 'bg-[var(--hf-status-orange-badge)]';
+    return 'bg-[var(--hf-status-yellow-badge)]';
   };
 
   const getFieldIcon = (field: string) => {
@@ -142,18 +142,18 @@ export default function DuplicateWarning({
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl"
+        className="mb-4 p-4 bg-[var(--hf-status-yellow-bg)] border border-[color:var(--hf-status-yellow-badge)] rounded-xl"
       >
         <div className="flex items-start gap-3">
-          <div className="p-2 bg-yellow-500/20 rounded-lg flex-shrink-0">
-            <AlertTriangle size={20} className="text-yellow-400" />
+          <div className="p-2 bg-[var(--hf-status-yellow-badge)] rounded-lg flex-shrink-0">
+            <AlertTriangle size={20} className="text-[var(--hf-status-yellow)]" />
           </div>
 
           <div className="flex-1 min-w-0">
-            <h4 className="font-medium text-yellow-400 mb-1">
+            <h4 className="font-medium text-[var(--hf-status-yellow)] mb-1">
               Обнаружены возможные дубликаты
             </h4>
-            <p className="text-sm text-yellow-200/70">
+            <p className="text-sm text-[color:var(--hf-status-yellow)]">
               Найдено {duplicates.length} контакт{duplicates.length > 1 ? 'а' : ''},
               похожих на "{entityName}". Проверьте, не являются ли они одним человеком.
             </p>
@@ -163,7 +163,7 @@ export default function DuplicateWarning({
               {duplicates.map((duplicate) => (
                 <div
                   key={duplicate.entity_id}
-                  className="flex items-center justify-between p-3 bg-black/20 rounded-lg"
+                  className="flex items-center justify-between p-3 bg-[var(--hf-black-alpha-20)] rounded-lg"
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className={clsx(
@@ -176,7 +176,7 @@ export default function DuplicateWarning({
                     </div>
                     <button
                       onClick={() => handleNavigateToEntity(duplicate.entity_id)}
-                      className="text-white hover:text-blue-400 transition-colors truncate flex items-center gap-1"
+                      className="text-[var(--hf-white)] hover:text-[var(--hf-status-blue)] transition-colors truncate flex items-center gap-1"
                     >
                       {duplicate.entity_name}
                       <ExternalLink size={12} className="flex-shrink-0" />
@@ -191,7 +191,7 @@ export default function DuplicateWarning({
                         return (
                           <span
                             key={field}
-                            className="p-1 bg-white/10 rounded text-white/60"
+                            className="p-1 bg-[var(--hf-white-alpha-10)] rounded text-[color:var(--hf-white-alpha-60)]"
                             title={`Совпадение: ${getFieldLabel(field)}`}
                           >
                             <Icon size={12} />
@@ -203,7 +203,7 @@ export default function DuplicateWarning({
                     {isAdmin && !isTransferred && (
                       <button
                         onClick={() => handleOpenMergeModal(duplicate)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 text-blue-400 text-xs rounded-lg hover:bg-blue-500/30 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] text-xs rounded-lg hover:bg-[var(--hf-status-cyan-badge)] transition-colors"
                       >
                         <GitMerge size={12} />
                         Объединить
@@ -217,10 +217,10 @@ export default function DuplicateWarning({
 
           <button
             onClick={() => setDismissed(true)}
-            className="p-1 hover:bg-white/10 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-[var(--hf-white-alpha-10)] rounded transition-colors flex-shrink-0"
             title="Скрыть"
           >
-            <X size={16} className="text-white/40" />
+            <X size={16} className="text-[color:var(--hf-white-alpha-40)]" />
           </button>
         </div>
       </motion.div>
@@ -232,7 +232,7 @@ export default function DuplicateWarning({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--hf-black-alpha-70)]"
             onClick={() => setShowMergeModal(false)}
           >
             <motion.div
@@ -243,12 +243,12 @@ export default function DuplicateWarning({
               className="w-full max-w-lg glass rounded-2xl overflow-hidden"
             >
               {/* Header */}
-              <div className="p-6 border-b border-white/10">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <GitMerge size={20} className="text-blue-400" />
+              <div className="p-6 border-b border-[color:var(--hf-white-alpha-10)]">
+                <h3 className="text-lg font-semibold text-[var(--hf-white)] flex items-center gap-2">
+                  <GitMerge size={20} className="text-[var(--hf-status-blue)]" />
                   Объединение контактов
                 </h3>
-                <p className="text-sm text-white/60 mt-1">
+                <p className="text-sm text-[color:var(--hf-white-alpha-60)] mt-1">
                   Все данные будут объединены, один из контактов будет удален.
                 </p>
               </div>
@@ -258,26 +258,26 @@ export default function DuplicateWarning({
                 {/* Visual merge representation */}
                 <div className="flex items-center justify-center gap-4 mb-6">
                   <div className="flex-1 p-4 glass-light rounded-xl text-center">
-                    <p className="text-xs text-white/40 mb-1">Останется</p>
-                    <p className="font-medium text-white">{entityName}</p>
+                    <p className="text-xs text-[color:var(--hf-white-alpha-40)] mb-1">Останется</p>
+                    <p className="font-medium text-[var(--hf-white)]">{entityName}</p>
                   </div>
                   <div className="flex flex-col items-center">
-                    <ChevronRight size={20} className="text-white/40" />
-                    <GitMerge size={16} className="text-blue-400 my-1" />
-                    <ChevronRight size={20} className="text-white/40" />
+                    <ChevronRight size={20} className="text-[color:var(--hf-white-alpha-40)]" />
+                    <GitMerge size={16} className="text-[var(--hf-status-blue)] my-1" />
+                    <ChevronRight size={20} className="text-[color:var(--hf-white-alpha-40)]" />
                   </div>
-                  <div className="flex-1 p-4 bg-red-500/10 rounded-xl text-center border border-red-500/30">
-                    <p className="text-xs text-red-400 mb-1 flex items-center justify-center gap-1">
+                  <div className="flex-1 p-4 bg-[var(--hf-status-red-bg)] rounded-xl text-center border border-[color:var(--hf-status-red-badge)]">
+                    <p className="text-xs text-[var(--hf-status-red)] mb-1 flex items-center justify-center gap-1">
                       <Trash2 size={10} />
                       Будет удален
                     </p>
-                    <p className="font-medium text-white">{selectedDuplicate.entity_name}</p>
+                    <p className="font-medium text-[var(--hf-white)]">{selectedDuplicate.entity_name}</p>
                   </div>
                 </div>
 
                 {/* Matched fields */}
                 <div className="mb-6">
-                  <p className="text-sm text-white/60 mb-3">Совпадающие данные:</p>
+                  <p className="text-sm text-[color:var(--hf-white-alpha-60)] mb-3">Совпадающие данные:</p>
                   <div className="space-y-2">
                     {Object.entries(selectedDuplicate.matched_fields).map(([field, values]) => {
                       const Icon = getFieldIcon(field);
@@ -286,14 +286,14 @@ export default function DuplicateWarning({
                           key={field}
                           className="flex items-center gap-3 p-3 glass-light rounded-lg"
                         >
-                          <Icon size={16} className="text-white/40 flex-shrink-0" />
+                          <Icon size={16} className="text-[color:var(--hf-white-alpha-40)] flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-white/40">{getFieldLabel(field)}</p>
-                            <p className="text-sm text-white truncate">
+                            <p className="text-xs text-[color:var(--hf-white-alpha-40)]">{getFieldLabel(field)}</p>
+                            <p className="text-sm text-[var(--hf-white)] truncate">
                               {values.join(' / ')}
                             </p>
                           </div>
-                          <CheckCircle2 size={16} className="text-green-400 flex-shrink-0" />
+                          <CheckCircle2 size={16} className="text-[var(--hf-status-green)] flex-shrink-0" />
                         </div>
                       );
                     })}
@@ -307,13 +307,13 @@ export default function DuplicateWarning({
                       type="checkbox"
                       checked={keepSourceData}
                       onChange={(e) => setKeepSourceData(e.target.checked)}
-                      className="mt-1 w-4 h-4 rounded border-white/30 bg-white/10 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+                      className="mt-1 w-4 h-4 rounded border-[color:var(--hf-white-alpha-30)] bg-[var(--hf-white-alpha-10)] text-[var(--hf-cyan-700)] focus:ring-[var(--hf-cyan-500)] focus:ring-offset-0"
                     />
                     <div>
-                      <p className="text-sm text-white">
+                      <p className="text-sm text-[var(--hf-white)]">
                         Приоритет данных удаляемого контакта
                       </p>
-                      <p className="text-xs text-white/40 mt-0.5">
+                      <p className="text-xs text-[color:var(--hf-white-alpha-40)] mt-0.5">
                         При конфликте данных использовать значения из "{selectedDuplicate.entity_name}"
                       </p>
                     </div>
@@ -322,25 +322,25 @@ export default function DuplicateWarning({
 
                 {/* Error message */}
                 {mergeError && (
-                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg mb-4">
-                    <p className="text-sm text-red-400">{mergeError}</p>
+                  <div className="p-3 bg-[var(--hf-status-red-badge)] border border-[color:var(--hf-status-red-badge)] rounded-lg mb-4">
+                    <p className="text-sm text-[var(--hf-status-red)]">{mergeError}</p>
                   </div>
                 )}
 
                 {/* Warning */}
-                <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                  <p className="text-xs text-yellow-200/70">
-                    <span className="font-medium text-yellow-400">Внимание:</span> Это действие
+                <div className="p-3 bg-[var(--hf-status-yellow-bg)] border border-[color:var(--hf-status-yellow-badge)] rounded-lg">
+                  <p className="text-xs text-[color:var(--hf-status-yellow)]">
+                    <span className="font-medium text-[var(--hf-status-yellow)]">Внимание:</span> Это действие
                     необратимо. Все чаты, звонки и история будут перенесены на основной контакт.
                   </p>
                 </div>
               </div>
 
               {/* Footer */}
-              <div className="p-4 border-t border-white/10 flex justify-between">
+              <div className="p-4 border-t border-[color:var(--hf-white-alpha-10)] flex justify-between">
                 <button
                   onClick={() => setShowMergeModal(false)}
-                  className="px-4 py-2 bg-white/10 text-white/80 rounded-lg hover:bg-white/20 transition-colors"
+                  className="px-4 py-2 bg-[var(--hf-white-alpha-10)] text-[color:var(--hf-white-alpha-80)] rounded-lg hover:bg-[var(--hf-white-alpha-20)] transition-colors"
                 >
                   Отмена
                 </button>
@@ -350,8 +350,8 @@ export default function DuplicateWarning({
                   className={clsx(
                     'flex items-center gap-2 px-4 py-2 rounded-lg transition-colors',
                     merging
-                      ? 'bg-blue-500/30 text-blue-300 cursor-wait'
-                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                      ? 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-status-blue)] cursor-wait'
+                      : 'bg-[var(--hf-cyan-600)] text-[var(--hf-white)] hover:bg-[var(--hf-cyan-700)]'
                   )}
                 >
                   {merging ? (
