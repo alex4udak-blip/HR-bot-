@@ -189,6 +189,9 @@
   --hf-sidebar-request-py:       1px;
   --hf-sidebar-request-list-mt:  6px;
   --hf-sidebar-subnav-py:        1px;
+  --hf-sidebar-subnav-px:        12px;
+  --hf-sidebar-subnav-indent:    var(--hf-space-3xl);
+  --hf-sidebar-subnav-radius:    var(--hf-radius-s);
   --hf-sidebar-chevron-btn:      18px;
   --hf-sidebar-chevron-icon:     13px;
   --hf-sidebar-chevron-ml:       2px;
@@ -226,6 +229,8 @@
   --hf-sidebar-settings-icon:    15px;
   --hf-sidebar-settings-radius:  6px;
   --hf-sidebar-settings-scale:   1.06;
+  --hf-sidebar-user-chevron:     16px;
+  --hf-sidebar-user-menu-gap:    2px;
   --hf-sidebar-resizer-z:        80;
   --hf-sidebar-resizer-right:    -8px;
   --hf-sidebar-resizer-w:        14px;
@@ -447,7 +452,24 @@
   --hf-candidates-all-gap:          6px;
   --hf-candidates-all-px:           9px;
   --hf-candidates-all-underline-x:  8px;
-  --hf-candidates-list-w:           640px;
+  --hf-candidates-list-w-min:       220px;
+  --hf-candidates-list-w-fluid:     28%;
+  --hf-candidates-list-w-max:       420px;
+  --hf-candidates-list-w:           clamp(
+    var(--hf-candidates-list-w-min),
+    var(--hf-candidates-list-w-fluid),
+    var(--hf-candidates-list-w-max)
+  );
+  --hf-profile-photo:               200px;
+  --hf-profile-photo-compact:       150px;
+  --hf-profile-title-fs:            30px;
+  --hf-profile-title-lh:            40px;
+  --hf-profile-title-compact-fs:    30px;
+  --hf-profile-title-compact-lh:    36px;
+  --hf-profile-fallback-fs:         36px;
+  --hf-profile-fallback-fw:         600;
+  --hf-profile-info-label-w:        96.833px;
+  --hf-profile-info-label-h:        24px;
   --hf-candidates-loading-row-h:     92px;
   --hf-candidates-loading-row-gap:   13px;
   --hf-candidates-loading-row-radius: var(--hf-radius-m);
@@ -646,6 +668,26 @@
   --hf-report-source-blue:      #5b8cbe;
   --hf-report-source-purple:    #9b59b6;
   --hf-report-source-orange:    #e67e22;
+  --hf-analytics-bg:            var(--hf-main-50);
+  --hf-analytics-surface:       var(--hf-white);
+  --hf-analytics-border:        var(--hf-ui-border);
+  --hf-analytics-border-strong: var(--hf-main-900);
+  --hf-analytics-border-soft:   var(--hf-ui-divider);
+  --hf-analytics-text:          var(--hf-main-900);
+  --hf-analytics-muted:         var(--hf-main-600);
+  --hf-analytics-soft:          var(--hf-main-500);
+  --hf-analytics-excel:         #18b957;
+  --hf-analytics-menu-shadow:   0 8px 24px var(--hf-black-alpha-12);
+  --hf-analytics-sheet-shadow:  0 1px 3px var(--hf-black-alpha-08);
+  --hf-analytics-sidebar-w:     260px;
+  --hf-analytics-header-px:     34px;
+  --hf-analytics-header-py:     26px;
+  --hf-analytics-filter-h:      40px;
+  --hf-analytics-sheet-max:     1040px;
+  --hf-analytics-sheet-p:       34px;
+  --hf-analytics-chart-label-w: 190px;
+  --hf-analytics-chart-side-w:  150px;
+  --hf-analytics-bar-h:         28px;
 
   /* ===== Размеры и spacing ===== */
 
@@ -776,11 +818,67 @@
   --hf-vacancy-people-grid-b: 146px;
   --hf-vacancy-people-grid-gap: 10px;
 
+  /* Vacancy workspace */
+  --hf-vacancy-workspace-bg: var(--hf-bg-body);
+  --hf-vacancy-workspace-header: var(--hf-main-900);
+  --hf-vacancy-workspace-surface: var(--hf-white);
+  --hf-vacancy-workspace-line: var(--hf-ui-divider);
+  --hf-vacancy-workspace-line-strong: var(--hf-ui-border);
+  --hf-vacancy-workspace-text: var(--hf-main-900);
+  --hf-vacancy-workspace-muted: var(--hf-main-600);
+  --hf-vacancy-workspace-soft: var(--hf-main-500);
+  --hf-vacancy-workspace-hover: var(--hf-main-100);
+  --hf-vacancy-workspace-selected: var(--hf-ui-selected);
+  --hf-vacancy-topbar-h: 56px;
+  --hf-vacancy-topbar-radius: 14px;
+  --hf-vacancy-topbar-px: 24px;
+  --hf-vacancy-stage-h: 52px;
+  --hf-vacancy-stage-gap: 26px;
+  --hf-vacancy-stage-active-line: 3px;
+  --hf-vacancy-stage-count: 28px;
+  --hf-vacancy-icon-btn: 50px;
+  --hf-vacancy-icon-btn-radius: 14px;
+  --hf-vacancy-main-radius: 14px;
+  --hf-vacancy-main-gap: 8px;
+  --hf-vacancy-candidate-list-w: clamp(220px, 30%, 350px);
+  --hf-vacancy-empty-max-w: 520px;
+  --hf-vacancy-empty-card-w: 760px;
+  --hf-vacancy-empty-pt: 58px;
+  --hf-vacancy-empty-title-mb: 12px;
+  --hf-vacancy-empty-section-mt: 30px;
+  --hf-vacancy-empty-link-gap: 14px;
+  --hf-vacancy-empty-hint-mt: 28px;
+  --hf-vacancy-empty-source-gap: 10px;
+  --hf-vacancy-empty-title-fs: 28px;
+  --hf-vacancy-empty-title-lh: 34px;
+  --hf-vacancy-empty-hint-box-py: 18px;
+  --hf-vacancy-empty-hint-box-radius: 20px;
+  --hf-vacancy-empty-help-h: 33px;
+  --hf-vacancy-empty-help-px: 14px;
+  --hf-vacancy-empty-help-radius: 16px;
+  --hf-closed-vacancies-bg: #f2f2f2;
+  --hf-closed-vacancies-surface: var(--hf-white);
+  --hf-closed-vacancies-text: var(--hf-main-900);
+  --hf-closed-vacancies-muted: var(--hf-main-600);
+  --hf-closed-vacancies-soft: var(--hf-main-500);
+  --hf-closed-vacancies-border: var(--hf-ui-divider);
+  --hf-closed-vacancies-border-strong: var(--hf-main-300);
+  --hf-closed-vacancies-inner-w: 948px;
+  --hf-closed-vacancies-header-h: 56px;
+  --hf-closed-vacancies-search-w: 560px;
+  --hf-closed-vacancies-toolbar-h: 52px;
+  --hf-closed-vacancies-filter-h: 36px;
+  --hf-closed-vacancies-row-py: 14px;
+  --hf-closed-vacancies-row-px: 24px;
+  --hf-closed-vacancies-title-fs: 17px;
+  --hf-closed-vacancies-title-lh: 24px;
+  --hf-closed-vacancies-title-color: #0097aa;
+
   /* Candidate modal */
   --hf-candidate-modal-top: 8px;
   --hf-candidate-modal-width: 764px;
   --hf-candidate-modal-shadow: 0 10px 42px var(--hf-black-alpha-30);
-  --hf-candidate-modal-z: 50;
+  --hf-candidate-modal-z: 260;
   --hf-candidate-modal-header-h: 113.33px;
   --hf-candidate-modal-body-h: 836px;
   --hf-candidate-modal-footer-h: 73.33px;

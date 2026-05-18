@@ -52,7 +52,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             value={resumeData.name || ''}
             onChange={(e) => handleChange('name', e.target.value)}
             className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
-            placeholder="Иван Петров"
+            placeholder="Имя кандидата"
           />
         </div>
 
@@ -65,7 +65,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
               value={resumeData.email || ''}
               onChange={(e) => handleChange('email', e.target.value)}
               className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
-              placeholder="ivan@mail.ru"
+              placeholder="candidate@example.com"
             />
           </div>
           <div>

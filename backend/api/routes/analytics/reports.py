@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, case, extract, text
+from sqlalchemy import select, func, and_, or_, case, extract, text, cast, String
 from pydantic import BaseModel
 
 from ...database import get_db
@@ -47,6 +47,22 @@ STAGE_LABELS = {
     "rejected": "Отклонён",
     "withdrawn": "Отозван",
 }
+
+LEGACY_STAGE_ALIASES = {
+    "new": "applied",
+}
+
+
+def _normalize_stage(stage: Optional[str]) -> Optional[str]:
+    if not stage:
+        return stage
+    value = stage.value if hasattr(stage, "value") else str(stage)
+    return LEGACY_STAGE_ALIASES.get(value, value)
+
+
+def _stage_values(stage: str) -> List[str]:
+    aliases = [key for key, value in LEGACY_STAGE_ALIASES.items() if value == stage]
+    return [stage, *aliases]
 
 
 # ========== SCHEMAS ==========
@@ -221,6 +237,7 @@ async def _scope_recruiter_id(
 async def get_time_to_fill(
     period: str = Query("current", description="current|month|quarter|half_year|year|custom"),
     recruiter_id: Optional[int] = None,
+    department_id: Optional[int] = None,
     vacancy_status: str = Query("all", description="all|open|closed"),
     date_from: Optional[str] = Query(None, description="Custom range start (ISO date)"),
     date_to: Optional[str] = Query(None, description="Custom range end (ISO date)"),
@@ -261,6 +278,8 @@ async def get_time_to_fill(
         hired_query = hired_query.where(VacancyApplication.last_stage_change_at <= date_to_dt)
     if recruiter_id:
         hired_query = hired_query.where(Vacancy.created_by == recruiter_id)
+    if department_id:
+        hired_query = hired_query.where(Vacancy.department_id == department_id)
 
     hired_result = await db.execute(hired_query.order_by(VacancyApplication.last_stage_change_at.desc()))
     hired_rows = hired_result.all()
@@ -289,6 +308,8 @@ async def get_time_to_fill(
 
     # Total positions count
     total_q = select(func.count(Vacancy.id)).where(Vacancy.org_id == org.id)
+    if department_id:
+        total_q = total_q.where(Vacancy.department_id == department_id)
     if vacancy_status == "open":
         total_q = total_q.where(Vacancy.status == VacancyStatus.open)
     elif vacancy_status == "closed":
@@ -324,6 +345,10 @@ async def get_time_to_fill(
                 trans_q = trans_q.where(StageTransition.created_at >= date_from_dt)
             if date_to_dt:
                 trans_q = trans_q.where(StageTransition.created_at <= date_to_dt)
+            if recruiter_id:
+                trans_q = trans_q.where(Vacancy.created_by == recruiter_id)
+            if department_id:
+                trans_q = trans_q.where(Vacancy.department_id == department_id)
 
             result = await db.execute(trans_q)
             avg_seconds = result.scalar()
@@ -351,6 +376,7 @@ async def get_time_to_fill(
 async def get_funnel_report(
     period: str = Query("current"),
     recruiter_id: Optional[int] = None,
+    department_id: Optional[int] = None,
     vacancy_status: str = Query("open"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -373,25 +399,28 @@ async def get_funnel_report(
         base_filter.append(VacancyApplication.applied_at <= date_to_dt)
     if recruiter_id:
         base_filter.append(Vacancy.created_by == recruiter_id)
+    if department_id:
+        base_filter.append(Vacancy.department_id == department_id)
     if vacancy_status == "open":
         base_filter.append(Vacancy.status == VacancyStatus.open)
     elif vacancy_status == "closed":
         base_filter.append(Vacancy.status == VacancyStatus.closed)
 
     # Stage counts (including rejected/withdrawn per stage)
+    stage_value = cast(VacancyApplication.stage, String)
     stage_q = (
         select(
-            VacancyApplication.stage,
+            stage_value.label("stage"),
             func.count(VacancyApplication.id).label("cnt"),
         )
         .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
         .where(*base_filter)
-        .group_by(VacancyApplication.stage)
+        .group_by(stage_value)
     )
     stage_result = await db.execute(stage_q)
     stage_counts = {}
     for row in stage_result:
-        key = row.stage.value if hasattr(row.stage, 'value') else str(row.stage)
+        key = _normalize_stage(row.stage)
         stage_counts[key] = row.cnt
 
     # Rejections by stage they were on before rejection (from StageTransition)
@@ -411,7 +440,11 @@ async def get_funnel_report(
     if date_from_dt:
         rej_by_stage_q = rej_by_stage_q.where(StageTransition.created_at >= date_from_dt)
     rej_result = await db.execute(rej_by_stage_q)
-    rej_by_stage = {row.from_stage: row.cnt for row in rej_result if row.from_stage}
+    rej_by_stage: Dict[str, int] = {}
+    for row in rej_result:
+        stage_key = _normalize_stage(row.from_stage)
+        if stage_key:
+            rej_by_stage[stage_key] = rej_by_stage.get(stage_key, 0) + row.cnt
 
     # Build funnel
     stages = []
@@ -480,6 +513,7 @@ async def get_funnel_report(
 @router.get("/funnel-by-recruiter", response_model=FunnelByRecruiterReport)
 async def get_funnel_by_recruiter(
     period: str = Query("current"),
+    department_id: Optional[int] = None,
     vacancy_status: str = Query("open"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -497,6 +531,7 @@ async def get_funnel_by_recruiter(
     # Для не-админа — суммарная воронка по его собственным вакансиям, не по всей оргe.
     summary = await get_funnel_report(
         period=period, recruiter_id=None if is_admin else current_user.id,
+        department_id=department_id,
         vacancy_status=vacancy_status,
         date_from=date_from, date_to=date_to,
         db=db, current_user=current_user,
@@ -511,6 +546,8 @@ async def get_funnel_by_recruiter(
     )
     if not is_admin:
         recruiter_q = recruiter_q.where(User.id == current_user.id)
+    if department_id:
+        recruiter_q = recruiter_q.where(Vacancy.department_id == department_id)
     recruiter_result = await db.execute(recruiter_q)
     recruiters = recruiter_result.all()
 
@@ -518,6 +555,7 @@ async def get_funnel_by_recruiter(
     for rec in recruiters:
         rec_funnel = await get_funnel_report(
             period=period, recruiter_id=rec.id, vacancy_status=vacancy_status,
+            department_id=department_id,
             date_from=date_from, date_to=date_to,
             db=db, current_user=current_user,
         )
@@ -539,6 +577,7 @@ async def get_funnel_by_recruiter(
 async def get_rejections_report(
     period: str = Query("current"),
     recruiter_id: Optional[int] = None,
+    department_id: Optional[int] = None,
     vacancy_status: str = Query("open"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -563,6 +602,12 @@ async def get_rejections_report(
         base_filter.append(VacancyApplication.last_stage_change_at <= date_to_dt)
     if recruiter_id:
         base_filter.append(Vacancy.created_by == recruiter_id)
+    if department_id:
+        base_filter.append(Vacancy.department_id == department_id)
+    if vacancy_status == "open":
+        base_filter.append(Vacancy.status == VacancyStatus.open)
+    elif vacancy_status == "closed":
+        base_filter.append(Vacancy.status == VacancyStatus.closed)
 
     # Total rejections
     total_q = (
@@ -590,6 +635,16 @@ async def get_rejections_report(
     )
     if date_from_dt:
         by_stage_q = by_stage_q.where(StageTransition.created_at >= date_from_dt)
+    if date_to_dt:
+        by_stage_q = by_stage_q.where(StageTransition.created_at <= date_to_dt)
+    if recruiter_id:
+        by_stage_q = by_stage_q.where(Vacancy.created_by == recruiter_id)
+    if department_id:
+        by_stage_q = by_stage_q.where(Vacancy.department_id == department_id)
+    if vacancy_status == "open":
+        by_stage_q = by_stage_q.where(Vacancy.status == VacancyStatus.open)
+    elif vacancy_status == "closed":
+        by_stage_q = by_stage_q.where(Vacancy.status == VacancyStatus.closed)
     by_stage_result = await db.execute(by_stage_q)
 
     by_stage = []
@@ -598,7 +653,9 @@ async def get_rejections_report(
         # без явного перехода) — пропускаем, чтобы в графике не было 'unknown'.
         if not row.from_stage:
             continue
-        stage_key = row.from_stage
+        stage_key = _normalize_stage(row.from_stage)
+        if not stage_key:
+            continue
         # Get rejection reasons for this stage
         reason_q = (
             select(
@@ -610,7 +667,7 @@ async def get_rejections_report(
                 StageTransition,
                 and_(
                     StageTransition.application_id == VacancyApplication.id,
-                    StageTransition.from_stage == stage_key,
+                    StageTransition.from_stage.in_(_stage_values(stage_key)),
                     StageTransition.to_stage == "rejected",
                 )
             )
@@ -666,6 +723,7 @@ async def get_rejections_report(
 async def get_sources_report(
     period: str = Query("current"),
     recruiter_id: Optional[int] = None,
+    department_id: Optional[int] = None,
     vacancy_status: str = Query("open"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -687,8 +745,12 @@ async def get_sources_report(
         base_filter.append(VacancyApplication.applied_at <= date_to_dt)
     if recruiter_id:
         base_filter.append(Vacancy.created_by == recruiter_id)
+    if department_id:
+        base_filter.append(Vacancy.department_id == department_id)
     if vacancy_status == "open":
         base_filter.append(Vacancy.status == VacancyStatus.open)
+    elif vacancy_status == "closed":
+        base_filter.append(Vacancy.status == VacancyStatus.closed)
 
     # Total
     total_q = (
@@ -722,7 +784,7 @@ async def get_sources_report(
                 func.count(VacancyApplication.id).label("cnt"),
             )
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-            .where(*base_filter, VacancyApplication.stage == stage)
+            .where(*base_filter, cast(VacancyApplication.stage, String).in_(_stage_values(stage)))
             .group_by("src")
             .order_by(func.count(VacancyApplication.id).desc())
         )
@@ -742,6 +804,7 @@ async def get_sources_report(
 async def get_movement_report(
     period: str = Query("current"),
     recruiter_id: Optional[int] = None,
+    department_id: Optional[int] = None,
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -773,14 +836,16 @@ async def get_movement_report(
         move_q = move_q.where(StageTransition.created_at <= date_to_dt)
     if recruiter_id:
         move_q = move_q.where(Vacancy.created_by == recruiter_id)
+    if department_id:
+        move_q = move_q.where(Vacancy.department_id == department_id)
 
     result = await db.execute(move_q)
 
     movements = []
     total = 0
     for row in result:
-        from_s = row.from_stage or "new"
-        to_s = row.to_stage or "unknown"
+        from_s = _normalize_stage(row.from_stage) or "applied"
+        to_s = _normalize_stage(row.to_stage) or "unknown"
         movements.append(StageMovementItem(
             from_stage=from_s,
             from_label=STAGE_LABELS.get(from_s, from_s),

@@ -74,7 +74,6 @@ const SettingsPage = lazyWithRetry(() => import('@/pages/SettingsPage'));
 const AdminSimulatorPage = lazyWithRetry(() => import('@/pages/AdminSimulatorPage'));
 const VacanciesPage = lazyWithRetry(() => import('@/pages/VacanciesPage'));
 const EmailTemplatesPage = lazyWithRetry(() => import('@/pages/EmailTemplatesPage'));
-const AnalyticsPage = lazyWithRetry(() => import('@/pages/AnalyticsPage'));
 const InternsPage = lazyWithRetry(() => import('@/pages/InternsPage'));
 const InternStatsPage = lazyWithRetry(() => import('@/pages/InternStatsPage'));
 const ExportsPage = lazyWithRetry(() => import('@/pages/ExportsPage'));
@@ -218,7 +217,7 @@ export default function App() {
           <Route path="document-templates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><DocumentTemplatesPage /></RoleRoute></Suspense>} />
           <Route path="email-templates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><EmailTemplatesPage /></RoleRoute></Suspense>} />
           <Route path="extension" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><ExtensionPage /></RoleRoute></Suspense>} />
-          <Route path="analytics" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><AnalyticsPage /></RoleRoute></Suspense>} />
+          <Route path="analytics" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><DashboardPage /></RoleRoute></Suspense>} />
           <Route path="hr-reports" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><HRReportsPage /></RoleRoute></Suspense>} />
           <Route path="saturn" element={<Suspense fallback={<PageLoader />}><SaturnPage /></Suspense>} />
 

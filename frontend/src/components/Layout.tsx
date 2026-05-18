@@ -447,6 +447,56 @@ function FABButton({
   );
 }
 
+function getBlockForPath(path: string): string | null {
+  if (
+    path.startsWith("/projects") ||
+    path.startsWith("/all-tasks") ||
+    path.startsWith("/saturn") ||
+    path.startsWith("/team") ||
+    path.startsWith("/dept-manager") ||
+    path.startsWith("/timeoff") ||
+    path.startsWith("/blockers")
+  ) {
+    return "projects";
+  }
+  if (
+    path.startsWith("/chats") ||
+    path.startsWith("/interns") ||
+    path.startsWith("/practice-list") ||
+    path.startsWith("/calls")
+  ) {
+    return "practice";
+  }
+  if (
+    [
+      "/dashboard",
+      "/all-candidates",
+      "/workspaces",
+      "/my-funnels",
+      "/form-builder",
+      "/document-templates",
+      "/employees",
+      "/vacancies",
+      "/analytics",
+      "/hr-reports",
+      "/pen",
+      "/extension",
+      "/exports",
+      "/import",
+    ].some((p) => path.startsWith(p))
+  ) {
+    return "hr";
+  }
+  if (
+    ["/users", "/departments", "/settings", "/admin", "/trash"].some((p) =>
+      path.startsWith(p),
+    )
+  ) {
+    return "admin";
+  }
+  return null;
+}
+
 export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
@@ -481,7 +531,9 @@ export default function Layout() {
   const [expandedFunnels, setExpandedFunnels] = useState(false);
   const [expandedRequests, setExpandedRequests] = useState(true);
   const [sidebarVacancy, setSidebarVacancy] = useState<Vacancy | null>(null);
-  const isHrSidebar = activeBlock === "hr";
+  const routeBlock = getBlockForPath(location.pathname);
+  const activeNavigationBlock = routeBlock || activeBlock;
+  const isHrSidebar = routeBlock === "hr";
   const [hrSidebarWidth, setHrSidebarWidth] = useState(readStoredHrSidebarWidth);
   const hrSidebarWidthRef = useRef(hrSidebarWidth);
   const [isHrSidebarResizing, setIsHrSidebarResizing] = useState(false);
@@ -492,14 +544,21 @@ export default function Layout() {
   const [showHrFabActions, setShowHrFabActions] = useState(false);
   const [showHrSettingsModal, setShowHrSettingsModal] = useState(false);
   const [showHrFunnelsPicker, setShowHrFunnelsPicker] = useState(false);
+  const [showHrUserMenu, setShowHrUserMenu] = useState(false);
   const hrFabActionsRef = useRef<HTMLDivElement | null>(null);
   const hrFunnelsPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (activeBlock === "hr") {
+    if (routeBlock === "hr") {
       fetchVacancies();
     }
-  }, [activeBlock, fetchVacancies]);
+  }, [routeBlock, fetchVacancies]);
+
+  useEffect(() => {
+    if (!showHrUserMenu) {
+      setShowNotifications(false);
+    }
+  }, [showHrUserMenu]);
 
   useEffect(() => {
     if (!showHrFabActions) return;
@@ -703,51 +762,8 @@ export default function Layout() {
 
   // Auto-switch active block based on current URL
   useEffect(() => {
-    const path = location.pathname;
-    if (
-      path.startsWith("/projects") ||
-      path.startsWith("/all-tasks") ||
-      path.startsWith("/saturn") ||
-      path.startsWith("/team") ||
-      path.startsWith("/dept-manager") ||
-      path.startsWith("/timeoff") ||
-      path.startsWith("/blockers")
-    ) {
-      setActiveBlock("projects");
-    } else if (
-      path.startsWith("/chats") ||
-      path.startsWith("/interns") ||
-      path.startsWith("/practice-list") ||
-      path.startsWith("/calls")
-    ) {
-      setActiveBlock("practice");
-    } else if (
-      [
-        "/dashboard",
-        "/all-candidates",
-        "/workspaces",
-        "/my-funnels",
-        "/form-builder",
-        "/document-templates",
-        "/employees",
-        "/my-profile",
-        "/vacancies",
-        "/analytics",
-        "/hr-reports",
-        "/pen",
-        "/extension",
-        "/exports",
-        "/import",
-      ].some((p) => path.startsWith(p))
-    ) {
-      setActiveBlock("hr");
-    } else if (
-      ["/users", "/departments", "/settings", "/admin", "/trash"].some((p) =>
-        path.startsWith(p),
-      )
-    ) {
-      setActiveBlock("admin");
-    }
+    const nextBlock = getBlockForPath(location.pathname);
+    if (nextBlock) setActiveBlock(nextBlock);
   }, [location.pathname]);
 
   // Navigation sections — 3 blocks: Projects, HR, Analytics + Admin
@@ -895,6 +911,17 @@ export default function Layout() {
     return navSections.flatMap((s) => s.items);
   }, [navSections]);
 
+  const handleBlockSwitch = useCallback(
+    (section: NavSection) => {
+      setActiveBlock(section.id);
+      const targetPath = section.items[0]?.path;
+      if (targetPath && location.pathname !== targetPath) {
+        navigate(targetPath);
+      }
+    },
+    [location.pathname, navigate],
+  );
+
   const handleLogout = () => {
     logout();
     navigate("/login");
@@ -909,6 +936,15 @@ export default function Layout() {
     user?.role === "superadmin" ||
     user?.org_role === "owner" ||
     user?.org_role === "admin";
+  const sidebarSearchParams = new URLSearchParams(location.search);
+  const sidebarSelectedVacancyId = sidebarSearchParams.get("v");
+  const isClosedFunnelsView =
+    location.pathname === "/my-funnels" &&
+    sidebarSearchParams.get("status") === "closed";
+  const isMyFunnelsRootView =
+    location.pathname === "/my-funnels" &&
+    !sidebarSelectedVacancyId &&
+    !isClosedFunnelsView;
   const sidebarOpenVacancies = vacancies
     .filter((v) => v.status === "open" || v.status === "paused")
     .filter((v) => isHrSidebarAdmin || (user && v.created_by === user.id));
@@ -933,9 +969,18 @@ export default function Layout() {
       return false;
     })
     .slice(0, 2);
+  const getSidebarRequestAuthor = (vacancy: Vacancy) =>
+    vacancy.created_by_name ||
+    vacancy.hiring_manager_name ||
+    "Автор не указан";
 
   return (
-    <div className="hf-hr-layout-shell">
+    <div
+      className={clsx(
+        "hf-hr-layout-shell",
+        isHrSidebar ? "hf-hr-layout-shell--hr" : "hf-hr-layout-shell--app",
+      )}
+    >
       <BackgroundEffects />
       <AnimatePresence>
         {showHrSettingsModal && (
@@ -966,12 +1011,12 @@ export default function Layout() {
               <div className="hf-hr-block-tabs">
                 {navSections.map((section) => {
                   const Icon = BLOCK_ICONS[section.id] || LayoutDashboard;
-                  const isActive = activeBlock === section.id;
+                  const isActive = activeNavigationBlock === section.id;
                   return (
                     <button
                       key={section.id}
                       type="button"
-                      onClick={() => setActiveBlock(section.id)}
+                      onClick={() => handleBlockSwitch(section)}
                       className={clsx(
                         "hf-hr-block-tab",
                         isActive && "hf-hr-block-tab-active",
@@ -1058,10 +1103,7 @@ export default function Layout() {
                   </button>
                   {expandedRequests && (
                     <div className="hf-hr-request-list">
-                      {(sidebarRequestVacancies.length > 0
-                        ? sidebarRequestVacancies
-                        : sidebarOpenVacancies.slice(0, 2)
-                      ).map((v) => (
+                      {sidebarRequestVacancies.map((v) => (
                         <button
                           key={v.id}
                           type="button"
@@ -1081,7 +1123,7 @@ export default function Layout() {
                               {v.title}
                             </span>
                             <span className="hf-hr-request-meta">
-                              {v.hiring_manager_name || "Dmitry Gerasimov"}
+                              {getSidebarRequestAuthor(v)}
                             </span>
                           </span>
                         </button>
@@ -1098,7 +1140,7 @@ export default function Layout() {
                     onClick={() => setShowHrFunnelsPicker((value) => !value)}
                     className={clsx(
                       "hf-hr-nav-item hf-hr-funnels-trigger min-w-0",
-                      location.pathname.startsWith("/my-funnels")
+                      isMyFunnelsRootView
                         ? "hf-hr-nav-item-active"
                         : "hf-hr-nav-item-white",
                     )}
@@ -1152,7 +1194,7 @@ export default function Layout() {
                           </span>
                           <span className="hf-hr-funnels-option-text">
                             <span className="hf-hr-funnels-option-title">
-                              Я, {user?.name || "Super Admin"}
+                              Я, {user?.name || user?.email || "Профиль"}
                             </span>
                             <span className="hf-hr-funnels-option-subtitle">
                               {user?.email || "—"}
@@ -1168,7 +1210,11 @@ export default function Layout() {
                         <NavLink
                           key={v.id}
                           to={`/my-funnels?v=${v.id}`}
-                          className="hf-hr-subnav-link"
+                          className={clsx(
+                            "hf-hr-subnav-link",
+                            sidebarSelectedVacancyId === String(v.id) &&
+                              "hf-hr-subnav-link-active",
+                          )}
                         >
                           <span className="hf-hr-request-title">
                             {v.title}
@@ -1193,7 +1239,12 @@ export default function Layout() {
 
                 <NavLink
                   to="/my-funnels?status=closed"
-                  className="hf-hr-nav-item hf-hr-nav-item-white"
+                  className={clsx(
+                    "hf-hr-nav-item",
+                    isClosedFunnelsView
+                      ? "hf-hr-nav-item-active"
+                      : "hf-hr-nav-item-white",
+                  )}
                 >
                   <HfSpriteIcon
                     id="archive-2-20"
@@ -1263,117 +1314,37 @@ export default function Layout() {
               </div>
 
               <div className="hf-hr-sidebar-bottom">
-                <div className="relative hf-hr-bottom-row" ref={notifRef}>
+                <div className="hf-hr-user-row hf-hr-bottom-row">
                   <button
                     type="button"
-                    onClick={handleToggleNotifications}
-                    className="hf-hr-nav-item w-full text-[color:var(--hf-white-alpha-72)]"
+                    onClick={() => setShowHrUserMenu((open) => !open)}
+                    className="hf-hr-user-toggle"
+                    aria-expanded={showHrUserMenu}
+                    aria-label={
+                      showHrUserMenu
+                        ? "Свернуть меню пользователя"
+                        : "Развернуть меню пользователя"
+                    }
                   >
-                    <Bell className="h-[var(--hf-avatar-3xs)] w-[var(--hf-avatar-3xs)]" strokeWidth={1.8} />
-                    <span className="min-w-0 flex-1 truncate text-left">
-                      Уведомления
+                    <span className="hf-hr-user-avatar">
+                      {user?.name?.[0]?.toUpperCase() || "U"}
                     </span>
-                    {unreadCount > 0 && (
-                      <span className="flex min-w-[18px] items-center justify-center rounded-full bg-[var(--hf-red-500)] px-[5px] text-[length:var(--hf-fs-5xs)] font-bold leading-[16px] text-[var(--hf-white)]">
-                        {unreadCount > 99 ? "99+" : unreadCount}
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="hf-hr-user-name">
+                        {user?.name}
                       </span>
-                    )}
+                      <span className="hf-hr-user-email">
+                        {user?.email}
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={clsx(
+                        "hf-hr-user-chevron",
+                        showHrUserMenu && "hf-hr-user-chevron-open",
+                      )}
+                      strokeWidth={1.8}
+                    />
                   </button>
-
-                  {showNotifications && (
-                    <div className="absolute bottom-full left-0 z-[120] mb-2 w-80 max-h-96 overflow-hidden rounded-xl border border-[color:var(--hf-white-alpha-10)] bg-[var(--hf-dark-panel-alpha-95)] shadow-[var(--hf-shadow-2xl)] backdrop-blur-xl">
-                      <div className="flex items-center justify-between border-b border-[color:var(--hf-white-alpha-05)] px-4 py-3">
-                        <span className="text-sm font-medium text-[var(--hf-white)]">
-                          Уведомления
-                        </span>
-                        {unreadCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleMarkAllRead}
-                            className="flex items-center gap-1 text-xs text-[var(--hf-status-blue)] transition-colors hover:text-[var(--hf-cyan-400)]"
-                          >
-                            <Check className="h-3 w-3" />
-                            Прочитать все
-                          </button>
-                        )}
-                      </div>
-                      <div className="max-h-80 overflow-y-auto">
-                        {notificationsLoading ? (
-                          <div className="flex items-center justify-center py-8">
-                            <div className="hf-loading-spinner h-5 w-5 border-2" />
-                          </div>
-                        ) : notificationsList.length === 0 ? (
-                          <div className="py-8 text-center text-xs text-[color:var(--hf-white-alpha-30)]">
-                            Нет уведомлений
-                          </div>
-                        ) : (
-                          notificationsList.map((notif) => (
-                            <button
-                              key={notif.id}
-                              type="button"
-                              onClick={() => {
-                                if (!notif.is_read) handleMarkRead(notif.id);
-                                if (notif.link) {
-                                  navigate(notif.link);
-                                  setShowNotifications(false);
-                                }
-                              }}
-                              className={clsx(
-                                "w-full border-b border-[color:var(--hf-white-alpha-03)] px-4 py-3 text-left transition-colors hover:bg-[var(--hf-white-alpha-03)]",
-                                !notif.is_read && "bg-[var(--hf-white-alpha-05)]",
-                              )}
-                            >
-                              <div className="flex items-start gap-2">
-                                {!notif.is_read && (
-                                  <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-[var(--hf-status-blue)]" />
-                                )}
-                                <div
-                                  className={clsx(
-                                    "min-w-0 flex-1",
-                                    notif.is_read && "ml-4",
-                                  )}
-                                >
-                                  <p className="truncate text-xs font-medium text-[var(--hf-white)]">
-                                    {notif.title}
-                                  </p>
-                                  {notif.message && (
-                                    <p className="mt-0.5 truncate text-[length:var(--hf-fs-4xs)] text-[color:var(--hf-white-alpha-30)]">
-                                      {notif.message}
-                                    </p>
-                                  )}
-                                  <p className="mt-1 text-[length:var(--hf-fs-5xs)] text-[color:var(--hf-white-alpha-20)]">
-                                    {new Date(notif.created_at).toLocaleString(
-                                      "ru-RU",
-                                      {
-                                        day: "numeric",
-                                        month: "short",
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      },
-                                    )}
-                                  </p>
-                                </div>
-                              </div>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="hf-hr-user-row hf-hr-bottom-row">
-                  <div className="hf-hr-user-avatar">
-                    {user?.name?.[0]?.toUpperCase() || "U"}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="hf-hr-user-name">
-                      {user?.name}
-                    </p>
-                    <p className="hf-hr-user-email">
-                      {user?.email}
-                    </p>
-                  </div>
                   <button
                     type="button"
                     onClick={() => setShowHrSettingsModal(true)}
@@ -1385,36 +1356,148 @@ export default function Layout() {
                   </button>
                 </div>
 
-                <ThemeToggle />
+                <AnimatePresence initial={false}>
+                  {showHrUserMenu && (
+                    <motion.div
+                      key="hr-user-menu"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                      className="hf-hr-user-menu"
+                    >
+                      <div className="relative hf-hr-bottom-row" ref={notifRef}>
+                        <button
+                          type="button"
+                          onClick={handleToggleNotifications}
+                          className="hf-hr-nav-item w-full text-[color:var(--hf-white-alpha-72)]"
+                        >
+                          <Bell className="h-[var(--hf-avatar-3xs)] w-[var(--hf-avatar-3xs)]" strokeWidth={1.8} />
+                          <span className="min-w-0 flex-1 truncate text-left">
+                            Уведомления
+                          </span>
+                          {unreadCount > 0 && (
+                            <span className="flex min-w-[18px] items-center justify-center rounded-full bg-[var(--hf-red-500)] px-[5px] text-[length:var(--hf-fs-5xs)] font-bold leading-[16px] text-[var(--hf-white)]">
+                              {unreadCount > 99 ? "99+" : unreadCount}
+                            </span>
+                          )}
+                        </button>
 
-                <NavLink
-                  to="/my-profile"
-                  className={({ isActive }) =>
-                    clsx(
-                      "hf-hr-nav-item w-full",
-                      isActive
-                        ? "hf-hr-nav-item-active"
-                        : "text-[color:var(--hf-white-alpha-72)]",
-                    )
-                  }
-                >
-                  <User className="h-[var(--hf-avatar-3xs)] w-[var(--hf-avatar-3xs)]" strokeWidth={1.8} />
-                  <span className="min-w-0 flex-1 truncate text-left">
-                    Мой профиль
-                  </span>
-                </NavLink>
+                        {showNotifications && (
+                          <div className="absolute bottom-full left-0 z-[120] mb-2 w-80 max-h-96 overflow-hidden rounded-xl border border-[color:var(--hf-white-alpha-10)] bg-[var(--hf-dark-panel-alpha-95)] shadow-[var(--hf-shadow-2xl)] backdrop-blur-xl">
+                            <div className="flex items-center justify-between border-b border-[color:var(--hf-white-alpha-05)] px-4 py-3">
+                              <span className="text-sm font-medium text-[var(--hf-white)]">
+                                Уведомления
+                              </span>
+                              {unreadCount > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={handleMarkAllRead}
+                                  className="flex items-center gap-1 text-xs text-[var(--hf-status-blue)] transition-colors hover:text-[var(--hf-cyan-400)]"
+                                >
+                                  <Check className="h-3 w-3" />
+                                  Прочитать все
+                                </button>
+                              )}
+                            </div>
+                            <div className="max-h-80 overflow-y-auto">
+                              {notificationsLoading ? (
+                                <div className="flex items-center justify-center py-8">
+                                  <div className="hf-loading-spinner h-5 w-5 border-2" />
+                                </div>
+                              ) : notificationsList.length === 0 ? (
+                                <div className="py-8 text-center text-xs text-[color:var(--hf-white-alpha-30)]">
+                                  Нет уведомлений
+                                </div>
+                              ) : (
+                                notificationsList.map((notif) => (
+                                  <button
+                                    key={notif.id}
+                                    type="button"
+                                    onClick={() => {
+                                      if (!notif.is_read) handleMarkRead(notif.id);
+                                      if (notif.link) {
+                                        navigate(notif.link);
+                                        setShowNotifications(false);
+                                      }
+                                    }}
+                                    className={clsx(
+                                      "w-full border-b border-[color:var(--hf-white-alpha-03)] px-4 py-3 text-left transition-colors hover:bg-[var(--hf-white-alpha-03)]",
+                                      !notif.is_read && "bg-[var(--hf-white-alpha-05)]",
+                                    )}
+                                  >
+                                    <div className="flex items-start gap-2">
+                                      {!notif.is_read && (
+                                        <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-[var(--hf-status-blue)]" />
+                                      )}
+                                      <div
+                                        className={clsx(
+                                          "min-w-0 flex-1",
+                                          notif.is_read && "ml-4",
+                                        )}
+                                      >
+                                        <p className="truncate text-xs font-medium text-[var(--hf-white)]">
+                                          {notif.title}
+                                        </p>
+                                        {notif.message && (
+                                          <p className="mt-0.5 truncate text-[length:var(--hf-fs-4xs)] text-[color:var(--hf-white-alpha-30)]">
+                                            {notif.message}
+                                          </p>
+                                        )}
+                                        <p className="mt-1 text-[length:var(--hf-fs-5xs)] text-[color:var(--hf-white-alpha-20)]">
+                                          {new Date(notif.created_at).toLocaleString(
+                                            "ru-RU",
+                                            {
+                                              day: "numeric",
+                                              month: "short",
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            },
+                                          )}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="hf-hr-nav-item w-full text-[color:var(--hf-white-alpha-72)] hover:bg-[var(--hf-status-red-bg)] hover:text-[var(--hf-red-300)]"
-                  aria-label="Выйти из аккаунта"
-                >
-                  <LogOut className="h-[var(--hf-avatar-3xs)] w-[var(--hf-avatar-3xs)]" strokeWidth={1.8} />
-                  <span className="min-w-0 flex-1 truncate text-left">
-                    Выход
-                  </span>
-                </button>
+                      <ThemeToggle />
+
+                      <NavLink
+                        to="/my-profile"
+                        className={({ isActive }) =>
+                          clsx(
+                            "hf-hr-nav-item w-full",
+                            isActive
+                              ? "hf-hr-nav-item-active"
+                              : "text-[color:var(--hf-white-alpha-72)]",
+                          )
+                        }
+                      >
+                        <User className="h-[var(--hf-avatar-3xs)] w-[var(--hf-avatar-3xs)]" strokeWidth={1.8} />
+                        <span className="min-w-0 flex-1 truncate text-left">
+                          Мой профиль
+                        </span>
+                      </NavLink>
+
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="hf-hr-nav-item w-full text-[color:var(--hf-white-alpha-72)] hover:bg-[var(--hf-status-red-bg)] hover:text-[var(--hf-red-300)]"
+                        aria-label="Выйти из аккаунта"
+                      >
+                        <LogOut className="h-[var(--hf-avatar-3xs)] w-[var(--hf-avatar-3xs)]" strokeWidth={1.8} />
+                        <span className="min-w-0 flex-1 truncate text-left">
+                          Выход
+                        </span>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
             <button
@@ -1440,11 +1523,11 @@ export default function Layout() {
               <div className="flex items-center gap-1">
                 {navSections.map((section) => {
                   const Icon = BLOCK_ICONS[section.id] || LayoutDashboard;
-                  const isActive = activeBlock === section.id;
+                  const isActive = activeNavigationBlock === section.id;
                   return (
                     <button
                       key={section.id}
-                      onClick={() => setActiveBlock(section.id)}
+                      onClick={() => handleBlockSwitch(section)}
                       className={clsx(
                         "flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all duration-200",
                         isActive
@@ -1469,7 +1552,7 @@ export default function Layout() {
               aria-label="Primary navigation"
             >
               {navSections
-                .filter((s) => s.id === activeBlock)
+                .filter((s) => s.id === activeNavigationBlock)
                 .map((section) => (
                   <div key={section.id}>
                     <div className="space-y-0.5">
@@ -1502,7 +1585,7 @@ export default function Layout() {
                                     clsx(
                                       "flex-1 flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm",
                                       isActive
-                                        ? clsx(BLOCK_ACCENT[activeBlock])
+                                        ? clsx(BLOCK_ACCENT[activeNavigationBlock])
                                         : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]",
                                     )
                                   }
@@ -1617,7 +1700,7 @@ export default function Layout() {
                                     clsx(
                                       "flex-1 flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm",
                                       isActive
-                                        ? clsx(BLOCK_ACCENT[activeBlock])
+                                        ? clsx(BLOCK_ACCENT[activeNavigationBlock])
                                         : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]",
                                     )
                                   }
@@ -1674,11 +1757,9 @@ export default function Layout() {
                                         <span className="truncate text-left">
                                           {v.title}
                                         </span>
-                                        {v.hiring_manager_name && (
-                                          <span className="text-[var(--hf-dark-500)] truncate ml-auto text-[length:var(--hf-fs-5xs)]">
-                                            {v.hiring_manager_name}
-                                          </span>
-                                        )}
+                                        <span className="text-[var(--hf-dark-500)] truncate ml-auto text-[length:var(--hf-fs-5xs)]">
+                                          {getSidebarRequestAuthor(v)}
+                                        </span>
                                       </button>
                                     ))}
                                   </div>
@@ -1697,7 +1778,7 @@ export default function Layout() {
                               clsx(
                                 "flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all duration-200 text-sm",
                                 isActive
-                                  ? clsx(BLOCK_ACCENT[activeBlock])
+                                  ? clsx(BLOCK_ACCENT[activeNavigationBlock])
                                   : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]",
                               )
                             }
@@ -1714,12 +1795,12 @@ export default function Layout() {
                 ))}
             </nav>
 
-            <div className="flex-shrink-0 p-4 border-t border-[color:var(--hf-workspace-divider)]">
+            <div className="app-sidebar-footer flex-shrink-0 border-t border-[color:var(--hf-workspace-divider)]">
               {/* Notification bell */}
-              <div className="relative mb-3" ref={notifRef}>
+              <div className="relative app-sidebar-footer-section" ref={notifRef}>
                 <button
                   onClick={handleToggleNotifications}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-[var(--hf-dark-300)] hover:text-[var(--hf-status-blue)] hover:bg-[var(--hf-status-blue-bg)] transition-all duration-200 relative"
+                  className="app-sidebar-footer-action w-full text-[var(--hf-dark-300)] hover:text-[var(--hf-status-blue)] hover:bg-[var(--hf-status-blue-bg)]"
                 >
                   <Bell className="w-5 h-5" />
                   <span className="font-medium text-sm">Уведомления</span>
@@ -1811,7 +1892,7 @@ export default function Layout() {
                 )}
               </div>
 
-              <div className="flex items-center gap-3 mb-4 px-2">
+              <div className="app-sidebar-user-row">
                 <div className="w-10 h-10 rounded-full bg-[var(--hf-accent-bg-20)] flex items-center justify-center">
                   <span className="text-[var(--hf-accent)] font-semibold">
                     {user?.name?.[0]?.toUpperCase() || "U"}
@@ -1834,7 +1915,7 @@ export default function Layout() {
                 to="/my-profile"
                 className={({ isActive }) =>
                   clsx(
-                    "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 mb-1",
+                    "app-sidebar-footer-action w-full mb-1",
                     isActive
                       ? "text-[var(--hf-accent)] bg-[var(--hf-accent-bg-10)]"
                       : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-alpha-100)]",
@@ -1846,7 +1927,7 @@ export default function Layout() {
               </NavLink>
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[var(--hf-dark-300)] hover:text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)] transition-all duration-200"
+                className="app-sidebar-footer-action w-full text-[var(--hf-dark-300)] hover:text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)]"
                 aria-label="Выйти из аккаунта"
               >
                 <LogOut className="w-5 h-5" aria-hidden="true" />
@@ -1905,10 +1986,10 @@ export default function Layout() {
                   return (
                     <button
                       key={section.id}
-                      onClick={() => setActiveBlock(section.id)}
+                      onClick={() => handleBlockSwitch(section)}
                       className={clsx(
                         "flex-1 flex flex-col items-center gap-1 py-2 rounded-xl transition-all text-xs",
-                        activeBlock === section.id
+                        activeNavigationBlock === section.id
                           ? clsx("border", BLOCK_ACTIVE_BG[section.id])
                           : "text-[color:var(--hf-white-alpha-30)] border border-transparent",
                       )}
@@ -1923,7 +2004,7 @@ export default function Layout() {
               </div>
               {/* Active block items */}
               {navSections
-                .filter((s) => s.id === activeBlock)
+                .filter((s) => s.id === activeNavigationBlock)
                 .map((section) => (
                   <div key={section.id}>
                     {section.items.map((item) => (
@@ -1935,7 +2016,7 @@ export default function Layout() {
                           clsx(
                             "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm",
                             isActive
-                              ? clsx(BLOCK_ACCENT[activeBlock])
+                              ? clsx(BLOCK_ACCENT[activeNavigationBlock])
                               : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-bg-dark-panel)]",
                           )
                         }
@@ -1967,7 +2048,10 @@ export default function Layout() {
 
       {/* Main Content */}
       <main
-        className="flex-1 overflow-hidden flex flex-col bg-[var(--hf-workspace-bg)]"
+        className={clsx(
+          "flex-1 overflow-hidden flex flex-col",
+          isHrSidebar ? "bg-[var(--hf-workspace-bg)]" : "bg-[var(--bg-body)]",
+        )}
         role="main"
         aria-label="Main content"
       >
@@ -2011,11 +2095,16 @@ export default function Layout() {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden relative bg-[var(--hf-workspace-bg)]">
+        <div
+          className={clsx(
+            "flex-1 overflow-y-auto overflow-x-hidden relative",
+            isHrSidebar ? "bg-[var(--hf-workspace-bg)]" : "bg-[var(--bg-body)]",
+          )}
+        >
           <Outlet />
 
           {/* FAB — floating action button for HR block */}
-          {activeBlock === "hr" && (
+          {isHrSidebar && (
             <div className="lg:hidden">
               <FABButton
                 onCreateVacancy={() => setShowFabVacancyForm(true)}

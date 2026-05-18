@@ -212,14 +212,14 @@ async def list_available_variables(
 ):
     """List available template variables with descriptions."""
     variables = [
-        {"name": "candidate_name", "description": "Имя кандидата", "example": "Иван Петров"},
-        {"name": "candidate_email", "description": "Email кандидата", "example": "ivan@example.com"},
+        {"name": "candidate_name", "description": "Имя кандидата", "example": "Имя кандидата"},
+        {"name": "candidate_email", "description": "Email кандидата", "example": "candidate@example.com"},
         {"name": "vacancy_title", "description": "Название вакансии", "example": "Senior Python Developer"},
         {"name": "company_name", "description": "Название компании", "example": "ООО Компания"},
         {"name": "interview_date", "description": "Дата собеседования", "example": "15 января 2026"},
         {"name": "interview_time", "description": "Время собеседования", "example": "14:00"},
         {"name": "interview_link", "description": "Ссылка на собеседование", "example": "https://meet.google.com/xxx"},
-        {"name": "hr_name", "description": "Имя HR менеджера", "example": "Анна Сидорова"},
+        {"name": "hr_name", "description": "Имя HR менеджера", "example": "Имя HR менеджера"},
         {"name": "hr_email", "description": "Email HR менеджера", "example": "hr@company.com"},
         {"name": "salary_offer", "description": "Предложенная зарплата", "example": "150 000 ₽"},
         {"name": "start_date", "description": "Дата начала работы", "example": "1 февраля 2026"},

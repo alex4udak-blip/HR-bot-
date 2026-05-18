@@ -941,16 +941,14 @@ export default function AllCandidatesPage() {
     /прин/i.test(column.label) ||
     /отклон/i.test(column.label);
 
-  const hasExpandedEmptyStageGroups = Object.values(
-    expandedEmptyStageGroups,
-  ).some(Boolean);
-
   useEffect(() => {
     const frame = window.requestAnimationFrame(updateTopStageScrollState);
     const timer = window.setTimeout(updateTopStageScrollState, 260);
+    window.addEventListener("resize", updateTopStageScrollState);
     return () => {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
+      window.removeEventListener("resize", updateTopStageScrollState);
     };
   }, [
     expandedEmptyStageGroups,
@@ -1175,9 +1173,7 @@ export default function AllCandidatesPage() {
             </button>
           </div>
         ) : null}
-        {hasExpandedEmptyStageGroups &&
-        !showTopSearch &&
-        topStageCanScroll.left ? (
+        {!showTopSearch && topStageCanScroll.left ? (
           <button
             type="button"
             onClick={() => scrollTopStageTabs("left")}
@@ -1187,9 +1183,7 @@ export default function AllCandidatesPage() {
             <ChevronLeft className="hf-top-stage-arrow-icon" />
           </button>
         ) : null}
-        {hasExpandedEmptyStageGroups &&
-        !showTopSearch &&
-        topStageCanScroll.right ? (
+        {!showTopSearch && topStageCanScroll.right ? (
           <button
             type="button"
             onClick={() => scrollTopStageTabs("right")}
@@ -1228,7 +1222,7 @@ export default function AllCandidatesPage() {
             {/* List */}
             <div className="hf-candidates-list-scroll">
               {displayedCards.length === 0 ? (
-                <div className="flex items-center justify-center h-40 text-hf-xxs text-[var(--hf-main-500)] dark:text-[color:var(--hf-white-alpha-40)]">
+                <div className="flex items-center justify-center h-40 text-hf-xxs text-[var(--hf-main-500)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)]">
                   Нет кандидатов
                 </div>
               ) : (
@@ -1355,7 +1349,7 @@ export default function AllCandidatesPage() {
                       onClick={() =>
                         setVisibleCount((prev) => prev + VISIBLE_STEP)
                       }
-                      className="w-full py-hf-m text-hf-xxs text-[var(--hf-cyan-700)] dark:text-[var(--hf-cyan-400)] hover:bg-[var(--hf-main-50)] dark:hover:bg-[var(--hf-white-alpha-05)] transition-colors border-b border-[var(--hf-main-100)] dark:border-[color:var(--hf-white-alpha-05)]"
+                      className="w-full py-hf-m text-hf-xxs text-[var(--hf-cyan-700)] hf-dark-disabled:text-[var(--hf-cyan-400)] hover:bg-[var(--hf-main-50)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-05)] transition-colors border-b border-[var(--hf-main-100)] hf-dark-disabled:border-[color:var(--hf-white-alpha-05)]"
                     >
                       Показать ещё ({displayedCards.length - visibleCount})
                     </button>
@@ -1366,7 +1360,7 @@ export default function AllCandidatesPage() {
           </div>
 
           {/* RIGHT: Detail panel */}
-          <div className="flex-1 bg-[var(--hf-white)] dark:bg-[var(--hf-bg-dark)] rounded-hf-l flex flex-col overflow-hidden">
+          <div className="hf-candidates-detail-panel flex-1 bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)] rounded-hf-l flex flex-col overflow-hidden">
             {selectedCard ? (
               <div className="flex-1 overflow-y-auto">
                 <InfoTab
@@ -1389,8 +1383,8 @@ export default function AllCandidatesPage() {
               </div>
             ) : (
               <div className="flex items-center justify-center h-full">
-                <div className="text-center text-[var(--hf-main-500)] dark:text-[color:var(--hf-white-alpha-40)]">
-                  <Users className="w-12 h-12 mx-auto mb-hf-m text-[var(--hf-main-400)] dark:text-[color:var(--hf-white-alpha-30)]" />
+                <div className="text-center text-[var(--hf-main-500)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)]">
+                  <Users className="w-12 h-12 mx-auto mb-hf-m text-[var(--hf-main-400)] hf-dark-disabled:text-[color:var(--hf-white-alpha-30)]" />
                   <p className="text-hf-xxs">Выберите кандидата из списка</p>
                 </div>
               </div>
@@ -1407,19 +1401,19 @@ export default function AllCandidatesPage() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 28, opacity: 0 }}
             transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute bottom-0 left-[560px] right-[320px] z-[85] min-h-[198px] max-w-[1320px] overflow-hidden rounded-t-[12px] rounded-b-[8px] border border-[var(--hf-ui-divider-soft)] border-t-[3px] border-t-[var(--hf-main-900)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[20px] shadow-[0_18px_60px_var(--hf-alpha-300)] dark:border-[color:var(--hf-white-alpha-10)] dark:border-t-white dark:bg-[var(--hf-bg-dark)]"
+            className="absolute bottom-0 left-[560px] right-[320px] z-[85] min-h-[198px] max-w-[1320px] overflow-hidden rounded-t-[12px] rounded-b-[8px] border border-[var(--hf-ui-divider-soft)] border-t-[3px] border-t-[var(--hf-main-900)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[20px] shadow-[0_18px_60px_var(--hf-alpha-300)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:border-t-white hf-dark-disabled:bg-[var(--hf-bg-dark)]"
           >
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
-              className="absolute right-[22px] top-[20px] inline-flex h-[28px] w-[28px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-06)] dark:hover:text-[var(--hf-white)]"
+              className="absolute right-[22px] top-[20px] inline-flex h-[28px] w-[28px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:hover:text-[var(--hf-white)]"
               title="Закрыть"
             >
               <X className="h-[20px] w-[20px]" strokeWidth={1.75} />
             </button>
 
             <div className="flex items-center gap-[10px] pr-[54px]">
-              <span className="text-[length:var(--hf-fs-m)] leading-[26px] font-medium text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+              <span className="text-[length:var(--hf-fs-m)] leading-[26px] font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
                 Выбрано кандидатов: {selectedIds.size}
                 <span className="ml-[2px] text-[var(--hf-main-500)]">/1000</span>
               </span>
@@ -1470,7 +1464,7 @@ export default function AllCandidatesPage() {
                           duration: 0.26,
                           ease: [0.22, 1, 0.36, 1],
                         }}
-                        className="relative h-full w-full overflow-hidden rounded-full border-[2px] border-[color:var(--hf-white)] bg-[var(--hf-ui-hover)] dark:border-[var(--hf-bg-dark)] dark:bg-[var(--hf-white-alpha-10)]"
+                        className="relative h-full w-full overflow-hidden rounded-full border-[2px] border-[color:var(--hf-white)] bg-[var(--hf-ui-hover)] hf-dark-disabled:border-[var(--hf-bg-dark)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)]"
                       >
                         {card.photo_url ? (
                           <img
@@ -1501,7 +1495,7 @@ export default function AllCandidatesPage() {
               <button
                 onClick={() => setShowBulkAddToVacancy(true)}
                 disabled={bulkProcessing}
-                className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium text-[var(--hf-main-900)] shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] disabled:opacity-50 dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-white-alpha-10)] dark:text-[var(--hf-white)]"
+                className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium text-[var(--hf-main-900)] shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] disabled:opacity-50 hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:text-[var(--hf-white)]"
               >
                 <PlusCircle className="h-[20px] w-[20px]" strokeWidth={1.8} />
                 Взять на вакансию
@@ -1514,7 +1508,7 @@ export default function AllCandidatesPage() {
                   )
                 }
                 disabled={bulkProcessing}
-                className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium text-[var(--hf-main-900)] shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] disabled:opacity-50 dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-white-alpha-10)] dark:text-[var(--hf-white)]"
+                className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium text-[var(--hf-main-900)] shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] disabled:opacity-50 hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:text-[var(--hf-white)]"
               >
                 <Send className="h-[20px] w-[20px]" strokeWidth={1.8} />
                 Отправить
@@ -1539,23 +1533,23 @@ export default function AllCandidatesPage() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-[420px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-bg-muted)] shadow-[0_18px_60px_var(--hf-black-alpha-30)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)]"
+              className="w-full max-w-[420px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-bg-muted)] shadow-[0_18px_60px_var(--hf-black-alpha-30)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]"
             >
-              <div className="border-b border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] py-[18px] dark:border-[color:var(--hf-white-alpha-10)]">
-                <h3 className="text-[20px] font-semibold leading-[var(--hf-lh-h2)] text-[var(--hf-ui-text-strong)] dark:text-[var(--hf-white)]">
+              <div className="border-b border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] py-[18px] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
+                <h3 className="text-[20px] font-semibold leading-[var(--hf-lh-h2)] text-[var(--hf-ui-text-strong)] hf-dark-disabled:text-[var(--hf-white)]">
                   Удалить кандидатов?
                 </h3>
               </div>
               <div className="px-[var(--hf-space-xxl)] py-[18px]">
-                <p className="text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-ui-text-muted)] dark:text-[color:var(--hf-white-alpha-60)]">
+                <p className="text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-ui-text-muted)] hf-dark-disabled:text-[color:var(--hf-white-alpha-60)]">
                   Вы уверены, что хотите удалить {selectedIds.size}{" "}
                   кандидат(ов)? Это действие необратимо.
                 </p>
               </div>
-              <div className="flex h-[72px] items-center justify-end gap-[12px] border-t border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+              <div className="flex h-[72px] items-center justify-end gap-[12px] border-t border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
                 <button
                   onClick={() => setShowBulkDeleteConfirm(false)}
-                  className="inline-flex h-[40px] items-center rounded-[var(--hf-radius-s)] px-[var(--hf-space-xxl)] text-[length:var(--hf-fs-xs)] font-medium text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] dark:text-[color:var(--hf-white-alpha-55)] dark:hover:bg-[var(--hf-white-alpha-06)] dark:hover:text-[var(--hf-white)]"
+                  className="inline-flex h-[40px] items-center rounded-[var(--hf-radius-s)] px-[var(--hf-space-xxl)] text-[length:var(--hf-fs-xs)] font-medium text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:hover:text-[var(--hf-white)]"
                 >
                   Отмена
                 </button>
@@ -1973,6 +1967,18 @@ const InfoTab = memo(function InfoTab({
     toast.success(`${card.name} → Оффер`);
   };
 
+  const handleSms = () => {
+    toast("SMS-модуль пока не подключён");
+  };
+
+  const handleFeedback = () => {
+    toast("Форма обратной связи пока не реализована");
+  };
+
+  const handleQuestionnaire = () => {
+    toast("Анкета кандидата пока не реализована");
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2363,16 +2369,16 @@ const InfoTab = memo(function InfoTab({
       </div>
 
       {/* ---- Name + Contact info (left column) | Photo (right column) ---- */}
-      <div className="flex items-start gap-hf-2xl mb-hf-l">
-        <div className="flex-1 min-w-0">
-          <h2 className="-m-[4px] overflow-hidden p-[4px] text-[30px] leading-[40px] font-medium text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+      <div className="hf-profile-summary">
+        <div className="hf-profile-summary-copy">
+          <h2 className="hf-profile-title">
             {card.name}
           </h2>
           {(card.position || card.company) && (
-            <p className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] dark:text-[color:var(--hf-white-alpha-60)] mt-0 mb-[18px]">
+            <p className="hf-profile-subtitle">
               {card.position}
               {card.position && card.company && (
-                <span className="mx-1.5 text-[color:var(--hf-alpha-400)] dark:text-[color:var(--hf-white-alpha-30)]">
+                <span className="mx-1.5 text-[color:var(--hf-alpha-400)] hf-dark-disabled:text-[color:var(--hf-white-alpha-30)]">
                   &bull;
                 </span>
               )}
@@ -2384,7 +2390,7 @@ const InfoTab = memo(function InfoTab({
               <div className="flex items-center gap-2">
                 <a
                   href={`tel:${card.phone}`}
-                  className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] dark:hover:text-[var(--hf-white)] transition-colors"
+                  className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
                 >
                   {formatPhoneDisplay(card.phone)}
                 </a>
@@ -2422,7 +2428,7 @@ const InfoTab = memo(function InfoTab({
             <InfoRow label="Эл. почта">
               <a
                 href={`mailto:${card.email}`}
-                className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] dark:hover:text-[var(--hf-white)] transition-colors"
+                className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
               >
                 {card.email}
               </a>
@@ -2434,7 +2440,7 @@ const InfoTab = memo(function InfoTab({
                 href={`https://t.me/${card.telegram_username}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] dark:hover:text-[var(--hf-white)] transition-colors"
+                className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
               >
                 {card.telegram_username}
               </a>
@@ -2442,29 +2448,29 @@ const InfoTab = memo(function InfoTab({
           )}
           {card.age && (
             <InfoRow label="Возраст">
-              <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)]">
+              <span className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)]">
                 {card.age}
               </span>
             </InfoRow>
           )}
           {card.city && (
             <InfoRow label="Город">
-              <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] inline-flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-[var(--hf-main-500)] dark:text-[var(--hf-dark-500)]" />
+              <span className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] inline-flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-[var(--hf-main-500)] hf-dark-disabled:text-[var(--hf-dark-500)]" />
                 {card.city}
               </span>
             </InfoRow>
           )}
           {card.salary && (
             <InfoRow label="Зарплата">
-              <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)]">
+              <span className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)]">
                 {card.salary}
               </span>
             </InfoRow>
           )}
           {card.total_experience && (
             <InfoRow label="Опыт">
-              <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)]">
+              <span className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)]">
                 {card.total_experience}
               </span>
             </InfoRow>
@@ -2476,12 +2482,12 @@ const InfoTab = memo(function InfoTab({
                   href={card.source_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[var(--hf-cyan-700)] dark:text-[var(--hf-accent)] hover:text-[var(--hf-red-500)] dark:hover:text-[var(--hf-accent-hover)] transition-colors inline-flex items-center gap-1"
+                  className="text-[var(--hf-cyan-700)] hf-dark-disabled:text-[var(--hf-accent)] hover:text-[var(--hf-red-500)] hf-dark-disabled:hover:text-[var(--hf-accent-hover)] transition-colors inline-flex items-center gap-1"
                 >
                   {card.source || "Ссылка"} <ExternalLink className="w-3 h-3" />
                 </a>
               ) : (
-                <span className="text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)]">
+                <span className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)]">
                   {card.source}
                 </span>
               )}
@@ -2494,7 +2500,7 @@ const InfoTab = memo(function InfoTab({
               {localTags.map((t) => (
                 <span
                   key={t}
-                  className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--hf-cyan-50)] dark:bg-[var(--hf-accent-bg-15)] text-[var(--hf-cyan-700)] dark:text-[var(--hf-accent)] border border-[var(--hf-cyan-200)] dark:border-[color:var(--hf-accent-border-20)]"
+                  className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--hf-cyan-50)] hf-dark-disabled:bg-[var(--hf-accent-bg-15)] text-[var(--hf-cyan-700)] hf-dark-disabled:text-[var(--hf-accent)] border border-[var(--hf-cyan-200)] hf-dark-disabled:border-[color:var(--hf-accent-border-20)]"
                 >
                   {t}
                   <button
@@ -2528,13 +2534,13 @@ const InfoTab = memo(function InfoTab({
                     }}
                     placeholder="Метка..."
                     autoFocus
-                    className="w-24 px-2 py-0.5 rounded text-xs bg-[var(--hf-white)] dark:bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-10)] text-[var(--hf-main-900)] dark:text-[var(--hf-dark-200)] placeholder:text-[var(--hf-main-500)] dark:placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[var(--hf-cyan-500)]"
+                    className="w-24 px-2 py-0.5 rounded text-xs bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] placeholder:text-[var(--hf-main-500)] hf-dark-disabled:placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[var(--hf-cyan-500)]"
                   />
                 </form>
               ) : (
                 <button
                   onClick={() => setShowTagInput(true)}
-                  className="inline-flex h-[20px] items-center rounded-[var(--hf-radius-xs)] bg-[var(--hf-bg-panel)] px-[var(--hf-space-s)] text-[length:var(--hf-fs-xxs)] font-normal leading-[var(--hf-lh-secondary)] text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-main-200)] hover:text-[var(--hf-main-900)] dark:bg-[var(--hf-white-alpha-06)] dark:text-[color:var(--hf-white-alpha-45)] dark:hover:bg-[var(--hf-white-alpha-10)] dark:hover:text-[var(--hf-white)]"
+                  className="inline-flex h-[20px] items-center rounded-[var(--hf-radius-xs)] bg-[var(--hf-bg-panel)] px-[var(--hf-space-s)] text-[length:var(--hf-fs-xxs)] font-normal leading-[var(--hf-lh-secondary)] text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-main-200)] hover:text-[var(--hf-main-900)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:hover:text-[var(--hf-white)]"
                 >
                   Добавить
                 </button>
@@ -2548,7 +2554,7 @@ const InfoTab = memo(function InfoTab({
             src={card.photo_url}
             alt={card.name}
             referrerPolicy="no-referrer"
-            className="w-[200px] h-[200px] rounded-hf-l object-cover flex-shrink-0 bg-[var(--hf-main-100)] dark:bg-[var(--hf-accent-bg-20)]"
+            className="hf-profile-photo"
             onError={(e) => {
               const el = e.currentTarget as HTMLImageElement;
               el.style.display = "none";
@@ -2558,7 +2564,8 @@ const InfoTab = memo(function InfoTab({
         ) : null}
         <div
           className={clsx(
-            "w-[200px] h-[200px] rounded-hf-l bg-[var(--hf-ui-avatar-dark)] dark:bg-[var(--hf-accent-bg-20)] flex items-center justify-center text-[var(--hf-ui-text-avatar-blue)] dark:text-[var(--hf-accent)] text-4xl font-bold flex-shrink-0",
+            "hf-profile-photo",
+            !card.photo_url && "hf-profile-photo-fallback",
             card.photo_url && "hidden",
           )}
         >
@@ -2671,14 +2678,20 @@ const InfoTab = memo(function InfoTab({
                           label="Интервью"
                           onClick={handleInterview}
                         />
-                        <ActionChip icon={MessageCircle} label="СМС" />
+                        <ActionChip
+                          icon={MessageCircle}
+                          label="СМС"
+                          onClick={handleSms}
+                        />
                         <ActionChip
                           icon={MessageSquareText}
                           label="Обратная связь"
+                          onClick={handleFeedback}
                         />
                         <ActionChip
                           icon={ClipboardList}
                           label="Анкета"
+                          onClick={handleQuestionnaire}
                           hasNotification
                         />
                         <ActionChip
@@ -2715,7 +2728,7 @@ const InfoTab = memo(function InfoTab({
                       <button
                         type="button"
                         onClick={() => setShowStageDD(false)}
-                        className="inline-flex h-[33px] min-w-[65px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-white-alpha-05)] dark:text-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+                        className="inline-flex h-[33px] min-w-[65px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-white-alpha-05)] hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
                       >
                         Отмена
                       </button>
@@ -2730,17 +2743,17 @@ const InfoTab = memo(function InfoTab({
         {/* ---- Comment textarea (Huntflow: "Написать комментарий") ---- */}
         <div className="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[6px] relative">
           {isCommentComposerOpen ? (
-            <div className="w-full overflow-hidden rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent text-[var(--hf-main-900)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)] dark:text-[var(--hf-white)]">
-              <div className="flex h-[45px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[10px] dark:border-[color:var(--hf-white-alpha-10)]">
+            <div className="w-full overflow-hidden rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)] hf-dark-disabled:text-[var(--hf-white)]">
+              <div className="flex h-[45px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[10px] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
                 <button
                   type="button"
-                  className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] font-medium leading-none hover:bg-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+                  className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] font-medium leading-none hover:bg-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
                 >
                   B
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] italic leading-none hover:bg-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+                  className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] italic leading-none hover:bg-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
                 >
                   I
                 </button>
@@ -2775,7 +2788,7 @@ const InfoTab = memo(function InfoTab({
                 onFocus={() => setCommentComposerOpen(true)}
                 placeholder="Написать комментарий"
                 rows={1}
-                className="block h-[56px] w-full resize-none border-0 bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] dark:text-[var(--hf-white)]"
+                className="block h-[56px] w-full resize-none border-0 bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] hf-dark-disabled:text-[var(--hf-white)]"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                     handleComment();
@@ -2792,11 +2805,20 @@ const InfoTab = memo(function InfoTab({
                   label="Интервью"
                   onClick={handleInterview}
                 />
-                <ActionChip icon={MessageCircle} label="СМС" />
-                <ActionChip icon={MessageSquareText} label="Обратная связь" />
+                <ActionChip
+                  icon={MessageCircle}
+                  label="СМС"
+                  onClick={handleSms}
+                />
+                <ActionChip
+                  icon={MessageSquareText}
+                  label="Обратная связь"
+                  onClick={handleFeedback}
+                />
                 <ActionChip
                   icon={ClipboardList}
                   label="Анкета"
+                  onClick={handleQuestionnaire}
                   hasNotification
                 />
                 <ActionChip
@@ -2813,7 +2835,7 @@ const InfoTab = memo(function InfoTab({
                 {comment.trim() && (
                   <button
                     onClick={handleComment}
-                    className="ml-auto inline-flex h-[28px] items-center rounded-[6px] bg-[var(--hf-main-900)] px-[12px] text-[length:var(--hf-fs-2xs)] font-medium text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] dark:bg-[var(--hf-white)] dark:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-90)]"
+                    className="ml-auto inline-flex h-[28px] items-center rounded-[6px] bg-[var(--hf-main-900)] px-[12px] text-[length:var(--hf-fs-2xs)] font-medium text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] hf-dark-disabled:bg-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-90)]"
                   >
                     Отправить
                   </button>
@@ -2827,7 +2849,7 @@ const InfoTab = memo(function InfoTab({
               onFocus={() => setCommentComposerOpen(true)}
               placeholder="Написать комментарий"
               rows={1}
-              className="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] pr-20 text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none dark:border-[color:var(--hf-white-alpha-06)] dark:text-[var(--hf-dark-200)] dark:placeholder:text-[var(--hf-dark-500)] dark:focus:border-[color:var(--hf-status-blue-badge)]"
+              className="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] pr-20 text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:placeholder:text-[var(--hf-dark-500)] hf-dark-disabled:focus:border-[color:var(--hf-status-blue-badge)]"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                   handleComment();
@@ -2840,7 +2862,7 @@ const InfoTab = memo(function InfoTab({
                 type="button"
                 onClick={handleComment}
                 disabled={!comment.trim()}
-                className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-05)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[color:var(--hf-black-alpha-25)] transition-colors enabled:bg-[var(--hf-main-900)] enabled:text-[var(--hf-white)] enabled:hover:bg-[var(--hf-main-800)] disabled:cursor-default dark:bg-[var(--hf-white-alpha-06)] dark:text-[color:var(--hf-white-alpha-35)] dark:enabled:bg-[var(--hf-white)] dark:enabled:text-[var(--hf-main-900)]"
+                className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-05)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[color:var(--hf-black-alpha-25)] transition-colors enabled:bg-[var(--hf-main-900)] enabled:text-[var(--hf-white)] enabled:hover:bg-[var(--hf-main-800)] disabled:cursor-default hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[color:var(--hf-white-alpha-35)] hf-dark-disabled:enabled:bg-[var(--hf-white)] hf-dark-disabled:enabled:text-[var(--hf-main-900)]"
               >
                 Сохранить
               </button>
@@ -2850,7 +2872,7 @@ const InfoTab = memo(function InfoTab({
                   setComment("");
                   setCommentComposerOpen(false);
                 }}
-                className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-06)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-08)] dark:bg-[var(--hf-white-alpha-06)] dark:text-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+                className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-06)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-08)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
               >
                 Отмена
               </button>
@@ -2859,7 +2881,7 @@ const InfoTab = memo(function InfoTab({
         </div>
 
         {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл | Отказ) ---- */}
-        <div className="px-[var(--hf-space-xxl)] pb-hf-l flex items-center gap-[var(--hf-space-s)] border-b border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-06)] flex-wrap">
+        <div className="px-[var(--hf-space-xxl)] pb-hf-l flex items-center gap-[var(--hf-space-s)] border-b border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] flex-wrap">
           {!isCommentComposerOpen && (
             <>
               <ActionChip
@@ -2872,9 +2894,22 @@ const InfoTab = memo(function InfoTab({
                 label="Интервью"
                 onClick={handleInterview}
               />
-              <ActionChip icon={MessageCircle} label="СМС" />
-              <ActionChip icon={MessageSquareText} label="Обратная связь" />
-              <ActionChip icon={ClipboardList} label="Анкета" hasNotification />
+              <ActionChip
+                icon={MessageCircle}
+                label="СМС"
+                onClick={handleSms}
+              />
+              <ActionChip
+                icon={MessageSquareText}
+                label="Обратная связь"
+                onClick={handleFeedback}
+              />
+              <ActionChip
+                icon={ClipboardList}
+                label="Анкета"
+                onClick={handleQuestionnaire}
+                hasNotification
+              />
               <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
               <ActionChip
                 icon={Paperclip}
@@ -2890,7 +2925,7 @@ const InfoTab = memo(function InfoTab({
         {Array.isArray(card.extra_data?.notes) &&
           card.extra_data.notes.length > 0 && (
             <div className="mb-6">
-              <div className="text-xs text-[var(--hf-main-600)] dark:text-[var(--hf-dark-500)] mb-3 uppercase tracking-wider">
+              <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[var(--hf-dark-500)] mb-3 uppercase tracking-wider">
                 Комментарии
               </div>
               <div className="space-y-2">
@@ -2923,7 +2958,7 @@ const InfoTab = memo(function InfoTab({
                 setActionMenuPlacement("above");
                 setShowActionMenu((value) => !value);
               }}
-              className="inline-flex h-[32px] items-center rounded-hf-s border border-transparent bg-[var(--hf-black-alpha-10)] pl-hf-m pr-[6px] text-hf-xxs font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-10)] focus:outline-none focus-visible:outline-none active:bg-[var(--hf-black-alpha-14)] dark:bg-[var(--hf-white-alpha-05)] dark:text-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+              className="inline-flex h-[32px] items-center rounded-hf-s border border-transparent bg-[var(--hf-black-alpha-10)] pl-hf-m pr-[6px] text-hf-xxs font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-10)] focus:outline-none focus-visible:outline-none active:bg-[var(--hf-black-alpha-14)] hf-dark-disabled:bg-[var(--hf-white-alpha-05)] hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
               aria-expanded={showActionMenu}
             >
               Действия: {timelineActionFilter || "Все"}{" "}
@@ -2937,7 +2972,7 @@ const InfoTab = memo(function InfoTab({
             {showActionMenu ? (
               <div
                 className={clsx(
-                  "absolute left-0 z-[220] w-[400px] overflow-hidden rounded-[var(--hf-radius-s)] bg-[var(--hf-white)] leading-[var(--hf-lh-field)] shadow-[0_0_40px_var(--hf-alpha-300)] dark:bg-[var(--hf-bg-dark)]",
+                  "absolute left-0 z-[220] w-[400px] overflow-hidden rounded-[var(--hf-radius-s)] bg-[var(--hf-white)] leading-[var(--hf-lh-field)] shadow-[0_0_40px_var(--hf-alpha-300)] hf-dark-disabled:bg-[var(--hf-bg-dark)]",
                   actionMenuPlacement === "below"
                     ? "top-full mt-[10px]"
                     : "bottom-full mb-[10px]",
@@ -2951,7 +2986,7 @@ const InfoTab = memo(function InfoTab({
                       value={actionSearch}
                       onChange={(event) => setActionSearch(event.target.value)}
                       placeholder="Поиск..."
-                      className="h-[40px] w-full rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-[var(--hf-white)] pl-[32px] pr-[16px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] dark:bg-transparent dark:text-[var(--hf-white)]"
+                      className="h-[40px] w-full rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-[var(--hf-white)] pl-[32px] pr-[16px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)]"
                     />
                   </div>
                 </div>
@@ -2962,11 +2997,11 @@ const InfoTab = memo(function InfoTab({
                     setActionSearch("");
                     setShowActionMenu(false);
                   }}
-                  className="block h-[34px] w-full px-[var(--hf-space-xxl)] text-left text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-bg-panel)] hover:text-[var(--hf-main-700)] dark:hover:bg-[var(--hf-white-alpha-05)]"
+                  className="block h-[34px] w-full px-[var(--hf-space-xxl)] text-left text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-bg-panel)] hover:text-[var(--hf-main-700)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-05)]"
                 >
                   Сбросить выбор
                 </button>
-                <div className="h-[322px] overflow-y-auto border-t border-[var(--hf-main-200)] py-[6px] dark:border-[color:var(--hf-white-alpha-06)]">
+                <div className="h-[322px] overflow-y-auto border-t border-[var(--hf-main-200)] py-[6px] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
                   {visibleActionFilters.length > 0 ? (
                     visibleActionFilters.map((item, index) => {
                       const isSelected = item === timelineActionFilter;
@@ -2984,13 +3019,13 @@ const InfoTab = memo(function InfoTab({
                             setActionSearch("");
                             setShowActionMenu(false);
                           }}
-                          className="group flex h-[42px] w-full items-center px-[var(--hf-space-s)] text-left text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]"
+                          className="group flex h-[42px] w-full items-center px-[var(--hf-space-s)] text-left text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]"
                         >
                           <span
                             className={clsx(
-                              "flex h-[41.333px] w-full items-center transition-colors group-hover:bg-[var(--hf-black-alpha-07)] dark:group-hover:bg-[var(--hf-white-alpha-10)]",
+                              "flex h-[41.333px] w-full items-center transition-colors group-hover:bg-[var(--hf-black-alpha-07)] hf-dark-disabled:group-hover:bg-[var(--hf-white-alpha-10)]",
                               (isSelected || isDefaultHighlighted) &&
-                                "bg-[var(--hf-black-alpha-07)] dark:bg-[var(--hf-white-alpha-10)]",
+                                "bg-[var(--hf-black-alpha-07)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)]",
                             )}
                           >
                             <span className="flex h-full w-[32px] shrink-0 items-center justify-center">
@@ -3038,7 +3073,7 @@ const InfoTab = memo(function InfoTab({
               </div>
             ) : null}
           </div>
-          <div className="relative ml-[17px] w-[calc(100%-11px)] border-l border-[var(--hf-main-300)] pl-[38.667px] dark:border-[color:var(--hf-white-alpha-08)]">
+          <div className="relative ml-[17px] w-[calc(100%-11px)] border-l border-[var(--hf-main-300)] pl-[38.667px] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
             {visibleTimelineItems.length > 0 ? (
               visibleTimelineItems.map((event, i) => (
                 <div
@@ -3046,9 +3081,9 @@ const InfoTab = memo(function InfoTab({
                   className="relative first:mt-0 mt-[20px]"
                 >
                   {i === 0 ? <TimelineUserGlyph /> : <TimelineDot />}
-                  <div className="flex items-center gap-0 text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] dark:text-[color:var(--hf-white-alpha-45)]">
+                  <div className="flex items-center gap-0 text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
                     {event.author && (
-                      <span className="mr-[8px] min-w-[10px] font-medium text-[color:var(--hf-alpha-600)] dark:text-[color:var(--hf-white-alpha-45)]">
+                      <span className="mr-[8px] min-w-[10px] font-medium text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
                         {event.author}
                       </span>
                     )}
@@ -3057,21 +3092,21 @@ const InfoTab = memo(function InfoTab({
                     </span>
                     <button
                       type="button"
-                      className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none dark:hover:bg-[var(--hf-white-alpha-06)]"
+                      className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
                     >
                       <TimelineMetaIcon />
                     </button>
                     <button
                       type="button"
-                      className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none dark:hover:bg-[var(--hf-white-alpha-06)]"
+                      className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
                     >
-                      <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] dark:text-[color:var(--hf-white-alpha-25)]" />
+                      <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
                     </button>
                   </div>
-                  <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)] whitespace-pre-wrap">
+                  <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)] whitespace-pre-wrap">
                     {event.title || "Событие"}
                     {event.body && (
-                      <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+                      <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
                         {event.body}
                       </div>
                     )}
@@ -3079,7 +3114,7 @@ const InfoTab = memo(function InfoTab({
                 </div>
               ))
             ) : (
-              <div className="relative text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-45)]">
+              <div className="relative text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
                 <TimelineDot />
                 Нет действий по выбранным фильтрам
               </div>
@@ -3092,7 +3127,7 @@ const InfoTab = memo(function InfoTab({
             onClick={handleTimelineMoreToggle}
             disabled={timelineExpanding}
             aria-busy={timelineExpanding}
-            className="mt-[25px] flex h-[49.333px] w-full items-center justify-center border-t border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-06)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)] transition-colors"
+            className="mt-[25px] flex h-[49.333px] w-full items-center justify-center border-t border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
           >
             {timelineExpanding ? (
               <HfLoadingSpinner
@@ -3113,20 +3148,20 @@ const InfoTab = memo(function InfoTab({
             )}
           </button>
         ) : (
-          <div className="mt-[25px] h-[49.333px] border-t border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-06)]" />
+          <div className="mt-[25px] h-[49.333px] border-t border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]" />
         )}
       </div>
 
       <div className="mt-[30px]">
-        <div className="flex h-[49.333px] items-start gap-[var(--hf-space-xxl)] border-b border-[var(--hf-main-300)] pb-[20px] dark:border-[color:var(--hf-white-alpha-06)]">
+        <div className="flex h-[49.333px] items-start gap-[var(--hf-space-xxl)] border-b border-[var(--hf-main-300)] pb-[20px] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
           <button
             type="button"
             onClick={() => onDetailSectionChange("info")}
             className={clsx(
               "h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
               detailSection === "info"
-                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] dark:border-[color:var(--hf-white)] dark:text-[var(--hf-white)]"
-                : "border-transparent text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)]",
+                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
+                : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
             )}
           >
             Личные заметки
@@ -3137,8 +3172,8 @@ const InfoTab = memo(function InfoTab({
             className={clsx(
               "h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
               detailSection === "resume"
-                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] dark:border-[color:var(--hf-white)] dark:text-[var(--hf-white)]"
-                : "border-transparent text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)]",
+                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
+                : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
             )}
           >
             Резюме
@@ -3148,7 +3183,7 @@ const InfoTab = memo(function InfoTab({
           <PersonalNotesTab
             card={card}
             onEmail={handleEmail}
-            onSms={() => undefined}
+            onSms={handleSms}
             onFile={() => fileInputRef.current?.click()}
             uploading={uploading}
           />
@@ -3186,7 +3221,7 @@ const PersonalNotesTab = memo(function PersonalNotesTab({
         onChange={(event) => setNote(event.target.value)}
         placeholder="Написать заметку"
         rows={1}
-        className="block h-[58px] w-full resize-none rounded-hf-s border border-[var(--hf-main-300)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[14px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none dark:border-[color:var(--hf-white-alpha-06)] dark:bg-transparent dark:text-[var(--hf-white)] dark:placeholder:text-[color:var(--hf-white-alpha-35)]"
+        className="block h-[58px] w-full resize-none rounded-hf-s border border-[var(--hf-main-300)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[14px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:placeholder:text-[color:var(--hf-white-alpha-35)]"
       />
 
       <div className="mt-[12px] flex items-center gap-[6px]">
@@ -3204,18 +3239,18 @@ const PersonalNotesTab = memo(function PersonalNotesTab({
         />
       </div>
 
-      <div className="mt-[28px] relative ml-[22px] border-l border-[var(--hf-main-300)] pl-[48px] dark:border-[color:var(--hf-white-alpha-08)]">
+      <div className="mt-[28px] relative ml-[22px] border-l border-[var(--hf-main-300)] pl-[48px] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
         <div className="relative pb-[4px]">
           <TimelineUserGlyph surface="white" align="notes" />
-          <div className="flex items-center gap-0 text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] dark:text-[color:var(--hf-white-alpha-45)]">
-            <span className="mr-[8px] min-w-[10px] font-medium text-[color:var(--hf-alpha-600)] dark:text-[color:var(--hf-white-alpha-45)]">
+          <div className="flex items-center gap-0 text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+            <span className="mr-[8px] min-w-[10px] font-medium text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
               Я
             </span>
             <span>{formatTimelineDate(noteCreatedAt)}</span>
             <TimelineMetaIcon />
-            <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] dark:text-[color:var(--hf-white-alpha-25)]" />
+            <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
           </div>
-          <div className="mt-[2px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+          <div className="mt-[2px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
             Кандидат добавлен
           </div>
         </div>
@@ -3402,7 +3437,7 @@ const CommentCard = memo(function CommentCard({
             <button
               onClick={save}
               disabled={busy}
-              className="inline-flex items-center h-[28px] px-hf-m text-hf-3xs font-medium bg-[var(--hf-main-900)] dark:bg-[var(--hf-white)] text-[var(--hf-white)] dark:text-[var(--hf-main-900)] rounded-hf-s hover:bg-[var(--hf-main-800)] dark:hover:bg-[var(--hf-white-alpha-90)] transition-colors duration-[100ms] disabled:cursor-not-allowed disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] dark:disabled:bg-[var(--hf-white-alpha-08)] dark:disabled:text-[color:var(--hf-white-alpha-35)]"
+              className="inline-flex items-center h-[28px] px-hf-m text-hf-3xs font-medium bg-[var(--hf-main-900)] hf-dark-disabled:bg-[var(--hf-white)] text-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)] rounded-hf-s hover:bg-[var(--hf-main-800)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-90)] transition-colors duration-[100ms] disabled:cursor-not-allowed disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] hf-dark-disabled:disabled:bg-[var(--hf-white-alpha-08)] hf-dark-disabled:disabled:text-[color:var(--hf-white-alpha-35)]"
             >
               {busy ? "Сохраняем…" : "Сохранить"}
             </button>
@@ -3549,7 +3584,21 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       }
     } else if (pdfFile) {
       handleDownload(pdfFile);
+    } else {
+      toast("Нет исходного файла для печати");
     }
+  };
+
+  const handleShowText = () => {
+    toast("Текст резюме уже показан");
+  };
+
+  const handleDemoDownload = () => {
+    if (pdfFile) {
+      handleDownload(pdfFile);
+      return;
+    }
+    toast("Нет исходного файла для скачивания");
   };
 
   if (loading) {
@@ -3619,14 +3668,15 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
 
     return (
       <div className="pt-[var(--hf-space-xxl)] max-w-[1180px]">
-        <div className="overflow-hidden rounded-[16px] border border-[color:var(--hf-black-alpha-10)] bg-[var(--hf-white)] dark:bg-[var(--hf-white-alpha-04)] dark:border-[color:var(--hf-white-alpha-08)]">
-          <div className="rounded-t-[16px] bg-[var(--hf-main-50)] px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[27px] dark:bg-[var(--hf-white-alpha-03)]">
-            <p className="mb-[20px] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] dark:text-[color:var(--hf-white-alpha-45)]">
+        <div className="overflow-hidden rounded-[16px] border border-[color:var(--hf-black-alpha-10)] bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-white-alpha-04)] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
+          <div className="rounded-t-[16px] bg-[var(--hf-main-50)] px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[27px] hf-dark-disabled:bg-[var(--hf-white-alpha-03)]">
+            <p className="mb-[20px] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
               Сохранено {formatResumeSaved(savedAt)}
             </p>
             <div className="flex items-center gap-[var(--hf-space-s)]">
               <button
                 type="button"
+                onClick={handleShowText}
                 className="hf-resume-action-btn"
               >
                 <Type className="hf-resume-action-icon" />
@@ -3642,6 +3692,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
               </button>
               <button
                 type="button"
+                onClick={handleDemoDownload}
                 className="hf-resume-action-btn"
               >
                 <Download className="hf-resume-action-icon" />
@@ -3650,7 +3701,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
             </div>
           </div>
 
-          <div className="relative bg-transparent px-[100px] pt-[36px] pb-[58px] dark:bg-[var(--hf-white-alpha-02)]">
+          <div className="relative bg-transparent px-[100px] pt-[36px] pb-[58px] hf-dark-disabled:bg-[var(--hf-white-alpha-02)]">
             <button
               type="button"
               aria-label="Предыдущее резюме"
@@ -3837,7 +3888,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
 
   return (
     <div className="py-hf-l max-w-[1180px]">
-      <p className="text-hf-3xs text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-40)] mb-hf-m">
+      <p className="text-hf-3xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)] mb-hf-m">
         Сохранено{" "}
         {formatDateFull(resumeFiles[0]?.created_at || card.created_at)}
       </p>
@@ -3845,21 +3896,21 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
         {card.source_url && (
           <button
             onClick={() => window.open(card.source_url!, "_blank")}
-            className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] dark:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)] transition-colors"
+            className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
           >
             <Eye className="w-3.5 h-3.5" /> Открыть источник
           </button>
         )}
         <button
           onClick={handlePrint}
-          className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] dark:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)] transition-colors"
+          className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
         >
           <Printer className="w-3.5 h-3.5" /> Распечатать
         </button>
         {pdfFile && (
           <button
             onClick={() => handleDownload(pdfFile)}
-            className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] dark:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] dark:hover:text-[var(--hf-white)] transition-colors"
+            className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
           >
             <Download className="w-3.5 h-3.5" /> Скачать PDF
           </button>
@@ -3944,14 +3995,14 @@ function InfoRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start py-[4px] group">
-      <span className="flex h-[24px] w-[96.833px] flex-shrink-0 items-center pr-[4px]">
-        <span className="whitespace-nowrap bg-[var(--hf-white)] text-[length:var(--hf-fs-xs)] font-normal leading-[var(--hf-lh-primary)] text-[color:var(--hf-alpha-600)] dark:bg-[var(--hf-bg-dark)] dark:text-[color:var(--hf-white-alpha-50)]">
+    <div className="hf-info-row group">
+      <span className="hf-info-label">
+        <span className="hf-info-label-text">
           {label}
         </span>
-        <span className="mb-[5px] ml-[4px] h-0 flex-1 border-b border-dotted border-[var(--hf-main-300)] dark:border-[color:var(--hf-white-alpha-10)]" />
+        <span className="hf-info-label-line" />
       </span>
-      <div className="text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] flex-1 min-w-0">
+      <div className="hf-info-value">
         {children}
       </div>
     </div>
@@ -4187,7 +4238,7 @@ const CANDIDATE_SOURCE_OPTIONS = [
   "Другой источник",
 ];
 
-function NewCandidateModal({
+export function NewCandidateModal({
   onClose,
   onSaved,
   onOpenParser,
@@ -4720,9 +4771,9 @@ function EditCandidateModal({
         exit={{ scale: 0.985, opacity: 0 }}
         transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
-        className="mb-[var(--hf-space-xxl)] flex h-[var(--hf-edit-modal-h)] w-[var(--hf-edit-modal-w)] max-w-[var(--hf-edit-modal-max-w)] flex-col overflow-hidden rounded-[var(--hf-edit-modal-radius)] bg-transparent text-[length:var(--hf-fs-s)] leading-[var(--hf-edit-modal-lh)] text-[var(--hf-main-900)] shadow-none dark:text-[var(--hf-white)]"
+        className="mb-[var(--hf-space-xxl)] flex h-[var(--hf-edit-modal-h)] w-[var(--hf-edit-modal-w)] max-w-[var(--hf-edit-modal-max-w)] flex-col overflow-hidden rounded-[var(--hf-edit-modal-radius)] bg-transparent text-[length:var(--hf-fs-s)] leading-[var(--hf-edit-modal-lh)] text-[var(--hf-main-900)] shadow-none hf-dark-disabled:text-[var(--hf-white)]"
       >
-        <div className="relative flex h-[var(--hf-edit-header-h)] flex-shrink-0 items-start justify-between rounded-t-[var(--hf-edit-modal-radius)] border-b-[length:var(--hf-edit-header-border)] border-[var(--hf-ui-divider)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[var(--hf-space-xl)] pr-[var(--hf-edit-header-pr)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)]">
+        <div className="relative flex h-[var(--hf-edit-header-h)] flex-shrink-0 items-start justify-between rounded-t-[var(--hf-edit-modal-radius)] border-b-[length:var(--hf-edit-header-border)] border-[var(--hf-ui-divider)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[var(--hf-space-xl)] pr-[var(--hf-edit-header-pr)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
           <div className="flex min-w-0 items-center gap-[var(--hf-space-l)]">
             <div className="h-[var(--hf-edit-avatar)] w-[var(--hf-edit-avatar)] flex-shrink-0 overflow-hidden rounded-full bg-[var(--hf-bg-muted)]">
               {card.photo_url ? (
@@ -4737,20 +4788,20 @@ function EditCandidateModal({
                 </div>
               )}
             </div>
-            <h3 className="truncate text-[length:var(--hf-edit-title-fs)] font-medium leading-[var(--hf-edit-title-lh)] tracking-normal text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+            <h3 className="truncate text-[length:var(--hf-edit-title-fs)] font-medium leading-[var(--hf-edit-title-lh)] tracking-normal text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
               {card.name}
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="absolute right-[var(--hf-edit-close-right)] top-[var(--hf-edit-close-top)] inline-flex h-[var(--hf-edit-close-h)] w-[var(--hf-edit-close-w)] flex-shrink-0 items-center justify-center rounded-[var(--hf-radius-s)] text-[var(--hf-ui-close)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-700)] dark:text-[color:var(--hf-white-alpha-70)] dark:hover:bg-[var(--hf-white-alpha-06)]"
+            className="absolute right-[var(--hf-edit-close-right)] top-[var(--hf-edit-close-top)] inline-flex h-[var(--hf-edit-close-h)] w-[var(--hf-edit-close-w)] flex-shrink-0 items-center justify-center rounded-[var(--hf-radius-s)] text-[var(--hf-ui-close)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-700)] hf-dark-disabled:text-[color:var(--hf-white-alpha-70)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
             aria-label="Закрыть"
           >
             <HuntflowClose28Icon className="h-[var(--hf-edit-close-icon)] w-[var(--hf-edit-close-icon)]" />
           </button>
         </div>
 
-        <div className="flex h-[var(--hf-edit-body-h)] flex-shrink-0 overflow-hidden bg-[var(--hf-white)] px-[var(--hf-space-xxl)] dark:bg-[var(--hf-bg-dark)]">
+        <div className="flex h-[var(--hf-edit-body-h)] flex-shrink-0 overflow-hidden bg-[var(--hf-white)] px-[var(--hf-space-xxl)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
           <div className="w-[var(--hf-edit-left-w)] flex-shrink-0 overflow-visible py-[var(--hf-edit-column-py)] pr-[var(--hf-space-xxl)]">
             <EditField
               label="Фамилия"
@@ -4834,14 +4885,14 @@ function EditCandidateModal({
             />
           </div>
 
-          <div className="min-w-0 flex-1 overflow-y-auto border-l border-[var(--hf-ui-divider)] py-[var(--hf-edit-column-py)] pl-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+          <div className="min-w-0 flex-1 overflow-y-auto border-l border-[var(--hf-ui-divider)] py-[var(--hf-edit-column-py)] pl-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
             <div className="mb-[var(--hf-space-l)]">
-              <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-semibold leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+              <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-semibold leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
                 Источник
               </label>
               <button
                 type="button"
-                className="flex h-[var(--hf-edit-field-h)] w-full items-center justify-between rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-[var(--hf-white)] px-[var(--hf-edit-field-px)] pr-[var(--hf-space-s)] text-left text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] text-[var(--hf-main-900)] transition-colors hover:border-[var(--hf-ui-border-strong)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-transparent dark:text-[var(--hf-white)]"
+                className="flex h-[var(--hf-edit-field-h)] w-full items-center justify-between rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-[var(--hf-white)] px-[var(--hf-edit-field-px)] pr-[var(--hf-space-s)] text-left text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] text-[var(--hf-main-900)] transition-colors hover:border-[var(--hf-ui-border-strong)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)]"
               >
                 <span className="truncate">
                   {card.source || "Другой источник"}
@@ -4850,19 +4901,19 @@ function EditCandidateModal({
               </button>
             </div>
             <div>
-              <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-semibold leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+              <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-semibold leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
                 Текст резюме
               </label>
               <textarea
                 value={resumeText}
                 onChange={(e) => setResumeText(e.target.value)}
-                className="h-[var(--hf-edit-resume-h)] w-full resize-none rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-transparent p-[var(--hf-space-l)] text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] tracking-normal text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-500)] focus:border-[var(--hf-cyan-500)] dark:border-[color:var(--hf-white-alpha-10)] dark:text-[var(--hf-white)]"
+                className="h-[var(--hf-edit-resume-h)] w-full resize-none rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-transparent p-[var(--hf-space-l)] text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] tracking-normal text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-500)] focus:border-[var(--hf-cyan-500)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:text-[var(--hf-white)]"
                 placeholder="Текст резюме"
               />
               <div className="mt-[var(--hf-edit-file-mt)] flex">
                 <button
                   type="button"
-                  className="inline-flex h-[var(--hf-edit-file-h)] max-w-full items-center gap-[var(--hf-space-s)] rounded-full border border-[color:var(--hf-black-alpha-08)] bg-[var(--hf-white)] px-[var(--hf-space-s)] py-[var(--hf-space-xxs)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] shadow-[0_1px_1px_var(--hf-alpha-100)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-transparent dark:text-[var(--hf-white)]"
+                  className="inline-flex h-[var(--hf-edit-file-h)] max-w-full items-center gap-[var(--hf-space-s)] rounded-full border border-[color:var(--hf-black-alpha-08)] bg-[var(--hf-white)] px-[var(--hf-space-s)] py-[var(--hf-space-xxs)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] shadow-[0_1px_1px_var(--hf-alpha-100)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)]"
                 >
                   <HuntflowClip18Icon className="h-[var(--hf-edit-file-icon)] w-[var(--hf-edit-file-icon)] flex-shrink-0" />
                   <span className="min-w-[var(--hf-edit-file-name-min-w)] truncate font-medium">
@@ -4875,12 +4926,12 @@ function EditCandidateModal({
           </div>
         </div>
 
-        <div className="flex h-[var(--hf-edit-footer-h)] flex-shrink-0 items-center justify-between rounded-b-[var(--hf-edit-modal-radius)] border-t-[length:var(--hf-edit-footer-border)] border-[var(--hf-ui-divider)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[var(--hf-edit-footer-py)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)]">
+        <div className="flex h-[var(--hf-edit-footer-h)] flex-shrink-0 items-center justify-between rounded-b-[var(--hf-edit-modal-radius)] border-t-[length:var(--hf-edit-footer-border)] border-[var(--hf-ui-divider)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[var(--hf-edit-footer-py)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
           <div className="flex items-center gap-[var(--hf-space-s)]">
             <button
               onClick={handleSave}
               disabled={saving || hasErrors}
-              className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-save-min-w)] items-center justify-center rounded-[var(--hf-edit-btn-radius)] border-[length:var(--hf-edit-btn-border)] border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-semibold leading-[var(--hf-edit-btn-lh)] text-[var(--hf-white)] transition-colors duration-[100ms] hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:border-[var(--hf-btn-disabled-bg)] disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] dark:bg-[var(--hf-white)] dark:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-90)] dark:disabled:bg-[var(--hf-white-alpha-08)] dark:disabled:text-[color:var(--hf-white-alpha-35)]"
+              className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-save-min-w)] items-center justify-center rounded-[var(--hf-edit-btn-radius)] border-[length:var(--hf-edit-btn-border)] border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-semibold leading-[var(--hf-edit-btn-lh)] text-[var(--hf-white)] transition-colors duration-[100ms] hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:border-[var(--hf-btn-disabled-bg)] disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] hf-dark-disabled:bg-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-90)] hf-dark-disabled:disabled:bg-[var(--hf-white-alpha-08)] hf-dark-disabled:disabled:text-[color:var(--hf-white-alpha-35)]"
             >
               {saving ? (
                 <HfLoadingSpinner
@@ -4891,7 +4942,7 @@ function EditCandidateModal({
             </button>
             <button
               onClick={onClose}
-              className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-cancel-min-w)] items-center rounded-[var(--hf-edit-btn-radius)] border border-[var(--hf-ui-divider)] bg-[var(--hf-white)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-04)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-transparent dark:text-[color:var(--hf-white-alpha-80)] dark:hover:bg-[var(--hf-white-alpha-06)]"
+              className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-cancel-min-w)] items-center rounded-[var(--hf-edit-btn-radius)] border border-[var(--hf-ui-divider)] bg-[var(--hf-white)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[color:var(--hf-white-alpha-80)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
             >
               Отмена
             </button>
@@ -4940,7 +4991,7 @@ function EditField({
   return (
     <div className={clsx(compactGap ? "mb-[var(--hf-space-s)]" : "mb-[var(--hf-space-l)]", className)}>
       {!hideLabel && (
-        <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-medium leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]">
+        <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-medium leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
           {label}
           {required && <span className="sr-only"> *</span>}
         </label>
@@ -4955,11 +5006,11 @@ function EditField({
           autoFocus={autoFocus}
           aria-invalid={!!error}
           className={clsx(
-            "h-[var(--hf-edit-field-h)] w-full rounded-[var(--hf-edit-field-radius)] border bg-[var(--hf-white)] px-[var(--hf-edit-field-px)] pb-[var(--hf-border-xs)] text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] tracking-normal text-[var(--hf-main-900)] [align-items:center] placeholder:text-[var(--hf-main-500)] focus:outline-none dark:bg-transparent dark:text-[var(--hf-white)]",
+            "h-[var(--hf-edit-field-h)] w-full rounded-[var(--hf-edit-field-radius)] border bg-[var(--hf-white)] px-[var(--hf-edit-field-px)] pb-[var(--hf-border-xs)] text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] tracking-normal text-[var(--hf-main-900)] [align-items:center] placeholder:text-[var(--hf-main-500)] focus:outline-none hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)]",
             clearable && value ? "pr-[var(--hf-edit-field-pr-clear)]" : "",
             error
               ? "border-[color:var(--hf-red-500)] focus:border-[var(--hf-red-500)]"
-              : "border-[color:var(--hf-black-alpha-16)] focus:border-[var(--hf-cyan-500)] dark:border-[color:var(--hf-white-alpha-10)] dark:focus:border-[var(--hf-cyan-500)]",
+              : "border-[color:var(--hf-black-alpha-16)] focus:border-[var(--hf-cyan-500)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:focus:border-[var(--hf-cyan-500)]",
           )}
         />
         {clearable && value && (
@@ -5025,16 +5076,16 @@ function ListSettingsModal({ onClose }: { onClose: () => void }) {
         exit={{ opacity: 0, y: -8, scale: 0.985 }}
         transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
-        className="w-[var(--hf-list-settings-w)] overflow-hidden rounded-[var(--hf-list-settings-radius)] bg-[var(--hf-white)] text-[var(--hf-main-900)] leading-[var(--hf-list-settings-lh)] dark:bg-[var(--hf-bg-dark)] dark:text-[var(--hf-white)]"
+        className="w-[var(--hf-list-settings-w)] overflow-hidden rounded-[var(--hf-list-settings-radius)] bg-[var(--hf-white)] text-[var(--hf-main-900)] leading-[var(--hf-list-settings-lh)] hf-dark-disabled:bg-[var(--hf-bg-dark)] hf-dark-disabled:text-[var(--hf-white)]"
       >
-        <div className="flex h-[var(--hf-list-settings-header-h)] items-center justify-between border-b border-[var(--hf-ui-divider)] px-[var(--hf-list-settings-x)] pr-[var(--hf-list-settings-x)] dark:border-[color:var(--hf-white-alpha-10)]">
+        <div className="flex h-[var(--hf-list-settings-header-h)] items-center justify-between border-b border-[var(--hf-ui-divider)] px-[var(--hf-list-settings-x)] pr-[var(--hf-list-settings-x)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
           <h3 className="text-[length:var(--hf-list-settings-title-fs)] font-medium leading-[var(--hf-list-settings-title-lh)] tracking-normal">
             Настройка списков кандидатов
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-[var(--hf-list-settings-close)] w-[var(--hf-list-settings-close)] items-center justify-center rounded-[var(--hf-list-settings-close-radius)] text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-bg-panel)] hover:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-10)] dark:hover:text-[var(--hf-white)]"
+            className="inline-flex h-[var(--hf-list-settings-close)] w-[var(--hf-list-settings-close)] items-center justify-center rounded-[var(--hf-list-settings-close-radius)] text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-bg-panel)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:hover:text-[var(--hf-white)]"
             aria-label="Закрыть"
           >
             <X className="h-[var(--hf-list-settings-close-icon)] w-[var(--hf-list-settings-close-icon)]" />
@@ -5059,7 +5110,7 @@ function ListSettingsModal({ onClose }: { onClose: () => void }) {
             />
           </section>
 
-          <section className="border-t border-[var(--hf-ui-divider)] pt-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+          <section className="border-t border-[var(--hf-ui-divider)] pt-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
             <h4 className="mb-[var(--hf-list-settings-heading-mb-sm)] text-[length:var(--hf-list-settings-heading-fs)] font-normal leading-[var(--hf-list-settings-heading-lh)] tracking-normal">
               Отображать в списках кандидатов
             </h4>
@@ -5117,18 +5168,18 @@ function ListSettingsModal({ onClose }: { onClose: () => void }) {
           </section>
         </div>
 
-        <div className="flex h-[var(--hf-list-settings-footer-h)] items-center gap-[var(--hf-space-s)] border-t border-[var(--hf-ui-divider)] px-[var(--hf-list-settings-x)] py-[var(--hf-edit-footer-py)] dark:border-[color:var(--hf-white-alpha-10)]">
+        <div className="flex h-[var(--hf-list-settings-footer-h)] items-center gap-[var(--hf-space-s)] border-t border-[var(--hf-ui-divider)] px-[var(--hf-list-settings-x)] py-[var(--hf-edit-footer-py)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
           <button
             type="button"
             onClick={handleSave}
-            className="inline-flex h-[var(--hf-edit-btn-h)] items-center justify-center rounded-[var(--hf-edit-btn-radius)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] active:bg-[var(--hf-black)] disabled:cursor-not-allowed disabled:!bg-[var(--hf-btn-disabled-bg)] disabled:!text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:!bg-[var(--hf-btn-disabled-bg)] dark:disabled:!bg-[var(--hf-white-alpha-08)] dark:disabled:!text-[color:var(--hf-white-alpha-35)]"
+            className="inline-flex h-[var(--hf-edit-btn-h)] items-center justify-center rounded-[var(--hf-edit-btn-radius)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] active:bg-[var(--hf-black)] disabled:cursor-not-allowed disabled:!bg-[var(--hf-btn-disabled-bg)] disabled:!text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:!bg-[var(--hf-btn-disabled-bg)] hf-dark-disabled:disabled:!bg-[var(--hf-white-alpha-08)] hf-dark-disabled:disabled:!text-[color:var(--hf-white-alpha-35)]"
           >
             Сохранить
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-cancel-min-w)] items-center justify-center rounded-[var(--hf-edit-btn-radius)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)] active:bg-[var(--hf-main-200)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-white-alpha-05)] dark:text-[var(--hf-white)] dark:hover:bg-[var(--hf-white-alpha-10)]"
+            className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-cancel-min-w)] items-center justify-center rounded-[var(--hf-edit-btn-radius)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)] active:bg-[var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-white-alpha-05)] hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
           >
             Отмена
           </button>
@@ -5155,7 +5206,7 @@ function ListSettingCheckbox({
         "mb-[var(--hf-space-s)] flex h-[var(--hf-list-settings-option-h)] w-max items-center gap-[var(--hf-list-settings-option-gap)] text-[length:var(--hf-list-settings-option-fs)] font-normal leading-[var(--hf-list-settings-option-lh)] last:mb-0",
         disabled
           ? "cursor-default text-[var(--hf-main-600)]"
-          : "cursor-pointer text-[var(--hf-main-900)] dark:text-[var(--hf-white)]",
+          : "cursor-pointer text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]",
       )}
     >
       <input
@@ -5212,7 +5263,7 @@ function ListSettingRadio({
   return (
     <label
       className={clsx(
-        "flex h-[var(--hf-list-settings-option-h)] w-max cursor-pointer items-center gap-[var(--hf-list-settings-option-gap)] text-[length:var(--hf-list-settings-option-fs)] leading-[var(--hf-list-settings-option-lh)] text-[var(--hf-main-900)] dark:text-[var(--hf-white)]",
+        "flex h-[var(--hf-list-settings-option-h)] w-max cursor-pointer items-center gap-[var(--hf-list-settings-option-gap)] text-[length:var(--hf-list-settings-option-fs)] leading-[var(--hf-list-settings-option-lh)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]",
         className,
       )}
     >
@@ -5297,27 +5348,27 @@ function StageSettingsModal({
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92vh] w-full max-w-[672px] flex-col overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-bg-muted)] shadow-[0_18px_60px_var(--hf-black-alpha-30)] dark:border-[color:var(--hf-white-alpha-10)] dark:bg-[var(--hf-bg-dark)]"
+        className="flex max-h-[92vh] w-full max-w-[672px] flex-col overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-bg-muted)] shadow-[0_18px_60px_var(--hf-black-alpha-30)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]"
       >
-        <div className="flex h-[68px] flex-shrink-0 items-center justify-between border-b border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+        <div className="flex h-[68px] flex-shrink-0 items-center justify-between border-b border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
           <div className="flex items-center gap-[12px]">
-            <span className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] bg-[var(--hf-white)] text-[var(--hf-cyan-500)] shadow-[0_1px_2px_var(--hf-alpha-100)] dark:bg-[var(--hf-white-alpha-10)]">
+            <span className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] bg-[var(--hf-white)] text-[var(--hf-cyan-500)] shadow-[0_1px_2px_var(--hf-alpha-100)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)]">
               <ShieldCheck className="h-[20px] w-[20px]" />
             </span>
-            <h3 className="text-[20px] font-semibold leading-[var(--hf-lh-h2)] text-[var(--hf-ui-text-strong)] dark:text-[var(--hf-white)]">
+            <h3 className="text-[20px] font-semibold leading-[var(--hf-lh-h2)] text-[var(--hf-ui-text-strong)] hf-dark-disabled:text-[var(--hf-white)]">
               Настройка этапов
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] text-[var(--hf-ui-text-strong)] transition-colors hover:bg-[var(--hf-black-alpha-04)] dark:text-[color:var(--hf-white-alpha-70)] dark:hover:bg-[var(--hf-white-alpha-06)]"
+            className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] text-[var(--hf-ui-text-strong)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hf-dark-disabled:text-[color:var(--hf-white-alpha-70)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
             aria-label="Закрыть"
           >
             <X className="h-[22px] w-[22px]" />
           </button>
         </div>
         <div className="overflow-y-auto px-[var(--hf-space-xxl)] py-[var(--hf-space-l)]">
-          <p className="mb-[16px] text-[length:var(--hf-fs-2xs)] leading-[18px] text-[var(--hf-ui-text-muted)] dark:text-[color:var(--hf-white-alpha-50)]">
+          <p className="mb-[16px] text-[length:var(--hf-fs-2xs)] leading-[18px] text-[var(--hf-ui-text-muted)] hf-dark-disabled:text-[color:var(--hf-white-alpha-50)]">
             Настройте названия и цвета этапов воронки. Применится ко всей
             организации.
           </p>
@@ -5335,7 +5386,7 @@ function StageSettingsModal({
               {stages.map((s, i) => (
                 <div
                   key={s.key}
-                  className="flex h-[48px] items-center gap-[10px] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-transparent px-[10px] transition-colors hover:border-[var(--hf-ui-border-hover)] dark:border-[color:var(--hf-white-alpha-10)] dark:hover:border-[color:var(--hf-white-alpha-20)]"
+                  className="flex h-[48px] items-center gap-[10px] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-transparent px-[10px] transition-colors hover:border-[var(--hf-ui-border-hover)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:hover:border-[color:var(--hf-white-alpha-20)]"
                 >
                   <GripVertical className="h-[16px] w-[16px] cursor-grab text-[var(--hf-main-600)]" />
                   <input
@@ -5362,7 +5413,7 @@ function StageSettingsModal({
                         ),
                       )
                     }
-                    className="h-full flex-1 bg-transparent text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-ui-text-strong)] focus:outline-none disabled:opacity-50 dark:text-[var(--hf-white)]"
+                    className="h-full flex-1 bg-transparent text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-ui-text-strong)] focus:outline-none disabled:opacity-50 hf-dark-disabled:text-[var(--hf-white)]"
                   />
                   <span className="font-mono text-[length:var(--hf-fs-4xs)] text-[var(--hf-main-600)]">
                     {s.key}
@@ -5372,18 +5423,18 @@ function StageSettingsModal({
             </div>
           )}
         </div>
-        <div className="flex h-[72px] flex-shrink-0 items-center justify-end gap-[12px] border-t border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] dark:border-[color:var(--hf-white-alpha-10)]">
+        <div className="flex h-[72px] flex-shrink-0 items-center justify-end gap-[12px] border-t border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
           <button
             onClick={onClose}
             disabled={saving}
-            className="inline-flex h-[40px] items-center rounded-[var(--hf-radius-s)] px-[var(--hf-space-xxl)] text-[length:var(--hf-fs-xs)] font-medium text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] disabled:opacity-50 dark:text-[color:var(--hf-white-alpha-55)] dark:hover:bg-[var(--hf-white-alpha-06)] dark:hover:text-[var(--hf-white)]"
+            className="inline-flex h-[40px] items-center rounded-[var(--hf-radius-s)] px-[var(--hf-space-xxl)] text-[length:var(--hf-fs-xs)] font-medium text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] disabled:opacity-50 hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:hover:text-[var(--hf-white)]"
           >
             Отмена
           </button>
           <button
             onClick={handleSave}
             disabled={saving || loading}
-            className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] bg-[var(--hf-main-900)] px-[18px] text-[length:var(--hf-fs-xs)] font-semibold text-[var(--hf-white)] transition-colors duration-[100ms] hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] dark:bg-[var(--hf-white)] dark:text-[var(--hf-main-900)] dark:hover:bg-[var(--hf-white-alpha-90)] dark:disabled:bg-[var(--hf-white-alpha-08)] dark:disabled:text-[color:var(--hf-white-alpha-35)]"
+            className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] bg-[var(--hf-main-900)] px-[18px] text-[length:var(--hf-fs-xs)] font-semibold text-[var(--hf-white)] transition-colors duration-[100ms] hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] hf-dark-disabled:bg-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-90)] hf-dark-disabled:disabled:bg-[var(--hf-white-alpha-08)] hf-dark-disabled:disabled:text-[color:var(--hf-white-alpha-35)]"
           >
             <Save className="w-4 h-4" />
             {saving ? "Сохраняем…" : "Сохранить"}

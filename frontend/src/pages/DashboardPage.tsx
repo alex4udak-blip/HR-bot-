@@ -110,6 +110,15 @@ interface MovementReport {
   movements: StageMovementItem[];
 }
 
+interface DepartmentSummary {
+  id: number;
+  name: string;
+  vacancies: number;
+  open_vacancies: number;
+  applications: number;
+  hires: number;
+}
+
 // ===== CONSTANTS =====
 
 const REPORT_CATEGORIES = [
@@ -150,15 +159,15 @@ const VACANCY_STATUS_OPTIONS = [
 ] as const;
 
 const BAR_COLORS = {
-  primary: '#d4a843',
-  green: '#8cb369',
-  red: '#e05263',
-  gray_light: '#6b7280',
-  gray_medium: '#4b5563',
-  gray_dark: '#374151',
-  blue: '#60a5fa',
-  purple: '#a78bfa',
-  orange: '#fb923c',
+  primary: 'var(--hf-report-candidate)',
+  green: 'var(--hf-report-source-green)',
+  red: 'var(--hf-report-source-red)',
+  gray_light: 'var(--hf-report-rejection-light)',
+  gray_medium: 'var(--hf-report-rejection-medium)',
+  gray_dark: 'var(--hf-report-rejection-dark)',
+  blue: 'var(--hf-report-source-blue)',
+  purple: 'var(--hf-report-source-purple)',
+  orange: 'var(--hf-report-source-orange)',
 };
 
 // ===== MAIN COMPONENT =====
@@ -182,8 +191,14 @@ export default function DashboardPage() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [vacancyStatus, setVacancyStatus] = useState('open');
+  const [selectedDepartment, setSelectedDepartment] = useState<number | null>(null);
+  const [showCategoryDD, setShowCategoryDD] = useState(false);
+  const [showReportDD, setShowReportDD] = useState(false);
+  const [showPeriodDD, setShowPeriodDD] = useState(false);
+  const [showDepartmentDD, setShowDepartmentDD] = useState(false);
   const [showStatusDD, setShowStatusDD] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   // Report data
   const [ttfData, setTtfData] = useState<TimeToFillReport | null>(null);
@@ -192,6 +207,13 @@ export default function DashboardPage() {
   const [rejectionsData, setRejectionsData] = useState<RejectionsReport | null>(null);
   const [sourcesData, setSourcesData] = useState<SourceReport | null>(null);
   const [movementData, setMovementData] = useState<MovementReport | null>(null);
+  const [departments, setDepartments] = useState<DepartmentSummary[]>([]);
+
+  useEffect(() => {
+    api.get<DepartmentSummary[]>('/analytics/dashboard/departments-summary')
+      .then(res => setDepartments(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setDepartments([]));
+  }, []);
 
   const loadReport = useCallback(async () => {
     if (period === 'custom' && customFrom && customTo && customFrom > customTo) {
@@ -199,8 +221,10 @@ export default function DashboardPage() {
       return;
     }
     setIsLoading(true);
+    setReportError(null);
     try {
       const params: Record<string, string> = { period, vacancy_status: vacancyStatus };
+      if (selectedDepartment) params.department_id = String(selectedDepartment);
       if (period === 'custom') {
         if (customFrom) params.date_from = customFrom;
         if (customTo) params.date_to = customTo;
@@ -238,12 +262,13 @@ export default function DashboardPage() {
         }
       }
     } catch (err) {
+      setReportError('Не удалось загрузить данные отчёта');
       toast.error('Ошибка загрузки отчёта');
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, [activeReport, period, vacancyStatus, customFrom, customTo]);
+  }, [activeReport, period, vacancyStatus, selectedDepartment, customFrom, customTo]);
 
   useEffect(() => {
     loadReport();
@@ -253,6 +278,7 @@ export default function DashboardPage() {
   const currentCat = REPORT_CATEGORIES.find(c => c.id === activeCategory);
   const currentReport = currentCat?.reports.find(r => r.id === activeReport);
   const currentStatus = VACANCY_STATUS_OPTIONS.find(s => s.id === vacancyStatus);
+  const currentDepartment = departments.find(d => d.id === selectedDepartment);
 
   // Экспорт текущего отчёта в Excel
   const handleExportExcel = useCallback(() => {
@@ -340,146 +366,249 @@ export default function DashboardPage() {
   }, [activeReport, ttfData, funnelData, funnelByRecruiter, rejectionsData, sourcesData, movementData, currentReport]);
 
   return (
-    <div className="h-full flex overflow-hidden">
-      {/* ===== LEFT SIDEBAR — Report Navigation ===== */}
-      <div className="w-[260px] flex-shrink-0 border-r border-white/[0.06] bg-white/[0.02] overflow-y-auto">
-        <div className="p-5 pb-3">
-          <h2 className="text-sm font-semibold text-white/50 uppercase tracking-wider">Аналитика</h2>
+    <div className="hf-analytics-page">
+      <div className="hf-analytics-header">
+        <div className="hf-analytics-title-row">
+          <div className="hf-analytics-title">
+            <h1>Центр аналитики</h1>
+          </div>
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="hf-analytics-excel"
+            title="Скачать Excel"
+          >
+            <FileSpreadsheet className="hf-analytics-excel-icon" />
+            Скачать Excel
+          </button>
         </div>
 
-        {visibleCategories.map(cat => (
-          <div key={cat.id} className="mb-2">
-            {/* Category header */}
-            <div className="px-5 py-2">
-              <span className="text-xs font-semibold text-white/30 uppercase tracking-wider">
-                {cat.label}
-              </span>
-            </div>
-
-            {/* Report items */}
-            {cat.reports.map(rep => {
-              const isActive = activeReport === rep.id;
-              const Icon = rep.icon;
-              return (
-                <button
-                  key={rep.id}
-                  onClick={() => {
-                    setActiveCategory(cat.id);
-                    setActiveReport(rep.id);
-                  }}
-                  className={clsx(
-                    'w-full flex items-center gap-3 px-5 py-2.5 text-left text-sm transition-colors',
-                    isActive
-                      ? 'bg-white/[0.08] text-white border-r-2 border-accent-500'
-                      : 'text-white/50 hover:text-white/70 hover:bg-white/[0.04]',
-                  )}
-                >
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate">{rep.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-
-      {/* ===== MAIN CONTENT ===== */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top filter bar */}
-        <div className="flex-shrink-0 border-b border-white/[0.06] bg-white/[0.02]">
-          {/* Report title + print */}
-          <div className="flex items-center justify-between px-6 pt-5 pb-3">
-            <div className="flex items-center gap-3">
-              {currentReport && <currentReport.icon className="w-5 h-5 text-white/40" />}
-              <h1 className="text-lg font-semibold text-white/90">
-                {currentReport?.label ?? 'Отчёт'}
-              </h1>
-            </div>
-            <button
-              onClick={handleExportExcel}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/20 transition-colors text-sm font-medium"
-              title="Экспорт в Excel"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Excel</span>
-            </button>
-          </div>
-
-          {/* Period tabs + vacancy status */}
-          <div className="flex items-center justify-between px-6 pb-3">
-            {/* Period tabs */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg p-1">
-                {PERIOD_TABS.map(p => (
+        <div className="hf-analytics-filter-row">
+          <div className="hf-analytics-filter-group">
+            <div className="hf-analytics-filter-dd">
+              <FilterSelect
+                label=""
+                value={currentCat?.label ?? 'Вакансии'}
+                open={showCategoryDD}
+                onClick={() => {
+                  setShowCategoryDD(!showCategoryDD);
+                  setShowReportDD(false);
+                  setShowPeriodDD(false);
+                  setShowDepartmentDD(false);
+                  setShowStatusDD(false);
+                }}
+              />
+              {showCategoryDD && (
+                <>
                   <button
-                    key={p.id}
-                    onClick={() => setPeriod(p.id)}
-                    className={clsx(
-                      'px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors',
-                      period === p.id
-                        ? 'bg-white/[0.12] text-white shadow-sm'
-                        : 'text-white/40 hover:text-white/60',
-                    )}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setPeriod('custom')}
-                  className={clsx(
-                    'flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors',
-                    period === 'custom'
-                      ? 'bg-white/[0.12] text-white shadow-sm'
-                      : 'text-white/40 hover:text-white/60',
-                  )}
-                >
-                  <CalendarRange className="w-3.5 h-3.5" />
-                  Свой диапазон
-                </button>
-              </div>
-
-              {period === 'custom' && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={customFrom}
-                    onChange={e => setCustomFrom(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-sm text-white/80 outline-none focus:border-accent-500/50"
+                    type="button"
+                    aria-label="Закрыть меню категории отчётов"
+                    className="hf-analytics-menu-backdrop"
+                    onClick={() => setShowCategoryDD(false)}
                   />
-                  <span className="text-white/30 text-sm">—</span>
-                  <input
-                    type="date"
-                    value={customTo}
-                    onChange={e => setCustomTo(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-sm text-white/80 outline-none focus:border-accent-500/50"
-                  />
-                </div>
+                  <div className="hf-analytics-menu hf-analytics-menu-open">
+                    {visibleCategories.map(cat => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveCategory(cat.id);
+                          setActiveReport(cat.reports[0].id);
+                          setShowCategoryDD(false);
+                        }}
+                        className={clsx('hf-analytics-menu-item', activeCategory === cat.id && 'hf-analytics-menu-item-active')}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
-            {/* Vacancy status dropdown */}
-            <div className="relative">
+            <div className="hf-analytics-filter-dd">
+              <FilterSelect
+                label=""
+                value={currentReport?.label ?? 'Отчёт'}
+                open={showReportDD}
+                onClick={() => {
+                  setShowReportDD(!showReportDD);
+                  setShowCategoryDD(false);
+                  setShowPeriodDD(false);
+                  setShowDepartmentDD(false);
+                  setShowStatusDD(false);
+                }}
+              />
+              {showReportDD && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Закрыть меню отчётов"
+                    className="hf-analytics-menu-backdrop"
+                    onClick={() => setShowReportDD(false)}
+                  />
+                  <div className="hf-analytics-report-menu hf-analytics-menu-open">
+                    {visibleCategories.map(cat => (
+                      <div key={cat.id} className="hf-analytics-report-group">
+                        <div className="hf-analytics-report-group-label">{cat.label}</div>
+                        {cat.reports.map(rep => {
+                          const Icon = rep.icon;
+                          const isActive = activeReport === rep.id;
+                          return (
+                            <button
+                              key={rep.id}
+                              type="button"
+                              onClick={() => {
+                                setActiveCategory(cat.id);
+                                setActiveReport(rep.id);
+                                setShowReportDD(false);
+                              }}
+                              className={clsx(
+                                'hf-analytics-report-item',
+                                isActive && 'hf-analytics-report-item-active',
+                              )}
+                            >
+                              <Icon className="hf-analytics-report-item-icon" />
+                              <span>{rep.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="hf-analytics-filter-group">
+            <div className="hf-analytics-filter-dd">
+              <FilterSelect
+                label="За период:"
+                value={PERIOD_TABS.find(p => p.id === period)?.label ?? 'Свой диапазон'}
+                open={showPeriodDD}
+                onClick={() => {
+                  setShowPeriodDD(!showPeriodDD);
+                  setShowCategoryDD(false);
+                  setShowReportDD(false);
+                  setShowDepartmentDD(false);
+                  setShowStatusDD(false);
+                }}
+              />
+              {showPeriodDD && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Закрыть меню периода"
+                    className="hf-analytics-menu-backdrop"
+                    onClick={() => setShowPeriodDD(false)}
+                  />
+                  <div className="hf-analytics-menu hf-analytics-menu-open">
+                    {PERIOD_TABS.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => { setPeriod(p.id); setShowPeriodDD(false); }}
+                        className={clsx('hf-analytics-menu-item', period === p.id && 'hf-analytics-menu-item-active')}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => { setPeriod('custom'); setShowPeriodDD(false); }}
+                      className={clsx('hf-analytics-menu-item', period === 'custom' && 'hf-analytics-menu-item-active')}
+                    >
+                      <CalendarRange className="hf-analytics-menu-icon" />
+                      Свой диапазон
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="hf-analytics-filter-dd">
+              <FilterSelect
+                label="Подразделение:"
+                value={currentDepartment?.name ?? 'Все'}
+                open={showDepartmentDD}
+                onClick={() => {
+                  setShowDepartmentDD(!showDepartmentDD);
+                  setShowCategoryDD(false);
+                  setShowReportDD(false);
+                  setShowPeriodDD(false);
+                  setShowStatusDD(false);
+                }}
+              />
+              {showDepartmentDD && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Закрыть меню подразделений"
+                    className="hf-analytics-menu-backdrop"
+                    onClick={() => setShowDepartmentDD(false)}
+                  />
+                  <div className="hf-analytics-menu hf-analytics-menu-open">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDepartment(null);
+                        setShowDepartmentDD(false);
+                      }}
+                      className={clsx('hf-analytics-menu-item', selectedDepartment === null && 'hf-analytics-menu-item-active')}
+                    >
+                      Все
+                    </button>
+                    {departments.map(dept => (
+                      <button
+                        key={dept.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedDepartment(dept.id);
+                          setShowDepartmentDD(false);
+                        }}
+                        className={clsx('hf-analytics-menu-item', selectedDepartment === dept.id && 'hf-analytics-menu-item-active')}
+                      >
+                        {dept.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="hf-analytics-filter-dd">
               <button
-                onClick={() => setShowStatusDD(!showStatusDD)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-white/70 hover:bg-white/[0.04] transition-colors"
+                type="button"
+                onClick={() => {
+                  setShowStatusDD(!showStatusDD);
+                  setShowCategoryDD(false);
+                  setShowReportDD(false);
+                  setShowPeriodDD(false);
+                  setShowDepartmentDD(false);
+                }}
+                className="hf-analytics-filter"
               >
-                Вакансии: {currentStatus?.label}
-                <ChevronDown className="w-3.5 h-3.5" />
+                <span>Вакансии:</span>
+                <strong>{currentStatus?.label}</strong>
+                <ChevronDown className="hf-analytics-filter-chevron" />
               </button>
               {showStatusDD && (
                 <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowStatusDD(false)} />
-                  <div className="absolute right-0 z-20 mt-1 bg-dark-700 border border-white/[0.08] rounded-lg shadow-xl py-1 min-w-[160px]">
+                  <button
+                    type="button"
+                    aria-label="Закрыть меню статуса вакансий"
+                    className="hf-analytics-menu-backdrop"
+                    onClick={() => setShowStatusDD(false)}
+                  />
+                  <div className="hf-analytics-menu hf-analytics-menu-open">
                     {VACANCY_STATUS_OPTIONS.map(s => (
                       <button
                         key={s.id}
+                        type="button"
                         onClick={() => { setVacancyStatus(s.id); setShowStatusDD(false); }}
-                        className={clsx(
-                          'w-full text-left px-4 py-2 text-sm hover:bg-white/[0.06] transition-colors',
-                          vacancyStatus === s.id ? 'text-white font-medium' : 'text-white/50',
-                        )}
+                        className={clsx('hf-analytics-menu-item', vacancyStatus === s.id && 'hf-analytics-menu-item-active')}
                       >
-                        {vacancyStatus === s.id && <span className="mr-2 text-accent-500">✓</span>}
                         {s.label}
                       </button>
                     ))}
@@ -488,80 +617,144 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
-        </div>
 
-        {/* Report content area */}
-        <div className="flex-1 overflow-y-auto p-6">
+          {period === 'custom' && (
+            <div className="hf-analytics-date-range">
+              <input
+                type="date"
+                value={customFrom}
+                onChange={e => setCustomFrom(e.target.value)}
+                className="hf-analytics-date"
+              />
+              <span>—</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={e => setCustomTo(e.target.value)}
+                className="hf-analytics-date"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <main className="hf-analytics-main">
+        <section className="hf-analytics-report-sheet">
+          <div className="hf-analytics-report-heading">
+            <h2>{currentCat?.label ?? 'Вакансии'} → {currentReport?.label ?? 'Отчёт'}</h2>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="hf-analytics-print"
+              title="Печать"
+              aria-label="Печать отчёта"
+            >
+              <FileDown className="hf-analytics-print-icon" />
+            </button>
+          </div>
+
           {isLoading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="w-8 h-8 border-2 border-accent-500 border-t-transparent rounded-full animate-spin" />
+            <div className="hf-analytics-loading">
+              <div className="hf-analytics-spinner" />
+            </div>
+          ) : reportError ? (
+            <div className="hf-analytics-empty-state">
+              <XCircle className="hf-analytics-empty-icon" />
+              <div>
+                <h3>{reportError}</h3>
+                <p>Попробуйте другой фильтр или обновите отчёт позже.</p>
+              </div>
             </div>
           ) : (
-            <div className="max-w-5xl">
+            <>
               {activeReport === 'ttf' && ttfData && <TTFContent data={ttfData} />}
               {activeReport === 'funnel' && funnelData && <FunnelContent data={funnelData} />}
               {activeReport === 'funnel-recruiter' && funnelByRecruiter && <FunnelByRecruiterContent data={funnelByRecruiter} />}
               {activeReport === 'rejections' && rejectionsData && <RejectionsContent data={rejectionsData} />}
               {activeReport === 'sources' && sourcesData && <SourcesContent data={sourcesData} />}
               {activeReport === 'movement' && movementData && <MovementContent data={movementData} />}
-            </div>
+            </>
           )}
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
   );
 }
 
 // ===== SHARED COMPONENTS =====
 
+function FilterSelect({
+  label,
+  value,
+  open,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  open: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx('hf-analytics-filter', open && 'hf-analytics-filter-open')}
+    >
+      {label && <span>{label}</span>}
+      <strong>{value}</strong>
+      <ChevronDown className="hf-analytics-filter-chevron" />
+    </button>
+  );
+}
+
 function KPICard({ value, label, sub }: { value: string | number; label: string; sub?: string }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-5">
-      <div className="text-3xl font-bold text-white/90">{value}</div>
-      <div className="text-sm text-white/40 mt-1">{label}</div>
-      {sub && <div className="text-xs text-white/25 mt-0.5">{sub}</div>}
+    <div className="hf-analytics-kpi">
+      <div className="hf-analytics-kpi-value">{value}</div>
+      <div className="hf-analytics-kpi-label">{label}</div>
+      {sub && <div className="hf-analytics-kpi-sub">{sub}</div>}
     </div>
   );
 }
 
 function HBar({ width, color, value, label }: { width: number; color: string; value: number | string; label: string }) {
   return (
-    <div className="flex items-center gap-4">
-      <div className="w-48 text-sm text-white/50 text-right truncate flex-shrink-0">{label}</div>
-      <div className="flex-1 flex items-center gap-3">
+    <div className="hf-analytics-bar-row">
+      <div className="hf-analytics-bar-label">{label}</div>
+      <div className="hf-analytics-bar-track">
         <div
-          className="h-7 rounded-sm transition-all duration-300"
+          className="hf-analytics-bar"
           style={{
             width: `${Math.max(width, 2)}%`,
             backgroundColor: color,
           }}
         />
-        <span className="text-sm font-medium text-white/70 flex-shrink-0">{value}</span>
+        <span className="hf-analytics-bar-value">{value}</span>
       </div>
     </div>
   );
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h3 className="text-base font-semibold text-white/80 mb-1">{children}</h3>;
+  return <h3 className="hf-analytics-section-title">{children}</h3>;
 }
 
 function SectionDesc({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm text-white/30 mb-5">{children}</p>;
+  return <p className="hf-analytics-section-desc">{children}</p>;
 }
 
 function Divider() {
-  return <div className="border-t border-white/[0.06] my-8" />;
+  return <div className="hf-analytics-divider" />;
 }
 
 function LegendItem({ color, label, count }: { color: string; label: string; count: number }) {
   return (
-    <div className="flex items-center justify-between text-sm py-0.5">
-      <div className="flex items-center gap-2">
-        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-        <span className="text-white/50 truncate max-w-[150px]">{label}</span>
+    <div className="hf-analytics-legend-item">
+      <div className="hf-analytics-legend-name">
+        <div className="hf-analytics-legend-dot" style={{ backgroundColor: color }} />
+        <span>{label}</span>
       </div>
-      <span className="text-white/70 font-medium ml-3">{count}</span>
+      <span className="hf-analytics-legend-count">{count}</span>
     </div>
   );
 }
@@ -575,13 +768,13 @@ function TTFContent({ data }: { data: TimeToFillReport }) {
   return (
     <>
       {/* KPI row */}
-      <div className="grid grid-cols-3 gap-5 mb-8">
+      <div className="hf-analytics-kpi-row">
         <KPICard
-          value={summary.avg_days_to_close != null ? `${summary.avg_days_to_close}` : '0'}
+          value={summary.avg_days_to_close != null ? `${summary.avg_days_to_close}` : '—'}
           label="Ср. срок закрытия, дн"
         />
         <KPICard
-          value={summary.avg_delay_days != null ? `${summary.avg_delay_days}` : '0'}
+          value={summary.avg_delay_days != null ? `${summary.avg_delay_days}` : '—'}
           label="Ср. просрочка, дн"
         />
         <KPICard
@@ -596,7 +789,7 @@ function TTFContent({ data }: { data: TimeToFillReport }) {
       <SectionTitle>Среднее время на этапе</SectionTitle>
       <SectionDesc>Среднее время нахождения кандидатов на каждом этапе воронки</SectionDesc>
 
-      <div className="space-y-2.5">
+      <div>
         {stage_timings.map(st => (
           <HBar
             key={st.stage}
@@ -613,26 +806,23 @@ function TTFContent({ data }: { data: TimeToFillReport }) {
         <>
           <Divider />
           <SectionTitle>Последние закрытия</SectionTitle>
-          <div className="space-y-2 mt-4">
+          <div className="hf-analytics-closing-list">
             {last_closings.map((lc, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-4 p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.02]"
-              >
-                <UserCheck className="w-5 h-5 text-green-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-white/80">{lc.candidate_name}</div>
-                  <div className="text-xs text-white/35">{lc.vacancy_title}</div>
+              <div key={i} className="hf-analytics-closing">
+                <UserCheck className="hf-analytics-closing-icon" />
+                <div className="hf-analytics-closing-main">
+                  <div className="hf-analytics-closing-name">{lc.candidate_name}</div>
+                  <div className="hf-analytics-closing-vacancy">{lc.vacancy_title}</div>
                   {lc.recruiter_name && (
-                    <div className="text-xs text-white/25 mt-0.5">{lc.recruiter_name}</div>
+                    <div className="hf-analytics-closing-recruiter">{lc.recruiter_name}</div>
                   )}
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="text-sm text-white/60 font-medium">
+                <div className="hf-analytics-closing-side">
+                  <div className="hf-analytics-closing-days">
                     {lc.days_to_close != null ? `${lc.days_to_close} дн` : '—'}
                   </div>
                   {lc.closed_date && (
-                    <div className="text-xs text-white/25">{lc.closed_date}</div>
+                    <div className="hf-analytics-closing-date">{lc.closed_date}</div>
                   )}
                 </div>
               </div>
@@ -649,55 +839,62 @@ function TTFContent({ data }: { data: TimeToFillReport }) {
 function FunnelContent({ data }: { data: FunnelReport }) {
   const maxCount = Math.max(...data.stages.map(s => s.candidate_count), 1);
   const maxRej = Math.max(...data.stages.map(s => s.rejection_count), 1);
-  const legendColors = ['#8cb369', '#e05263', '#d4a843', '#60a5fa', '#a78bfa', '#fb923c'];
+  const legendColors = [
+    BAR_COLORS.green,
+    BAR_COLORS.red,
+    BAR_COLORS.primary,
+    BAR_COLORS.blue,
+    BAR_COLORS.purple,
+    BAR_COLORS.orange,
+  ];
 
   return (
-    <div className="flex gap-8">
+    <div className="hf-analytics-split">
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className="hf-analytics-chart-main">
         {/* Headers */}
-        <div className="flex gap-4 mb-4">
-          <div className="w-48 flex-shrink-0" />
-          <div className="flex-1 text-xs text-white/30 font-medium uppercase tracking-wider">
+        <div className="hf-analytics-chart-head">
+          <div className="hf-analytics-chart-label-spacer" />
+          <div className="hf-analytics-chart-head-cell">
             Кандидаты
           </div>
-          <div className="w-40 text-xs text-white/30 font-medium uppercase tracking-wider flex-shrink-0">
+          <div className="hf-analytics-chart-head-side">
             Отказы
           </div>
         </div>
 
         {/* Bars */}
-        <div className="space-y-2">
+        <div>
           {data.stages.map(st => (
-            <div key={st.stage} className="flex items-center gap-4">
-              <div className="w-48 text-sm text-white/50 text-right flex-shrink-0 truncate">
+            <div key={st.stage} className="hf-analytics-funnel-row">
+              <div className="hf-analytics-funnel-label">
                 {st.label}
               </div>
               {/* Candidate bar */}
-              <div className="flex-1 flex items-center gap-2">
+              <div className="hf-analytics-funnel-track">
                 <div
-                  className="h-7 rounded-sm"
+                  className="hf-analytics-funnel-bar"
                   style={{
                     width: `${Math.max((st.candidate_count / maxCount) * 100, 1)}%`,
                     backgroundColor: BAR_COLORS.green,
                   }}
                 />
                 {st.candidate_count > 0 && (
-                  <span className="text-xs text-white/50">{st.candidate_count}</span>
+                  <span className="hf-analytics-funnel-value">{st.candidate_count}</span>
                 )}
               </div>
               {/* Rejection bar */}
-              <div className="w-40 flex items-center gap-2 flex-shrink-0">
+              <div className="hf-analytics-funnel-rejections">
                 {st.rejection_count > 0 && (
                   <>
                     <div
-                      className="h-7 rounded-sm"
+                      className="hf-analytics-funnel-bar"
                       style={{
                         width: `${(st.rejection_count / maxRej) * 100}%`,
                         backgroundColor: BAR_COLORS.gray_light,
                       }}
                     />
-                    <span className="text-xs text-white/40">{st.rejection_count}</span>
+                    <span className="hf-analytics-funnel-value">{st.rejection_count}</span>
                   </>
                 )}
               </div>
@@ -707,10 +904,10 @@ function FunnelContent({ data }: { data: FunnelReport }) {
       </div>
 
       {/* Right legend */}
-      <div className="w-52 flex-shrink-0">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-semibold text-white/70">Все</span>
-          <span className="text-sm font-bold text-white/80">{data.total_candidates}</span>
+      <div className="hf-analytics-legend">
+        <div className="hf-analytics-legend-head">
+          <span className="hf-analytics-legend-title">Все</span>
+          <span className="hf-analytics-legend-total">{data.total_candidates}</span>
         </div>
         {data.sources.map((s, i) => (
           <LegendItem
@@ -722,10 +919,10 @@ function FunnelContent({ data }: { data: FunnelReport }) {
         ))}
 
         {data.rejection_reasons.length > 0 && (
-          <div className="mt-6 pt-4 border-t border-white/[0.06]">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-semibold text-white/70">Отказы</span>
-              <span className="text-sm font-bold text-white/80">{data.total_rejections}</span>
+          <div className="hf-analytics-legend-section">
+            <div className="hf-analytics-legend-head">
+              <span className="hf-analytics-legend-title">Отказы</span>
+              <span className="hf-analytics-legend-total">{data.total_rejections}</span>
             </div>
             {data.rejection_reasons.map((r, i) => (
               <LegendItem
@@ -753,27 +950,27 @@ function FunnelByRecruiterContent({ data }: { data: FunnelByRecruiterReport }) {
         <>
           <Divider />
           <SectionTitle>По рекрутерам</SectionTitle>
-          <div className="space-y-5 mt-4">
+          <div className="hf-analytics-recruiter-list">
             {data.by_recruiter.map(rec => {
               const maxCount = Math.max(...rec.stages.map(s => s.candidate_count), 1);
               return (
-                <div key={rec.recruiter_id} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-accent-500/20 flex items-center justify-center text-xs font-bold text-accent-400">
+                <div key={rec.recruiter_id} className="hf-analytics-recruiter-card">
+                  <div className="hf-analytics-recruiter-head">
+                    <div className="hf-analytics-recruiter-person">
+                      <div className="hf-analytics-recruiter-avatar">
                         {rec.recruiter_name.charAt(0)}
                       </div>
-                      <span className="font-medium text-white/80">{rec.recruiter_name}</span>
+                      <span className="hf-analytics-recruiter-name">{rec.recruiter_name}</span>
                     </div>
-                    <div className="text-xs text-white/35">
+                    <div className="hf-analytics-recruiter-meta">
                       {rec.total_candidates} кандидатов · {rec.total_rejections} отказов
                     </div>
                   </div>
-                  <div className="space-y-1.5">
+                  <div>
                     {rec.stages.map(st => (
-                      <div key={st.stage} className="flex items-center gap-3">
-                        <div className="w-40 text-xs text-white/40 text-right truncate">{st.label}</div>
-                        <div className="flex-1 flex items-center gap-2">
+                      <div key={st.stage} className="hf-analytics-recruiter-row">
+                        <div className="hf-analytics-recruiter-stage">{st.label}</div>
+                        <div className="hf-analytics-funnel-track">
                           <div
                             className="h-5 rounded-sm"
                             style={{
@@ -782,7 +979,7 @@ function FunnelByRecruiterContent({ data }: { data: FunnelByRecruiterReport }) {
                             }}
                           />
                           {st.candidate_count > 0 && (
-                            <span className="text-xs text-white/40">{st.candidate_count}</span>
+                            <span className="hf-analytics-funnel-value">{st.candidate_count}</span>
                           )}
                         </div>
                       </div>
@@ -804,12 +1001,12 @@ function RejectionsContent({ data }: { data: RejectionsReport }) {
   const maxCount = Math.max(...data.by_stage.map(s => s.count), 1);
 
   return (
-    <div className="flex gap-8">
-      <div className="flex-1 min-w-0">
+    <div className="hf-analytics-split">
+      <div className="hf-analytics-chart-main">
         <SectionTitle>Отказы по этапам</SectionTitle>
         <SectionDesc>На каком этапе кандидаты получают отказ</SectionDesc>
 
-        <div className="space-y-2.5">
+        <div>
           {data.by_stage.map(st => (
             <HBar
               key={st.stage}
@@ -823,10 +1020,10 @@ function RejectionsContent({ data }: { data: RejectionsReport }) {
       </div>
 
       {/* Right legend */}
-      <div className="w-52 flex-shrink-0">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-semibold text-white/70">Всего отказов</span>
-          <span className="text-sm font-bold text-white/80">{data.total_rejections}</span>
+      <div className="hf-analytics-legend">
+        <div className="hf-analytics-legend-head">
+          <span className="hf-analytics-legend-title">Всего отказов</span>
+          <span className="hf-analytics-legend-total">{data.total_rejections}</span>
         </div>
         {data.top_reasons.map((r, i) => (
           <LegendItem
@@ -845,17 +1042,24 @@ function RejectionsContent({ data }: { data: RejectionsReport }) {
 
 function SourcesContent({ data }: { data: SourceReport }) {
   const maxCount = Math.max(...data.sources.map(s => s.count), 1);
-  const colors = ['#8cb369', '#e05263', '#d4a843', '#60a5fa', '#a78bfa', '#fb923c'];
+  const colors = [
+    BAR_COLORS.green,
+    BAR_COLORS.red,
+    BAR_COLORS.primary,
+    BAR_COLORS.blue,
+    BAR_COLORS.purple,
+    BAR_COLORS.orange,
+  ];
 
   return (
     <>
-      <div className="flex items-center gap-4 mb-6">
+      <div className="hf-analytics-kpi-row hf-analytics-kpi-row-compact">
         <KPICard value={data.total_candidates} label="Всего кандидатов" />
         <KPICard value={data.sources.length} label="Источников" />
       </div>
 
       <SectionTitle>Распределение по источникам</SectionTitle>
-      <div className="space-y-2.5 mt-4">
+      <div className="hf-analytics-bars">
         {data.sources.map((s, i) => (
           <HBar
             key={i}
@@ -882,19 +1086,19 @@ function MovementContent({ data }: { data: MovementReport }) {
       </div>
 
       <SectionTitle>Перемещения между этапами</SectionTitle>
-      <div className="space-y-2.5 mt-4">
+      <div className="hf-analytics-bars">
         {data.movements.map((m, i) => {
           const color = m.to_stage === 'rejected' ? BAR_COLORS.red
             : m.to_stage === 'hired' ? BAR_COLORS.green
             : BAR_COLORS.primary;
           return (
-            <div key={i} className="flex items-center gap-4">
-              <div className="w-56 text-sm text-white/50 text-right flex items-center justify-end gap-2 flex-shrink-0 truncate">
+            <div key={i} className="hf-analytics-bar-row">
+              <div className="hf-analytics-movement-label">
                 <span className="truncate">{m.from_label}</span>
-                <ArrowRight className="w-3 h-3 text-white/25 flex-shrink-0" />
+                <ArrowRight className="hf-analytics-movement-icon" />
                 <span className="truncate">{m.to_label}</span>
               </div>
-              <div className="flex-1 flex items-center gap-3">
+              <div className="hf-analytics-bar-track">
                 <div
                   className="h-7 rounded-sm"
                   style={{
@@ -902,7 +1106,7 @@ function MovementContent({ data }: { data: MovementReport }) {
                     backgroundColor: color,
                   }}
                 />
-                <span className="text-sm font-medium text-white/70">{m.count}</span>
+                <span className="hf-analytics-bar-value">{m.count}</span>
               </div>
             </div>
           );

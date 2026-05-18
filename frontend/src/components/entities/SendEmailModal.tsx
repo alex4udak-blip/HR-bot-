@@ -74,6 +74,16 @@ export default function SendEmailModal({
     loadTemplates();
   }, [loadTemplates]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !sending) {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, sending]);
+
   const handleTemplateSelect = async (templateId: number) => {
     setSelectedTemplateId(templateId);
     setPreviewing(true);

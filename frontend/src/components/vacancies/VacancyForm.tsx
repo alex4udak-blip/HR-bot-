@@ -530,7 +530,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   <label className={hfLabelClass}>Назначенные рекрутеры</label>
                   <div className="hf-vacancy-recruiter-row">
                     <span className="hf-vacancy-avatar">Я</span>
-                    <span className="truncate">Я, {user?.name || user?.email || "Super Admin"}</span>
+                    <span className="truncate">Я, {user?.name || user?.email || "Профиль"}</span>
                   </div>
                   <button
                     type="button"

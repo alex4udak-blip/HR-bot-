@@ -74,6 +74,16 @@ export default function AddToVacancyModal({
     return () => clearTimeout(debounce);
   }, [searchQuery, seesAllVacancies, user]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !loading) {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [loading, onClose]);
+
   const handleSubmit = async () => {
     if (!selectedVacancy) {
       toast.error("Выберите вакансию");

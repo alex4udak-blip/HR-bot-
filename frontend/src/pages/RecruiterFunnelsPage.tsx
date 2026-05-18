@@ -4,6 +4,7 @@ import {
   Plus,
   Briefcase,
   Users,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   Search,
@@ -43,6 +44,8 @@ import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
+import ParserModal from '@/components/parser/ParserModal';
+import { NewCandidateModal } from '@/pages/AllCandidatesPage';
 
 // ==================== Constants ====================
 
@@ -65,6 +68,8 @@ const STATUS_FILTERS: { id: VacancyStatus | 'all'; label: string }[] = [
   { id: 'draft', label: 'Черновики' },
 ];
 
+const STATUS_FILTER_IDS = new Set<string>(STATUS_FILTERS.map((f) => f.id));
+
 const STAGE_ORDER = [
   'applied', 'screening', 'phone_screen', 'interview',
   'assessment', 'offer', 'hired', 'rejected', 'withdrawn',
@@ -82,6 +87,29 @@ const STAGE_LABELS: Record<string, string> = {
   hired: 'Принят',
   rejected: 'Отклонён',
   withdrawn: 'Отозван',
+};
+
+const VACANCY_STAGE_TAB_LABELS: Record<string, string> = {
+  applied: 'Отклики',
+  screening: 'В работе',
+  phone_screen: 'Новые',
+  interview: 'Резюме у заказчика',
+  assessment: 'Интервью с HR',
+  offer: 'Выставлен оффер',
+  hired: 'Оффер принят',
+  rejected: 'Отказ',
+  withdrawn: 'Отказ',
+};
+
+const formatVacancyListDate = (date?: string | null) => {
+  if (!date) return 'не указана';
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return 'не указана';
+  return parsed.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).replace(/\sг\.$/, '');
 };
 
 const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badge: string }> = {
@@ -144,6 +172,20 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
+function HuntflowOptionsIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <path
+        d="M3 8h12m0 0a3 3 0 1 0 6 0 3 3 0 0 0-6 0Zm-6 8h12M9 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 // ==================== Main Component ====================
 
 export default function RecruiterFunnelsPage() {
@@ -169,6 +211,16 @@ export default function RecruiterFunnelsPage() {
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
+  const [showVacancySearch, setShowVacancySearch] = useState(false);
+  const [showNewCandidateModal, setShowNewCandidateModal] = useState(false);
+  const [showParserModal, setShowParserModal] = useState(false);
+  const [vacancyEmptyStagesExpanded, setVacancyEmptyStagesExpanded] = useState(false);
+  const vacancySearchRef = useRef<HTMLInputElement>(null);
+  const vacancyStageScrollRef = useRef<HTMLDivElement>(null);
+  const [vacancyStageCanScroll, setVacancyStageCanScroll] = useState({
+    left: false,
+    right: false,
+  });
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -234,6 +286,17 @@ export default function RecruiterFunnelsPage() {
   useEffect(() => {
     fetchVacancies();
   }, [fetchVacancies]);
+
+  useEffect(() => {
+    const urlStatus = searchParams.get('status');
+    const nextStatus =
+      urlStatus && STATUS_FILTER_IDS.has(urlStatus)
+        ? (urlStatus as VacancyStatus | 'all')
+        : 'all';
+    if (nextStatus !== statusFilter) {
+      setStatusFilter(nextStatus);
+    }
+  }, [searchParams, statusFilter]);
 
   useEffect(() => {
     if (isHrAdmin) {
@@ -307,11 +370,7 @@ export default function RecruiterFunnelsPage() {
     [vacancies, selectedVacancyId],
   );
 
-  const selectedRecruiterName = useMemo(() => {
-    if (!selectedVacancy) return '';
-    const uid = selectedVacancy.created_by ?? 0;
-    return selectedVacancy.created_by_name || usersMap[uid] || '';
-  }, [selectedVacancy, usersMap]);
+  const selectedVacancySearchTitle = encodeURIComponent(selectedVacancy?.title?.trim() || '');
 
   // Load candidates when vacancy selected
   useEffect(() => {
@@ -326,7 +385,37 @@ export default function RecruiterFunnelsPage() {
     setDetailTab('info');
     setCurrentResumePage(0);
     setSelectedIds(new Set());
+    setVacancyEmptyStagesExpanded(false);
   }, [selectedVacancyId]);
+
+  useEffect(() => {
+    if (showVacancySearch) {
+      requestAnimationFrame(() => vacancySearchRef.current?.focus());
+    }
+  }, [showVacancySearch]);
+
+  const updateVacancyStageScrollState = useCallback(() => {
+    const el = vacancyStageScrollRef.current;
+    if (!el) return;
+    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    setVacancyStageCanScroll({
+      left: el.scrollLeft > 1,
+      right: el.scrollLeft < maxScrollLeft - 1,
+    });
+  }, []);
+
+  const scrollVacancyStageTabs = useCallback(
+    (direction: 'left' | 'right') => {
+      const el = vacancyStageScrollRef.current;
+      if (!el) return;
+      el.scrollBy({
+        left: direction === 'left' ? -520 : 520,
+        behavior: 'smooth',
+      });
+      window.setTimeout(updateVacancyStageScrollState, 320);
+    },
+    [updateVacancyStageScrollState],
+  );
 
   const loadCandidates = useCallback(async (vacancyId: number) => {
     setCandidatesLoading(true);
@@ -448,6 +537,35 @@ export default function RecruiterFunnelsPage() {
     }
     return map;
   }, [groupedByStage]);
+
+  const vacancyPrimaryStageLimit = 5;
+
+  const vacancyVisibleStageKeys = useMemo(() => {
+    return stagesConfig.keys.filter((key, index) => {
+      const count = groupedByStageMap[key]?.length || 0;
+      return vacancyEmptyStagesExpanded || index < vacancyPrimaryStageLimit || count > 0 || selectedTab === key;
+    });
+  }, [groupedByStageMap, selectedTab, stagesConfig.keys, vacancyEmptyStagesExpanded]);
+
+  const vacancyHiddenEmptyStages = Math.max(stagesConfig.keys.length - vacancyVisibleStageKeys.length, 0);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(updateVacancyStageScrollState);
+    const timer = window.setTimeout(updateVacancyStageScrollState, 260);
+    window.addEventListener('resize', updateVacancyStageScrollState);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', updateVacancyStageScrollState);
+    };
+  }, [
+    candidatesLoading,
+    showVacancySearch,
+    vacancyHiddenEmptyStages,
+    vacancyVisibleStageKeys.length,
+    selectedVacancyId,
+    updateVacancyStageScrollState,
+  ]);
 
   // Master-detail derived data
   const selectedCandidate = useMemo(
@@ -703,13 +821,26 @@ export default function RecruiterFunnelsPage() {
     });
   };
 
+  const handleStatusFilterChange = (nextStatus: VacancyStatus | 'all') => {
+    setStatusFilter(nextStatus);
+    if (!selectedVacancyId) {
+      setSearchParams(nextStatus === 'all' ? {} : { status: nextStatus });
+    }
+  };
+
   const selectVacancy = (vacancyId: number) => {
-    setSearchParams({ v: String(vacancyId) });
+    const params: Record<string, string> = { v: String(vacancyId) };
+    if (statusFilter !== 'all') params.status = statusFilter;
+    setSearchParams(params);
     setCandidateSearch('');
     setMobileSidebar(false);
   };
 
   const deselectVacancy = () => {
+    if (statusFilter !== 'all') {
+      setSearchParams({ status: statusFilter });
+      return;
+    }
     setSearchParams({});
   };
 
@@ -954,7 +1085,7 @@ export default function RecruiterFunnelsPage() {
       )}
 
       {/* ========== LEFT SIDEBAR: Recruiter tree (admin only) ========== */}
-      {isHrAdmin && <aside className={clsx(
+      {isHrAdmin && !selectedVacancy && statusFilter !== 'closed' && <aside className={clsx(
         'flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-dark-panel-alpha-95)] backdrop-blur-xl flex flex-col overflow-hidden z-50 transition-all duration-200',
         // Desktop: collapsible
         sidebarCollapsed
@@ -1012,7 +1143,7 @@ export default function RecruiterFunnelsPage() {
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.id}
-              onClick={() => setStatusFilter(f.id)}
+              onClick={() => handleStatusFilterChange(f.id)}
               className={clsx(
                 'px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors',
                 statusFilter === f.id
@@ -1102,7 +1233,7 @@ export default function RecruiterFunnelsPage() {
       </aside>}
 
       {/* Expand sidebar button (visible when collapsed, admin only) */}
-      {isHrAdmin && sidebarCollapsed && (
+      {isHrAdmin && !selectedVacancy && statusFilter !== 'closed' && sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
           className="hidden lg:flex items-center justify-center w-6 flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-dark-panel-alpha-50)] hover:bg-[var(--hf-dark-panel-alpha-80)] transition-colors group"
@@ -1116,6 +1247,19 @@ export default function RecruiterFunnelsPage() {
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* No vacancy selected — show funnels overview */}
         {!selectedVacancy ? (
+          statusFilter === 'closed' ? (
+            <ClosedVacanciesView
+              vacancies={filteredVacancies}
+              isLoading={isLoading}
+              search={search}
+              onSearchChange={setSearch}
+              onClearSearch={() => setSearch('')}
+              onSelectVacancy={selectVacancy}
+              onEditVacancy={setEditingVacancy}
+              onDeleteVacancy={handleDeleteVacancy}
+              usersMap={usersMap}
+            />
+          ) : (
           <div className="flex-1 flex flex-col overflow-y-auto p-4 lg:p-6">
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
@@ -1169,11 +1313,12 @@ export default function RecruiterFunnelsPage() {
               </div>
             )}
           </div>
+          )
         ) : (
           /* Vacancy selected — show candidates (Huntflow-style master-detail) */
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Top bar: breadcrumb + search */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-2 sm:py-3 gap-2 border-b border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] flex-shrink-0">
+          <div className="hf-vacancy-workspace flex-1 flex flex-col overflow-hidden">
+            {/* Top bar: kept for layout parity; visible search lives in stage island like /all-candidates */}
+            <div className="hf-vacancy-topbar flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-2 sm:py-3 gap-2 border-b border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] flex-shrink-0">
               {/* Breadcrumb */}
               <div className="flex items-center gap-1.5 text-sm min-w-0">
                 <button
@@ -1184,37 +1329,25 @@ export default function RecruiterFunnelsPage() {
                 </button>
                 <button
                   onClick={deselectVacancy}
-                  className="text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)] transition-colors hidden sm:inline"
-                >
-                  HR отдел
-                </button>
-                {isHrAdmin && selectedRecruiterName && (
-                  <>
-                    <ChevronRight className="w-3.5 h-3.5 text-[var(--hf-dark-600)] flex-shrink-0 hidden sm:block" />
-                    <span className="text-[var(--hf-dark-400)] truncate max-w-[120px] lg:max-w-[180px] hidden sm:inline">{selectedRecruiterName}</span>
-                  </>
-                )}
-                <ChevronRight className="w-3.5 h-3.5 text-[var(--hf-dark-600)] flex-shrink-0 hidden sm:block" />
-                <button
-                  onClick={deselectVacancy}
                   className="sm:hidden text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)] transition-colors text-xs"
                 >
                   ← Назад
                 </button>
                 <span className={clsx(
+                  'hf-vacancy-title',
                   'font-medium truncate max-w-[180px] sm:max-w-[250px]',
                   selectedVacancy.title?.trim() ? 'text-[var(--hf-dark-200)]' : 'text-[var(--hf-dark-500)] italic',
                 )}>
-                  {selectedVacancy.title?.trim() || 'Без названия'}
+                  {selectedVacancy.title?.trim() || 'Без названия'}{selectedVacancy.department_name ? ` · ${selectedVacancy.department_name}` : ''}
                 </span>
-                <span className="text-xs text-[var(--hf-dark-500)] ml-1 sm:ml-2 flex-shrink-0">
+                <span className="hf-vacancy-counter text-xs text-[var(--hf-dark-500)] ml-1 sm:ml-2 flex-shrink-0">
                   {candidates.length}
                 </span>
               </div>
 
               {/* Search + Actions */}
               <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-                <div className="relative flex-1 sm:flex-none">
+                <div className="hf-vacancy-search relative flex-1 sm:flex-none">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--hf-dark-500)]" />
                   <input
                     type="text"
@@ -1224,29 +1357,6 @@ export default function RecruiterFunnelsPage() {
                     className="w-full sm:w-44 pl-8 pr-3 py-1.5 bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-06)] rounded-lg text-xs text-[var(--hf-dark-200)] placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[color:var(--hf-accent-border-40)]"
                   />
                 </div>
-                <button
-                  onClick={() => setEditingVacancy(selectedVacancy)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-white-alpha-06)] transition-colors"
-                  title="Редактировать вакансию"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                {selectedVacancy.status !== 'closed' && (
-                  <button
-                    onClick={() => handleCloseVacancy(selectedVacancy)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-status-yellow)] hover:bg-[var(--hf-status-yellow-bg)] transition-colors"
-                    title="Закрыть вакансию"
-                  >
-                    <Archive className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <button
-                  onClick={() => handleDeleteVacancy(selectedVacancy)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)] transition-colors"
-                  title="Удалить вакансию"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
               </div>
             </div>
 
@@ -1257,42 +1367,209 @@ export default function RecruiterFunnelsPage() {
             ) : (
               /* ===== DETAIL VIEW: Huntflow-style master-detail ===== */
               <>
-                {/* Stage tabs */}
-                <div className="flex items-center gap-1 px-4 py-2 border-b border-[color:var(--hf-white-alpha-06)] overflow-x-auto no-scrollbar flex-shrink-0">
-                  <button
-                    onClick={() => { setSelectedTab('all'); setSelectedCandidateId(null); }}
+                {/* Stage tabs: same visual shell as /all-candidates, vacancy-specific content */}
+                <div className="hf-vacancy-stage-shell hf-top-stage-shell">
+                  <div
+                    ref={vacancyStageScrollRef}
+                    onScroll={updateVacancyStageScrollState}
                     className={clsx(
-                      'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
-                      selectedTab === 'all'
-                        ? 'bg-[var(--hf-accent)] text-[var(--hf-white)]'
-                        : 'text-[var(--hf-dark-400)] hover:bg-[var(--hf-white-alpha-06)]'
+                      'hf-vacancy-stage-tabs hf-top-stage-tabs no-scrollbar',
+                      !showVacancySearch && 'hf-top-stage-tabs-padded',
                     )}
                   >
-                    Все <span className="ml-1 text-xs opacity-70">{filteredCandidates.length}</span>
-                  </button>
-                  {stagesConfig.keys.map(key => {
-                    const count = groupedByStageMap[key]?.length || 0;
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => { setSelectedTab(key); setSelectedCandidateId(null); }}
-                        className={clsx(
-                          'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors',
-                          selectedTab === key
-                            ? 'bg-[var(--hf-accent)] text-[var(--hf-white)]'
-                            : 'text-[var(--hf-dark-400)] hover:bg-[var(--hf-white-alpha-06)]'
+                    <button
+                      type="button"
+                      onClick={() => setShowVacancySearch((value) => !value)}
+                      className={clsx(
+                        'hf-top-stage-search-toggle',
+                        (showVacancySearch || candidateSearch) && 'hf-top-stage-search-toggle-active',
+                      )}
+                      title={showVacancySearch ? 'Скрыть поиск' : 'Открыть поиск'}
+                      aria-pressed={showVacancySearch}
+                    >
+                      <Search className="h-[var(--hf-candidates-search-icon)] w-[var(--hf-candidates-search-icon)]" />
+                    </button>
+
+                    {showVacancySearch ? (
+                      <div className="hf-top-stage-search">
+                        <input
+                          ref={vacancySearchRef}
+                          value={candidateSearch}
+                          onChange={(e) => setCandidateSearch(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              if (candidateSearch) setCandidateSearch('');
+                              else setShowVacancySearch(false);
+                            }
+                          }}
+                          placeholder="Поиск по имени, почте, телефону..."
+                          className="hf-top-stage-search-input"
+                        />
+                        {candidateSearch ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCandidateSearch('');
+                              vacancySearchRef.current?.focus();
+                            }}
+                            className="hf-top-stage-search-action hf-top-stage-search-clear"
+                            title="Очистить поиск"
+                          >
+                            <X className="h-5 w-5" />
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => { setSelectedTab('all'); setSelectedCandidateId(null); }}
+                          className={clsx(
+                            'hf-top-stage-item hf-top-stage-all',
+                            selectedTab === 'all'
+                              ? 'hf-top-stage-item-active'
+                              : 'hf-top-stage-item-idle',
+                          )}
+                        >
+                          Из базы
+                          <span className={clsx(
+                            'hf-top-stage-badge',
+                            selectedTab === 'all' && 'hf-top-stage-badge-active',
+                          )}>
+                            {filteredCandidates.length}
+                          </span>
+                          {selectedTab === 'all' && <span className="hf-top-stage-underline-all" />}
+                        </button>
+
+                        {vacancyVisibleStageKeys.map(key => {
+                          const count = groupedByStageMap[key]?.length || 0;
+                          const vacancyStageLabel = VACANCY_STAGE_TAB_LABELS[stagesConfig.keyToEnum[key] || key]
+                            || stagesConfig.labels[key];
+                          const isActive = selectedTab === key;
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => { setSelectedTab(key); setSelectedCandidateId(null); }}
+                              className={clsx(
+                                'hf-top-stage-item',
+                                isActive
+                                  ? 'hf-top-stage-item-active'
+                                  : 'hf-top-stage-item-idle',
+                              )}
+                            >
+                              {vacancyStageLabel}
+                              {count > 0 && <span className="hf-top-stage-badge hf-top-stage-badge-muted">{count}</span>}
+                              {isActive && <span className="hf-top-stage-underline" />}
+                            </button>
+                          );
+                        })}
+                        {vacancyHiddenEmptyStages > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setVacancyEmptyStagesExpanded(true)}
+                            className="hf-top-stage-empty-group"
+                          >
+                            • • {vacancyHiddenEmptyStages} этапов без кандидатов • •
+                          </button>
                         )}
-                      >
-                        {stagesConfig.labels[key]} <span className="ml-1 text-xs opacity-70">{count}</span>
-                      </button>
-                    );
-                  })}
+                      </>
+                    )}
+                  </div>
+                  <div className="hf-top-stage-action-cell">
+                    <button
+                      type="button"
+                      onClick={() => setEditingVacancy(selectedVacancy)}
+                      className="hf-top-stage-action-btn"
+                      title="Действия с вакансией"
+                      aria-label="Действия с вакансией"
+                    >
+                      <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
+                    </button>
+                  </div>
+                  {!showVacancySearch && vacancyStageCanScroll.left ? (
+                    <button
+                      type="button"
+                      onClick={() => scrollVacancyStageTabs('left')}
+                      className="hf-top-stage-arrow hf-top-stage-arrow-left"
+                      title="Прокрутить этапы влево"
+                    >
+                      <ChevronLeft className="hf-top-stage-arrow-icon" />
+                    </button>
+                  ) : null}
+                  {!showVacancySearch && vacancyStageCanScroll.right ? (
+                    <button
+                      type="button"
+                      onClick={() => scrollVacancyStageTabs('right')}
+                      className="hf-top-stage-arrow hf-top-stage-arrow-right"
+                      title="Прокрутить этапы вправо"
+                    >
+                      <ChevronRight className="hf-top-stage-arrow-icon" />
+                    </button>
+                  ) : null}
                 </div>
 
-                {/* Master-Detail split */}
-                <div className="flex-1 flex overflow-hidden">
+                {tabFilteredCandidates.length === 0 && !candidateSearch.trim() ? (
+                  <div className="hf-vacancy-empty flex-1 overflow-y-auto">
+                    <section className="hf-vacancy-empty-card">
+                      <h2>Взять кандидатов в работу</h2>
+                      <div className="hf-vacancy-empty-actions">
+                        <button
+                          type="button"
+                          onClick={() => navigate('/all-candidates')}
+                          className="hf-vacancy-empty-link"
+                        >
+                          Найти в базе
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowNewCandidateModal(true)}
+                          className="hf-vacancy-empty-link"
+                        >
+                          · Добавить новое резюме вручную
+                        </button>
+                      </div>
+
+                      <h3>Найти на джоб-сайтах</h3>
+                      <div className="hf-vacancy-job-links">
+                        <a
+                          href={`https://hh.ru/search/resume?text=${selectedVacancySearchTitle}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          На Хедхантере
+                        </a>
+                        <a
+                          href={`https://career.habr.com/resumes?q=${selectedVacancySearchTitle}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          На Хабр Карьере
+                        </a>
+                        <a
+                          href={`https://www.linkedin.com/search/results/all/?keywords=${selectedVacancySearchTitle}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          На LinkedIn
+                        </a>
+                      </div>
+
+                      <p className="hf-vacancy-empty-hint">
+                        Сохраняйте найденные резюме одним кликом
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => toast('Расширение для сохранения резюме пока не подключено')}
+                        className="hf-vacancy-empty-help"
+                      >
+                        Прочесть инструкцию
+                      </button>
+                    </section>
+                  </div>
+                ) : (
+                /* Master-Detail split */
+                <div className="hf-vacancy-master-detail flex-1 flex overflow-hidden">
                   {/* Left: candidate list */}
-                  <div className="w-[350px] flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] overflow-hidden flex flex-col relative">
+                  <div className="hf-vacancy-candidate-list w-[350px] flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] overflow-hidden flex flex-col relative">
                     <div className={clsx('flex-1 overflow-y-auto', anySelected && 'pb-14')}>
                     {tabFilteredCandidates.length === 0 ? (
                       <div className="flex items-center justify-center h-40 text-[var(--hf-dark-500)] text-sm">
@@ -1424,7 +1701,7 @@ export default function RecruiterFunnelsPage() {
                   </div>
 
                   {/* Right: detail panel */}
-                  <div className="flex-1 flex flex-col overflow-hidden">
+                  <div className="hf-vacancy-detail flex-1 flex flex-col overflow-hidden">
                     {selectedCandidate ? (
                       <>
                         {/* Detail tabs: Личные заметки / Резюме */}
@@ -2094,7 +2371,7 @@ export default function RecruiterFunnelsPage() {
                         </div>
                       </>
                     ) : (
-                      <div className="flex-1 flex items-center justify-center h-full text-[var(--hf-dark-500)]">
+                      <div className="hf-vacancy-no-selection flex-1 flex items-center justify-center h-full text-[var(--hf-dark-500)]">
                         <div className="text-center">
                           <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
                           <p className="text-sm">Выберите кандидата из списка</p>
@@ -2103,6 +2380,7 @@ export default function RecruiterFunnelsPage() {
                     )}
                   </div>
                 </div>
+                )}
               </>
             )}
           </div>
@@ -2124,6 +2402,33 @@ export default function RecruiterFunnelsPage() {
           vacancy={editingVacancy}
           onClose={() => setEditingVacancy(null)}
           onSuccess={() => { setEditingVacancy(null); fetchVacancies(); }}
+        />
+      )}
+
+      {showNewCandidateModal && (
+        <NewCandidateModal
+          onClose={() => setShowNewCandidateModal(false)}
+          onSaved={() => {
+            setShowNewCandidateModal(false);
+          }}
+          onOpenParser={() => {
+            setShowNewCandidateModal(false);
+            setShowParserModal(true);
+          }}
+        />
+      )}
+
+      {showParserModal && (
+        <ParserModal
+          type="resume"
+          onClose={() => setShowParserModal(false)}
+          onParsed={() => {
+            setShowParserModal(false);
+            toast.success('Кандидат добавлен');
+          }}
+          onAttachedToEntity={() => {
+            setShowParserModal(false);
+          }}
         />
       )}
 
@@ -2220,6 +2525,277 @@ export default function RecruiterFunnelsPage() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+/* ===================== Closed Vacancies ===================== */
+
+function ClosedVacanciesView({
+  vacancies,
+  isLoading,
+  search,
+  onSearchChange,
+  onClearSearch,
+  onSelectVacancy,
+  onEditVacancy,
+  onDeleteVacancy,
+  usersMap,
+}: {
+  vacancies: Vacancy[];
+  isLoading: boolean;
+  search: string;
+  onSearchChange: (value: string) => void;
+  onClearSearch: () => void;
+  onSelectVacancy: (id: number) => void;
+  onEditVacancy: (vacancy: Vacancy) => void;
+  onDeleteVacancy: (vacancy: Vacancy) => void;
+  usersMap: Record<number, string>;
+}) {
+  const [recruiterFilter, setRecruiterFilter] = useState('all');
+  const [recruiterMenuOpen, setRecruiterMenuOpen] = useState(false);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sortMode, setSortMode] = useState<'match' | 'closed_desc' | 'title_asc'>('match');
+
+  const recruiterName = (vacancy: Vacancy) =>
+    vacancy.created_by_name || usersMap[vacancy.created_by ?? 0] || 'Не указан';
+
+  const recruiters = useMemo(() => {
+    const map = new Map<string, string>();
+    vacancies.forEach((vacancy) => {
+      const key = String(vacancy.created_by ?? recruiterName(vacancy));
+      if (!map.has(key)) map.set(key, recruiterName(vacancy));
+    });
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1], 'ru'));
+  }, [vacancies, usersMap]);
+
+  const visibleVacancies = useMemo(() => {
+    const result = recruiterFilter === 'all'
+      ? [...vacancies]
+      : vacancies.filter((vacancy) => String(vacancy.created_by ?? recruiterName(vacancy)) === recruiterFilter);
+
+    if (sortMode === 'closed_desc') {
+      result.sort((a, b) => new Date(b.closes_at || b.updated_at).getTime() - new Date(a.closes_at || a.updated_at).getTime());
+    }
+    if (sortMode === 'title_asc') {
+      result.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ru'));
+    }
+    return result;
+  }, [vacancies, recruiterFilter, sortMode, usersMap]);
+
+  const activeRecruiterLabel =
+    recruiterFilter === 'all'
+      ? 'Все'
+      : recruiters.find(([key]) => key === recruiterFilter)?.[1] || 'Все';
+
+  const sortLabel =
+    sortMode === 'closed_desc'
+      ? 'По дате закрытия'
+      : sortMode === 'title_asc'
+        ? 'По названию'
+        : 'По соответствию';
+
+  return (
+    <div className="hf-closed-vacancies flex-1 min-w-0 overflow-y-auto">
+      <div className="hf-closed-vacancies-inner">
+        <header className="hf-closed-vacancies-searchbar">
+          <button type="button" className="hf-closed-vacancies-search-kind">
+            ВАКАНСИИ
+          </button>
+          <div className="hf-closed-vacancies-searchbox">
+            <Search className="hf-closed-vacancies-search-icon" />
+            <input
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Поиск в базе"
+              aria-label="Поиск закрытых вакансий"
+            />
+            {search && (
+              <button
+                type="button"
+                className="hf-closed-vacancies-clear"
+                onClick={onClearSearch}
+                aria-label="Очистить поиск"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div className="hf-closed-vacancies-toolbar">
+          <div className="hf-closed-vacancies-filters">
+            <div className="hf-closed-vacancies-filter-wrap">
+              <button type="button" className="hf-closed-vacancies-filter hf-closed-vacancies-filter-active">
+                Закрытые <ChevronDown className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="hf-closed-vacancies-filter-wrap">
+              <button
+                type="button"
+                className="hf-closed-vacancies-filter"
+                onClick={() => {
+                  setRecruiterMenuOpen((value) => !value);
+                  setSortMenuOpen(false);
+                  setFiltersOpen(false);
+                }}
+              >
+                Рекрутеры : {activeRecruiterLabel} <ChevronDown className="h-4 w-4" />
+              </button>
+              {recruiterMenuOpen && (
+                <div className="hf-closed-vacancies-menu">
+                  <button
+                    type="button"
+                    className={clsx(recruiterFilter === 'all' && 'hf-closed-vacancies-menu-active')}
+                    onClick={() => {
+                      setRecruiterFilter('all');
+                      setRecruiterMenuOpen(false);
+                    }}
+                  >
+                    Все
+                  </button>
+                  {recruiters.map(([key, name]) => (
+                    <button
+                      type="button"
+                      key={key}
+                      className={clsx(recruiterFilter === key && 'hf-closed-vacancies-menu-active')}
+                      onClick={() => {
+                        setRecruiterFilter(key);
+                        setRecruiterMenuOpen(false);
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="hf-closed-vacancies-filter-wrap">
+              <button
+                type="button"
+                className="hf-closed-vacancies-filter"
+                onClick={() => {
+                  setFiltersOpen((value) => !value);
+                  setRecruiterMenuOpen(false);
+                  setSortMenuOpen(false);
+                }}
+              >
+                Фильтры <ChevronDown className="h-4 w-4" />
+              </button>
+              {filtersOpen && (
+                <div className="hf-closed-vacancies-menu hf-closed-vacancies-menu-note">
+                  Дополнительные фильтры появятся, когда API начнёт отдавать заказчиков и офферы по закрытым вакансиям.
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="hf-closed-vacancies-filter-wrap">
+            <button
+              type="button"
+              className="hf-closed-vacancies-filter hf-closed-vacancies-sort"
+              onClick={() => {
+                setSortMenuOpen((value) => !value);
+                setRecruiterMenuOpen(false);
+                setFiltersOpen(false);
+              }}
+            >
+              {sortLabel} <ChevronDown className="h-4 w-4" />
+            </button>
+            {sortMenuOpen && (
+              <div className="hf-closed-vacancies-menu">
+                {[
+                  ['match', 'По соответствию'],
+                  ['closed_desc', 'По дате закрытия'],
+                  ['title_asc', 'По названию'],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={clsx(sortMode === key && 'hf-closed-vacancies-menu-active')}
+                    onClick={() => {
+                      setSortMode(key as typeof sortMode);
+                      setSortMenuOpen(false);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <section className="hf-closed-vacancies-results" aria-label="Закрытые вакансии">
+        <div className="hf-closed-vacancies-count">
+          Найдено вакансий: {visibleVacancies.length}
+        </div>
+
+        {isLoading ? (
+          <div className="hf-closed-vacancies-state">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Загрузка вакансий
+          </div>
+        ) : visibleVacancies.length === 0 ? (
+          <div className="hf-closed-vacancies-state">
+            {search ? 'Ничего не найдено' : 'Закрытых вакансий нет'}
+          </div>
+        ) : (
+          <div className="hf-closed-vacancies-list">
+            {visibleVacancies.map((vacancy) => {
+              const openedAt = vacancy.published_at || vacancy.created_at;
+              const closedAt = vacancy.closes_at || vacancy.updated_at;
+              return (
+                <article key={vacancy.id} className="hf-closed-vacancies-row">
+                  <button
+                    type="button"
+                    className="hf-closed-vacancies-title"
+                    onClick={() => onSelectVacancy(vacancy.id)}
+                  >
+                    <span className="hf-closed-vacancies-status">ЗАКРЫТА</span>
+                    <span className="hf-closed-vacancies-title-text">{vacancy.title?.trim() || 'Без названия'}</span>
+                  </button>
+                  {vacancy.department_name && (
+                    <div className="hf-closed-vacancies-department">{vacancy.department_name}</div>
+                  )}
+                  <div className="hf-closed-vacancies-meta">
+                    <span>Открыта: {formatVacancyListDate(openedAt)}</span>
+                    <span className="hf-closed-vacancies-dot">·</span>
+                    <span>Закрыта: {formatVacancyListDate(closedAt)}</span>
+                  </div>
+                  <div className="hf-closed-vacancies-meta">
+                    <span>Последнее действие: {formatVacancyListDate(vacancy.updated_at)}</span>
+                  </div>
+                  <div className="hf-closed-vacancies-meta">
+                    <span>Рекрутер: {recruiterName(vacancy)}</span>
+                  </div>
+                  <div className="hf-closed-vacancies-footer">
+                    <div className="hf-closed-vacancies-actions">
+                      <button
+                        type="button"
+                        onClick={() => onEditVacancy(vacancy)}
+                        aria-label="Редактировать вакансию"
+                        title="Редактировать"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteVacancy(vacancy)}
+                        aria-label="Удалить вакансию"
+                        title="Удалить"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+        </section>
+      </div>
     </div>
   );
 }
