@@ -12,17 +12,17 @@ export default {
     extend: {
       colors: {
         dark: {
-          50: 'var(--hf-dark-50)',
-          100: 'var(--hf-dark-100)',
-          200: 'var(--hf-dark-200)',
-          300: 'var(--hf-dark-300)',
-          400: 'var(--hf-dark-400)',
-          500: 'var(--hf-dark-500)',
-          600: 'var(--hf-dark-600)',
-          700: 'var(--hf-dark-700)',
-          800: 'var(--hf-dark-800)',
-          900: 'var(--hf-dark-900)',
-          950: 'var(--hf-dark-950)',
+          50: 'var(--tw-dark-50)',
+          100: 'var(--tw-dark-100)',
+          200: 'var(--tw-dark-200)',
+          300: 'var(--tw-dark-300)',
+          400: 'var(--tw-dark-400)',
+          500: 'var(--tw-dark-500)',
+          600: 'var(--tw-dark-600)',
+          700: 'var(--tw-dark-700)',
+          800: 'var(--tw-dark-800)',
+          900: 'var(--tw-dark-900)',
+          950: 'var(--tw-dark-950)',
         },
         accent: {
           50: 'var(--hf-cyan-50)',
