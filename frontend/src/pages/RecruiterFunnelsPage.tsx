@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import type { RefObject } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -30,6 +31,7 @@ import {
   Pencil,
   Archive,
   Trash2,
+  Inbox,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -112,6 +114,9 @@ const formatVacancyListDate = (date?: string | null) => {
   }).replace(/\sг\.$/, '');
 };
 
+const getClosedVacancyDate = (vacancy: Vacancy) =>
+  vacancy.closes_at || vacancy.updated_at || vacancy.created_at;
+
 const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badge: string }> = {
   applied:      { bg: 'bg-[var(--hf-status-blue-bg)]',   text: 'text-[var(--hf-status-blue)]',    dot: 'bg-[var(--hf-status-blue)]',    badge: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]' },
   screening:    { bg: 'bg-[var(--hf-status-cyan-bg)]',    text: 'text-[var(--hf-cyan-400)]',    dot: 'bg-[var(--hf-status-cyan)]',    badge: 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-cyan-400)]' },
@@ -172,6 +177,141 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
+type VacancyStagesConfig = {
+  keys: string[];
+  labels: Record<string, string>;
+  keyToEnum: Record<string, string>;
+  enumToKeys: Record<string, string[]>;
+  colorKeys: Record<string, string>;
+  isVirtual: Record<string, boolean>;
+};
+
+function ClosedVacancyDetail({
+  vacancy,
+  stageKeys,
+  stagesConfig,
+  groupedByStageMap,
+  hiddenEmptyStages,
+  stageScrollRef,
+  onStageScroll,
+  canScroll,
+  onScrollStages,
+  onReopen,
+  onEdit,
+}: {
+  vacancy: Vacancy;
+  stageKeys: string[];
+  stagesConfig: VacancyStagesConfig;
+  groupedByStageMap: Record<string, VacancyApplication[]>;
+  hiddenEmptyStages: number;
+  stageScrollRef: RefObject<HTMLDivElement>;
+  onStageScroll: () => void;
+  canScroll: { left: boolean; right: boolean };
+  onScrollStages: (direction: 'left' | 'right') => void;
+  onReopen: () => void;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="hf-vacancy-workspace hf-vacancy-workspace-closed flex-1 flex flex-col overflow-hidden">
+      <div className="hf-vacancy-stage-shell hf-top-stage-shell">
+        <div className="hf-vacancy-source-tabs hf-vacancy-source-tabs-closed">
+          <button type="button" className="hf-vacancy-source-tab hf-vacancy-source-tab-active">
+            Вакансия закрыта
+          </button>
+          <button type="button" className="hf-vacancy-source-tab">
+            Отклики
+          </button>
+          <span className="hf-vacancy-ai-badge" aria-hidden="true">AI</span>
+          <button type="button" className="hf-vacancy-source-tab hf-vacancy-source-tab-base">
+            Из базы
+          </button>
+        </div>
+        <div
+          ref={stageScrollRef}
+          onScroll={onStageScroll}
+          className="hf-vacancy-stage-tabs hf-top-stage-tabs hf-top-stage-tabs-padded no-scrollbar"
+        >
+          {stageKeys.map((key) => {
+            const count = groupedByStageMap[key]?.length || 0;
+            const vacancyStageLabel = VACANCY_STAGE_TAB_LABELS[stagesConfig.keyToEnum[key] || key]
+              || stagesConfig.labels[key];
+            return (
+              <button
+                key={key}
+                type="button"
+                className="hf-top-stage-item hf-top-stage-item-idle"
+              >
+                {vacancyStageLabel}
+                {count > 0 && <span className="hf-top-stage-badge hf-top-stage-badge-muted">{count}</span>}
+              </button>
+            );
+          })}
+          {hiddenEmptyStages > 0 && (
+            <span className="hf-top-stage-empty-group">
+              • • {hiddenEmptyStages} этапов без кандидатов • •
+            </span>
+          )}
+        </div>
+        <div className="hf-top-stage-action-cell">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="hf-top-stage-action-btn"
+            title="Информация о вакансии"
+            aria-label="Информация о вакансии"
+          >
+            <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
+          </button>
+        </div>
+        {canScroll.left ? (
+          <button
+            type="button"
+            onClick={() => onScrollStages('left')}
+            className="hf-top-stage-arrow hf-top-stage-arrow-left"
+            title="Прокрутить этапы влево"
+          >
+            <ChevronLeft className="hf-top-stage-arrow-icon" />
+          </button>
+        ) : null}
+        {canScroll.right ? (
+          <button
+            type="button"
+            onClick={() => onScrollStages('right')}
+            className="hf-top-stage-arrow hf-top-stage-arrow-right"
+            title="Прокрутить этапы вправо"
+          >
+            <ChevronRight className="hf-top-stage-arrow-icon" />
+          </button>
+        ) : null}
+      </div>
+
+      <div className="hf-vacancy-closed-panel flex-1 overflow-y-auto">
+        <section className="hf-vacancy-closed-card">
+          <Inbox className="hf-vacancy-closed-icon" />
+          <h2>Вакансия закрыта {formatVacancyListDate(getClosedVacancyDate(vacancy))}</h2>
+          <p className="hf-vacancy-closed-status">Все наняты</p>
+          <p className="hf-vacancy-closed-muted">Нет закрытых позиций</p>
+          <div className="hf-vacancy-closed-actions">
+            <button type="button" onClick={onReopen} className="hf-vacancy-closed-button">
+              Открыть заново
+            </button>
+            <button type="button" onClick={onEdit} className="hf-vacancy-closed-button">
+              Информация о вакансии
+            </button>
+          </div>
+          <div className="hf-vacancy-closed-note">
+            <strong>Открывайте старые вакансии вместо создания новых</strong>
+            <span>
+              Статистика посчитается корректно, история работы не потеряется,
+              а кандидаты автоматически снимутся с этапов.
+            </span>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function HuntflowOptionsIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -211,11 +351,9 @@ export default function RecruiterFunnelsPage() {
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
-  const [showVacancySearch, setShowVacancySearch] = useState(false);
   const [showNewCandidateModal, setShowNewCandidateModal] = useState(false);
   const [showParserModal, setShowParserModal] = useState(false);
   const [vacancyEmptyStagesExpanded, setVacancyEmptyStagesExpanded] = useState(false);
-  const vacancySearchRef = useRef<HTMLInputElement>(null);
   const vacancyStageScrollRef = useRef<HTMLDivElement>(null);
   const [vacancyStageCanScroll, setVacancyStageCanScroll] = useState({
     left: false,
@@ -257,6 +395,8 @@ export default function RecruiterFunnelsPage() {
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
   const [addingToVacancy, setAddingToVacancy] = useState(false);
   const addToVacancyRef = useRef<HTMLDivElement>(null);
+  const [showVacancyTopSearch, setShowVacancyTopSearch] = useState(false);
+  const vacancyTopSearchRef = useRef<HTMLInputElement>(null);
 
   // Org-level лейблы этапов с /all-candidates → ⚙️.
   // Маппинг: ApplicationStage (applied/screening/phone_screen/...) ↔
@@ -380,19 +520,13 @@ export default function RecruiterFunnelsPage() {
     }
     loadCandidates(selectedVacancyId);
     setSelectedCandidateId(null);
-    setSelectedTab('all');
+    setSelectedTab('screening');
     setCandidateHistory([]);
     setDetailTab('info');
     setCurrentResumePage(0);
     setSelectedIds(new Set());
     setVacancyEmptyStagesExpanded(false);
   }, [selectedVacancyId]);
-
-  useEffect(() => {
-    if (showVacancySearch) {
-      requestAnimationFrame(() => vacancySearchRef.current?.focus());
-    }
-  }, [showVacancySearch]);
 
   const updateVacancyStageScrollState = useCallback(() => {
     const el = vacancyStageScrollRef.current;
@@ -539,15 +673,21 @@ export default function RecruiterFunnelsPage() {
   }, [groupedByStage]);
 
   const vacancyPrimaryStageLimit = 5;
+  const vacancySourceStageKeys = useMemo(() => new Set(['applied']), []);
+  const vacancyWorkflowKeys = useMemo(
+    () => stagesConfig.keys.filter((key) => !vacancySourceStageKeys.has(stagesConfig.keyToEnum[key] || key)),
+    [stagesConfig.keys, stagesConfig.keyToEnum, vacancySourceStageKeys],
+  );
 
   const vacancyVisibleStageKeys = useMemo(() => {
-    return stagesConfig.keys.filter((key, index) => {
+    return vacancyWorkflowKeys.filter((key, index) => {
       const count = groupedByStageMap[key]?.length || 0;
       return vacancyEmptyStagesExpanded || index < vacancyPrimaryStageLimit || count > 0 || selectedTab === key;
     });
-  }, [groupedByStageMap, selectedTab, stagesConfig.keys, vacancyEmptyStagesExpanded]);
+  }, [groupedByStageMap, selectedTab, vacancyEmptyStagesExpanded, vacancyWorkflowKeys]);
 
-  const vacancyHiddenEmptyStages = Math.max(stagesConfig.keys.length - vacancyVisibleStageKeys.length, 0);
+  const vacancyWorkflowStageCount = vacancyWorkflowKeys.length;
+  const vacancyHiddenEmptyStages = Math.max(vacancyWorkflowStageCount - vacancyVisibleStageKeys.length, 0);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(updateVacancyStageScrollState);
@@ -560,7 +700,6 @@ export default function RecruiterFunnelsPage() {
     };
   }, [
     candidatesLoading,
-    showVacancySearch,
     vacancyHiddenEmptyStages,
     vacancyVisibleStageKeys.length,
     selectedVacancyId,
@@ -580,6 +719,25 @@ export default function RecruiterFunnelsPage() {
       return candidateStageKeys.includes(selectedTab);
     });
   }, [filteredCandidates, selectedTab, stagesConfig]);
+
+  useEffect(() => {
+    if (selectedTab === 'all') return;
+    const activeKeys = new Set(stagesConfig.keys);
+    if (!activeKeys.has(selectedTab)) {
+      setSelectedTab(vacancyWorkflowKeys[0] || 'all');
+    }
+  }, [selectedTab, stagesConfig.keys, vacancyWorkflowKeys]);
+
+  useEffect(() => {
+    if (tabFilteredCandidates.length === 0) {
+      if (selectedCandidateId !== null) setSelectedCandidateId(null);
+      return;
+    }
+    if (!selectedCandidateId || !tabFilteredCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
+      setSelectedCandidateId(tabFilteredCandidates[0].id);
+      setDetailTab('info');
+    }
+  }, [selectedCandidateId, tabFilteredCandidates]);
 
   // Load history when candidate selected
   useEffect(() => {
@@ -855,6 +1013,18 @@ export default function RecruiterFunnelsPage() {
     setConfirmDialog({ type: 'close', vacancy });
   };
 
+  const handleReopenVacancy = async (vacancy: Vacancy) => {
+    try {
+      await updateVacancy(vacancy.id, { status: 'open' });
+      toast.success('Вакансия открыта заново');
+      setStatusFilter('open');
+      setSearchParams({ v: String(vacancy.id), status: 'open' });
+      fetchVacancies();
+    } catch {
+      toast.error('Не удалось открыть вакансию заново');
+    }
+  };
+
   const handleDeleteVacancy = (vacancy: Vacancy) => {
     setConfirmDialog({ type: 'delete', vacancy });
   };
@@ -1040,6 +1210,12 @@ export default function RecruiterFunnelsPage() {
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showAddToVacancy]);
+
+  useEffect(() => {
+    if (showVacancyTopSearch) {
+      vacancyTopSearchRef.current?.focus();
+    }
+  }, [showVacancyTopSearch]);
 
   // Get vacancies available for adding a candidate (exclude current vacancy, show only open ones)
   const availableVacanciesForCandidate = useMemo(() => {
@@ -1252,8 +1428,19 @@ export default function RecruiterFunnelsPage() {
               vacancies={filteredVacancies}
               isLoading={isLoading}
               search={search}
+              statusFilter={statusFilter}
               onSearchChange={setSearch}
               onClearSearch={() => setSearch('')}
+              onStatusChange={(nextStatus) => {
+                const next = new URLSearchParams(searchParams);
+                if (nextStatus === 'all') {
+                  next.delete('status');
+                } else {
+                  next.set('status', nextStatus);
+                }
+                next.delete('v');
+                setSearchParams(next);
+              }}
               onSelectVacancy={selectVacancy}
               onEditVacancy={setEditingVacancy}
               onDeleteVacancy={handleDeleteVacancy}
@@ -1314,10 +1501,24 @@ export default function RecruiterFunnelsPage() {
             )}
           </div>
           )
+        ) : selectedVacancy.status === 'closed' ? (
+          <ClosedVacancyDetail
+            vacancy={selectedVacancy}
+            stageKeys={vacancyVisibleStageKeys}
+            stagesConfig={stagesConfig}
+            groupedByStageMap={groupedByStageMap}
+            hiddenEmptyStages={vacancyHiddenEmptyStages}
+            stageScrollRef={vacancyStageScrollRef}
+            onStageScroll={updateVacancyStageScrollState}
+            canScroll={vacancyStageCanScroll}
+            onScrollStages={scrollVacancyStageTabs}
+            onReopen={() => handleReopenVacancy(selectedVacancy)}
+            onEdit={() => setEditingVacancy(selectedVacancy)}
+          />
         ) : (
           /* Vacancy selected — show candidates (Huntflow-style master-detail) */
           <div className="hf-vacancy-workspace flex-1 flex flex-col overflow-hidden">
-            {/* Top bar: kept for layout parity; visible search lives in stage island like /all-candidates */}
+            {/* Top bar: vacancy title context; search lives in the stage island like /all-candidates */}
             <div className="hf-vacancy-topbar flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-2 sm:py-3 gap-2 border-b border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] flex-shrink-0">
               {/* Breadcrumb */}
               <div className="flex items-center gap-1.5 text-sm min-w-0">
@@ -1345,19 +1546,6 @@ export default function RecruiterFunnelsPage() {
                 </span>
               </div>
 
-              {/* Search + Actions */}
-              <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-                <div className="hf-vacancy-search relative flex-1 sm:flex-none">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--hf-dark-500)]" />
-                  <input
-                    type="text"
-                    placeholder="Поиск..."
-                    value={candidateSearch}
-                    onChange={(e) => setCandidateSearch(e.target.value)}
-                    className="w-full sm:w-44 pl-8 pr-3 py-1.5 bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-06)] rounded-lg text-xs text-[var(--hf-dark-200)] placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[color:var(--hf-accent-border-40)]"
-                  />
-                </div>
-              </div>
             </div>
 
             {candidatesLoading ? (
@@ -1369,40 +1557,36 @@ export default function RecruiterFunnelsPage() {
               <>
                 {/* Stage tabs: same visual shell as /all-candidates, vacancy-specific content */}
                 <div className="hf-vacancy-stage-shell hf-top-stage-shell">
-                  <div
-                    ref={vacancyStageScrollRef}
-                    onScroll={updateVacancyStageScrollState}
-                    className={clsx(
-                      'hf-vacancy-stage-tabs hf-top-stage-tabs no-scrollbar',
-                      !showVacancySearch && 'hf-top-stage-tabs-padded',
-                    )}
-                  >
+                  <div className={clsx(
+                    'hf-vacancy-source-tabs',
+                    (showVacancyTopSearch || candidateSearch) && 'hf-vacancy-source-tabs-searching',
+                  )}>
                     <button
                       type="button"
-                      onClick={() => setShowVacancySearch((value) => !value)}
+                      onClick={() => setShowVacancyTopSearch((value) => !value)}
                       className={clsx(
-                        'hf-top-stage-search-toggle',
-                        (showVacancySearch || candidateSearch) && 'hf-top-stage-search-toggle-active',
+                        'hf-top-stage-search-toggle hf-vacancy-source-search-toggle',
+                        (showVacancyTopSearch || candidateSearch) && 'hf-top-stage-search-toggle-active',
                       )}
-                      title={showVacancySearch ? 'Скрыть поиск' : 'Открыть поиск'}
-                      aria-pressed={showVacancySearch}
+                      title={showVacancyTopSearch ? 'Скрыть поиск' : 'Открыть поиск'}
+                      aria-pressed={showVacancyTopSearch}
                     >
                       <Search className="h-[var(--hf-candidates-search-icon)] w-[var(--hf-candidates-search-icon)]" />
                     </button>
 
-                    {showVacancySearch ? (
-                      <div className="hf-top-stage-search">
+                    {showVacancyTopSearch || candidateSearch ? (
+                      <div className="hf-vacancy-source-search">
                         <input
-                          ref={vacancySearchRef}
+                          ref={vacancyTopSearchRef}
                           value={candidateSearch}
-                          onChange={(e) => setCandidateSearch(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Escape') {
+                          onChange={(event) => setCandidateSearch(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
                               if (candidateSearch) setCandidateSearch('');
-                              else setShowVacancySearch(false);
+                              else setShowVacancyTopSearch(false);
                             }
                           }}
-                          placeholder="Поиск по имени, почте, телефону..."
+                          placeholder="Поиск по имени, должности..."
                           className="hf-top-stage-search-input"
                         />
                         {candidateSearch ? (
@@ -1410,7 +1594,7 @@ export default function RecruiterFunnelsPage() {
                             type="button"
                             onClick={() => {
                               setCandidateSearch('');
-                              vacancySearchRef.current?.focus();
+                              vacancyTopSearchRef.current?.focus();
                             }}
                             className="hf-top-stage-search-action hf-top-stage-search-clear"
                             title="Очистить поиск"
@@ -1422,24 +1606,42 @@ export default function RecruiterFunnelsPage() {
                     ) : (
                       <>
                         <button
+                          type="button"
+                          onClick={() => { setSelectedTab('applied'); setSelectedCandidateId(null); }}
+                          className={clsx(
+                            'hf-vacancy-source-tab',
+                            selectedTab === 'applied' && 'hf-vacancy-source-tab-active',
+                          )}
+                        >
+                          Отклики
+                        </button>
+                        <span className="hf-vacancy-ai-badge" aria-hidden="true">
+                          AI
+                        </span>
+                        <button
+                          type="button"
                           onClick={() => { setSelectedTab('all'); setSelectedCandidateId(null); }}
                           className={clsx(
-                            'hf-top-stage-item hf-top-stage-all',
-                            selectedTab === 'all'
-                              ? 'hf-top-stage-item-active'
-                              : 'hf-top-stage-item-idle',
+                            'hf-vacancy-source-tab hf-vacancy-source-tab-base',
+                            selectedTab === 'all' && 'hf-vacancy-source-tab-active',
                           )}
                         >
                           Из базы
-                          <span className={clsx(
-                            'hf-top-stage-badge',
-                            selectedTab === 'all' && 'hf-top-stage-badge-active',
-                          )}>
+                          <span className="hf-top-stage-badge hf-top-stage-badge-muted">
                             {filteredCandidates.length}
                           </span>
-                          {selectedTab === 'all' && <span className="hf-top-stage-underline-all" />}
                         </button>
-
+                      </>
+                    )}
+                  </div>
+                  <div
+                    ref={vacancyStageScrollRef}
+                    onScroll={updateVacancyStageScrollState}
+                    className={clsx(
+                      'hf-vacancy-stage-tabs hf-top-stage-tabs no-scrollbar',
+                      'hf-top-stage-tabs-padded',
+                    )}
+                  >
                         {vacancyVisibleStageKeys.map(key => {
                           const count = groupedByStageMap[key]?.length || 0;
                           const vacancyStageLabel = VACANCY_STAGE_TAB_LABELS[stagesConfig.keyToEnum[key] || key]
@@ -1471,8 +1673,6 @@ export default function RecruiterFunnelsPage() {
                             • • {vacancyHiddenEmptyStages} этапов без кандидатов • •
                           </button>
                         )}
-                      </>
-                    )}
                   </div>
                   <div className="hf-top-stage-action-cell">
                     <button
@@ -1485,7 +1685,7 @@ export default function RecruiterFunnelsPage() {
                       <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
                     </button>
                   </div>
-                  {!showVacancySearch && vacancyStageCanScroll.left ? (
+                  {vacancyStageCanScroll.left ? (
                     <button
                       type="button"
                       onClick={() => scrollVacancyStageTabs('left')}
@@ -1495,7 +1695,7 @@ export default function RecruiterFunnelsPage() {
                       <ChevronLeft className="hf-top-stage-arrow-icon" />
                     </button>
                   ) : null}
-                  {!showVacancySearch && vacancyStageCanScroll.right ? (
+                  {vacancyStageCanScroll.right ? (
                     <button
                       type="button"
                       onClick={() => scrollVacancyStageTabs('right')}
@@ -2535,8 +2735,10 @@ function ClosedVacanciesView({
   vacancies,
   isLoading,
   search,
+  statusFilter,
   onSearchChange,
   onClearSearch,
+  onStatusChange,
   onSelectVacancy,
   onEditVacancy,
   onDeleteVacancy,
@@ -2545,18 +2747,24 @@ function ClosedVacanciesView({
   vacancies: Vacancy[];
   isLoading: boolean;
   search: string;
+  statusFilter: VacancyStatus | 'all';
   onSearchChange: (value: string) => void;
   onClearSearch: () => void;
+  onStatusChange: (status: VacancyStatus | 'all') => void;
   onSelectVacancy: (id: number) => void;
   onEditVacancy: (vacancy: Vacancy) => void;
   onDeleteVacancy: (vacancy: Vacancy) => void;
   usersMap: Record<number, string>;
 }) {
+  const currentUser = useAuthStore((state) => state.user);
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const [recruiterFilter, setRecruiterFilter] = useState('all');
   const [recruiterMenuOpen, setRecruiterMenuOpen] = useState(false);
+  const [recruiterSearch, setRecruiterSearch] = useState('');
+  const [showClosedSearch, setShowClosedSearch] = useState(false);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sortMode, setSortMode] = useState<'match' | 'closed_desc' | 'title_asc'>('match');
+  const [sortMode, setSortMode] = useState<'match' | 'title_asc' | 'opened_desc' | 'updated_desc'>('match');
 
   const recruiterName = (vacancy: Vacancy) =>
     vacancy.created_by_name || usersMap[vacancy.created_by ?? 0] || 'Не указан';
@@ -2570,16 +2778,25 @@ function ClosedVacanciesView({
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1], 'ru'));
   }, [vacancies, usersMap]);
 
+  const filteredRecruiters = useMemo(() => {
+    const query = recruiterSearch.trim().toLowerCase();
+    if (!query) return recruiters;
+    return recruiters.filter(([, name]) => name.toLowerCase().includes(query));
+  }, [recruiters, recruiterSearch]);
+
   const visibleVacancies = useMemo(() => {
     const result = recruiterFilter === 'all'
       ? [...vacancies]
       : vacancies.filter((vacancy) => String(vacancy.created_by ?? recruiterName(vacancy)) === recruiterFilter);
 
-    if (sortMode === 'closed_desc') {
-      result.sort((a, b) => new Date(b.closes_at || b.updated_at).getTime() - new Date(a.closes_at || a.updated_at).getTime());
-    }
     if (sortMode === 'title_asc') {
       result.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ru'));
+    }
+    if (sortMode === 'opened_desc') {
+      result.sort((a, b) => new Date(b.published_at || b.created_at).getTime() - new Date(a.published_at || a.created_at).getTime());
+    }
+    if (sortMode === 'updated_desc') {
+      result.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
     }
     return result;
   }, [vacancies, recruiterFilter, sortMode, usersMap]);
@@ -2589,83 +2806,151 @@ function ClosedVacanciesView({
       ? 'Все'
       : recruiters.find(([key]) => key === recruiterFilter)?.[1] || 'Все';
 
+  const activeStatusLabel =
+    statusFilter === 'paused'
+      ? 'Приостановленные'
+      : STATUS_FILTERS.find((filter) => filter.id === statusFilter)?.label || 'Все вакансии';
+
   const sortLabel =
-    sortMode === 'closed_desc'
-      ? 'По дате закрытия'
-      : sortMode === 'title_asc'
-        ? 'По названию'
-        : 'По соответствию';
+    sortMode === 'title_asc'
+      ? 'По алфавиту'
+      : sortMode === 'opened_desc'
+        ? 'По дате открытия'
+        : sortMode === 'updated_desc'
+          ? 'По дате последнего действия'
+          : 'По соответствию';
+
+  const statusMenuItems: { id: VacancyStatus | 'all'; label: string }[] = [
+    { id: 'all', label: 'Все вакансии' },
+    { id: 'open', label: 'Открытые' },
+    { id: 'paused', label: 'Приостановленные' },
+    { id: 'closed', label: 'Закрытые' },
+  ];
+
+  const showSearchField = showClosedSearch || Boolean(search);
+
+  const closeMenus = () => {
+    setStatusMenuOpen(false);
+    setRecruiterMenuOpen(false);
+    setFiltersOpen(false);
+    setSortMenuOpen(false);
+  };
+
+  const openOnly = (menu: 'status' | 'recruiters' | 'filters' | 'sort') => {
+    setStatusMenuOpen(menu === 'status' ? !statusMenuOpen : false);
+    setRecruiterMenuOpen(menu === 'recruiters' ? !recruiterMenuOpen : false);
+    setFiltersOpen(menu === 'filters' ? !filtersOpen : false);
+    setSortMenuOpen(menu === 'sort' ? !sortMenuOpen : false);
+  };
+
+  const sortOptions: [typeof sortMode, string][] = [
+    ['match', 'По соответствию'],
+    ['title_asc', 'По алфавиту'],
+    ['opened_desc', 'По дате открытия'],
+    ['updated_desc', 'По дате последнего действия'],
+  ];
+
+  const selectedRecruiterName =
+    recruiterFilter === 'all'
+      ? null
+      : recruiters.find(([key]) => key === recruiterFilter)?.[1] || activeRecruiterLabel;
+
+  const selectedStatusLabel =
+    statusFilter === 'all'
+      ? null
+      : activeStatusLabel;
+
+  const filtersSummary =
+    [
+      selectedStatusLabel ? `Статус: ${selectedStatusLabel}` : null,
+      selectedRecruiterName ? `Рекрутер: ${selectedRecruiterName}` : null,
+      search ? `Поиск: ${search}` : null,
+    ].filter(Boolean).join(' · ') || 'Активных фильтров нет';
+
+  const handleResetFilters = () => {
+    setRecruiterFilter('all');
+    setRecruiterSearch('');
+    onClearSearch();
+    onStatusChange('closed');
+    closeMenus();
+  };
+
+  const handleClearSearch = () => {
+    onClearSearch();
+    setShowClosedSearch(false);
+  };
+
+  const isCurrentRecruiter = (key: string) => currentUser?.id !== undefined && key === String(currentUser.id);
+  const recruiterDisplayName = (key: string, name: string) =>
+    isCurrentRecruiter(key) ? `Я,${name}` : name;
+  const recruiterMeta = (key: string, name: string) => {
+    if (isCurrentRecruiter(key) && currentUser?.email) return currentUser.email;
+    return name === 'Не указан' ? 'Нет данных' : 'Рекрутер';
+  };
+  const recruiterInitial = (name: string) => name.trim().charAt(0).toUpperCase() || '?';
 
   return (
     <div className="hf-closed-vacancies flex-1 min-w-0 overflow-y-auto">
       <div className="hf-closed-vacancies-inner">
-        <header className="hf-closed-vacancies-searchbar">
-          <button type="button" className="hf-closed-vacancies-search-kind">
-            ВАКАНСИИ
-          </button>
-          <div className="hf-closed-vacancies-searchbox">
-            <Search className="hf-closed-vacancies-search-icon" />
-            <input
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Поиск в базе"
-              aria-label="Поиск закрытых вакансий"
-            />
-            {search && (
+        <header className="hf-closed-vacancies-toolbar">
+          <div className="hf-closed-vacancies-filters">
+            <div className={clsx('hf-closed-vacancies-search', showSearchField && 'hf-closed-vacancies-search-open')}>
               <button
                 type="button"
-                className="hf-closed-vacancies-clear"
-                onClick={onClearSearch}
-                aria-label="Очистить поиск"
+                className={clsx('hf-closed-vacancies-search-toggle', showSearchField && 'hf-closed-vacancies-search-toggle-active')}
+                onClick={() => {
+                  closeMenus();
+                  setShowClosedSearch((value) => !value);
+                }}
+                aria-label="Поиск закрытых вакансий"
               >
-                <X className="h-4 w-4" />
+                <Search className="hf-closed-vacancies-search-icon" />
               </button>
-            )}
-          </div>
-        </header>
-
-        <div className="hf-closed-vacancies-toolbar">
-          <div className="hf-closed-vacancies-filters">
-            <div className="hf-closed-vacancies-filter-wrap">
-              <button type="button" className="hf-closed-vacancies-filter hf-closed-vacancies-filter-active">
-                Закрытые <ChevronDown className="h-4 w-4" />
-              </button>
+              {showSearchField && (
+                <div className="hf-closed-vacancies-searchbox">
+                  <input
+                    value={search}
+                    onChange={(event) => onSearchChange(event.target.value)}
+                    placeholder="Поиск..."
+                    aria-label="Поиск закрытых вакансий"
+                    autoFocus
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      className="hf-closed-vacancies-clear"
+                      onClick={handleClearSearch}
+                      aria-label="Очистить поиск"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
+
             <div className="hf-closed-vacancies-filter-wrap">
               <button
                 type="button"
                 className="hf-closed-vacancies-filter"
-                onClick={() => {
-                  setRecruiterMenuOpen((value) => !value);
-                  setSortMenuOpen(false);
-                  setFiltersOpen(false);
-                }}
+                onClick={() => openOnly('status')}
               >
-                Рекрутеры : {activeRecruiterLabel} <ChevronDown className="h-4 w-4" />
+                {activeStatusLabel} <ChevronDown className="h-4 w-4" />
               </button>
-              {recruiterMenuOpen && (
-                <div className="hf-closed-vacancies-menu">
-                  <button
-                    type="button"
-                    className={clsx(recruiterFilter === 'all' && 'hf-closed-vacancies-menu-active')}
-                    onClick={() => {
-                      setRecruiterFilter('all');
-                      setRecruiterMenuOpen(false);
-                    }}
-                  >
-                    Все
-                  </button>
-                  {recruiters.map(([key, name]) => (
+              {statusMenuOpen && (
+                <div className="hf-closed-vacancies-menu hf-closed-vacancies-status-menu">
+                  {statusMenuItems.map((item) => (
                     <button
                       type="button"
-                      key={key}
-                      className={clsx(recruiterFilter === key && 'hf-closed-vacancies-menu-active')}
+                      key={item.id}
+                      className={clsx(statusFilter === item.id && 'hf-closed-vacancies-menu-active')}
                       onClick={() => {
-                        setRecruiterFilter(key);
-                        setRecruiterMenuOpen(false);
+                        onStatusChange(item.id);
+                        setStatusMenuOpen(false);
                       }}
                     >
-                      {name}
+                      {statusFilter === item.id && <Check className="hf-closed-vacancies-menu-check" />}
+                      <span>{item.label}</span>
                     </button>
                   ))}
                 </div>
@@ -2675,56 +2960,123 @@ function ClosedVacanciesView({
               <button
                 type="button"
                 className="hf-closed-vacancies-filter"
-                onClick={() => {
-                  setFiltersOpen((value) => !value);
-                  setRecruiterMenuOpen(false);
-                  setSortMenuOpen(false);
-                }}
+                onClick={() => openOnly('recruiters')}
+              >
+                Рекрутеры: {activeRecruiterLabel} <ChevronDown className="h-4 w-4" />
+              </button>
+              {recruiterMenuOpen && (
+                <div className="hf-closed-vacancies-menu hf-closed-vacancies-recruiter-menu">
+                  <label className="hf-closed-vacancies-menu-search">
+                    <Search className="hf-closed-vacancies-menu-search-icon" />
+                    <input
+                      value={recruiterSearch}
+                      onChange={(event) => setRecruiterSearch(event.target.value)}
+                      placeholder="Поиск..."
+                      aria-label="Поиск рекрутера"
+                      autoFocus
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="hf-closed-vacancies-menu-reset"
+                    onClick={() => {
+                      setRecruiterFilter('all');
+                      setRecruiterSearch('');
+                    }}
+                  >
+                    Сбросить выбор
+                  </button>
+                  <div className="hf-closed-vacancies-recruiter-list">
+                    {filteredRecruiters.length === 0 ? (
+                      <div className="hf-closed-vacancies-menu-empty">
+                        Ничего не найдено
+                      </div>
+                    ) : (
+                      filteredRecruiters.map(([key, name]) => {
+                        const highlighted = recruiterFilter === key || (recruiterFilter === 'all' && isCurrentRecruiter(key));
+                        return (
+                          <button
+                            type="button"
+                            key={key}
+                            className={clsx('hf-closed-vacancies-recruiter-option', highlighted && 'hf-closed-vacancies-recruiter-option-active')}
+                            onClick={() => {
+                              setRecruiterFilter(key);
+                              setRecruiterMenuOpen(false);
+                              setRecruiterSearch('');
+                            }}
+                          >
+                            <span className="hf-closed-vacancies-avatar">{recruiterInitial(name)}</span>
+                            <span className="hf-closed-vacancies-recruiter-text">
+                              <span>{recruiterDisplayName(key, name)}</span>
+                              <span>{recruiterMeta(key, name)}</span>
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="hf-closed-vacancies-filter-wrap">
+              <button
+                type="button"
+                className="hf-closed-vacancies-filter"
+                onClick={() => openOnly('filters')}
               >
                 Фильтры <ChevronDown className="h-4 w-4" />
               </button>
               {filtersOpen && (
                 <div className="hf-closed-vacancies-menu hf-closed-vacancies-menu-note">
-                  Дополнительные фильтры появятся, когда API начнёт отдавать заказчиков и офферы по закрытым вакансиям.
+                  <div className="hf-closed-vacancies-menu-note-title">Фильтры</div>
+                  <div>{filtersSummary}</div>
+                  <button
+                    type="button"
+                    className="hf-closed-vacancies-menu-reset"
+                    onClick={handleResetFilters}
+                  >
+                    Сбросить фильтры
+                  </button>
+                  <div className="hf-closed-vacancies-menu-note-muted">
+                    Расширенные фильтры Huntflow по заказчикам и офферам пока не поддерживаются API HR-bot.
+                  </div>
                 </div>
               )}
             </div>
           </div>
-          <div className="hf-closed-vacancies-filter-wrap">
+          <div className="hf-closed-vacancies-filter-wrap hf-closed-vacancies-sort-wrap">
             <button
               type="button"
               className="hf-closed-vacancies-filter hf-closed-vacancies-sort"
-              onClick={() => {
-                setSortMenuOpen((value) => !value);
-                setRecruiterMenuOpen(false);
-                setFiltersOpen(false);
-              }}
+              onClick={() => openOnly('sort')}
             >
+              <span className="hf-closed-vacancies-sort-icon" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
               {sortLabel} <ChevronDown className="h-4 w-4" />
             </button>
             {sortMenuOpen && (
-              <div className="hf-closed-vacancies-menu">
-                {[
-                  ['match', 'По соответствию'],
-                  ['closed_desc', 'По дате закрытия'],
-                  ['title_asc', 'По названию'],
-                ].map(([key, label]) => (
+              <div className="hf-closed-vacancies-menu hf-closed-vacancies-sort-menu">
+                {sortOptions.map(([key, label]) => (
                   <button
                     key={key}
                     type="button"
                     className={clsx(sortMode === key && 'hf-closed-vacancies-menu-active')}
                     onClick={() => {
-                      setSortMode(key as typeof sortMode);
+                      setSortMode(key);
                       setSortMenuOpen(false);
                     }}
                   >
-                    {label}
+                    {sortMode === key && <Check className="hf-closed-vacancies-menu-check" />}
+                    <span>{label}</span>
                   </button>
                 ))}
               </div>
             )}
           </div>
-        </div>
+        </header>
 
         <section className="hf-closed-vacancies-results" aria-label="Закрытые вакансии">
         <div className="hf-closed-vacancies-count">
@@ -2799,8 +3151,6 @@ function ClosedVacanciesView({
     </div>
   );
 }
-
-/* ===================== Funnel Card ===================== */
 
 /* ===================== Stage Dropdown ===================== */
 

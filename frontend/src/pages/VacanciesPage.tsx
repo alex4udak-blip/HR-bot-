@@ -606,9 +606,9 @@ export default function VacanciesPage() {
 
   // List view
   return (
-    <div className="h-full w-full max-w-full flex flex-col overflow-hidden">
+    <div className="vacancies-page h-full w-full max-w-full flex flex-col overflow-hidden text-[var(--hf-vacancies-page-text)]">
       {/* Header */}
-      <div className="p-4 border-b border-[color:var(--hf-white-alpha-10)]">
+      <div className="p-4 border-b border-[color:var(--hf-vacancies-page-border)]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -653,19 +653,19 @@ export default function VacanciesPage() {
         <div className="flex flex-wrap items-center gap-3">
           {/* Search */}
           <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[color:var(--hf-white-alpha-40)]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[color:var(--hf-vacancies-page-faint)]" />
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Поиск по названию..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-[var(--hf-white-alpha-03)] rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)] text-sm"
+              className="w-full pl-10 pr-4 py-2 bg-[var(--hf-vacancies-page-surface)] border border-[color:var(--hf-vacancies-page-border)] rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)] text-sm placeholder:text-[color:var(--hf-vacancies-page-soft)]"
             />
           </div>
 
           {/* Status filter */}
-          <div className="flex items-center gap-1 p-1 bg-[var(--hf-white-alpha-03)] rounded-lg">
+          <div className="flex items-center gap-1 p-1 bg-[var(--hf-vacancies-page-surface-soft)] rounded-lg">
             {STATUS_FILTERS.map((status) => (
               <button
                 key={status.id}
@@ -674,7 +674,7 @@ export default function VacanciesPage() {
                   'px-3 py-1.5 text-sm rounded-md transition-all',
                   statusFilter === status.id
                     ? 'bg-[var(--hf-cyan-700)] text-[var(--hf-white)]'
-                    : 'text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)]'
+                    : 'text-[color:var(--hf-vacancies-page-muted)] hover:text-[var(--hf-vacancies-page-text)] hover:bg-[var(--hf-vacancies-page-chip)]'
                 )}
               >
                 {status.name}
@@ -686,7 +686,7 @@ export default function VacanciesPage() {
           <select
             value={departmentFilter}
             onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-            className="px-3 py-2 bg-[var(--hf-white-alpha-03)] rounded-lg text-sm focus:outline-none focus:border-[var(--hf-cyan-500)]"
+            className="px-3 py-2 bg-[var(--hf-vacancies-page-surface)] border border-[color:var(--hf-vacancies-page-border)] rounded-lg text-sm focus:outline-none focus:border-[var(--hf-cyan-500)]"
           >
             <option value="all">Все отделы</option>
             {departments.map((dept) => (
@@ -703,7 +703,7 @@ export default function VacanciesPage() {
               'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border',
               showOnlyMine
                 ? 'bg-[var(--hf-status-blue-badge)] border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
-                : 'border-[color:var(--hf-white-alpha-10)] text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-white-alpha-05)]'
+                : 'border-[color:var(--hf-vacancies-page-border)] text-[color:var(--hf-vacancies-page-muted)] hover:text-[var(--hf-vacancies-page-text)] hover:bg-[var(--hf-vacancies-page-chip)]'
             )}
           >
             <Users className="w-4 h-4" />
@@ -718,7 +718,7 @@ export default function VacanciesPage() {
                 'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border',
                 assignmentFilter === 'unassigned'
                   ? 'bg-[var(--hf-status-yellow-badge)] border-[color:var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]'
-                  : 'border-[color:var(--hf-white-alpha-10)] text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-white-alpha-05)]'
+                  : 'border-[color:var(--hf-vacancies-page-border)] text-[color:var(--hf-vacancies-page-muted)] hover:text-[var(--hf-vacancies-page-text)] hover:bg-[var(--hf-vacancies-page-chip)]'
               )}
             >
               <UserPlus className="w-4 h-4" />
@@ -751,10 +751,10 @@ export default function VacanciesPage() {
             <>
               {showFiltersDropdown && (
                 <div
-                  className="absolute right-0 top-full mt-2 w-80 border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] rounded-xl shadow-[var(--hf-shadow-xl)] z-50 overflow-hidden"
+                  className="absolute left-0 2xl:left-auto 2xl:right-0 top-full mt-2 w-80 border border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface)] rounded-xl shadow-[var(--hf-shadow-xl)] z-50 overflow-hidden"
                 >
                   {/* Header */}
-                  <div className="flex items-center justify-between p-3 border-b border-[color:var(--hf-white-alpha-10)]">
+                  <div className="flex items-center justify-between p-3 border-b border-[color:var(--hf-vacancies-page-border)]">
                     <span className="font-medium text-sm">Быстрые фильтры</span>
                     {activeFilterCount > 0 && (
                       <button
@@ -770,7 +770,7 @@ export default function VacanciesPage() {
                   <div className="p-3 space-y-4 max-h-96 overflow-y-auto">
                     {/* Status Filter (Multi-select) */}
                     <div>
-                      <label className="flex items-center gap-2 text-xs font-medium text-[color:var(--hf-white-alpha-60)] mb-2">
+                      <label className="flex items-center gap-2 text-xs font-medium text-[color:var(--hf-vacancies-page-muted)] mb-2">
                         <Briefcase className="w-3.5 h-3.5" />
                         Статус
                       </label>
@@ -783,7 +783,7 @@ export default function VacanciesPage() {
                               'flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg transition-colors',
                               quickFilters.statuses.includes(status)
                                 ? 'bg-[var(--hf-status-blue-badge)] border border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
-                                : 'glass-button text-[color:var(--hf-white-alpha-70)]'
+                                : 'border border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface)] text-[color:var(--hf-vacancies-page-muted)] hover:bg-[var(--hf-vacancies-page-chip)]'
                             )}
                           >
                             {quickFilters.statuses.includes(status) && <Check className="w-3 h-3" />}
@@ -795,7 +795,7 @@ export default function VacanciesPage() {
 
                     {/* Salary Range Filter */}
                     <div>
-                      <label className="flex items-center gap-2 text-xs font-medium text-[color:var(--hf-white-alpha-60)] mb-2">
+                      <label className="flex items-center gap-2 text-xs font-medium text-[color:var(--hf-vacancies-page-muted)] mb-2">
                         <DollarSign className="w-3.5 h-3.5" />
                         Зарплата
                       </label>
@@ -808,7 +808,7 @@ export default function VacanciesPage() {
                               'px-2.5 py-1.5 text-xs rounded-lg transition-colors',
                               quickFilters.salaryRange === range.id
                                 ? 'bg-[var(--hf-status-blue-badge)] border border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
-                                : 'glass-button text-[color:var(--hf-white-alpha-70)]'
+                                : 'border border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface)] text-[color:var(--hf-vacancies-page-muted)] hover:bg-[var(--hf-vacancies-page-chip)]'
                             )}
                           >
                             {range.label}
@@ -819,7 +819,7 @@ export default function VacanciesPage() {
 
                     {/* Date Range Filter */}
                     <div>
-                      <label className="flex items-center gap-2 text-xs font-medium text-[color:var(--hf-white-alpha-60)] mb-2">
+                      <label className="flex items-center gap-2 text-xs font-medium text-[color:var(--hf-vacancies-page-muted)] mb-2">
                         <Calendar className="w-3.5 h-3.5" />
                         Дата создания
                       </label>
@@ -832,7 +832,7 @@ export default function VacanciesPage() {
                               'px-2.5 py-1.5 text-xs rounded-lg transition-colors',
                               quickFilters.dateRange === range.id
                                 ? 'bg-[var(--hf-status-blue-badge)] border border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
-                                : 'glass-button text-[color:var(--hf-white-alpha-70)]'
+                                : 'border border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface)] text-[color:var(--hf-vacancies-page-muted)] hover:bg-[var(--hf-vacancies-page-chip)]'
                             )}
                           >
                             {range.label}
@@ -843,8 +843,8 @@ export default function VacanciesPage() {
                   </div>
 
                   {/* Results count */}
-                  <div className="p-3 border-t border-[color:var(--hf-white-alpha-10)] bg-[var(--hf-white-alpha-03)]">
-                    <span className="text-xs text-[color:var(--hf-white-alpha-50)]">
+                  <div className="p-3 border-t border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface-soft)]">
+                    <span className="text-xs text-[color:var(--hf-vacancies-page-soft)]">
                       Показано {filteredVacancies.length} из {vacancies.length} вакансий
                     </span>
                   </div>
@@ -904,7 +904,7 @@ export default function VacanciesPage() {
                   <div
                     onClick={() => handleVacancyClick(vacancy)}
                     className={clsx(
-                      'p-4 border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)] rounded-xl cursor-pointer group transition-all hover:bg-[var(--hf-white-alpha-04)] hover:border-[color:var(--hf-white-alpha-10)] border-l-[3px]',
+                      'p-4 border border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface)] rounded-xl cursor-pointer group transition-all hover:bg-[var(--hf-vacancies-page-surface-hover)] hover:border-[color:var(--hf-vacancies-page-border-strong)] border-l-[3px]',
                       STATUS_BORDER_COLORS[vacancy.status] || 'border-l-gray-600'
                     )}
                   >
@@ -912,7 +912,7 @@ export default function VacanciesPage() {
                       <div className="flex-1 min-w-0">
                         <h3 className={clsx(
                           'font-semibold text-lg truncate',
-                          !vacancy.title?.trim() && 'italic text-[color:var(--hf-white-alpha-40)]',
+                          !vacancy.title?.trim() && 'italic text-[color:var(--hf-vacancies-page-faint)]',
                         )}>{vacancy.title?.trim() || 'Без названия'}</h3>
                         <div className="flex items-center gap-2">
                           <VacancyStatusBadge status={vacancy.status} size="sm" />
@@ -951,7 +951,7 @@ export default function VacanciesPage() {
                     </div>
 
                     {/* Info */}
-                    <div className="space-y-2 text-sm text-[color:var(--hf-white-alpha-60)]">
+                    <div className="space-y-2 text-sm text-[color:var(--hf-vacancies-page-muted)]">
                       {vacancy.location && (
                         <div className="flex items-center gap-2">
                           <MapPin className="w-4 h-4" />
@@ -974,7 +974,7 @@ export default function VacanciesPage() {
 
                     {/* Owner & Department */}
                     {(vacancy.created_by_name || vacancy.department_name) && (
-                      <div className="mt-3 flex items-center gap-3 text-xs text-[color:var(--hf-white-alpha-40)]">
+                      <div className="mt-3 flex items-center gap-3 text-xs text-[color:var(--hf-vacancies-page-soft)]">
                         {vacancy.created_by_name && (
                           <span title="Владелец вакансии">👤 {vacancy.created_by_name}</span>
                         )}
@@ -1012,7 +1012,7 @@ export default function VacanciesPage() {
                           {showAdminReassign && (
                             <button
                               onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[var(--hf-white-alpha-05)] hover:bg-[var(--hf-white-alpha-08)] text-[color:var(--hf-white-alpha-60)] border border-[color:var(--hf-white-alpha-10)] rounded-lg transition-colors"
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[var(--hf-vacancies-page-chip)] hover:bg-[var(--hf-vacancies-page-surface-hover)] text-[color:var(--hf-vacancies-page-muted)] border border-[color:var(--hf-vacancies-page-border)] rounded-lg transition-colors"
                             >
                               <UserPlus className="w-3.5 h-3.5" />
                               Переназначить
@@ -1037,7 +1037,7 @@ export default function VacanciesPage() {
                     })()}
 
                     {/* Stats */}
-                    <div className="mt-4 pt-3 border-t border-[color:var(--hf-white-alpha-10)] flex items-center justify-between">
+                    <div className="mt-4 pt-3 border-t border-[color:var(--hf-vacancies-page-border)] flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm">
                         <Users className="w-4 h-4 text-[var(--hf-status-blue)]" />
                         <span>{vacancy.applications_count} кандидатов</span>
@@ -1045,7 +1045,7 @@ export default function VacanciesPage() {
                       {Object.keys(vacancy.stage_counts).length > 0 && (
                         <div className="flex items-center gap-1">
                           {Object.entries(vacancy.stage_counts).slice(0, 3).map(([stage, count]) => (
-                            <span key={stage} className="text-xs px-1.5 py-0.5 bg-[var(--hf-white-alpha-03)] rounded">
+                            <span key={stage} className="text-xs px-1.5 py-0.5 bg-[var(--hf-vacancies-page-chip)] rounded">
                               {count}
                             </span>
                           ))}
@@ -1057,12 +1057,12 @@ export default function VacanciesPage() {
                     {vacancy.tags.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1">
                         {vacancy.tags.slice(0, 4).map((tag) => (
-                          <span key={tag} className="text-xs px-2 py-0.5 bg-[var(--hf-white-alpha-03)] rounded-full">
+                          <span key={tag} className="text-xs px-2 py-0.5 bg-[var(--hf-vacancies-page-chip)] rounded-full">
                             {tag}
                           </span>
                         ))}
                         {vacancy.tags.length > 4 && (
-                          <span className="text-xs px-2 py-0.5 text-[color:var(--hf-white-alpha-40)]">
+                          <span className="text-xs px-2 py-0.5 text-[color:var(--hf-vacancies-page-soft)]">
                             +{vacancy.tags.length - 4}
                           </span>
                         )}

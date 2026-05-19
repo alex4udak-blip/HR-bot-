@@ -17,6 +17,7 @@
   --hf-main-500: #b4b4b4;
   --hf-main-600: #989898;
   --hf-main-700: #696969;
+  --hf-main-750: #444444;
   --hf-main-800: #1e1e1e;
   --hf-main-900: #050505;
   --hf-black: #000000;
@@ -24,31 +25,48 @@
 
   /* Cyan — бренд-акцент */
   --hf-cyan-50:  #f6fdfe;
+  --hf-cyan-100: #e8fbff;
   --hf-cyan-200: #d6f6fd;
   --hf-cyan-300: #97dff2;
   --hf-cyan-400: #56d2ec;
   --hf-cyan-500: #25cfe8;
   --hf-cyan-600: #0ab3ce;
   --hf-cyan-700: #0093ac;
+  --hf-cyan-800: #00758a;
+  --hf-cyan-900: #005766;
 
   /* Green — accent action */
   --hf-green-50:  #f4faec;
+  --hf-green-100: #e8f5d8;
+  --hf-green-200: #d3ebb3;
+  --hf-green-300: #b6df82;
+  --hf-green-400: #94ce45;
   --hf-green-500: #7ac016;
   --hf-green-600: #70b60b;
+  --hf-green-700: #5f9b09;
+  --hf-green-800: #4d7d08;
+  --hf-green-900: #365806;
 
   /* Pistou green — switch active */
+  --hf-pistou-green-500: #7ac016;
+  --hf-pistou-green-600: #70b60b;
 
   /* Red — danger */
   --hf-red-50:  #fff9f9;
+  --hf-red-100: #ffecec;
   --hf-red-200: #ffd8d8;
   --hf-red-300: #ffb3af;
   --hf-red-400: #ff7a73;
   --hf-red-500: #ff533b;
   --hf-red-600: #ff0000;
   --hf-red-700: #df0000;
+  --hf-red-800: #b80000;
+  --hf-red-900: #8f0000;
 
   /* Yellow — warning */
   --hf-yellow-300: #ffd22e;
+  --hf-yellow-400: #ffbd22;
+  --hf-yellow-500: #f5a400;
   --hf-yellow-600: #e27000;
 
   /* Дополнительные палитры (для статусов/тегов) */
@@ -720,6 +738,7 @@
 
   /* Shadows */
   --hf-shadow-card:     0 1px 4px 0 rgba(0, 0, 0, 0.04);
+  --hf-shadow-card-lg:  0 4px 12px 0 rgba(0, 0, 0, 0.08);
   --hf-shadow-dropdown: 0 0 40px 0 rgba(5, 5, 5, 0.16);
   --hf-shadow-popover:  var(--hf-shadow-dropdown);
   --hf-shadow-sm:       0 1px 2px 0 var(--hf-black-alpha-05);
@@ -832,6 +851,13 @@
   --hf-vacancy-topbar-h: 56px;
   --hf-vacancy-topbar-radius: 14px;
   --hf-vacancy-topbar-px: 24px;
+  --hf-vacancy-source-tabs-min-w: 284px;
+  --hf-vacancy-source-tabs-closed-min-w: 420px;
+  --hf-vacancy-source-tabs-px: 20px;
+  --hf-vacancy-source-tabs-gap: 14px;
+  --hf-vacancy-source-ai-size: 30px;
+  --hf-vacancy-source-ai-offset: -8px;
+  --hf-vacancy-source-ai-icon: 18px;
   --hf-vacancy-stage-h: 52px;
   --hf-vacancy-stage-gap: 26px;
   --hf-vacancy-stage-active-line: 3px;
@@ -843,7 +869,7 @@
   --hf-vacancy-candidate-list-w: clamp(220px, 30%, 350px);
   --hf-vacancy-empty-max-w: 520px;
   --hf-vacancy-empty-card-w: 760px;
-  --hf-vacancy-empty-pt: 58px;
+  --hf-vacancy-empty-pt: clamp(64px, 24vh, 250px);
   --hf-vacancy-empty-title-mb: 12px;
   --hf-vacancy-empty-section-mt: 30px;
   --hf-vacancy-empty-link-gap: 14px;
@@ -856,6 +882,11 @@
   --hf-vacancy-empty-help-h: 33px;
   --hf-vacancy-empty-help-px: 14px;
   --hf-vacancy-empty-help-radius: 16px;
+  --hf-vacancy-closed-icon: 76px;
+  --hf-vacancy-closed-card-w: 660px;
+  --hf-vacancy-closed-pt: clamp(78px, 18vh, 150px);
+  --hf-vacancy-closed-note-w: 640px;
+  --hf-vacancy-closed-note-mt: 68px;
   --hf-closed-vacancies-bg: #f2f2f2;
   --hf-closed-vacancies-surface: var(--hf-white);
   --hf-closed-vacancies-text: var(--hf-main-900);
@@ -865,14 +896,28 @@
   --hf-closed-vacancies-border-strong: var(--hf-main-300);
   --hf-closed-vacancies-inner-w: 948px;
   --hf-closed-vacancies-header-h: 56px;
-  --hf-closed-vacancies-search-w: 560px;
+  --hf-closed-vacancies-search-w: 230px;
+  --hf-closed-vacancies-menu-w: 448px;
+  --hf-closed-vacancies-sort-w: 230px;
   --hf-closed-vacancies-toolbar-h: 52px;
   --hf-closed-vacancies-filter-h: 36px;
+  --hf-closed-vacancies-search-h: 38px;
+  --hf-closed-vacancies-search-toggle: 36px;
   --hf-closed-vacancies-row-py: 14px;
   --hf-closed-vacancies-row-px: 24px;
   --hf-closed-vacancies-title-fs: 17px;
   --hf-closed-vacancies-title-lh: 24px;
   --hf-closed-vacancies-title-color: #0097aa;
+  --hf-vacancies-page-surface: var(--hf-white);
+  --hf-vacancies-page-surface-soft: var(--hf-main-50);
+  --hf-vacancies-page-surface-hover: var(--hf-main-75);
+  --hf-vacancies-page-chip: var(--hf-main-100);
+  --hf-vacancies-page-border: var(--hf-ui-divider);
+  --hf-vacancies-page-border-strong: var(--hf-ui-border);
+  --hf-vacancies-page-text: var(--hf-main-900);
+  --hf-vacancies-page-muted: var(--hf-main-700);
+  --hf-vacancies-page-soft: var(--hf-main-600);
+  --hf-vacancies-page-faint: var(--hf-main-500);
 
   /* Candidate modal */
   --hf-candidate-modal-top: 8px;

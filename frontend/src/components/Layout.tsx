@@ -911,6 +911,13 @@ export default function Layout() {
     return navSections.flatMap((s) => s.items);
   }, [navSections]);
 
+  const mobileNavItems = useMemo(() => {
+    return (
+      navSections.find((section) => section.id === activeNavigationBlock)?.items ??
+      navItems
+    );
+  }, [activeNavigationBlock, navItems, navSections]);
+
   const handleBlockSwitch = useCallback(
     (section: NavSection) => {
       setActiveBlock(section.id);
@@ -977,8 +984,9 @@ export default function Layout() {
   return (
     <div
       className={clsx(
-        "hf-hr-layout-shell",
-        isHrSidebar ? "hf-hr-layout-shell--hr" : "hf-hr-layout-shell--app",
+        isHrSidebar
+          ? "hf-hr-layout-shell hf-hr-layout-shell--hr"
+          : "app-layout-shell",
       )}
     >
       <BackgroundEffects />
@@ -2120,7 +2128,7 @@ export default function Layout() {
         className="lg:hidden glass border-t border-[color:var(--hf-white-alpha-05)] px-2 py-2 flex"
         aria-label="Bottom navigation"
       >
-        {navItems.slice(0, 4).map((item) => (
+        {mobileNavItems.slice(0, 4).map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
