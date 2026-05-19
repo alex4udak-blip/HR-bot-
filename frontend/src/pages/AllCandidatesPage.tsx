@@ -155,6 +155,16 @@ const HUNTFLOW_EMPTY_STAGE_GROUPS: Record<string, string[]> = {
   ],
 };
 
+const HUNTFLOW_STAGE_STATUS_BY_LABEL: Record<string, string> = {
+  "В работе": "screening",
+  "Резюме у заказчика": "practice",
+  "Интервью с HR": "tech_practice",
+  "Интервью с заказчиком": "is_interview",
+  "Выставлен оффер": "offer",
+  "Оффер принят": "hired",
+  "Отказ": "rejected",
+};
+
 const HUNTFLOW_STAGE_LAYOUT_TRANSITION = {
   duration: 0.42,
   ease: [0.22, 1, 0.36, 1] as const,
@@ -755,13 +765,23 @@ export default function AllCandidatesPage() {
         return;
       }
     }
-    // Fallback: auto-select first
-    if (filteredCards.length > 0 && !selectedCard) {
+    const selectedVisible = selectedCard
+      ? filteredCards.some(({ card }) => card.id === selectedCard.id)
+      : false;
+    if (filteredCards.length === 0) {
+      if (selectedCard) {
+        setSelectedCard(null);
+        setSelectedStatus("");
+      }
+      return;
+    }
+    // Fallback: auto-select first visible card for the current stage/search.
+    if (!selectedVisible) {
       const initial = filteredCards[0];
       setSelectedCard(initial.card);
       setSelectedStatus(initial.status);
     }
-  }, [filteredCards.length, entityParam, board]);
+  }, [filteredCards, entityParam, board, selectedCard]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedCard || newStatus === selectedStatus) return;
@@ -863,11 +883,17 @@ export default function AllCandidatesPage() {
     const columns = board?.columns || [];
     const getColumnCount = (column: KanbanColumn) =>
       column.count ?? column.cards.length;
-    const findStageColumn = (stage: string) =>
-      columns.find(
+    const findColumnByStatus = (status: string) =>
+      columns.find((column) => column.status === status);
+    const findStageColumn = (stage: string) => {
+      const direct = columns.find(
         (column) =>
           normalizeStageLabel(column.label) === normalizeStageLabel(stage),
       );
+      if (direct) return direct;
+      const mappedStatus = HUNTFLOW_STAGE_STATUS_BY_LABEL[stage];
+      return mappedStatus ? findColumnByStatus(mappedStatus) : undefined;
+    };
     const newColumn = columns.find(
       (column) => column.status === "new" || /^нов/i.test(column.label),
     );
@@ -878,17 +904,22 @@ export default function AllCandidatesPage() {
       (column) => column.status === "rejected" || /отклон/i.test(column.label),
     );
     const items: Array<
-      | { type: "stage"; column: KanbanColumn }
-      | { type: "empty-group"; count: number; key: string; stages: string[] }
+      | { type: "stage"; column: KanbanColumn; label?: string }
+      | {
+          type: "empty-group";
+          count: number;
+          key: string;
+          stages: Array<{ label: string; column?: KanbanColumn }>;
+        }
     > = [];
     const pushStageGroup = (key: string) => {
-      const emptyStages: string[] = [];
+      const emptyStages: Array<{ label: string; column?: KanbanColumn }> = [];
       for (const stage of HUNTFLOW_EMPTY_STAGE_GROUPS[key] || []) {
         const column = findStageColumn(stage);
         if (column && getColumnCount(column) > 0) {
-          items.push({ type: "stage", column });
+          items.push({ type: "stage", column, label: stage });
         } else {
-          emptyStages.push(stage);
+          emptyStages.push({ label: stage, column });
         }
       }
       if (emptyStages.length > 0) {
@@ -903,6 +934,10 @@ export default function AllCandidatesPage() {
 
     if (newColumn) {
       items.push({ type: "stage", column: newColumn });
+    }
+    const screeningColumn = findStageColumn("В работе");
+    if (screeningColumn && getColumnCount(screeningColumn) > 0) {
+      items.push({ type: "stage", column: screeningColumn, label: "В работе" });
     }
 
     pushStageGroup("middle-before-offer");
@@ -932,14 +967,6 @@ export default function AllCandidatesPage() {
     if (/прин/i.test(column.label) && column.count === 0) return "0/1";
     return String(column.count);
   };
-
-  const isTopStageDisabled = (column: KanbanColumn) =>
-    column.status === "new" ||
-    column.status === "hired" ||
-    column.status === "rejected" ||
-    /^нов/i.test(column.label) ||
-    /прин/i.test(column.label) ||
-    /отклон/i.test(column.label);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(updateTopStageScrollState);
@@ -1058,12 +1085,26 @@ export default function AllCandidatesPage() {
                   const expanded = expandedEmptyStageGroups[item.key];
 
                   if (expanded) {
-                    return stages.map((stage) => (
+                    return stages.map(({ label, column }) => (
                       <motion.button
-                        key={`${item.key}-${stage}`}
+                        key={`${item.key}-${label}`}
                         layout="position"
                         type="button"
-                        disabled
+                        disabled={!column}
+                        aria-disabled={!column}
+                        title={
+                          column
+                            ? undefined
+                            : "Этап отсутствует в текущей модели HR-bot"
+                        }
+                        onClick={
+                          column
+                            ? () => {
+                                setActiveTab(column.status);
+                                setSelectedCard(null);
+                              }
+                            : undefined
+                        }
                         initial={{ opacity: 0.16, x: -18 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{
@@ -1071,9 +1112,19 @@ export default function AllCandidatesPage() {
                           x: HUNTFLOW_STAGE_LAYOUT_TRANSITION,
                           layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION,
                         }}
-                        className="hf-top-stage-item hf-top-stage-expanded"
+                        className={clsx(
+                          "hf-top-stage-item hf-top-stage-expanded",
+                          column
+                            ? activeTab === column.status
+                              ? "hf-top-stage-item-active"
+                              : "hf-top-stage-item-idle"
+                            : "hf-top-stage-item-disabled",
+                        )}
                       >
-                        {stage}
+                        {label}
+                        {column && activeTab === column.status && (
+                          <span className="hf-top-stage-underline" />
+                        )}
                       </motion.button>
                     ));
                   }
@@ -1087,14 +1138,14 @@ export default function AllCandidatesPage() {
                       onMouseEnter={() =>
                         setHoveredEmptyStageGroup({
                           key: item.key,
-                          stages: item.stages,
+                          stages: item.stages.map((stage) => stage.label),
                         })
                       }
                       onMouseLeave={() => setHoveredEmptyStageGroup(null)}
                       onFocus={() =>
                         setHoveredEmptyStageGroup({
                           key: item.key,
-                          stages: item.stages,
+                          stages: item.stages.map((stage) => stage.label),
                         })
                       }
                       onBlur={() => setHoveredEmptyStageGroup(null)}
@@ -1108,39 +1159,33 @@ export default function AllCandidatesPage() {
 
                 const col = item.column;
                 const isActive = activeTab === col.status;
-                const showTopStageCounter = /прин/i.test(col.label);
-                const disabled = isTopStageDisabled(col);
+                const stageLabel = item.label || getTopStageLabel(col);
+                const showTopStageCounter =
+                  col.status === "hired" || /прин/i.test(stageLabel);
                 return (
                   <motion.button
                     key={col.status}
                     layout="position"
                     transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
                     type="button"
-                    disabled={disabled}
-                    onClick={
-                      disabled
-                        ? undefined
-                        : () => {
-                            setActiveTab(col.status);
-                            setSelectedCard(null);
-                          }
-                    }
+                    onClick={() => {
+                      setActiveTab(col.status);
+                      setSelectedCard(null);
+                    }}
                     className={clsx(
                       "hf-top-stage-item",
-                      disabled
-                        ? "hf-top-stage-item-disabled"
-                        : isActive
+                      isActive
                         ? "hf-top-stage-item-active"
                         : "hf-top-stage-item-idle",
                     )}
                   >
-                    {getTopStageLabel(col)}
+                    {stageLabel}
                     {showTopStageCounter && (
                       <span className="hf-top-stage-badge hf-top-stage-badge-muted">
                         {getTopStageCount(col)}
                       </span>
                     )}
-                    {isActive && !disabled && (
+                    {isActive && (
                       <span className="hf-top-stage-underline" />
                     )}
                   </motion.button>

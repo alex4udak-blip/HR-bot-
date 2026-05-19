@@ -448,10 +448,9 @@ export default function DashboardPage() {
                     onClick={() => setShowReportDD(false)}
                   />
                   <div className="hf-analytics-report-menu hf-analytics-menu-open">
-                    {visibleCategories.map(cat => (
-                      <div key={cat.id} className="hf-analytics-report-group">
-                        <div className="hf-analytics-report-group-label">{cat.label}</div>
-                        {cat.reports.map(rep => {
+                    {currentCat ? (
+                      <div className="hf-analytics-report-group">
+                        {currentCat.reports.map(rep => {
                           const Icon = rep.icon;
                           const isActive = activeReport === rep.id;
                           return (
@@ -459,7 +458,6 @@ export default function DashboardPage() {
                               key={rep.id}
                               type="button"
                               onClick={() => {
-                                setActiveCategory(cat.id);
                                 setActiveReport(rep.id);
                                 setShowReportDD(false);
                               }}
@@ -474,7 +472,7 @@ export default function DashboardPage() {
                           );
                         })}
                       </div>
-                    ))}
+                    ) : null}
                   </div>
                 </>
               )}

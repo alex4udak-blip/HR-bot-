@@ -802,6 +802,8 @@
   --hf-vacancy-footer-btn-px: 11px;
   --hf-vacancy-footer-primary-btn-min-w: 98.5px;
   --hf-vacancy-button-icon: 16px;
+  --hf-request-preview-body-min-h: 536px;
+  --hf-request-preview-icon: 18px;
   --hf-vacancy-pill-h: 28px;
   --hf-vacancy-pill-px: 8px;
   --hf-vacancy-pill-gap: 6px;
@@ -862,6 +864,8 @@
   --hf-vacancy-stage-gap: 26px;
   --hf-vacancy-stage-active-line: 3px;
   --hf-vacancy-stage-count: 28px;
+  --hf-vacancy-stage-search-toggle-w: 42px;
+  --hf-vacancy-stage-search-pl: 16px;
   --hf-vacancy-icon-btn: 50px;
   --hf-vacancy-icon-btn-radius: 14px;
   --hf-vacancy-main-radius: 14px;

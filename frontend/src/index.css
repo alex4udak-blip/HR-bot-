@@ -1519,6 +1519,69 @@
   background: var(--hf-main-50);
 }
 
+.hf-request-preview-overlay {
+  align-items: flex-start;
+}
+
+.hf-request-preview-modal {
+  max-width: var(--hf-vacancy-modal-width);
+}
+
+.hf-request-preview-grid {
+  min-height: var(--hf-request-preview-body-min-h);
+}
+
+.hf-request-preview-main,
+.hf-request-preview-aside {
+  align-content: start;
+  row-gap: var(--hf-space-xl);
+}
+
+.hf-request-preview-block {
+  display: grid;
+  row-gap: var(--hf-space-xs);
+}
+
+.hf-request-preview-label {
+  color: var(--hf-main-900);
+  font-size: var(--hf-fs-xs);
+  font-weight: var(--hf-fw-medium);
+  line-height: var(--hf-lh-primary);
+}
+
+.hf-request-preview-value {
+  white-space: pre-wrap;
+  color: var(--hf-main-900);
+  font-size: var(--hf-fs-xs);
+  line-height: var(--hf-lh-primary);
+}
+
+.hf-request-preview-settings-icon,
+.hf-request-preview-close-icon {
+  width: var(--hf-request-preview-icon);
+  height: var(--hf-request-preview-icon);
+}
+
+.hf-request-preview-footer {
+  gap: var(--hf-space-s);
+}
+
+.hf-request-preview-decline-btn {
+  margin-left: auto;
+  height: var(--hf-vacancy-footer-btn-h);
+  border-radius: var(--hf-radius-s);
+  background: var(--hf-red-500);
+  padding-inline: var(--hf-vacancy-footer-btn-px);
+  color: var(--hf-white);
+  font-size: var(--hf-fs-xxs);
+  font-weight: var(--hf-fw-medium);
+  line-height: var(--hf-lh-secondary);
+}
+
+.hf-request-preview-decline-btn:hover {
+  background: var(--hf-red-600);
+}
+
 .hf-vacancy-workspace {
   background: var(--hf-vacancy-workspace-bg);
   color: var(--hf-vacancy-workspace-text);
@@ -1669,6 +1732,15 @@
   flex: 1 1 0 !important;
 }
 
+.hf-vacancy-stage-tabs .hf-vacancy-stage-search-toggle {
+  width: var(--hf-vacancy-stage-search-toggle-w);
+  flex: 0 0 var(--hf-vacancy-stage-search-toggle-w);
+}
+
+.hf-vacancy-stage-search {
+  padding-left: var(--hf-vacancy-stage-search-pl);
+}
+
 .hf-vacancy-empty {
   display: flex;
   justify-content: center;
@@ -1703,6 +1775,13 @@
 
 .hf-vacancy-empty-card h3 {
   margin-top: var(--hf-vacancy-empty-section-mt);
+}
+
+.hf-vacancy-empty-text {
+  margin: 0;
+  color: var(--hf-vacancy-workspace-muted);
+  font-size: var(--hf-fs-xs);
+  line-height: var(--hf-lh-primary);
 }
 
 .hf-vacancy-empty-actions,

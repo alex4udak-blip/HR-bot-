@@ -24,8 +24,6 @@ import {
   XCircle,
   Copy,
   Check,
-  CheckSquare,
-  Square,
   Printer,
   Tag,
   Pencil,
@@ -46,8 +44,6 @@ import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
-import ParserModal from '@/components/parser/ParserModal';
-import { NewCandidateModal } from '@/pages/AllCandidatesPage';
 
 // ==================== Constants ====================
 
@@ -100,7 +96,7 @@ const VACANCY_STAGE_TAB_LABELS: Record<string, string> = {
   offer: 'Выставлен оффер',
   hired: 'Оффер принят',
   rejected: 'Отказ',
-  withdrawn: 'Отказ',
+  withdrawn: 'Отозван',
 };
 
 const formatVacancyListDate = (date?: string | null) => {
@@ -351,8 +347,6 @@ export default function RecruiterFunnelsPage() {
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
-  const [showNewCandidateModal, setShowNewCandidateModal] = useState(false);
-  const [showParserModal, setShowParserModal] = useState(false);
   const [vacancyEmptyStagesExpanded, setVacancyEmptyStagesExpanded] = useState(false);
   const vacancyStageScrollRef = useRef<HTMLDivElement>(null);
   const [vacancyStageCanScroll, setVacancyStageCanScroll] = useState({
@@ -510,7 +504,6 @@ export default function RecruiterFunnelsPage() {
     [vacancies, selectedVacancyId],
   );
 
-  const selectedVacancySearchTitle = encodeURIComponent(selectedVacancy?.title?.trim() || '');
 
   // Load candidates when vacancy selected
   useEffect(() => {
@@ -640,6 +633,27 @@ export default function RecruiterFunnelsPage() {
     };
   }, [selectedVacancy, orgStageOverrides]);
 
+  const getVacancyStageLabel = useCallback((stageOrKey: string) => {
+    const enumKey = stagesConfig.keyToEnum[stageOrKey] || stageOrKey;
+    return (
+      VACANCY_STAGE_TAB_LABELS[enumKey] ||
+      stagesConfig.labels[stageOrKey] ||
+      STAGE_LABELS[stageOrKey] ||
+      stageOrKey
+    );
+  }, [stagesConfig]);
+
+  const vacancyStageDropdownLabels = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const key of stagesConfig.keys) {
+      labels[key] = getVacancyStageLabel(key);
+    }
+    for (const stage of STAGE_ORDER) {
+      labels[stage] = getVacancyStageLabel(stage);
+    }
+    return labels;
+  }, [getVacancyStageLabel, stagesConfig.keys]);
+
   // Group candidates by stage columns (handles virtual stages via maps_to)
   const groupedByStage = useMemo(() => {
     const map = new Map<string, VacancyApplication[]>();
@@ -672,12 +686,8 @@ export default function RecruiterFunnelsPage() {
     return map;
   }, [groupedByStage]);
 
-  const vacancyPrimaryStageLimit = 5;
-  const vacancySourceStageKeys = useMemo(() => new Set(['applied']), []);
-  const vacancyWorkflowKeys = useMemo(
-    () => stagesConfig.keys.filter((key) => !vacancySourceStageKeys.has(stagesConfig.keyToEnum[key] || key)),
-    [stagesConfig.keys, stagesConfig.keyToEnum, vacancySourceStageKeys],
-  );
+  const vacancyPrimaryStageLimit = 6;
+  const vacancyWorkflowKeys = stagesConfig.keys;
 
   const vacancyVisibleStageKeys = useMemo(() => {
     return vacancyWorkflowKeys.filter((key, index) => {
@@ -1060,13 +1070,13 @@ export default function RecruiterFunnelsPage() {
       setCandidates((prev) =>
         prev.map((c) => c.id === applicationId ? { ...c, stage: newStage } : c)
       );
-      toast.success(`Статус изменён → ${stagesConfig.labels[newStage] || STAGE_LABELS[newStage] || newStage}`);
+      toast.success(`Статус изменён → ${getVacancyStageLabel(newStage)}`);
       // Refresh vacancy store for updated counts
       fetchVacancies();
     } catch {
       toast.error('Ошибка смены статуса');
     }
-  }, [fetchVacancies, stagesConfig]);
+  }, [fetchVacancies, getVacancyStageLabel]);
 
   // ─── Interview scheduling modal ───
   const [interviewForCandidate, setInterviewForCandidate] = useState<typeof selectedCandidate | null>(null);
@@ -1106,7 +1116,7 @@ export default function RecruiterFunnelsPage() {
       const resp = await addEntityNote(selectedCandidate.entity_id, {
         text: text.trim(),
         stage: selectedCandidate.stage as string | undefined,
-        stage_label: stagesConfig.labels[selectedCandidate.stage] || (selectedCandidate.stage as string),
+        stage_label: getVacancyStageLabel(selectedCandidate.stage as string),
       });
       // Локально мерджим только что добавленный коммент в entity_data
       // — иначе пришлось бы ждать reload entity, и юзер думал бы что
@@ -1123,7 +1133,7 @@ export default function RecruiterFunnelsPage() {
     } finally {
       setCommentSaving(false);
     }
-  }, [selectedCandidate, stagesConfig]);
+  }, [selectedCandidate, getVacancyStageLabel]);
 
   // ─── File attach (Файл button) ───
   const candidateFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1557,15 +1567,26 @@ export default function RecruiterFunnelsPage() {
               <>
                 {/* Stage tabs: same visual shell as /all-candidates, vacancy-specific content */}
                 <div className="hf-vacancy-stage-shell hf-top-stage-shell">
-                  <div className={clsx(
-                    'hf-vacancy-source-tabs',
-                    (showVacancyTopSearch || candidateSearch) && 'hf-vacancy-source-tabs-searching',
-                  )}>
+                  <div
+                    ref={vacancyStageScrollRef}
+                    onScroll={updateVacancyStageScrollState}
+                    className={clsx(
+                      'hf-vacancy-stage-tabs hf-top-stage-tabs no-scrollbar',
+                      !showVacancyTopSearch && 'hf-top-stage-tabs-padded',
+                    )}
+                  >
                     <button
                       type="button"
-                      onClick={() => setShowVacancyTopSearch((value) => !value)}
+                      onClick={() => {
+                        if (showVacancyTopSearch || candidateSearch) {
+                          setCandidateSearch('');
+                          setShowVacancyTopSearch(false);
+                          return;
+                        }
+                        setShowVacancyTopSearch(true);
+                      }}
                       className={clsx(
-                        'hf-top-stage-search-toggle hf-vacancy-source-search-toggle',
+                        'hf-top-stage-search-toggle hf-vacancy-stage-search-toggle',
                         (showVacancyTopSearch || candidateSearch) && 'hf-top-stage-search-toggle-active',
                       )}
                       title={showVacancyTopSearch ? 'Скрыть поиск' : 'Открыть поиск'}
@@ -1575,7 +1596,7 @@ export default function RecruiterFunnelsPage() {
                     </button>
 
                     {showVacancyTopSearch || candidateSearch ? (
-                      <div className="hf-vacancy-source-search">
+                      <div className="hf-top-stage-search hf-vacancy-stage-search">
                         <input
                           ref={vacancyTopSearchRef}
                           value={candidateSearch}
@@ -1605,43 +1626,6 @@ export default function RecruiterFunnelsPage() {
                       </div>
                     ) : (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedTab('applied'); setSelectedCandidateId(null); }}
-                          className={clsx(
-                            'hf-vacancy-source-tab',
-                            selectedTab === 'applied' && 'hf-vacancy-source-tab-active',
-                          )}
-                        >
-                          Отклики
-                        </button>
-                        <span className="hf-vacancy-ai-badge" aria-hidden="true">
-                          AI
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedTab('all'); setSelectedCandidateId(null); }}
-                          className={clsx(
-                            'hf-vacancy-source-tab hf-vacancy-source-tab-base',
-                            selectedTab === 'all' && 'hf-vacancy-source-tab-active',
-                          )}
-                        >
-                          Из базы
-                          <span className="hf-top-stage-badge hf-top-stage-badge-muted">
-                            {filteredCandidates.length}
-                          </span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  <div
-                    ref={vacancyStageScrollRef}
-                    onScroll={updateVacancyStageScrollState}
-                    className={clsx(
-                      'hf-vacancy-stage-tabs hf-top-stage-tabs no-scrollbar',
-                      'hf-top-stage-tabs-padded',
-                    )}
-                  >
                         {vacancyVisibleStageKeys.map(key => {
                           const count = groupedByStageMap[key]?.length || 0;
                           const vacancyStageLabel = VACANCY_STAGE_TAB_LABELS[stagesConfig.keyToEnum[key] || key]
@@ -1673,6 +1657,8 @@ export default function RecruiterFunnelsPage() {
                             • • {vacancyHiddenEmptyStages} этапов без кандидатов • •
                           </button>
                         )}
+                      </>
+                    )}
                   </div>
                   <div className="hf-top-stage-action-cell">
                     <button
@@ -1685,7 +1671,7 @@ export default function RecruiterFunnelsPage() {
                       <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
                     </button>
                   </div>
-                  {vacancyStageCanScroll.left ? (
+                  {vacancyStageCanScroll.left && !showVacancyTopSearch && !candidateSearch ? (
                     <button
                       type="button"
                       onClick={() => scrollVacancyStageTabs('left')}
@@ -1695,7 +1681,7 @@ export default function RecruiterFunnelsPage() {
                       <ChevronLeft className="hf-top-stage-arrow-icon" />
                     </button>
                   ) : null}
-                  {vacancyStageCanScroll.right ? (
+                  {vacancyStageCanScroll.right && !showVacancyTopSearch && !candidateSearch ? (
                     <button
                       type="button"
                       onClick={() => scrollVacancyStageTabs('right')}
@@ -1710,130 +1696,115 @@ export default function RecruiterFunnelsPage() {
                 {tabFilteredCandidates.length === 0 && !candidateSearch.trim() ? (
                   <div className="hf-vacancy-empty flex-1 overflow-y-auto">
                     <section className="hf-vacancy-empty-card">
-                      <h2>Взять кандидатов в работу</h2>
-                      <div className="hf-vacancy-empty-actions">
-                        <button
-                          type="button"
-                          onClick={() => navigate('/all-candidates')}
-                          className="hf-vacancy-empty-link"
-                        >
-                          Найти в базе
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowNewCandidateModal(true)}
-                          className="hf-vacancy-empty-link"
-                        >
-                          · Добавить новое резюме вручную
-                        </button>
-                      </div>
-
-                      <h3>Найти на джоб-сайтах</h3>
-                      <div className="hf-vacancy-job-links">
-                        <a
-                          href={`https://hh.ru/search/resume?text=${selectedVacancySearchTitle}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          На Хедхантере
-                        </a>
-                        <a
-                          href={`https://career.habr.com/resumes?q=${selectedVacancySearchTitle}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          На Хабр Карьере
-                        </a>
-                        <a
-                          href={`https://www.linkedin.com/search/results/all/?keywords=${selectedVacancySearchTitle}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          На LinkedIn
-                        </a>
-                      </div>
-
-                      <p className="hf-vacancy-empty-hint">
-                        Сохраняйте найденные резюме одним кликом
+                      <h2>На этом этапе пока нет кандидатов</h2>
+                      <p className="hf-vacancy-empty-text">
+                        Кандидаты появятся здесь после перемещения на выбранный этап.
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => toast('Расширение для сохранения резюме пока не подключено')}
-                        className="hf-vacancy-empty-help"
-                      >
-                        Прочесть инструкцию
-                      </button>
                     </section>
                   </div>
                 ) : (
                 /* Master-Detail split */
-                <div className="hf-vacancy-master-detail flex-1 flex overflow-hidden">
+                <div className="hf-candidates-master">
                   {/* Left: candidate list */}
-                  <div className="hf-vacancy-candidate-list w-[350px] flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] overflow-hidden flex flex-col relative">
-                    <div className={clsx('flex-1 overflow-y-auto', anySelected && 'pb-14')}>
+                  <div className="hf-candidates-list-panel relative">
+                    <div className={clsx('hf-candidates-list-scroll', anySelected && 'pb-14')}>
                     {tabFilteredCandidates.length === 0 ? (
-                      <div className="flex items-center justify-center h-40 text-[var(--hf-dark-500)] text-sm">
+                      <div className="flex items-center justify-center h-40 text-hf-xxs text-[var(--hf-main-500)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)]">
                         Нет кандидатов
                       </div>
                     ) : (
                       tabFilteredCandidates.map(candidate => {
                         const isSelected = candidate.id === selectedCandidateId;
                         const isChecked = selectedIds.has(candidate.id);
-                        const initials = (candidate.entity_name || '?')[0].toUpperCase();
+                        const listMetaPrimary = candidate.entity_company || candidate.source;
                         return (
                           <div
                             key={candidate.id}
                             onClick={() => { setSelectedCandidateId(candidate.id); setDetailTab('info'); }}
                             className={clsx(
-                              'flex items-start gap-2 px-3 py-3 cursor-pointer border-b border-[color:var(--hf-white-alpha-04)] transition-colors group/card',
-                              isChecked
-                                ? 'bg-[var(--hf-accent-bg-10)] border-l-2 border-l-[var(--hf-accent)]'
-                                : isSelected
-                                  ? 'bg-[var(--hf-accent-bg-10)] border-l-2 border-l-[var(--hf-accent)]'
-                                  : 'hover:bg-[var(--hf-white-alpha-03)] border-l-2 border-l-transparent'
+                              'hf-candidate-row',
+                              isChecked || isSelected
+                                ? 'hf-candidate-row-selected'
+                                : 'hf-candidate-row-idle',
                             )}
                           >
-                            {/* Checkbox */}
+                            {/* Avatar / checkmark zone — same interaction as /all-candidates */}
                             <div
                               onClick={(e) => { e.stopPropagation(); toggleCandidateSelection(candidate.id); }}
-                              className={clsx(
-                                'flex items-center justify-center w-4 h-4 mt-2.5 flex-shrink-0 cursor-pointer transition-opacity',
-                                anySelected ? 'opacity-100' : 'opacity-0 group-hover/card:opacity-100'
-                              )}
+                              className="hf-candidate-avatar-zone"
                             >
                               {isChecked ? (
-                                <CheckSquare className="w-4 h-4 text-[var(--hf-accent)]" />
+                                (candidate as { entity_photo?: string }).entity_photo ? (
+                                  <div className="hf-candidate-avatar-check">
+                                    <img
+                                      src={(candidate as { entity_photo?: string }).entity_photo}
+                                      alt={candidate.entity_name || ''}
+                                      referrerPolicy="no-referrer"
+                                      className="hf-candidate-avatar-check-img"
+                                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                    />
+                                    <div className="hf-candidate-avatar-check-overlay">
+                                      <Check className="hf-candidate-check-icon" />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="hf-candidate-avatar-check">
+                                    <Check className="hf-candidate-check-icon" />
+                                  </div>
+                                )
                               ) : (
-                                <Square className="w-4 h-4 text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)]" />
+                                <>
+                                  {(candidate as { entity_photo?: string }).entity_photo ? (
+                                    <img
+                                      src={(candidate as { entity_photo?: string }).entity_photo}
+                                      alt={candidate.entity_name || ''}
+                                      referrerPolicy="no-referrer"
+                                      className="hf-candidate-avatar"
+                                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                    />
+                                  ) : (
+                                    <div className="hf-candidate-avatar-fallback">
+                                      <span className="hf-candidate-avatar-head" />
+                                      <span className="hf-candidate-avatar-body" />
+                                    </div>
+                                  )}
+                                  <div className="hf-candidate-avatar-hover">
+                                    <Check className="hf-candidate-check-icon" />
+                                  </div>
+                                </>
                               )}
                             </div>
-                            {(candidate as { entity_photo?: string }).entity_photo ? (
-                              <img
-                                src={(candidate as { entity_photo?: string }).entity_photo}
-                                alt={candidate.entity_name || ''}
-                                referrerPolicy="no-referrer"
-                                className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-[var(--hf-accent-bg-20)]"
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            ) : (
-                              <div className="w-9 h-9 rounded-full bg-[var(--hf-accent-bg-20)] flex items-center justify-center text-[var(--hf-accent)] text-sm font-medium flex-shrink-0">
-                                {initials}
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium text-[var(--hf-dark-100)] truncate">
-                                {candidate.entity_name || 'Без имени'}
+                            <div className="hf-candidate-row-copy">
+                              <div className="flex items-center min-w-0">
+                                <div className="hf-candidate-row-name">
+                                  {candidate.entity_name || 'Без имени'}
+                                </div>
                               </div>
                               {candidate.entity_position && (
-                                <div className="text-xs text-[var(--hf-dark-500)] truncate mt-0.5">
+                                <div className="hf-candidate-row-subtitle">
                                   {candidate.entity_position}
                                 </div>
                               )}
-                              <div className="text-xs text-[var(--hf-dark-600)] mt-0.5">
-                                {candidate.source || ''}
-                                {candidate.applied_at && (
-                                  <span className="ml-1">{new Date(candidate.applied_at).toLocaleDateString('ru')}</span>
+                              <div className="hf-candidate-row-meta">
+                                {listMetaPrimary && (
+                                  <span
+                                    className="hf-candidate-row-meta-text"
+                                    title={listMetaPrimary}
+                                  >
+                                    {listMetaPrimary}
+                                  </span>
                                 )}
+                                {listMetaPrimary && candidate.applied_at && (
+                                  <span className="hf-candidate-row-meta-dot">·</span>
+                                )}
+                                {candidate.applied_at && (
+                                  <span className="hf-candidate-row-date">
+                                    {new Date(candidate.applied_at).toLocaleDateString('ru')}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="sr-only">
+                                {candidate.entity_name || 'Без имени'}
                               </div>
                             </div>
                           </div>
@@ -1873,7 +1844,7 @@ export default function RecruiterFunnelsPage() {
                                       className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm hover:bg-[var(--hf-white-alpha-04)] text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)]"
                                     >
                                       <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
-                                      <span className="flex-1">{stagesConfig.labels[stage] || STAGE_LABELS[stage] || stage}</span>
+                                      <span className="flex-1">{getVacancyStageLabel(stage)}</span>
                                     </button>
                                   );
                                 })}
@@ -1901,7 +1872,7 @@ export default function RecruiterFunnelsPage() {
                   </div>
 
                   {/* Right: detail panel */}
-                  <div className="hf-vacancy-detail flex-1 flex flex-col overflow-hidden">
+                  <div className="hf-candidates-detail-panel hf-vacancy-detail flex-1 bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)] rounded-hf-l flex flex-col overflow-hidden">
                     {selectedCandidate ? (
                       <>
                         {/* Detail tabs: Личные заметки / Резюме */}
@@ -2168,15 +2139,13 @@ export default function RecruiterFunnelsPage() {
                                   <div>
                                     <div className="text-xs text-[var(--hf-dark-500)] mb-1">Текущий этап</div>
                                     <div className="text-base font-semibold text-[var(--hf-dark-100)]">
-                                      {stagesConfig.labels[
-                                        (stagesConfig.enumToKeys[selectedCandidate.stage] || [])[0] || selectedCandidate.stage
-                                      ] || selectedCandidate.stage}
+                                      {getVacancyStageLabel(selectedCandidate.stage as string)}
                                     </div>
                                   </div>
                                   <StageDropdown
                                     currentStage={selectedCandidate.stage as ApplicationStage}
                                     onChangeStage={(newStage) => handleStageChange(selectedCandidate.id, newStage)}
-                                    customLabels={stagesConfig.labels}
+                                    customLabels={vacancyStageDropdownLabels}
                                   />
                                 </div>
                               </div>
@@ -2288,7 +2257,7 @@ export default function RecruiterFunnelsPage() {
                                       .map((note, i) => {
                                         const stage = note.stage as string | undefined;
                                         const stageLabel = (note.stage_label as string | undefined)
-                                          || (stage ? (stagesConfig.labels[stage] || stage) : null);
+                                          || (stage ? getVacancyStageLabel(stage) : null);
                                         const authorName = (note.author_name as string) || 'Аноним';
                                         const dateStr = note.date ? new Date(note.date as string).toLocaleString('ru-RU', {
                                           day: '2-digit', month: '2-digit', year: 'numeric',
@@ -2381,17 +2350,17 @@ export default function RecruiterFunnelsPage() {
                                           {entry.from_stage ? (
                                             <div className="flex items-center gap-1.5 flex-wrap text-xs mb-1">
                                               <span className={clsx('px-2 py-0.5 rounded-full', fromColors?.badge)}>
-                                                {stagesConfig.labels[entry.from_stage] || STAGE_LABELS[entry.from_stage] || entry.from_stage}
+                                                {getVacancyStageLabel(entry.from_stage)}
                                               </span>
                                               <span className="text-[var(--hf-dark-600)]">&rarr;</span>
                                               <span className={clsx('px-2 py-0.5 rounded-full', toColors.badge)}>
-                                                {stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}
+                                                {getVacancyStageLabel(entry.to_stage)}
                                               </span>
                                             </div>
                                           ) : (
                                             <div className="text-sm text-[var(--hf-dark-300)] mb-1">
                                               <span className={clsx('inline-block px-2 py-0.5 rounded-full text-xs', toColors.badge)}>
-                                                {stagesConfig.labels[entry.to_stage] || STAGE_LABELS[entry.to_stage] || entry.to_stage}
+                                                {getVacancyStageLabel(entry.to_stage)}
                                               </span>
                                             </div>
                                           )}
@@ -2602,33 +2571,6 @@ export default function RecruiterFunnelsPage() {
           vacancy={editingVacancy}
           onClose={() => setEditingVacancy(null)}
           onSuccess={() => { setEditingVacancy(null); fetchVacancies(); }}
-        />
-      )}
-
-      {showNewCandidateModal && (
-        <NewCandidateModal
-          onClose={() => setShowNewCandidateModal(false)}
-          onSaved={() => {
-            setShowNewCandidateModal(false);
-          }}
-          onOpenParser={() => {
-            setShowNewCandidateModal(false);
-            setShowParserModal(true);
-          }}
-        />
-      )}
-
-      {showParserModal && (
-        <ParserModal
-          type="resume"
-          onClose={() => setShowParserModal(false)}
-          onParsed={() => {
-            setShowParserModal(false);
-            toast.success('Кандидат добавлен');
-          }}
-          onAttachedToEntity={() => {
-            setShowParserModal(false);
-          }}
         />
       )}
 

@@ -41,6 +41,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import type { ReactNode } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useVacancyStore } from "@/stores/vacancyStore";
 import * as notificationsApi from "@/services/api/notifications";
@@ -50,7 +51,7 @@ import ThemeToggle from "./ThemeToggle";
 import { VacancyForm } from "@/components/vacancies";
 import ParserModal from "@/components/parser/ParserModal";
 import TelegramConnectBanner from "@/components/TelegramConnectBanner";
-import { getVacancy } from "@/services/api/vacancies";
+import { getVacancy, takeVacancy } from "@/services/api/vacancies";
 import type { Vacancy } from "@/types";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
@@ -145,6 +146,185 @@ type HrSettingsItem = {
   adminOnly?: boolean;
   missing?: boolean;
 };
+
+type SidebarVacancyMode = "view" | "edit";
+
+function formatSidebarVacancyDate(date?: string | null) {
+  if (!date) return "";
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(date));
+}
+
+function RequestPreviewBlock({
+  title,
+  children,
+}: {
+  title: string;
+  children?: ReactNode;
+}) {
+  if (!children) return null;
+  return (
+    <div className="hf-request-preview-block">
+      <div className="hf-request-preview-label">{title}</div>
+      <div className="hf-request-preview-value">{children}</div>
+    </div>
+  );
+}
+
+function SidebarRequestPreviewModal({
+  vacancy,
+  onClose,
+  onEdit,
+  onTaken,
+}: {
+  vacancy: Vacancy;
+  onClose: () => void;
+  onEdit: () => void;
+  onTaken: () => void;
+}) {
+  const { user } = useAuthStore();
+  const { vacancies, fetchVacancies } = useVacancyStore();
+  const [taking, setTaking] = useState(false);
+  const isTakenByMe = useMemo(() => {
+    if (!user) return false;
+    return vacancies.some(
+      (v) =>
+        v.created_by === user.id &&
+        (v.extra_data as Record<string, unknown> | undefined)
+          ?.cloned_from_request_id === vacancy.id,
+    );
+  }, [user, vacancies, vacancy.id]);
+  const requestDate = formatSidebarVacancyDate(
+    vacancy.published_at || vacancy.created_at,
+  );
+  const customerName =
+    vacancy.hiring_manager_name || vacancy.created_by_name || "Не указан";
+  const departmentName = vacancy.department_name || "Не выбрано";
+  const positionsCount =
+    typeof vacancy.extra_data?.positions_count === "number"
+      ? vacancy.extra_data.positions_count
+      : 1;
+
+  const handleTake = async () => {
+    setTaking(true);
+    try {
+      await takeVacancy(vacancy.id);
+      await fetchVacancies();
+      toast.success('Заявка взята в работу — открыта в "Мои вакансии"');
+      onTaken();
+    } catch {
+      toast.error("Не удалось взять заявку");
+    } finally {
+      setTaking(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="hf-vacancy-modal-overlay hf-request-preview-overlay"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        onClick={(event) => event.stopPropagation()}
+        className="hf-vacancy-modal hf-request-preview-modal"
+      >
+        <div className="hf-vacancy-modal-header">
+          <h2 className="hf-vacancy-modal-title">
+            {vacancy.title?.trim() || "Заявка"}
+          </h2>
+          <div className="hf-vacancy-header-actions">
+            <button
+              type="button"
+              className="hf-vacancy-settings-btn"
+              onClick={() =>
+                toast("Настройка полей формы Huntflow пока не реализована в HR-bot")
+              }
+            >
+              <Filter className="hf-request-preview-settings-icon" />
+              Настроить поля формы
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="hf-vacancy-close-btn"
+              aria-label="Закрыть"
+            >
+              <X className="hf-request-preview-close-icon" />
+            </button>
+          </div>
+        </div>
+
+        <div className="hf-vacancy-form-scroll">
+          <div className="hf-vacancy-modal-grid hf-request-preview-grid grid min-h-full">
+            <div className="hf-vacancy-modal-main hf-request-preview-main">
+              <RequestPreviewBlock title="Отдел, подразделение">
+                {departmentName}
+              </RequestPreviewBlock>
+              <RequestPreviewBlock title="Обязанности кандидата">
+                {vacancy.responsibilities || vacancy.description}
+              </RequestPreviewBlock>
+              <RequestPreviewBlock title="Требования к кандидату">
+                {vacancy.requirements}
+              </RequestPreviewBlock>
+              <RequestPreviewBlock title="Условия работы">
+                {vacancy.description && vacancy.responsibilities
+                  ? vacancy.description
+                  : null}
+              </RequestPreviewBlock>
+            </div>
+
+            <aside className="hf-vacancy-modal-aside hf-request-preview-aside">
+              <RequestPreviewBlock title="Сколько человек нужно нанять">
+                {positionsCount}
+              </RequestPreviewBlock>
+              <RequestPreviewBlock
+                title={requestDate ? `Заказчик, ${requestDate}` : "Заказчик"}
+              >
+                {customerName}
+              </RequestPreviewBlock>
+              <RequestPreviewBlock title="Заявка получена">
+                {departmentName}
+              </RequestPreviewBlock>
+            </aside>
+          </div>
+        </div>
+
+        <div className="hf-vacancy-footer hf-request-preview-footer">
+          <button
+            type="button"
+            onClick={handleTake}
+            disabled={taking || isTakenByMe}
+            className="hf-vacancy-primary-btn"
+          >
+            {taking ? "Беру..." : isTakenByMe ? "Уже в работе" : "Взять в работу"}
+          </button>
+          <button type="button" onClick={onClose} className="hf-vacancy-secondary-btn">
+            Закрыть
+          </button>
+          <button type="button" onClick={onEdit} className="hf-vacancy-secondary-btn">
+            Редактировать
+          </button>
+          <button
+            type="button"
+            onClick={() => toast("Отклонение заявки пока не поддерживается в HR-bot")}
+            className="hf-request-preview-decline-btn"
+          >
+            Не брать в работу
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
 
 const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
   {
@@ -531,6 +711,8 @@ export default function Layout() {
   const [expandedFunnels, setExpandedFunnels] = useState(false);
   const [expandedRequests, setExpandedRequests] = useState(true);
   const [sidebarVacancy, setSidebarVacancy] = useState<Vacancy | null>(null);
+  const [sidebarVacancyMode, setSidebarVacancyMode] =
+    useState<SidebarVacancyMode>("view");
   const routeBlock = getBlockForPath(location.pathname);
   const activeNavigationBlock = routeBlock || activeBlock;
   const isHrSidebar = routeBlock === "hr";
@@ -625,6 +807,7 @@ export default function Layout() {
       try {
         const v = await getVacancy(id);
         setSidebarVacancy(v);
+        setSidebarVacancyMode("view");
       } catch {
         navigate(`/vacancies/${id}`);
       }
@@ -953,7 +1136,7 @@ export default function Layout() {
     !sidebarSelectedVacancyId &&
     !isClosedFunnelsView;
   const sidebarOpenVacancies = vacancies
-    .filter((v) => v.status === "open" || v.status === "paused")
+    .filter((v) => v.status === "open")
     .filter((v) => isHrSidebarAdmin || (user && v.created_by === user.id));
   const sidebarRequestVacancies = vacancies
     .filter(
@@ -1077,19 +1260,6 @@ export default function Layout() {
                     />
                     Аналитика
                   </NavLink>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      toast("Календарь Huntflow пока не реализован в HR-блоке")
-                    }
-                    className="hf-hr-nav-item w-full"
-                  >
-                    <HfSpriteIcon
-                      id="calendar-20"
-                      className="hf-hr-nav-icon"
-                    />
-                    Календарь
-                  </button>
                 </div>
 
                 <div className="hf-hr-sidebar-divider hf-hr-sidebar-divider-requests" />
@@ -1214,7 +1384,7 @@ export default function Layout() {
                   </AnimatePresence>
                   {sidebarOpenVacancies.length > 0 && (
                     <div className="hf-hr-subnav">
-                      {sidebarOpenVacancies.slice(0, 1).map((v) => (
+                      {sidebarOpenVacancies.map((v) => (
                         <NavLink
                           key={v.id}
                           to={`/my-funnels?v=${v.id}`}
@@ -2152,24 +2322,17 @@ export default function Layout() {
       {/* Sidebar Vacancy Modal */}
       <AnimatePresence>
         {sidebarVacancy && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          >
-            <div
-              className="absolute inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm"
-              onClick={() => setSidebarVacancy(null)}
+          sidebarVacancyMode === "view" ? (
+            <SidebarRequestPreviewModal
+              key={`sidebar-view-${sidebarVacancy.id}`}
+              vacancy={sidebarVacancy}
+              onClose={() => setSidebarVacancy(null)}
+              onEdit={() => setSidebarVacancyMode("edit")}
+              onTaken={() => setSidebarVacancy(null)}
             />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-[var(--hf-white)] dark:bg-[var(--hf-bg-dark)] rounded-2xl shadow-[var(--hf-shadow-2xl)]"
-            >
+          ) : (
               <VacancyForm
-                key={`sidebar-${sidebarVacancy.id}`}
+                key={`sidebar-edit-${sidebarVacancy.id}`}
                 vacancy={sidebarVacancy}
                 onClose={() => setSidebarVacancy(null)}
                 onSuccess={() => {
@@ -2177,8 +2340,7 @@ export default function Layout() {
                   fetchVacancies();
                 }}
               />
-            </motion.div>
-          </motion.div>
+          )
         )}
       </AnimatePresence>
 

@@ -32,11 +32,6 @@ export default function AddToVacancyModal({
 }: AddToVacancyModalProps) {
   const [loading, setLoading] = useState(false);
   const { user } = useAuthStore();
-  // Все open-вакансии орги видят только платформенные роли
-  // (superadmin / owner). HR-админ и рекрут — только СВОИ
-  // (created_by === me): личные + клоны после 'Взять в работу'.
-  const seesAllVacancies =
-    user?.role === "superadmin" || user?.org_role === "owner";
   const [searchQuery, setSearchQuery] = useState("");
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null);
@@ -56,11 +51,20 @@ export default function AddToVacancyModal({
       try {
         const data = await getVacancies({
           status: "open",
-          search: searchQuery || undefined,
         });
-        const filtered = seesAllVacancies
-          ? data
-          : data.filter((v) => user && v.created_by === user.id);
+        const myVacancies = data.filter((v) => {
+          if (!user) return false;
+          if (v.assigned_to_all) return false;
+          return v.created_by === user.id;
+        });
+        const query = searchQuery.trim().toLowerCase();
+        const filtered = query
+          ? myVacancies.filter((v) =>
+              [v.title, v.location, v.department_name]
+                .filter(Boolean)
+                .some((value) => value!.toLowerCase().includes(query)),
+            )
+          : myVacancies;
         setVacancies(filtered);
       } catch (error) {
         console.error("Failed to load vacancies:", error);
@@ -72,7 +76,7 @@ export default function AddToVacancyModal({
 
     const debounce = setTimeout(loadVacancies, 300);
     return () => clearTimeout(debounce);
-  }, [searchQuery, seesAllVacancies, user]);
+  }, [searchQuery, user]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
