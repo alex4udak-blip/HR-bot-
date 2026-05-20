@@ -209,6 +209,9 @@ function SidebarRequestPreviewModal({
       : 1;
 
   const handleTake = async () => {
+    // Guard: повторный клик пока запрос ещё в полёте не должен
+    // отправлять второй POST — иначе создавались дубли-клоны.
+    if (taking) return;
     setTaking(true);
     try {
       await takeVacancy(vacancy.id);
@@ -1147,13 +1150,23 @@ export default function Layout() {
         v.status === "paused",
     )
     .filter((v) => {
+      // Клон (вакансия, взятая рекрутёром в работу) — это НЕ заявка,
+      // а рабочая копия в «Мои вакансии». Без этой проверки после
+      // «Взять в работу» клон висел дубликатом в «Заявки», и каждый
+      // повторный клик плодил ещё один.
+      const clonedFrom = (v.extra_data as Record<string, unknown> | undefined)
+        ?.cloned_from_request_id;
+      if (typeof clonedFrom === "number") return false;
       if (isHrSidebarAdmin) {
         if (v.assigned_to_all) return false;
         if (v.assigned_to && v.assigned_to.length > 0) return false;
         return true;
       }
       if (!user) return false;
-      if (v.created_by === user.id) return false;
+      // Рекрутёр видит назначенные на него заявки И свои собственные
+      // созданные через «+» — раньше своя заявка скрывалась и казалось
+      // что создание не сработало.
+      if (v.created_by === user.id) return true;
       if (v.assigned_to_all) return true;
       if (v.assigned_to && v.assigned_to.includes(user.id)) return true;
       return false;
