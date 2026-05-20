@@ -578,7 +578,14 @@ async def take_vacancy(
     (либо у пользователя полный доступ к БД).
     """
     org = await get_user_org(current_user, db)
-    source = await db.get(Vacancy, vacancy_id)
+    # FOR UPDATE на строке-заявке: сериализует одновременные «Взять в работу».
+    # Без этого 3 быстрых клика проходили dedup-SELECT до первого COMMIT и
+    # создавали 3 клона. С блокировкой второй и третий запрос ждут, а потом
+    # видят уже созданный клон и получают 409.
+    source_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id).with_for_update()
+    )
+    source = source_result.scalar_one_or_none()
     if not source or (org and source.org_id != org.id):
         raise HTTPException(status_code=404, detail="Vacancy not found")
 

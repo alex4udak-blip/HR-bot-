@@ -509,7 +509,31 @@ async def change_candidate_status(
 
     old_status = entity.status
     entity.status = new_status
+
+    # Синхронизируем связанные VacancyApplication.stage. Без этого смена
+    # этапа в /all-candidates меняла только Entity.status, а в воронке
+    # (/my-funnels читает VacancyApplication.stage) кандидат оставался
+    # в старой колонке — выглядело как «не перемещается».
+    from api.models.database import STATUS_SYNC_MAP
+    synced_apps = 0
+    if new_status in STATUS_SYNC_MAP:
+        target_stage = STATUS_SYNC_MAP[new_status]
+        apps_result = await db.execute(
+            select(VacancyApplication).where(VacancyApplication.entity_id == entity_id)
+        )
+        for app in apps_result.scalars().all():
+            if app.stage != target_stage:
+                app.stage = target_stage
+                app.last_stage_change_at = datetime.utcnow()
+                synced_apps += 1
+
     await db.commit()
+
+    if synced_apps:
+        logger.info(
+            f"change_candidate_status: entity {entity_id} → {new_status.value}, "
+            f"synced {synced_apps} VacancyApplication(s)"
+        )
 
     return {
         "success": True,
