@@ -23,7 +23,6 @@ import {
   Plus,
   User,
   UserPlus,
-  TrendingUp,
   Puzzle,
   ChevronDown,
   Calendar,
@@ -62,6 +61,7 @@ import toast from "react-hot-toast";
 // Map paths to data-tour attributes
 const pathToTourAttribute: Record<string, string> = {
   "/all-candidates": "candidates-link",
+  "/analytics": "analytics-link",
   "/chats": "chats-link",
   "/dashboard": "dashboard-link",
 };
@@ -247,16 +247,6 @@ function SidebarRequestPreviewModal({
           <div className="hf-vacancy-header-actions">
             <button
               type="button"
-              className="hf-vacancy-settings-btn"
-              onClick={() =>
-                toast("Настройка полей формы Huntflow пока не реализована в HR-bot")
-              }
-            >
-              <Filter className="hf-request-preview-settings-icon" />
-              Настроить поля формы
-            </button>
-            <button
-              type="button"
               onClick={onClose}
               className="hf-vacancy-close-btn"
               aria-label="Закрыть"
@@ -316,13 +306,6 @@ function SidebarRequestPreviewModal({
           <button type="button" onClick={onEdit} className="hf-vacancy-secondary-btn">
             Редактировать
           </button>
-          <button
-            type="button"
-            onClick={() => toast("Отклонение заявки пока не поддерживается в HR-bot")}
-            className="hf-request-preview-decline-btn"
-          >
-            Не брать в работу
-          </button>
         </div>
       </motion.div>
     </motion.div>
@@ -369,7 +352,7 @@ const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
   },
   {
     title: "Темы оформления",
-    description: "Сделайте ваш Хантфлоу по‑настоящему уютным",
+    description: "Цвета, темы и персонализация интерфейса",
     icon: Palette,
     color: "text-[var(--hf-status-lime)]",
     missing: true,
@@ -520,10 +503,10 @@ function HrSettingsModal({
             <X className="hf-hr-settings-close-icon" />
           </button>
           <h2 className="hf-hr-settings-title">
-            Solva
+            HR-bot
           </h2>
           <p className="hf-hr-settings-subtitle">
-            ID 1398 · Тариф «Профессиональный» до 06.04.2027 · Управляющий рекрутер
+            Настройки рабочего пространства и рекрутингового контура
           </p>
         </div>
 
@@ -553,7 +536,7 @@ function HrSettingsModal({
 
           <div className="hf-hr-settings-section">
             <h3 className="hf-hr-settings-section-title">
-              Мой Хантфлоу
+              Мой профиль
             </h3>
             <div className="hf-hr-settings-grid hf-hr-settings-grid-first">
               {myItems.map((item) => (
@@ -658,6 +641,7 @@ function getBlockForPath(path: string): string | null {
       "/my-funnels",
       "/form-builder",
       "/document-templates",
+      "/email-templates",
       "/employees",
       "/vacancies",
       "/analytics",
@@ -1040,23 +1024,13 @@ export default function Layout() {
         icon: Users,
         label: "Все кандидаты",
       });
-      hrItems.push({ path: "/dashboard", icon: BarChart3, label: "Аналитика" });
+      hrItems.push({ path: "/analytics", icon: BarChart3, label: "Аналитика" });
       hrItems.push({
         path: "/my-funnels",
         icon: Briefcase,
         label: "Мои вакансии",
       });
       hrItems.push({ path: "/vacancies", icon: GitBranch, label: "Заявки" });
-      hrItems.push({
-        path: "/extension",
-        icon: Puzzle,
-        label: "Волшебная кнопка",
-      });
-      if (isHrAdmin) {
-        // У HR-админа в боковом меню оставлено только ПЭН — остальные пункты
-        // (Аналитика, Отчёты, Формы, Шаблоны, Сотрудники, CSV) убраны по запросу.
-        hrItems.push({ path: "/pen", icon: TrendingUp, label: "ПЭН (бонусы)" });
-      }
       sections.push({
         id: "hr",
         label: "HR",
@@ -1103,6 +1077,19 @@ export default function Layout() {
       navItems
     );
   }, [activeNavigationBlock, navItems, navSections]);
+
+  const hrMobileNavItems = useMemo(
+    () => [
+      { path: "/all-candidates", icon: Users, label: "Все кандидаты" },
+      { path: "/analytics", icon: BarChart3, label: "Аналитика" },
+      { path: "/vacancies", icon: GitBranch, label: "Заявки" },
+      { path: "/my-funnels", icon: Briefcase, label: "Мои вакансии" },
+      { path: "/my-funnels?status=closed", icon: FolderKanban, label: "Закрытые вакансии" },
+    ],
+    [],
+  );
+
+  const activeMobileNavItems = isHrSidebar ? hrMobileNavItems : mobileNavItems;
 
   const handleBlockSwitch = useCallback(
     (section: NavSection) => {
@@ -1258,8 +1245,8 @@ export default function Layout() {
                     Все кандидаты
                   </NavLink>
                   <NavLink
-                    to="/dashboard"
-                    data-tour={pathToTourAttribute["/dashboard"]}
+                    to="/analytics"
+                    data-tour={pathToTourAttribute["/analytics"]}
                     className={({ isActive }) =>
                       clsx(
                         "hf-hr-nav-item",
@@ -1282,6 +1269,7 @@ export default function Layout() {
                     type="button"
                     onClick={() => setExpandedRequests(!expandedRequests)}
                     className="hf-hr-nav-item hf-hr-nav-item-white w-full"
+                    aria-expanded={expandedRequests}
                   >
                     <HfSpriteIcon
                       id="edit-2-20"
@@ -1289,7 +1277,7 @@ export default function Layout() {
                     />
                     <span className="min-w-0 flex-1">Заявки</span>
                     <span className="hf-hr-secondary-text">
-                      Свернуть
+                      {expandedRequests ? "Свернуть" : "Развернуть"}
                     </span>
                   </button>
                   {expandedRequests && (
@@ -1470,13 +1458,6 @@ export default function Layout() {
                         {
                           label: "Заявка на подбор",
                           action: () => navigate("/vacancies"),
-                        },
-                        {
-                          label: "Добавить событие",
-                          action: () =>
-                            toast(
-                              "Добавление события из меню Huntflow пока не реализовано в HR-bot",
-                            ),
                         },
                       ].map((item) => (
                         <button
@@ -2131,15 +2112,32 @@ export default function Layout() {
 
       {/* Mobile Header */}
       <header
-        className="lg:hidden glass border-b border-[color:var(--hf-white-alpha-05)] px-4 py-3 flex items-center justify-between"
+        className={clsx(
+          "lg:hidden border-b px-4 py-3 flex items-center justify-between",
+          isHrSidebar
+            ? "hf-hr-mobile-header"
+            : "glass border-[color:var(--hf-white-alpha-05)]",
+        )}
         role="banner"
       >
-        <h1 className="text-lg font-bold bg-[linear-gradient(to_right,var(--hf-accent),var(--hf-accent-hover))] bg-clip-text text-transparent">
+        <h1
+          className={clsx(
+            "text-lg font-bold",
+            isHrSidebar
+              ? "hf-hr-mobile-brand"
+              : "bg-[linear-gradient(to_right,var(--hf-accent),var(--hf-accent-hover))] bg-clip-text text-transparent",
+          )}
+        >
           Enceladus
         </h1>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 rounded-lg hover:bg-[var(--hf-bg-dark-panel)]"
+          className={clsx(
+            "p-2 rounded-lg",
+            isHrSidebar
+              ? "hf-hr-mobile-menu-trigger"
+              : "hover:bg-[var(--hf-bg-dark-panel)]",
+          )}
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-menu"
           aria-label={mobileMenuOpen ? "Закрыть меню" : "Открыть меню"}
@@ -2155,82 +2153,116 @@ export default function Layout() {
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-50 bg-[var(--hf-black-alpha-80)] animate-[fadeIn_0.15s_ease]"
+          className={clsx(
+            "lg:hidden fixed inset-0 z-50 animate-[fadeIn_0.15s_ease]",
+            isHrSidebar ? "hf-hr-mobile-menu-overlay" : "bg-[var(--hf-black-alpha-80)]",
+          )}
           onClick={() => setMobileMenuOpen(false)}
           role="dialog"
           aria-modal="true"
-          aria-label="Mobile navigation menu"
+          aria-label="Мобильное меню"
         >
           <div
-            className="absolute right-0 top-0 h-full w-64 glass flex flex-col animate-[slideInRight_0.2s_ease]"
+            className={clsx(
+              "absolute right-0 top-0 h-full w-64 flex flex-col animate-[slideInRight_0.2s_ease]",
+              isHrSidebar ? "hf-hr-mobile-menu" : "glass",
+            )}
             onClick={(e) => e.stopPropagation()}
             id="mobile-menu"
           >
             <nav
               className="p-3 overflow-y-auto flex-1"
-              aria-label="Mobile navigation"
+              aria-label="Мобильная навигация"
             >
-              {/* Block switcher */}
-              <div className="flex gap-1 mb-4">
-                {navSections.map((section) => {
-                  const Icon = BLOCK_ICONS[section.id] || LayoutDashboard;
-                  return (
-                    <button
-                      key={section.id}
-                      onClick={() => handleBlockSwitch(section)}
-                      className={clsx(
-                        "flex-1 flex flex-col items-center gap-1 py-2 rounded-xl transition-all text-xs",
-                        activeNavigationBlock === section.id
-                          ? clsx("border", BLOCK_ACTIVE_BG[section.id])
-                          : "text-[color:var(--hf-white-alpha-30)] border border-transparent",
-                      )}
+              {isHrSidebar ? (
+                <div className="hf-hr-mobile-nav-list">
+                  {hrMobileNavItems.map((item) => (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={({ isActive }) =>
+                        clsx(
+                          "hf-hr-mobile-nav-item",
+                          isActive && "hf-hr-mobile-nav-item-active",
+                        )
+                      }
                     >
-                      <Icon className="w-4 h-4" />
-                      <span className="text-[length:var(--hf-fs-6xs)] font-semibold uppercase">
-                        {section.label}
+                      <item.icon className="hf-hr-mobile-nav-icon" aria-hidden="true" />
+                      <span className="font-medium truncate">
+                        {item.label}
                       </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {/* Active block items */}
-              {navSections
-                .filter((s) => s.id === activeNavigationBlock)
-                .map((section) => (
-                  <div key={section.id}>
-                    {section.items.map((item) => (
-                      <NavLink
-                        key={item.path}
-                        to={item.path}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={({ isActive }) =>
-                          clsx(
-                            "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm",
-                            isActive
-                              ? clsx(BLOCK_ACCENT[activeNavigationBlock])
-                              : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-bg-dark-panel)]",
-                          )
-                        }
-                      >
-                        <item.icon
-                          className="w-4 h-4 flex-shrink-0"
-                          aria-hidden="true"
-                        />
-                        <span className="font-medium truncate">
-                          {item.label}
-                        </span>
-                      </NavLink>
-                    ))}
+                    </NavLink>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <div className="flex gap-1 mb-4">
+                    {navSections.map((section) => {
+                      const Icon = BLOCK_ICONS[section.id] || LayoutDashboard;
+                      return (
+                        <button
+                          key={section.id}
+                          onClick={() => handleBlockSwitch(section)}
+                          className={clsx(
+                            "flex-1 flex flex-col items-center gap-1 py-2 rounded-xl transition-all text-xs",
+                            activeNavigationBlock === section.id
+                              ? clsx("border", BLOCK_ACTIVE_BG[section.id])
+                              : "text-[color:var(--hf-white-alpha-30)] border border-transparent",
+                          )}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span className="text-[length:var(--hf-fs-6xs)] font-semibold uppercase">
+                            {section.label}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                ))}
-              <ThemeToggle />
+                  {navSections
+                    .filter((s) => s.id === activeNavigationBlock)
+                    .map((section) => (
+                      <div key={section.id}>
+                        {section.items.map((item) => (
+                          <NavLink
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => setMobileMenuOpen(false)}
+                            className={({ isActive }) =>
+                              clsx(
+                                "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm",
+                                isActive
+                                  ? clsx(BLOCK_ACCENT[activeNavigationBlock])
+                                  : "text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)] hover:bg-[var(--hf-bg-dark-panel)]",
+                              )
+                            }
+                          >
+                            <item.icon
+                              className="w-4 h-4 flex-shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span className="font-medium truncate">
+                              {item.label}
+                            </span>
+                          </NavLink>
+                        ))}
+                      </div>
+                    ))}
+                  <ThemeToggle />
+                </>
+              )}
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[var(--hf-dark-300)] hover:text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)] transition-all duration-200"
+                className={clsx(
+                  "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
+                  isHrSidebar
+                    ? "hf-hr-mobile-logout"
+                    : "text-[var(--hf-dark-300)] hover:text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)]",
+                )}
                 aria-label="Выйти из аккаунта"
               >
                 <LogOut className="w-5 h-5" aria-hidden="true" />
-                <span className="font-medium">Logout</span>
+                <span className="font-medium">Выйти</span>
               </button>
             </nav>
           </div>
@@ -2295,7 +2327,7 @@ export default function Layout() {
           <Outlet />
 
           {/* FAB — floating action button for HR block */}
-          {isHrSidebar && (
+          {isHrSidebar && !mobileMenuOpen && (
             <div className="lg:hidden">
               <FABButton
                 onCreateVacancy={() => setShowFabVacancyForm(true)}
@@ -2308,10 +2340,15 @@ export default function Layout() {
 
       {/* Mobile Bottom Navigation */}
       <nav
-        className="lg:hidden glass border-t border-[color:var(--hf-white-alpha-05)] px-2 py-2 flex"
-        aria-label="Bottom navigation"
+        className={clsx(
+          "lg:hidden border-t px-2 py-2 flex",
+          isHrSidebar
+            ? "hf-hr-mobile-bottom-nav"
+            : "glass border-[color:var(--hf-white-alpha-05)]",
+        )}
+        aria-label="Нижняя навигация"
       >
-        {mobileNavItems.slice(0, 4).map((item) => (
+        {activeMobileNavItems.slice(0, 4).map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
@@ -2319,9 +2356,13 @@ export default function Layout() {
             className={({ isActive }) =>
               clsx(
                 "flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all duration-200",
-                isActive
-                  ? "text-[var(--hf-accent)]"
-                  : "text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]",
+                isHrSidebar
+                  ? isActive
+                    ? "hf-hr-mobile-bottom-item-active"
+                    : "hf-hr-mobile-bottom-item"
+                  : isActive
+                    ? "text-[var(--hf-accent)]"
+                    : "text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]",
               )
             }
             aria-label={item.label}

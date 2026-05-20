@@ -6,9 +6,7 @@ import {
   Search,
   Plus,
   Briefcase,
-  MapPin,
   DollarSign,
-  Clock,
   Users,
   Upload,
   Filter,
@@ -31,7 +29,6 @@ import { getDepartments, assignVacancy, takeVacancy, getAssignableUsers } from '
 import type { Department, ParsedVacancy, AssignableUser } from '@/services/api';
 import {
   VacancyForm,
-  VacancyCardSkeleton,
   VacancyStatusBadge,
 } from '@/components/vacancies';
 import ParserModal from '@/components/parser/ParserModal';
@@ -42,15 +39,6 @@ import {
   ConfirmDialog,
   ErrorMessage
 } from '@/components/ui';
-
-const STATUS_BORDER_COLORS: Record<string, string> = {
-  open: 'border-l-green-500',
-  draft: 'border-l-gray-500',
-  pending_review: 'border-l-purple-500',
-  closed: 'border-l-red-500',
-  paused: 'border-l-yellow-500',
-  cancelled: 'border-l-gray-600',
-};
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; name: string }[] = [
   { id: 'all', name: 'Все' },
@@ -565,6 +553,32 @@ export default function VacanciesPage() {
     return formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency);
   };
 
+  const formatVacancyDate = (value?: string) => {
+    if (!value) return '—';
+    return new Intl.DateTimeFormat('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date(value));
+  };
+
+  const getVacancyStatusLabel = (status: VacancyStatus) =>
+    STATUS_FILTERS.find((item) => item.id === status)?.name || status;
+
+  const getVacancyKindLabel = (vacancy: Vacancy) =>
+    user && vacancy.created_by !== user.id && (vacancy.assigned_to?.includes(user.id) || vacancy.assigned_to_all)
+      ? 'Заявка'
+      : 'Вакансия';
+
+  const getClosedVacancyDate = (vacancy: Vacancy) =>
+    vacancy.status === 'closed' ? vacancy.closes_at || vacancy.updated_at : null;
+
+  const getEmploymentTypeLabel = (value?: string) => {
+    if (!value) return null;
+    const normalizedValue = value.replace(/_/g, '-');
+    return EMPLOYMENT_TYPES.find((type) => type.value === normalizedValue)?.label || value;
+  };
+
   const handleParsedVacancy = (data: ParsedVacancy) => {
     // Convert parsed vacancy to prefill data for the form
     const prefill: Partial<Vacancy> = {
@@ -856,16 +870,20 @@ export default function VacanciesPage() {
       </div>
 
       {/* Vacancies list */}
-      <div className="flex-1 overflow-auto p-3 sm:p-4">
+      <div className="hf-vacancies-search-body">
         {error ? (
           <ErrorMessage
             error={error}
             onRetry={handleRetryFetch}
           />
         ) : isLoading ? (
-          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="hf-vacancies-search-list" aria-label="Загрузка вакансий">
             {Array.from({ length: 6 }).map((_, i) => (
-              <VacancyCardSkeleton key={i} />
+              <div key={i} className="hf-vacancies-search-row hf-vacancies-search-row-skeleton">
+                <div className="hf-vacancies-search-skeleton-line hf-vacancies-search-skeleton-title" />
+                <div className="hf-vacancies-search-skeleton-line" />
+                <div className="hf-vacancies-search-skeleton-line hf-vacancies-search-skeleton-short" />
+              </div>
             ))}
           </div>
         ) : filteredVacancies.length === 0 ? (
@@ -880,9 +898,27 @@ export default function VacanciesPage() {
             />
           </div>
         ) : (
-          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            <>
-              {filteredVacancies.map((vacancy) => (
+          <section className="hf-vacancies-search-results" aria-label="Вакансии">
+            <div className="hf-vacancies-search-count">
+              Найдено вакансий: {filteredVacancies.length}
+            </div>
+            <div className="hf-vacancies-search-list">
+              {filteredVacancies.map((vacancy) => {
+                const closedDate = getClosedVacancyDate(vacancy);
+                const salaryDisplay = getSalaryDisplay(vacancy);
+                const employmentLabel = getEmploymentTypeLabel(vacancy.employment_type);
+                const isRequestForMe = !isAdmin && user && vacancy.created_by !== user.id && isAssignedToMe(vacancy);
+                const isAlreadyAssigned = vacancy.assigned_to_all || (vacancy.assigned_to && vacancy.assigned_to.length > 0);
+                const showAdminAssign = isAdmin && (
+                  vacancy.status === 'pending_review' ||
+                  vacancy.status === 'draft' ||
+                  (vacancy.status === 'open' && !isAlreadyAssigned)
+                );
+                const showAdminReassign = isAdmin && vacancy.status === 'open' && isAlreadyAssigned;
+                const showTakeBtn = isRequestForMe && !hasAlreadyTaken(vacancy);
+                const acceptedCount = vacancy.stage_counts.hired || 0;
+
+                return (
                 <ContextMenu
                   key={vacancy.id}
                   items={[
@@ -901,120 +937,117 @@ export default function VacanciesPage() {
                     }] : []),
                   ]}
                 >
-                  <div
+                  <article
                     onClick={() => handleVacancyClick(vacancy)}
-                    className={clsx(
-                      'p-4 border border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface)] rounded-xl cursor-pointer group transition-all hover:bg-[var(--hf-vacancies-page-surface-hover)] hover:border-[color:var(--hf-vacancies-page-border-strong)] border-l-[3px]',
-                      STATUS_BORDER_COLORS[vacancy.status] || 'border-l-gray-600'
-                    )}
+                    className="hf-vacancies-search-row"
+                    aria-label={`${getVacancyStatusLabel(vacancy.status)}: ${vacancy.title?.trim() || 'Без названия'}`}
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1 min-w-0">
-                        <h3 className={clsx(
-                          'font-semibold text-lg truncate',
-                          !vacancy.title?.trim() && 'italic text-[color:var(--hf-vacancies-page-faint)]',
-                        )}>{vacancy.title?.trim() || 'Без названия'}</h3>
-                        <div className="flex items-center gap-2">
+                    <div className="hf-vacancies-search-main">
+                      <div className="hf-vacancies-search-title-row">
                           <VacancyStatusBadge status={vacancy.status} size="sm" />
-                          {(user && vacancy.created_by !== user.id && (vacancy.assigned_to?.includes(user.id) || vacancy.assigned_to_all)) ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border border-[color:var(--hf-status-purple-badge)]">
-                              Заявка
-                            </span>
-                          ) : (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--hf-status-blue-bg)] text-[color:var(--hf-status-blue)]">
-                              Вакансия
-                            </span>
+                        <button
+                          type="button"
+                          className={clsx(
+                            'hf-vacancies-search-title',
+                            !vacancy.title?.trim() && 'hf-vacancies-search-title-empty',
                           )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleVacancyClick(vacancy);
+                          }}
+                        >
+                          {vacancy.title?.trim() || 'Без названия'}
+                        </button>
+                        <span className="hf-vacancies-search-kind">{getVacancyKindLabel(vacancy)}</span>
                           {vacancy.applications_count > 0 && (
-                            <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-[var(--hf-status-blue-bg)] text-[var(--hf-status-blue)]">
-                              <Users className="w-3 h-3" />
+                          <span className="hf-vacancies-search-candidates">
+                            <Users className="hf-vacancies-search-candidates-icon" />
                               {vacancy.applications_count}
                             </span>
                           )}
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1.5">
+
+                      {vacancy.department_name && (
+                        <div className="hf-vacancies-search-department">{vacancy.department_name}</div>
+                      )}
+
+                      <div className="hf-vacancies-search-meta">
+                        <span>Открыта: {formatVacancyDate(vacancy.published_at || vacancy.created_at)}</span>
+                        {closedDate && (
+                          <>
+                            <span className="hf-vacancies-search-dot">·</span>
+                            <span>Закрыта: {formatVacancyDate(closedDate)}</span>
+                          </>
+                        )}
+                        </div>
+
+                      <div className="hf-vacancies-search-meta">
+                        <span>Последнее действие: {formatVacancyDate(vacancy.updated_at)}</span>
+                        </div>
+
+                        {vacancy.created_by_name && (
+                        <div className="hf-vacancies-search-meta">
+                          <span>Рекрутер: {vacancy.created_by_name}</span>
+                        </div>
+                        )}
+
+                      {vacancy.hiring_manager_name && (
+                        <div className="hf-vacancies-search-meta">
+                          <span>Заказчик: {vacancy.hiring_manager_name}</span>
+                        </div>
+                        )}
+
+                      {(vacancy.location || salaryDisplay || employmentLabel) && (
+                        <div className="hf-vacancies-search-meta hf-vacancies-search-extra">
+                          {vacancy.location && <span>{vacancy.location}</span>}
+                          {salaryDisplay && <span>{salaryDisplay}</span>}
+                          {employmentLabel && <span>{employmentLabel}</span>}
+                        </div>
+                      )}
+
+                      {acceptedCount > 0 && (
+                        <div className="hf-vacancies-search-meta">
+                          <span>Оффер принят: {acceptedCount}</span>
+                        </div>
+                      )}
+
+                      {vacancy.tags.length > 0 && (
+                        <div className="hf-vacancies-search-tags">
+                          {vacancy.tags.slice(0, 4).map((tag) => (
+                            <span key={tag}>{tag}</span>
+                          ))}
+                          {vacancy.tags.length > 4 && <span>+{vacancy.tags.length - 4}</span>}
+                        </div>
+                      )}
+                    </div>
+
+                    {(showAdminAssign || showAdminReassign || showTakeBtn || vacancy.priority > 0 || vacancy.visible_to_all) && (
+                      <div className="hf-vacancies-search-side">
                         {vacancy.visible_to_all && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]" title="Видна всем сотрудникам">
+                          <span className="hf-vacancies-search-chip" title="Видна всем сотрудникам">
                             Общая
                           </span>
                         )}
                         {vacancy.priority > 0 && (
-                          <span className={clsx(
-                            'text-xs px-2 py-0.5 rounded-full',
-                            vacancy.priority === 2 ? 'bg-[var(--hf-status-red-badge)] text-[var(--hf-red-300)]' : 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]'
-                          )}>
+                          <span className={clsx('hf-vacancies-search-chip', vacancy.priority === 2 && 'hf-vacancies-search-chip-urgent')}>
                             {vacancy.priority === 2 ? 'Срочно' : 'Важно'}
                           </span>
                         )}
-                      </div>
-                    </div>
-
-                    {/* Info */}
-                    <div className="space-y-2 text-sm text-[color:var(--hf-vacancies-page-muted)]">
-                      {vacancy.location && (
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4" />
-                          <span>{vacancy.location}</span>
-                        </div>
-                      )}
-                      {getSalaryDisplay(vacancy) && (
-                        <div className="flex items-center gap-2">
-                          <DollarSign className="w-4 h-4" />
-                          <span>{getSalaryDisplay(vacancy)}</span>
-                        </div>
-                      )}
-                      {vacancy.employment_type && (
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4" />
-                          <span>{EMPLOYMENT_TYPES.find(t => t.value === vacancy.employment_type)?.label || vacancy.employment_type}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Owner & Department */}
-                    {(vacancy.created_by_name || vacancy.department_name) && (
-                      <div className="mt-3 flex items-center gap-3 text-xs text-[color:var(--hf-vacancies-page-soft)]">
-                        {vacancy.created_by_name && (
-                          <span title="Владелец вакансии">👤 {vacancy.created_by_name}</span>
-                        )}
-                        {vacancy.department_name && (
-                          <span title="Департамент">📁 {vacancy.department_name}</span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Assignment actions */}
-                    {(() => {
-                      const isRequestForMe = !isAdmin && user && vacancy.created_by !== user.id && isAssignedToMe(vacancy);
-                      // Админ видит «Назначить» на pending_review/draft, и
-                      // «Переназначить» на open — на случай если хочет сменить состав.
-                      const isAlreadyAssigned = vacancy.assigned_to_all || (vacancy.assigned_to && vacancy.assigned_to.length > 0);
-                      const showAdminAssign = isAdmin && (
-                        vacancy.status === 'pending_review' ||
-                        vacancy.status === 'draft' ||
-                        (vacancy.status === 'open' && !isAlreadyAssigned)
-                      );
-                      const showAdminReassign = isAdmin && vacancy.status === 'open' && isAlreadyAssigned;
-                      const showTakeBtn = isRequestForMe && !hasAlreadyTaken(vacancy);
-                      if (!showAdminAssign && !showAdminReassign && !showTakeBtn) return null;
-                      return (
-                        <div className="mt-3 flex items-center gap-2">
                           {showAdminAssign && (
                             <button
                               onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[var(--hf-status-yellow-badge)] hover:bg-[var(--hf-status-yellow-bg)] text-[var(--hf-status-yellow)] border border-[color:var(--hf-status-yellow-badge)] rounded-lg transition-colors"
+                            className="hf-vacancies-search-action"
                             >
-                              <UserPlus className="w-3.5 h-3.5" />
+                            <UserPlus className="hf-vacancies-search-action-icon" />
                               {isAlreadyAssigned ? 'Переназначить' : 'Назначить'}
                             </button>
                           )}
                           {showAdminReassign && (
                             <button
                               onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[var(--hf-vacancies-page-chip)] hover:bg-[var(--hf-vacancies-page-surface-hover)] text-[color:var(--hf-vacancies-page-muted)] border border-[color:var(--hf-vacancies-page-border)] rounded-lg transition-colors"
+                            className="hf-vacancies-search-action"
                             >
-                              <UserPlus className="w-3.5 h-3.5" />
+                            <UserPlus className="hf-vacancies-search-action-icon" />
                               Переназначить
                             </button>
                           )}
@@ -1022,57 +1055,24 @@ export default function VacanciesPage() {
                             <button
                               onClick={(e) => { e.stopPropagation(); handleTakeVacancy(vacancy); }}
                               disabled={takingVacancyId === vacancy.id}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[var(--hf-status-green-badge)] hover:bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border border-[color:var(--hf-status-green-badge)] rounded-lg transition-colors disabled:opacity-50"
+                            className="hf-vacancies-search-action hf-vacancies-search-action-green"
                             >
                               {takingVacancyId === vacancy.id ? (
-                                <div className="animate-spin w-3.5 h-3.5 border-2 border-[color:var(--hf-status-green)] border-t-transparent rounded-full" />
+                              <div className="hf-vacancies-search-spinner" />
                               ) : (
-                                <PlayCircle className="w-3.5 h-3.5" />
+                              <PlayCircle className="hf-vacancies-search-action-icon" />
                               )}
                               Взять в работу
                             </button>
                           )}
                         </div>
-                      );
-                    })()}
-
-                    {/* Stats */}
-                    <div className="mt-4 pt-3 border-t border-[color:var(--hf-vacancies-page-border)] flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Users className="w-4 h-4 text-[var(--hf-status-blue)]" />
-                        <span>{vacancy.applications_count} кандидатов</span>
-                      </div>
-                      {Object.keys(vacancy.stage_counts).length > 0 && (
-                        <div className="flex items-center gap-1">
-                          {Object.entries(vacancy.stage_counts).slice(0, 3).map(([stage, count]) => (
-                            <span key={stage} className="text-xs px-1.5 py-0.5 bg-[var(--hf-vacancies-page-chip)] rounded">
-                              {count}
-                            </span>
-                          ))}
-                        </div>
                       )}
-                    </div>
-
-                    {/* Tags */}
-                    {vacancy.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1">
-                        {vacancy.tags.slice(0, 4).map((tag) => (
-                          <span key={tag} className="text-xs px-2 py-0.5 bg-[var(--hf-vacancies-page-chip)] rounded-full">
-                            {tag}
-                          </span>
-                        ))}
-                        {vacancy.tags.length > 4 && (
-                          <span className="text-xs px-2 py-0.5 text-[color:var(--hf-vacancies-page-soft)]">
-                            +{vacancy.tags.length - 4}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  </article>
                 </ContextMenu>
-              ))}
-            </>
-          </div>
+                );
+              })}
+            </div>
+          </section>
         )}
       </div>
 

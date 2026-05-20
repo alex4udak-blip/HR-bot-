@@ -41,20 +41,6 @@ function HfSpriteIcon({ id, className }: { id: string; className?: string }) {
   );
 }
 
-function HuntflowOptionsIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <path
-        d="M3 8h12m0 0a3 3 0 1 0 6 0 3 3 0 0 0-6 0Zm-6 8h12M9 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function HuntflowClose28Icon({ className }: { className?: string }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 28 28" className={className} fill="none">
@@ -415,16 +401,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
             {isReadOnlyRequest ? 'Заявка' : (vacancy ? 'Редактировать вакансию' : 'Новая вакансия')}
           </h2>
           <div className="hf-vacancy-header-actions">
-            {!vacancy && !isReadOnlyRequest && (
-              <button
-                type="button"
-                className="hf-vacancy-settings-btn"
-                onClick={() => toast("Настройка полей формы Huntflow пока не реализована в HR-bot")}
-              >
-                <HuntflowOptionsIcon className="hf-vacancy-settings-icon" />
-                Настроить поля формы
-              </button>
-            )}
           <button
             onClick={onClose}
               className="hf-vacancy-close-btn"
@@ -464,16 +440,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   onChange={(value) => setFormData({ ...formData, department_id: value })}
                   disabled={isReadOnlyRequest}
                 />
-                <p className="hf-vacancy-hint">
-                  Добавляют, удаляют и настраивают порядок и вложенность пунктов{' '}
-                  <button
-                    type="button"
-                    className="hf-vacancy-hint-link"
-                    onClick={() => toast('Настройки подразделений Huntflow пока не реализованы в HR-bot')}
-                  >
-                    в настройках
-                  </button>
-                </p>
               </div>
 
               <div>
@@ -510,17 +476,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   formData.description,
                   (value) => setFormData({ ...formData, description: value }),
                 )}
-              </div>
-
-              <div>
-                <button
-                  type="button"
-                  className="hf-vacancy-attach-btn"
-                  onClick={() => toast('Прикрепление файлов к вакансии пока не реализовано в HR-bot')}
-                >
-                  <HfSpriteIcon id="clip" className="hf-vacancy-action-icon" />
-                  Прикрепить файл
-                </button>
               </div>
             </div>
 

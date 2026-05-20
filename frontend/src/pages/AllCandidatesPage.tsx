@@ -29,15 +29,12 @@ import {
   ChevronLeft,
   ChevronRight,
   MessageCircle,
-  MessageSquareText,
-  ClipboardList,
   Maximize2,
   Type,
   List,
   ListOrdered,
   Link as LinkIcon,
   AtSign,
-  Video,
   Upload,
 } from "lucide-react";
 import clsx from "clsx";
@@ -135,46 +132,10 @@ const FALLBACK_COLOR = {
 
 // ---------- helpers ----------
 
-const HUNTFLOW_EMPTY_STAGE_GROUPS: Record<string, string[]> = {
-  "middle-before-offer": [
-    "Резюме у заказчика",
-    "Интервью с HR",
-    "Интервью с заказчиком",
-    "Принятие решения/ СБ",
-    "Выставлен оффер",
-  ],
-  "middle-after-offer": [
-    "Вышел на работу",
-    "Резерв",
-    "Выполняет тз",
-    "Онбординг - 1 неделя работы",
-    "Онбординг - 1,5 месяца работы",
-    "Онбординг - 3 месяца работы",
-    "Закрывающий фидбек по онбордингу от лида",
-    "Закрытие испытательного срока",
-  ],
-};
-
-const HUNTFLOW_STAGE_STATUS_BY_LABEL: Record<string, string> = {
-  "В работе": "screening",
-  "Резюме у заказчика": "practice",
-  "Интервью с HR": "tech_practice",
-  "Интервью с заказчиком": "is_interview",
-  "Выставлен оффер": "offer",
-  "Оффер принят": "hired",
-  "Отказ": "rejected",
-};
-
 const HUNTFLOW_STAGE_LAYOUT_TRANSITION = {
   duration: 0.42,
   ease: [0.22, 1, 0.36, 1] as const,
 };
-const HUNTFLOW_STAGE_REVEAL_TRANSITION = {
-  duration: 0.36,
-  ease: [0.22, 1, 0.36, 1] as const,
-};
-
-const getEmptyStageTooltip = (stages: string[]) => stages.join(", ");
 
 function HuntflowClose28Icon({ className }: { className?: string }) {
   return (
@@ -280,10 +241,7 @@ const TIMELINE_ACTION_FILTERS = [
   "Комментарий",
   "Письмо кандидату",
   "Интервью",
-  "SMS",
   "Телефонный звонок",
-  "Форма обратной связи",
-  "Анкета кандидата",
   "Файл",
   "Оффер",
   "Отказ",
@@ -294,9 +252,7 @@ const getTimelineFilterAliases = (filter: string) => {
   const aliases: Record<string, string[]> = {
     "Смена этапа подбора": ["смен", "этап", "перенес", "новый", "отказ"],
     "Письмо кандидату": ["письм", "email", "почт"],
-    SMS: ["sms", "смс"],
     "Телефонный звонок": ["телефон", "звон"],
-    "Форма обратной связи": ["обратн", "связ"],
     "Сопроводительное письмо": ["сопровод"],
   };
   return [filter, ...(aliases[filter] || [])].map((value) =>
@@ -396,16 +352,6 @@ function parseRuDateInput(value: string): string {
   if (!match) return "";
   const [, day, month, year] = match;
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
-
-function formatDateLongRu(dateStr: string): string {
-  if (!dateStr) return "";
-  const date = new Date(`${dateStr}T00:00:00`);
-  return date.toLocaleDateString("ru", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).replace(/\s*г\.$/, "");
 }
 
 function formatTimelineDate(dateStr: string): string {
@@ -597,13 +543,6 @@ export default function AllCandidatesPage() {
   const topSearchRef = useRef<HTMLInputElement>(null);
   const topStageScrollRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState("all");
-  const [expandedEmptyStageGroups, setExpandedEmptyStageGroups] = useState<
-    Record<string, boolean>
-  >({});
-  const [hoveredEmptyStageGroup, setHoveredEmptyStageGroup] = useState<{
-    key: string;
-    stages: string[];
-  } | null>(null);
   const [topStageCanScroll, setTopStageCanScroll] = useState({
     left: false,
     right: false,
@@ -628,10 +567,6 @@ export default function AllCandidatesPage() {
     user?.org_role === "owner" ||
     user?.org_role === "admin";
   const anySelected = selectedIds.size > 0;
-
-  const toggleEmptyStageGroup = useCallback((key: string) => {
-    setExpandedEmptyStageGroups((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
 
   const updateTopStageScrollState = useCallback(() => {
     const el = topStageScrollRef.current;
@@ -734,6 +669,14 @@ export default function AllCandidatesPage() {
 
   // Auto-select from URL ?entity=ID or first card
   const entityParam = searchParams.get("entity");
+  const editParam = searchParams.get("edit");
+  const clearCandidateDeepLink = useCallback(() => {
+    if (!searchParams.has("entity") && !searchParams.has("edit")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("entity");
+    next.delete("edit");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   // Чтобы не тянуть entity повторно после неудачной попытки селекта.
   const entityFetchTriedRef = useRef<number | null>(null);
   useEffect(() => {
@@ -744,6 +687,10 @@ export default function AllCandidatesPage() {
       if (match) {
         setSelectedCard(match.card);
         setSelectedStatus(match.status);
+        if (editParam === "1") {
+          setShowEditModal(true);
+        }
+        clearCandidateDeepLink();
         return;
       }
       // Кандидат пришёл из расширения / другой страницы и не виден на текущем фильтре —
@@ -757,11 +704,13 @@ export default function AllCandidatesPage() {
               setSearchText(entity.name);
             } else {
               toast.error("Кандидат не найден");
+              clearCandidateDeepLink();
             }
           })
-          .catch(() =>
-            toast.error("Не удалось открыть кандидата (нет доступа?)"),
-          );
+          .catch(() => {
+            toast.error("Не удалось открыть кандидата (нет доступа?)");
+            clearCandidateDeepLink();
+          });
         return;
       }
     }
@@ -781,7 +730,7 @@ export default function AllCandidatesPage() {
       setSelectedCard(initial.card);
       setSelectedStatus(initial.status);
     }
-  }, [filteredCards, entityParam, board, selectedCard]);
+  }, [filteredCards, entityParam, editParam, board, selectedCard, clearCandidateDeepLink]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedCard || newStatus === selectedStatus) return;
@@ -881,90 +830,58 @@ export default function AllCandidatesPage() {
     ) ?? 0;
   const topStageItems = useMemo(() => {
     const columns = board?.columns || [];
-    const getColumnCount = (column: KanbanColumn) =>
-      column.count ?? column.cards.length;
-    const findColumnByStatus = (status: string) =>
-      columns.find((column) => column.status === status);
-    const findStageColumn = (stage: string) => {
-      const direct = columns.find(
-        (column) =>
-          normalizeStageLabel(column.label) === normalizeStageLabel(stage),
-      );
-      if (direct) return direct;
-      const mappedStatus = HUNTFLOW_STAGE_STATUS_BY_LABEL[stage];
-      return mappedStatus ? findColumnByStatus(mappedStatus) : undefined;
-    };
-    const newColumn = columns.find(
-      (column) => column.status === "new" || /^нов/i.test(column.label),
-    );
-    const hiredColumn = columns.find(
-      (column) => column.status === "hired" || /прин/i.test(column.label),
-    );
-    const rejectedColumn = columns.find(
-      (column) => column.status === "rejected" || /отклон/i.test(column.label),
-    );
-    const items: Array<
-      | { type: "stage"; column: KanbanColumn; label?: string }
-      | {
-          type: "empty-group";
-          count: number;
-          key: string;
-          stages: Array<{ label: string; column?: KanbanColumn }>;
-        }
-    > = [];
-    const pushStageGroup = (key: string) => {
-      const emptyStages: Array<{ label: string; column?: KanbanColumn }> = [];
-      for (const stage of HUNTFLOW_EMPTY_STAGE_GROUPS[key] || []) {
-        const column = findStageColumn(stage);
-        if (column && getColumnCount(column) > 0) {
-          items.push({ type: "stage", column, label: stage });
-        } else {
-          emptyStages.push({ label: stage, column });
-        }
-      }
-      if (emptyStages.length > 0) {
-        items.push({
-          type: "empty-group",
-          count: emptyStages.length,
-          key,
-          stages: emptyStages,
-        });
-      }
-    };
-
-    if (newColumn) {
-      items.push({ type: "stage", column: newColumn });
-    }
-    const screeningColumn = findStageColumn("В работе");
-    if (screeningColumn && getColumnCount(screeningColumn) > 0) {
-      items.push({ type: "stage", column: screeningColumn, label: "В работе" });
-    }
-
-    pushStageGroup("middle-before-offer");
-
-    if (hiredColumn) {
-      items.push({ type: "stage", column: hiredColumn });
-    }
-
-    pushStageGroup("middle-after-offer");
-
-    if (rejectedColumn) {
-      items.push({ type: "stage", column: rejectedColumn });
-    }
-
-    return items;
+    return columns.filter((column) => column.status !== "withdrawn");
   }, [board?.columns]);
+  type TopStageNavItem =
+    | { type: "stage"; column: KanbanColumn }
+    | { type: "empty-group"; id: string; count: number };
+
+  const topStageNavItems = useMemo<TopStageNavItem[]>(() => {
+    const items: TopStageNavItem[] = [];
+    let emptyRun: KanbanColumn[] = [];
+
+    const flushEmptyRun = () => {
+      if (!emptyRun.length) return;
+      items.push({
+        type: "empty-group",
+        id: emptyRun.map((column) => column.status).join("-"),
+        count: emptyRun.length,
+      });
+      emptyRun = [];
+    };
+
+    topStageItems.forEach((column) => {
+      const count = column.count ?? column.cards.length;
+      if (count === 0) {
+        emptyRun.push(column);
+        return;
+      }
+
+      flushEmptyRun();
+      items.push({ type: "stage", column });
+    });
+
+    flushEmptyRun();
+    return items;
+  }, [topStageItems]);
+
+  const getEmptyStageGroupLabel = (count: number) => {
+    const mod10 = count % 10;
+    const mod100 = count % 100;
+    const noun =
+      mod10 === 1 && mod100 !== 11
+        ? "этап"
+        : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
+          ? "этапа"
+          : "этапов";
+    return `• • ${count} ${noun} без кандидатов • •`;
+  };
 
   const getTopStageLabel = (column: KanbanColumn) => {
-    if (/^нов/i.test(column.label)) return "Новые";
-    if (/прин/i.test(column.label)) return "Оффер принят";
-    if (/отклон/i.test(column.label) || column.status === "rejected")
-      return "Отказ";
     return column.label;
   };
 
   const getTopStageCount = (column: KanbanColumn) => {
-    if (/прин/i.test(column.label) && column.count === 0) return "0/1";
     return String(column.count);
   };
 
@@ -978,7 +895,6 @@ export default function AllCandidatesPage() {
       window.removeEventListener("resize", updateTopStageScrollState);
     };
   }, [
-    expandedEmptyStageGroups,
     showTopSearch,
     topStageItems.length,
     updateTopStageScrollState,
@@ -1079,89 +995,24 @@ export default function AllCandidatesPage() {
                 )}
               </motion.button>
 
-              {topStageItems.map((item) => {
+              {topStageNavItems.map((item) => {
                 if (item.type === "empty-group") {
-                  const stages = item.stages;
-                  const expanded = expandedEmptyStageGroups[item.key];
-
-                  if (expanded) {
-                    return stages.map(({ label, column }) => (
-                      <motion.button
-                        key={`${item.key}-${label}`}
-                        layout="position"
-                        type="button"
-                        disabled={!column}
-                        aria-disabled={!column}
-                        title={
-                          column
-                            ? undefined
-                            : "Этап отсутствует в текущей модели HR-bot"
-                        }
-                        onClick={
-                          column
-                            ? () => {
-                                setActiveTab(column.status);
-                                setSelectedCard(null);
-                              }
-                            : undefined
-                        }
-                        initial={{ opacity: 0.16, x: -18 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{
-                          opacity: HUNTFLOW_STAGE_REVEAL_TRANSITION,
-                          x: HUNTFLOW_STAGE_LAYOUT_TRANSITION,
-                          layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION,
-                        }}
-                        className={clsx(
-                          "hf-top-stage-item hf-top-stage-expanded",
-                          column
-                            ? activeTab === column.status
-                              ? "hf-top-stage-item-active"
-                              : "hf-top-stage-item-idle"
-                            : "hf-top-stage-item-disabled",
-                        )}
-                      >
-                        {label}
-                        {column && activeTab === column.status && (
-                          <span className="hf-top-stage-underline" />
-                        )}
-                      </motion.button>
-                    ));
-                  }
-
                   return (
-                    <motion.button
-                      key={item.key}
+                    <motion.div
+                      key={`empty-${item.id}`}
                       layout="position"
-                      type="button"
-                      onClick={() => toggleEmptyStageGroup(item.key)}
-                      onMouseEnter={() =>
-                        setHoveredEmptyStageGroup({
-                          key: item.key,
-                          stages: item.stages.map((stage) => stage.label),
-                        })
-                      }
-                      onMouseLeave={() => setHoveredEmptyStageGroup(null)}
-                      onFocus={() =>
-                        setHoveredEmptyStageGroup({
-                          key: item.key,
-                          stages: item.stages.map((stage) => stage.label),
-                        })
-                      }
-                      onBlur={() => setHoveredEmptyStageGroup(null)}
                       transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
                       className="hf-top-stage-empty-group"
+                      aria-disabled="true"
                     >
-                      • • {item.count} этапов без кандидатов • •
-                    </motion.button>
+                      {getEmptyStageGroupLabel(item.count)}
+                    </motion.div>
                   );
                 }
 
                 const col = item.column;
                 const isActive = activeTab === col.status;
-                const stageLabel = item.label || getTopStageLabel(col);
-                const showTopStageCounter =
-                  col.status === "hired" || /прин/i.test(stageLabel);
+                const stageLabel = getTopStageLabel(col);
                 return (
                   <motion.button
                     key={col.status}
@@ -1180,11 +1031,9 @@ export default function AllCandidatesPage() {
                     )}
                   >
                     {stageLabel}
-                    {showTopStageCounter && (
-                      <span className="hf-top-stage-badge hf-top-stage-badge-muted">
-                        {getTopStageCount(col)}
-                      </span>
-                    )}
+                    <span className="hf-top-stage-badge hf-top-stage-badge-muted">
+                      {getTopStageCount(col)}
+                    </span>
                     {isActive && (
                       <span className="hf-top-stage-underline" />
                     )}
@@ -1241,20 +1090,6 @@ export default function AllCandidatesPage() {
             <ChevronRight className="hf-top-stage-arrow-icon" />
           </button>
         ) : null}
-        {hoveredEmptyStageGroup &&
-        !expandedEmptyStageGroups[hoveredEmptyStageGroup.key] &&
-        !showTopSearch ? (
-          <div
-            className={clsx(
-              "hf-top-stage-tooltip",
-              hoveredEmptyStageGroup.key === "middle-before-offer"
-                ? "hf-top-stage-tooltip-middle"
-                : "hf-top-stage-tooltip-late",
-            )}
-          >
-            {getEmptyStageTooltip(hoveredEmptyStageGroup.stages)}
-          </div>
-        ) : null}
       </div>
 
       {/* ===== MASTER-DETAIL (huntflow style) ===== */}
@@ -1286,6 +1121,7 @@ export default function AllCandidatesPage() {
                             setSelectedCard(card);
                             setSelectedStatus(status);
                             setDetailTab("resume");
+                            clearCandidateDeepLink();
                           }}
                           className={clsx(
                             "hf-candidate-row",
@@ -1545,19 +1381,6 @@ export default function AllCandidatesPage() {
                 <PlusCircle className="h-[20px] w-[20px]" strokeWidth={1.8} />
                 Взять на вакансию
               </button>
-              <button
-                type="button"
-                onClick={() =>
-                  toast(
-                    "Отправка для нескольких кандидатов пока не реализована",
-                  )
-                }
-                disabled={bulkProcessing}
-                className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium text-[var(--hf-main-900)] shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] disabled:opacity-50 hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:text-[var(--hf-white)]"
-              >
-                <Send className="h-[20px] w-[20px]" strokeWidth={1.8} />
-                Отправить
-              </button>
             </div>
           </motion.div>
         )}
@@ -1794,36 +1617,11 @@ const InfoTab = memo(function InfoTab({
       ? `Отказ. ${card.rejection_reason}`
       : statusLabel;
   const stagePickerOptions = useMemo(() => {
-    const labels = [
-      "Новые",
-      "Резюме у заказчика",
-      "Интервью с HR",
-      "Интервью с заказчиком",
-      "Принятие решения/ СБ",
-      "Выставлен оффер",
-      "Оффер",
-      "Оффер принят",
-      "Вышел на работу",
-      "Резерв",
-      "Выполняет тз",
-      "Онбординг - 1 неделя работы",
-      "Онбординг - 1,5 месяца работы",
-      "Онбординг - 3 месяца работы",
-      "Закрывающий фидбек по онбордингу от лида",
-      "Закрытие испытательного срока",
-      "Отказ",
-    ];
-    const normalizedColumns = new Map(
-      columns.map((col) => [normalizeStageLabel(col.label), col]),
-    );
-    return labels.map((label) => {
-      const column = normalizedColumns.get(normalizeStageLabel(label));
-      return {
-        label,
-        status: column?.status ?? label,
-        isRealStage: Boolean(column),
-      };
-    });
+    return columns.map((column) => ({
+      label: column.label,
+      status: column.status,
+      isRealStage: true,
+    }));
   }, [columns]);
 
   useEffect(() => {
@@ -1839,6 +1637,12 @@ const InfoTab = memo(function InfoTab({
       }
     };
   }, [card.id, timelineActionFilter]);
+
+  useEffect(() => {
+    setLocalTags(card.tags || []);
+    setShowTagInput(false);
+    setTagInput("");
+  }, [card.id, card.tags]);
 
   const handleTimelineMoreToggle = useCallback(() => {
     if (timelineExpanding) return;
@@ -2012,18 +1816,6 @@ const InfoTab = memo(function InfoTab({
     toast.success(`${card.name} → Оффер`);
   };
 
-  const handleSms = () => {
-    toast("SMS-модуль пока не подключён");
-  };
-
-  const handleFeedback = () => {
-    toast("Форма обратной связи пока не реализована");
-  };
-
-  const handleQuestionnaire = () => {
-    toast("Анкета кандидата пока не реализована");
-  };
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2135,9 +1927,6 @@ const InfoTab = memo(function InfoTab({
               <button className="hf-interview-tab hf-interview-tab-active">
                 Интервью
               </button>
-              <button className="hf-interview-tab">
-                Другое
-              </button>
             </div>
 
             <div className="hf-interview-body">
@@ -2205,34 +1994,9 @@ const InfoTab = memo(function InfoTab({
                         />
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="hf-interview-timezone"
-                    >
+                    <span className="hf-interview-timezone">
                       GMT+03:00
-                      <ChevronDown className="hf-interview-timezone-icon" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="hf-interview-zoom">
-                  <div className="hf-interview-zoom-inner">
-                  <button
-                    type="button"
-                    className="hf-interview-zoom-button"
-                  >
-                    <span className="hf-interview-zoom-icon-box">
-                      <Video className="hf-interview-zoom-icon" />
                     </span>
-                    Прикрепить видеовстречу Zoom
-                  </button>
-                  <button
-                    type="button"
-                    className="hf-interview-zoom-chevron-button"
-                    aria-label="Выбрать тип видеовстречи"
-                  >
-                    <ChevronDown className="hf-interview-zoom-chevron" />
-                  </button>
                   </div>
                 </div>
 
@@ -2246,30 +2010,6 @@ const InfoTab = memo(function InfoTab({
                     className="hf-interview-control hf-interview-textarea"
                   />
                 </label>
-
-                <div className="hf-interview-stack">
-                  <span className="hf-interview-field-label">
-                    Прикрепить резюме
-                  </span>
-                  <button
-                    type="button"
-                    className="hf-interview-control hf-interview-select-btn hf-interview-select-btn-first"
-                  >
-                    Резюме — 13.03.2026
-                    <ChevronDown className="h-[var(--hf-interview-chevron-size)] w-[var(--hf-interview-chevron-size)]" />
-                  </button>
-                  <button
-                    type="button"
-                    className="hf-interview-control hf-interview-select-btn hf-interview-select-btn-second"
-                  >
-                    Текст резюме
-                    <ChevronDown className="h-[var(--hf-interview-chevron-size)] w-[var(--hf-interview-chevron-size)]" />
-                  </button>
-                  <label className="hf-interview-checkbox hf-interview-checkbox-offset">
-                    <input type="checkbox" className="hf-interview-checkbox-input" />
-                    Скрыть зарплату
-                  </label>
-                </div>
 
                 <label className="block">
                   <span className="hf-interview-field-label">
@@ -2306,61 +2046,8 @@ const InfoTab = memo(function InfoTab({
                       {currentUser?.email || "tatsiana.kochubei@sol..."}
                     </span>
                   </div>
-                  <input
-                    className="hf-interview-control placeholder:text-[var(--hf-main-600)]"
-                    placeholder="Эл. почта"
-                  />
-                </section>
-
-                <section className="hf-interview-reminder">
-                  <h4 className="hf-interview-side-title">
-                    Напоминание
-                  </h4>
-                  <div className="hf-interview-reminder-row">
-                    <input
-                      value="15"
-                      readOnly
-                      className="hf-interview-control hf-interview-reminder-input"
-                    />
-                    <button
-                      type="button"
-                      className="hf-interview-control hf-interview-reminder-select"
-                    >
-                      минут
-                      <ChevronDown className="h-[var(--hf-interview-chevron-size)] w-[var(--hf-interview-chevron-size)]" />
-                    </button>
-                    <button
-                      type="button"
-                      className="hf-interview-remove"
-                      aria-label="Удалить напоминание"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <button className="hf-interview-link hf-interview-link-offset">
-                    + Добавить
-                  </button>
-                </section>
-
-                <section className="hf-interview-email-section">
-                  <h4 className="hf-interview-side-title">
-                    Уведомление по эл. почте
-                  </h4>
-                  <button className="hf-interview-link">
-                    + Добавить
-                  </button>
                 </section>
               </aside>
-            </div>
-
-            <div className="hf-interview-availability">
-              <button
-                type="button"
-                className="hf-interview-link text-[length:var(--hf-interview-modal-fs)] leading-[18px]"
-              >
-                Проверить доступность участников{" "}
-                {formatDateLongRu(interviewDate)}
-              </button>
             </div>
 
             <div className="hf-interview-footer">
@@ -2724,22 +2411,6 @@ const InfoTab = memo(function InfoTab({
                           onClick={handleInterview}
                         />
                         <ActionChip
-                          icon={MessageCircle}
-                          label="СМС"
-                          onClick={handleSms}
-                        />
-                        <ActionChip
-                          icon={MessageSquareText}
-                          label="Обратная связь"
-                          onClick={handleFeedback}
-                        />
-                        <ActionChip
-                          icon={ClipboardList}
-                          label="Анкета"
-                          onClick={handleQuestionnaire}
-                          hasNotification
-                        />
-                        <ActionChip
                           icon={ThumbsUp}
                           label="Оффер"
                           onClick={handleOffer}
@@ -2835,8 +2506,10 @@ const InfoTab = memo(function InfoTab({
                 rows={1}
                 className="block h-[56px] w-full resize-none border-0 bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] hf-dark-disabled:text-[var(--hf-white)]"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
                     handleComment();
+                  }
                 }}
               />
               <div className="flex h-[53px] items-start gap-[var(--hf-space-s)] px-[var(--hf-space-xxl)] pb-[16px] pt-[8px]">
@@ -2849,22 +2522,6 @@ const InfoTab = memo(function InfoTab({
                   icon={Calendar}
                   label="Интервью"
                   onClick={handleInterview}
-                />
-                <ActionChip
-                  icon={MessageCircle}
-                  label="СМС"
-                  onClick={handleSms}
-                />
-                <ActionChip
-                  icon={MessageSquareText}
-                  label="Обратная связь"
-                  onClick={handleFeedback}
-                />
-                <ActionChip
-                  icon={ClipboardList}
-                  label="Анкета"
-                  onClick={handleQuestionnaire}
-                  hasNotification
                 />
                 <ActionChip
                   icon={ThumbsUp}
@@ -2896,8 +2553,10 @@ const InfoTab = memo(function InfoTab({
               rows={1}
               className="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] pr-20 text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:placeholder:text-[var(--hf-dark-500)] hf-dark-disabled:focus:border-[color:var(--hf-status-blue-badge)]"
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
                   handleComment();
+                }
               }}
             />
           )}
@@ -2938,22 +2597,6 @@ const InfoTab = memo(function InfoTab({
                 icon={Calendar}
                 label="Интервью"
                 onClick={handleInterview}
-              />
-              <ActionChip
-                icon={MessageCircle}
-                label="СМС"
-                onClick={handleSms}
-              />
-              <ActionChip
-                icon={MessageSquareText}
-                label="Обратная связь"
-                onClick={handleFeedback}
-              />
-              <ActionChip
-                icon={ClipboardList}
-                label="Анкета"
-                onClick={handleQuestionnaire}
-                hasNotification
               />
               <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
               <ActionChip
@@ -3085,17 +2728,8 @@ const InfoTab = memo(function InfoTab({
                               {item === "Интервью" ? (
                                 <Calendar className={iconClass} />
                               ) : null}
-                              {item === "SMS" ? (
-                                <MessageCircle className={iconClass} />
-                              ) : null}
                               {item === "Телефонный звонок" ? (
                                 <Phone className={iconClass} />
-                              ) : null}
-                              {item === "Форма обратной связи" ? (
-                                <MessageSquareText className={iconClass} />
-                              ) : null}
-                              {item === "Анкета кандидата" ? (
-                                <ClipboardList className={iconClass} />
                               ) : null}
                               {item === "Оффер" ? (
                                 <ThumbsUp className={iconClass} />
@@ -3228,7 +2862,6 @@ const InfoTab = memo(function InfoTab({
           <PersonalNotesTab
             card={card}
             onEmail={handleEmail}
-            onSms={handleSms}
             onFile={() => fileInputRef.current?.click()}
             uploading={uploading}
           />
@@ -3242,13 +2875,11 @@ const InfoTab = memo(function InfoTab({
 const PersonalNotesTab = memo(function PersonalNotesTab({
   card,
   onEmail,
-  onSms,
   onFile,
   uploading,
 }: {
   card: KanbanCard;
   onEmail: React.MouseEventHandler<HTMLButtonElement>;
-  onSms: () => void;
   onFile: () => void;
   uploading: boolean;
 }) {
@@ -3275,7 +2906,6 @@ const PersonalNotesTab = memo(function PersonalNotesTab({
           label="Письмо"
           onClick={onEmail}
         />
-        <ActionChip icon={MessageCircle} label="СМС" onClick={onSms} />
         <ActionChip
           icon={Paperclip}
           label="Файл"
@@ -4063,17 +3693,6 @@ const HUNTFLOW_ACTION_ICON_BY_LABEL: Record<
     id: "calendar-usage",
     viewBox: "0 0 20 20",
     label: "calendar",
-  },
-  СМС: { id: "message-2-usage", viewBox: "0 0 18 18", label: "message-2" },
-  "Обратная связь": {
-    id: "feedback-usage",
-    viewBox: "0 0 18 18",
-    label: "feedback",
-  },
-  Анкета: {
-    id: "clipboard-usage",
-    viewBox: "0 0 18 18",
-    label: "clipboard",
   },
   Оффер: {
     id: "thumbs-up-usage",

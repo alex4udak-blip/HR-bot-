@@ -438,6 +438,9 @@
   --hf-candidates-stage-fw:         var(--hf-fw-regular);
   --hf-candidates-stage-badge-min:  24px;
   --hf-candidates-stage-badge-px:   6px;
+  --hf-candidates-stage-empty-gap:  var(--hf-space-xs);
+  --hf-candidates-stage-empty-color: #bdbdbd;
+  --hf-candidates-stage-empty-fw:   var(--hf-fw-medium);
   --hf-candidates-stage-underline-x: 22px;
   --hf-candidates-stage-underline-h: 2px;
   --hf-candidates-top-action-size:  52px;
@@ -771,6 +774,8 @@
   /* Weights */
   --hf-fw-regular: 400;
   --hf-fw-medium:  500;
+  --hf-fw-semibold: 600;
+  --hf-fw-bold: 700;
 
   --hf-font-body: 'Graphik', 'Arial', 'Tahoma', 'Verdana', sans-serif;
 

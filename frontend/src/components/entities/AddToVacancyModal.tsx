@@ -37,6 +37,10 @@ export default function AddToVacancyModal({
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null);
   const [loadingVacancies, setLoadingVacancies] = useState(false);
   const isBulk = !!bulkEntityIds?.length;
+  const isHrAdmin =
+    user?.role === "superadmin" ||
+    user?.org_role === "owner" ||
+    user?.org_role === "admin";
   const dropdownLeft = anchorRect
     ? Math.min(Math.max(anchorRect.left, 16), window.innerWidth - 616)
     : Math.max(16, window.innerWidth / 2 - 300);
@@ -52,11 +56,10 @@ export default function AddToVacancyModal({
         const data = await getVacancies({
           status: "open",
         });
-        const myVacancies = data.filter((v) => {
-          if (!user) return false;
-          if (v.assigned_to_all) return false;
-          return v.created_by === user.id;
-        });
+        const myVacancies =
+          user && !isHrAdmin
+            ? data.filter((v) => v.created_by === user.id)
+            : data;
         const query = searchQuery.trim().toLowerCase();
         const filtered = query
           ? myVacancies.filter((v) =>
@@ -76,7 +79,7 @@ export default function AddToVacancyModal({
 
     const debounce = setTimeout(loadVacancies, 300);
     return () => clearTimeout(debounce);
-  }, [searchQuery, user]);
+  }, [isHrAdmin, searchQuery, user]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -134,6 +137,7 @@ export default function AddToVacancyModal({
         isBulk && "flex items-center justify-center bg-[var(--hf-black-alpha-35)] p-4",
       )}
       onClick={onClose}
+      onMouseDown={onClose}
     >
       <motion.div
         initial={
@@ -149,6 +153,7 @@ export default function AddToVacancyModal({
         }
         transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         className={clsx(
           "flex flex-col overflow-hidden rounded-[8px] bg-[var(--hf-white)] text-[var(--hf-main-900)] leading-[22px] shadow-[0_0_40px_var(--hf-alpha-300)] dark:bg-[var(--hf-bg-dark)] dark:text-[var(--hf-white)]",
           isBulk

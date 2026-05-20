@@ -30,6 +30,10 @@ import {
   Archive,
   Trash2,
   Inbox,
+  List,
+  ListOrdered,
+  Link as LinkIcon,
+  AtSign,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -60,13 +64,23 @@ const TAG_PALETTE = [
 
 const STATUS_FILTERS: { id: VacancyStatus | 'all'; label: string }[] = [
   { id: 'all', label: 'Все' },
-  { id: 'open', label: 'Открытые' },
+  { id: 'pending_review', label: 'На рассмотрении' },
+  { id: 'open', label: 'Открыта' },
   { id: 'paused', label: 'На паузе' },
-  { id: 'closed', label: 'Закрытые' },
-  { id: 'draft', label: 'Черновики' },
+  { id: 'closed', label: 'Закрыта' },
+  { id: 'cancelled', label: 'Отменена' },
 ];
 
 const STATUS_FILTER_IDS = new Set<string>(STATUS_FILTERS.map((f) => f.id));
+
+const getRecruiterStatusDotClass = (status: VacancyStatus) => {
+  if (status === 'open') return 'hf-recruiter-status-dot-open';
+  if (status === 'paused') return 'hf-recruiter-status-dot-paused';
+  if (status === 'closed') return 'hf-recruiter-status-dot-closed';
+  if (status === 'pending_review') return 'hf-recruiter-status-dot-pending';
+  if (status === 'cancelled') return 'hf-recruiter-status-dot-cancelled';
+  return 'hf-recruiter-status-dot-default';
+};
 
 const STAGE_ORDER = [
   'applied', 'screening', 'phone_screen', 'interview',
@@ -84,18 +98,6 @@ const STAGE_LABELS: Record<string, string> = {
   offer: 'Оффер',
   hired: 'Принят',
   rejected: 'Отклонён',
-  withdrawn: 'Отозван',
-};
-
-const VACANCY_STAGE_TAB_LABELS: Record<string, string> = {
-  applied: 'Отклики',
-  screening: 'В работе',
-  phone_screen: 'Новые',
-  interview: 'Резюме у заказчика',
-  assessment: 'Интервью с HR',
-  offer: 'Выставлен оффер',
-  hired: 'Оффер принят',
-  rejected: 'Отказ',
   withdrawn: 'Отозван',
 };
 
@@ -187,7 +189,6 @@ function ClosedVacancyDetail({
   stageKeys,
   stagesConfig,
   groupedByStageMap,
-  hiddenEmptyStages,
   stageScrollRef,
   onStageScroll,
   canScroll,
@@ -199,7 +200,6 @@ function ClosedVacancyDetail({
   stageKeys: string[];
   stagesConfig: VacancyStagesConfig;
   groupedByStageMap: Record<string, VacancyApplication[]>;
-  hiddenEmptyStages: number;
   stageScrollRef: RefObject<HTMLDivElement>;
   onStageScroll: () => void;
   canScroll: { left: boolean; right: boolean };
@@ -207,19 +207,29 @@ function ClosedVacancyDetail({
   onReopen: () => void;
   onEdit: () => void;
 }) {
+  const [activeClosedStage, setActiveClosedStage] = useState<'summary' | string>('summary');
+  const activeStageCandidates =
+    activeClosedStage === 'summary'
+      ? []
+      : groupedByStageMap[activeClosedStage] || [];
+  const activeStageLabel =
+    activeClosedStage === 'summary'
+      ? ''
+      : stagesConfig.labels[activeClosedStage] || activeClosedStage;
+
   return (
     <div className="hf-vacancy-workspace hf-vacancy-workspace-closed flex-1 flex flex-col overflow-hidden">
       <div className="hf-vacancy-stage-shell hf-top-stage-shell">
         <div className="hf-vacancy-source-tabs hf-vacancy-source-tabs-closed">
-          <button type="button" className="hf-vacancy-source-tab hf-vacancy-source-tab-active">
+          <button
+            type="button"
+            onClick={() => setActiveClosedStage('summary')}
+            className={clsx(
+              'hf-vacancy-source-tab',
+              activeClosedStage === 'summary' && 'hf-vacancy-source-tab-active',
+            )}
+          >
             Вакансия закрыта
-          </button>
-          <button type="button" className="hf-vacancy-source-tab">
-            Отклики
-          </button>
-          <span className="hf-vacancy-ai-badge" aria-hidden="true">AI</span>
-          <button type="button" className="hf-vacancy-source-tab hf-vacancy-source-tab-base">
-            Из базы
           </button>
         </div>
         <div
@@ -229,24 +239,25 @@ function ClosedVacancyDetail({
         >
           {stageKeys.map((key) => {
             const count = groupedByStageMap[key]?.length || 0;
-            const vacancyStageLabel = VACANCY_STAGE_TAB_LABELS[stagesConfig.keyToEnum[key] || key]
-              || stagesConfig.labels[key];
+            const vacancyStageLabel = stagesConfig.labels[key];
             return (
               <button
                 key={key}
                 type="button"
-                className="hf-top-stage-item hf-top-stage-item-idle"
+                onClick={() => setActiveClosedStage(key)}
+                className={clsx(
+                  'hf-top-stage-item',
+                  activeClosedStage === key
+                    ? 'hf-top-stage-item-active'
+                    : 'hf-top-stage-item-idle',
+                )}
               >
                 {vacancyStageLabel}
                 {count > 0 && <span className="hf-top-stage-badge hf-top-stage-badge-muted">{count}</span>}
+                {activeClosedStage === key && <span className="hf-top-stage-underline" />}
               </button>
             );
           })}
-          {hiddenEmptyStages > 0 && (
-            <span className="hf-top-stage-empty-group">
-              • • {hiddenEmptyStages} этапов без кандидатов • •
-            </span>
-          )}
         </div>
         <div className="hf-top-stage-action-cell">
           <button
@@ -282,27 +293,61 @@ function ClosedVacancyDetail({
       </div>
 
       <div className="hf-vacancy-closed-panel flex-1 overflow-y-auto">
-        <section className="hf-vacancy-closed-card">
-          <Inbox className="hf-vacancy-closed-icon" />
-          <h2>Вакансия закрыта {formatVacancyListDate(getClosedVacancyDate(vacancy))}</h2>
-          <p className="hf-vacancy-closed-status">Все наняты</p>
-          <p className="hf-vacancy-closed-muted">Нет закрытых позиций</p>
-          <div className="hf-vacancy-closed-actions">
-            <button type="button" onClick={onReopen} className="hf-vacancy-closed-button">
-              Открыть заново
-            </button>
-            <button type="button" onClick={onEdit} className="hf-vacancy-closed-button">
-              Информация о вакансии
-            </button>
-          </div>
-          <div className="hf-vacancy-closed-note">
-            <strong>Открывайте старые вакансии вместо создания новых</strong>
-            <span>
-              Статистика посчитается корректно, история работы не потеряется,
-              а кандидаты автоматически снимутся с этапов.
-            </span>
-          </div>
-        </section>
+        {activeClosedStage === 'summary' ? (
+          <section className="hf-vacancy-closed-card">
+            <Inbox className="hf-vacancy-closed-icon" />
+            <h2>Вакансия закрыта {formatVacancyListDate(getClosedVacancyDate(vacancy))}</h2>
+            <p className="hf-vacancy-closed-status">Все наняты</p>
+            <p className="hf-vacancy-closed-muted">Нет закрытых позиций</p>
+            <div className="hf-vacancy-closed-actions">
+              <button type="button" onClick={onReopen} className="hf-vacancy-closed-button">
+                Открыть заново
+              </button>
+              <button type="button" onClick={onEdit} className="hf-vacancy-closed-button">
+                Информация о вакансии
+              </button>
+            </div>
+            <div className="hf-vacancy-closed-note">
+              <strong>Открывайте старые вакансии вместо создания новых</strong>
+              <span>
+                Статистика посчитается корректно, история работы не потеряется,
+                а кандидаты автоматически снимутся с этапов.
+              </span>
+            </div>
+          </section>
+        ) : (
+          <section className="hf-vacancy-closed-stage">
+            <div className="hf-vacancy-closed-stage-head">
+              <h2>{activeStageLabel}</h2>
+              <span>{activeStageCandidates.length}</span>
+            </div>
+            {activeStageCandidates.length === 0 ? (
+              <div className="hf-vacancy-closed-stage-empty">
+                На этом этапе пока нет кандидатов
+              </div>
+            ) : (
+              <div className="hf-vacancy-closed-stage-list">
+                {activeStageCandidates.map((candidate) => (
+                  <div key={candidate.id} className="hf-vacancy-closed-stage-row">
+                    <div className="hf-vacancy-closed-stage-name">
+                      {candidate.entity_name || 'Без имени'}
+                    </div>
+                    {candidate.entity_position ? (
+                      <div className="hf-vacancy-closed-stage-meta">
+                        {candidate.entity_position}
+                      </div>
+                    ) : null}
+                    {candidate.entity_company || candidate.source ? (
+                      <div className="hf-vacancy-closed-stage-meta">
+                        {candidate.entity_company || candidate.source}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   );
@@ -334,6 +379,7 @@ export default function RecruiterFunnelsPage() {
 
   // UI state
   const [search, setSearch] = useState('');
+  const [recruiterSearch, setRecruiterSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
@@ -341,13 +387,13 @@ export default function RecruiterFunnelsPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [usersMap, setUsersMap] = useState<Record<number, string>>({});
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  const recruiterAutoExpandedRef = useRef(false);
 
   // ClickUp view: selected vacancy + candidates
   const selectedVacancyId = searchParams.get('v') ? Number(searchParams.get('v')) : null;
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
-  const [vacancyEmptyStagesExpanded, setVacancyEmptyStagesExpanded] = useState(false);
   const vacancyStageScrollRef = useRef<HTMLDivElement>(null);
   const [vacancyStageCanScroll, setVacancyStageCanScroll] = useState({
     left: false,
@@ -367,6 +413,11 @@ export default function RecruiterFunnelsPage() {
   const [candidateHistory, setCandidateHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
+  const [personalNoteComposerOpen, setPersonalNoteComposerOpen] = useState(false);
+  const [personalNoteText, setPersonalNoteText] = useState('');
+  const personalNoteRef = useRef<HTMLTextAreaElement | null>(null);
+  const [stageCommentComposerOpen, setStageCommentComposerOpen] = useState(false);
+  const [stageCommentText, setStageCommentText] = useState('');
   const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [currentResumePage, setCurrentResumePage] = useState(0);
@@ -442,8 +493,7 @@ export default function RecruiterFunnelsPage() {
     }
   }, [isHrAdmin]);
 
-  // Filter vacancies
-  const filteredVacancies = useMemo(() => {
+  const scopedVacancies = useMemo(() => {
     let result = vacancies;
     if (!isHrAdmin && user) {
       result = result.filter((v) => v.created_by === user.id);
@@ -451,26 +501,43 @@ export default function RecruiterFunnelsPage() {
     if (statusFilter !== 'all') {
       result = result.filter((v) => v.status === statusFilter);
     }
+    return result;
+  }, [vacancies, user, isHrAdmin, statusFilter]);
+
+  // Filter vacancies
+  const filteredVacancies = useMemo(() => {
+    let result = scopedVacancies;
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter((v) => {
-        // Search by vacancy title and department
-        const matchTitle = v.title.toLowerCase().includes(q) || v.department_name?.toLowerCase().includes(q);
-        // For admins: also search by recruiter name
-        if (isHrAdmin) {
-          const recruiterName = v.created_by_name || usersMap[v.created_by ?? 0] || '';
-          return matchTitle || recruiterName.toLowerCase().includes(q);
-        }
-        return matchTitle;
+        return v.title.toLowerCase().includes(q) || Boolean(v.department_name?.toLowerCase().includes(q));
       });
     }
     return result;
-  }, [vacancies, user, isHrAdmin, statusFilter, search]);
+  }, [scopedVacancies, search]);
+
+  useEffect(() => {
+    if (!isHrAdmin || recruiterAutoExpandedRef.current || scopedVacancies.length === 0) return;
+
+    const groups = new Map<number, string>();
+    scopedVacancies.forEach((v) => {
+      const uid = v.created_by ?? 0;
+      if (!groups.has(uid)) {
+        groups.set(uid, v.created_by_name || usersMap[uid] || (uid === user?.id ? (user?.name || 'Мои') : 'Без автора'));
+      }
+    });
+
+    const firstGroup = Array.from(groups.entries()).sort((a, b) => a[1].localeCompare(b[1]))[0];
+    if (!firstGroup) return;
+
+    recruiterAutoExpandedRef.current = true;
+    setExpandedGroups(new Set([firstGroup[0]]));
+  }, [isHrAdmin, scopedVacancies, user, usersMap]);
 
   // Group by recruiter (for admin) or single group (for hr)
   const recruiterGroups = useMemo((): RecruiterGroup[] => {
     const groups: Record<number, RecruiterGroup> = {};
-    const vacs = filteredVacancies;
+    const vacs = scopedVacancies;
     vacs.forEach((v) => {
       const uid = v.created_by ?? 0;
       if (!groups[uid]) {
@@ -478,25 +545,27 @@ export default function RecruiterFunnelsPage() {
           userId: uid,
           userName: v.created_by_name || usersMap[uid] || (uid === user?.id ? (user?.name || 'Мои') : 'Без автора'),
           vacancies: [],
-          expanded: expandedGroups.has(uid),
+          expanded: !isHrAdmin || expandedGroups.has(uid),
         };
       }
       groups[uid].vacancies.push(v);
     });
-    const result = Object.values(groups).sort((a, b) => a.userName.localeCompare(b.userName));
+    return Object.values(groups).sort((a, b) => a.userName.localeCompare(b.userName));
+  }, [scopedVacancies, isHrAdmin, usersMap, expandedGroups, user]);
 
-    // Auto-expand first group or single group
-    if (result.length === 1 || (!isHrAdmin && result.length > 0)) {
-      result.forEach(g => g.expanded = true);
-    } else if (expandedGroups.size === 0 && result.length > 0) {
-      // First load: expand first group
-      result[0].expanded = true;
-      setExpandedGroups(new Set([result[0].userId]));
-    } else {
-      result.forEach(g => { g.expanded = expandedGroups.has(g.userId); });
-    }
-    return result;
-  }, [filteredVacancies, isHrAdmin, usersMap, expandedGroups, user]);
+  const filteredRecruiterCount = useMemo(() => {
+    const ids = new Set<string>();
+    filteredVacancies.forEach((vacancy) => {
+      ids.add(String(vacancy.created_by ?? vacancy.created_by_name ?? 'unknown'));
+    });
+    return ids.size;
+  }, [filteredVacancies]);
+
+  const visibleRecruiterGroups = useMemo(() => {
+    if (!recruiterSearch.trim()) return recruiterGroups;
+    const q = recruiterSearch.trim().toLowerCase();
+    return recruiterGroups.filter((group) => group.userName.toLowerCase().includes(q));
+  }, [recruiterGroups, recruiterSearch]);
 
   // Selected vacancy
   const selectedVacancy = useMemo(
@@ -513,12 +582,11 @@ export default function RecruiterFunnelsPage() {
     }
     loadCandidates(selectedVacancyId);
     setSelectedCandidateId(null);
-    setSelectedTab('screening');
+    setSelectedTab('applied');
     setCandidateHistory([]);
     setDetailTab('info');
     setCurrentResumePage(0);
     setSelectedIds(new Set());
-    setVacancyEmptyStagesExpanded(false);
   }, [selectedVacancyId]);
 
   const updateVacancyStageScrollState = useCallback(() => {
@@ -634,9 +702,7 @@ export default function RecruiterFunnelsPage() {
   }, [selectedVacancy, orgStageOverrides]);
 
   const getVacancyStageLabel = useCallback((stageOrKey: string) => {
-    const enumKey = stagesConfig.keyToEnum[stageOrKey] || stageOrKey;
     return (
-      VACANCY_STAGE_TAB_LABELS[enumKey] ||
       stagesConfig.labels[stageOrKey] ||
       STAGE_LABELS[stageOrKey] ||
       stageOrKey
@@ -686,18 +752,11 @@ export default function RecruiterFunnelsPage() {
     return map;
   }, [groupedByStage]);
 
-  const vacancyPrimaryStageLimit = 6;
   const vacancyWorkflowKeys = stagesConfig.keys;
 
   const vacancyVisibleStageKeys = useMemo(() => {
-    return vacancyWorkflowKeys.filter((key, index) => {
-      const count = groupedByStageMap[key]?.length || 0;
-      return vacancyEmptyStagesExpanded || index < vacancyPrimaryStageLimit || count > 0 || selectedTab === key;
-    });
-  }, [groupedByStageMap, selectedTab, vacancyEmptyStagesExpanded, vacancyWorkflowKeys]);
-
-  const vacancyWorkflowStageCount = vacancyWorkflowKeys.length;
-  const vacancyHiddenEmptyStages = Math.max(vacancyWorkflowStageCount - vacancyVisibleStageKeys.length, 0);
+    return vacancyWorkflowKeys;
+  }, [vacancyWorkflowKeys]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(updateVacancyStageScrollState);
@@ -710,7 +769,6 @@ export default function RecruiterFunnelsPage() {
     };
   }, [
     candidatesLoading,
-    vacancyHiddenEmptyStages,
     vacancyVisibleStageKeys.length,
     selectedVacancyId,
     updateVacancyStageScrollState,
@@ -783,6 +841,13 @@ export default function RecruiterFunnelsPage() {
     getEntity(selectedCandidate.entity_id)
       .then(entity => setEntityExtraData(entity.extra_data || null))
       .catch(() => setEntityExtraData(null));
+  }, [selectedCandidate?.entity_id]);
+
+  useEffect(() => {
+    setPersonalNoteText('');
+    setPersonalNoteComposerOpen(false);
+    setStageCommentText('');
+    setStageCommentComposerOpen(false);
   }, [selectedCandidate?.entity_id]);
 
   // Resume: original document (PDF or DOC/DOCX) + page images (JPEG renders from backend)
@@ -905,6 +970,25 @@ export default function RecruiterFunnelsPage() {
     }
     return parts.length > 0 ? parts.join('\n') : null;
   }, [entityExtraData]);
+
+  const vacancyEntityNotes = useMemo(() => {
+    if (!Array.isArray(entityExtraData?.notes)) return [];
+    return (entityExtraData.notes as Array<Record<string, unknown>>)
+      .slice()
+      .sort((a, b) => {
+        const ta = a?.date ? new Date(a.date as string).getTime() : 0;
+        const tb = b?.date ? new Date(b.date as string).getTime() : 0;
+        return tb - ta;
+      });
+  }, [entityExtraData]);
+  const vacancyPersonalNotes = useMemo(
+    () => vacancyEntityNotes.filter((note) => !note.stage),
+    [vacancyEntityNotes],
+  );
+  const vacancyWorkflowComments = useMemo(
+    () => vacancyEntityNotes.filter((note) => Boolean(note.stage)),
+    [vacancyEntityNotes],
+  );
 
   // Load org tags once
   useEffect(() => {
@@ -1070,13 +1154,15 @@ export default function RecruiterFunnelsPage() {
       setCandidates((prev) =>
         prev.map((c) => c.id === applicationId ? { ...c, stage: newStage } : c)
       );
+      setSelectedTab(stagesConfig.enumToKeys[newStage]?.[0] || newStage);
+      setSelectedCandidateId(applicationId);
       toast.success(`Статус изменён → ${getVacancyStageLabel(newStage)}`);
       // Refresh vacancy store for updated counts
       fetchVacancies();
     } catch {
       toast.error('Ошибка смены статуса');
     }
-  }, [fetchVacancies, getVacancyStageLabel]);
+  }, [fetchVacancies, getVacancyStageLabel, stagesConfig.enumToKeys]);
 
   // ─── Interview scheduling modal ───
   const [interviewForCandidate, setInterviewForCandidate] = useState<typeof selectedCandidate | null>(null);
@@ -1108,15 +1194,19 @@ export default function RecruiterFunnelsPage() {
   const commentRef = useRef<HTMLTextAreaElement | null>(null);
   const [commentSaving, setCommentSaving] = useState(false);
 
-  const handleSaveComment = useCallback(async (text: string) => {
+  const saveEntityNote = useCallback(async (
+    text: string,
+    stage?: string | null,
+    stageLabel?: string | null,
+  ) => {
     if (!selectedCandidate?.entity_id || !text.trim()) return;
     setCommentSaving(true);
     try {
       // Через POST /entities/{id}/notes — рекрутёру достаточно view-доступа.
       const resp = await addEntityNote(selectedCandidate.entity_id, {
         text: text.trim(),
-        stage: selectedCandidate.stage as string | undefined,
-        stage_label: getVacancyStageLabel(selectedCandidate.stage as string),
+        stage,
+        stage_label: stageLabel,
       });
       // Локально мерджим только что добавленный коммент в entity_data
       // — иначе пришлось бы ждать reload entity, и юзер думал бы что
@@ -1133,7 +1223,67 @@ export default function RecruiterFunnelsPage() {
     } finally {
       setCommentSaving(false);
     }
-  }, [selectedCandidate, getVacancyStageLabel]);
+  }, [selectedCandidate?.entity_id]);
+
+  const handleSaveComment = useCallback(async (text: string) => {
+    await saveEntityNote(
+      text,
+      selectedCandidate?.stage as string | undefined,
+      selectedCandidate?.stage ? getVacancyStageLabel(selectedCandidate.stage as string) : null,
+    );
+  }, [getVacancyStageLabel, saveEntityNote, selectedCandidate?.stage]);
+
+  const handleSavePersonalNote = useCallback(async () => {
+    const text = personalNoteText.trim();
+    if (!text) return;
+    await saveEntityNote(text, null, 'Личная заметка');
+    setPersonalNoteText('');
+    setPersonalNoteComposerOpen(false);
+  }, [personalNoteText, saveEntityNote]);
+
+  const handleSaveStageComment = useCallback(async () => {
+    const text = stageCommentText.trim();
+    if (!text) return;
+    await handleSaveComment(text);
+    setStageCommentText('');
+    setStageCommentComposerOpen(false);
+  }, [handleSaveComment, stageCommentText]);
+
+  const renderVacancyNoteCard = useCallback((note: Record<string, unknown>, i: number) => {
+    const stage = note.stage as string | undefined;
+    const stageLabel = (note.stage_label as string | undefined)
+      || (stage ? getVacancyStageLabel(stage) : null);
+    const authorName = (note.author_name as string) || 'Аноним';
+    const dateStr = note.date ? new Date(note.date as string).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) : '';
+    return (
+      <div
+        key={(note.id as string) || `note-${i}`}
+        className="hf-vacancy-note-card"
+      >
+        <div className="hf-vacancy-note-avatar">
+          {(authorName || '?')[0].toUpperCase()}
+        </div>
+        <div className="hf-vacancy-note-body">
+          <div className="hf-vacancy-note-meta">
+            <span className="hf-vacancy-note-author">{authorName}</span>
+            {stageLabel && (
+              <span className="hf-vacancy-note-stage">{stageLabel}</span>
+            )}
+            <span className="hf-vacancy-note-date">{dateStr}</span>
+          </div>
+          <div className="hf-vacancy-note-text">
+            {String(note.text)}
+          </div>
+        </div>
+      </div>
+    );
+  }, [getVacancyStageLabel]);
 
   // ─── File attach (Файл button) ───
   const candidateFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1271,8 +1421,8 @@ export default function RecruiterFunnelsPage() {
       )}
 
       {/* ========== LEFT SIDEBAR: Recruiter tree (admin only) ========== */}
-      {isHrAdmin && !selectedVacancy && statusFilter !== 'closed' && <aside className={clsx(
-        'flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-dark-panel-alpha-95)] backdrop-blur-xl flex flex-col overflow-hidden z-50 transition-all duration-200',
+      {isHrAdmin && !selectedVacancy && <aside className={clsx(
+        'hf-recruiter-sidebar flex-shrink-0 flex flex-col overflow-hidden z-50 transition-all duration-200',
         // Desktop: collapsible
         sidebarCollapsed
           ? 'lg:relative lg:translate-x-0 lg:w-0 lg:border-r-0 lg:overflow-hidden'
@@ -1282,59 +1432,57 @@ export default function RecruiterFunnelsPage() {
         mobileSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
       )}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--hf-white-alpha-06)]">
-          <span className="text-xs font-semibold text-[var(--hf-dark-400)] uppercase tracking-wider">
-            {isHrAdmin ? 'Рекрутеры' : 'Мои воронки'}
+        <div className="hf-recruiter-sidebar-head">
+          <span className="hf-recruiter-sidebar-title">
+            {isHrAdmin ? 'Рекрутеры' : 'Мои вакансии'}
           </span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setShowCreateModal(true)}
-              className="p-1 hover:bg-[var(--hf-white-alpha-06)] rounded transition-colors"
-              title="Новая воронка"
+              className="hf-recruiter-sidebar-icon-btn"
+              title="Новая вакансия"
             >
-              <Plus className="w-3.5 h-3.5 text-[var(--hf-dark-400)]" />
+              <Plus className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => setSidebarCollapsed(true)}
-              className="hidden lg:block p-1 hover:bg-[var(--hf-white-alpha-06)] rounded transition-colors"
+              className="hf-recruiter-sidebar-icon-btn hidden lg:block"
               title="Свернуть панель"
             >
-              <PanelLeftClose className="w-3.5 h-3.5 text-[var(--hf-dark-400)]" />
+              <PanelLeftClose className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => setMobileSidebar(false)}
-              className="lg:hidden p-1 hover:bg-[var(--hf-white-alpha-06)] rounded transition-colors"
+              className="hf-recruiter-sidebar-icon-btn lg:hidden"
             >
-              <X className="w-3.5 h-3.5 text-[var(--hf-dark-400)]" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
         {/* Search */}
-        <div className="px-3 py-2 border-b border-[color:var(--hf-white-alpha-04)]">
+        <div className="hf-recruiter-search-wrap">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--hf-dark-500)]" />
+            <Search className="hf-recruiter-search-icon" />
             <input
               type="text"
-              placeholder={isHrAdmin ? "Поиск по рекрутеру..." : "Поиск воронок..."}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-06)] rounded-lg text-xs text-[var(--hf-dark-200)] placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[color:var(--hf-accent-border-40)]"
+              placeholder={isHrAdmin ? "Поиск по рекрутеру..." : "Поиск вакансий..."}
+              value={recruiterSearch}
+              onChange={(e) => setRecruiterSearch(e.target.value)}
+              className="hf-recruiter-search-input"
             />
           </div>
         </div>
 
         {/* Status filter pills */}
-        <div className="px-3 py-2 border-b border-[color:var(--hf-white-alpha-04)] flex flex-wrap gap-1">
+        <div className="hf-recruiter-status-list">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.id}
               onClick={() => handleStatusFilterChange(f.id)}
               className={clsx(
-                'px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors',
-                statusFilter === f.id
-                  ? 'bg-[var(--hf-accent-bg-15)] text-[var(--hf-accent)]'
-                  : 'text-[var(--hf-dark-500)] hover:text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)]'
+                'hf-recruiter-status-pill',
+                statusFilter === f.id && 'hf-recruiter-status-pill-active',
               )}
             >
               {f.label}
@@ -1348,29 +1496,29 @@ export default function RecruiterFunnelsPage() {
             <div className="flex items-center justify-center py-8">
               <div className="w-5 h-5 border-2 border-[var(--hf-accent)] border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : recruiterGroups.length === 0 ? (
-            <div className="px-4 py-8 text-center text-[var(--hf-dark-500)] text-xs">
-              {search ? 'Ничего не найдено' : 'Нет воронок'}
+          ) : visibleRecruiterGroups.length === 0 ? (
+            <div className="hf-recruiter-empty">
+              {recruiterSearch ? 'Ничего не найдено' : 'Нет вакансий'}
             </div>
           ) : (
-            recruiterGroups.map((group) => (
+            visibleRecruiterGroups.map((group) => (
               <div key={group.userId}>
                 {/* Recruiter folder header */}
                 {isHrAdmin && (
                   <button
                     onClick={() => toggleGroup(group.userId)}
-                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-[var(--hf-white-alpha-04)] transition-colors group"
+                    className="hf-recruiter-group-btn group"
                   >
                     {group.expanded ? (
-                      <ChevronDown className="w-3.5 h-3.5 text-[var(--hf-dark-500)] flex-shrink-0" />
+                      <ChevronDown className="hf-recruiter-chevron" />
                     ) : (
-                      <ChevronRight className="w-3.5 h-3.5 text-[var(--hf-dark-500)] flex-shrink-0" />
+                      <ChevronRight className="hf-recruiter-chevron" />
                     )}
-                    <FolderOpen className="w-4 h-4 text-[var(--hf-status-purple)] flex-shrink-0" />
-                    <span className="text-sm text-[var(--hf-dark-200)] truncate flex-1 text-left font-medium">
+                    <FolderOpen className="hf-recruiter-folder-icon" />
+                    <span className="hf-recruiter-group-name">
                       {group.userName}
                     </span>
-                    <span className="text-[10px] text-[var(--hf-dark-500)] flex-shrink-0">
+                    <span className="hf-recruiter-count">
                       {group.vacancies.length}
                     </span>
                   </button>
@@ -1387,23 +1535,19 @@ export default function RecruiterFunnelsPage() {
                           key={v.id}
                           onClick={() => selectVacancy(v.id)}
                           className={clsx(
-                            'w-full flex items-center gap-2 pr-3 py-1.5 text-left transition-colors',
+                            'hf-recruiter-vacancy-btn',
                             isHrAdmin ? 'pl-6' : 'pl-3',
-                            isSelected
-                              ? 'bg-[var(--hf-accent-bg-10)] text-[var(--hf-accent)]'
-                              : 'hover:bg-[var(--hf-white-alpha-04)] text-[var(--hf-dark-300)]',
+                            isSelected && 'hf-recruiter-vacancy-btn-active',
                           )}
                         >
                           <span className={clsx(
-                            'w-1.5 h-1.5 rounded-full flex-shrink-0',
-                            v.status === 'open' ? 'bg-[var(--hf-status-green)]' :
-                            v.status === 'paused' ? 'bg-[var(--hf-status-yellow)]' :
-                            v.status === 'closed' ? 'bg-[var(--hf-status-red)]' : 'bg-[var(--hf-dark-500)]'
+                            'hf-recruiter-status-dot',
+                            getRecruiterStatusDotClass(v.status),
                           )} />
-                          <span className={clsx('text-sm truncate flex-1', !v.title?.trim() && 'italic text-[var(--hf-dark-500)]')}>{v.title?.trim() || 'Без названия'}</span>
+                          <span className={clsx('hf-recruiter-vacancy-title', !v.title?.trim() && 'hf-recruiter-vacancy-title-empty')}>{v.title?.trim() || 'Без названия'}</span>
                           <span className={clsx(
-                            'text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0',
-                            isSelected ? 'bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)]' : 'bg-[var(--hf-white-alpha-06)] text-[var(--hf-dark-400)]',
+                            'hf-recruiter-count',
+                            isSelected && 'hf-recruiter-count-active',
                           )}>
                             {count}
                           </span>
@@ -1419,13 +1563,13 @@ export default function RecruiterFunnelsPage() {
       </aside>}
 
       {/* Expand sidebar button (visible when collapsed, admin only) */}
-      {isHrAdmin && !selectedVacancy && statusFilter !== 'closed' && sidebarCollapsed && (
+      {isHrAdmin && !selectedVacancy && sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
-          className="hidden lg:flex items-center justify-center w-6 flex-shrink-0 border-r border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-dark-panel-alpha-50)] hover:bg-[var(--hf-dark-panel-alpha-80)] transition-colors group"
+          className="hf-recruiter-sidebar-expand hidden lg:flex group"
           title="Развернуть панель"
         >
-          <PanelLeftOpen className="w-4 h-4 text-[var(--hf-dark-500)] group-hover:text-[var(--hf-dark-300)] transition-colors" />
+          <PanelLeftOpen className="w-4 h-4 transition-colors" />
         </button>
       )}
 
@@ -1433,91 +1577,221 @@ export default function RecruiterFunnelsPage() {
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* No vacancy selected — show funnels overview */}
         {!selectedVacancy ? (
-          statusFilter === 'closed' ? (
-            <ClosedVacanciesView
-              vacancies={filteredVacancies}
-              isLoading={isLoading}
-              search={search}
-              statusFilter={statusFilter}
-              onSearchChange={setSearch}
-              onClearSearch={() => setSearch('')}
-              onStatusChange={(nextStatus) => {
-                const next = new URLSearchParams(searchParams);
-                if (nextStatus === 'all') {
-                  next.delete('status');
-                } else {
-                  next.set('status', nextStatus);
-                }
-                next.delete('v');
-                setSearchParams(next);
-              }}
-              onSelectVacancy={selectVacancy}
-              onEditVacancy={setEditingVacancy}
-              onDeleteVacancy={handleDeleteVacancy}
-              usersMap={usersMap}
-            />
-          ) : (
-          <div className="flex-1 flex flex-col overflow-y-auto p-4 lg:p-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setMobileSidebar(true)}
-                  className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-[var(--hf-white-alpha-06)] transition-colors"
-                >
-                  <Menu className="w-5 h-5 text-[var(--hf-dark-300)]" />
-                </button>
-                <div>
-                <h1 className="text-xl lg:text-2xl font-bold text-[var(--hf-dark-50)]">
-                  {isHrAdmin ? 'Воронки рекрутеров' : 'Мои воронки'}
-                </h1>
-                <p className="text-sm text-[var(--hf-dark-400)] mt-0.5">
-                  {filteredVacancies.length} воронок
-                  {isHrAdmin && ` у ${recruiterGroups.length} рекрутеров`}
-                </p>
+          <div className="vacancies-page flex-1 w-full max-w-full flex flex-col overflow-hidden text-[var(--hf-vacancies-page-text)]">
+            <div className="p-4 border-b border-[color:var(--hf-vacancies-page-border)]">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => setMobileSidebar(true)}
+                    className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-[var(--hf-vacancies-page-chip)] transition-colors"
+                    aria-label="Открыть список рекрутеров"
+                  >
+                    <Menu className="w-5 h-5 text-[var(--hf-vacancies-page-muted)]" />
+                  </button>
+                  <h1 className="text-2xl font-bold flex items-center gap-2">
+                    <Briefcase className="w-7 h-7 text-[var(--hf-status-blue)]" />
+                    Мои вакансии
+                  </h1>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => navigate('/all-candidates')}
+                    className="flex items-center gap-2 px-3 py-2 bg-[var(--hf-status-purple-badge)] hover:bg-[var(--hf-status-purple-bg)] text-[var(--hf-status-purple)] rounded-lg text-sm transition-colors"
+                    title="Перейти к базе кандидатов"
+                  >
+                    <Users className="w-4 h-4" />
+                    К кандидатам
+                  </button>
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-400)] rounded-xl transition-all shadow-[var(--hf-shadow-lg)] shadow-[0_10px_15px_-3px_var(--hf-status-blue-badge)] hover:shadow-[0_10px_15px_-3px_var(--hf-status-blue-badge)] text-[var(--hf-white)] font-semibold text-sm"
+                  >
+                    <Plus className="w-5 h-5" strokeWidth={2.5} />
+                    Новая вакансия
+                  </button>
                 </div>
               </div>
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-accent)] hover:bg-[var(--hf-accent-hover)] text-[var(--hf-white)] text-sm font-medium rounded-lg transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Новая воронка
-              </button>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative flex-1 min-w-[200px] max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[color:var(--hf-vacancies-page-faint)]" />
+                  <input
+                    type="text"
+                    placeholder="Поиск по названию..."
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-[var(--hf-vacancies-page-surface)] border border-[color:var(--hf-vacancies-page-border)] rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)] text-sm placeholder:text-[color:var(--hf-vacancies-page-soft)]"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1 p-1 bg-[var(--hf-vacancies-page-surface-soft)] rounded-lg">
+                  {STATUS_FILTERS.map((status) => (
+                    <button
+                      key={status.id}
+                      onClick={() => {
+                        const next = new URLSearchParams(searchParams);
+                        if (status.id === 'all') {
+                          next.delete('status');
+                        } else {
+                          next.set('status', status.id);
+                        }
+                        next.delete('v');
+                        setSearchParams(next);
+                      }}
+                      className={clsx(
+                        'px-3 py-1.5 text-sm rounded-md transition-all',
+                        statusFilter === status.id
+                          ? 'bg-[var(--hf-cyan-700)] text-[var(--hf-white)]'
+                          : 'text-[color:var(--hf-vacancies-page-muted)] hover:text-[var(--hf-vacancies-page-text)] hover:bg-[var(--hf-vacancies-page-chip)]',
+                      )}
+                    >
+                      {status.label}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('');
+                    setRecruiterSearch('');
+                    const next = new URLSearchParams(searchParams);
+                    next.delete('status');
+                    next.delete('v');
+                    setSearchParams(next);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border border-[color:var(--hf-vacancies-page-border)] text-[color:var(--hf-vacancies-page-muted)] hover:text-[var(--hf-vacancies-page-text)] hover:bg-[var(--hf-vacancies-page-chip)]"
+                >
+                  <Users className="w-4 h-4" />
+                  Все вакансии
+                </button>
+              </div>
             </div>
 
-            {/* Funnels grid */}
-            {filteredVacancies.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 gap-4">
-                <Briefcase className="w-10 h-10 text-[var(--hf-dark-500)]" />
-                <div className="text-center">
-                  <p className="text-[var(--hf-dark-100)] font-medium">Пока нет воронок</p>
-                  <p className="text-[var(--hf-dark-400)] text-sm mt-1">Создайте первую воронку для начала работы</p>
+            <div className="hf-vacancies-search-body">
+              <section className="hf-vacancies-search-results">
+                <div className="hf-vacancies-search-count">
+                  Найдено вакансий: {filteredVacancies.length}
+                  {isHrAdmin && ` у ${filteredRecruiterCount} рекрутеров`}
                 </div>
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-accent)] hover:bg-[var(--hf-accent-hover)] text-[var(--hf-white)] text-sm font-medium rounded-lg transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Создать воронку
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {filteredVacancies.map((v) => (
-                  <FunnelCard key={v.id} vacancy={v} onClick={() => selectVacancy(v.id)} onEdit={() => setEditingVacancy(v)} onClose={() => handleCloseVacancy(v)} onDelete={() => handleDeleteVacancy(v)} />
-                ))}
-              </div>
-            )}
+                <div className="hf-vacancies-search-list">
+                  {filteredVacancies.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                      <Briefcase className="w-10 h-10 text-[var(--hf-vacancies-page-faint)]" />
+                      <div>
+                        <p className="text-[var(--hf-vacancies-page-text)] font-medium">
+                          {search ? 'Ничего не найдено' : 'Пока нет вакансий'}
+                        </p>
+                        <p className="text-[var(--hf-vacancies-page-muted)] text-sm mt-1">
+                          {search ? 'Измените поиск или фильтр статуса' : 'Создайте первую вакансию для начала работы'}
+                        </p>
+                      </div>
+                      {!search && (
+                        <button
+                          onClick={() => setShowCreateModal(true)}
+                          className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-400)] text-[var(--hf-white)] text-sm font-medium rounded-lg transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Создать вакансию
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    filteredVacancies.map((v) => {
+                      const count = v.applications_count ?? 0;
+                      return (
+                        <div
+                          key={v.id}
+                          onClick={() => selectVacancy(v.id)}
+                          className="hf-vacancies-search-row"
+                        >
+                          <div className="hf-vacancies-search-main">
+                            <div className="hf-vacancies-search-title-row">
+                              <VacancyStatusBadge status={v.status} size="sm" />
+                              <span
+                                className={clsx(
+                                  'hf-vacancies-search-title',
+                                  !v.title?.trim() && 'hf-vacancies-search-title-empty',
+                                )}
+                              >
+                                {v.title?.trim() || 'Без названия'}
+                              </span>
+                              <span className="hf-vacancies-search-kind">Вакансия</span>
+                              {count > 0 && (
+                                <span className="hf-vacancies-search-candidates">
+                                  <Users className="hf-vacancies-search-candidates-icon" />
+                                  {count}
+                                </span>
+                              )}
+                            </div>
+                            <div className="hf-vacancies-search-meta">
+                              <span>Открыта: {formatVacancyListDate(v.created_at)}</span>
+                              {v.updated_at && (
+                                <span>Последнее действие: {formatVacancyListDate(v.updated_at)}</span>
+                              )}
+                              <span>Рекрутер: {v.created_by_name || usersMap[v.created_by ?? 0] || 'Не назначен'}</span>
+                            </div>
+                            <div className="hf-vacancies-search-department">
+                              {v.department_name || 'Общая'}
+                            </div>
+                          </div>
+                          <div className="hf-vacancies-search-side">
+                            <span className="hf-vacancies-search-chip">
+                              {count} кандидатов
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setEditingVacancy(v);
+                                }}
+                                className="hf-vacancies-search-action"
+                                title="Редактировать"
+                              >
+                                <Pencil className="hf-vacancies-search-action-icon" />
+                              </button>
+                              {v.status !== 'closed' && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleCloseVacancy(v);
+                                  }}
+                                  className="hf-vacancies-search-action"
+                                  title="Закрыть вакансию"
+                                >
+                                  <Archive className="hf-vacancies-search-action-icon" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDeleteVacancy(v);
+                                }}
+                                className="hf-vacancies-search-action"
+                                title="Удалить"
+                              >
+                                <Trash2 className="hf-vacancies-search-action-icon" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+            </div>
           </div>
-          )
         ) : selectedVacancy.status === 'closed' ? (
           <ClosedVacancyDetail
             vacancy={selectedVacancy}
             stageKeys={vacancyVisibleStageKeys}
             stagesConfig={stagesConfig}
             groupedByStageMap={groupedByStageMap}
-            hiddenEmptyStages={vacancyHiddenEmptyStages}
             stageScrollRef={vacancyStageScrollRef}
             onStageScroll={updateVacancyStageScrollState}
             canScroll={vacancyStageCanScroll}
@@ -1628,8 +1902,7 @@ export default function RecruiterFunnelsPage() {
                       <>
                         {vacancyVisibleStageKeys.map(key => {
                           const count = groupedByStageMap[key]?.length || 0;
-                          const vacancyStageLabel = VACANCY_STAGE_TAB_LABELS[stagesConfig.keyToEnum[key] || key]
-                            || stagesConfig.labels[key];
+                          const vacancyStageLabel = stagesConfig.labels[key];
                           const isActive = selectedTab === key;
                           return (
                             <button
@@ -1648,15 +1921,6 @@ export default function RecruiterFunnelsPage() {
                             </button>
                           );
                         })}
-                        {vacancyHiddenEmptyStages > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setVacancyEmptyStagesExpanded(true)}
-                            className="hf-top-stage-empty-group"
-                          >
-                            • • {vacancyHiddenEmptyStages} этапов без кандидатов • •
-                          </button>
-                        )}
                       </>
                     )}
                   </div>
@@ -1876,7 +2140,10 @@ export default function RecruiterFunnelsPage() {
                     {selectedCandidate ? (
                       <>
                         {/* Detail tabs: Личные заметки / Резюме */}
-                        <div className="flex items-center border-b border-[color:var(--hf-white-alpha-06)] px-5 flex-shrink-0">
+                        <div className={clsx(
+                          'flex items-center border-b border-[color:var(--hf-white-alpha-06)] px-5 flex-shrink-0',
+                          detailTab === 'info' && 'hidden',
+                        )}>
                           <button
                             onClick={() => setDetailTab('info')}
                             className={clsx(
@@ -1910,15 +2177,15 @@ export default function RecruiterFunnelsPage() {
                         {/* Tab content */}
                         <div className="flex-1 overflow-y-auto">
                           {detailTab === 'info' ? (
-                            <div className="p-5 max-w-3xl">
+                            <div className="p-[var(--hf-space-xxl)] max-w-[1220px]">
                               {/* Top action buttons — Huntflow style */}
-                              <div className="flex items-center gap-2 mb-6">
+                              <div className="hf-profile-action-bar">
                                 {selectedCandidate.entity_id && (
                                   <button
                                     onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}`)}
-                                    className="flex items-center gap-1.5 px-3.5 py-2 border border-[color:var(--hf-white-alpha-12)] rounded-lg text-sm text-[var(--hf-dark-200)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
+                                    className="hf-profile-action-btn"
                                   >
-                                    <Users className="w-4 h-4" /> Открыть профиль
+                                    <Users className="hf-profile-action-icon" /> Открыть профиль
                                   </button>
                                 )}
                                 {selectedCandidate.entity_id && (
@@ -1926,28 +2193,28 @@ export default function RecruiterFunnelsPage() {
                                     <button
                                       onClick={() => setShowAddToVacancy(!showAddToVacancy)}
                                       disabled={addingToVacancy}
-                                      className="flex items-center gap-1.5 px-3.5 py-2 border border-[color:var(--hf-white-alpha-12)] rounded-lg text-sm text-[var(--hf-dark-200)] hover:bg-[var(--hf-white-alpha-04)] transition-colors disabled:opacity-50"
+                                      className="hf-profile-action-btn disabled:opacity-50"
                                     >
                                       {addingToVacancy ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <Loader2 className="hf-profile-action-icon animate-spin" />
                                       ) : (
-                                        <Plus className="w-4 h-4" />
+                                        <Plus className="hf-profile-action-icon" />
                                       )}
                                       Переместить
                                     </button>
                                     {showAddToVacancy && (
-                                      <div className="absolute top-full left-0 mt-1 w-72 max-h-64 overflow-y-auto z-50 bg-[var(--hf-bg-dark-panel)] border border-[color:var(--hf-white-alpha-10)] rounded-xl shadow-[var(--hf-shadow-xl)]">
+                                      <div className="hf-profile-vacancy-menu absolute top-full left-0 mt-1 w-72 max-h-64 overflow-y-auto z-50">
                                         {availableVacanciesForCandidate.length === 0 ? (
-                                          <div className="px-4 py-3 text-sm text-[var(--hf-dark-400)]">Нет доступных вакансий</div>
+                                          <div className="hf-profile-vacancy-menu-empty">Нет доступных вакансий</div>
                                         ) : (
                                           availableVacanciesForCandidate.map((v) => (
                                             <button
                                               key={v.id}
                                               onClick={() => handleAddToVacancy(v.id)}
                                               disabled={addingToVacancy}
-                                              className="w-full text-left px-4 py-2.5 text-sm text-[var(--hf-dark-200)] hover:bg-[var(--hf-white-alpha-06)] transition-colors flex items-center gap-2 disabled:opacity-50"
+                                              className="hf-profile-vacancy-menu-item"
                                             >
-                                              <Briefcase className="w-3.5 h-3.5 text-[var(--hf-dark-400)] flex-shrink-0" />
+                                              <Briefcase className="hf-profile-vacancy-menu-icon" />
                                               <span className="truncate">{v.title}</span>
                                             </button>
                                           ))
@@ -1957,83 +2224,84 @@ export default function RecruiterFunnelsPage() {
                                   </div>
                                 )}
                                 <button
-                                  onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}`)}
-                                  className="flex items-center gap-1.5 px-3.5 py-2 border border-[color:var(--hf-white-alpha-12)] rounded-lg text-sm text-[var(--hf-dark-200)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
+                                  onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}&edit=1`)}
+                                  className="hf-profile-action-btn"
                                 >
-                                  <Pencil className="w-4 h-4" /> Редактировать
+                                  <Pencil className="hf-profile-action-icon" /> Редактировать
                                 </button>
                               </div>
 
                               {/* Name + large photo (Huntflow / AllCandidatesPage style) */}
-                              <div className="flex items-start justify-between gap-4 mb-5">
-                                <div className="flex-1 min-w-0">
-                                  <h2 className="text-2xl font-bold text-[var(--hf-dark-50)] mb-1">
+                              <div className="hf-profile-summary">
+                                <div className="hf-profile-summary-copy">
+                                  <h2 className="hf-profile-title">
                                     {selectedCandidate.entity_name || 'Без имени'}
                                   </h2>
                                   {(selectedCandidate.entity_position || selectedCandidate.entity_company) && (
-                                    <p className="text-sm text-[var(--hf-dark-400)]">
+                                    <p className="hf-profile-subtitle">
                                       {[selectedCandidate.entity_position, selectedCandidate.entity_company].filter(Boolean).join(' · ')}
                                     </p>
                                   )}
-                                </div>
-                                {(selectedCandidate as { entity_photo?: string }).entity_photo ? (
-                                  <img
-                                    src={(selectedCandidate as { entity_photo?: string }).entity_photo}
-                                    alt={selectedCandidate.entity_name || ''}
-                                    referrerPolicy="no-referrer"
-                                    className="w-[120px] h-[150px] rounded-xl object-cover flex-shrink-0 bg-[var(--hf-accent-bg-20)]"
-                                    onError={(e) => {
-                                      const el = e.currentTarget as HTMLImageElement;
-                                      el.style.display = 'none';
-                                      el.nextElementSibling?.classList.remove('hidden');
-                                    }}
-                                  />
-                                ) : null}
-                                <div className={clsx(
-                                  'w-[120px] h-[150px] rounded-xl bg-[var(--hf-accent-bg-20)] flex items-center justify-center text-[var(--hf-accent)] text-4xl font-bold flex-shrink-0',
-                                  (selectedCandidate as { entity_photo?: string }).entity_photo && 'hidden'
-                                )}>
-                                  {(selectedCandidate.entity_name || '?')[0].toUpperCase()}
-                                </div>
-                              </div>
 
                               {/* Contact info — Huntflow dotted-line rows */}
-                              <div className="space-y-0 mb-6 text-sm">
+                              <div className="mb-[var(--hf-space-xl)]">
                                 {selectedCandidate.entity_phone && (
-                                  <div className="group flex items-baseline gap-2 py-1.5">
-                                    <span className="text-[var(--hf-dark-500)] flex-shrink-0">Телефон</span>
-                                    <span className="flex-1 border-b border-dotted border-[color:var(--hf-white-alpha-08)]" />
-                                    <a href={`tel:${selectedCandidate.entity_phone}`} className="text-[var(--hf-dark-200)] hover:text-[var(--hf-white)] transition-colors flex-shrink-0">
-                                      {selectedCandidate.entity_phone}
-                                    </a>
-                                    <CopyButton value={selectedCandidate.entity_phone} />
+                                  <div className="hf-info-row group">
+                                    <div className="hf-info-label">
+                                      <span className="hf-info-label-text">Телефон</span>
+                                      <span className="hf-info-label-line" />
+                                    </div>
+                                    <div className="hf-info-value">
+                                      <div className="flex items-center gap-2">
+                                        <a href={`tel:${selectedCandidate.entity_phone}`} className="text-[var(--hf-main-900)] hover:text-[var(--hf-cyan-700)] transition-colors">
+                                          {selectedCandidate.entity_phone}
+                                        </a>
+                                        <CopyButton value={selectedCandidate.entity_phone} />
+                                      </div>
+                                    </div>
                                   </div>
                                 )}
                                 {selectedCandidate.entity_email && (
-                                  <div className="group flex items-baseline gap-2 py-1.5">
-                                    <span className="text-[var(--hf-dark-500)] flex-shrink-0">Эл. почта</span>
-                                    <span className="flex-1 border-b border-dotted border-[color:var(--hf-white-alpha-08)]" />
-                                    <a href={`mailto:${selectedCandidate.entity_email}`} className="text-[var(--hf-dark-200)] hover:text-[var(--hf-white)] transition-colors flex-shrink-0">
-                                      {selectedCandidate.entity_email}
-                                    </a>
-                                    <CopyButton value={selectedCandidate.entity_email} />
+                                  <div className="hf-info-row group">
+                                    <div className="hf-info-label">
+                                      <span className="hf-info-label-text">Эл. почта</span>
+                                      <span className="hf-info-label-line" />
+                                    </div>
+                                    <div className="hf-info-value">
+                                      <div className="flex items-center gap-2">
+                                        <a href={`mailto:${selectedCandidate.entity_email}`} className="text-[var(--hf-main-900)] hover:text-[var(--hf-cyan-700)] transition-colors">
+                                          {selectedCandidate.entity_email}
+                                        </a>
+                                        <CopyButton value={selectedCandidate.entity_email} />
+                                      </div>
+                                    </div>
                                   </div>
                                 )}
                                 {selectedCandidate.entity_telegram && (
-                                  <div className="group flex items-baseline gap-2 py-1.5">
-                                    <span className="text-[var(--hf-dark-500)] flex-shrink-0">Telegram</span>
-                                    <span className="flex-1 border-b border-dotted border-[color:var(--hf-white-alpha-08)]" />
-                                    <a href={`https://t.me/${selectedCandidate.entity_telegram}`} target="_blank" rel="noopener noreferrer" className="text-[var(--hf-dark-200)] hover:text-[var(--hf-white)] transition-colors flex-shrink-0">
-                                      @{selectedCandidate.entity_telegram}
-                                    </a>
-                                    <CopyButton value={`@${selectedCandidate.entity_telegram}`} />
+                                  <div className="hf-info-row group">
+                                    <div className="hf-info-label">
+                                      <span className="hf-info-label-text">Telegram</span>
+                                      <span className="hf-info-label-line" />
+                                    </div>
+                                    <div className="hf-info-value">
+                                      <div className="flex items-center gap-2">
+                                        <a href={`https://t.me/${selectedCandidate.entity_telegram}`} target="_blank" rel="noopener noreferrer" className="text-[var(--hf-main-900)] hover:text-[var(--hf-cyan-700)] transition-colors">
+                                          @{selectedCandidate.entity_telegram}
+                                        </a>
+                                        <CopyButton value={`@${selectedCandidate.entity_telegram}`} />
+                                      </div>
+                                    </div>
                                   </div>
                                 )}
                                 {selectedCandidate.source && (
-                                  <div className="flex items-baseline gap-2 py-1.5">
-                                    <span className="text-[var(--hf-dark-500)] flex-shrink-0">Источник</span>
-                                    <span className="flex-1 border-b border-dotted border-[color:var(--hf-white-alpha-08)]" />
-                                    <span className="text-[var(--hf-dark-200)] flex-shrink-0">{selectedCandidate.source}</span>
+                                  <div className="hf-info-row">
+                                    <div className="hf-info-label">
+                                      <span className="hf-info-label-text">Источник</span>
+                                      <span className="hf-info-label-line" />
+                                    </div>
+                                    <div className="hf-info-value">
+                                      <span className="text-[var(--hf-main-900)]">{selectedCandidate.source}</span>
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -2132,182 +2400,274 @@ export default function RecruiterFunnelsPage() {
                                   </div>
                                 </div>
                               </div>
+                                </div>
+                                {(selectedCandidate as { entity_photo?: string }).entity_photo ? (
+                                  <img
+                                    src={(selectedCandidate as { entity_photo?: string }).entity_photo}
+                                    alt={selectedCandidate.entity_name || ''}
+                                    referrerPolicy="no-referrer"
+                                    className="hf-profile-photo"
+                                  />
+                                ) : (
+                                  <div className="hf-profile-photo hf-profile-photo-fallback">
+                                    {(selectedCandidate.entity_name || '?')[0].toUpperCase()}
+                                  </div>
+                                )}
+                              </div>
 
                               {/* Current stage — Huntflow style block */}
-                              <div className="mb-5 p-4 rounded-xl border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)]">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <div className="text-xs text-[var(--hf-dark-500)] mb-1">Текущий этап</div>
-                                    <div className="text-base font-semibold text-[var(--hf-dark-100)]">
-                                      {getVacancyStageLabel(selectedCandidate.stage as string)}
+                              <div className="hf-stage-card">
+                                <div className="hf-stage-card-head">
+                                  <div className="hf-stage-card-head-row">
+                                    <div>
+                                      <div className="hf-stage-card-title">
+                                        {getVacancyStageLabel(selectedCandidate.stage as string)}
+                                      </div>
+                                      <div className="hf-stage-card-subtitle">
+                                        {selectedVacancy?.title || 'Вакансия'}
+                                        {selectedVacancy?.department_name ? ` (${selectedVacancy.department_name})` : ''}
+                                      </div>
                                     </div>
-                                  </div>
                                   <StageDropdown
                                     currentStage={selectedCandidate.stage as ApplicationStage}
                                     onChangeStage={(newStage) => handleStageChange(selectedCandidate.id, newStage)}
                                     customLabels={vacancyStageDropdownLabels}
+                                    buttonClassName="hf-stage-change-btn"
+                                    buttonLabel="Сменить этап подбора"
+                                    menuAlign="right"
+                                    menuVariant="light"
                                   />
+                                  </div>
                                 </div>
-                              </div>
 
                               {/* Compatibility score */}
                               {selectedCandidate.compatibility_score != null && (
-                                <div className="mb-5 p-4 rounded-xl border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-02)]">
+                                <div className="mx-[var(--hf-space-xxl)] mt-[var(--hf-space-l)] rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-08)] bg-[var(--hf-white-alpha-55)] p-[var(--hf-space-l)]">
                                   <div className="text-xs text-[var(--hf-dark-500)] mb-1">Совместимость</div>
                                   <div className="text-lg font-semibold text-[var(--hf-accent)]">{selectedCandidate.compatibility_score.overall_score}%</div>
                                 </div>
                               )}
 
                               {/* Comment input — Huntflow style */}
-                              <div className="mb-5">
-                                <textarea
-                                  ref={commentRef}
-                                  placeholder="Написать комментарий... (Enter — отправить, Shift+Enter — новая строка)"
-                                  className="w-full px-4 py-3 rounded-xl border border-[color:var(--hf-white-alpha-08)] bg-[var(--hf-white-alpha-02)] text-sm text-[var(--hf-dark-200)] placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[color:var(--hf-white-alpha-15)] resize-none disabled:opacity-50"
-                                  rows={2}
-                                  disabled={commentSaving}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                      e.preventDefault();
-                                      const val = (e.target as HTMLTextAreaElement).value;
-                                      if (val.trim()) handleSaveComment(val);
-                                    }
-                                  }}
-                                />
+                              <div className="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[6px]">
+                                {stageCommentComposerOpen || stageCommentText.trim() ? (
+                                  <>
+                                    <div className="w-full overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-transparent text-[var(--hf-main-900)]">
+                                      <div className="flex h-[45px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[10px]">
+                                        <button
+                                          type="button"
+                                          className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] font-medium leading-none hover:bg-[var(--hf-white)]"
+                                          aria-label="Жирный"
+                                        >
+                                          B
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] italic leading-none hover:bg-[var(--hf-white)]"
+                                          aria-label="Курсив"
+                                        >
+                                          I
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                                          aria-label="Маркированный список"
+                                        >
+                                          <List className="h-[16px] w-[16px]" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                                          aria-label="Нумерованный список"
+                                        >
+                                          <ListOrdered className="h-[16px] w-[16px]" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                                          aria-label="Ссылка"
+                                        >
+                                          <LinkIcon className="h-[16px] w-[16px]" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                                          aria-label="Упомянуть"
+                                        >
+                                          <AtSign className="h-[16px] w-[16px]" />
+                                        </button>
+                                      </div>
+                                      <textarea
+                                        ref={commentRef}
+                                        value={stageCommentText}
+                                        onChange={(event) => setStageCommentText(event.target.value)}
+                                        placeholder="Написать комментарий"
+                                        rows={1}
+                                        disabled={commentSaving}
+                                        className="block h-[56px] w-full resize-none border-0 bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] disabled:opacity-50"
+                                        onKeyDown={(event) => {
+                                          if (event.key === 'Enter' && !event.shiftKey) {
+                                            event.preventDefault();
+                                            handleSaveStageComment();
+                                          }
+                                        }}
+                                      />
+                                      <div className="flex h-[53px] items-start gap-[var(--hf-space-s)] px-[var(--hf-space-xxl)] pb-[16px] pt-[8px]">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (selectedCandidate.entity_email) {
+                                              window.open(`mailto:${selectedCandidate.entity_email}`);
+                                            } else {
+                                              toast.error('Email кандидата не указан');
+                                            }
+                                          }}
+                                          className="hf-action-chip"
+                                        >
+                                          <Mail className="hf-action-chip-lucide" /> Письмо
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setInterviewForCandidate(selectedCandidate);
+                                            const cur = selectedCandidate.next_interview_at;
+                                            if (cur) {
+                                              const d = new Date(cur);
+                                              const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+                                                .toISOString().slice(0, 16);
+                                              setInterviewDateTime(local);
+                                            } else {
+                                              setInterviewDateTime('');
+                                            }
+                                          }}
+                                          className="hf-action-chip"
+                                        >
+                                          <Calendar className="hf-action-chip-lucide" /> Интервью
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage)}
+                                          className="hf-action-chip"
+                                        >
+                                          <ThumbsUp className="hf-action-chip-lucide" /> Оффер
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => candidateFileInputRef.current?.click()}
+                                          disabled={candidateFileUploading}
+                                          className="hf-action-chip disabled:opacity-50"
+                                        >
+                                          <Paperclip className="hf-action-chip-lucide" /> {candidateFileUploading ? 'Загрузка…' : 'Файл'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="mt-[10px] flex h-[32px] items-start gap-[var(--hf-space-s)]">
+                                      <button
+                                        type="button"
+                                        onClick={handleSaveStageComment}
+                                        disabled={!stageCommentText.trim() || commentSaving}
+                                        className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-05)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[color:var(--hf-black-alpha-25)] transition-colors enabled:bg-[var(--hf-main-900)] enabled:text-[var(--hf-white)] enabled:hover:bg-[var(--hf-main-800)] disabled:cursor-default"
+                                      >
+                                        {commentSaving ? 'Сохраняем...' : 'Сохранить'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setStageCommentText('');
+                                          setStageCommentComposerOpen(false);
+                                        }}
+                                        className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-06)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-08)]"
+                                      >
+                                        Отмена
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <textarea
+                                    ref={commentRef}
+                                    value={stageCommentText}
+                                    onChange={(event) => setStageCommentText(event.target.value)}
+                                    onFocus={() => setStageCommentComposerOpen(true)}
+                                    placeholder="Написать комментарий"
+                                    className="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none disabled:opacity-50"
+                                    rows={2}
+                                    disabled={commentSaving}
+                                  />
+                                )}
                               </div>
+
+                              <input
+                                type="file"
+                                ref={candidateFileInputRef}
+                                onChange={handleCandidateFileUpload}
+                                className="hidden"
+                              />
 
                               {/* Action chips — Huntflow outlined style */}
-                              <div className="flex flex-wrap items-center gap-2 mb-5 pb-5 border-b border-[color:var(--hf-white-alpha-06)]">
-                                <button
-                                  onClick={() => {
-                                    if (selectedCandidate.entity_email) {
-                                      window.open(`mailto:${selectedCandidate.entity_email}`);
-                                    } else {
-                                      toast.error('Email кандидата не указан');
-                                    }
-                                  }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
-                                >
-                                  <Mail className="w-3.5 h-3.5" /> Письмо
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setInterviewForCandidate(selectedCandidate);
-                                    // Pre-fill: текущий next_interview_at в local input format
-                                    const cur = selectedCandidate.next_interview_at;
-                                    if (cur) {
-                                      const d = new Date(cur);
-                                      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-                                        .toISOString().slice(0, 16);
-                                      setInterviewDateTime(local);
-                                    } else {
-                                      setInterviewDateTime('');
-                                    }
-                                  }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
-                                >
-                                  <Calendar className="w-3.5 h-3.5" /> Интервью
-                                </button>
-                                <button
-                                  onClick={() => commentRef.current?.focus()}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
-                                >
-                                  <MessageSquare className="w-3.5 h-3.5" /> Комментарий
-                                </button>
-                                <button
-                                  onClick={() => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
-                                >
-                                  <ThumbsUp className="w-3.5 h-3.5" /> Оффер
-                                </button>
-                                <button
-                                  onClick={() => candidateFileInputRef.current?.click()}
-                                  disabled={candidateFileUploading}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors disabled:opacity-50"
-                                >
-                                  <Paperclip className="w-3.5 h-3.5" /> {candidateFileUploading ? 'Загрузка…' : 'Файл'}
-                                </button>
-                                <input
-                                  type="file"
-                                  ref={candidateFileInputRef}
-                                  onChange={handleCandidateFileUpload}
-                                  className="hidden"
-                                />
-                                <button
-                                  onClick={() => handleStageChange(selectedCandidate.id, 'rejected' as ApplicationStage)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-status-red-badge)] text-sm text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-bg)] transition-colors"
-                                >
-                                  <XCircle className="w-3.5 h-3.5" /> Отказ
-                                </button>
-                              </div>
-
-                              {/* Comments — те же что в /all-candidates,
-                                  читаются из Entity.extra_data.notes */}
-                              {Array.isArray(entityExtraData?.notes) && (entityExtraData!.notes as unknown[]).length > 0 && (
-                                <div className="mb-5">
-                                  <div className="text-xs text-[var(--hf-dark-500)] mb-2 uppercase tracking-wider">Комментарии</div>
-                                  <div className="space-y-2">
-                                    {(entityExtraData!.notes as Array<Record<string, unknown>>)
-                                      .slice()
-                                      .sort((a, b) => {
-                                        const ta = a?.date ? new Date(a.date as string).getTime() : 0;
-                                        const tb = b?.date ? new Date(b.date as string).getTime() : 0;
-                                        return tb - ta;
-                                      })
-                                      .map((note, i) => {
-                                        const stage = note.stage as string | undefined;
-                                        const stageLabel = (note.stage_label as string | undefined)
-                                          || (stage ? getVacancyStageLabel(stage) : null);
-                                        const authorName = (note.author_name as string) || 'Аноним';
-                                        const dateStr = note.date ? new Date(note.date as string).toLocaleString('ru-RU', {
-                                          day: '2-digit', month: '2-digit', year: 'numeric',
-                                          hour: '2-digit', minute: '2-digit',
-                                        }) : '';
-                                        return (
-                                          <div
-                                            key={(note.id as string) || `note-${i}`}
-                                            className="rounded-lg border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white-alpha-03)] p-3"
-                                          >
-                                            <div className="flex items-center justify-between mb-1.5 gap-2">
-                                              <div className="flex items-center gap-2 min-w-0">
-                                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0 bg-[var(--hf-white-alpha-08)] text-[color:var(--hf-white-alpha-70)]">
-                                                  {(authorName || '?')[0].toUpperCase()}
-                                                </div>
-                                                <span className="text-xs font-medium text-[var(--hf-dark-200)] truncate">{authorName}</span>
-                                                {stageLabel && (
-                                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--hf-white-alpha-06)] text-[color:var(--hf-white-alpha-60)] flex-shrink-0">
-                                                    {stageLabel}
-                                                  </span>
-                                                )}
-                                              </div>
-                                              <span className="text-[10px] text-[var(--hf-dark-500)] flex-shrink-0">{dateStr}</span>
-                                            </div>
-                                            <div className="text-sm text-[var(--hf-dark-200)] whitespace-pre-wrap break-words">
-                                              {String(note.text)}
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Legacy notes (VacancyApplication.notes string) */}
-                              {selectedCandidate.notes && (
-                                <div className="mb-5">
-                                  <div className="text-xs text-[var(--hf-dark-500)] mb-2">Заметки</div>
-                                  <div className="text-sm text-[var(--hf-dark-300)] whitespace-pre-wrap p-3 rounded-lg bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)]">
-                                    {selectedCandidate.notes}
-                                  </div>
+                              {!stageCommentComposerOpen && !stageCommentText.trim() && (
+                                <div className="hf-vacancy-stage-action-row">
+                                  <button
+                                    onClick={() => {
+                                      if (selectedCandidate.entity_email) {
+                                        window.open(`mailto:${selectedCandidate.entity_email}`);
+                                      } else {
+                                        toast.error('Email кандидата не указан');
+                                      }
+                                    }}
+                                    className="hf-action-chip"
+                                  >
+                                    <Mail className="hf-action-chip-lucide" /> Письмо
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setInterviewForCandidate(selectedCandidate);
+                                      const cur = selectedCandidate.next_interview_at;
+                                      if (cur) {
+                                        const d = new Date(cur);
+                                        const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+                                          .toISOString().slice(0, 16);
+                                        setInterviewDateTime(local);
+                                      } else {
+                                        setInterviewDateTime('');
+                                      }
+                                    }}
+                                    className="hf-action-chip"
+                                  >
+                                    <Calendar className="hf-action-chip-lucide" /> Интервью
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setStageCommentComposerOpen(true);
+                                      requestAnimationFrame(() => commentRef.current?.focus());
+                                    }}
+                                    className="hf-action-chip"
+                                  >
+                                    <MessageSquare className="hf-action-chip-lucide" /> Комментарий
+                                  </button>
+                                  <button
+                                    onClick={() => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage)}
+                                    className="hf-action-chip"
+                                  >
+                                    <ThumbsUp className="hf-action-chip-lucide" /> Оффер
+                                  </button>
+                                  <button
+                                    onClick={() => candidateFileInputRef.current?.click()}
+                                    disabled={candidateFileUploading}
+                                    className="hf-action-chip disabled:opacity-50"
+                                  >
+                                    <Paperclip className="hf-action-chip-lucide" /> {candidateFileUploading ? 'Загрузка…' : 'Файл'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleStageChange(selectedCandidate.id, 'rejected' as ApplicationStage)}
+                                    className="hf-action-chip hf-action-chip-danger"
+                                  >
+                                    <XCircle className="hf-action-chip-lucide" /> Отказ
+                                  </button>
                                 </div>
                               )}
 
                               {/* History timeline — Huntflow style */}
-                              <div className="mt-4">
-                                <div className="flex items-center gap-2 mb-3">
-                                  <span className="text-xs text-[var(--hf-dark-500)] uppercase tracking-wider font-medium">Действия</span>
-                                  <span className="text-xs text-[var(--hf-dark-600)]">Все</span>
-                                </div>
+                              <div className="hf-vacancy-stage-history">
                                 {historyLoading ? (
                                   <div className="flex items-center gap-2 text-[var(--hf-dark-500)] text-sm">
                                     <Loader2 className="w-4 h-4 animate-spin" /> Загрузка...
@@ -2329,6 +2689,12 @@ export default function RecruiterFunnelsPage() {
                                           )
                                         : null;
                                       const fromColors = fromColorKey ? (STAGE_COLORS[fromColorKey] || fallbackColor) : null;
+                                      const changedById = Number(entry.changed_by);
+                                      const changedByName =
+                                        entry.changed_by_name ||
+                                        (Number.isFinite(changedById) ? usersMap[changedById] : null) ||
+                                        (changedById === user?.id ? user?.name : null) ||
+                                        (!Number.isFinite(changedById) ? entry.changed_by : null);
 
                                       return (
                                         <div key={i} className="relative pb-5 last:pb-0">
@@ -2373,12 +2739,178 @@ export default function RecruiterFunnelsPage() {
                                           )}
 
                                           {/* Changed by */}
-                                          {entry.changed_by && (
-                                            <div className="text-xs text-[var(--hf-dark-600)] mt-1">{entry.changed_by}</div>
+                                          {changedByName && (
+                                            <div className="text-xs text-[var(--hf-dark-600)] mt-1">{changedByName}</div>
                                           )}
                                         </div>
                                       );
                                     })}
+                                  </div>
+                                )}
+                              </div>
+                              </div>
+
+                              <div className="hf-vacancy-detail-tabs">
+                                <button
+                                  type="button"
+                                  onClick={() => setDetailTab('info')}
+                                  className={clsx(
+                                    'hf-vacancy-detail-tab',
+                                    detailTab === 'info' && 'hf-vacancy-detail-tab-active',
+                                  )}
+                                >
+                                  Личные заметки
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDetailTab('resume')}
+                                  className="hf-vacancy-detail-tab"
+                                >
+                                  <FileText className="h-[14px] w-[14px]" />
+                                  Резюме
+                                  {hasResume && (
+                                    <span className="hf-vacancy-detail-tab-count">
+                                      {resumePages.length || 1}
+                                    </span>
+                                  )}
+                                </button>
+                              </div>
+
+                              <div className="hf-vacancy-notes-panel">
+                                <div className="hf-vacancy-personal-composer">
+                                  {personalNoteComposerOpen || personalNoteText.trim() ? (
+                                    <>
+                                      <div className="w-full overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-transparent text-[var(--hf-main-900)]">
+                                        <div className="flex h-[45px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[10px]">
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] font-medium leading-none hover:bg-[var(--hf-white)]"
+                                            aria-label="Жирный"
+                                          >
+                                            B
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] italic leading-none hover:bg-[var(--hf-white)]"
+                                            aria-label="Курсив"
+                                          >
+                                            I
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                                            aria-label="Маркированный список"
+                                          >
+                                            <List className="h-[16px] w-[16px]" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                                            aria-label="Нумерованный список"
+                                          >
+                                            <ListOrdered className="h-[16px] w-[16px]" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="hf-editor-icon-btn hf-editor-icon-btn-plain"
+                                            aria-label="Ссылка"
+                                          >
+                                            <LinkIcon className="h-[16px] w-[16px]" />
+                                          </button>
+                                        </div>
+                                        <textarea
+                                          ref={personalNoteRef}
+                                          value={personalNoteText}
+                                          onChange={(event) => setPersonalNoteText(event.target.value)}
+                                          placeholder="Написать заметку"
+                                          rows={1}
+                                          className="block h-[56px] w-full resize-none border-0 bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)]"
+                                        />
+                                        <div className="flex h-[53px] items-start gap-[var(--hf-space-s)] px-[var(--hf-space-xxl)] pb-[16px] pt-[8px]">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (selectedCandidate.entity_email) {
+                                                window.open(`mailto:${selectedCandidate.entity_email}`);
+                                              } else {
+                                                toast.error('Email кандидата не указан');
+                                              }
+                                            }}
+                                            className="hf-action-chip"
+                                          >
+                                            <Mail className="hf-action-chip-lucide" /> Письмо
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => candidateFileInputRef.current?.click()}
+                                            disabled={candidateFileUploading}
+                                            className="hf-action-chip disabled:opacity-50"
+                                          >
+                                            <Paperclip className="hf-action-chip-lucide" /> {candidateFileUploading ? 'Загрузка…' : 'Файл'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div className="mt-[10px] flex h-[32px] items-start gap-[var(--hf-space-s)]">
+                                        <button
+                                          type="button"
+                                          onClick={handleSavePersonalNote}
+                                          disabled={!personalNoteText.trim() || commentSaving}
+                                          className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-05)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[color:var(--hf-black-alpha-25)] transition-colors enabled:bg-[var(--hf-main-900)] enabled:text-[var(--hf-white)] enabled:hover:bg-[var(--hf-main-800)] disabled:cursor-default"
+                                        >
+                                          {commentSaving ? 'Сохраняем...' : 'Сохранить'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setPersonalNoteText('');
+                                            setPersonalNoteComposerOpen(false);
+                                          }}
+                                          className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-06)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-08)]"
+                                        >
+                                          Отмена
+                                        </button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <textarea
+                                      value={personalNoteText}
+                                      onChange={(event) => setPersonalNoteText(event.target.value)}
+                                      onFocus={() => setPersonalNoteComposerOpen(true)}
+                                      placeholder="Написать заметку"
+                                      rows={1}
+                                      className="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[var(--hf-main-300)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[14px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none"
+                                    />
+                                  )}
+                                </div>
+
+                                <div className="hf-vacancy-notes-heading">Заметки</div>
+                                {vacancyPersonalNotes.length > 0 ? (
+                                  <div className="hf-vacancy-notes-list">
+                                    {vacancyPersonalNotes.map(renderVacancyNoteCard)}
+                                  </div>
+                                ) : (
+                                  <div className="hf-vacancy-notes-empty">
+                                    Нет заметок
+                                  </div>
+                                )}
+
+                                <div className="hf-vacancy-notes-heading hf-vacancy-comments-heading">Комментарии</div>
+                                {vacancyWorkflowComments.length > 0 ? (
+                                  <div className="hf-vacancy-notes-list">
+                                    {vacancyWorkflowComments.map(renderVacancyNoteCard)}
+                                  </div>
+                                ) : (
+                                  <div className="hf-vacancy-notes-empty">
+                                    Нет комментариев
+                                  </div>
+                                )}
+
+                                {selectedCandidate.notes && (
+                                  <div className="hf-vacancy-legacy-note">
+                                    <div className="hf-vacancy-notes-heading">Заметки вакансии</div>
+                                    <div className="hf-vacancy-legacy-note-text">
+                                      {selectedCandidate.notes}
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -2620,31 +3152,34 @@ export default function RecruiterFunnelsPage() {
       {/* Confirm modal — close / delete vacancy */}
       {confirmDialog && (
         <div
-          className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="hf-confirm-modal-backdrop"
           onClick={() => !confirmBusy && setConfirmDialog(null)}
         >
           <div
-            className="glass rounded-xl p-5 w-full max-w-sm space-y-4"
+            className={clsx(
+              'hf-confirm-modal',
+              confirmDialog.type === 'delete' && 'hf-confirm-modal-delete',
+            )}
             onClick={(e) => e.stopPropagation()}
           >
             <div>
-              <h3 className="text-base font-semibold text-[var(--hf-white)] mb-1">
+              <h3 className="hf-confirm-modal-title">
                 {confirmDialog.type === 'close' ? 'Закрыть вакансию?' : 'Удалить вакансию?'}
               </h3>
-              <p className="text-sm text-[var(--hf-dark-300)]">
+              <p className="hf-confirm-modal-subtitle">
                 «{confirmDialog.vacancy.title?.trim() || 'Без названия'}»
               </p>
               {confirmDialog.type === 'delete' && (
-                <p className="text-xs text-[color:var(--hf-status-red)] mt-2">
+                <p className="hf-confirm-modal-danger-text">
                   Действие нельзя отменить. Кандидаты в воронке потеряют связь с этой вакансией.
                 </p>
               )}
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="hf-confirm-modal-actions">
               <button
                 onClick={() => setConfirmDialog(null)}
                 disabled={confirmBusy}
-                className="px-3 py-1.5 text-sm text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] transition-colors disabled:opacity-50"
+                className="hf-confirm-modal-cancel"
               >
                 Отмена
               </button>
@@ -2652,10 +3187,10 @@ export default function RecruiterFunnelsPage() {
                 onClick={runConfirmedAction}
                 disabled={confirmBusy}
                 className={clsx(
-                  'px-4 py-1.5 text-sm font-medium text-[var(--hf-white)] rounded-lg transition-colors disabled:opacity-50',
+                  'hf-confirm-modal-submit',
                   confirmDialog.type === 'delete'
-                    ? 'bg-[var(--hf-red-500)] hover:bg-[var(--hf-red-600)]'
-                    : 'bg-[var(--hf-status-yellow)] hover:bg-[var(--hf-status-yellow)]',
+                    ? 'hf-confirm-modal-submit-danger'
+                    : 'hf-confirm-modal-submit-warning',
                 )}
               >
                 {confirmBusy
@@ -2671,439 +3206,24 @@ export default function RecruiterFunnelsPage() {
   );
 }
 
-/* ===================== Closed Vacancies ===================== */
-
-function ClosedVacanciesView({
-  vacancies,
-  isLoading,
-  search,
-  statusFilter,
-  onSearchChange,
-  onClearSearch,
-  onStatusChange,
-  onSelectVacancy,
-  onEditVacancy,
-  onDeleteVacancy,
-  usersMap,
-}: {
-  vacancies: Vacancy[];
-  isLoading: boolean;
-  search: string;
-  statusFilter: VacancyStatus | 'all';
-  onSearchChange: (value: string) => void;
-  onClearSearch: () => void;
-  onStatusChange: (status: VacancyStatus | 'all') => void;
-  onSelectVacancy: (id: number) => void;
-  onEditVacancy: (vacancy: Vacancy) => void;
-  onDeleteVacancy: (vacancy: Vacancy) => void;
-  usersMap: Record<number, string>;
-}) {
-  const currentUser = useAuthStore((state) => state.user);
-  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
-  const [recruiterFilter, setRecruiterFilter] = useState('all');
-  const [recruiterMenuOpen, setRecruiterMenuOpen] = useState(false);
-  const [recruiterSearch, setRecruiterSearch] = useState('');
-  const [showClosedSearch, setShowClosedSearch] = useState(false);
-  const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sortMode, setSortMode] = useState<'match' | 'title_asc' | 'opened_desc' | 'updated_desc'>('match');
-
-  const recruiterName = (vacancy: Vacancy) =>
-    vacancy.created_by_name || usersMap[vacancy.created_by ?? 0] || 'Не указан';
-
-  const recruiters = useMemo(() => {
-    const map = new Map<string, string>();
-    vacancies.forEach((vacancy) => {
-      const key = String(vacancy.created_by ?? recruiterName(vacancy));
-      if (!map.has(key)) map.set(key, recruiterName(vacancy));
-    });
-    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1], 'ru'));
-  }, [vacancies, usersMap]);
-
-  const filteredRecruiters = useMemo(() => {
-    const query = recruiterSearch.trim().toLowerCase();
-    if (!query) return recruiters;
-    return recruiters.filter(([, name]) => name.toLowerCase().includes(query));
-  }, [recruiters, recruiterSearch]);
-
-  const visibleVacancies = useMemo(() => {
-    const result = recruiterFilter === 'all'
-      ? [...vacancies]
-      : vacancies.filter((vacancy) => String(vacancy.created_by ?? recruiterName(vacancy)) === recruiterFilter);
-
-    if (sortMode === 'title_asc') {
-      result.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ru'));
-    }
-    if (sortMode === 'opened_desc') {
-      result.sort((a, b) => new Date(b.published_at || b.created_at).getTime() - new Date(a.published_at || a.created_at).getTime());
-    }
-    if (sortMode === 'updated_desc') {
-      result.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-    }
-    return result;
-  }, [vacancies, recruiterFilter, sortMode, usersMap]);
-
-  const activeRecruiterLabel =
-    recruiterFilter === 'all'
-      ? 'Все'
-      : recruiters.find(([key]) => key === recruiterFilter)?.[1] || 'Все';
-
-  const activeStatusLabel =
-    statusFilter === 'paused'
-      ? 'Приостановленные'
-      : STATUS_FILTERS.find((filter) => filter.id === statusFilter)?.label || 'Все вакансии';
-
-  const sortLabel =
-    sortMode === 'title_asc'
-      ? 'По алфавиту'
-      : sortMode === 'opened_desc'
-        ? 'По дате открытия'
-        : sortMode === 'updated_desc'
-          ? 'По дате последнего действия'
-          : 'По соответствию';
-
-  const statusMenuItems: { id: VacancyStatus | 'all'; label: string }[] = [
-    { id: 'all', label: 'Все вакансии' },
-    { id: 'open', label: 'Открытые' },
-    { id: 'paused', label: 'Приостановленные' },
-    { id: 'closed', label: 'Закрытые' },
-  ];
-
-  const showSearchField = showClosedSearch || Boolean(search);
-
-  const closeMenus = () => {
-    setStatusMenuOpen(false);
-    setRecruiterMenuOpen(false);
-    setFiltersOpen(false);
-    setSortMenuOpen(false);
-  };
-
-  const openOnly = (menu: 'status' | 'recruiters' | 'filters' | 'sort') => {
-    setStatusMenuOpen(menu === 'status' ? !statusMenuOpen : false);
-    setRecruiterMenuOpen(menu === 'recruiters' ? !recruiterMenuOpen : false);
-    setFiltersOpen(menu === 'filters' ? !filtersOpen : false);
-    setSortMenuOpen(menu === 'sort' ? !sortMenuOpen : false);
-  };
-
-  const sortOptions: [typeof sortMode, string][] = [
-    ['match', 'По соответствию'],
-    ['title_asc', 'По алфавиту'],
-    ['opened_desc', 'По дате открытия'],
-    ['updated_desc', 'По дате последнего действия'],
-  ];
-
-  const selectedRecruiterName =
-    recruiterFilter === 'all'
-      ? null
-      : recruiters.find(([key]) => key === recruiterFilter)?.[1] || activeRecruiterLabel;
-
-  const selectedStatusLabel =
-    statusFilter === 'all'
-      ? null
-      : activeStatusLabel;
-
-  const filtersSummary =
-    [
-      selectedStatusLabel ? `Статус: ${selectedStatusLabel}` : null,
-      selectedRecruiterName ? `Рекрутер: ${selectedRecruiterName}` : null,
-      search ? `Поиск: ${search}` : null,
-    ].filter(Boolean).join(' · ') || 'Активных фильтров нет';
-
-  const handleResetFilters = () => {
-    setRecruiterFilter('all');
-    setRecruiterSearch('');
-    onClearSearch();
-    onStatusChange('closed');
-    closeMenus();
-  };
-
-  const handleClearSearch = () => {
-    onClearSearch();
-    setShowClosedSearch(false);
-  };
-
-  const isCurrentRecruiter = (key: string) => currentUser?.id !== undefined && key === String(currentUser.id);
-  const recruiterDisplayName = (key: string, name: string) =>
-    isCurrentRecruiter(key) ? `Я,${name}` : name;
-  const recruiterMeta = (key: string, name: string) => {
-    if (isCurrentRecruiter(key) && currentUser?.email) return currentUser.email;
-    return name === 'Не указан' ? 'Нет данных' : 'Рекрутер';
-  };
-  const recruiterInitial = (name: string) => name.trim().charAt(0).toUpperCase() || '?';
-
-  return (
-    <div className="hf-closed-vacancies flex-1 min-w-0 overflow-y-auto">
-      <div className="hf-closed-vacancies-inner">
-        <header className="hf-closed-vacancies-toolbar">
-          <div className="hf-closed-vacancies-filters">
-            <div className={clsx('hf-closed-vacancies-search', showSearchField && 'hf-closed-vacancies-search-open')}>
-              <button
-                type="button"
-                className={clsx('hf-closed-vacancies-search-toggle', showSearchField && 'hf-closed-vacancies-search-toggle-active')}
-                onClick={() => {
-                  closeMenus();
-                  setShowClosedSearch((value) => !value);
-                }}
-                aria-label="Поиск закрытых вакансий"
-              >
-                <Search className="hf-closed-vacancies-search-icon" />
-              </button>
-              {showSearchField && (
-                <div className="hf-closed-vacancies-searchbox">
-                  <input
-                    value={search}
-                    onChange={(event) => onSearchChange(event.target.value)}
-                    placeholder="Поиск..."
-                    aria-label="Поиск закрытых вакансий"
-                    autoFocus
-                  />
-                  {search && (
-                    <button
-                      type="button"
-                      className="hf-closed-vacancies-clear"
-                      onClick={handleClearSearch}
-                      aria-label="Очистить поиск"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="hf-closed-vacancies-filter-wrap">
-              <button
-                type="button"
-                className="hf-closed-vacancies-filter"
-                onClick={() => openOnly('status')}
-              >
-                {activeStatusLabel} <ChevronDown className="h-4 w-4" />
-              </button>
-              {statusMenuOpen && (
-                <div className="hf-closed-vacancies-menu hf-closed-vacancies-status-menu">
-                  {statusMenuItems.map((item) => (
-                    <button
-                      type="button"
-                      key={item.id}
-                      className={clsx(statusFilter === item.id && 'hf-closed-vacancies-menu-active')}
-                      onClick={() => {
-                        onStatusChange(item.id);
-                        setStatusMenuOpen(false);
-                      }}
-                    >
-                      {statusFilter === item.id && <Check className="hf-closed-vacancies-menu-check" />}
-                      <span>{item.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="hf-closed-vacancies-filter-wrap">
-              <button
-                type="button"
-                className="hf-closed-vacancies-filter"
-                onClick={() => openOnly('recruiters')}
-              >
-                Рекрутеры: {activeRecruiterLabel} <ChevronDown className="h-4 w-4" />
-              </button>
-              {recruiterMenuOpen && (
-                <div className="hf-closed-vacancies-menu hf-closed-vacancies-recruiter-menu">
-                  <label className="hf-closed-vacancies-menu-search">
-                    <Search className="hf-closed-vacancies-menu-search-icon" />
-                    <input
-                      value={recruiterSearch}
-                      onChange={(event) => setRecruiterSearch(event.target.value)}
-                      placeholder="Поиск..."
-                      aria-label="Поиск рекрутера"
-                      autoFocus
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="hf-closed-vacancies-menu-reset"
-                    onClick={() => {
-                      setRecruiterFilter('all');
-                      setRecruiterSearch('');
-                    }}
-                  >
-                    Сбросить выбор
-                  </button>
-                  <div className="hf-closed-vacancies-recruiter-list">
-                    {filteredRecruiters.length === 0 ? (
-                      <div className="hf-closed-vacancies-menu-empty">
-                        Ничего не найдено
-                      </div>
-                    ) : (
-                      filteredRecruiters.map(([key, name]) => {
-                        const highlighted = recruiterFilter === key || (recruiterFilter === 'all' && isCurrentRecruiter(key));
-                        return (
-                          <button
-                            type="button"
-                            key={key}
-                            className={clsx('hf-closed-vacancies-recruiter-option', highlighted && 'hf-closed-vacancies-recruiter-option-active')}
-                            onClick={() => {
-                              setRecruiterFilter(key);
-                              setRecruiterMenuOpen(false);
-                              setRecruiterSearch('');
-                            }}
-                          >
-                            <span className="hf-closed-vacancies-avatar">{recruiterInitial(name)}</span>
-                            <span className="hf-closed-vacancies-recruiter-text">
-                              <span>{recruiterDisplayName(key, name)}</span>
-                              <span>{recruiterMeta(key, name)}</span>
-                            </span>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="hf-closed-vacancies-filter-wrap">
-              <button
-                type="button"
-                className="hf-closed-vacancies-filter"
-                onClick={() => openOnly('filters')}
-              >
-                Фильтры <ChevronDown className="h-4 w-4" />
-              </button>
-              {filtersOpen && (
-                <div className="hf-closed-vacancies-menu hf-closed-vacancies-menu-note">
-                  <div className="hf-closed-vacancies-menu-note-title">Фильтры</div>
-                  <div>{filtersSummary}</div>
-                  <button
-                    type="button"
-                    className="hf-closed-vacancies-menu-reset"
-                    onClick={handleResetFilters}
-                  >
-                    Сбросить фильтры
-                  </button>
-                  <div className="hf-closed-vacancies-menu-note-muted">
-                    Расширенные фильтры Huntflow по заказчикам и офферам пока не поддерживаются API HR-bot.
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="hf-closed-vacancies-filter-wrap hf-closed-vacancies-sort-wrap">
-            <button
-              type="button"
-              className="hf-closed-vacancies-filter hf-closed-vacancies-sort"
-              onClick={() => openOnly('sort')}
-            >
-              <span className="hf-closed-vacancies-sort-icon" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-              {sortLabel} <ChevronDown className="h-4 w-4" />
-            </button>
-            {sortMenuOpen && (
-              <div className="hf-closed-vacancies-menu hf-closed-vacancies-sort-menu">
-                {sortOptions.map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={clsx(sortMode === key && 'hf-closed-vacancies-menu-active')}
-                    onClick={() => {
-                      setSortMode(key);
-                      setSortMenuOpen(false);
-                    }}
-                  >
-                    {sortMode === key && <Check className="hf-closed-vacancies-menu-check" />}
-                    <span>{label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </header>
-
-        <section className="hf-closed-vacancies-results" aria-label="Закрытые вакансии">
-        <div className="hf-closed-vacancies-count">
-          Найдено вакансий: {visibleVacancies.length}
-        </div>
-
-        {isLoading ? (
-          <div className="hf-closed-vacancies-state">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Загрузка вакансий
-          </div>
-        ) : visibleVacancies.length === 0 ? (
-          <div className="hf-closed-vacancies-state">
-            {search ? 'Ничего не найдено' : 'Закрытых вакансий нет'}
-          </div>
-        ) : (
-          <div className="hf-closed-vacancies-list">
-            {visibleVacancies.map((vacancy) => {
-              const openedAt = vacancy.published_at || vacancy.created_at;
-              const closedAt = vacancy.closes_at || vacancy.updated_at;
-              return (
-                <article key={vacancy.id} className="hf-closed-vacancies-row">
-                  <button
-                    type="button"
-                    className="hf-closed-vacancies-title"
-                    onClick={() => onSelectVacancy(vacancy.id)}
-                  >
-                    <span className="hf-closed-vacancies-status">ЗАКРЫТА</span>
-                    <span className="hf-closed-vacancies-title-text">{vacancy.title?.trim() || 'Без названия'}</span>
-                  </button>
-                  {vacancy.department_name && (
-                    <div className="hf-closed-vacancies-department">{vacancy.department_name}</div>
-                  )}
-                  <div className="hf-closed-vacancies-meta">
-                    <span>Открыта: {formatVacancyListDate(openedAt)}</span>
-                    <span className="hf-closed-vacancies-dot">·</span>
-                    <span>Закрыта: {formatVacancyListDate(closedAt)}</span>
-                  </div>
-                  <div className="hf-closed-vacancies-meta">
-                    <span>Последнее действие: {formatVacancyListDate(vacancy.updated_at)}</span>
-                  </div>
-                  <div className="hf-closed-vacancies-meta">
-                    <span>Рекрутер: {recruiterName(vacancy)}</span>
-                  </div>
-                  <div className="hf-closed-vacancies-footer">
-                    <div className="hf-closed-vacancies-actions">
-                      <button
-                        type="button"
-                        onClick={() => onEditVacancy(vacancy)}
-                        aria-label="Редактировать вакансию"
-                        title="Редактировать"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteVacancy(vacancy)}
-                        aria-label="Удалить вакансию"
-                        title="Удалить"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-        </section>
-      </div>
-    </div>
-  );
-}
-
 /* ===================== Stage Dropdown ===================== */
 
 function StageDropdown({
   currentStage,
   onChangeStage,
   customLabels,
+  buttonClassName,
+  buttonLabel,
+  menuAlign = 'left',
+  menuVariant = 'dark',
 }: {
   currentStage: ApplicationStage;
   onChangeStage: (stage: ApplicationStage) => void;
   customLabels?: Record<string, string>;
+  buttonClassName?: string;
+  buttonLabel?: string;
+  menuAlign?: 'left' | 'right';
+  menuVariant?: 'dark' | 'light';
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -3126,18 +3246,22 @@ function StageDropdown({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className={clsx(
+        className={buttonClassName || clsx(
           'text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer transition-all',
           'hover:ring-2 hover:ring-[var(--hf-white-alpha-10)]',
           colors.badge,
         )}
       >
-        {customLabels?.[currentStage] || STAGE_LABELS[currentStage] || currentStage}
+        {buttonLabel || customLabels?.[currentStage] || STAGE_LABELS[currentStage] || currentStage}
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-56 py-1 bg-[var(--hf-dark-panel-alpha-95)] backdrop-blur-xl border border-[color:var(--hf-white-alpha-10)] rounded-xl shadow-[var(--hf-shadow-2xl)] overflow-hidden">
-          <div className="px-3 py-1.5 text-[10px] text-[var(--hf-dark-500)] uppercase tracking-wider font-semibold">
+        <div className={clsx(
+          'hf-stage-dropdown-menu absolute top-full mt-1 z-50 w-56 py-1 overflow-hidden',
+          menuVariant === 'light' ? 'hf-stage-dropdown-menu-light' : 'hf-stage-dropdown-menu-dark',
+          menuAlign === 'right' ? 'right-0' : 'left-0',
+        )}>
+          <div className="hf-stage-dropdown-header">
             Перенести в
           </div>
           {STAGE_ORDER.map((stage) => {
@@ -3151,124 +3275,19 @@ function StageDropdown({
                   setOpen(false);
                 }}
                 className={clsx(
-                  'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm',
-                  isCurrent
-                    ? 'bg-[var(--hf-white-alpha-06)] text-[var(--hf-dark-200)]'
-                    : 'hover:bg-[var(--hf-white-alpha-04)] text-[var(--hf-dark-300)] hover:text-[var(--hf-dark-100)]',
+                  'hf-stage-dropdown-option',
+                  isCurrent ? 'hf-stage-dropdown-option-current' : 'hf-stage-dropdown-option-idle',
                 )}
               >
                 <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
                 <span className="flex-1">{customLabels?.[stage] || STAGE_LABELS[stage] || stage}</span>
                 {isCurrent && (
-                  <span className="text-[10px] text-[var(--hf-dark-500)]">текущий</span>
+                  <span className="hf-stage-dropdown-current-note">текущий</span>
                 )}
               </button>
             );
           })}
         </div>
-      )}
-    </div>
-  );
-}
-
-/* ===================== Funnel Card ===================== */
-
-function FunnelCard({ vacancy, onClick, onEdit, onClose, onDelete }: { vacancy: Vacancy; onClick: () => void; onEdit: () => void; onClose: () => void; onDelete: () => void }) {
-  const count = vacancy.applications_count ?? 0;
-  const stageCounts = vacancy.stage_counts ?? {};
-  const mainStages = ['applied', 'screening', 'phone_screen', 'interview', 'assessment', 'offer', 'hired'];
-  const total = mainStages.reduce((s, k) => s + (stageCounts[k] || 0), 0);
-
-  return (
-    <div
-      onClick={onClick}
-      className="p-3 rounded-lg border border-[color:var(--hf-white-alpha-06)] glass-light hover:border-[color:var(--hf-white-alpha-12)] cursor-pointer transition-colors group relative"
-    >
-      <div className="flex items-start justify-between mb-2">
-        <h3 className={clsx(
-          'text-sm font-medium group-hover:text-[var(--hf-accent)] transition-colors line-clamp-2 flex-1 mr-2',
-          vacancy.title?.trim() ? 'text-[var(--hf-dark-100)]' : 'text-[var(--hf-dark-500)] italic',
-        )}>
-          {vacancy.title?.trim() || 'Без названия'}
-        </h3>
-        {/* Action buttons — приглушены до hover, но всегда видны */}
-        <div className="flex items-center gap-0.5 shrink-0">
-          <div className="flex items-center gap-0.5 opacity-50 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit(); }}
-              className="p-1 rounded-md hover:bg-[var(--hf-white-alpha-10)] text-[var(--hf-dark-400)] hover:text-[var(--hf-white)] transition-colors"
-              title="Редактировать"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-            {vacancy.status !== 'closed' && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onClose(); }}
-                className="p-1 rounded-md hover:bg-[var(--hf-status-red-badge)] text-[var(--hf-dark-400)] hover:text-[var(--hf-status-red)] transition-colors"
-                title="Закрыть вакансию"
-              >
-                <Archive className="w-3.5 h-3.5" />
-              </button>
-            )}
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              className="p-1 rounded-md hover:bg-[var(--hf-status-red-badge)] text-[var(--hf-dark-400)] hover:text-[var(--hf-status-red)] transition-colors"
-              title="Удалить воронку"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[var(--hf-dark-500)] group-hover:text-[var(--hf-accent)] transition-colors mt-0.5" />
-        </div>
-      </div>
-      <div className="flex items-center gap-2 mb-2">
-        <VacancyStatusBadge status={vacancy.status} />
-        {vacancy.department_name && (
-          <span className="text-xs text-[var(--hf-dark-400)] truncate">{vacancy.department_name}</span>
-        )}
-      </div>
-      <div className="flex items-center gap-1.5 text-xs text-[var(--hf-dark-400)] mb-2">
-        <Users className="w-3.5 h-3.5" />
-        <span>{count} кандидатов</span>
-      </div>
-      {total > 0 && (
-        <>
-          <div
-            className="flex items-center justify-between text-[10px] text-[var(--hf-dark-500)] mb-1"
-            title="Распределение кандидатов по этапам воронки"
-          >
-            <span>Этапы</span>
-            <span>{Math.round(((stageCounts['hired'] || 0) / total) * 100)}% наняты</span>
-          </div>
-          <div
-            className="flex gap-0.5 h-1 rounded-full overflow-hidden bg-[var(--hf-white-alpha-04)]"
-            title="Распределение кандидатов по этапам (наведите на сегмент)"
-          >
-            {mainStages.map((stage) => {
-              const c = stageCounts[stage] || 0;
-              if (c === 0) return null;
-              const pct = (c / total) * 100;
-              const stageLabel = STAGE_LABELS[stage] || stage;
-              return (
-                <div
-                  key={stage}
-                  className={clsx(
-                    'h-full rounded-full',
-                    stage === 'applied' && 'bg-[var(--hf-status-blue-badge)]',
-                    stage === 'screening' && 'bg-[var(--hf-status-cyan-badge)]',
-                    stage === 'phone_screen' && 'bg-[var(--hf-status-purple-badge)]',
-                    stage === 'interview' && 'bg-[var(--hf-status-indigo-badge)]',
-                    stage === 'assessment' && 'bg-[var(--hf-status-orange-badge)]',
-                    stage === 'offer' && 'bg-[var(--hf-status-yellow-badge)]',
-                    stage === 'hired' && 'bg-[var(--hf-status-green-badge)]',
-                  )}
-                  style={{ width: `${Math.max(pct, 4)}%` }}
-                  title={`${stageLabel}: ${c} (${Math.round(pct)}%)`}
-                />
-              );
-            })}
-          </div>
-        </>
       )}
     </div>
   );

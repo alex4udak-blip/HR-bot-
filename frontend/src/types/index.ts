@@ -464,14 +464,15 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
 };
 
 export const STATUS_LABELS: Record<EntityStatus, string> = {
-  // HR Pipeline по ТЗ
+  // Единые HR-лейблы: держим в синхронизации с KANBAN_STATUS_LABELS
+  // и APPLICATION_STAGE_LABELS.
   new: 'Новый',
-  screening: 'Отбор',
-  practice: 'Собеседование назначено',
-  tech_practice: 'Собеседование пройдено',
-  is_interview: 'Практика',
+  screening: 'Скрининг',
+  practice: 'Практика',
+  tech_practice: 'Тех-практика',
+  is_interview: 'ИС',
   offer: 'Оффер',
-  hired: 'Вышел на работу',
+  hired: 'Принят',
   rejected: 'Отказ',
   withdrawn: 'Отозван',
   // General/Legacy statuses
@@ -481,9 +482,9 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
   converted: 'Сконвертирован',
   ended: 'Завершён',
   negotiation: 'Переговоры',
-  interview: 'Собеседование пройдено',
+  interview: 'Тех-практика',
   applied: 'Новый',
-  phone_screen: 'Собеседование назначено',
+  phone_screen: 'Практика',
   assessment: 'ИС'
 };
 
@@ -861,4 +862,3 @@ export interface NotifyCandidatesResponse {
   candidates_notified: CandidateMatch[];
   message: string;
 }
-
