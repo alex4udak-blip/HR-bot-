@@ -1545,10 +1545,14 @@ export default function Layout() {
                           label: "Добавить кандидата",
                           action: () => navigate("/all-candidates?add=resume"),
                         },
-                        {
-                          label: "Заявка на подбор",
-                          action: () => navigate("/vacancies"),
-                        },
+                        // «Создать заявку» — только для админов/суперадмина:
+                        // заявки на подбор заводят они, рекрутёры их разбирают.
+                        ...(isHrSidebarAdmin
+                          ? [{
+                              label: "Создать заявку",
+                              action: () => navigate("/vacancies"),
+                            }]
+                          : []),
                       ].map((item) => (
                         <button
                           key={item.label}
