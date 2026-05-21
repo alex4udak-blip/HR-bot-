@@ -275,10 +275,6 @@
   padding-right: var(--hf-sidebar-scroll-pr);
 }
 
-.hf-hr-nav-popover-open {
-  overflow: visible;
-}
-
 .hf-hr-nav-list {
   margin-top: calc(var(--hf-border-xs) * -1);
 }
@@ -406,13 +402,19 @@
 
 .hf-hr-subnav-link {
   display: block;
+  width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   border-radius: var(--hf-sidebar-subnav-radius);
   padding-block: var(--hf-sidebar-subnav-py);
   padding-right: var(--hf-sidebar-subnav-px);
   padding-left: var(--hf-sidebar-subnav-indent);
   text-align: left;
   transition: background-color var(--hf-transition-fast), color var(--hf-transition-fast);
+}
+
+.hf-hr-subnav-link > * {
+  pointer-events: none;
 }
 
 .hf-hr-subnav-link:hover {
@@ -452,132 +454,34 @@
   position: relative;
 }
 
-.hf-hr-funnels-trigger {
-  width: 100%;
+.hf-hr-funnels-header {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-xs);
 }
 
-.hf-hr-funnels-trigger-caret {
-  margin-left: auto;
+.hf-hr-funnels-trigger {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.hf-hr-funnels-toggle {
   display: flex;
   width: var(--hf-sidebar-chevron-btn);
   height: var(--hf-sidebar-chevron-btn);
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
+  border: 0;
   border-radius: var(--hf-sidebar-chevron-radius);
   background: var(--hf-white-alpha-10);
   color: var(--hf-white-alpha-68);
+  transition: background-color var(--hf-transition-fast), color var(--hf-transition-fast);
 }
 
-.hf-hr-funnels-picker {
-  position: absolute;
-  top: calc(100% + var(--hf-space-xs));
-  left: 0;
-  z-index: var(--hf-z-dropdown);
-  width: min(
-    var(--hf-sidebar-funnels-popover-w),
-    calc(100vw - var(--hf-space-xl))
-  );
-  border-radius: var(--hf-radius-s);
-  background: var(--hf-white);
-  padding: var(--hf-space-m);
-  box-shadow: var(--hf-shadow-popover);
-  color: var(--hf-text-main);
-}
-
-.hf-hr-funnels-search {
-  display: flex;
-  height: var(--hf-sidebar-funnels-search-h);
-  align-items: center;
-  gap: var(--hf-space-xs);
-  border: var(--hf-border-xs) solid var(--hf-cyan-500);
-  border-radius: var(--hf-radius-xs);
-  background: var(--hf-white);
-  padding: 0 var(--hf-space-l);
-}
-
-.hf-hr-funnels-search-icon {
-  width: 16px;
-  height: 16px;
-  color: var(--hf-main-500);
-}
-
-.hf-hr-funnels-search-input {
-  min-width: 0;
-  flex: 1 1 auto;
-  border: 0;
-  background: transparent;
-  color: var(--hf-text-main);
-  font-size: var(--hf-fs-s);
-  line-height: var(--hf-lh-normal);
-  outline: none;
-}
-
-.hf-hr-funnels-search-input::placeholder {
-  color: var(--hf-main-500);
-}
-
-.hf-hr-funnels-option {
-  display: flex;
-  width: 100%;
-  min-height: var(--hf-sidebar-funnels-option-h);
-  align-items: center;
-  gap: var(--hf-space-s);
-  margin-top: var(--hf-space-m);
-  border-radius: var(--hf-radius-xs);
-  background: var(--hf-main-100);
-  padding: var(--hf-space-s) var(--hf-space-l);
-  text-align: left;
-}
-
-.hf-hr-funnels-option:hover {
-  background: var(--hf-main-200);
-}
-
-.hf-hr-funnels-check {
-  width: var(--hf-sidebar-block-icon);
-  height: var(--hf-sidebar-block-icon);
-  flex-shrink: 0;
-  color: var(--hf-main-900);
-}
-
-.hf-hr-funnels-avatar {
-  display: inline-flex;
-  width: var(--hf-sidebar-funnels-avatar);
-  height: var(--hf-sidebar-funnels-avatar);
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--hf-radius-pill);
-  background: var(--hf-main-200);
-  color: var(--hf-main-500);
-  font-size: var(--hf-fs-5xs);
-  font-weight: var(--hf-fw-medium);
-}
-
-.hf-hr-funnels-option-text {
-  min-width: 0;
-}
-
-.hf-hr-funnels-option-title,
-.hf-hr-funnels-option-subtitle {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hf-hr-funnels-option-title {
-  color: var(--hf-text-main);
-  font-size: var(--hf-fs-s);
-  line-height: var(--hf-lh-normal);
-}
-
-.hf-hr-funnels-option-subtitle {
-  margin-top: var(--hf-space-xxs);
-  color: var(--hf-text-semilight);
-  font-size: var(--hf-fs-xs);
-  line-height: var(--hf-lh-tight);
+.hf-hr-funnels-toggle:hover {
+  background: var(--hf-white-alpha-16);
+  color: var(--hf-white);
 }
 
 .hf-hr-fab-wrap {

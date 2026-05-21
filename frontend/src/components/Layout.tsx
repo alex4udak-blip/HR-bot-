@@ -705,6 +705,7 @@ export default function Layout() {
   const { vacancies, fetchVacancies } = useVacancyStore();
   const [expandedFunnels, setExpandedFunnels] = useState(false);
   const [expandedRequests, setExpandedRequests] = useState(true);
+  const [hrFunnelsExpanded, setHrFunnelsExpanded] = useState(true);
   const [sidebarVacancy, setSidebarVacancy] = useState<Vacancy | null>(null);
   const [sidebarVacancyMode, setSidebarVacancyMode] =
     useState<SidebarVacancyMode>("view");
@@ -720,10 +721,8 @@ export default function Layout() {
   const [showFabParserModal, setShowFabParserModal] = useState(false);
   const [showHrFabActions, setShowHrFabActions] = useState(false);
   const [showHrSettingsModal, setShowHrSettingsModal] = useState(false);
-  const [showHrFunnelsPicker, setShowHrFunnelsPicker] = useState(false);
   const [showHrUserMenu, setShowHrUserMenu] = useState(false);
   const hrFabActionsRef = useRef<HTMLDivElement | null>(null);
-  const hrFunnelsPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (routeBlock === "hr") {
@@ -769,20 +768,6 @@ export default function Layout() {
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [showHrFabActions]);
-
-  useEffect(() => {
-    if (!showHrFunnelsPicker) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (
-        hrFunnelsPickerRef.current &&
-        !hrFunnelsPickerRef.current.contains(event.target as Node)
-      ) {
-        setShowHrFunnelsPicker(false);
-      }
-    };
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [showHrFunnelsPicker]);
 
   useEffect(() => {
     hrSidebarWidthRef.current = hrSidebarWidth;
@@ -1257,13 +1242,7 @@ export default function Layout() {
                 })}
               </div>
 
-              <nav
-                className={clsx(
-                  "hf-hr-nav",
-                  showHrFunnelsPicker && "hf-hr-nav-popover-open",
-                )}
-                aria-label="Primary navigation"
-              >
+              <nav className="hf-hr-nav" aria-label="Primary navigation">
                 <div className="hf-hr-nav-list">
                   <NavLink
                     to="/all-candidates"
@@ -1347,87 +1326,59 @@ export default function Layout() {
 
                 <div className="hf-hr-sidebar-divider hf-hr-sidebar-divider-funnels" />
 
-                <div className="hf-hr-funnels-picker-wrap" ref={hrFunnelsPickerRef}>
-                  <button
-                    type="button"
-                    onClick={() => setShowHrFunnelsPicker((value) => !value)}
-                    className={clsx(
-                      "hf-hr-nav-item hf-hr-funnels-trigger min-w-0",
-                      isMyFunnelsRootView
-                        ? "hf-hr-nav-item-active"
-                        : "hf-hr-nav-item-white",
-                    )}
-                    aria-expanded={showHrFunnelsPicker}
-                    aria-haspopup="listbox"
+                <div className="hf-hr-funnels-picker-wrap">
+                  <div className="hf-hr-funnels-header">
+                    <NavLink
+                      to="/my-funnels"
+                      className={() =>
+                        clsx(
+                          "hf-hr-nav-item hf-hr-funnels-trigger min-w-0",
+                          isMyFunnelsRootView
+                            ? "hf-hr-nav-item-active"
+                            : "hf-hr-nav-item-white",
+                        )
+                      }
                     >
                       <HfSpriteIcon
                         id="business-folder"
                         className="hf-hr-nav-icon"
                       />
                       <span className="truncate">Мои вакансии</span>
-                      <span className="hf-hr-funnels-trigger-caret">
+                    </NavLink>
+                    {sidebarOpenVacancies.length > 0 && (
+                      <button
+                        type="button"
+                        className="hf-hr-funnels-toggle"
+                        onClick={() => setHrFunnelsExpanded((value) => !value)}
+                        aria-label={
+                          hrFunnelsExpanded
+                            ? "Свернуть мои вакансии"
+                            : "Развернуть мои вакансии"
+                        }
+                        aria-expanded={hrFunnelsExpanded}
+                      >
                         <ChevronDown
                           className={clsx(
                             "hf-hr-chevron-icon",
-                            showHrFunnelsPicker && "rotate-180",
+                            hrFunnelsExpanded && "rotate-180",
                           )}
                         />
-                      </span>
-                  </button>
-                  <AnimatePresence>
-                    {showHrFunnelsPicker && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -4, scale: 0.985 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -4, scale: 0.985 }}
-                        transition={{ duration: 0.12, ease: "easeOut" }}
-                        className="hf-hr-funnels-picker"
-                        role="listbox"
-                      >
-                        <label className="hf-hr-funnels-search">
-                          <Search className="hf-hr-funnels-search-icon" />
-                          <input
-                            className="hf-hr-funnels-search-input"
-                            placeholder="Поиск..."
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className="hf-hr-funnels-option"
-                          onClick={() => {
-                            setShowHrFunnelsPicker(false);
-                            navigate("/my-funnels");
-                          }}
-                          role="option"
-                          aria-selected="true"
-                        >
-                          <Check className="hf-hr-funnels-check" />
-                          <span className="hf-hr-funnels-avatar">
-                            {user?.name?.[0]?.toUpperCase() || "Я"}
-                          </span>
-                          <span className="hf-hr-funnels-option-text">
-                            <span className="hf-hr-funnels-option-title">
-                              Я, {user?.name || user?.email || "Профиль"}
-                            </span>
-                            <span className="hf-hr-funnels-option-subtitle">
-                              {user?.email || "—"}
-                            </span>
-                          </span>
-                        </button>
-                      </motion.div>
+                      </button>
                     )}
-                  </AnimatePresence>
-                  {sidebarOpenVacancies.length > 0 && (
+                  </div>
+                  {hrFunnelsExpanded && sidebarOpenVacancies.length > 0 && (
                     <div className="hf-hr-subnav">
                       {sidebarOpenVacancies.map((v) => (
                         <NavLink
                           key={v.id}
                           to={`/my-funnels?v=${v.id}`}
-                          className={clsx(
-                            "hf-hr-subnav-link",
-                            sidebarSelectedVacancyId === String(v.id) &&
-                              "hf-hr-subnav-link-active",
-                          )}
+                          className={() =>
+                            clsx(
+                              "hf-hr-subnav-link",
+                              sidebarSelectedVacancyId === String(v.id) &&
+                                "hf-hr-subnav-link-active",
+                            )
+                          }
                         >
                           <span className="hf-hr-request-title">
                             {v.title}
