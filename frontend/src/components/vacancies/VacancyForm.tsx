@@ -611,16 +611,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     disabled={isReadOnlyRequest}
                   />
                 </div>
-                <div>
-                  <label className={hfLabelClass}>Шаблон оффера</label>
-                  <HfSelect
-                    id="offer-template"
-                    value="standard"
-                    options={[{ value: "standard", label: "Стандартный оффер" }]}
-                    showSelectedIcon
-                    disabled={isReadOnlyRequest}
-                  />
-                </div>
               </div>
             </aside>
           </div>
