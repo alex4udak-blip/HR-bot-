@@ -612,6 +612,104 @@ async def update_org_stages(
     return {"success": True, "stages": cleaned}
 
 
+# ---------------------------------------------------------------------------
+# Шаблоны статусов — именованные наборы этапов воронки. Админ создаёт их в
+# настройках, при создании заявки выбирает нужный шаблон. Храним в
+# Organization.settings.status_templates (JSON, миграция не нужна).
+# ---------------------------------------------------------------------------
+
+class StatusTemplate(BaseModel):
+    id: str = Field(..., min_length=1, max_length=64)
+    name: str = Field(..., min_length=1, max_length=64)
+    stages: List[StageItem]
+
+
+class StatusTemplatesUpdate(BaseModel):
+    templates: List[StatusTemplate]
+
+
+def _read_status_templates(org: Organization) -> list[dict]:
+    """Список шаблонов статусов из settings (или пустой список)."""
+    settings_data = org.settings or {}
+    tpls = settings_data.get("status_templates")
+    if not isinstance(tpls, list):
+        return []
+    result = []
+    for t in tpls:
+        if not isinstance(t, dict) or not t.get("id") or not t.get("name"):
+            continue
+        stages = t.get("stages")
+        if not isinstance(stages, list):
+            continue
+        clean_stages = [
+            s for s in stages
+            if isinstance(s, dict) and s.get("key") in ALLOWED_STAGE_KEYS
+        ]
+        if clean_stages:
+            result.append({"id": t["id"], "name": t["name"], "stages": clean_stages})
+    return result
+
+
+@router.get("/status-templates")
+async def get_status_templates(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Шаблоны статусов организации."""
+    org = await _get_user_org_or_404(user, db)
+    return {"templates": _read_status_templates(org)}
+
+
+@router.put("/status-templates")
+async def update_status_templates(
+    data: StatusTemplatesUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Сохранить шаблоны статусов. Только superadmin/owner/admin."""
+    org = await _get_user_org_or_404(user, db)
+
+    is_platform_admin = user.role == UserRole.superadmin
+    if not is_platform_admin:
+        member_res = await db.execute(
+            select(OrgMember.role).where(
+                OrgMember.user_id == user.id,
+                OrgMember.org_id == org.id,
+            )
+        )
+        role_val = member_res.scalar_one_or_none()
+        if role_val not in (OrgRole.owner, OrgRole.admin):
+            raise HTTPException(403, "Только админ организации может менять шаблоны")
+
+    cleaned: list[dict] = []
+    seen_ids: set[str] = set()
+    for tpl in data.templates:
+        if tpl.id in seen_ids:
+            raise HTTPException(400, f"Дублирующийся шаблон: {tpl.id}")
+        seen_ids.add(tpl.id)
+
+        seen_keys: set[str] = set()
+        clean_stages = []
+        for s in tpl.stages:
+            if s.key not in ALLOWED_STAGE_KEYS:
+                raise HTTPException(400, f"Неизвестный ключ этапа: {s.key}")
+            if s.key in seen_keys:
+                raise HTTPException(400, f"Дублирующийся этап в шаблоне «{tpl.name}»: {s.key}")
+            seen_keys.add(s.key)
+            clean_stages.append({"key": s.key, "label": s.label.strip(), "color": s.color.lower()})
+        if not clean_stages:
+            raise HTTPException(400, f"Шаблон «{tpl.name}» должен содержать хотя бы один этап")
+        cleaned.append({"id": tpl.id, "name": tpl.name.strip(), "stages": clean_stages})
+
+    new_settings = dict(org.settings or {})
+    new_settings["status_templates"] = cleaned
+    org.settings = new_settings
+    flag_modified(org, "settings")
+    await db.commit()
+
+    return {"success": True, "templates": cleaned}
+
+
 @router.post("/change-password")
 @limiter.limit("3/minute")
 async def change_password(
