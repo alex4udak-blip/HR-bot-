@@ -3052,10 +3052,7 @@ const CommentCard = memo(function CommentCard({
 
   return (
     <div
-      className={clsx(
-        "group rounded-lg border border-[color:var(--hf-white-alpha-06)] p-3 relative",
-        noteSc.bg,
-      )}
+      className="group rounded-lg p-3 relative"
     >
       <div className="flex items-center justify-between mb-1.5 gap-2">
         <div className="flex items-center gap-2 min-w-0">

@@ -7318,16 +7318,14 @@ body.performance-mode .glass-card:hover {
 .hf-vacancy-note-body {
   min-width: 0;
   border-radius: var(--hf-radius-s);
-  background: var(--hf-bg-panel);
-  padding: 10px 12px 12px;
+  /* Комментарии все в одном стиле, без фона-плашки (решение HR-команды).
+     Раньше personal-заметки имели серый фон, workflow-комменты — синий. */
+  background: transparent;
+  padding: 2px 0 0;
 }
 
 .hf-vacancy-stage-comments .hf-vacancy-note-card {
   max-width: none;
-}
-
-.hf-vacancy-note-card-workflow .hf-vacancy-note-body {
-  background: var(--hf-status-blue-bg);
 }
 
 .hf-vacancy-note-meta {
