@@ -74,66 +74,8 @@ import {
 
 // ---------- constants ----------
 
-const STATUS_COLORS: Record<
-  string,
-  { dot: string; text: string; bg: string; badge: string }
-> = {
-  new: {
-    dot: "bg-[var(--hf-status-blue)]",
-    text: "text-[var(--hf-status-blue)]",
-    bg: "bg-[var(--hf-status-blue-bg)]",
-    badge: "bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]",
-  },
-  screening: {
-    dot: "bg-[var(--hf-status-cyan)]",
-    text: "text-[var(--hf-status-cyan)]",
-    bg: "bg-[var(--hf-status-cyan-bg)]",
-    badge: "bg-[var(--hf-status-cyan-badge)] text-[var(--hf-status-cyan)]",
-  },
-  practice: {
-    dot: "bg-[var(--hf-status-purple)]",
-    text: "text-[var(--hf-status-purple)]",
-    bg: "bg-[var(--hf-status-purple-bg)]",
-    badge: "bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]",
-  },
-  tech_practice: {
-    dot: "bg-[var(--hf-status-indigo)]",
-    text: "text-[var(--hf-status-indigo)]",
-    bg: "bg-[var(--hf-status-indigo-bg)]",
-    badge: "bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)]",
-  },
-  is_interview: {
-    dot: "bg-[var(--hf-status-orange)]",
-    text: "text-[var(--hf-status-orange)]",
-    bg: "bg-[var(--hf-status-orange-bg)]",
-    badge: "bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]",
-  },
-  offer: {
-    dot: "bg-[var(--hf-status-yellow)]",
-    text: "text-[var(--hf-status-yellow)]",
-    bg: "bg-[var(--hf-status-yellow-bg)]",
-    badge: "bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]",
-  },
-  hired: {
-    dot: "bg-[var(--hf-status-green)]",
-    text: "text-[var(--hf-status-green)]",
-    bg: "bg-[var(--hf-status-green-bg)]",
-    badge: "bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]",
-  },
-  rejected: {
-    dot: "bg-[var(--hf-status-red)]",
-    text: "text-[var(--hf-status-red)]",
-    bg: "bg-[var(--hf-status-red-bg)]",
-    badge: "bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]",
-  },
-};
-
-const FALLBACK_COLOR = {
-  dot: "bg-[var(--hf-status-gray)]",
-  text: "text-[var(--hf-status-gray)]",
-  bg: "bg-[var(--hf-status-gray-bg)]",
-  badge: "bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]",
-};
+// STATUS_COLORS / FALLBACK_COLOR удалены — комментарии перешли на
+// единый Huntflow-стиль (hf-vacancy-note-card) без цветных фонов.
 
 // ---------- helpers ----------
 
@@ -3005,9 +2947,6 @@ const CommentCard = memo(function CommentCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const noteStage = note.stage;
-  const noteSc = noteStage
-    ? STATUS_COLORS[noteStage] || FALLBACK_COLOR
-    : FALLBACK_COLOR;
   const initials = (note.author_name || "?")[0].toUpperCase();
   // Можно править/удалить если: я автор, либо админ. Legacy-комменты без
   // author_id трогать может только админ.
@@ -3071,114 +3010,98 @@ const CommentCard = memo(function CommentCard({
   };
 
   return (
-    <div
-      className="group rounded-lg p-3 relative"
-    >
-      <div className="flex items-center justify-between mb-1.5 gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div
-            className={clsx(
-              "w-6 h-6 rounded-full flex items-center justify-center text-[length:var(--hf-fs-5xs)] font-semibold flex-shrink-0",
-              noteSc.badge,
-            )}
-          >
-            {initials}
-          </div>
-          <span className="text-xs font-medium text-[var(--hf-dark-200)] truncate">
+    <div className="hf-vacancy-note-card group">
+      <div className="hf-vacancy-note-avatar">{initials}</div>
+      <div className="hf-vacancy-note-body">
+        <div className="hf-vacancy-note-meta">
+          <span className="hf-vacancy-note-author">
             {note.author_name || "Аноним"}
           </span>
           {noteStage && (
-            <span
-              className={clsx(
-                "text-[length:var(--hf-fs-5xs)] px-1.5 py-0.5 rounded-full flex-shrink-0",
-                noteSc.badge,
-              )}
-            >
+            <span className="hf-vacancy-note-stage">
               {note.stage_label || noteStage}
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-[length:var(--hf-fs-5xs)] text-[var(--hf-dark-500)]">
+          <span className="hf-vacancy-note-date">
             {note.date ? formatDateFull(note.date) : ""}
             {note.edited_at && " · изм."}
           </span>
           {canModify && !editing && !confirmDelete && (
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+            <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
               <button
                 onClick={() => {
                   setEditText(note.text);
                   setEditing(true);
                 }}
-                className="p-1 rounded hover:bg-[var(--hf-white-alpha-10)] text-[var(--hf-dark-400)] hover:text-[var(--hf-white)]"
+                className="rounded p-1 text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-ui-text-strong)]"
                 title="Редактировать"
               >
-                <Pencil className="w-3 h-3" />
+                <Pencil className="h-3 w-3" />
               </button>
               <button
                 onClick={() => setConfirmDelete(true)}
-                className="p-1 rounded hover:bg-[var(--hf-status-red-badge)] text-[var(--hf-dark-400)] hover:text-[var(--hf-status-red)]"
+                className="rounded p-1 text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-red-500)]"
                 title="Удалить"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="h-3 w-3" />
               </button>
             </div>
           )}
         </div>
-      </div>
 
-      {editing ? (
-        <div className="space-y-2">
-          <textarea
-            value={editText}
-            onChange={(e) => setEditText(e.target.value)}
-            disabled={busy}
-            rows={3}
-            className="w-full px-2 py-1.5 rounded-md bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-white-alpha-10)] text-sm text-[var(--hf-dark-100)] focus:outline-none focus:border-[var(--hf-status-blue)] resize-y disabled:opacity-50"
-            autoFocus
-          />
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setEditing(false)}
+        {editing ? (
+          <div className="space-y-2">
+            <textarea
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
               disabled={busy}
-              className="px-2 py-1 text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] disabled:opacity-50"
-            >
-              Отмена
-            </button>
-            <button
-              onClick={save}
-              disabled={busy}
-              className="inline-flex items-center h-[28px] px-hf-m text-hf-3xs font-medium bg-[var(--hf-main-900)] hf-dark-disabled:bg-[var(--hf-white)] text-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)] rounded-hf-s hover:bg-[var(--hf-main-800)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-90)] transition-colors duration-[100ms] disabled:cursor-not-allowed disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] hf-dark-disabled:disabled:bg-[var(--hf-white-alpha-08)] hf-dark-disabled:disabled:text-[color:var(--hf-white-alpha-35)]"
-            >
-              {busy ? "Сохраняем…" : "Сохранить"}
-            </button>
+              rows={3}
+              className="w-full resize-y rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-transparent px-2 py-1.5 text-[length:var(--hf-fs-s)] text-[var(--hf-ui-text-strong)] focus:border-[var(--hf-ui-border-hover)] focus:outline-none disabled:opacity-50 hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:text-[var(--hf-white)]"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setEditing(false)}
+                disabled={busy}
+                className="px-2 py-1 text-[length:var(--hf-fs-2xs)] text-[var(--hf-ui-text-soft)] transition-colors hover:text-[var(--hf-main-900)] disabled:opacity-50 hf-dark-disabled:hover:text-[var(--hf-white)]"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={save}
+                disabled={busy}
+                className="inline-flex h-[28px] items-center rounded-[var(--hf-radius-s)] bg-[var(--hf-main-900)] px-[12px] text-[length:var(--hf-fs-3xs)] font-medium text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:opacity-50 hf-dark-disabled:bg-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)]"
+              >
+                {busy ? "Сохраняем…" : "Сохранить"}
+              </button>
+            </div>
           </div>
-        </div>
-      ) : confirmDelete ? (
-        <div className="flex items-center justify-between gap-3 p-2 rounded-md bg-[var(--hf-status-red-bg)] border border-[color:var(--hf-status-red-badge)]">
-          <span className="text-xs text-[var(--hf-red-300)]">Удалить этот коммент?</span>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => setConfirmDelete(false)}
-              disabled={busy}
-              className="px-2 py-1 text-xs text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] disabled:opacity-50"
-            >
-              Нет
-            </button>
-            <button
-              onClick={remove}
-              disabled={busy}
-              className="px-2.5 py-1 text-xs font-medium bg-[var(--hf-red-500)] hover:bg-[var(--hf-red-600)] text-[var(--hf-white)] rounded-md disabled:opacity-50"
-            >
-              {busy ? "Удаляем…" : "Удалить"}
-            </button>
+        ) : confirmDelete ? (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[length:var(--hf-fs-2xs)] text-[var(--hf-ui-text-soft)]">
+              Удалить этот коммент?
+            </span>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                disabled={busy}
+                className="px-2 py-1 text-[length:var(--hf-fs-2xs)] text-[var(--hf-ui-text-soft)] transition-colors hover:text-[var(--hf-main-900)] disabled:opacity-50 hf-dark-disabled:hover:text-[var(--hf-white)]"
+              >
+                Нет
+              </button>
+              <button
+                onClick={remove}
+                disabled={busy}
+                className="rounded-[var(--hf-radius-s)] bg-[var(--hf-red-500)] px-2.5 py-1 text-[length:var(--hf-fs-2xs)] font-medium text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-red-600)] disabled:opacity-50"
+              >
+                {busy ? "Удаляем…" : "Удалить"}
+              </button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="text-sm text-[var(--hf-dark-200)] whitespace-pre-wrap break-words">
-          {note.text}
-        </div>
-      )}
+        ) : (
+          <div className="hf-vacancy-note-text">{note.text}</div>
+        )}
+      </div>
     </div>
   );
 });
