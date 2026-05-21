@@ -91,10 +91,10 @@ function AssignModal({
     setLoading(true);
     try {
       await assignVacancy(vacancy.id, selectedIds, assignAll);
-      toast.success('Вакансия назначена');
+      toast.success('Заявка назначена');
       onAssigned();
     } catch {
-      toast.error('Не удалось назначить вакансию');
+      toast.error('Не удалось назначить заявку');
     } finally {
       setLoading(false);
     }
@@ -533,19 +533,19 @@ export default function VacanciesPage() {
       if (confirmDialog.type === 'close') {
         // Task 14: Close vacancy and auto-switch to "open" filter
         await updateVacancy(confirmDialog.vacancy.id, { status: 'closed' });
-        toast.success('Вакансия закрыта');
+        toast.success('Заявка закрыта');
         setStatusFilter('open');
         fetchVacancies();
       } else {
         await deleteVacancy(confirmDialog.vacancy.id);
-        toast.success('Вакансия удалена');
+        toast.success('Заявка удалена');
         if (currentVacancy?.id === confirmDialog.vacancy.id) {
           navigate('/vacancies');
         }
       }
       setConfirmDialog({ open: false, vacancy: null, type: 'delete' });
     } catch {
-      toast.error(confirmDialog.type === 'close' ? 'Не удалось закрыть вакансию' : 'Не удалось удалить вакансию');
+      toast.error(confirmDialog.type === 'close' ? 'Не удалось закрыть заявку' : 'Не удалось удалить заявку');
     } finally {
       setDeleteLoading(false);
     }
@@ -589,10 +589,10 @@ export default function VacanciesPage() {
   const getVacancyStatusLabel = (status: VacancyStatus) =>
     getHuntflowVacancyStatusFilterLabel(status);
 
-  const getVacancyKindLabel = (vacancy: Vacancy) =>
-    user && vacancy.created_by !== user.id && (vacancy.assigned_to?.includes(user.id) || vacancy.assigned_to_all)
-      ? 'Заявка'
-      : 'Вакансия';
+  // Страница /vacancies — это раздел «Заявки». Всё что здесь лежит и
+  // создаётся — заявки (вакансия становится «вакансией» только когда
+  // рекрутёр взял её в работу → клон в «Мои вакансии»).
+  const getVacancyKindLabel = (_vacancy: Vacancy) => 'Заявка';
 
   const getClosedVacancyDate = (vacancy: Vacancy) =>
     vacancy.status === 'closed' ? vacancy.closes_at || vacancy.updated_at : null;
@@ -637,11 +637,11 @@ export default function VacanciesPage() {
               setShowCreateModal(true);
             }}
             data-tour="create-vacancy"
-            title="Создать вакансию"
+            title="Создать заявку"
             className="hf-funnels-primary-btn"
           >
             <Plus className="hf-funnels-primary-icon" strokeWidth={2.5} />
-            Новая вакансия
+            Новая заявка
           </button>
         </div>
 
@@ -835,7 +835,7 @@ export default function VacanciesPage() {
                   {/* Results count */}
                   <div className="p-3 border-t border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface-soft)]">
                     <span className="text-xs text-[color:var(--hf-vacancies-page-soft)]">
-                      Показано {filteredVacancies.length} из {vacancies.length} вакансий
+                      Показано {filteredVacancies.length} из {vacancies.length} заявок
                     </span>
                   </div>
                 </div>
@@ -853,7 +853,7 @@ export default function VacanciesPage() {
             onRetry={handleRetryFetch}
           />
         ) : isLoading ? (
-          <div className="hf-vacancies-search-list" aria-label="Загрузка вакансий">
+          <div className="hf-vacancies-search-list" aria-label="Загрузка заявок">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="hf-vacancies-search-row hf-vacancies-search-row-skeleton">
                 <div className="hf-vacancies-search-skeleton-line hf-vacancies-search-skeleton-title" />
@@ -873,9 +873,9 @@ export default function VacanciesPage() {
             />
           </div>
         ) : (
-          <section className="hf-vacancies-search-results" aria-label="Вакансии">
+          <section className="hf-vacancies-search-results" aria-label="Заявки">
             <div className="hf-vacancies-search-count">
-              Найдено вакансий: {filteredVacancies.length}
+              Найдено заявок: {filteredVacancies.length}
             </div>
             <div className="hf-vacancies-search-list">
               {filteredVacancies.map((vacancy) => {
@@ -905,7 +905,7 @@ export default function VacanciesPage() {
                     ),
                     ...(vacancy.status === 'open' || vacancy.status === 'paused' ? [{
                       id: 'close',
-                      label: 'Закрыть вакансию',
+                      label: 'Закрыть заявку',
                       icon: XCircle,
                       onClick: () => handleCloseClick(vacancy),
                       divider: true,
@@ -1061,7 +1061,7 @@ export default function VacanciesPage() {
                                 e.stopPropagation();
                                 handleCloseClick(vacancy);
                               }}
-                              title="Закрыть вакансию"
+                              title="Закрыть заявку"
                             >
                               <Archive className="hf-vacancies-search-action-icon" />
                             </button>
@@ -1110,10 +1110,10 @@ export default function VacanciesPage() {
       {/* Confirmation Dialog */}
       <ConfirmDialog
         open={confirmDialog.open}
-        title={confirmDialog.type === 'close' ? 'Закрыть вакансию' : 'Удалить вакансию'}
+        title={confirmDialog.type === 'close' ? 'Закрыть заявку' : 'Удалить заявку'}
         message={confirmDialog.type === 'close'
-          ? 'Вы уверены, что хотите закрыть эту вакансию? Она переместится в статус "Закрыта".'
-          : 'Вы уверены, что хотите удалить эту вакансию? Это действие невозможно отменить.'}
+          ? 'Вы уверены, что хотите закрыть эту заявку? Она переместится в статус "Закрыта".'
+          : 'Вы уверены, что хотите удалить эту заявку? Это действие невозможно отменить.'}
         confirmLabel={confirmDialog.type === 'close' ? 'Закрыть' : 'Удалить'}
         cancelLabel="Отмена"
         variant={confirmDialog.type === 'close' ? 'warning' : 'danger'}
