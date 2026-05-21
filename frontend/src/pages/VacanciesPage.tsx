@@ -8,7 +8,6 @@ import {
   Briefcase,
   DollarSign,
   Users,
-  Upload,
   Filter,
   X,
   Check,
@@ -17,6 +16,9 @@ import {
   UserPlus,
   PlayCircle,
   XCircle,
+  Pencil,
+  Archive,
+  Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -26,12 +28,12 @@ import type { Vacancy, VacancyStatus } from '@/types';
 import { EMPLOYMENT_TYPES } from '@/types';
 import { formatSalary } from '@/utils';
 import { getDepartments, assignVacancy, takeVacancy, getAssignableUsers } from '@/services/api';
-import type { Department, ParsedVacancy, AssignableUser } from '@/services/api';
+import type { Department, AssignableUser } from '@/services/api';
 import {
   VacancyForm,
   VacancyStatusBadge,
 } from '@/components/vacancies';
-import ParserModal from '@/components/parser/ParserModal';
+import { SidebarRequestPreviewModal } from '@/components/Layout';
 import {
   ContextMenu,
   createVacancyContextMenu,
@@ -39,15 +41,10 @@ import {
   ConfirmDialog,
   ErrorMessage
 } from '@/components/ui';
-
-const STATUS_FILTERS: { id: VacancyStatus | 'all'; name: string }[] = [
-  { id: 'all', name: 'Все' },
-  { id: 'pending_review', name: 'На рассмотрении' },
-  { id: 'open', name: 'Открыта' },
-  { id: 'paused', name: 'На паузе' },
-  { id: 'closed', name: 'Закрыта' },
-  { id: 'cancelled', name: 'Отменена' },
-];
+import {
+  HUNTFLOW_VACANCY_STATUS_FILTERS,
+  getHuntflowVacancyStatusFilterLabel,
+} from '@/components/hr/huntflowVacancyStatus';
 
 // Quick filter options
 const SALARY_RANGES = [
@@ -110,35 +107,35 @@ function AssignModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-60)]" onClick={onClose}>
       <div
-        className="w-full max-w-md mx-4 bg-[var(--hf-bg-dark)] border border-[color:var(--hf-white-alpha-10)] rounded-2xl shadow-[var(--hf-shadow-2xl)] overflow-hidden"
+        className="w-full max-w-md mx-4 bg-[var(--hf-white)] border border-[var(--hf-ui-border)] text-[var(--hf-main-900)] rounded-2xl shadow-[var(--hf-shadow-2xl)] overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[color:var(--hf-white-alpha-10)]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--hf-ui-divider)]">
           <h3 className="text-lg font-semibold">Назначить рекрутеров</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-[var(--hf-white-alpha-10)] transition-colors">
+          <button onClick={onClose} className="p-1 rounded-lg text-[var(--hf-main-500)] hover:bg-[var(--hf-ui-hover)] hover:text-[var(--hf-main-900)] transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-5 space-y-4 max-h-96 overflow-y-auto">
           {/* Assign to all toggle */}
-          <label className="flex items-center gap-3 p-3 rounded-xl bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-06)] cursor-pointer hover:bg-[var(--hf-white-alpha-05)] transition-colors">
+          <label className="flex items-center gap-3 p-3 rounded-xl bg-[var(--hf-bg-muted)] border border-[var(--hf-ui-divider)] cursor-pointer hover:bg-[var(--hf-ui-hover)] transition-colors">
             <input
               type="checkbox"
               checked={assignAll}
               onChange={() => setAssignAll(!assignAll)}
-              className="w-4 h-4 rounded border-[color:var(--hf-white-alpha-20)] text-[var(--hf-cyan-700)] focus:ring-[var(--hf-cyan-500)]"
+              className="w-4 h-4 rounded border-[var(--hf-ui-border)] text-[var(--hf-cyan-700)] focus:ring-[var(--hf-cyan-500)]"
             />
             <div>
               <span className="text-sm font-medium">Назначить всем</span>
-              <p className="text-xs text-[color:var(--hf-white-alpha-40)]">Все рекрутеры увидят эту заявку</p>
+              <p className="text-xs text-[var(--hf-main-500)]">Все рекрутеры увидят эту заявку</p>
             </div>
           </label>
 
           {/* User list */}
           {!assignAll && (
             <div className="space-y-1">
-              <p className="text-xs font-medium text-[color:var(--hf-white-alpha-50)] mb-2">Выберите рекрутеров:</p>
+              <p className="text-xs font-medium text-[var(--hf-main-500)] mb-2">Выберите рекрутеров:</p>
               {users.length === 0 ? (
                 <div className="flex items-center justify-center py-6">
                   <div className="animate-spin w-5 h-5 border-2 border-[color:var(--hf-status-blue)] border-t-transparent rounded-full" />
@@ -151,14 +148,14 @@ function AssignModal({
                       'flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors',
                       selectedIds.includes(u.id)
                         ? 'bg-[var(--hf-status-blue-badge)] border border-[color:var(--hf-status-blue-badge)]'
-                        : 'hover:bg-[var(--hf-white-alpha-03)] border border-transparent'
+                        : 'hover:bg-[var(--hf-ui-hover)] border border-transparent'
                     )}
                   >
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(u.id)}
                       onChange={() => toggleUser(u.id)}
-                      className="w-4 h-4 rounded border-[color:var(--hf-white-alpha-20)] text-[var(--hf-cyan-700)] focus:ring-[var(--hf-cyan-500)]"
+                      className="w-4 h-4 rounded border-[var(--hf-ui-border)] text-[var(--hf-cyan-700)] focus:ring-[var(--hf-cyan-500)]"
                     />
                     <span className="text-sm">{u.name}</span>
                   </label>
@@ -168,17 +165,17 @@ function AssignModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[color:var(--hf-white-alpha-10)]">
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[var(--hf-ui-divider)]">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-white-alpha-06)] transition-colors"
+            className="px-4 py-2 text-sm rounded-lg text-[var(--hf-main-700)] hover:text-[var(--hf-main-900)] hover:bg-[var(--hf-ui-hover)] transition-colors"
           >
             Отмена
           </button>
           <button
             onClick={handleSave}
             disabled={loading || (!assignAll && selectedIds.length === 0)}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-[var(--hf-cyan-700)] hover:bg-[var(--hf-cyan-600)] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-[var(--hf-cyan-700)] text-[var(--hf-white)] hover:bg-[var(--hf-cyan-600)] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
           >
             {loading ? (
               <div className="animate-spin w-4 h-4 border-2 border-[color:var(--hf-white)] border-t-transparent rounded-full" />
@@ -206,8 +203,6 @@ export default function VacanciesPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
-  const [showParserModal, setShowParserModal] = useState(false);
-  const [prefillData, setPrefillData] = useState<Partial<Vacancy> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Confirmation dialog state
@@ -252,13 +247,15 @@ export default function VacanciesPage() {
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
 
   // Task 9: "My vacancies" filter — non-admin users see only their vacancies by default
-  const [showOnlyMine, setShowOnlyMine] = useState(!isAdmin);
+  const [showOnlyMine, setShowOnlyMine] = useState(false);
+  const effectiveShowOnlyMine = !isAdmin || showOnlyMine;
 
   // Task 12: Assignment filter for unassigned requests
   const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'unassigned'>('all');
 
   // Assign modal state
   const [assigningVacancy, setAssigningVacancy] = useState<Vacancy | null>(null);
+  const [previewVacancy, setPreviewVacancy] = useState<Vacancy | null>(null);
 
   // Take vacancy handler
   const [takingVacancyId, setTakingVacancyId] = useState<number | null>(null);
@@ -307,6 +304,8 @@ export default function VacanciesPage() {
   // Filter vacancies based on quick filters
   // Note: Salary ranges are in RUB, so we convert vacancy salaries to RUB for comparison
   const filteredVacancies = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+
     return vacancies.filter((vacancy) => {
       // Заявки page = только заявки, не персональные клоны рекрутёров.
       // Личные вакансии (включая клоны) живут в "Мои вакансии".
@@ -322,7 +321,7 @@ export default function VacanciesPage() {
       }
 
       // Task 9: "My vacancies" filter
-      if (showOnlyMine && user) {
+      if (effectiveShowOnlyMine && user) {
         const isMine = vacancy.created_by === user.id
           || (vacancy.assigned_to && vacancy.assigned_to.includes(user.id))
           || vacancy.assigned_to_all === true;
@@ -333,6 +332,31 @@ export default function VacanciesPage() {
       if (assignmentFilter === 'unassigned') {
         const hasAssignment = (vacancy.assigned_to && vacancy.assigned_to.length > 0) || vacancy.assigned_to_all;
         if (hasAssignment) return false;
+      }
+
+      if (departmentFilter !== 'all' && vacancy.department_id !== departmentFilter) {
+        return false;
+      }
+
+      if (normalizedSearch) {
+        const searchableText = [
+          vacancy.title,
+          vacancy.description,
+          vacancy.requirements,
+          vacancy.responsibilities,
+          vacancy.location,
+          vacancy.department_name,
+          vacancy.created_by_name,
+          vacancy.hiring_manager_name,
+          ...(vacancy.tags || []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        if (!searchableText.includes(normalizedSearch)) {
+          return false;
+        }
       }
 
       // Main status tab filter (top tabs)
@@ -380,7 +404,7 @@ export default function VacanciesPage() {
 
       return true;
     });
-  }, [vacancies, quickFilters, getComparableSalary, showOnlyMine, assignmentFilter, statusFilter, user]);
+  }, [vacancies, searchQuery, departmentFilter, quickFilters, getComparableSalary, effectiveShowOnlyMine, assignmentFilter, statusFilter, user]);
 
   // Sync quick filters to URL
   useEffect(() => {
@@ -486,7 +510,7 @@ export default function VacanciesPage() {
   }, [vacancyId, fetchVacancy, clearCurrentVacancy]);
 
   const handleVacancyClick = (vacancy: Vacancy) => {
-    navigate(`/vacancies/${vacancy.id}`);
+    setPreviewVacancy(vacancy);
   };
 
   const handleBack = () => {
@@ -563,7 +587,7 @@ export default function VacanciesPage() {
   };
 
   const getVacancyStatusLabel = (status: VacancyStatus) =>
-    STATUS_FILTERS.find((item) => item.id === status)?.name || status;
+    getHuntflowVacancyStatusFilterLabel(status);
 
   const getVacancyKindLabel = (vacancy: Vacancy) =>
     user && vacancy.created_by !== user.id && (vacancy.assigned_to?.includes(user.id) || vacancy.assigned_to_all)
@@ -577,26 +601,6 @@ export default function VacanciesPage() {
     if (!value) return null;
     const normalizedValue = value.replace(/_/g, '-');
     return EMPLOYMENT_TYPES.find((type) => type.value === normalizedValue)?.label || value;
-  };
-
-  const handleParsedVacancy = (data: ParsedVacancy) => {
-    // Convert parsed vacancy to prefill data for the form
-    const prefill: Partial<Vacancy> = {
-      title: data.title,
-      description: data.description,
-      requirements: data.requirements,
-      responsibilities: data.responsibilities,
-      salary_min: data.salary_min,
-      salary_max: data.salary_max,
-      salary_currency: data.salary_currency || 'RUB',
-      location: data.location,
-      employment_type: data.employment_type,
-      experience_level: data.experience_level,
-    };
-    setPrefillData(prefill);
-    setShowParserModal(false);
-    setShowCreateModal(true);
-    toast.success('Данные успешно извлечены');
   };
 
   // Handle main tab change
@@ -621,86 +625,67 @@ export default function VacanciesPage() {
   // List view
   return (
     <div className="vacancies-page h-full w-full max-w-full flex flex-col overflow-hidden text-[var(--hf-vacancies-page-text)]">
-      {/* Header */}
-      <div className="p-4 border-b border-[color:var(--hf-vacancies-page-border)]">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Briefcase className="w-7 h-7 text-[var(--hf-status-blue)]" />
-              Заявки
-            </h1>
-          </div>
+      <div className="hf-vacancies-page-head">
+        <div className="hf-vacancies-title-row">
+          <h1 className="hf-vacancies-title">
+            <Briefcase className="hf-vacancies-title-icon" />
+            Заявки
+          </h1>
 
-          <div className="flex items-center gap-2">
-            {/* Navigation to candidates page */}
-            <button
-              onClick={() => navigate('/all-candidates')}
-              className="flex items-center gap-2 px-3 py-2 bg-[var(--hf-status-purple-badge)] hover:bg-[var(--hf-status-purple-bg)] text-[var(--hf-status-purple)] rounded-lg text-sm transition-colors"
-              title="Перейти к базе кандидатов"
-            >
-              <Users className="w-4 h-4" />
-              К кандидатам
-            </button>
-                <button
-                  onClick={() => setShowParserModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 glass-button rounded-lg"
-                >
-                  <Upload className="w-4 h-4" />
-                  Импорт
-                </button>
-                <button
-                  onClick={() => {
-                    setPrefillData(null);
-                    setShowCreateModal(true);
-                  }}
-                  data-tour="create-vacancy"
-                  title="Создать вакансию"
-                  className="flex items-center gap-2 px-5 py-2.5 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-400)] rounded-xl transition-all shadow-[var(--hf-shadow-lg)] shadow-[0_10px_15px_-3px_var(--hf-status-blue-badge)] hover:shadow-[0_10px_15px_-3px_var(--hf-status-blue-badge)] text-[var(--hf-white)] font-semibold text-sm animate-pulse-subtle"
-                >
-                  <Plus className="w-5 h-5" strokeWidth={2.5} />
-                  Новая вакансия
-                </button>
-          </div>
+          <button
+            onClick={() => {
+              setShowCreateModal(true);
+            }}
+            data-tour="create-vacancy"
+            title="Создать вакансию"
+            className="hf-funnels-primary-btn"
+          >
+            <Plus className="hf-funnels-primary-icon" strokeWidth={2.5} />
+            Новая вакансия
+          </button>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Search */}
-          <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[color:var(--hf-vacancies-page-faint)]" />
+        <div className="hf-vacancies-toolbar">
+          <label className={clsx('hf-funnels-search', searchQuery && 'hf-funnels-search-active')}>
+            <Search className="hf-funnels-search-icon" />
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Поиск по названию..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-[var(--hf-vacancies-page-surface)] border border-[color:var(--hf-vacancies-page-border)] rounded-lg focus:outline-none focus:border-[var(--hf-cyan-500)] text-sm placeholder:text-[color:var(--hf-vacancies-page-soft)]"
+              className="hf-funnels-search-input"
             />
-          </div>
-
-          {/* Status filter */}
-          <div className="flex items-center gap-1 p-1 bg-[var(--hf-vacancies-page-surface-soft)] rounded-lg">
-            {STATUS_FILTERS.map((status) => (
+            {searchQuery && (
               <button
-                key={status.id}
-                onClick={() => setStatusFilter(status.id)}
-                className={clsx(
-                  'px-3 py-1.5 text-sm rounded-md transition-all',
-                  statusFilter === status.id
-                    ? 'bg-[var(--hf-cyan-700)] text-[var(--hf-white)]'
-                    : 'text-[color:var(--hf-vacancies-page-muted)] hover:text-[var(--hf-vacancies-page-text)] hover:bg-[var(--hf-vacancies-page-chip)]'
-                )}
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="hf-funnels-search-clear"
+                title="Очистить поиск"
               >
-                {status.name}
+                <X className="hf-funnels-search-clear-icon" />
               </button>
-            ))}
-          </div>
+            )}
+          </label>
 
-          {/* Department filter */}
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as VacancyStatus | 'all')}
+            className="hf-vacancies-select"
+            aria-label="Статус заявки"
+          >
+            {HUNTFLOW_VACANCY_STATUS_FILTERS.map((status) => (
+              <option key={status.id} value={status.id}>
+                {status.id === 'all' ? 'Все заявки' : status.label}
+              </option>
+            ))}
+          </select>
+
           <select
             value={departmentFilter}
             onChange={(e) => setDepartmentFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-            className="px-3 py-2 bg-[var(--hf-vacancies-page-surface)] border border-[color:var(--hf-vacancies-page-border)] rounded-lg text-sm focus:outline-none focus:border-[var(--hf-cyan-500)]"
+            className="hf-vacancies-select"
+            aria-label="Отдел"
           >
             <option value="all">Все отделы</option>
             {departments.map((dept) => (
@@ -710,65 +695,56 @@ export default function VacanciesPage() {
             ))}
           </select>
 
-          {/* Task 9: "My vacancies" toggle */}
-          <button
-            onClick={() => setShowOnlyMine(!showOnlyMine)}
-            className={clsx(
-              'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border',
-              showOnlyMine
-                ? 'bg-[var(--hf-status-blue-badge)] border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
-                : 'border-[color:var(--hf-vacancies-page-border)] text-[color:var(--hf-vacancies-page-muted)] hover:text-[var(--hf-vacancies-page-text)] hover:bg-[var(--hf-vacancies-page-chip)]'
-            )}
-          >
-            <Users className="w-4 h-4" />
-            {showOnlyMine ? 'Только мои' : 'Все вакансии'}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowOnlyMine(!showOnlyMine)}
+              className={clsx(
+                'hf-funnels-filter hf-vacancies-toolbar-button',
+                showOnlyMine && 'hf-vacancies-toolbar-button-active'
+              )}
+            >
+              <Users className="hf-funnels-filter-leading-icon" />
+              {showOnlyMine ? 'Только мои' : 'Доступ: все'}
+            </button>
+          )}
 
-          {/* Task 12: Unassigned requests filter */}
           {isAdmin && (
             <button
               onClick={() => setAssignmentFilter(prev => prev === 'all' ? 'unassigned' : 'all')}
               className={clsx(
-                'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border',
-                assignmentFilter === 'unassigned'
-                  ? 'bg-[var(--hf-status-yellow-badge)] border-[color:var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]'
-                  : 'border-[color:var(--hf-vacancies-page-border)] text-[color:var(--hf-vacancies-page-muted)] hover:text-[var(--hf-vacancies-page-text)] hover:bg-[var(--hf-vacancies-page-chip)]'
+                'hf-funnels-filter hf-vacancies-toolbar-button',
+                assignmentFilter === 'unassigned' && 'hf-vacancies-toolbar-button-active'
               )}
             >
-              <UserPlus className="w-4 h-4" />
-              {assignmentFilter === 'unassigned' ? 'Нераспределённые' : 'Все заявки'}
+              <UserPlus className="hf-funnels-filter-leading-icon" />
+              {assignmentFilter === 'unassigned' ? 'Без рекрутера' : 'Все назначения'}
             </button>
           )}
 
-          {/* Quick Filters Dropdown */}
           <div className="relative" ref={filtersDropdownRef}>
             <button
               onClick={() => setShowFiltersDropdown(!showFiltersDropdown)}
               className={clsx(
-                'flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors',
-                activeFilterCount > 0
-                  ? 'bg-[var(--hf-status-blue-badge)] border-[color:var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]'
-                  : 'glass-button'
+                'hf-funnels-filter hf-vacancies-toolbar-button',
+                activeFilterCount > 0 && 'hf-vacancies-toolbar-button-active'
               )}
             >
-              <Filter className="w-4 h-4" />
+              <Filter className="hf-funnels-filter-leading-icon" />
               Фильтры
               {activeFilterCount > 0 && (
-                <span className="flex items-center justify-center w-5 h-5 bg-[var(--hf-cyan-700)] text-[var(--hf-white)] text-xs rounded-full">
+                <span className="hf-vacancies-filter-count">
                   {activeFilterCount}
                 </span>
               )}
-              <ChevronDown className={clsx('w-4 h-4 transition-transform', showFiltersDropdown && 'rotate-180')} />
+              <ChevronDown className={clsx('hf-funnels-filter-icon', showFiltersDropdown && 'hf-funnels-filter-icon-open')} />
             </button>
 
-            {/* Dropdown Panel */}
             <>
               {showFiltersDropdown && (
                 <div
-                  className="absolute left-0 2xl:left-auto 2xl:right-0 top-full mt-2 w-80 border border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface)] rounded-xl shadow-[var(--hf-shadow-xl)] z-50 overflow-hidden"
+                  className="hf-vacancies-filter-menu"
                 >
-                  {/* Header */}
-                  <div className="flex items-center justify-between p-3 border-b border-[color:var(--hf-vacancies-page-border)]">
+                  <div className="hf-vacancies-filter-menu-head">
                     <span className="font-medium text-sm">Быстрые фильтры</span>
                     {activeFilterCount > 0 && (
                       <button
@@ -801,7 +777,7 @@ export default function VacanciesPage() {
                             )}
                           >
                             {quickFilters.statuses.includes(status) && <Check className="w-3 h-3" />}
-                            {STATUS_FILTERS.find(s => s.id === status)?.name || status}
+                            {getHuntflowVacancyStatusFilterLabel(status)}
                           </button>
                         ))}
                       </div>
@@ -892,7 +868,6 @@ export default function VacanciesPage() {
               variant={searchQuery ? 'search' : activeFilterCount > 0 ? 'filter' : 'primary'}
               query={searchQuery}
               onCreate={() => {
-                setPrefillData(null);
                 setShowCreateModal(true);
               }}
             />
@@ -1021,8 +996,7 @@ export default function VacanciesPage() {
                       )}
                     </div>
 
-                    {(showAdminAssign || showAdminReassign || showTakeBtn || vacancy.priority > 0 || vacancy.visible_to_all) && (
-                      <div className="hf-vacancies-search-side">
+                    <div className="hf-vacancies-search-side">
                         {vacancy.visible_to_all && (
                           <span className="hf-vacancies-search-chip" title="Видна всем сотрудникам">
                             Общая
@@ -1036,7 +1010,8 @@ export default function VacanciesPage() {
                           {showAdminAssign && (
                             <button
                               onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
-                            className="hf-vacancies-search-action"
+                            className="hf-vacancies-search-action hf-vacancies-search-action-wide"
+                            title={isAlreadyAssigned ? 'Переназначить' : 'Назначить'}
                             >
                             <UserPlus className="hf-vacancies-search-action-icon" />
                               {isAlreadyAssigned ? 'Переназначить' : 'Назначить'}
@@ -1045,7 +1020,8 @@ export default function VacanciesPage() {
                           {showAdminReassign && (
                             <button
                               onClick={(e) => { e.stopPropagation(); setAssigningVacancy(vacancy); }}
-                            className="hf-vacancies-search-action"
+                            className="hf-vacancies-search-action hf-vacancies-search-action-wide"
+                            title="Переназначить"
                             >
                             <UserPlus className="hf-vacancies-search-action-icon" />
                               Переназначить
@@ -1055,18 +1031,54 @@ export default function VacanciesPage() {
                             <button
                               onClick={(e) => { e.stopPropagation(); handleTakeVacancy(vacancy); }}
                               disabled={takingVacancyId === vacancy.id}
-                            className="hf-vacancies-search-action hf-vacancies-search-action-green"
+                            className="hf-vacancies-search-action hf-vacancies-search-action-green hf-vacancies-search-action-wide"
+                            title="Взять в работу"
                             >
                               {takingVacancyId === vacancy.id ? (
                               <div className="hf-vacancies-search-spinner" />
                               ) : (
                               <PlayCircle className="hf-vacancies-search-action-icon" />
                               )}
-                              Взять в работу
                             </button>
                           )}
+                        <div className="hf-vacancies-row-actions">
+                          <button
+                            type="button"
+                            className="hf-vacancies-search-action"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingVacancy(vacancy);
+                            }}
+                            title="Редактировать"
+                          >
+                            <Pencil className="hf-vacancies-search-action-icon" />
+                          </button>
+                          {(vacancy.status === 'open' || vacancy.status === 'paused') && (
+                            <button
+                              type="button"
+                              className="hf-vacancies-search-action"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCloseClick(vacancy);
+                              }}
+                              title="Закрыть вакансию"
+                            >
+                              <Archive className="hf-vacancies-search-action-icon" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="hf-vacancies-search-action"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteClick(vacancy);
+                            }}
+                            title="Удалить"
+                          >
+                            <Trash2 className="hf-vacancies-search-action-icon" />
+                          </button>
                         </div>
-                      )}
+                    </div>
                   </article>
                 </ContextMenu>
                 );
@@ -1082,29 +1094,15 @@ export default function VacanciesPage() {
           <VacancyForm
             key={editingVacancy ? `edit-list-${editingVacancy.id}` : 'create'}
             vacancy={editingVacancy || undefined}
-            prefillData={prefillData || undefined}
             onClose={() => {
               setShowCreateModal(false);
               setEditingVacancy(null);
-              setPrefillData(null);
             }}
             onSuccess={() => {
               setShowCreateModal(false);
               setEditingVacancy(null);
-              setPrefillData(null);
               fetchVacancies();
             }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Parser Modal */}
-      <AnimatePresence>
-        {showParserModal && (
-          <ParserModal
-            type="vacancy"
-            onClose={() => setShowParserModal(false)}
-            onParsed={(data) => handleParsedVacancy(data as ParsedVacancy)}
           />
         )}
       </AnimatePresence>
@@ -1131,6 +1129,21 @@ export default function VacanciesPage() {
           onClose={() => setAssigningVacancy(null)}
           onAssigned={() => {
             setAssigningVacancy(null);
+            fetchVacancies();
+          }}
+        />
+      )}
+
+      {previewVacancy && (
+        <SidebarRequestPreviewModal
+          vacancy={previewVacancy}
+          onClose={() => setPreviewVacancy(null)}
+          onEdit={() => {
+            setPreviewVacancy(null);
+            setEditingVacancy(previewVacancy);
+          }}
+          onTaken={() => {
+            setPreviewVacancy(null);
             fetchVacancies();
           }}
         />

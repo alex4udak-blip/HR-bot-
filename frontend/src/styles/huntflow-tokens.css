@@ -162,7 +162,7 @@
   /* Tabs */
   /* Активный таб подсвечивается cyan-500 (видели на huntflow при выборе) */
 
-  /* Sidebar (фирменный тёмно-синий) */
+  /* Sidebar (фирменный тёмно-синий, не зависит от app theme) */
   --hf-sidebar-bg:               #1d2441;
   --hf-sidebar-text:             var(--hf-white);
   --hf-sidebar-text-secondary:   var(--hf-white-alpha-60);
@@ -466,7 +466,7 @@
   --hf-candidates-stage-tooltip-left-late: 660px;
   --hf-candidates-stage-tooltip-shadow: 0 2px 6px var(--hf-black-alpha-30);
   --hf-candidates-stagebar-h:       52px;
-  --hf-candidates-search-toggle-w:  69px;
+  --hf-candidates-search-toggle-w:  44px;
   --hf-candidates-search-icon:      18px;
   --hf-candidates-search-clear-pr:  42px;
   --hf-candidates-search-action-right: 28px;
@@ -927,6 +927,28 @@
   --hf-vacancies-page-muted: var(--hf-main-700);
   --hf-vacancies-page-soft: var(--hf-main-600);
   --hf-vacancies-page-faint: var(--hf-main-500);
+  --hf-funnels-head-px: 8px;
+  --hf-funnels-head-py: 8px;
+  --hf-funnels-title-gap: 12px;
+  --hf-funnels-title-icon: 28px;
+  --hf-funnels-toolbar-gap: 8px;
+  --hf-funnels-toolbar-h: 52px;
+  --hf-funnels-toolbar-radius: 12px;
+  --hf-funnels-search-w: 360px;
+  --hf-funnels-search-closed-w: 44px;
+  --hf-funnels-search-icon: 18px;
+  --hf-funnels-search-input-px: 42px;
+  --hf-funnels-search-clear: 28px;
+  --hf-funnels-filter-h: 40px;
+  --hf-funnels-filter-px: 14px;
+  --hf-funnels-small-icon: 16px;
+  --hf-funnels-mobile-icon: 20px;
+  --hf-funnels-menu-top: 8px;
+  --hf-funnels-menu-w: 300px;
+  --hf-funnels-menu-option-h: 38px;
+  --hf-funnels-menu-check: 15px;
+  --hf-funnels-recruiter-menu-w: 360px;
+  --hf-funnels-avatar: 26px;
 
   /* Candidate modal */
   --hf-candidate-modal-top: 8px;

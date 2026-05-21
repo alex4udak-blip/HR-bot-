@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -31,10 +31,6 @@ import {
   MessageCircle,
   Maximize2,
   Type,
-  List,
-  ListOrdered,
-  Link as LinkIcon,
-  AtSign,
   Upload,
 } from "lucide-react";
 import clsx from "clsx";
@@ -66,6 +62,13 @@ import type { EntityFile } from "@/services/api/entities";
 import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
 import ParserModal from "@/components/parser/ParserModal";
 import { useAuthStore } from "@/stores/authStore";
+import { HuntflowComposer } from "@/components/hr/HuntflowComposer";
+import {
+  HuntflowActionChip as ActionChip,
+  HuntflowEditorIcon,
+  HuntflowInfoRow as InfoRow,
+  HuntflowOptionsIcon,
+} from "@/components/hr/HuntflowControls";
 
 // ---------- constants ----------
 
@@ -832,9 +835,12 @@ export default function AllCandidatesPage() {
     const columns = board?.columns || [];
     return columns.filter((column) => column.status !== "withdrawn");
   }, [board?.columns]);
+  const [expandedEmptyStageGroups, setExpandedEmptyStageGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
   type TopStageNavItem =
     | { type: "stage"; column: KanbanColumn }
-    | { type: "empty-group"; id: string; count: number };
+    | { type: "empty-group"; id: string; columns: KanbanColumn[]; count: number };
 
   const topStageNavItems = useMemo<TopStageNavItem[]>(() => {
     const items: TopStageNavItem[] = [];
@@ -845,6 +851,7 @@ export default function AllCandidatesPage() {
       items.push({
         type: "empty-group",
         id: emptyRun.map((column) => column.status).join("-"),
+        columns: [...emptyRun],
         count: emptyRun.length,
       });
       emptyRun = [];
@@ -874,7 +881,7 @@ export default function AllCandidatesPage() {
         : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
           ? "этапа"
           : "этапов";
-    return `• • ${count} ${noun} без кандидатов • •`;
+    return `${count} ${noun} без кандидатов`;
   };
 
   const getTopStageLabel = (column: KanbanColumn) => {
@@ -997,16 +1004,61 @@ export default function AllCandidatesPage() {
 
               {topStageNavItems.map((item) => {
                 if (item.type === "empty-group") {
+                  const isExpanded = expandedEmptyStageGroups.has(item.id);
                   return (
-                    <motion.div
-                      key={`empty-${item.id}`}
-                      layout="position"
-                      transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
-                      className="hf-top-stage-empty-group"
-                      aria-disabled="true"
-                    >
-                      {getEmptyStageGroupLabel(item.count)}
-                    </motion.div>
+                    <Fragment key={`empty-${item.id}`}>
+                      <motion.button
+                        layout="position"
+                        transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
+                        type="button"
+                        className={clsx(
+                          "hf-top-stage-empty-group",
+                          isExpanded && "hf-top-stage-empty-group-expanded",
+                        )}
+                        aria-expanded={isExpanded}
+                        title={isExpanded ? "Свернуть пустые этапы" : "Показать пустые этапы"}
+                        onClick={() => {
+                          setExpandedEmptyStageGroups((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(item.id)) next.delete(item.id);
+                            else next.add(item.id);
+                            return next;
+                          });
+                        }}
+                      >
+                        <span>{getEmptyStageGroupLabel(item.count)}</span>
+                        <ChevronDown className="hf-top-stage-empty-group-icon" />
+                      </motion.button>
+                      {isExpanded && item.columns.map((col) => {
+                        const isActive = activeTab === col.status;
+                        return (
+                          <motion.button
+                            key={col.status}
+                            layout="position"
+                            transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
+                            type="button"
+                            onClick={() => {
+                              setActiveTab(col.status);
+                              setSelectedCard(null);
+                            }}
+                            className={clsx(
+                              "hf-top-stage-item hf-top-stage-empty-stage",
+                              isActive
+                                ? "hf-top-stage-item-active"
+                                : "hf-top-stage-item-idle",
+                            )}
+                          >
+                            {getTopStageLabel(col)}
+                            <span className="hf-top-stage-badge hf-top-stage-badge-muted">
+                              {getTopStageCount(col)}
+                            </span>
+                            {isActive && (
+                              <span className="hf-top-stage-underline" />
+                            )}
+                          </motion.button>
+                        );
+                      })}
+                    </Fragment>
                   );
                 }
 
@@ -2457,132 +2509,32 @@ const InfoTab = memo(function InfoTab({
         </div>
 
         {/* ---- Comment textarea (Huntflow: "Написать комментарий") ---- */}
-        <div className="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[6px] relative">
-          {isCommentComposerOpen ? (
-            <div className="w-full overflow-hidden rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)] hf-dark-disabled:text-[var(--hf-white)]">
-              <div className="flex h-[45px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[10px] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
-                <button
-                  type="button"
-                  className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] font-medium leading-none hover:bg-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
-                >
-                  B
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex h-[28px] min-w-[28px] items-center justify-center rounded-[6px] px-[6px] text-[length:var(--hf-fs-s)] italic leading-none hover:bg-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
-                >
-                  I
-                </button>
-                <button
-                  type="button"
-                  className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-                >
-                  <List className="h-[16px] w-[16px]" />
-                </button>
-                <button
-                  type="button"
-                  className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-                >
-                  <ListOrdered className="h-[16px] w-[16px]" />
-                </button>
-                <button
-                  type="button"
-                  className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-                >
-                  <LinkIcon className="h-[16px] w-[16px]" />
-                </button>
-                <button
-                  type="button"
-                  className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-                >
-                  <AtSign className="h-[16px] w-[16px]" />
-                </button>
-              </div>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                onFocus={() => setCommentComposerOpen(true)}
-                placeholder="Написать комментарий"
-                rows={1}
-                className="block h-[56px] w-full resize-none border-0 bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] hf-dark-disabled:text-[var(--hf-white)]"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleComment();
-                  }
-                }}
-              />
-              <div className="flex h-[53px] items-start gap-[var(--hf-space-s)] px-[var(--hf-space-xxl)] pb-[16px] pt-[8px]">
-                <ActionChip
-                  icon={Mail}
-                  label="Письмо"
-                  onClick={handleEmail}
-                />
-                <ActionChip
-                  icon={Calendar}
-                  label="Интервью"
-                  onClick={handleInterview}
-                />
-                <ActionChip
-                  icon={ThumbsUp}
-                  label="Оффер"
-                  onClick={handleOffer}
-                />
-                <ActionChip
-                  icon={Paperclip}
-                  label="Файл"
-                  onClick={() => fileInputRef.current?.click()}
-                  loading={uploading}
-                />
-                {comment.trim() && (
-                  <button
-                    onClick={handleComment}
-                    className="ml-auto inline-flex h-[28px] items-center rounded-[6px] bg-[var(--hf-main-900)] px-[12px] text-[length:var(--hf-fs-2xs)] font-medium text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] hf-dark-disabled:bg-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-90)]"
-                  >
-                    Отправить
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              onFocus={() => setCommentComposerOpen(true)}
-              placeholder="Написать комментарий"
-              rows={1}
-              className="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] pr-20 text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:placeholder:text-[var(--hf-dark-500)] hf-dark-disabled:focus:border-[color:var(--hf-status-blue-badge)]"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleComment();
-                }
-              }}
-            />
-          )}
-          {isCommentComposerOpen && (
-            <div className="mt-[10px] flex h-[26px] items-start gap-[var(--hf-space-s)]">
-              <button
-                type="button"
-                onClick={handleComment}
-                disabled={!comment.trim()}
-                className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-05)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[color:var(--hf-black-alpha-25)] transition-colors enabled:bg-[var(--hf-main-900)] enabled:text-[var(--hf-white)] enabled:hover:bg-[var(--hf-main-800)] disabled:cursor-default hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[color:var(--hf-white-alpha-35)] hf-dark-disabled:enabled:bg-[var(--hf-white)] hf-dark-disabled:enabled:text-[var(--hf-main-900)]"
-              >
-                Сохранить
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setComment("");
-                  setCommentComposerOpen(false);
-                }}
-                className="inline-flex h-[32px] items-center justify-center rounded-[var(--hf-radius-s)] border border-transparent bg-[var(--hf-black-alpha-06)] px-[12px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-08)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
-              >
-                Отмена
-              </button>
-            </div>
-          )}
-        </div>
+        <HuntflowComposer
+          wrapperClassName="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[6px] relative"
+          value={comment}
+          onChange={setComment}
+          open={commentComposerOpen}
+          onOpenChange={setCommentComposerOpen}
+          placeholder="Написать комментарий"
+          onSubmit={handleComment}
+          onCancel={() => {
+            setComment("");
+            setCommentComposerOpen(false);
+          }}
+          showMention
+          collapsedClassName="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] pr-20 text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:placeholder:text-[var(--hf-dark-500)] hf-dark-disabled:focus:border-[color:var(--hf-status-blue-badge)]"
+          actions={[
+            { icon: Mail, label: "Письмо", onClick: handleEmail },
+            { icon: Calendar, label: "Интервью", onClick: handleInterview },
+            { icon: ThumbsUp, label: "Оффер", onClick: handleOffer },
+            {
+              icon: Paperclip,
+              label: "Файл",
+              onClick: () => fileInputRef.current?.click(),
+              loading: uploading,
+            },
+          ]}
+        />
 
         {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл | Отказ) ---- */}
         <div className="px-[var(--hf-space-xxl)] pb-hf-l flex items-center gap-[var(--hf-space-s)] border-b border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] flex-wrap">
@@ -2611,13 +2563,14 @@ const InfoTab = memo(function InfoTab({
 
         {/* ---- Комментарии: отдельный блок, фон по стадии в момент комментария ---- */}
         {Array.isArray(card.extra_data?.notes) &&
-          card.extra_data.notes.length > 0 && (
-            <div className="mb-6">
-              <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[var(--hf-dark-500)] mb-3 uppercase tracking-wider">
+          (card.extra_data.notes as NoteShape[]).some((note) => Boolean(note.stage)) && (
+            <div className="hf-stage-comments-section">
+              <div className="hf-stage-comments-heading">
                 Комментарии
               </div>
               <div className="space-y-2">
-                {(card.extra_data.notes as any[])
+                {(card.extra_data.notes as NoteShape[])
+                  .filter((note) => Boolean(note.stage))
                   .slice()
                   .sort((a, b) => {
                     const ta = a?.date ? new Date(a.date).getTime() : 0;
@@ -2883,53 +2836,119 @@ const PersonalNotesTab = memo(function PersonalNotesTab({
   onFile: () => void;
   uploading: boolean;
 }) {
+  const { user: currentUser } = useAuthStore();
   const [note, setNote] = useState("");
-  const noteCreatedAt =
-    (card.extra_data?.resume_demo as { saved_at?: string } | undefined)
-      ?.saved_at ||
-    card.created_at ||
-    new Date().toISOString();
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [localNotes, setLocalNotes] = useState<NoteShape[]>(() =>
+    Array.isArray(card.extra_data?.notes)
+      ? ([...(card.extra_data.notes as NoteShape[])] as NoteShape[])
+      : [],
+  );
+
+  useEffect(() => {
+    setNote("");
+    setComposerOpen(false);
+    setSaving(false);
+    setLocalNotes(
+      Array.isArray(card.extra_data?.notes)
+        ? ([...(card.extra_data.notes as NoteShape[])] as NoteShape[])
+        : [],
+    );
+  }, [card.id, card.extra_data?.notes]);
+
+  const personalNotes = localNotes.filter((item) => !item.stage);
+
+  const handleSavePersonalNote = async () => {
+    const text = note.trim();
+    if (!text) return;
+    setSaving(true);
+    try {
+      const resp = await addEntityNote(card.id, {
+        text,
+        stage: null,
+        stage_label: "Личная заметка",
+      });
+      if (!card.extra_data) card.extra_data = {};
+      const existingNotes: NoteShape[] = Array.isArray(card.extra_data.notes)
+        ? (card.extra_data.notes as NoteShape[])
+        : [];
+      const nextNotes = [...existingNotes, resp.note as NoteShape];
+      card.extra_data.notes = nextNotes;
+      setLocalNotes(nextNotes);
+      setNote("");
+      setComposerOpen(false);
+      toast.success("Заметка сохранена");
+    } catch (err) {
+      console.error("Failed to save personal note:", err);
+      toast.error("Не удалось сохранить заметку");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renderNoteCard = (item: NoteShape, index: number) => {
+    const authorName = item.author_name || currentUser?.name || "Я";
+    const initials = authorName.trim()[0]?.toUpperCase() || "Я";
+    return (
+      <div
+        key={item.id || `note-${item.date || index}`}
+        className="hf-vacancy-note-card"
+      >
+        <div className="hf-vacancy-note-avatar">{initials}</div>
+        <div className="hf-vacancy-note-body">
+          <div className="hf-vacancy-note-meta">
+            <span className="hf-vacancy-note-author">{authorName}</span>
+            {item.stage && (
+              <span className="hf-vacancy-note-stage">
+                {item.stage_label || item.stage}
+              </span>
+            )}
+            <span className="hf-vacancy-note-date">
+              {item.date ? formatDateFull(item.date) : ""}
+            </span>
+          </div>
+          <div className="hf-vacancy-note-text">{item.text}</div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="pt-[35px] pb-[28px]">
-      <textarea
+      <HuntflowComposer
+        wrapperClassName="hf-vacancy-personal-composer"
         value={note}
-        onChange={(event) => setNote(event.target.value)}
+        onChange={setNote}
+        open={composerOpen}
+        onOpenChange={setComposerOpen}
         placeholder="Написать заметку"
-        rows={1}
-        className="block h-[58px] w-full resize-none rounded-hf-s border border-[var(--hf-main-300)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[14px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:placeholder:text-[color:var(--hf-white-alpha-35)]"
+        onSubmit={handleSavePersonalNote}
+        onCancel={() => {
+          setNote("");
+          setComposerOpen(false);
+        }}
+        saving={saving}
+        actions={[
+          { icon: Mail, label: "Письмо", onClick: onEmail },
+          {
+            icon: Paperclip,
+            label: "Файл",
+            onClick: onFile,
+            loading: uploading,
+          },
+        ]}
       />
 
-      <div className="mt-[12px] flex items-center gap-[6px]">
-        <ActionChip
-          icon={Mail}
-          label="Письмо"
-          onClick={onEmail}
-        />
-        <ActionChip
-          icon={Paperclip}
-          label="Файл"
-          onClick={onFile}
-          loading={uploading}
-        />
-      </div>
-
-      <div className="mt-[28px] relative ml-[22px] border-l border-[var(--hf-main-300)] pl-[48px] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
-        <div className="relative pb-[4px]">
-          <TimelineUserGlyph surface="white" align="notes" />
-          <div className="flex items-center gap-0 text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-            <span className="mr-[8px] min-w-[10px] font-medium text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-              Я
-            </span>
-            <span>{formatTimelineDate(noteCreatedAt)}</span>
-            <TimelineMetaIcon />
-            <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
-          </div>
-          <div className="mt-[2px] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] font-normal text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
-            Кандидат добавлен
-          </div>
+      <div className="hf-vacancy-notes-heading">Заметки</div>
+      {personalNotes.length > 0 ? (
+        <div className="hf-vacancy-notes-list">
+          {personalNotes.map(renderNoteCard)}
         </div>
-      </div>
+      ) : (
+        <div className="hf-vacancy-notes-empty">Нет заметок</div>
+      )}
+
     </div>
   );
 });
@@ -3642,190 +3661,6 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
 // SUB-COMPONENTS
 // ================================================================
 
-function HuntflowOptionsIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M3 8h12m0 0a3 3 0 1 0 6 0 3 3 0 0 0-6 0Zm-6 8h12M9 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** Huntflow info row with dotted line separator */
-function InfoRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="hf-info-row group">
-      <span className="hf-info-label">
-        <span className="hf-info-label-text">
-          {label}
-        </span>
-        <span className="hf-info-label-line" />
-      </span>
-      <div className="hf-info-value">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-const HUNTFLOW_ACTION_ICON_BY_LABEL: Record<
-  string,
-  { id: string; viewBox: string; label: string }
-> = {
-  Письмо: { id: "mail-usage", viewBox: "0 0 18 18", label: "mail" },
-  Интервью: {
-    id: "calendar-usage",
-    viewBox: "0 0 20 20",
-    label: "calendar",
-  },
-  Оффер: {
-    id: "thumbs-up-usage",
-    viewBox: "0 0 18 18",
-    label: "thumbs-up",
-  },
-  Файл: { id: "clip-usage", viewBox: "0 0 18 18", label: "clip" },
-};
-
-const HUNTFLOW_EDITOR_ICON_BY_LABEL: Record<
-  string,
-  { id: string; viewBox: string; label: string }
-> = {
-  bold: { id: "bold-usage", viewBox: "0 0 20 20", label: "bold" },
-  italic: { id: "italic-usage", viewBox: "0 0 20 20", label: "italic" },
-  "bullet-list": {
-    id: "bullet-list-usage",
-    viewBox: "0 0 20 20",
-    label: "bullet-list",
-  },
-  "numbered-list": {
-    id: "numbered-list-usage",
-    viewBox: "0 0 20 20",
-    label: "numbered-list",
-  },
-  link: { id: "link-usage", viewBox: "0 0 20 20", label: "link" },
-  at: { id: "at-usage", viewBox: "0 0 20 20", label: "at" },
-};
-
-function HuntflowActionIcon({ label }: { label: string }) {
-  const icon = HUNTFLOW_ACTION_ICON_BY_LABEL[label];
-
-  if (!icon) return null;
-
-  return (
-    <svg
-      aria-label={icon.label}
-      className="h-[18px] w-[18px]"
-      viewBox={icon.viewBox}
-      role="img"
-    >
-      <use
-        href={`/huntflow-sprite.svg#${icon.id}`}
-        xlinkHref={`/huntflow-sprite.svg#${icon.id}`}
-      />
-    </svg>
-  );
-}
-
-function HuntflowUnavailableIcon() {
-  return (
-    <svg
-      aria-label="unavailable"
-      className="h-[8px] w-[12px]"
-      viewBox="0 0 11 13"
-      role="img"
-    >
-      <use
-        href="/huntflow-sprite.svg#unavailable-usage"
-        xlinkHref="/huntflow-sprite.svg#unavailable-usage"
-      />
-    </svg>
-  );
-}
-
-function HuntflowEditorIcon({ name }: { name: string }) {
-  const icon = HUNTFLOW_EDITOR_ICON_BY_LABEL[name];
-
-  if (!icon) return null;
-
-  return (
-    <svg
-      aria-label={icon.label}
-      className="h-[20px] w-[20px]"
-      viewBox={icon.viewBox}
-      role="img"
-    >
-      <use
-        href={`/huntflow-sprite.svg#${icon.id}`}
-        xlinkHref={`/huntflow-sprite.svg#${icon.id}`}
-      />
-    </svg>
-  );
-}
-
-/** Action chip button (Huntflow: bordered pill with icon + text) */
-function ActionChip({
-  icon: Icon,
-  label,
-  onClick,
-  danger,
-  loading,
-  hasNotification,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  danger?: boolean;
-  loading?: boolean;
-  hasNotification?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      className={clsx(
-        "hf-action-chip",
-        danger && "hf-action-chip-danger",
-        loading && "hf-action-chip-loading",
-      )}
-    >
-      <span className="hf-action-chip-icon">
-        {loading ? (
-          <HfLoadingSpinner
-            size="var(--hf-loading-spinner-size-md)"
-            stroke="var(--hf-loading-spinner-border)"
-          />
-        ) : HUNTFLOW_ACTION_ICON_BY_LABEL[label] ? (
-          <HuntflowActionIcon label={label} />
-        ) : (
-          <Icon className="hf-action-chip-lucide" />
-        )}
-        {hasNotification && (
-          <span className="hf-action-chip-unavailable">
-            <HuntflowUnavailableIcon />
-          </span>
-        )}
-      </span>
-      {label}
-    </button>
-  );
-}
-
 // ================================================================
 // NEW / EDIT CANDIDATE MODALS
 // ================================================================
@@ -4327,7 +4162,7 @@ function buildEditResumeText(
     .join("\n\n");
 }
 
-function EditCandidateModal({
+export function EditCandidateModal({
   card,
   onClose,
   onSaved,

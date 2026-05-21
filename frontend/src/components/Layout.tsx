@@ -39,7 +39,7 @@ import {
   Link2,
   type LucideIcon,
 } from "lucide-react";
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import type { ReactNode } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useVacancyStore } from "@/stores/vacancyStore";
@@ -91,6 +91,14 @@ const HF_HR_SIDEBAR_WIDTH_LEGACY_STORAGE_KEY = "left-menu-width";
 const HF_HR_SIDEBAR_WIDTH_MIN = 266;
 const HF_HR_SIDEBAR_WIDTH_DEFAULT = 266;
 const HF_HR_SIDEBAR_WIDTH_MAX = 416;
+const APP_THEME_STORAGE_KEY = "theme";
+const APP_DEFAULT_THEME = "dark";
+
+function readStoredAppTheme() {
+  if (typeof window === "undefined") return APP_DEFAULT_THEME;
+  const stored = window.localStorage.getItem(APP_THEME_STORAGE_KEY);
+  return stored === "light" || stored === "dark" ? stored : APP_DEFAULT_THEME;
+}
 
 function clampHrSidebarWidth(width: number) {
   return Math.min(
@@ -174,7 +182,7 @@ function RequestPreviewBlock({
   );
 }
 
-function SidebarRequestPreviewModal({
+export function SidebarRequestPreviewModal({
   vacancy,
   onClose,
   onEdit,
@@ -723,6 +731,25 @@ export default function Layout() {
     }
   }, [routeBlock, fetchVacancies]);
 
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (isHrSidebar) {
+      root.setAttribute("data-theme", "light");
+      root.dataset.hrForcedLightTheme = "true";
+      return () => {
+        if (root.dataset.hrForcedLightTheme === "true") {
+          root.setAttribute("data-theme", readStoredAppTheme());
+          delete root.dataset.hrForcedLightTheme;
+        }
+      };
+    }
+
+    if (root.dataset.hrForcedLightTheme === "true") {
+      root.setAttribute("data-theme", readStoredAppTheme());
+      delete root.dataset.hrForcedLightTheme;
+    }
+  }, [isHrSidebar]);
+
   useEffect(() => {
     if (!showHrUserMenu) {
       setShowNotifications(false);
@@ -791,15 +818,22 @@ export default function Layout() {
 
   const openVacancyModal = useCallback(
     async (id: number) => {
+      const cachedVacancy = vacancies.find((v) => v.id === id);
+      if (cachedVacancy) {
+        setSidebarVacancy(cachedVacancy);
+        setSidebarVacancyMode("view");
+      }
       try {
         const v = await getVacancy(id);
         setSidebarVacancy(v);
         setSidebarVacancyMode("view");
       } catch {
-        navigate(`/vacancies/${id}`);
+        if (!cachedVacancy) {
+          toast.error("Не удалось открыть заявку");
+        }
       }
     },
-    [navigate],
+    [vacancies],
   );
 
   // Count of vacancies for the "Заявки" badge.
@@ -1556,9 +1590,9 @@ export default function Layout() {
                         </button>
 
                         {showNotifications && (
-                          <div className="absolute bottom-full left-0 z-[120] mb-2 w-80 max-h-96 overflow-hidden rounded-xl border border-[color:var(--hf-white-alpha-10)] bg-[var(--hf-dark-panel-alpha-95)] shadow-[var(--hf-shadow-2xl)] backdrop-blur-xl">
-                            <div className="flex items-center justify-between border-b border-[color:var(--hf-white-alpha-05)] px-4 py-3">
-                              <span className="text-sm font-medium text-[var(--hf-white)]">
+                          <div className="hf-hr-notifications-popover absolute bottom-full left-0 z-[120] mb-2 w-80 max-h-96 overflow-hidden rounded-xl shadow-[var(--hf-shadow-2xl)]">
+                            <div className="hf-hr-notifications-header flex items-center justify-between px-4 py-3">
+                              <span className="hf-hr-notifications-title text-sm font-medium">
                                 Уведомления
                               </span>
                               {unreadCount > 0 && (
@@ -1578,7 +1612,7 @@ export default function Layout() {
                                   <div className="hf-loading-spinner h-5 w-5 border-2" />
                                 </div>
                               ) : notificationsList.length === 0 ? (
-                                <div className="py-8 text-center text-xs text-[color:var(--hf-white-alpha-30)]">
+                                <div className="hf-hr-notifications-empty py-8 text-center text-xs">
                                   Нет уведомлений
                                 </div>
                               ) : (
@@ -1594,8 +1628,8 @@ export default function Layout() {
                                       }
                                     }}
                                     className={clsx(
-                                      "w-full border-b border-[color:var(--hf-white-alpha-03)] px-4 py-3 text-left transition-colors hover:bg-[var(--hf-white-alpha-03)]",
-                                      !notif.is_read && "bg-[var(--hf-white-alpha-05)]",
+                                      "hf-hr-notifications-item w-full px-4 py-3 text-left transition-colors",
+                                      !notif.is_read && "hf-hr-notifications-item-unread",
                                     )}
                                   >
                                     <div className="flex items-start gap-2">
@@ -1608,15 +1642,15 @@ export default function Layout() {
                                           notif.is_read && "ml-4",
                                         )}
                                       >
-                                        <p className="truncate text-xs font-medium text-[var(--hf-white)]">
+                                        <p className="hf-hr-notifications-item-title truncate text-xs font-medium">
                                           {notif.title}
                                         </p>
                                         {notif.message && (
-                                          <p className="mt-0.5 truncate text-[length:var(--hf-fs-4xs)] text-[color:var(--hf-white-alpha-30)]">
+                                          <p className="hf-hr-notifications-item-message mt-0.5 truncate text-[length:var(--hf-fs-4xs)]">
                                             {notif.message}
                                           </p>
                                         )}
-                                        <p className="mt-1 text-[length:var(--hf-fs-5xs)] text-[color:var(--hf-white-alpha-20)]">
+                                        <p className="hf-hr-notifications-item-time mt-1 text-[length:var(--hf-fs-5xs)]">
                                           {new Date(notif.created_at).toLocaleString(
                                             "ru-RU",
                                             {
@@ -1637,7 +1671,7 @@ export default function Layout() {
                         )}
                       </div>
 
-                      <ThemeToggle />
+                      {!isHrSidebar && <ThemeToggle />}
 
                       <NavLink
                         to="/my-profile"
@@ -2082,7 +2116,7 @@ export default function Layout() {
                   )}
                 </div>
               </div>
-              <ThemeToggle />
+              {!isHrSidebar && <ThemeToggle />}
               <NavLink
                 to="/my-profile"
                 className={({ isActive }) =>
@@ -2248,7 +2282,7 @@ export default function Layout() {
                         ))}
                       </div>
                     ))}
-                  <ThemeToggle />
+                  {!isHrSidebar && <ThemeToggle />}
                 </>
               )}
               <button
