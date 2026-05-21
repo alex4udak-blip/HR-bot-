@@ -32,6 +32,7 @@ import {
   Maximize2,
   Type,
   Upload,
+  Layers,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -57,6 +58,7 @@ import {
   deleteEntityNote,
 } from "@/services/api/entities";
 import { getOrgStages, updateOrgStages } from "@/services/api/auth";
+import StatusTemplatesModal from "@/components/vacancies/StatusTemplatesModal";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import type { EntityFile } from "@/services/api/entities";
 import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
@@ -556,6 +558,7 @@ export default function AllCandidatesPage() {
   const [detailTab, setDetailTab] = useState<"info" | "resume">("resume");
   const [showListSettings, setShowListSettings] = useState(false);
   const [showStageSettings, setShowStageSettings] = useState(false);
+  const [showStatusTemplates, setShowStatusTemplates] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
   const [addToVacancyAnchor, setAddToVacancyAnchor] = useState<{
@@ -1119,6 +1122,18 @@ export default function AllCandidatesPage() {
             </button>
           </div>
         ) : null}
+        {isAdmin ? (
+          <div className="hf-top-stage-action-cell">
+            <button
+              type="button"
+              onClick={() => setShowStatusTemplates(true)}
+              className="hf-top-stage-admin-btn"
+              title="Админ: шаблоны статусов"
+            >
+              <Layers className="hf-top-stage-admin-icon" />
+            </button>
+          </div>
+        ) : null}
         {!showTopSearch && topStageCanScroll.left ? (
           <button
             type="button"
@@ -1521,6 +1536,11 @@ export default function AllCandidatesPage() {
           <StageSettingsModal
             onClose={() => setShowStageSettings(false)}
             onSaved={() => fetchBoard()}
+          />
+        )}
+        {showStatusTemplates && (
+          <StatusTemplatesModal
+            onClose={() => setShowStatusTemplates(false)}
           />
         )}
         {showEditModal && selectedCard && (
