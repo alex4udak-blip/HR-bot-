@@ -127,8 +127,9 @@ export const assignVacancy = async (id: number, userIds: number[], all: boolean)
   return data;
 };
 
-export const takeVacancy = async (id: number): Promise<Vacancy> => {
-  const { data } = await debouncedMutation<Vacancy>('post', `/vacancies/${id}/take`);
+export const takeVacancy = async (id: number, force = false): Promise<Vacancy> => {
+  const path = force ? `/vacancies/${id}/take?force=true` : `/vacancies/${id}/take`;
+  const { data } = await debouncedMutation<Vacancy>('post', path);
   return data;
 };
 

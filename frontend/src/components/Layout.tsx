@@ -221,13 +221,39 @@ export function SidebarRequestPreviewModal({
     // отправлять второй POST — иначе создавались дубли-клоны.
     if (taking) return;
     setTaking(true);
-    try {
-      await takeVacancy(vacancy.id);
+
+    const doTake = async (force: boolean) => {
+      await takeVacancy(vacancy.id, force);
       await fetchVacancies();
       toast.success('Заявка взята в работу — открыта в "Мои вакансии"');
       onTaken();
-    } catch {
-      toast.error("Не удалось взять заявку");
+    };
+
+    try {
+      await doTake(false);
+    } catch (err) {
+      // Backend вернул 409 duplicate_clone — у юзера уже есть вакансия по
+      // этой заявке. Не блокируем жёстко, а спрашиваем — вдруг дубль нужен.
+      const detail = (err as { response?: { data?: { detail?: unknown } } })
+        ?.response?.data?.detail;
+      const isDuplicate =
+        detail !== null &&
+        typeof detail === "object" &&
+        (detail as { code?: string }).code === "duplicate_clone";
+      if (isDuplicate) {
+        const msg =
+          (detail as { message?: string }).message ||
+          "У вас уже есть такая вакансия. Создать дубликат?";
+        if (window.confirm(msg)) {
+          try {
+            await doTake(true);
+          } catch {
+            toast.error("Не удалось взять заявку");
+          }
+        }
+      } else {
+        toast.error("Не удалось взять заявку");
+      }
     } finally {
       setTaking(false);
     }
@@ -1162,6 +1188,18 @@ export default function Layout() {
   const sidebarOpenVacancies = vacancies
     .filter((v) => v.status === "open")
     .filter((v) => isHrSidebarAdmin || (user && v.created_by === user.id));
+  // Заявки, которые ТЕКУЩИЙ юзер уже взял в работу (есть свой клон).
+  // После «Взять в работу» исходная заявка должна пропасть из списка —
+  // она уже взята. Раньше она оставалась висеть.
+  const myTakenRequestIds = new Set<number>();
+  if (user) {
+    vacancies.forEach((v) => {
+      if (v.created_by !== user.id) return;
+      const src = (v.extra_data as Record<string, unknown> | undefined)
+        ?.cloned_from_request_id;
+      if (typeof src === "number") myTakenRequestIds.add(src);
+    });
+  }
   const sidebarRequestVacancies = vacancies
     .filter(
       (v) =>
@@ -1178,6 +1216,9 @@ export default function Layout() {
       const clonedFrom = (v.extra_data as Record<string, unknown> | undefined)
         ?.cloned_from_request_id;
       if (typeof clonedFrom === "number") return false;
+      // Заявку, которую текущий юзер уже взял в работу, прячем —
+      // и для админа, и для рекрутёра.
+      if (myTakenRequestIds.has(v.id)) return false;
       if (isHrSidebarAdmin) {
         if (v.assigned_to_all) return false;
         if (v.assigned_to && v.assigned_to.length > 0) return false;

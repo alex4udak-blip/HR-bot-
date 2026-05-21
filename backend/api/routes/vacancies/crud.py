@@ -565,6 +565,7 @@ async def get_assignable_users(
 
 async def take_vacancy(
     vacancy_id: int,
+    force: bool = Query(False, description="Создать клон даже если он уже есть (подтверждение дубля)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access),
 ):
@@ -597,18 +598,28 @@ async def take_vacancy(
         if not is_assigned and not is_assigned_all:
             raise HTTPException(status_code=403, detail="You are not assigned to this vacancy")
 
-    # Проверка: рекрутёр уже не брал эту заявку
+    # Проверка: рекрутёр уже брал эту заявку. Если force=False — не блокируем
+    # жёстко, а возвращаем 409 со структурой, чтобы фронт показал диалог
+    # «у вас уже есть такая вакансия, создать дубль?». При force=True
+    # сознательно создаём дубликат.
     src_id = int(source.id)
-    existing = await db.execute(
-        select(Vacancy.id).where(
-            Vacancy.created_by == current_user.id,
-            text(
-                f"vacancies.extra_data::jsonb @> '{{\"cloned_from_request_id\": {src_id}}}'::jsonb"
-            ),
+    if not force:
+        existing = await db.execute(
+            select(Vacancy.id).where(
+                Vacancy.created_by == current_user.id,
+                text(
+                    f"vacancies.extra_data::jsonb @> '{{\"cloned_from_request_id\": {src_id}}}'::jsonb"
+                ),
+            )
         )
-    )
-    if existing.scalar():
-        raise HTTPException(status_code=409, detail="Заявка уже взята вами в работу")
+        if existing.scalar():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "duplicate_clone",
+                    "message": f"У вас уже есть вакансия по заявке «{source.title}». Создать дубликат?",
+                },
+            )
 
     cloned_extra = dict(source.extra_data or {})
     cloned_extra['cloned_from_request_id'] = source.id
