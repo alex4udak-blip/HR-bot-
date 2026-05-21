@@ -13,6 +13,20 @@ import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { getDepartments, getAssignableUsers, assignVacancy, takeVacancy } from '@/services/api';
 import type { Department, AssignableUser } from '@/services/api';
+import { getStatusTemplates, type StatusTemplate } from '@/services/api/auth';
+
+// EntityStatus-ключ шаблона → ApplicationStage-ключ колонки канбана.
+// custom_stages.columns должны содержать ApplicationStage-значения.
+const TEMPLATE_KEY_TO_APP_STAGE: Record<string, string> = {
+  new: 'applied',
+  screening: 'screening',
+  practice: 'phone_screen',
+  tech_practice: 'interview',
+  is_interview: 'assessment',
+  offer: 'offer',
+  hired: 'hired',
+  rejected: 'rejected',
+};
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
@@ -147,6 +161,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [loading, setLoading] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AssignableUser[]>([]);
+  const [statusTemplates, setStatusTemplates] = useState<StatusTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
 
   // Use prefillData when creating new vacancy, vacancy when editing
   const initialData = vacancy || prefillData;
@@ -184,6 +200,9 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     getAssignableUsers()
       .then(setUsers)
       .catch((err) => console.error('Failed to load assignable users:', err));
+    getStatusTemplates()
+      .then((r) => setStatusTemplates(r.templates))
+      .catch((err) => console.error('Failed to load status templates:', err));
   }, []);
 
   useEffect(() => {
@@ -220,6 +239,18 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
     setLoading(true);
     try {
+      // Выбранный шаблон статусов → custom_stages воронки. Ключи шаблона
+      // (EntityStatus) конвертируем в ApplicationStage для колонок канбана.
+      const selectedTemplate = statusTemplates.find(t => t.id === selectedTemplateId);
+      const customStages = selectedTemplate
+        ? {
+            columns: selectedTemplate.stages.map(s => {
+              const appKey = TEMPLATE_KEY_TO_APP_STAGE[s.key] || s.key;
+              return { key: appKey, maps_to: appKey, label: s.label, visible: true };
+            }),
+          }
+        : undefined;
+
       const data = {
         title: formData.title.trim(),
         description: formData.description.trim() || undefined,
@@ -237,6 +268,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         visible_to_all: formData.visible_to_all,
         department_id: formData.department_id ? parseInt(String(formData.department_id)) : undefined,
         hiring_manager_id: formData.hiring_manager_id ? parseInt(String(formData.hiring_manager_id)) : undefined,
+        ...(customStages ? { custom_stages: customStages } : {}),
       };
 
       if (vacancy) {
@@ -566,11 +598,15 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   />
                 </div>
                 <div>
-                  <label className={hfLabelClass}>Этапы подбора</label>
+                  <label className={hfLabelClass}>Шаблон статусов</label>
                   <HfSelect
-                    id="stages"
-                    value="all"
-                    options={[{ value: "all", label: "Все этапы" }]}
+                    id="status-template"
+                    value={selectedTemplateId}
+                    options={[
+                      { value: "", label: "Все этапы (по умолчанию)" },
+                      ...statusTemplates.map((t) => ({ value: t.id, label: t.name })),
+                    ]}
+                    onChange={(value) => setSelectedTemplateId(String(value))}
                     showSelectedIcon
                     disabled={isReadOnlyRequest}
                   />
