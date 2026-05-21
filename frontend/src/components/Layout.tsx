@@ -1349,37 +1349,32 @@ export default function Layout() {
 
                 <div className="hf-hr-funnels-picker-wrap" ref={hrFunnelsPickerRef}>
                   <div className="hf-hr-funnels-header">
-                    <NavLink
-                      to="/my-funnels"
-                      className={() =>
-                        clsx(
-                          "hf-hr-nav-item hf-hr-funnels-trigger min-w-0",
-                          isMyFunnelsRootView
-                            ? "hf-hr-nav-item-active"
-                            : "hf-hr-nav-item-white",
-                        )
-                      }
+                    <button
+                      type="button"
+                      className={clsx(
+                        "hf-hr-nav-item hf-hr-funnels-trigger min-w-0",
+                        isMyFunnelsRootView
+                          ? "hf-hr-nav-item-active"
+                          : "hf-hr-nav-item-white",
+                      )}
+                      onClick={() => setShowHrFunnelsPicker((value) => !value)}
+                      aria-label="Выбрать владельца вакансий"
+                      aria-expanded={showHrFunnelsPicker}
+                      aria-haspopup="listbox"
                     >
                       <HfSpriteIcon
                         id="business-folder"
                         className="hf-hr-nav-icon"
                       />
                       <span className="truncate">Мои вакансии</span>
-                    </NavLink>
-                    <button
-                      type="button"
-                      className="hf-hr-funnels-toggle"
-                      onClick={() => setShowHrFunnelsPicker((value) => !value)}
-                      aria-label="Выбрать владельца вакансий"
-                      aria-expanded={showHrFunnelsPicker}
-                      aria-haspopup="listbox"
-                    >
-                      <ChevronDown
-                        className={clsx(
-                          "hf-hr-chevron-icon",
-                          showHrFunnelsPicker && "rotate-180",
-                        )}
-                      />
+                      <span className="hf-hr-funnels-trigger-caret">
+                        <ChevronDown
+                          className={clsx(
+                            "hf-hr-chevron-icon",
+                            showHrFunnelsPicker && "rotate-180",
+                          )}
+                        />
+                      </span>
                     </button>
                   </div>
                   <AnimatePresence>

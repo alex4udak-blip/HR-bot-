@@ -465,11 +465,13 @@
 }
 
 .hf-hr-funnels-trigger {
+  width: 100%;
   min-width: 0;
   flex: 1 1 auto;
 }
 
-.hf-hr-funnels-toggle {
+.hf-hr-funnels-trigger-caret {
+  margin-left: auto;
   display: flex;
   width: var(--hf-sidebar-chevron-btn);
   height: var(--hf-sidebar-chevron-btn);
@@ -483,7 +485,7 @@
   transition: background-color var(--hf-transition-fast), color var(--hf-transition-fast);
 }
 
-.hf-hr-funnels-toggle:hover {
+.hf-hr-funnels-trigger:hover .hf-hr-funnels-trigger-caret {
   background: var(--hf-white-alpha-16);
   color: var(--hf-white);
 }
