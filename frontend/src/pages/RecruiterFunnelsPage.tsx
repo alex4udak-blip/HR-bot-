@@ -488,6 +488,17 @@ export default function RecruiterFunnelsPage() {
 
   const scopedVacancies = useMemo(() => {
     let result = vacancies;
+    // Исходные заявки, у которых уже есть клон («взяли в работу»), —
+    // это НЕ рабочие вакансии, а заявки. После «Взять в работу» оригинал
+    // переходит в status=open и без этого фильтра дублировал клон в списке
+    // вакансий рекрутёра (видно как два одинаковых «Тест»).
+    const clonedSourceIds = new Set<number>();
+    vacancies.forEach((v) => {
+      const src = (v.extra_data as Record<string, unknown> | undefined)
+        ?.cloned_from_request_id;
+      if (typeof src === 'number') clonedSourceIds.add(src);
+    });
+    result = result.filter((v) => !clonedSourceIds.has(v.id));
     if (!isHrAdmin && user) {
       result = result.filter((v) => v.created_by === user.id);
     }

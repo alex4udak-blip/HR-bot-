@@ -1185,8 +1185,18 @@ export default function Layout() {
     location.pathname === "/my-funnels" &&
     !sidebarSelectedVacancyId &&
     !isClosedFunnelsView;
+  // Все исходные заявки, у которых уже есть клон («взяли в работу»).
+  // Оригинал после взятия переходит в status=open и без этого фильтра
+  // дублировал клон в «Мои вакансии» (видно как два одинаковых «Тест»).
+  const allClonedSourceIds = new Set<number>();
+  vacancies.forEach((v) => {
+    const src = (v.extra_data as Record<string, unknown> | undefined)
+      ?.cloned_from_request_id;
+    if (typeof src === "number") allClonedSourceIds.add(src);
+  });
   const sidebarOpenVacancies = vacancies
     .filter((v) => v.status === "open")
+    .filter((v) => !allClonedSourceIds.has(v.id))
     .filter((v) => isHrSidebarAdmin || (user && v.created_by === user.id));
   // Заявки, которые ТЕКУЩИЙ юзер уже взял в работу (есть свой клон).
   // После «Взять в работу» исходная заявка должна пропасть из списка —
