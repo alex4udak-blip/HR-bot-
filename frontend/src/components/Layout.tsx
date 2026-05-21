@@ -1537,22 +1537,23 @@ export default function Layout() {
                       className="hf-hr-fab-menu"
                     >
                       {[
-                        {
-                          label: "Добавить вакансию",
-                          action: () => setShowFabVacancyForm(true),
-                        },
+                        // «Создать заявку» — только для админов/суперадмина:
+                        // заявки на подбор заводят они, рекрутёры их разбирают.
+                        // Открывает модалку-форму прямо на месте.
+                        ...(isHrSidebarAdmin
+                          ? [{
+                              label: "Создать заявку",
+                              action: () => setShowFabVacancyForm(true),
+                            }]
+                          : []),
                         {
                           label: "Добавить кандидата",
                           action: () => navigate("/all-candidates?add=resume"),
                         },
-                        // «Создать заявку» — только для админов/суперадмина:
-                        // заявки на подбор заводят они, рекрутёры их разбирают.
-                        ...(isHrSidebarAdmin
-                          ? [{
-                              label: "Создать заявку",
-                              action: () => navigate("/vacancies"),
-                            }]
-                          : []),
+                        {
+                          label: "Перейти к заявкам",
+                          action: () => navigate("/vacancies"),
+                        },
                       ].map((item) => (
                         <button
                           key={item.label}
