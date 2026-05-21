@@ -362,10 +362,16 @@
   align-items: flex-start;
   gap: var(--hf-sidebar-request-gap);
   border-radius: var(--hf-radius-xs);
+  padding-right: var(--hf-sidebar-subnav-px);
   padding-top: var(--hf-sidebar-request-py);
   padding-bottom: var(--hf-sidebar-request-py);
   padding-left: var(--hf-space-l);
   text-align: left;
+  transition: background-color var(--hf-transition-fast), color var(--hf-transition-fast);
+}
+
+.hf-hr-request-item:hover {
+  background: var(--hf-white-alpha-08);
 }
 
 .hf-hr-request-dot {
