@@ -398,7 +398,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       >
         <div className="hf-vacancy-modal-header">
           <h2 className="hf-vacancy-modal-title">
-            {isReadOnlyRequest ? 'Заявка' : (vacancy ? 'Редактировать вакансию' : 'Новая вакансия')}
+            {isReadOnlyRequest ? 'Заявка' : (vacancy ? 'Редактировать заявку' : 'Новая заявка')}
           </h2>
           <div className="hf-vacancy-header-actions">
           <button
