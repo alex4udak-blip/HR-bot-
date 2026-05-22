@@ -125,13 +125,10 @@ async def upload_attachment(
 
     original_filename = file.filename or "unnamed"
     unique_filename = f"{uuid.uuid4()}_{original_filename}"
-    upload_dir = os.path.join(UPLOAD_BASE, str(project_id), str(task_id))
-    os.makedirs(upload_dir, exist_ok=True)
-    file_path = os.path.join(upload_dir, unique_filename)
 
-    async with aiofiles.open(file_path, "wb") as f:
-        await f.write(content)
-
+    # Содержимое храним в БД (file_data), а не на диске: Railway /tmp
+    # эфемерный — при каждом редеплое файлы исчезали и скрины в
+    # комментариях ломались («битая картинка»).
     attachment = TaskAttachment(
         task_id=task_id,
         user_id=current_user.id,
@@ -139,7 +136,8 @@ async def upload_attachment(
         original_filename=original_filename,
         file_size=len(content),
         content_type=file.content_type,
-        storage_path=file_path,
+        storage_path=None,
+        file_data=content,
     )
     db.add(attachment)
     await db.commit()
@@ -181,13 +179,32 @@ async def download_attachment(
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    if not os.path.exists(attachment.storage_path):
-        raise HTTPException(status_code=404, detail="File not found on disk")
+    media_type = attachment.content_type or "application/octet-stream"
 
-    return FileResponse(
-        path=attachment.storage_path,
-        filename=attachment.original_filename,
-        media_type=attachment.content_type or "application/octet-stream",
+    # Новые вложения — из БД (file_data). inline-disposition чтобы
+    # картинки рендерились в <img>, а не качались.
+    if attachment.file_data:
+        from fastapi.responses import Response
+        return Response(
+            content=attachment.file_data,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'inline; filename="{attachment.original_filename}"',
+                "Cache-Control": "private, max-age=86400",
+            },
+        )
+
+    # Legacy: старые вложения на диске (могут быть стёрты редеплоем Railway).
+    if attachment.storage_path and os.path.exists(attachment.storage_path):
+        return FileResponse(
+            path=attachment.storage_path,
+            filename=attachment.original_filename,
+            media_type=media_type,
+        )
+
+    raise HTTPException(
+        status_code=404,
+        detail="Файл недоступен — был загружен до обновления и не сохранился. Загрузите заново.",
     )
 
 

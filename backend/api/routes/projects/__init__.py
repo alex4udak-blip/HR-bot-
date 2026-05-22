@@ -81,6 +81,8 @@ router.add_api_route("/{project_id}/tasks/{task_id}/comments/{comment_id}", dele
 router.add_api_route("/{project_id}/tasks/{task_id}/attachments", list_attachments, methods=["GET"], tags=["project-attachments"])
 router.add_api_route("/{project_id}/tasks/{task_id}/attachments", upload_attachment, methods=["POST"], status_code=201, tags=["project-attachments"])
 router.add_api_route("/{project_id}/tasks/{task_id}/attachments/{attachment_id}", download_attachment, methods=["GET"], tags=["project-attachments"])
+# Алиас с /download — вкладка «Файлы» ссылается на этот путь.
+router.add_api_route("/{project_id}/tasks/{task_id}/attachments/{attachment_id}/download", download_attachment, methods=["GET"], tags=["project-attachments"])
 router.add_api_route("/{project_id}/tasks/{task_id}/attachments/{attachment_id}", delete_attachment, methods=["DELETE"], status_code=204, tags=["project-attachments"])
 
 router.add_api_route("/{project_id}/tasks/{task_id}", get_task, methods=["GET"], tags=["project-tasks"])

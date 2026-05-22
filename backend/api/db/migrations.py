@@ -101,6 +101,11 @@ COLUMN_MIGRATIONS = [
     # Embedding columns for similarity search (pgvector)
     ("ALTER TABLE entities ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMP", "Add embedding_updated_at to entities"),
     ("ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMP", "Add embedding_updated_at to vacancies"),
+
+    # Task attachments — храним содержимое файла в БД (Railway /tmp эфемерный,
+    # стирается при редеплое → скрины в комментариях пропадали).
+    ("ALTER TABLE task_attachments ADD COLUMN IF NOT EXISTS file_data BYTEA", "Add file_data to task_attachments"),
+    ("ALTER TABLE task_attachments ALTER COLUMN storage_path DROP NOT NULL", "task_attachments.storage_path nullable"),
 ]
 
 # Entity AI conversations table

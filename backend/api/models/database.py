@@ -1337,7 +1337,10 @@ class TaskAttachment(Base):
     original_filename = Column(String(500), nullable=False)
     file_size = Column(Integer, nullable=False)  # bytes
     content_type = Column(String(200), nullable=True)
-    storage_path = Column(String(1000), nullable=False)  # local file path
+    # Legacy: путь к локальному файлу. На Railway /tmp эфемерный и стирается
+    # при каждом редеплое — поэтому новые вложения храним в file_data (БД).
+    storage_path = Column(String(1000), nullable=True)
+    file_data = Column(LargeBinary, nullable=True)  # содержимое файла в БД (persistent)
     created_at = Column(DateTime, default=func.now())
 
     task = relationship("ProjectTask", back_populates="attachments")
