@@ -56,6 +56,19 @@ async def ensure_shadow_columns():
         # Make file_path nullable (no longer required with DB storage)
         await conn.execute(text('ALTER TABLE entity_files ALTER COLUMN file_path DROP NOT NULL'))
 
+        # Check and add file_data column to task_attachments (bytea for DB file storage)
+        # Railway /tmp эфемерный — без этой колонки модель ломает любой запрос
+        # к task_attachments (kanban 500).
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'task_attachments' AND column_name = 'file_data')\"
+        ))
+        if not result.scalar():
+            print('Adding file_data column to task_attachments...')
+            await conn.execute(text('ALTER TABLE task_attachments ADD COLUMN file_data BYTEA'))
+
+        # Make task_attachments.storage_path nullable (no longer required with DB storage)
+        await conn.execute(text('ALTER TABLE task_attachments ALTER COLUMN storage_path DROP NOT NULL'))
+
         # Check and add auto_tasks_enabled column to chats
         result = await conn.execute(text(
             \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'chats' AND column_name = 'auto_tasks_enabled')\"
