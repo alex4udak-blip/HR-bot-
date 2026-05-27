@@ -61,6 +61,22 @@ CALL_RECORDINGS_INDEXES = [
 
 # Column migrations for various tables
 COLUMN_MIGRATIONS = [
+    # API tokens for external integrations (Claude MCP, etc.)
+    (
+        """CREATE TABLE IF NOT EXISTS api_tokens (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name VARCHAR(80) NOT NULL,
+            token_hash VARCHAR(64) UNIQUE NOT NULL,
+            prefix VARCHAR(12) NOT NULL,
+            last_used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT now()
+        )""",
+        "Create api_tokens table"
+    ),
+    ("CREATE INDEX IF NOT EXISTS ix_api_tokens_user_id ON api_tokens(user_id)", "Index api_tokens.user_id"),
+    ("CREATE INDEX IF NOT EXISTS ix_api_tokens_token_hash ON api_tokens(token_hash)", "Index api_tokens.token_hash"),
+
     # Fireflies integration migrations
     ("ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'teams'", "Add teams to callsource enum"),
     ("ALTER TYPE callsource ADD VALUE IF NOT EXISTS 'fireflies'", "Add fireflies to callsource enum"),

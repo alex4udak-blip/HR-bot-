@@ -354,6 +354,26 @@ class User(Base):
     uploaded_files = relationship("EntityFile", back_populates="uploader")
 
 
+class ApiToken(Base):
+    """Long-lived API token for external integrations (e.g. Claude MCP server).
+
+    Owner = User. One human can have multiple named tokens. We store only
+    sha256 hash — plain token is shown to the user ONCE at generation time.
+    Actions done with the token are attributed to the owner (created_by, etc.).
+    """
+    __tablename__ = "api_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(80), nullable=False)              # human-readable label
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)  # sha256 hex
+    prefix = Column(String(12), nullable=False)            # first chars shown in UI
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User")
+
+
 class Chat(Base):
     __tablename__ = "chats"
 
