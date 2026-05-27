@@ -12,6 +12,9 @@ RUN apt-get update && apt-get install -y \
     libreoffice-impress \
     unrar-free \
     libheif-dev \
+    # libmagic — нужен python-magic (api/routes/parser.py делает import magic),
+    # без него uvicorn падает с ImportError на старте.
+    libmagic1 \
     # Playwright dependencies
     libnss3 \
     libnspr4 \
