@@ -7,8 +7,19 @@ import re
 import os
 import logging
 import json
+import difflib
 from typing import Optional
 from datetime import datetime
+
+# Кириллица → латиница для матчинга проекта в блокерах/тасках.
+# «Saturn» в БД должен матчиться на «Сатурн» и наоборот.
+_CYR_TO_LAT = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+    'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+    'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+    'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+    'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+}
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -679,25 +690,58 @@ async def create_tasks_from_message(
     all_projects = list(all_projects_result.scalars().all())
     logger.info(f"📂 Found {len(all_projects)} org projects: {[p.name for p in all_projects[:5]]}")
 
-    # LENIENT MATCHING: normalize both sides (lowercase, strip non-alphanumerics)
-    # so "AdsCombinePro" matches "AdsCombine Pro", "ads-combine-pro" и т.д.
+    # LENIENT MATCHING: normalize both sides (lowercase, strip non-alphanumerics,
+    # transliterate Cyrillic → Latin) so:
+    #  - "AdsCombinePro" matches "AdsCombine Pro", "ads-combine-pro"
+    #  - "Saturn" matches "Сатурн" (и наоборот) — переведено в одну нотацию
     def _normalize(s: str) -> str:
-        return re.sub(r'[^a-zа-я0-9]+', '', s.lower())
+        s = s.lower()
+        s = ''.join(_CYR_TO_LAT.get(c, c) for c in s)
+        return re.sub(r'[^a-z0-9]+', '', s)
 
     text_lower = message_text.lower()
     text_normalized = _normalize(message_text)
     text_matched_project = None
+    # Pass 1 — точный/нормализованный substring.
     for p in all_projects:
         if len(p.name) < 3:
             continue
         name_lower = p.name.lower()
         name_normalized = _normalize(p.name)
-        # 1) точный substring без нормализации (как было)
-        # 2) substring после нормализации — ловит "AdsCombine Pro" ≈ "AdsCombinePro"
         if name_lower in text_lower or (name_normalized and name_normalized in text_normalized):
             text_matched_project = p
-            logger.info(f"🎯 Matched project '{p.name}' from message text")
+            logger.info(f"🎯 Matched project '{p.name}' from message text (exact)")
             break
+
+    # Pass 2 — fuzzy-fallback для опечаток («Сатург» → «Saturn»).
+    # Берём слова из сообщения, сравниваем по difflib.ratio (stdlib).
+    # Порог 0.8 — ловит 1-2 опечатки на коротких именах, при этом не цепляется
+    # к похожим но другим проектам.
+    if not text_matched_project:
+        tokens = re.findall(r'[A-Za-zА-Яа-я0-9]+', message_text)
+        best_p = None
+        best_ratio = 0.0
+        for p in all_projects:
+            if len(p.name) < 4:  # слишком короткие — слишком много ложных
+                continue
+            name_norm = _normalize(p.name)
+            if not name_norm:
+                continue
+            for tok in tokens:
+                tok_norm = _normalize(tok)
+                # сравниваем только токены сопоставимой длины
+                if not tok_norm or abs(len(tok_norm) - len(name_norm)) > 3:
+                    continue
+                r = difflib.SequenceMatcher(None, tok_norm, name_norm).ratio()
+                if r > best_ratio:
+                    best_ratio = r
+                    best_p = p
+        if best_p and best_ratio >= 0.8:
+            text_matched_project = best_p
+            logger.info(
+                f"🎯 Matched project '{best_p.name}' from message text "
+                f"(fuzzy, ratio={best_ratio:.2f})"
+            )
 
     if not text_matched_project:
         logger.warning(
