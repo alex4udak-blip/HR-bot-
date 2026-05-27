@@ -28,6 +28,19 @@ async def ensure_shadow_columns():
         db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
 
     engine = create_async_engine(db_url)
+    # На свежей БД (например, первый деплой на новый Postgres-инстанс) таблиц
+    # ещё нет — Base.metadata.create_all отработает в init_database() уже
+    # после старта сервера. Если ALTER TABLE users тут упадёт, вся
+    # транзакция откатится и оставшиеся ALTER не применятся. Поэтому
+    # пропускаем весь блок если 'users' нет в БД.
+    async with engine.begin() as bootstrap_conn:
+        check = await bootstrap_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users')\"
+        ))
+        if not check.scalar():
+            print('Fresh database (no users table yet) — skipping column-check, init_database will create everything')
+            await engine.dispose()
+            return
     async with engine.begin() as conn:
         # Check and add is_shadow column
         result = await conn.execute(text(
