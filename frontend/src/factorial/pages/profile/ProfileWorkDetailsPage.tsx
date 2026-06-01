@@ -1,17 +1,55 @@
 import { User } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import ProfileTemplate from '@/factorial/templates/ProfileTemplate';
-import EmptyState from '@/factorial/components/EmptyState';
-import { PROFILE_SUBNAV } from './_subNav';
+import { getMyProfile } from '@/factorial/api/employees';
+import { formatDateRu, formatTenure } from '@/factorial/lib/formatDate';
+import { CABINET_TABS } from '@/factorial/lib/routes';
+import DetailRow from '@/factorial/components/cabinet/DetailRow';
+
+const TITLE_ICON = (
+  <div className="w-9 h-9 rounded-fx-lg bg-pink-100 flex items-center justify-center">
+    <User className="w-5 h-5 text-pink-600" />
+  </div>
+);
 
 export default function ProfileWorkDetailsPage() {
+  const { data: me, isError } = useQuery({ queryKey: ['fx', 'me'], queryFn: getMyProfile, retry: false });
+
+  const startRaw = me?.department_start_date || me?.practice_start_date || me?.created_at || null;
+  const start = startRaw ? `${formatDateRu(startRaw)} (${formatTenure(startRaw)} назад)` : '—';
+  const fmt = (d?: string | null) => (d ? formatDateRu(d) : '—');
+  const sign = (ok?: boolean, at?: string | null) =>
+    ok ? `Подписан${at ? ' · ' + formatDateRu(at) : ''}` : 'Не подписан';
+
   return (
     <ProfileTemplate
       breadcrumb={[{ label: 'Профиль' }, { label: 'Детали работы' }]}
-      titleIcon={<div className="w-9 h-9 rounded-fx-lg bg-pink-100 flex items-center justify-center"><User className="w-5 h-5 text-pink-600" /></div>}
+      titleIcon={TITLE_ICON}
       title="Профиль"
-      subNav={PROFILE_SUBNAV}
-      leftColumn={<div className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-12"><EmptyState emoji="🚧" heading="Раздел в разработке" description="Будет реализовано в следующих фазах." /></div>}
-      rightDetails={[]}
+      subNav={CABINET_TABS}
+      leftColumn={
+        isError ? (
+          <article className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-6 text-fx-sm text-text-muted">
+            Профиль сотрудника ещё не заведён.
+          </article>
+        ) : (
+          <article className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-5">
+            <h2 className="font-semibold mb-2">Детали работы</h2>
+            <DetailRow label="Должность" value={me?.position || '—'} />
+            <DetailRow label="Отдел" value={me?.department_name || '—'} />
+            <DetailRow label="Дата начала" value={start} />
+            <DetailRow label="Начало практики" value={fmt(me?.practice_start_date)} />
+            <DetailRow label="Конец испытательного" value={fmt(me?.probation_end_date)} />
+            <DetailRow label="Год работы" value={fmt(me?.one_year_date)} />
+            <DetailRow label="Договор" value={sign(me?.contract_signed, me?.contract_signed_at)} />
+            <DetailRow label="NDA" value={sign(me?.nda_signed, me?.nda_signed_at)} />
+          </article>
+        )
+      }
+      rightDetails={[
+        { label: 'Электронная почта', value: <span>{me?.user_email || '—'}</span> },
+        { label: 'Отдел', value: <span>{me?.department_name || '—'}</span> },
+      ]}
     />
   );
 }

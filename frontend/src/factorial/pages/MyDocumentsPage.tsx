@@ -64,13 +64,13 @@ export default function MyDocumentsPage() {
   return (
     <>
       <TableTemplate
-        breadcrumb={[{ label: 'Мои документы' }]}
+        breadcrumb={[{ label: 'Соглашения' }]}
         titleIcon={
           <div className="w-9 h-9 rounded-fx-lg bg-amber-100 flex items-center justify-center">
             <FolderOpen className="w-5 h-5 text-amber-600" />
           </div>
         }
-        title="Мои документы"
+        title="Соглашения"
         secondaryNav={CABINET_TABS}
         toolbar={{ searchKey: 'name', searchPlaceholder: 'Поиск документа...' }}
         columns={columns}

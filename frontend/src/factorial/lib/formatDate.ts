@@ -1,4 +1,4 @@
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, intervalToDuration } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 export function formatDateRu(date: Date | string): string {
@@ -42,4 +42,16 @@ export function formatHiredAgo(date: Date | string): string {
   const years = Math.floor(months / 12);
   if (years === 1) return 'год назад';
   return `${years} ${plural(years, 'год', 'года', 'лет')} назад`;
+}
+
+/** Стаж в формате Factorial: «7 мес. 4 дн.» / «2 г. 3 мес.». */
+export function formatTenure(start: Date | string): string {
+  const s = typeof start === 'string' ? new Date(start) : start;
+  if (Number.isNaN(s.getTime())) return '';
+  const d = intervalToDuration({ start: s, end: new Date() });
+  const parts: string[] = [];
+  if (d.years) parts.push(`${d.years} г.`);
+  if (d.months) parts.push(`${d.months} мес.`);
+  if (d.days && !d.years) parts.push(`${d.days} дн.`);
+  return parts.length ? parts.join(' ') : 'менее дня';
 }
