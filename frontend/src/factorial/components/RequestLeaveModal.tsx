@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createLeaveRequest } from '../api/employees';
+import DatePickerFactorial from './DatePickerFactorial';
 
 export default function RequestLeaveModal({ employeeId, onClose }: { employeeId: number; onClose: () => void }) {
   const qc = useQueryClient();
@@ -56,11 +57,11 @@ export default function RequestLeaveModal({ employeeId, onClose }: { employeeId:
         <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
           <div style={{ flex: 1 }}>
             <label>С</label>
-            <input className="fx-input" type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+            <DatePickerFactorial value={start} onChange={setStart} disablePast />
           </div>
           <div style={{ flex: 1 }}>
             <label>По</label>
-            <input className="fx-input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+            <DatePickerFactorial value={end} onChange={setEnd} disablePast />
           </div>
         </div>
         <div className="fx-field">

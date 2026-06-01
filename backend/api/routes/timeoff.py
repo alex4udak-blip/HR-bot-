@@ -2,14 +2,63 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
-from ..models.database import TimeOffRequest, User, OrgMember
+from ..models.database import TimeOffRequest, User, OrgMember, OrgRole, Employee, LeaveRequest
 from ..database import get_db
-from ..services.auth import get_current_user
+from ..services.auth import get_current_user, get_user_org
 
 router = APIRouter()
+
+
+async def _is_admin_or_owner(user: User, org_id: int, db: AsyncSession) -> bool:
+    """superadmin / owner / admin org-а (зеркало helper-а из employees.py)."""
+    if user.role and user.role.value == "superadmin":
+        return True
+    result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.user_id == user.id,
+            OrgMember.org_id == org_id,
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin]),
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+# Нормализация типов из обеих систем в единый набор + рус. подпись
+_TYPE_NORMALIZE = {
+    "vacation": "vacation",
+    "day_off": "day_off",
+    "sick_leave": "sick",
+    "sick": "sick",
+    "family_leave": "family_leave",
+    "bereavement": "bereavement",
+    "other": "other",
+}
+_TYPE_LABELS = {
+    "vacation": "Отпуск",
+    "day_off": "Отгул",
+    "sick": "Больничный",
+    "family_leave": "Семейные дни",
+    "bereavement": "По утрате",
+    "other": "Другое",
+}
+
+
+class TimeOffAllItem(BaseModel):
+    source: str            # 'timeoff' (A) | 'leave' (B)
+    source_id: int
+    user_id: int | None = None
+    person_name: str | None = None
+    type: str              # canonical: vacation|day_off|sick|family_leave|bereavement|other
+    type_label: str
+    start: datetime
+    end: datetime
+    days: int
+    status: str            # pending|approved|rejected
+    reason: str | None = None
 
 
 class TimeOffOut(BaseModel):
@@ -126,6 +175,84 @@ async def timeoff_calendar(
         }
         for r in requests
     ]
+
+
+@router.get("/all", response_model=list[TimeOffAllItem])
+async def list_all_timeoff(
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Объединённый орг-обзор ВСЕХ отпусков из обеих систем. Только admin/owner, read-only."""
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization")
+    if not await _is_admin_or_owner(current_user, org.id, db):
+        raise HTTPException(403, "Admin access required")
+
+    items: list[TimeOffAllItem] = []
+
+    # ── Система A: time_off_requests (заявки из Telegram-бота) ──
+    a_query = select(TimeOffRequest).where(TimeOffRequest.org_id == org.id)
+    if status:
+        a_query = a_query.where(TimeOffRequest.status == status)
+    a_rows = (await db.execute(a_query)).scalars().all()
+
+    a_user_ids = {r.user_id for r in a_rows}
+    a_names: dict[int, str] = {}
+    if a_user_ids:
+        res = await db.execute(select(User).where(User.id.in_(a_user_ids)))
+        a_names = {u.id: u.name for u in res.scalars().all()}
+
+    for r in a_rows:
+        raw = r.type if isinstance(r.type, str) else r.type.value
+        st = r.status if isinstance(r.status, str) else r.status.value
+        canon = _TYPE_NORMALIZE.get(raw, "other")
+        items.append(TimeOffAllItem(
+            source="timeoff",
+            source_id=r.id,
+            user_id=r.user_id,
+            person_name=a_names.get(r.user_id),
+            type=canon,
+            type_label=_TYPE_LABELS.get(canon, raw),
+            start=r.date_from,
+            end=r.date_to,
+            days=max(1, (r.date_to.date() - r.date_from.date()).days + 1),
+            status=st,
+            reason=r.reason,
+        ))
+
+    # ── Система B: leave_requests (заявки из Factorial-формы) ──
+    b_query = (
+        select(LeaveRequest)
+        .join(Employee, LeaveRequest.employee_id == Employee.id)
+        .options(selectinload(LeaveRequest.employee).selectinload(Employee.user))
+        .where(Employee.org_id == org.id)
+    )
+    if status:
+        b_query = b_query.where(LeaveRequest.status == status)
+    b_rows = (await db.execute(b_query)).scalars().all()
+
+    for lr in b_rows:
+        raw = lr.type
+        canon = _TYPE_NORMALIZE.get(raw, "other")
+        emp = lr.employee
+        items.append(TimeOffAllItem(
+            source="leave",
+            source_id=lr.id,
+            user_id=emp.user_id if emp else None,
+            person_name=(emp.user.name if emp and emp.user else None),
+            type=canon,
+            type_label=_TYPE_LABELS.get(canon, raw),
+            start=lr.start_date,
+            end=lr.end_date,
+            days=lr.days,
+            status=lr.status,
+            reason=lr.reason,
+        ))
+
+    items.sort(key=lambda x: x.start, reverse=True)
+    return items
 
 
 @router.post("/{request_id}/approve")

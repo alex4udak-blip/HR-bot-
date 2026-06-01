@@ -19,7 +19,10 @@ interface CalendarTemplateProps {
 }
 
 export default function CalendarTemplate({ breadcrumb, titleIcon, title, secondaryNav, events, primaryCta }: CalendarTemplateProps) {
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 4, 1));
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), 1);
+  });
 
   const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
   const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });

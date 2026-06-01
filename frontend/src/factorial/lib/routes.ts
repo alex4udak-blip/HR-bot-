@@ -38,6 +38,5 @@ export const ROUTES = {
 // Вкладки «Личного кабинета» (внутри страницы кабинета, верхний переключатель).
 export const CABINET_TABS = [
   { label: 'Профиль', href: '/factorial/profile', end: true },
-  { label: 'Отпуска', href: '/factorial/time-off' },
   { label: 'Мои документы', href: '/factorial/my-documents' },
 ];

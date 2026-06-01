@@ -1341,11 +1341,20 @@ export default function Layout() {
                       Документы
                     </NavLink>
                     <NavLink
+                      to="/factorial/time-off"
+                      className={({ isActive }) =>
+                        clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                      }
+                    >
+                      <Calendar className="hf-hr-nav-icon" strokeWidth={1.8} />
+                      Отпуска
+                    </NavLink>
+                    <NavLink
                       to="/factorial/profile"
                       className={() =>
                         clsx(
                           "hf-hr-nav-item",
-                          /\/factorial\/(profile|time-off|my-documents)/.test(
+                          /\/factorial\/(profile|my-documents)/.test(
                             location.pathname,
                           ) && "hf-hr-nav-item-active",
                         )
