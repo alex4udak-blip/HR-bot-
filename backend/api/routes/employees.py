@@ -703,3 +703,80 @@ async def reject_leave_request(
     await db.commit()
 
     return {"ok": True, "detail": "Leave request rejected"}
+
+
+# ─── Secure passport upload (employee self-service, encrypted at rest) ───
+
+class PassportUpload(BaseModel):
+    filename: str
+    content_type: str
+    data_base64: str  # raw file bytes, base64-encoded (no data: prefix)
+
+
+def _passport_fernet():
+    import base64 as _b64
+    import hashlib
+    from cryptography.fernet import Fernet
+    from api.config import settings
+    key = _b64.urlsafe_b64encode(hashlib.sha256(settings.jwt_secret.encode()).digest())
+    return Fernet(key)
+
+
+def _passport_path(emp_id: int):
+    from pathlib import Path
+    d = Path("uploads") / "passports"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{emp_id}.enc"
+
+
+@router.post("/me/passport")
+async def upload_my_passport(
+    payload: PassportUpload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload own passport scan. Stored encrypted on disk; readable only by the employee."""
+    import base64 as _b64
+    result = await db.execute(select(Employee).where(Employee.user_id == current_user.id))
+    emp = result.scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee profile not found")
+    try:
+        raw = _b64.b64decode(payload.data_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Некорректные данные файла")
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс 8 МБ)")
+    _passport_path(emp.id).write_bytes(_passport_fernet().encrypt(raw))
+    extra = dict(emp.extra_data or {})
+    extra["passport"] = {
+        "filename": payload.filename,
+        "content_type": payload.content_type,
+        "uploaded_at": datetime.utcnow().isoformat(),
+    }
+    emp.extra_data = extra
+    await db.commit()
+    return {"ok": True, "filename": payload.filename}
+
+
+@router.get("/me/passport")
+async def get_my_passport(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download own passport scan (decrypted). Only the employee can access their own file."""
+    import base64 as _b64
+    result = await db.execute(select(Employee).where(Employee.user_id == current_user.id))
+    emp = result.scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee profile not found")
+    meta = (emp.extra_data or {}).get("passport")
+    path = _passport_path(emp.id)
+    if not meta or not path.exists():
+        raise HTTPException(status_code=404, detail="Паспорт не загружен")
+    raw = _passport_fernet().decrypt(path.read_bytes())
+    return {
+        "filename": meta.get("filename"),
+        "content_type": meta.get("content_type"),
+        "data_base64": _b64.b64encode(raw).decode(),
+    }

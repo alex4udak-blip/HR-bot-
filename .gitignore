@@ -87,3 +87,23 @@ frontend/playwright/.cache/
 # Local-only Codex/reference files
 AGENTS.md
 frontend/public/demo-assets/
+
+# Factorial module: re-include lib/ (the broad Python `lib/` rule above wrongly
+# matches frontend/src/factorial/lib/ and would drop cn.ts / routes.ts / formatDate.ts on push)
+!frontend/src/factorial/lib/
+!frontend/src/factorial/lib/**
+
+# Runtime data & process artifacts — must never be pushed
+backend/uploads/
+*.pid
+
+# Standing rule: never push these (even on "push all")
+begin.txt
+speech.txt
+
+# Local-only dev helpers & notes (machine-specific paths / local creds — never push)
+FACTORIAL_DEMO.md
+recover.ps1
+backend/run_local.sh
+backend/requirements.win.txt
+backend/requirements.local.txt

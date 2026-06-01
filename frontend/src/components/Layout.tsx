@@ -348,6 +348,13 @@ export function SidebarRequestPreviewModal({
 
 const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
   {
+    title: "Факториал",
+    description: "Сотрудники, документы и личный кабинет",
+    icon: Users,
+    color: "text-[var(--hf-status-indigo)]",
+    path: "/factorial",
+  },
+  {
     title: "Рекрутеры и заказчики",
     description: "Добавление пользователей и настройка прав",
     icon: Users,

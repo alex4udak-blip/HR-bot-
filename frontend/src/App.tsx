@@ -98,6 +98,7 @@ const CsvImportPage = lazyWithRetry(() => import('@/pages/CsvImportPage'));
 const TimeOffPage = lazyWithRetry(() => import('@/pages/TimeOffPage'));
 const BlockersPage = lazyWithRetry(() => import('@/pages/BlockersPage'));
 const HRReportsPage = lazyWithRetry(() => import('@/pages/HRReportsPage'));
+const FactorialModule = lazyWithRetry(() => import('@/factorial/FactorialModule'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -197,6 +198,7 @@ export default function App() {
           <Route path="timeoff" element={<Suspense fallback={<PageLoader />}><TimeOffPage /></Suspense>} />
           <Route path="blockers" element={<Suspense fallback={<PageLoader />}><BlockersPage /></Suspense>} />
           <Route path="my-profile" element={<Suspense fallback={<PageLoader />}><EmployeePortalPage /></Suspense>} />
+          <Route path="factorial/*" element={<Suspense fallback={<PageLoader />}><FactorialModule /></Suspense>} />
 
           {/* HR routes — superadmin, owner, admin, hr (recruiter like Мария) */}
           {/* /candidates and /candidate-database removed — use /all-candidates */}
