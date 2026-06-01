@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import CalendarTemplate, { type CalendarEvent } from '@/factorial/templates/CalendarTemplate';
 import RequestLeaveModal from '@/factorial/components/RequestLeaveModal';
 import { getMyProfile, listLeaveRequests } from '@/factorial/api/employees';
+import { CABINET_TABS } from '@/factorial/lib/routes';
 
 const TYPE_COLOR: Record<string, string> = {
   vacation: '#16A34A',
@@ -45,6 +46,7 @@ export default function TimeOffPage() {
           </div>
         }
         title="Отпуска"
+        secondaryNav={CABINET_TABS}
         events={events}
         primaryCta={{ label: 'Запросить отпуск', onClick: () => setOpen(true) }}
       />

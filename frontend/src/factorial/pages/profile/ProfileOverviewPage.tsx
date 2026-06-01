@@ -4,7 +4,7 @@ import { toast } from '@/factorial/components/ui/toast';
 import ProfileTemplate from '@/factorial/templates/ProfileTemplate';
 import { getMyProfile } from '@/factorial/api/employees';
 import { formatDateRu } from '@/factorial/lib/formatDate';
-import { PROFILE_SUBNAV } from './_subNav';
+import { CABINET_TABS } from '@/factorial/lib/routes';
 
 export default function ProfileOverviewPage() {
   // Реальная карточка текущего сотрудника из бэкенда Энцеладуса.
@@ -24,7 +24,7 @@ export default function ProfileOverviewPage() {
       breadcrumb={[{ label: 'Профиль' }]}
       titleIcon={<div className="w-9 h-9 rounded-fx-lg bg-pink-100 flex items-center justify-center"><User className="w-5 h-5 text-pink-600" /></div>}
       title="Профиль"
-      subNav={PROFILE_SUBNAV}
+      subNav={CABINET_TABS}
       leftColumn={(
         <>
           <article className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-5 space-y-4">

@@ -7,6 +7,7 @@ import SignDocumentModal from '@/factorial/components/SignDocumentModal';
 import { myDocuments } from '@/factorial/api/documents';
 import type { SignedDoc } from '@/factorial/api/types';
 import { formatDateRu } from '@/factorial/lib/formatDate';
+import { CABINET_TABS } from '@/factorial/lib/routes';
 
 interface DocRow {
   id: number;
@@ -70,6 +71,7 @@ export default function MyDocumentsPage() {
           </div>
         }
         title="Мои документы"
+        secondaryNav={CABINET_TABS}
         toolbar={{ searchKey: 'name', searchPlaceholder: 'Поиск документа...' }}
         columns={columns}
         data={rows}

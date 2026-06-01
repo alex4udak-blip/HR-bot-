@@ -676,6 +676,7 @@ function getBlockForPath(path: string): string | null {
   }
   if (
     [
+      "/factorial",
       "/dashboard",
       "/all-candidates",
       "/workspaces",
@@ -742,6 +743,9 @@ export default function Layout() {
   const [sidebarVacancyMode, setSidebarVacancyMode] =
     useState<SidebarVacancyMode>("view");
   const routeBlock = getBlockForPath(location.pathname);
+  // На /factorial чёрное меню показывает модули брифа (Сотрудники/Документы/Кабинет);
+  // вне Факториала всё остаётся прежним.
+  const isFactorial = location.pathname.startsWith("/factorial");
   const activeNavigationBlock = routeBlock || activeBlock;
   const isHrSidebar = routeBlock === "hr";
   const [hrSidebarWidth, setHrSidebarWidth] = useState(readStoredHrSidebarWidth);
@@ -1315,6 +1319,45 @@ export default function Layout() {
                 })}
               </div>
 
+              {isFactorial && (
+                <nav className="hf-hr-nav" aria-label="Factorial navigation">
+                  <div className="hf-hr-nav-list">
+                    <NavLink
+                      to="/factorial/employees"
+                      className={({ isActive }) =>
+                        clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                      }
+                    >
+                      <HfSpriteIcon id="home-20" className="hf-hr-nav-icon" />
+                      Сотрудники
+                    </NavLink>
+                    <NavLink
+                      to="/factorial/files"
+                      className={({ isActive }) =>
+                        clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                      }
+                    >
+                      <HfSpriteIcon id="business-folder" className="hf-hr-nav-icon" />
+                      Документы
+                    </NavLink>
+                    <NavLink
+                      to="/factorial/profile"
+                      className={() =>
+                        clsx(
+                          "hf-hr-nav-item",
+                          /\/factorial\/(profile|time-off|my-documents)/.test(
+                            location.pathname,
+                          ) && "hf-hr-nav-item-active",
+                        )
+                      }
+                    >
+                      <HfSpriteIcon id="edit-2-20" className="hf-hr-nav-icon" />
+                      Личный кабинет
+                    </NavLink>
+                  </div>
+                </nav>
+              )}
+              {!isFactorial && (
               <nav
                 className={clsx(
                   "hf-hr-nav",
@@ -1529,7 +1572,9 @@ export default function Layout() {
                   <span className="min-w-0 flex-1">Закрытые вакансии</span>
                 </NavLink>
               </nav>
+              )}
 
+              {!isFactorial && (
               <div
                 ref={hrFabActionsRef}
                 className="hf-hr-fab-wrap"
@@ -1586,6 +1631,7 @@ export default function Layout() {
                   <Plus className="hf-hr-fab-icon" />
                 </button>
               </div>
+              )}
 
               <div className="hf-hr-sidebar-bottom">
                 <div className="hf-hr-user-row hf-hr-bottom-row">

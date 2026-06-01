@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import FactorialShell from './layouts/FactorialShell';
 
 // Основные страницы (порядок — как в боковой навигации Factorial)
-import DashboardPage from './pages/DashboardPage';
 import InboxPage from './pages/InboxPage';
 import CalendarPage from './pages/CalendarPage';
 import DiscoverPage from './pages/DiscoverPage';
@@ -44,9 +43,9 @@ export default function FactorialModule() {
   return (
     <Routes>
       <Route element={<FactorialShell />}>
-        {/* Главная */}
-        <Route index element={<DashboardPage />} />
-        <Route path="dashboard" element={<Navigate to="/factorial" replace />} />
+        {/* Вход в Факториал → сразу «Сотрудники» (первый модуль брифа) */}
+        <Route index element={<Navigate to="/factorial/employees" replace />} />
+        <Route path="dashboard" element={<Navigate to="/factorial/employees" replace />} />
         <Route path="dashboard/event/new" element={<AddEventFormPage />} />
         <Route path="dashboard/post/new" element={<WritePostFormPage />} />
         <Route path="dashboard/kudos/new" element={<KudosFormPage />} />
