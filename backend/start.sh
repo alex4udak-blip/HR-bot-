@@ -214,6 +214,42 @@ async def ensure_shadow_columns():
             await conn.execute(text('ALTER TABLE project_tasks ADD COLUMN blocker_id INTEGER REFERENCES blockers(id) ON DELETE SET NULL'))
             await conn.execute(text('CREATE INDEX ix_task_blocker ON project_tasks (blocker_id)'))
 
+        # Org chart (оргсхема): org_units table + employees.org_unit_id / manager_id.
+        # Их добавляет init_database(), но на проде он может не дойти до этого шага —
+        # дублируем в safety-net, иначе SELECT employees падает (500).
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'org_units')\"
+        ))
+        if not result.scalar():
+            print('Creating org_units table...')
+            await conn.execute(text('''
+                CREATE TABLE org_units (
+                    id SERIAL PRIMARY KEY,
+                    org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    parent_id INTEGER REFERENCES org_units(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    color VARCHAR(20),
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT now()
+                )
+            '''))
+            await conn.execute(text('CREATE INDEX ix_org_units_org_id ON org_units (org_id)'))
+            await conn.execute(text('CREATE INDEX ix_org_units_parent_id ON org_units (parent_id)'))
+
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'org_unit_id')\"
+        ))
+        if not result.scalar():
+            print('Adding org_unit_id column to employees...')
+            await conn.execute(text('ALTER TABLE employees ADD COLUMN org_unit_id INTEGER REFERENCES org_units(id) ON DELETE SET NULL'))
+
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'manager_id')\"
+        ))
+        if not result.scalar():
+            print('Adding manager_id column to employees...')
+            await conn.execute(text('ALTER TABLE employees ADD COLUMN manager_id INTEGER REFERENCES employees(id) ON DELETE SET NULL'))
+
         # Seed default email templates for all orgs
         result = await conn.execute(text('SELECT id FROM organizations'))
         org_ids = [r[0] for r in result.fetchall()]
