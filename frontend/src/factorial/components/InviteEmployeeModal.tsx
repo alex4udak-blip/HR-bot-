@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { createInvitation } from '../api/invitations';
 import type { Invitation } from '../api/types';
+import { getErrorDetail } from '@/utils';
 
 export default function InviteEmployeeModal({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('');
@@ -12,7 +13,12 @@ export default function InviteEmployeeModal({ onClose }: { onClose: () => void }
   const m = useMutation({
     mutationFn: () => createInvitation({ email: email || undefined, name: name || undefined, org_role: 'member' }),
     onSuccess: (inv: Invitation) => setLink(window.location.origin + inv.invitation_url),
-    onError: () => setErr('Не удалось создать приглашение.'),
+    onError: (e: unknown) => {
+      const d = getErrorDetail(e, '');
+      setErr(/already a member/i.test(d)
+        ? 'Этот email уже зарегистрирован в организации — введите другой или оставьте поле пустым.'
+        : (d || 'Не удалось создать приглашение.'));
+    },
   });
 
   const submit = (e: FormEvent) => { e.preventDefault(); setErr(''); m.mutate(); };
