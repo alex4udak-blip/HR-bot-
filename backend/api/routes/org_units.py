@@ -44,9 +44,22 @@ class OrgUnitNode(BaseModel):
     employees: List[EmployeeMini] = []
 
 
+class PersonNode(BaseModel):
+    id: int
+    user_name: Optional[str] = None
+    position: Optional[str] = None
+    manager_id: Optional[int] = None
+    org_unit_id: Optional[int] = None
+
+
+class AssignManager(BaseModel):
+    manager_id: Optional[int] = None
+
+
 class OrgChartResponse(BaseModel):
     units: List[OrgUnitNode]
     unassigned: List[EmployeeMini]
+    people: List[PersonNode] = []
 
 
 @router.get("", response_model=OrgChartResponse)
@@ -60,8 +73,11 @@ async def get_org_chart(org: Organization = Depends(get_current_org), db: AsyncS
     )).all()
     by_unit: dict = {}
     unassigned: List[EmployeeMini] = []
+    people: List[PersonNode] = []
     for emp, user in rows:
         mini = EmployeeMini(id=emp.id, user_name=user.name, position=emp.position)
+        people.append(PersonNode(id=emp.id, user_name=user.name, position=emp.position,
+                                 manager_id=emp.manager_id, org_unit_id=emp.org_unit_id))
         if emp.org_unit_id:
             by_unit.setdefault(emp.org_unit_id, []).append(mini)
         else:
@@ -71,7 +87,7 @@ async def get_org_chart(org: Organization = Depends(get_current_org), db: AsyncS
                     sort_order=u.sort_order or 0, employees=by_unit.get(u.id, []))
         for u in units
     ]
-    return OrgChartResponse(units=nodes, unassigned=unassigned)
+    return OrgChartResponse(units=nodes, unassigned=unassigned, people=people)
 
 
 @router.post("", response_model=OrgUnitNode)
@@ -171,3 +187,35 @@ async def assign_employee(employee_id: int, data: AssignEmployee, auth: tuple = 
     emp.org_unit_id = data.org_unit_id
     await db.commit()
     return {"success": True, "employee_id": employee_id, "org_unit_id": data.org_unit_id}
+
+
+@router.put("/manager/{employee_id}")
+async def set_manager(employee_id: int, data: AssignManager, auth: tuple = Depends(require_org_admin), db: AsyncSession = Depends(get_db)):
+    user, org, role = auth
+    emp = (await db.execute(
+        select(Employee).where(Employee.id == employee_id, Employee.org_id == org.id)
+    )).scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    new_mgr = data.manager_id
+    if new_mgr is not None:
+        if new_mgr == employee_id:
+            raise HTTPException(status_code=400, detail="Employee cannot be their own manager")
+        mgr = (await db.execute(
+            select(Employee).where(Employee.id == new_mgr, Employee.org_id == org.id)
+        )).scalar_one_or_none()
+        if not mgr:
+            raise HTTPException(status_code=404, detail="Manager not found")
+        # защита от циклов: идём вверх по цепочке руководителей от нового менеджера
+        rows2 = (await db.execute(select(Employee.id, Employee.manager_id).where(Employee.org_id == org.id))).all()
+        mp = {r[0]: r[1] for r in rows2}
+        cur = new_mgr
+        seen = set()
+        while cur is not None and cur not in seen:
+            if cur == employee_id:
+                raise HTTPException(status_code=400, detail="Cannot set manager to a subordinate (cycle)")
+            seen.add(cur)
+            cur = mp.get(cur)
+    emp.manager_id = new_mgr
+    await db.commit()
+    return {"success": True, "employee_id": employee_id, "manager_id": new_mgr}

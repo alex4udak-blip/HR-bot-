@@ -1561,6 +1561,7 @@ class Employee(Base):
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)  # link to candidate record
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
     org_unit_id = Column(Integer, ForeignKey("org_units.id", ondelete="SET NULL"), nullable=True, index=True)
+    manager_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Personal info
     position = Column(String(300), nullable=True)

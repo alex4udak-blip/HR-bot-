@@ -479,3 +479,9 @@ EMPLOYEE_ORG_UNIT_COLUMN = [
     ("ALTER TABLE employees ADD COLUMN IF NOT EXISTS org_unit_id INTEGER REFERENCES org_units(id) ON DELETE SET NULL", "Add org_unit_id to employees"),
     ("CREATE INDEX IF NOT EXISTS ix_employees_org_unit_id ON employees(org_unit_id)", "Index employees.org_unit_id"),
 ]
+
+# Manager (reporting line) for the org chart — self-reference on employees
+EMPLOYEE_MANAGER_COLUMN = [
+    ("ALTER TABLE employees ADD COLUMN IF NOT EXISTS manager_id INTEGER REFERENCES employees(id) ON DELETE SET NULL", "Add manager_id to employees"),
+    ("CREATE INDEX IF NOT EXISTS ix_employees_manager_id ON employees(manager_id)", "Index employees.manager_id"),
+]

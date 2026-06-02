@@ -60,6 +60,7 @@ from api.db.migrations import (
     CREATE_ORG_UNITS_SQL,
     ORG_UNITS_INDEXES,
     EMPLOYEE_ORG_UNIT_COLUMN,
+    EMPLOYEE_MANAGER_COLUMN,
 )
 
 logger = logging.getLogger("hr-analyzer")
@@ -249,6 +250,8 @@ async def init_database():
     for sql, description in ORG_UNITS_INDEXES:
         await run_migration(engine, sql, description)
     for sql, description in EMPLOYEE_ORG_UNIT_COLUMN:
+        await run_migration(engine, sql, description)
+    for sql, description in EMPLOYEE_MANAGER_COLUMN:
         await run_migration(engine, sql, description)
     logger.info("=== ORG UNITS READY ===")
 

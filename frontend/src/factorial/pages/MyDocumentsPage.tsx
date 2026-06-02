@@ -8,6 +8,7 @@ import { myDocuments } from '@/factorial/api/documents';
 import type { SignedDoc } from '@/factorial/api/types';
 import { formatDateRu } from '@/factorial/lib/formatDate';
 import { CABINET_TABS } from '@/factorial/lib/routes';
+import ContractCard from '@/factorial/components/cabinet/ContractCard';
 
 interface DocRow {
   id: number;
@@ -72,6 +73,7 @@ export default function MyDocumentsPage() {
         }
         title="Соглашения"
         secondaryNav={CABINET_TABS}
+        beforeToolbar={<ContractCard />}
         toolbar={{ searchKey: 'name', searchPlaceholder: 'Поиск документа...' }}
         columns={columns}
         data={rows}

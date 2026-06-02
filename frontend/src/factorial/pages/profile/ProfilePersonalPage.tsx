@@ -52,6 +52,12 @@ export default function ProfilePersonalPage() {
               <DetailRow label="Telegram" value={str(me?.telegram_username)} />
               <p className="text-fx-xs text-text-muted mt-3">Данные заполняет HR. Ниже можно загрузить скан паспорта.</p>
             </article>
+            <article className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-5">
+              <h2 className="font-semibold mb-2">Контакт для экстренной связи</h2>
+              <DetailRow label="Имя" value={str(e.emergency_contact_name)} />
+              <DetailRow label="Телефон" value={str(e.emergency_contact_phone)} />
+              <p className="text-fx-xs text-text-muted mt-3">Заполняет HR.</p>
+            </article>
             <PassportCard passport={passportMeta} />
           </>
         )

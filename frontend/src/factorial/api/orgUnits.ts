@@ -1,6 +1,7 @@
 import api from '@/services/api/client';
 
 export interface EmployeeMini { id: number; user_name?: string; position?: string; }
+export interface PersonNode { id: number; user_name?: string; position?: string; manager_id: number | null; org_unit_id: number | null; }
 export interface OrgUnitNode {
   id: number;
   name: string;
@@ -9,7 +10,7 @@ export interface OrgUnitNode {
   sort_order: number;
   employees: EmployeeMini[];
 }
-export interface OrgChart { units: OrgUnitNode[]; unassigned: EmployeeMini[]; }
+export interface OrgChart { units: OrgUnitNode[]; unassigned: EmployeeMini[]; people: PersonNode[]; }
 
 export const getOrgChart = () => api.get<OrgChart>('/org-units').then((r) => r.data);
 
@@ -24,3 +25,6 @@ export const deleteOrgUnit = (id: number) =>
 
 export const assignEmployee = (employeeId: number, orgUnitId: number | null) =>
   api.put(`/org-units/assign/${employeeId}`, { org_unit_id: orgUnitId }).then((r) => r.data);
+
+export const setManager = (employeeId: number, managerId: number | null) =>
+  api.put(`/org-units/manager/${employeeId}`, { manager_id: managerId }).then((r) => r.data);

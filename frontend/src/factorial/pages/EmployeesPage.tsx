@@ -7,6 +7,7 @@ import UserAvatar from '@/factorial/components/UserAvatar';
 import StatusPill from '@/factorial/components/StatusPill';
 import { useQuery } from '@tanstack/react-query';
 import { listEmployees } from '@/factorial/api/employees';
+import { getOrgChart } from '@/factorial/api/orgUnits';
 import { formatHiredAgo } from '@/factorial/lib/formatDate';
 import InviteEmployeeModal from '@/factorial/components/InviteEmployeeModal';
 import type { Employee } from '@/factorial/mocks/employees';
@@ -20,6 +21,17 @@ export default function EmployeesPage() {
     queryKey: ['fx', 'employees', 'table'],
     queryFn: () => listEmployees(true),
   });
+  // Отдел (HR org_unit) + Руководитель — из данных оргсхемы.
+  const { data: chart } = useQuery({ queryKey: ['fx', 'org-chart'], queryFn: getOrgChart });
+  const people = chart?.people ?? [];
+  const units = chart?.units ?? [];
+  const metaOf = (empId: number) => {
+    const p = people.find((x) => x.id === empId);
+    if (!p) return { dept: '—', manager: '—' };
+    const dept = p.org_unit_id ? (units.find((u) => u.id === p.org_unit_id)?.name || '—') : '—';
+    const manager = p.manager_id ? (people.find((x) => x.id === p.manager_id)?.user_name || '—') : '—';
+    return { dept, manager };
+  };
   const employees: Employee[] = rows.map((e) => ({
     id: e.id,
     fullName: e.user_name || '—',
@@ -54,6 +66,8 @@ export default function EmployeesPage() {
       ),
     },
     { accessorKey: 'position', header: 'Должность', cell: ({ getValue }) => (getValue() as string) || '' },
+    { id: 'dept', header: 'Отдел', accessorFn: (r) => metaOf(r.id).dept },
+    { id: 'manager', header: 'Руководитель', accessorFn: (r) => metaOf(r.id).manager },
     { accessorKey: 'location', header: 'Место работы' },
     { accessorKey: 'hiredAt', header: 'Нанят', cell: ({ getValue }) => { const v = getValue() as string; return v ? formatHiredAgo(v) : '—'; } },
     {
