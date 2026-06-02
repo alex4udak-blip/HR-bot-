@@ -57,6 +57,9 @@ from api.db.migrations import (
     SHARED_ACCESS_CALL_ID,
     SHARED_ACCESS_VACANCY_ID,
     ENTITY_FILES_ORG_ID,
+    CREATE_ORG_UNITS_SQL,
+    ORG_UNITS_INDEXES,
+    EMPLOYEE_ORG_UNIT_COLUMN,
 )
 
 logger = logging.getLogger("hr-analyzer")
@@ -239,6 +242,15 @@ async def init_database():
     # Entity transfer tracking columns
     for sql, description in ENTITY_TRACKING_COLUMNS:
         await run_migration(engine, sql, description)
+
+    # Step 8.5: Org units (HR org chart) — изолированная HR-структура
+    logger.info("=== SETTING UP ORG UNITS ===")
+    await run_migration(engine, CREATE_ORG_UNITS_SQL, "Create org_units table")
+    for sql, description in ORG_UNITS_INDEXES:
+        await run_migration(engine, sql, description)
+    for sql, description in EMPLOYEE_ORG_UNIT_COLUMN:
+        await run_migration(engine, sql, description)
+    logger.info("=== ORG UNITS READY ===")
 
     # Step 8: Invitations table
     logger.info("=== SETTING UP INVITATIONS ===")

@@ -15,6 +15,7 @@ import TimeOffPage from './pages/TimeOffPage';
 import TasksPage from './pages/TasksPage';
 import MyDocumentsPage from './pages/MyDocumentsPage';
 import EmployeesPage from './pages/EmployeesPage';
+import EmployeesOrgChartPage from './pages/EmployeesOrgChartPage';
 import FilesPage from './pages/FilesPage';
 import PagesPage from './pages/PagesPage';
 import TicketingPage from './pages/TicketingPage';
@@ -76,7 +77,7 @@ export default function FactorialModule() {
         <Route path="employees/new" element={<AddEmployeeFormPage />} />
         <Route path="employees/export" element={<ExportDataFormPage />} />
         <Route path="employees/teams" element={<EmployeesPage />} />
-        <Route path="employees/org-chart" element={<EmployeesPage />} />
+        <Route path="employees/org-chart" element={<EmployeesOrgChartPage />} />
         <Route path="employees/vacancies" element={<EmployeesPage />} />
         <Route path="files" element={<FilesPage />} />
         <Route path="pages" element={<PagesPage />} />

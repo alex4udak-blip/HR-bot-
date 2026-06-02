@@ -1538,6 +1538,19 @@ class FormVacancy(Base):
 # EMPLOYEE MANAGEMENT (Personal Cabinet, Leave Counter, Reminders)
 # ============================================================
 
+class OrgUnit(Base):
+    """HR org-chart unit — изолировано от рекрутингового Department."""
+    __tablename__ = "org_units"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_id = Column(Integer, ForeignKey("org_units.id", ondelete="CASCADE"), nullable=True, index=True)
+    name = Column(String(255), nullable=False)
+    color = Column(String(20), nullable=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=func.now())
+
+
 class Employee(Base):
     """Employee record — created when candidate transitions to staff"""
     __tablename__ = "employees"
@@ -1547,6 +1560,7 @@ class Employee(Base):
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)  # link to candidate record
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
+    org_unit_id = Column(Integer, ForeignKey("org_units.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Personal info
     position = Column(String(300), nullable=True)
