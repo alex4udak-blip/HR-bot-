@@ -231,6 +231,31 @@ def _employee_to_response(emp: Employee) -> EmployeeResponse:
 
 # ─── Employee CRUD ───────────────────────────────────────────
 
+async def sync_org_employees(org_id: int, db: AsyncSession) -> int:
+    """Подтянуть всех участников организации («Управление») в HR/Factorial:
+    создаёт запись Employee для каждого org-member, у кого её ещё нет. Идемпотентно."""
+    member_ids = list((await db.execute(
+        select(OrgMember.user_id).where(OrgMember.org_id == org_id)
+    )).scalars().all())
+    if not member_ids:
+        return 0
+    existing = set((await db.execute(
+        select(Employee.user_id).where(Employee.user_id.in_(member_ids))
+    )).scalars().all())
+    created = 0
+    for uid in member_ids:
+        if uid not in existing:
+            db.add(Employee(user_id=uid, org_id=org_id, is_active=True))
+            existing.add(uid)
+            created += 1
+    if created:
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+    return created
+
+
 @router.get("", response_model=List[EmployeeResponse])
 async def list_employees(
     active_only: bool = Query(True),
@@ -243,6 +268,8 @@ async def list_employees(
         raise HTTPException(status_code=403, detail="No organization")
     if not await _is_admin_or_owner(current_user, org.id, db):
         raise HTTPException(status_code=403, detail="Admin access required")
+
+    await sync_org_employees(org.id, db)
 
     query = (
         select(Employee)

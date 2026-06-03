@@ -1,7 +1,7 @@
 import api from '@/services/api/client';
 
 export interface EmployeeMini { id: number; user_name?: string; position?: string; }
-export interface PersonNode { id: number; user_name?: string; position?: string; manager_id: number | null; org_unit_id: number | null; }
+export interface PersonNode { id: number; user_name?: string; position?: string; manager_id: number | null; org_unit_id: number | null; hired_at?: string | null; }
 export interface OrgUnitNode {
   id: number;
   name: string;

@@ -50,6 +50,7 @@ class PersonNode(BaseModel):
     position: Optional[str] = None
     manager_id: Optional[int] = None
     org_unit_id: Optional[int] = None
+    hired_at: Optional[str] = None
 
 
 class AssignManager(BaseModel):
@@ -64,6 +65,8 @@ class OrgChartResponse(BaseModel):
 
 @router.get("", response_model=OrgChartResponse)
 async def get_org_chart(org: Organization = Depends(get_current_org), db: AsyncSession = Depends(get_db)):
+    from .employees import sync_org_employees
+    await sync_org_employees(org.id, db)
     units = (await db.execute(
         select(OrgUnit).where(OrgUnit.org_id == org.id).order_by(OrgUnit.sort_order, OrgUnit.id)
     )).scalars().all()
@@ -77,7 +80,8 @@ async def get_org_chart(org: Organization = Depends(get_current_org), db: AsyncS
     for emp, user in rows:
         mini = EmployeeMini(id=emp.id, user_name=user.name, position=emp.position)
         people.append(PersonNode(id=emp.id, user_name=user.name, position=emp.position,
-                                 manager_id=emp.manager_id, org_unit_id=emp.org_unit_id))
+                                 manager_id=emp.manager_id, org_unit_id=emp.org_unit_id,
+                                 hired_at=emp.department_start_date.isoformat() if emp.department_start_date else None))
         if emp.org_unit_id:
             by_unit.setdefault(emp.org_unit_id, []).append(mini)
         else:

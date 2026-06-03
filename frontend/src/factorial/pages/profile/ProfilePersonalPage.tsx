@@ -46,8 +46,6 @@ export default function ProfilePersonalPage() {
               <DetailRow label="Кем выдан" value={str(e.passport_issued_by)} />
               <DetailRow label="Дата выдачи" value={dat(e.passport_issued)} />
               <DetailRow label="Адрес" value={str(e.address)} />
-              <DetailRow label="ИНН" value={str(e.inn)} />
-              <DetailRow label="СНИЛС" value={str(e.snils)} />
               <DetailRow label="Телефон" value={str(me?.phone)} />
               <DetailRow label="Telegram" value={str(me?.telegram_username)} />
               <p className="text-fx-xs text-text-muted mt-3">Данные заполняет HR. Ниже можно загрузить скан паспорта.</p>
