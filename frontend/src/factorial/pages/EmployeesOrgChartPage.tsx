@@ -120,14 +120,29 @@ export default function EmployeesOrgChartPage() {
       units.forEach((u) => { const k = u.parent_id ?? null; if (!unitsByParent.has(k)) unitsByParent.set(k, []); unitsByParent.get(k)!.push(u); });
       const peopleByUnit = new Map<number | null, PersonNode[]>();
       people.forEach((p) => { const k = p.org_unit_id ?? null; if (!peopleByUnit.has(k)) peopleByUnit.set(k, []); peopleByUnit.get(k)!.push(p); });
+      // Внутри отдела — дерево по руководителю: lead сверху (нет руководителя в этом отделе), подчинённые под ним
+      const forest = (ppl: PersonNode[]): TNode[] => {
+        const scope = new Set(ppl.map((p) => p.id));
+        const byMgr = new Map<number, PersonNode[]>();
+        ppl.forEach((p) => { if (p.manager_id != null && scope.has(p.manager_id)) { if (!byMgr.has(p.manager_id)) byMgr.set(p.manager_id, []); byMgr.get(p.manager_id)!.push(p); } });
+        const seen = new Set<number>();
+        const buildP = (p: PersonNode): TNode => {
+          seen.add(p.id);
+          const kids = (byMgr.get(p.id) || []).filter((c) => !seen.has(c.id));
+          const node: TNode = { kind: 'emp', id: 'e' + p.id, empId: p.id, name: p.user_name || '—', position: p.position || '', person: p, childCount: kids.length };
+          if (kids.length && !collapsed.has(node.id)) node.children = kids.map(buildP);
+          return node;
+        };
+        return ppl.filter((p) => p.manager_id == null || !scope.has(p.manager_id)).map(buildP);
+      };
       const buildUnit = (u: OrgUnitNode): TNode => {
         const ppl = peopleByUnit.get(u.id) || [];
-        const kids = [...(unitsByParent.get(u.id) || []).map(buildUnit), ...ppl.map(buildPerson)];
+        const kids = [...(unitsByParent.get(u.id) || []).map(buildUnit), ...forest(ppl)];
         const node: TNode = { kind: 'unit', id: 'u' + u.id, unitId: u.id, name: u.name, deptColor: u.color || colorForValue(u.name), count: ppl.length, childCount: kids.length };
         if (kids.length && !collapsed.has(node.id)) node.children = kids;
         return node;
       };
-      const top = [...(unitsByParent.get(null) || []).map(buildUnit), ...(peopleByUnit.get(null) || []).map(buildPerson)];
+      const top = [...(unitsByParent.get(null) || []).map(buildUnit), ...forest(peopleByUnit.get(null) || [])];
       return company(top);
     }
 
