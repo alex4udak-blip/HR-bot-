@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 from api.database import get_db
 from api.models.database import (
     Employee, LeaveRequest, User, Organization, Department,
-    OrgMember, OrgRole, Notification,
+    DepartmentMember, OrgUnit, OrgMember, OrgRole, Notification,
 )
 from api.services.auth import get_current_user, get_user_org
 
@@ -256,6 +256,66 @@ async def sync_org_employees(org_id: int, db: AsyncSession) -> int:
     return created
 
 
+async def sync_org_departments(org_id: int, db: AsyncSession) -> int:
+    """Подтянуть распределение по отделам из Энцеладуса (departments/department_members)
+    в Factorial: создать org_units по именам департаментов и проставить employees.org_unit_id
+    тем, у кого он ещё НЕ задан. Идемпотентно; ручные назначения в Factorial не перетирает."""
+    depts = (await db.execute(
+        select(Department).where(Department.org_id == org_id, Department.is_active == True)  # noqa: E712
+    )).scalars().all()
+    if not depts:
+        return 0
+    units = (await db.execute(select(OrgUnit).where(OrgUnit.org_id == org_id))).scalars().all()
+    unit_by_name = {u.name: u for u in units}
+    dept_to_unit = {}
+    created = 0
+    for d in depts:
+        u = unit_by_name.get(d.name)
+        if not u:
+            u = OrgUnit(org_id=org_id, name=d.name, parent_id=None, color=d.color, sort_order=0)
+            db.add(u)
+            await db.flush()
+            unit_by_name[d.name] = u
+            created += 1
+        dept_to_unit[d.id] = u
+    # вложенность отделов — только если у узла ещё нет родителя (не перетираем ручное)
+    for d in depts:
+        if d.parent_id and d.parent_id in dept_to_unit:
+            u = dept_to_unit[d.id]
+            parent_u = dept_to_unit[d.parent_id]
+            if u.parent_id is None and parent_u.id != u.id:
+                u.parent_id = parent_u.id
+    # user_id -> department_id (первое членство)
+    dept_ids = [d.id for d in depts]
+    rows = (await db.execute(
+        select(DepartmentMember.user_id, DepartmentMember.department_id)
+        .where(DepartmentMember.department_id.in_(dept_ids))
+    )).all()
+    user_dept = {}
+    for uid, did in rows:
+        if uid not in user_dept:
+            user_dept[uid] = did
+    # проставить org_unit_id сотрудникам без отдела
+    emps = (await db.execute(
+        select(Employee).where(Employee.org_id == org_id, Employee.org_unit_id.is_(None))
+    )).scalars().all()
+    changed = 0
+    for e in emps:
+        did = user_dept.get(e.user_id)
+        if did is None and e.department_id in dept_to_unit:
+            did = e.department_id
+        u = dept_to_unit.get(did) if did is not None else None
+        if u:
+            e.org_unit_id = u.id
+            changed += 1
+    if created or changed:
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+    return changed
+
+
 @router.get("", response_model=List[EmployeeResponse])
 async def list_employees(
     active_only: bool = Query(True),
@@ -269,7 +329,14 @@ async def list_employees(
     if not await _is_admin_or_owner(current_user, org.id, db):
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    await sync_org_employees(org.id, db)
+    try:
+        await sync_org_employees(org.id, db)
+        await sync_org_departments(org.id, db)
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     query = (
         select(Employee)

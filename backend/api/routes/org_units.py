@@ -65,8 +65,15 @@ class OrgChartResponse(BaseModel):
 
 @router.get("", response_model=OrgChartResponse)
 async def get_org_chart(org: Organization = Depends(get_current_org), db: AsyncSession = Depends(get_db)):
-    from .employees import sync_org_employees
-    await sync_org_employees(org.id, db)
+    from .employees import sync_org_employees, sync_org_departments
+    try:
+        await sync_org_employees(org.id, db)
+        await sync_org_departments(org.id, db)
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
     units = (await db.execute(
         select(OrgUnit).where(OrgUnit.org_id == org.id).order_by(OrgUnit.sort_order, OrgUnit.id)
     )).scalars().all()
