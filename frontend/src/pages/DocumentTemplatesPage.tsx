@@ -262,7 +262,7 @@ export default function DocumentTemplatesPage() {
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="NDA, Трудовой договор..."
+                  placeholder="NDA, Договор..."
                   className="w-full px-4 py-2.5 bg-dark-800 border border-white/10 rounded-xl text-white placeholder:text-white/20 focus:outline-none focus:border-emerald-500/50 transition-colors"
                 />
               </div>
