@@ -189,6 +189,7 @@ async def assign_employee(employee_id: int, data: AssignEmployee, auth: tuple = 
     )).scalar_one_or_none()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
+    unit = None
     if data.org_unit_id is not None:
         unit = (await db.execute(
             select(OrgUnit).where(OrgUnit.id == data.org_unit_id, OrgUnit.org_id == org.id)
@@ -196,6 +197,34 @@ async def assign_employee(employee_id: int, data: AssignEmployee, auth: tuple = 
         if not unit:
             raise HTTPException(status_code=404, detail="Org unit not found")
     emp.org_unit_id = data.org_unit_id
+    # Write-through в реальные департаменты Энцеладуса (единый источник): перемещение в оргсхеме
+    # отражается в «Управление → Департаменты» (department_members + Employee.department_id) и
+    # ставит руководителем lead целевого отдела. Best-effort: ошибка не ломает основное назначение.
+    from api.models.database import Department, DepartmentMember, DeptRole
+    try:
+        all_depts = (await db.execute(select(Department).where(Department.org_id == org.id))).scalars().all()
+        org_dept_ids = [d.id for d in all_depts]
+        target_dept = next((d for d in all_depts if unit is not None and d.name == unit.name and d.is_active), None)
+        emp.department_id = target_dept.id if target_dept else None
+        if org_dept_ids:
+            old_dm = (await db.execute(
+                select(DepartmentMember).where(DepartmentMember.user_id == emp.user_id, DepartmentMember.department_id.in_(org_dept_ids))
+            )).scalars().all()
+            for dm in old_dm:
+                await db.delete(dm)
+            if target_dept:
+                db.add(DepartmentMember(department_id=target_dept.id, user_id=emp.user_id, role=DeptRole.member))
+        new_mgr = None
+        if target_dept:
+            lead = (await db.execute(
+                select(DepartmentMember).where(DepartmentMember.department_id == target_dept.id, DepartmentMember.role == DeptRole.lead)
+            )).scalars().first()
+            if lead and lead.user_id != emp.user_id:
+                lead_emp = (await db.execute(select(Employee).where(Employee.user_id == lead.user_id, Employee.org_id == org.id))).scalar_one_or_none()
+                new_mgr = lead_emp.id if lead_emp else None
+        emp.manager_id = new_mgr
+    except Exception:
+        pass
     await db.commit()
     return {"success": True, "employee_id": employee_id, "org_unit_id": data.org_unit_id}
 
