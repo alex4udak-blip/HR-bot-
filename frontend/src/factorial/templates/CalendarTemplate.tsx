@@ -16,9 +16,11 @@ interface CalendarTemplateProps {
   secondaryNav?: { label: string; href: string; end?: boolean }[];
   events: CalendarEvent[];
   primaryCta?: { label: string; onClick: () => void };
+  /** Опциональный блок между заголовком и сеткой календаря (например, счётчики отпуска). */
+  headerExtra?: ReactNode;
 }
 
-export default function CalendarTemplate({ breadcrumb, titleIcon, title, secondaryNav, events, primaryCta }: CalendarTemplateProps) {
+export default function CalendarTemplate({ breadcrumb, titleIcon, title, secondaryNav, events, primaryCta, headerExtra }: CalendarTemplateProps) {
   const [currentMonth, setCurrentMonth] = useState(() => {
     const n = new Date();
     return new Date(n.getFullYear(), n.getMonth(), 1);
@@ -46,6 +48,7 @@ export default function CalendarTemplate({ breadcrumb, titleIcon, title, seconda
           </div>
         )}
         {secondaryNav && <SecondaryNav items={secondaryNav} />}
+        {headerExtra}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button type="button" className="p-2 rounded-fx-lg border border-border bg-white hover:bg-sidebar-hover">

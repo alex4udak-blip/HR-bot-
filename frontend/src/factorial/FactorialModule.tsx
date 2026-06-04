@@ -1,4 +1,6 @@
+import { type ReactElement } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useAuthStore } from '@/stores/authStore';
 import FactorialShell from './layouts/FactorialShell';
 
 // Основные страницы (порядок — как в боковой навигации Factorial)
@@ -43,12 +45,24 @@ import KudosFormPage from './pages/forms/KudosFormPage';
  * Боковая навигация и переходы используют АБСОЛЮТНЫЕ /factorial/* (см. lib/routes.ts).
  */
 export default function FactorialModule() {
+  const user = useAuthStore((s) => s.user);
+  // «Сотрудники» и «Документы» — только HR/админ/рекрутёр. Обычный сотрудник (member)
+  // их не видит и не может открыть по URL: дефолтная посадка и guard ведут в «Личный кабинет».
+  const canManage =
+    user?.role === 'superadmin' ||
+    user?.org_role === 'owner' ||
+    user?.org_role === 'admin' ||
+    user?.org_role === 'hr';
+  const home = canManage ? '/factorial/employees' : '/factorial/profile';
+  const guard = (el: ReactElement): ReactElement =>
+    canManage ? el : <Navigate to="/factorial/profile" replace />;
+
   return (
     <Routes>
       <Route element={<FactorialShell />}>
-        {/* Вход в Факториал → сразу «Сотрудники» (первый модуль брифа) */}
-        <Route index element={<Navigate to="/factorial/employees" replace />} />
-        <Route path="dashboard" element={<Navigate to="/factorial/employees" replace />} />
+        {/* Вход в Факториал: HR → «Сотрудники», обычный сотрудник → «Личный кабинет» */}
+        <Route index element={<Navigate to={home} replace />} />
+        <Route path="dashboard" element={<Navigate to={home} replace />} />
         <Route path="dashboard/event/new" element={<AddEventFormPage />} />
         <Route path="dashboard/post/new" element={<WritePostFormPage />} />
         <Route path="dashboard/kudos/new" element={<KudosFormPage />} />
@@ -74,14 +88,14 @@ export default function FactorialModule() {
         <Route path="tasks/new" element={<CreateTaskFormPage />} />
         <Route path="my-documents" element={<MyDocumentsPage />} />
 
-        {/* Компания */}
-        <Route path="employees" element={<EmployeesPage />} />
-        <Route path="employees/new" element={<AddEmployeeFormPage />} />
-        <Route path="employees/export" element={<ExportDataFormPage />} />
-        <Route path="employees/teams" element={<EmployeesTeamsPage />} />
-        <Route path="employees/org-chart" element={<EmployeesOrgChartPage />} />
-        <Route path="employees/vacancies" element={<EmployeesVacanciesPage />} />
-        <Route path="files" element={<FilesPage />} />
+        {/* Компания — только HR/админ; обычный сотрудник редиректится в «Личный кабинет» */}
+        <Route path="employees" element={guard(<EmployeesPage />)} />
+        <Route path="employees/new" element={guard(<AddEmployeeFormPage />)} />
+        <Route path="employees/export" element={guard(<ExportDataFormPage />)} />
+        <Route path="employees/teams" element={guard(<EmployeesTeamsPage />)} />
+        <Route path="employees/org-chart" element={guard(<EmployeesOrgChartPage />)} />
+        <Route path="employees/vacancies" element={guard(<EmployeesVacanciesPage />)} />
+        <Route path="files" element={guard(<FilesPage />)} />
         <Route path="pages" element={<PagesPage />} />
         <Route path="ticketing" element={<TicketingPage />} />
 

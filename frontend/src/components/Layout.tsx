@@ -1187,6 +1187,9 @@ export default function Layout() {
     user?.role === "superadmin" ||
     user?.org_role === "owner" ||
     user?.org_role === "admin";
+  // Factorial: «Сотрудники» и «Документы» — только для HR/админа (и рекрутёра).
+  // Обычный сотрудник (org_role=member) видит лишь «Отпуска» и «Личный кабинет».
+  const canManageFactorialPeople = isHrSidebarAdmin || user?.org_role === "hr";
   const sidebarSearchParams = new URLSearchParams(location.search);
   const sidebarSelectedVacancyId = sidebarSearchParams.get("v");
   const isClosedFunnelsView =
@@ -1322,24 +1325,28 @@ export default function Layout() {
               {isFactorial && (
                 <nav className="hf-hr-nav" aria-label="Factorial navigation">
                   <div className="hf-hr-nav-list">
-                    <NavLink
-                      to="/factorial/employees"
-                      className={({ isActive }) =>
-                        clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
-                      }
-                    >
-                      <HfSpriteIcon id="home-20" className="hf-hr-nav-icon" />
-                      Сотрудники
-                    </NavLink>
-                    <NavLink
-                      to="/factorial/files"
-                      className={({ isActive }) =>
-                        clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
-                      }
-                    >
-                      <HfSpriteIcon id="business-folder" className="hf-hr-nav-icon" />
-                      Документы
-                    </NavLink>
+                    {canManageFactorialPeople && (
+                      <>
+                        <NavLink
+                          to="/factorial/employees"
+                          className={({ isActive }) =>
+                            clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                          }
+                        >
+                          <HfSpriteIcon id="home-20" className="hf-hr-nav-icon" />
+                          Сотрудники
+                        </NavLink>
+                        <NavLink
+                          to="/factorial/files"
+                          className={({ isActive }) =>
+                            clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                          }
+                        >
+                          <HfSpriteIcon id="business-folder" className="hf-hr-nav-icon" />
+                          Документы
+                        </NavLink>
+                      </>
+                    )}
                     <NavLink
                       to="/factorial/time-off"
                       className={({ isActive }) =>

@@ -3,7 +3,8 @@ import { Palmtree as TreePalm } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import CalendarTemplate, { type CalendarEvent } from '@/factorial/templates/CalendarTemplate';
 import RequestLeaveModal from '@/factorial/components/RequestLeaveModal';
-import { getMyProfile, listLeaveRequests } from '@/factorial/api/employees';
+import VacationCounters from '@/factorial/components/cabinet/VacationCounters';
+import { getMyProfile, listLeaveRequests, getLeaveBalance } from '@/factorial/api/employees';
 import { getAllTimeOff, type UnifiedTimeOff } from '@/factorial/api/timeoff';
 
 const TYPE_COLOR: Record<string, string> = {
@@ -49,6 +50,16 @@ export default function TimeOffPage() {
     enabled: !isAdmin,
   });
 
+  // Баланс текущего сотрудника для счётчиков «Доступно / Накоплено».
+  const { data: balance } = useQuery({
+    queryKey: ['fx', 'leave-balance', me?.id],
+    queryFn: () => getLeaveBalance(me!.id),
+    enabled: !!me,
+  });
+  const pendingVacationDays = myReqs
+    .filter((r) => r.employee_id === me?.id && r.status === 'pending' && r.type === 'vacation')
+    .reduce((s, r) => s + r.days, 0);
+
   const events: CalendarEvent[] = isAdmin
     ? rows
         .filter((r) => r.status !== 'rejected')
@@ -81,6 +92,7 @@ export default function TimeOffPage() {
         title="Отпуска"
         events={events}
         primaryCta={{ label: 'Запросить отпуск', onClick: () => setOpen(true) }}
+        headerExtra={me ? <VacationCounters balance={balance} pendingDays={pendingVacationDays} /> : undefined}
       />
 
       {isAdmin && (
