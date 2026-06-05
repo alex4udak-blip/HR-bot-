@@ -1,4 +1,5 @@
-import { User } from 'lucide-react';
+import { useState } from 'react';
+import { User, Pencil } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import ProfileTemplate from '@/factorial/templates/ProfileTemplate';
 import { getMyProfile } from '@/factorial/api/employees';
@@ -6,6 +7,7 @@ import { formatDateRu } from '@/factorial/lib/formatDate';
 import { CABINET_TABS } from '@/factorial/lib/routes';
 import DetailRow from '@/factorial/components/cabinet/DetailRow';
 import PassportCard from '@/factorial/components/PassportCard';
+import EmployeeEditModal from '@/factorial/components/EmployeeEditModal';
 
 const TITLE_ICON = (
   <div className="w-9 h-9 rounded-fx-lg bg-pink-100 flex items-center justify-center">
@@ -15,6 +17,7 @@ const TITLE_ICON = (
 
 export default function ProfilePersonalPage() {
   const { data: me, isError } = useQuery({ queryKey: ['fx', 'me'], queryFn: getMyProfile, retry: false });
+  const [editOpen, setEditOpen] = useState(false);
 
   const e = (me?.extra_data || {}) as Record<string, unknown>;
   const str = (v: unknown) => (v ? String(v) : '—');
@@ -39,7 +42,16 @@ export default function ProfilePersonalPage() {
         ) : (
           <>
             <article className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-5">
-              <h2 className="font-semibold mb-2">Личные данные</h2>
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="font-semibold">Личные данные</h2>
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-fx-xs font-medium border border-card-border-soft rounded-fx-lg hover:bg-sidebar-hover"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Изменить
+                </button>
+              </div>
               <DetailRow label="ФИО" value={fio} />
               <DetailRow label="Дата рождения" value={dat(e.birth_date)} />
               <DetailRow label="№ паспорта" value={str(e.passport_number)} />
@@ -48,15 +60,16 @@ export default function ProfilePersonalPage() {
               <DetailRow label="Адрес" value={str(e.address)} />
               <DetailRow label="Телефон" value={str(me?.phone)} />
               <DetailRow label="Telegram" value={str(me?.telegram_username)} />
-              <p className="text-fx-xs text-text-muted mt-3">Данные заполняет HR. Ниже можно загрузить скан паспорта.</p>
+              <p className="text-fx-xs text-text-muted mt-3">Данные можете заполнить вы или HR. Ниже можно загрузить скан паспорта.</p>
             </article>
             <article className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-5">
               <h2 className="font-semibold mb-2">Контакт для экстренной связи</h2>
               <DetailRow label="Имя" value={str(e.emergency_contact_name)} />
               <DetailRow label="Телефон" value={str(e.emergency_contact_phone)} />
-              <p className="text-fx-xs text-text-muted mt-3">Заполняет HR.</p>
+              <p className="text-fx-xs text-text-muted mt-3">Можете заполнить вы или HR (кнопка «Изменить»).</p>
             </article>
             <PassportCard passport={passportMeta} />
+            {editOpen && <EmployeeEditModal selfMode onClose={() => setEditOpen(false)} />}
           </>
         )
       }

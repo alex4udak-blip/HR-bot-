@@ -1,21 +1,26 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getEmployee, updateEmployee } from '../api/employees';
+import { getEmployee, updateEmployee, getMyProfile, updateMyProfile } from '../api/employees';
 
 // Редактирование карточки сотрудника (HR/админ). extra_data мёржится, чтобы не затереть
 // поля, которых нет в форме. Дата начала работы пишет department_start_date (от неё считается
 // стаж/отпуска), поэтому правка тут чинит и «менее месяца», и нулевые счётчики.
 export default function EmployeeEditModal({
   employeeId,
+  selfMode = false,
   onClose,
   onSaved,
 }: {
-  employeeId: number;
+  employeeId?: number;
+  selfMode?: boolean;
   onClose: () => void;
   onSaved?: () => void;
 }) {
   const qc = useQueryClient();
-  const { data: emp, isLoading } = useQuery({ queryKey: ['fx', 'employee', employeeId], queryFn: () => getEmployee(employeeId) });
+  const { data: emp, isLoading } = useQuery({
+    queryKey: selfMode ? ['fx', 'me'] : ['fx', 'employee', employeeId],
+    queryFn: () => (selfMode ? getMyProfile() : getEmployee(employeeId!)),
+  });
   const [form, setForm] = useState<Record<string, string>>({});
   const [err, setErr] = useState('');
 
@@ -63,13 +68,14 @@ export default function EmployeeEditModal({
         emergency_contact_name: u(form.emergency_contact_name),
         emergency_contact_phone: u(form.emergency_contact_phone),
       };
-      return updateEmployee(employeeId, {
+      const body = {
         position: form.position.trim() || null,
         phone: form.phone.trim() || null,
         telegram_username: form.telegram_username.trim() || null,
         department_start_date: form.department_start_date ? `${form.department_start_date}T00:00:00` : null,
         extra_data: extra,
-      });
+      };
+      return selfMode ? updateMyProfile(body) : updateEmployee(employeeId!, body);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fx'] });
@@ -88,7 +94,7 @@ export default function EmployeeEditModal({
   return (
     <div className="fx-modal-overlay" onClick={onClose}>
       <form className="fx-modal" style={{ width: 560, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h3>Редактировать сотрудника</h3>
+        <h3>{selfMode ? 'Редактировать профиль' : 'Редактировать сотрудника'}</h3>
         {isLoading || !emp ? (
           <div className="fx-sub">Загрузка…</div>
         ) : (

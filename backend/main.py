@@ -457,39 +457,45 @@ async def lifespan(app: FastAPI):
         bool(settings.communication_api_key),
     )
 
-    # Startup - initialize database (wait for it to complete)
-    try:
-        await asyncio.wait_for(init_database(), timeout=120)
-    except asyncio.TimeoutError:
-        logger.error("Database initialization timed out")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
+    # Тяжёлая инициализация (БД, миграции, Redis, Playwright) — В ФОНЕ, чтобы uvicorn
+    # начал отвечать на /health сразу и контейнер проходил healthcheck Saturn. Раньше эти
+    # awaits блокировали startup (init_database + Alembic без таймаута), сервер не успевал
+    # подняться в окно healthcheck (~2.5 мин) и деплой откатывался. Движок БД создаётся при
+    # импорте, поэтому /health (пинг БД) работает и до завершения этой инициализации.
+    async def _deferred_startup():
+        try:
+            await asyncio.wait_for(init_database(), timeout=120)
+        except asyncio.TimeoutError:
+            logger.error("Database initialization timed out")
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}")
 
-    # Run Alembic migrations after init_database
-    try:
-        await asyncio.get_event_loop().run_in_executor(None, run_alembic_migrations_sync)
-    except Exception as e:
-        logger.warning(f"Alembic migration failed: {e}")
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, run_alembic_migrations_sync)
+        except Exception as e:
+            logger.warning(f"Alembic migration failed: {e}")
 
-    # Initialize Redis connection
-    try:
-        redis = await asyncio.wait_for(get_redis(), timeout=10)
-        if redis:
-            logger.info("Redis cache connected successfully")
-        else:
-            logger.warning("Redis unavailable, using in-memory cache fallback")
-    except asyncio.TimeoutError:
-        logger.warning("Redis connection timed out, using in-memory cache")
-    except Exception as e:
-        logger.warning(f"Redis connection failed: {e}, using in-memory cache")
+        try:
+            redis = await asyncio.wait_for(get_redis(), timeout=10)
+            if redis:
+                logger.info("Redis cache connected successfully")
+            else:
+                logger.warning("Redis unavailable, using in-memory cache fallback")
+        except asyncio.TimeoutError:
+            logger.warning("Redis connection timed out, using in-memory cache")
+        except Exception as e:
+            logger.warning(f"Redis connection failed: {e}, using in-memory cache")
 
-    # Check Playwright status (for Fireflies link processing)
-    try:
-        await asyncio.wait_for(check_playwright_status(), timeout=30)
-    except asyncio.TimeoutError:
-        logger.warning("Playwright check timed out")
-    except Exception as e:
-        logger.warning(f"Playwright check failed: {e}")
+        try:
+            await asyncio.wait_for(check_playwright_status(), timeout=30)
+        except asyncio.TimeoutError:
+            logger.warning("Playwright check timed out")
+        except Exception as e:
+            logger.warning(f"Playwright check failed: {e}")
+
+        logger.info("Deferred startup complete (db/migrations/redis/playwright)")
+
+    asyncio.create_task(_deferred_startup())
 
     # Start Telegram bot in background
     bot_task = None

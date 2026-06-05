@@ -16,6 +16,10 @@ export const createEmployee = (body: Partial<Employee> & { user_id: number }) =>
 export const updateEmployee = (id: number, body: Partial<Employee>) =>
   api.put<Employee>(`/employees/${id}`, body).then((r) => r.data);
 
+// Сотрудник правит СВОЙ профиль (личный кабинет) — PUT /employees/me.
+export const updateMyProfile = (body: Partial<Employee>) =>
+  api.put<Employee>('/employees/me', body).then((r) => r.data);
+
 export const dismissEmployee = (id: number, reason?: string) =>
   api
     .delete(`/employees/${id}${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`)

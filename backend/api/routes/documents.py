@@ -112,6 +112,18 @@ def _render_template(content: str, employee: Employee, user: User) -> str:
         "passport_number", "passport_issued", "passport_issued_by", "address", "inn", "snils",
     ):
         replacements[key] = str(extra.get(key, "") or "")
+    # ФИО с фолбэком, чтобы не выходило пустое «Исполнитель: ,»:
+    # extra.full_name → склейка фамилия/имя/отчество → имя пользователя.
+    fio = (
+        replacements["full_name"].strip()
+        or " ".join(
+            p for p in (replacements["last_name"], replacements["first_name"], replacements["middle_name"]) if p.strip()
+        ).strip()
+        or (user.name or "")
+    )
+    replacements["full_name"] = fio
+    if not replacements["name"].strip():
+        replacements["name"] = fio
     result = content
     for key, value in replacements.items():
         result = result.replace("{{" + key + "}}", str(value))
