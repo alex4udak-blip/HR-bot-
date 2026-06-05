@@ -1,27 +1,29 @@
 import { useState } from 'react';
-import { Users } from 'lucide-react';
+import { Users, Trash2, FolderInput, Download, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import * as XLSX from 'xlsx';
 import TableTemplate from '@/factorial/templates/TableTemplate';
 import UserAvatar from '@/factorial/components/UserAvatar';
 import StatusPill from '@/factorial/components/StatusPill';
-import { useQuery } from '@tanstack/react-query';
-import { listEmployees } from '@/factorial/api/employees';
-import { getOrgChart } from '@/factorial/api/orgUnits';
+import { listEmployees, dismissEmployee } from '@/factorial/api/employees';
+import { getOrgChart, assignEmployee } from '@/factorial/api/orgUnits';
 import { formatHiredAgo } from '@/factorial/lib/formatDate';
 import InviteEmployeeModal from '@/factorial/components/InviteEmployeeModal';
+import EmployeeEditModal from '@/factorial/components/EmployeeEditModal';
 import type { Employee } from '@/factorial/mocks/employees';
 
 export default function EmployeesPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [invite, setInvite] = useState(false);
-  // Реальные данные из бэкенда Энцеладуса (active_only). Маппим в строки таблицы
-  // ровно той же формы, что ждут колонки клона — визуал не меняется.
-  const { data: rows = [] } = useQuery({
-    queryKey: ['fx', 'employees', 'table'],
-    queryFn: () => listEmployees(true),
-  });
-  // Отдел (HR org_unit) + Руководитель — из данных оргсхемы.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveUnit, setMoveUnit] = useState('');
+  const [editId, setEditId] = useState<number | null>(null);
+
+  const { data: rows = [] } = useQuery({ queryKey: ['fx', 'employees', 'table'], queryFn: () => listEmployees(true) });
   const { data: chart } = useQuery({ queryKey: ['fx', 'org-chart'], queryFn: getOrgChart });
   const people = chart?.people ?? [];
   const units = chart?.units ?? [];
@@ -42,16 +44,59 @@ export default function EmployeesPage() {
     contractStatus: e.contract_signed ? 'completed' : 'in_progress',
   }));
 
+  // Выделение строк (по id, сохраняется между страницами/поиском)
+  const toggle = (id: number) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allIds = employees.map((e) => e.id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(allIds));
+  const clear = () => setSelected(new Set());
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['fx', 'employees'] });
+    qc.invalidateQueries({ queryKey: ['fx', 'org-chart'] });
+  };
+
+  const dismissM = useMutation({
+    mutationFn: async () => { for (const id of Array.from(selected)) await dismissEmployee(id); },
+    onSuccess: () => { refresh(); clear(); },
+  });
+  const moveM = useMutation({
+    mutationFn: async () => {
+      const unitId = moveUnit ? Number(moveUnit) : null;
+      for (const id of Array.from(selected)) await assignEmployee(id, unitId);
+    },
+    onSuccess: () => { refresh(); clear(); setMoveOpen(false); setMoveUnit(''); },
+  });
+
+  const onDismiss = () => {
+    if (!selected.size) return;
+    if (window.confirm(`Уволить выбранных (${selected.size})? Станут неактивными, данные не удаляются.`)) dismissM.mutate();
+  };
+  const onExport = () => {
+    const sel = employees.filter((e) => selected.has(e.id));
+    const data = sel.map((e) => ({
+      'Сотрудник': e.fullName,
+      'Должность': e.position,
+      'Отдел': metaOf(e.id).dept,
+      'Руководитель': metaOf(e.id).manager,
+      'Место работы': e.location,
+      'Доступ': e.accessStatus === 'active' ? 'Активен' : 'Неактивен',
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Сотрудники');
+    XLSX.writeFile(wb, 'employees-selected.xlsx');
+  };
+
   const columns: ColumnDef<Employee, any>[] = [
     {
       id: 'select',
-      header: '',
-      cell: () => (
-        <input
-          type="checkbox"
-          className="rounded border-border"
-          onClick={(e) => e.stopPropagation()}
-        />
+      enableSorting: false,
+      header: () => (
+        <input type="checkbox" className="rounded border-border" checked={allSelected} onChange={toggleAll} onClick={(e) => e.stopPropagation()} aria-label="Выбрать всех" />
+      ),
+      cell: ({ row }) => (
+        <input type="checkbox" className="rounded border-border" checked={selected.has(row.original.id)} onChange={() => toggle(row.original.id)} onClick={(e) => e.stopPropagation()} />
       ),
       size: 32,
     },
@@ -84,38 +129,79 @@ export default function EmployeesPage() {
 
   return (
     <>
-    <TableTemplate
-      breadcrumb={[{ label: 'Сотрудники' }]}
-      titleIcon={
-        <div className="w-9 h-9 rounded-fx-lg bg-pink-100 flex items-center justify-center">
-          <Users className="w-5 h-5 text-pink-600" />
+      <TableTemplate
+        breadcrumb={[{ label: 'Сотрудники' }]}
+        titleIcon={
+          <div className="w-9 h-9 rounded-fx-lg bg-pink-100 flex items-center justify-center">
+            <Users className="w-5 h-5 text-pink-600" />
+          </div>
+        }
+        title="Сотрудники"
+        secondaryNav={[
+          { label: 'Сотрудники', href: '/factorial/employees', end: true },
+          { label: 'Команды', href: '/factorial/employees/teams' },
+          { label: 'Оргсхема', href: '/factorial/employees/org-chart' },
+        ]}
+        beforeToolbar={
+          <div className="grid grid-cols-2 gap-3 max-w-md">
+            <MiniCard label="0 ожидает принятия" />
+            <MiniCard label="0 не приглашен" />
+          </div>
+        }
+        toolbar={{
+          searchKey: 'fullName',
+          searchPlaceholder: 'Поиск сотрудника...',
+          filterAction: () => alert('Demo mode — фильтры'),
+          exportAction: () => navigate('/factorial/employees/export'),
+          primaryCta: { label: 'Добавить сотрудника', onClick: () => setInvite(true) },
+        }}
+        columns={columns}
+        data={employees}
+        pageSize={20}
+      />
+
+      {invite && <InviteEmployeeModal onClose={() => setInvite(false)} />}
+      {editId != null && <EmployeeEditModal employeeId={editId} onClose={() => setEditId(null)} onSaved={refresh} />}
+
+      {moveOpen && (
+        <div className="fx-modal-overlay" onClick={() => setMoveOpen(false)}>
+          <div className="fx-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Переместить в отдел ({selected.size})</h3>
+            <div className="fx-field">
+              <label>Отдел</label>
+              <select className="fx-select" value={moveUnit} onChange={(e) => setMoveUnit(e.target.value)}>
+                <option value="">— Без отдела —</option>
+                {units.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}
+              </select>
+            </div>
+            <div className="fx-modal-actions">
+              <button type="button" className="fx-btn fx-btn--secondary" onClick={() => setMoveOpen(false)}>Отмена</button>
+              <button type="button" className="fx-btn fx-btn--primary" disabled={moveM.isPending} onClick={() => moveM.mutate()}>{moveM.isPending ? 'Перемещение…' : 'Переместить'}</button>
+            </div>
+          </div>
         </div>
-      }
-      title="Сотрудники"
-      secondaryNav={[
-        { label: 'Сотрудники', href: '/factorial/employees', end: true },
-        { label: 'Команды', href: '/factorial/employees/teams' },
-        { label: 'Оргсхема', href: '/factorial/employees/org-chart' },
-        { label: 'Вакансии', href: '/factorial/employees/vacancies' },
-      ]}
-      beforeToolbar={
-        <div className="grid grid-cols-2 gap-3 max-w-md">
-          <MiniCard label="0 ожидает принятия" />
-          <MiniCard label="0 не приглашен" />
+      )}
+
+      {selected.size > 0 && (
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-50 flex items-center gap-1 rounded-2xl shadow-card px-3 py-2 text-white" style={{ background: '#1E293B' }}>
+          <span className="text-fx-sm px-2 font-medium">{selected.size} выбрано</span>
+          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm hover:bg-white/10" onClick={clear}>Снять</button>
+          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm hover:bg-white/10 inline-flex items-center gap-1.5" onClick={() => setMoveOpen(true)}>
+            <FolderInput className="w-4 h-4" />Переместить
+          </button>
+          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm hover:bg-white/10 inline-flex items-center gap-1.5" onClick={onExport}>
+            <Download className="w-4 h-4" />Экспорт
+          </button>
+          {selected.size === 1 && (
+            <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm hover:bg-white/10 inline-flex items-center gap-1.5" onClick={() => setEditId(Array.from(selected)[0])}>
+              <Pencil className="w-4 h-4" />Редактировать
+            </button>
+          )}
+          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm inline-flex items-center gap-1.5 disabled:opacity-60" style={{ background: '#DC2626' }} onClick={onDismiss} disabled={dismissM.isPending}>
+            <Trash2 className="w-4 h-4" />{dismissM.isPending ? 'Увольнение…' : 'Уволить'}
+          </button>
         </div>
-      }
-      toolbar={{
-        searchKey: 'fullName',
-        searchPlaceholder: 'Поиск сотрудника...',
-        filterAction: () => alert('Demo mode — фильтры'),
-        exportAction: () => navigate('/factorial/employees/export'),
-        primaryCta: { label: 'Добавить сотрудника', onClick: () => setInvite(true) },
-      }}
-      columns={columns}
-      data={employees}
-      pageSize={20}
-    />
-    {invite && <InviteEmployeeModal onClose={() => setInvite(false)} />}
+      )}
     </>
   );
 }

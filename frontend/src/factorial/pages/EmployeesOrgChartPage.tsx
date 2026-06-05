@@ -15,7 +15,6 @@ const NAV = [
   { label: 'Сотрудники', href: '/factorial/employees', end: true },
   { label: 'Команды', href: '/factorial/employees/teams' },
   { label: 'Оргсхема', href: '/factorial/employees/org-chart' },
-  { label: 'Вакансии', href: '/factorial/employees/vacancies' },
 ];
 
 const NODE_W = 190, NODE_H = 96, GAP_X = 26, GAP_Y = 60;

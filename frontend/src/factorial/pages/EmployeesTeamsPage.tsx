@@ -9,7 +9,6 @@ const NAV = [
   { label: 'Сотрудники', href: '/factorial/employees', end: true },
   { label: 'Команды', href: '/factorial/employees/teams' },
   { label: 'Оргсхема', href: '/factorial/employees/org-chart' },
-  { label: 'Вакансии', href: '/factorial/employees/vacancies' },
 ];
 
 export default function EmployeesTeamsPage() {
