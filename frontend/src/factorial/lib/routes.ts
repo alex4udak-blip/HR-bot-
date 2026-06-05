@@ -42,5 +42,4 @@ export const CABINET_TABS = [
   { label: 'Личные данные', href: '/factorial/profile/personal' },
   { label: 'Соглашения', href: '/factorial/my-documents' },
   { label: 'Планирование', href: '/factorial/profile/planning_versions' },
-  { label: 'Другое', href: '/factorial/profile/custom_tables' },
 ];

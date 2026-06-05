@@ -905,3 +905,45 @@ async def get_my_passport(
         "content_type": meta.get("content_type"),
         "data_base64": _b64.b64encode(raw).decode(),
     }
+
+
+@router.get("/{employee_id}/passport")
+async def get_employee_passport(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Скан паспорта сотрудника. Доступ: сам сотрудник, HR (owner/admin/hr) или его руководитель."""
+    import base64 as _b64
+    emp = (await db.execute(select(Employee).where(Employee.id == employee_id))).scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    allowed = emp.user_id == current_user.id  # сам сотрудник
+    if not allowed and await _is_admin_or_owner(current_user, emp.org_id, db):
+        allowed = True  # superadmin / owner / admin (HR-админ)
+    if not allowed:
+        om = (await db.execute(
+            select(OrgMember).where(OrgMember.user_id == current_user.id, OrgMember.org_id == emp.org_id)
+        )).scalar_one_or_none()
+        if om and om.role == OrgRole.hr:
+            allowed = True  # HR-рекрутер
+    if not allowed and emp.manager_id:
+        mgr = (await db.execute(
+            select(Employee).where(Employee.id == emp.manager_id, Employee.org_id == emp.org_id)
+        )).scalar_one_or_none()
+        if mgr and mgr.user_id == current_user.id:
+            allowed = True  # непосредственный руководитель
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Нет доступа к паспорту этого сотрудника")
+
+    meta = (emp.extra_data or {}).get("passport")
+    path = _passport_path(emp.id)
+    if not meta or not path.exists():
+        raise HTTPException(status_code=404, detail="Паспорт не загружен")
+    raw = _passport_fernet().decrypt(path.read_bytes())
+    return {
+        "filename": meta.get("filename"),
+        "content_type": meta.get("content_type"),
+        "data_base64": _b64.b64encode(raw).decode(),
+    }

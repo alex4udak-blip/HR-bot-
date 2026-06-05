@@ -52,3 +52,7 @@ export const uploadMyPassport = (filename: string, content_type: string, data_ba
 
 export const getMyPassport = () =>
   api.get<{ filename: string; content_type: string; data_base64: string }>('/employees/me/passport').then((r) => r.data);
+
+// Скан паспорта сотрудника — для HR/руководителя (бэкенд проверяет доступ: self/HR/руководитель).
+export const getEmployeePassport = (id: number) =>
+  api.get<{ filename: string; content_type: string; data_base64: string }>(`/employees/${id}/passport`).then((r) => r.data);

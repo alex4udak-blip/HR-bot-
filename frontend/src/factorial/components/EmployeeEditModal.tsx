@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getEmployee, updateEmployee, getMyProfile, updateMyProfile, listEmployees } from '../api/employees';
+import { getEmployee, updateEmployee, getMyProfile, updateMyProfile, listEmployees, getEmployeePassport } from '../api/employees';
 import DatePickerFactorial from './DatePickerFactorial';
 import { formatPhone } from '../lib/phone';
 
@@ -55,6 +55,22 @@ export default function EmployeeEditModal({
   }, [emp]);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  // HR/руководитель: скачать скан паспорта сотрудника (бэкенд проверяет доступ).
+  const downloadPassport = async () => {
+    if (!employeeId) return;
+    try {
+      const p = await getEmployeePassport(employeeId);
+      const a = document.createElement('a');
+      a.href = `data:${p.content_type || 'application/octet-stream'};base64,${p.data_base64}`;
+      a.download = p.filename || 'passport';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      setErr('Не удалось скачать паспорт (нет доступа или файл не загружен).');
+    }
+  };
 
   const save = useMutation({
     mutationFn: () => {
@@ -136,6 +152,13 @@ export default function EmployeeEditModal({
               <div style={{ flex: 1 }}><label>Имя</label><input className="fx-input" value={form.first_name} onChange={(e) => set('first_name', e.target.value)} /></div>
               <div style={{ flex: 1 }}><label>Отчество</label><input className="fx-input" value={form.middle_name} onChange={(e) => set('middle_name', e.target.value)} /></div>
             </div>
+
+            {!selfMode && (emp.extra_data as Record<string, unknown> | null)?.passport != null && (
+              <div className="fx-field">
+                <label>Паспорт (скан)</label>
+                <button type="button" className="fx-btn fx-btn--secondary" onClick={downloadPassport}>Скачать скан паспорта</button>
+              </div>
+            )}
 
             {selfMode && (
               <>
