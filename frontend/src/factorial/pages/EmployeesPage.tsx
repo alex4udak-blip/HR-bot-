@@ -12,6 +12,7 @@ import { getOrgChart, assignEmployee } from '@/factorial/api/orgUnits';
 import { formatHiredAgo } from '@/factorial/lib/formatDate';
 import InviteEmployeeModal from '@/factorial/components/InviteEmployeeModal';
 import EmployeeEditModal from '@/factorial/components/EmployeeEditModal';
+import BulkEditEmployeesModal from '@/factorial/components/BulkEditEmployeesModal';
 import type { Employee } from '@/factorial/mocks/employees';
 
 export default function EmployeesPage() {
@@ -22,6 +23,7 @@ export default function EmployeesPage() {
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveUnit, setMoveUnit] = useState('');
   const [editId, setEditId] = useState<number | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const { data: rows = [] } = useQuery({ queryKey: ['fx', 'employees', 'table'], queryFn: () => listEmployees(true) });
   const { data: chart } = useQuery({ queryKey: ['fx', 'org-chart'], queryFn: getOrgChart });
@@ -162,6 +164,13 @@ export default function EmployeesPage() {
 
       {invite && <InviteEmployeeModal onClose={() => setInvite(false)} />}
       {editId != null && <EmployeeEditModal employeeId={editId} onClose={() => setEditId(null)} onSaved={refresh} />}
+      {bulkOpen && (
+        <BulkEditEmployeesModal
+          employees={rows.filter((r) => selected.has(r.id))}
+          onClose={() => setBulkOpen(false)}
+          onSaved={() => { refresh(); clear(); }}
+        />
+      )}
 
       {moveOpen && (
         <div className="fx-modal-overlay" onClick={() => setMoveOpen(false)}>
@@ -183,21 +192,23 @@ export default function EmployeesPage() {
       )}
 
       {selected.size > 0 && (
-        <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-50 flex items-center gap-1 rounded-2xl shadow-card px-3 py-2 text-white" style={{ background: '#1E293B' }}>
-          <span className="text-fx-sm px-2 font-medium">{selected.size} выбрано</span>
-          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm hover:bg-white/10" onClick={clear}>Снять</button>
-          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm hover:bg-white/10 inline-flex items-center gap-1.5" onClick={() => setMoveOpen(true)}>
+        <div
+          className="fixed left-1/2 -translate-x-1/2 bottom-6 z-50 flex items-center gap-1.5 rounded-2xl px-3 py-2"
+          style={{ background: '#0F172A', boxShadow: '0 14px 36px rgba(0,0,0,0.4)' }}
+        >
+          <span className="text-fx-sm px-2 font-semibold" style={{ color: '#FFFFFF' }}>{selected.size} выбрано</span>
+          <span style={{ width: 1, height: 22, background: 'rgba(255,255,255,0.2)' }} />
+          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm font-medium hover:bg-white/15" style={{ color: '#FFFFFF' }} onClick={clear}>Снять</button>
+          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm font-medium inline-flex items-center gap-1.5 hover:bg-white/15" style={{ color: '#FFFFFF' }} onClick={() => setMoveOpen(true)}>
             <FolderInput className="w-4 h-4" />Переместить
           </button>
-          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm hover:bg-white/10 inline-flex items-center gap-1.5" onClick={onExport}>
+          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm font-medium inline-flex items-center gap-1.5 hover:bg-white/15" style={{ color: '#FFFFFF' }} onClick={onExport}>
             <Download className="w-4 h-4" />Экспорт
           </button>
-          {selected.size === 1 && (
-            <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm hover:bg-white/10 inline-flex items-center gap-1.5" onClick={() => setEditId(Array.from(selected)[0])}>
-              <Pencil className="w-4 h-4" />Редактировать
-            </button>
-          )}
-          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm inline-flex items-center gap-1.5 disabled:opacity-60" style={{ background: '#DC2626' }} onClick={onDismiss} disabled={dismissM.isPending}>
+          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm font-medium inline-flex items-center gap-1.5 hover:bg-white/15" style={{ color: '#FFFFFF' }} onClick={() => (selected.size === 1 ? setEditId(Array.from(selected)[0]) : setBulkOpen(true))}>
+            <Pencil className="w-4 h-4" />Редактировать
+          </button>
+          <button type="button" className="px-3 py-1.5 rounded-lg text-fx-sm font-semibold inline-flex items-center gap-1.5 disabled:opacity-60 hover:brightness-110" style={{ background: '#DC2626', color: '#FFFFFF' }} onClick={onDismiss} disabled={dismissM.isPending}>
             <Trash2 className="w-4 h-4" />{dismissM.isPending ? 'Увольнение…' : 'Уволить'}
           </button>
         </div>
