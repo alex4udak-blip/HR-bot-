@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { updateEmployee } from '../api/employees';
+import { createPortal } from 'react-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { updateEmployee, listEmployees } from '../api/employees';
+import { formatPhone } from '../lib/phone';
 import type { Employee } from '../api/types';
 
 type Row = { last_name: string; first_name: string; position: string; department_start_date: string; phone: string };
@@ -17,6 +19,8 @@ export default function BulkEditEmployeesModal({
   onSaved?: () => void;
 }) {
   const qc = useQueryClient();
+  const { data: allEmps = [] } = useQuery({ queryKey: ['fx', 'employees', 'table'], queryFn: () => listEmployees(true), retry: false });
+  const positions = Array.from(new Set(allEmps.map((e) => (e.position || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ru'));
 
   const buildInit = (): Record<number, Row> => {
     const m: Record<number, Row> = {};
@@ -28,7 +32,7 @@ export default function BulkEditEmployeesModal({
         first_name: s(ex.first_name),
         position: s(e.position),
         department_start_date: e.department_start_date ? String(e.department_start_date).slice(0, 10) : '',
-        phone: s(e.phone),
+        phone: formatPhone(s(e.phone)),
       };
     });
     return m;
@@ -61,7 +65,7 @@ export default function BulkEditEmployeesModal({
     onError: () => setErr('Не удалось сохранить часть строк. Проверьте данные и попробуйте ещё раз.'),
   });
 
-  const cellInput = (id: number, field: keyof Row, type = 'text') => (
+  const textCell = (id: number, field: keyof Row, type = 'text') => (
     <input
       type={type}
       className="fx-input"
@@ -71,7 +75,8 @@ export default function BulkEditEmployeesModal({
     />
   );
 
-  return (
+  return createPortal(
+    <div className="factorial-root" style={{ height: 'auto', background: 'transparent' }}>
     <div className="fx-modal-overlay" onClick={onClose}>
       <div
         className="fx-modal"
@@ -98,11 +103,33 @@ export default function BulkEditEmployeesModal({
               {employees.map((e) => (
                 <tr key={e.id} className="border-t border-card-border-soft">
                   <td className="px-2 py-1.5 whitespace-nowrap font-medium">{e.user_name || '—'}</td>
-                  <td className="px-1 py-1">{cellInput(e.id, 'last_name')}</td>
-                  <td className="px-1 py-1">{cellInput(e.id, 'first_name')}</td>
-                  <td className="px-1 py-1">{cellInput(e.id, 'position')}</td>
-                  <td className="px-1 py-1">{cellInput(e.id, 'department_start_date', 'date')}</td>
-                  <td className="px-1 py-1">{cellInput(e.id, 'phone')}</td>
+                  <td className="px-1 py-1">{textCell(e.id, 'last_name')}</td>
+                  <td className="px-1 py-1">{textCell(e.id, 'first_name')}</td>
+                  <td className="px-1 py-1">
+                    <select
+                      className="fx-select"
+                      style={{ padding: '6px 8px', minWidth: 150 }}
+                      value={edits[e.id].position}
+                      onChange={(ev) => setCell(e.id, 'position', ev.target.value)}
+                    >
+                      <option value="">— Не выбрана —</option>
+                      {positions.map((p) => (<option key={p} value={p}>{p}</option>))}
+                      {edits[e.id].position && !positions.includes(edits[e.id].position) && (
+                        <option value={edits[e.id].position}>{edits[e.id].position}</option>
+                      )}
+                    </select>
+                  </td>
+                  <td className="px-1 py-1">{textCell(e.id, 'department_start_date', 'date')}</td>
+                  <td className="px-1 py-1">
+                    <input
+                      className="fx-input"
+                      style={{ padding: '6px 8px', minWidth: 150 }}
+                      value={edits[e.id].phone}
+                      onChange={(ev) => setCell(e.id, 'phone', formatPhone(ev.target.value))}
+                      placeholder="+7 (___) ___-__-__"
+                      inputMode="tel"
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -117,5 +144,7 @@ export default function BulkEditEmployeesModal({
         </div>
       </div>
     </div>
+    </div>,
+    document.body,
   );
 }
