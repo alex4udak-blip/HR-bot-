@@ -1370,6 +1370,15 @@ export default function Layout() {
                       <HfSpriteIcon id="edit-2-20" className="hf-hr-nav-icon" />
                       Личный кабинет
                     </NavLink>
+                    <NavLink
+                      to="/factorial/my-team"
+                      className={({ isActive }) =>
+                        clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                      }
+                    >
+                      <Users className="hf-hr-nav-icon" strokeWidth={1.8} />
+                      Моя команда
+                    </NavLink>
                   </div>
                 </nav>
               )}

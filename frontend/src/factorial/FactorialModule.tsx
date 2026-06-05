@@ -16,6 +16,7 @@ import ProfileCustomPage from './pages/profile/ProfileCustomPage';
 import TimeOffPage from './pages/TimeOffPage';
 import TasksPage from './pages/TasksPage';
 import MyDocumentsPage from './pages/MyDocumentsPage';
+import MyTeamPage from './pages/MyTeamPage';
 import EmployeesPage from './pages/EmployeesPage';
 import EmployeesOrgChartPage from './pages/EmployeesOrgChartPage';
 import EmployeesTeamsPage from './pages/EmployeesTeamsPage';
@@ -87,6 +88,7 @@ export default function FactorialModule() {
         <Route path="tasks" element={<TasksPage />} />
         <Route path="tasks/new" element={<CreateTaskFormPage />} />
         <Route path="my-documents" element={<MyDocumentsPage />} />
+        <Route path="my-team" element={<MyTeamPage />} />
 
         {/* Компания — только HR/админ; обычный сотрудник редиректится в «Личный кабинет» */}
         <Route path="employees" element={guard(<EmployeesPage />)} />
