@@ -1,5 +1,5 @@
 import api from '@/services/api/client';
-import type { Employee, LeaveBalance, LeaveRequest, Reminder } from './types';
+import type { Employee, EmployeeDocument, LeaveBalance, LeaveRequest, Reminder, BulkImportResult } from './types';
 
 export const listEmployees = (activeOnly = true) =>
   api.get<Employee[]>(`/employees?active_only=${activeOnly}`).then((r) => r.data);
@@ -56,3 +56,21 @@ export const getMyPassport = () =>
 // Скан паспорта сотрудника — для HR/руководителя (бэкенд проверяет доступ: self/HR/руководитель).
 export const getEmployeePassport = (id: number) =>
   api.get<{ filename: string; content_type: string; data_base64: string }>(`/employees/${id}/passport`).then((r) => r.data);
+
+export const listEmployeeDocuments = (id: number) =>
+  api.get<EmployeeDocument[]>(`/employees/${id}/documents`).then((r) => r.data);
+
+export const uploadEmployeeDocument = (id: number, file: File) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return api.post(`/employees/${id}/documents`, fd).then((r) => r.data);
+};
+
+export const downloadEmployeeDocument = (id: number, docId: number) =>
+  api.get<{ filename: string; content_type: string | null; data_base64: string }>(`/employees/${id}/documents/${docId}`).then((r) => r.data);
+
+export const deleteEmployeeDocument = (id: number, docId: number) =>
+  api.delete(`/employees/${id}/documents/${docId}`).then((r) => r.data);
+
+export const bulkImportEmployees = (rows: Record<string, unknown>[]) =>
+  api.post<BulkImportResult>('/employees/bulk-import', rows).then((r) => r.data);

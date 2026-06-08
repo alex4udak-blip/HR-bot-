@@ -13,11 +13,13 @@ import ProfilePersonalPage from './pages/profile/ProfilePersonalPage';
 import ProfileContractsPage from './pages/profile/ProfileContractsPage';
 import ProfilePlanningPage from './pages/profile/ProfilePlanningPage';
 import ProfileCustomPage from './pages/profile/ProfileCustomPage';
+import ProfileDocumentsPage from './pages/profile/ProfileDocumentsPage';
 import TimeOffPage from './pages/TimeOffPage';
 import TasksPage from './pages/TasksPage';
 import MyDocumentsPage from './pages/MyDocumentsPage';
 import MyTeamPage from './pages/MyTeamPage';
 import EmployeesPage from './pages/EmployeesPage';
+import EmployeesImportPage from './pages/EmployeesImportPage';
 import EmployeesOrgChartPage from './pages/EmployeesOrgChartPage';
 import EmployeesTeamsPage from './pages/EmployeesTeamsPage';
 import EmployeesVacanciesPage from './pages/EmployeesVacanciesPage';
@@ -83,6 +85,8 @@ export default function FactorialModule() {
         <Route path="profile/contract_versions" element={<ProfileContractsPage />} />
         <Route path="profile/planning_versions" element={<ProfilePlanningPage />} />
         <Route path="profile/custom_tables" element={<ProfileCustomPage />} />
+        <Route path="profile/documents" element={<ProfileDocumentsPage />} />
+        <Route path="profile/time-off" element={<ProfilePlanningPage />} />
         <Route path="time-off" element={<TimeOffPage />} />
         <Route path="time-off/new" element={<RequestTimeOffFormPage />} />
         <Route path="tasks" element={<TasksPage />} />
@@ -94,9 +98,17 @@ export default function FactorialModule() {
         <Route path="employees" element={guard(<EmployeesPage />)} />
         <Route path="employees/new" element={guard(<AddEmployeeFormPage />)} />
         <Route path="employees/export" element={guard(<ExportDataFormPage />)} />
+        <Route path="employees/import" element={guard(<EmployeesImportPage />)} />
         <Route path="employees/teams" element={guard(<EmployeesTeamsPage />)} />
         <Route path="employees/org-chart" element={guard(<EmployeesOrgChartPage />)} />
         <Route path="employees/vacancies" element={guard(<EmployeesVacanciesPage />)} />
+        {/* HR/руководитель: карточка сотрудника по ID (6 вкладок) */}
+        <Route path="employees/:id" element={guard(<ProfileOverviewPage />)} />
+        <Route path="employees/:id/work-details" element={guard(<ProfileWorkDetailsPage />)} />
+        <Route path="employees/:id/personal" element={guard(<ProfilePersonalPage />)} />
+        <Route path="employees/:id/agreements" element={guard(<MyDocumentsPage />)} />
+        <Route path="employees/:id/documents" element={guard(<ProfileDocumentsPage />)} />
+        <Route path="employees/:id/time-off" element={guard(<ProfilePlanningPage />)} />
         <Route path="files" element={guard(<FilesPage />)} />
         <Route path="pages" element={<PagesPage />} />
         <Route path="ticketing" element={<TicketingPage />} />

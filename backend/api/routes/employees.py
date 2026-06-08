@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 
 from dateutil.relativedelta import relativedelta
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,16 +21,13 @@ from sqlalchemy.orm import selectinload
 from api.database import get_db
 from api.models.database import (
     Employee, LeaveRequest, User, Organization, Department,
-    DepartmentMember, OrgUnit, OrgMember, OrgRole, Notification,
+    DepartmentMember, OrgUnit, OrgMember, OrgRole, Notification, EmployeeDocument,
 )
 from api.services.auth import get_current_user, get_user_org
 
 logger = logging.getLogger("hr-analyzer.employees")
 
 router = APIRouter()
-
-# Лимит одобренных отпусков за один рабочий год (год от даты приёма сотрудника).
-VACATION_REQUESTS_PER_CYCLE = 2
 
 
 # ─── Pydantic schemas ───────────────────────────────────────
@@ -118,8 +115,6 @@ class LeaveBalanceResponse(BaseModel):
     family_leave_remaining: int
     cycle_start: Optional[datetime] = None
     cycle_end: Optional[datetime] = None
-    vacation_requests_used: int = 0
-    vacation_requests_limit: int = VACATION_REQUESTS_PER_CYCLE
 
 
 class LeaveRequestCreate(BaseModel):
@@ -156,6 +151,21 @@ class ReminderItem(BaseModel):
     days_remaining: int
 
 
+class BulkImportRow(BaseModel):
+    email: str
+    last_name: Optional[str] = None
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    position: Optional[str] = None
+    phone: Optional[str] = None
+    telegram_username: Optional[str] = None
+    department_start_date: Optional[str] = None  # ISO или ДД.ММ.ГГГГ
+    address: Optional[str] = None
+    passport_number: Optional[str] = None
+    payment_method: Optional[str] = None
+    payment_details: Optional[str] = None
+
+
 # ─── Helpers ─────────────────────────────────────────────────
 
 def _auto_calculate_dates(emp: Employee):
@@ -186,6 +196,26 @@ def _calculate_vacation_days(
     months = delta.years * 12 + delta.months  # полных месяцев с даты приёма
     months_in_cycle = months % 12  # 0..11 (на годовщине обнуляется)
     return months_in_cycle * 2  # 0..22
+
+
+def _parse_import_date(s: str) -> Optional[datetime]:
+    s = (s or "").strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(s[:10], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _merge_extra(base: Optional[dict], patch: Optional[dict]) -> dict:
+    """Слить patch поверх base, сохранив все прочие ключи base (passport, documents и т.п.)."""
+    out = dict(base or {})
+    for k, v in (patch or {}).items():
+        out[k] = v
+    return out
 
 
 def _cycle_start(
@@ -385,6 +415,49 @@ async def list_employees(
         emp.vacation_days_total = _calculate_vacation_days(emp.department_start_date)
         responses.append(_employee_to_response(emp))
     return responses
+
+
+@router.post("/bulk-import")
+async def bulk_import_employees(
+    rows: List[BulkImportRow],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org = await get_user_org(current_user, db)
+    if not org or not await _is_admin_or_owner(current_user, org.id, db):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    updated, skipped, errors = 0, [], []
+    for r in rows:
+        email = (r.email or "").strip().lower()
+        if not email:
+            errors.append("пустой email в строке")
+            continue
+        user = (await db.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
+        emp = None
+        if user:
+            emp = (await db.execute(select(Employee).where(Employee.user_id == user.id, Employee.org_id == org.id))).scalar_one_or_none()
+        if not emp:
+            skipped.append(email)
+            continue
+        if r.position is not None:
+            emp.position = r.position
+        if r.phone is not None:
+            emp.phone = r.phone
+        if r.telegram_username is not None:
+            emp.telegram_username = r.telegram_username
+        if r.department_start_date:
+            parsed = _parse_import_date(r.department_start_date)
+            if parsed:
+                emp.department_start_date = parsed
+        patch = {}
+        for k in ("last_name", "first_name", "middle_name", "address", "passport_number", "payment_method", "payment_details"):
+            v = getattr(r, k)
+            if v is not None and str(v).strip():
+                patch[k] = str(v).strip()
+        emp.extra_data = _merge_extra(emp.extra_data, patch)
+        updated += 1
+    await db.commit()
+    return {"updated": updated, "skipped": skipped, "errors": errors}
 
 
 @router.get("/me", response_model=EmployeeResponse)
@@ -716,7 +789,6 @@ async def get_leave_balance(
     # «Использовано» считаем по одобренным заявкам, чья ДАТА НАЧАЛА попадает в текущий
     # цикл (start_date >= cstart). Заявку относим к циклу по дате начала — по спеке.
     used = {"vacation": 0, "sick": 0, "family_leave": 0}
-    vacation_requests_used = 0
     if cstart:
         rows = (await db.execute(
             select(LeaveRequest.type, LeaveRequest.days).where(
@@ -729,8 +801,6 @@ async def get_leave_balance(
         for t, d in rows:
             if t in used:
                 used[t] += (d or 0)
-            if t == "vacation":
-                vacation_requests_used += 1
 
     sick_total = 7
     fl_total = 2
@@ -746,8 +816,6 @@ async def get_leave_balance(
         family_leave_remaining=max(0, fl_total - used["family_leave"]),
         cycle_start=cstart,
         cycle_end=cend,
-        vacation_requests_used=vacation_requests_used,
-        vacation_requests_limit=VACATION_REQUESTS_PER_CYCLE,
     )
 
 
@@ -835,16 +903,16 @@ async def approve_leave_request(
     emp_result = await db.execute(select(Employee).where(Employee.id == lr.employee_id))
     emp = emp_result.scalar_one_or_none()
 
-    # Лимит: не более VACATION_REQUESTS_PER_CYCLE одобренных отпусков за рабочий год.
-    # Текущая заявка ещё "pending" и не входит в подсчёт.
+    # Проверка остатка: одобрять отпуск можно, пока в текущем рабочем году есть
+    # доступные накопленные дни (дробление по числу заявок НЕ ограничено).
     if lr.type == "vacation" and emp:
-        # Нет даты приёма → _cycle_start вернёт None и лимит не проверяется
-        # (by design: неполные данные не блокируем).
-        cstart = _cycle_start(emp.department_start_date)
+        now = datetime.utcnow()
+        cstart = _cycle_start(emp.department_start_date, now=now)
         if cstart:
             cend = cstart + relativedelta(months=12)
-            approved_vac = (await db.execute(
-                select(func.count()).select_from(LeaveRequest).where(
+            accrued = _calculate_vacation_days(emp.department_start_date, now=now)
+            used_days = (await db.execute(
+                select(func.coalesce(func.sum(LeaveRequest.days), 0)).where(
                     LeaveRequest.employee_id == lr.employee_id,
                     LeaveRequest.type == "vacation",
                     LeaveRequest.status == "approved",
@@ -852,10 +920,11 @@ async def approve_leave_request(
                     LeaveRequest.start_date < cend,
                 )
             )).scalar() or 0
-            if approved_vac >= VACATION_REQUESTS_PER_CYCLE:
+            available = max(0, accrued - used_days)
+            if lr.days > available:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Достигнут лимит: {VACATION_REQUESTS_PER_CYCLE} отпуска за рабочий год",
+                    detail=f"Недостаточно дней отпуска: доступно {available}",
                 )
 
     lr.status = "approved"
@@ -929,6 +998,34 @@ def _passport_path(emp_id: int):
     d = Path("uploads") / "passports"
     d.mkdir(parents=True, exist_ok=True)
     return d / f"{emp_id}.enc"
+
+
+def _employee_docs_dir():
+    from pathlib import Path
+    d = Path("uploads") / "employee_docs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+async def _can_view_employee(current_user: User, emp: Employee, db: AsyncSession) -> bool:
+    """True если current_user может смотреть карточку emp: сам сотрудник, admin/owner, HR, или его руководитель.
+    ВАЖНО: сверь набор с существующим passport-эндпоинтом get_employee_passport и приведи к тому же."""
+    if emp.user_id == current_user.id:
+        return True
+    if await _is_admin_or_owner(current_user, emp.org_id, db):
+        return True
+    org = await get_user_org(current_user, db)
+    if org:
+        member = (await db.execute(
+            select(OrgMember).where(OrgMember.user_id == current_user.id, OrgMember.org_id == emp.org_id)
+        )).scalar_one_or_none()
+        if member and member.role == OrgRole.hr:
+            return True
+    if emp.manager_id:
+        mgr = (await db.execute(select(Employee).where(Employee.id == emp.manager_id))).scalar_one_or_none()
+        if mgr and mgr.user_id == current_user.id:
+            return True
+    return False
 
 
 @router.post("/me/passport")
@@ -1024,3 +1121,86 @@ async def get_employee_passport(
         "content_type": meta.get("content_type"),
         "data_base64": _b64.b64encode(raw).decode(),
     }
+
+
+@router.get("/{employee_id}/documents")
+async def list_employee_documents(employee_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    emp = (await db.execute(select(Employee).where(Employee.id == employee_id))).scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if not await _can_view_employee(current_user, emp, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    docs = (await db.execute(
+        select(EmployeeDocument).where(EmployeeDocument.employee_id == employee_id).order_by(EmployeeDocument.uploaded_at.desc())
+    )).scalars().all()
+    return [{"id": d.id, "filename": d.filename, "content_type": d.content_type, "size": d.size, "uploaded_at": d.uploaded_at} for d in docs]
+
+
+@router.post("/{employee_id}/documents")
+async def upload_employee_document(employee_id: int, request: Request, file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    emp = (await db.execute(select(Employee).where(Employee.id == employee_id))).scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    # загрузка: сам сотрудник или HR/admin/owner
+    allowed = emp.user_id == current_user.id or await _is_admin_or_owner(current_user, emp.org_id, db)
+    if not allowed:
+        org = await get_user_org(current_user, db)
+        member = (await db.execute(select(OrgMember).where(OrgMember.user_id == current_user.id, OrgMember.org_id == emp.org_id))).scalar_one_or_none() if org else None
+        allowed = bool(member and member.role == OrgRole.hr)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
+    clen = request.headers.get("content-length")
+    if clen and clen.isdigit() and int(clen) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл больше 10 МБ")
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл больше 10 МБ")
+    import uuid
+    fpath = _employee_docs_dir() / f"{employee_id}_{uuid.uuid4().hex}.enc"
+    fpath.write_bytes(_passport_fernet().encrypt(raw))
+    doc = EmployeeDocument(employee_id=employee_id, filename=file.filename, content_type=file.content_type, size=len(raw), path=str(fpath), uploaded_by=current_user.id)
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return {"id": doc.id, "filename": doc.filename, "content_type": doc.content_type, "size": doc.size, "uploaded_at": doc.uploaded_at}
+
+
+@router.get("/{employee_id}/documents/{doc_id}")
+async def download_employee_document(employee_id: int, doc_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    emp = (await db.execute(select(Employee).where(Employee.id == employee_id))).scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if not await _can_view_employee(current_user, emp, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    doc = (await db.execute(select(EmployeeDocument).where(EmployeeDocument.id == doc_id, EmployeeDocument.employee_id == employee_id))).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    from pathlib import Path
+    import base64
+    p = Path(doc.path)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Файл не найден на диске")
+    data = _passport_fernet().decrypt(p.read_bytes())
+    return {"filename": doc.filename, "content_type": doc.content_type, "data_base64": base64.b64encode(data).decode()}
+
+
+@router.delete("/{employee_id}/documents/{doc_id}")
+async def delete_employee_document(employee_id: int, doc_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    emp = (await db.execute(select(Employee).where(Employee.id == employee_id))).scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    doc = (await db.execute(select(EmployeeDocument).where(EmployeeDocument.id == doc_id, EmployeeDocument.employee_id == employee_id))).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    allowed = doc.uploaded_by == current_user.id or await _is_admin_or_owner(current_user, emp.org_id, db)
+    if not allowed:
+        org = await get_user_org(current_user, db)
+        member = (await db.execute(select(OrgMember).where(OrgMember.user_id == current_user.id, OrgMember.org_id == emp.org_id))).scalar_one_or_none() if org else None
+        allowed = bool(member and member.role == OrgRole.hr)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
+    from pathlib import Path
+    Path(doc.path).unlink(missing_ok=True)
+    await db.delete(doc)
+    await db.commit()
+    return {"ok": True}

@@ -108,7 +108,14 @@ export default function EmployeesPage() {
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
           <UserAvatar fullName={row.original.fullName} size="sm" singleLetter />
-          <span className="font-medium">{row.original.fullName}</span>
+          <button
+            type="button"
+            className="font-medium cursor-pointer hover:underline"
+            style={{ color: '#DC2626', background: 'none', border: 'none', padding: 0 }}
+            onClick={() => navigate(`/factorial/employees/${row.original.id}`)}
+          >
+            {row.original.fullName}
+          </button>
         </div>
       ),
     },
@@ -155,6 +162,15 @@ export default function EmployeesPage() {
           searchPlaceholder: 'Поиск сотрудника...',
           filterAction: () => alert('Demo mode — фильтры'),
           exportAction: () => navigate('/factorial/employees/export'),
+          moreActions: (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-fx-lg border border-border bg-white hover:bg-sidebar-hover text-fx-sm"
+              onClick={() => navigate('/factorial/employees/import')}
+            >
+              Импорт
+            </button>
+          ),
           primaryCta: { label: 'Добавить сотрудника', onClick: () => setInvite(true) },
         }}
         columns={columns}

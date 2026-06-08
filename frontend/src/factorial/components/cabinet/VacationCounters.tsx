@@ -4,7 +4,7 @@ import type { LeaveBalance } from '@/factorial/api/types';
  * Два крупных счётчика отпуска:
  *  • Доступно  = сколько дней можно взять прямо сейчас (накоплено − использовано − на рассмотрении)
  *  • Накоплено = сколько заработано в текущем рабочем году (2 дня за каждый полный месяц, сброс на годовщине)
- * Плюс строка про рабочий год: до какой даты он идёт и сколько отпусков осталось (лимит 2/год).
+ * Плюс строка про рабочий год: до какой даты он идёт (неиспользованные дни сгорают на годовщине).
  * Данные — из /employees/{id}/leave-balance.
  */
 export default function VacationCounters({
@@ -18,8 +18,6 @@ export default function VacationCounters({
   const used = balance?.vacation_used ?? 0;
   const available = Math.max(0, accrued - used - pendingDays);
 
-  const vacLimit = balance?.vacation_requests_limit ?? 2;
-  const vacLeft = Math.max(0, vacLimit - (balance?.vacation_requests_used ?? 0));
   const cycleEndLabel = balance?.cycle_end
     ? new Date(balance.cycle_end).toLocaleDateString('ru-RU')
     : null;
@@ -50,7 +48,7 @@ export default function VacationCounters({
       </div>
       {cycleEndLabel && (
         <p className="text-fx-xs text-text-muted px-1">
-          Рабочий год до {cycleEndLabel} · осталось {vacLeft} из {vacLimit} отпусков · неиспользованные дни сгорают на годовщине
+          Рабочий год до {cycleEndLabel} · неиспользованные дни сгорают на годовщине
         </p>
       )}
     </div>

@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { User, Pencil } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import ProfileTemplate from '@/factorial/templates/ProfileTemplate';
-import { getMyProfile } from '@/factorial/api/employees';
 import { getCurrentOrganization } from '@/services/api/auth';
 import { formatDateRu, formatTenure } from '@/factorial/lib/formatDate';
-import { CABINET_TABS } from '@/factorial/lib/routes';
+import { buildProfileTabs } from '@/factorial/lib/routes';
+import { useProfileEmployee } from '@/factorial/lib/useProfileEmployee';
 import DetailRow from '@/factorial/components/cabinet/DetailRow';
 import EmployeeEditModal from '@/factorial/components/EmployeeEditModal';
 
@@ -16,7 +16,8 @@ const TITLE_ICON = (
 );
 
 export default function ProfileWorkDetailsPage() {
-  const { data: me, isError } = useQuery({ queryKey: ['fx', 'me'], queryFn: getMyProfile, retry: false });
+  const { data: me, isError, byId, employeeId } = useProfileEmployee();
+  const base = byId ? `/factorial/employees/${employeeId}` : '/factorial/profile';
   const { data: org } = useQuery({ queryKey: ['fx', 'org-current'], queryFn: getCurrentOrganization, retry: false });
   const [editOpen, setEditOpen] = useState(false);
 
@@ -28,10 +29,10 @@ export default function ProfileWorkDetailsPage() {
 
   return (
     <ProfileTemplate
-      breadcrumb={[{ label: 'Профиль' }, { label: 'Детали работы' }]}
+      breadcrumb={byId ? [{ label: 'Сотрудники', href: '/factorial/employees' }, { label: me?.user_name || 'Профиль' }] : [{ label: 'Профиль' }, { label: 'Детали работы' }]}
       titleIcon={TITLE_ICON}
-      title="Профиль"
-      subNav={CABINET_TABS}
+      title={byId ? (me?.user_name || 'Профиль') : 'Профиль'}
+      subNav={buildProfileTabs(base)}
       leftColumn={
         isError ? (
           <article className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-6 text-fx-sm text-text-muted">
@@ -60,7 +61,7 @@ export default function ProfileWorkDetailsPage() {
               <DetailRow label="Договор" value={sign(me?.contract_signed, me?.contract_signed_at)} />
               <DetailRow label="NDA" value={sign(me?.nda_signed, me?.nda_signed_at)} />
             </article>
-            {editOpen && <EmployeeEditModal selfMode onClose={() => setEditOpen(false)} />}
+            {editOpen && <EmployeeEditModal {...(byId ? { employeeId } : { selfMode: true })} section="work" onClose={() => setEditOpen(false)} onSaved={() => setEditOpen(false)} />}
           </>
         )
       }

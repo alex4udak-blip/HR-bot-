@@ -3,10 +3,11 @@ import { Copy, User } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from '@/factorial/components/ui/toast';
 import ProfileTemplate from '@/factorial/templates/ProfileTemplate';
-import { getMyProfile, getLeaveBalance } from '@/factorial/api/employees';
-import { myDocuments } from '@/factorial/api/documents';
+import { getLeaveBalance } from '@/factorial/api/employees';
+import { myDocuments, employeeDocuments } from '@/factorial/api/documents';
 import { formatDateRu, formatTenure } from '@/factorial/lib/formatDate';
-import { CABINET_TABS } from '@/factorial/lib/routes';
+import { buildProfileTabs } from '@/factorial/lib/routes';
+import { useProfileEmployee } from '@/factorial/lib/useProfileEmployee';
 import LeaveBalanceCard from '@/factorial/components/cabinet/LeaveBalanceCard';
 import MyDocsMini from '@/factorial/components/cabinet/MyDocsMini';
 import EmployeeStatusCard from '@/factorial/components/cabinet/EmployeeStatusCard';
@@ -19,13 +20,18 @@ const TITLE_ICON = (
 );
 
 export default function ProfileOverviewPage() {
-  const { data: me, isError } = useQuery({ queryKey: ['fx', 'me'], queryFn: getMyProfile, retry: false });
+  const { data: me, isError, byId, employeeId } = useProfileEmployee();
+  const base = byId ? `/factorial/employees/${employeeId}` : '/factorial/profile';
   const { data: balance } = useQuery({
     queryKey: ['fx', 'leave-balance', me?.id],
     queryFn: () => getLeaveBalance(me!.id),
     enabled: !!me,
   });
-  const { data: docs = [] } = useQuery({ queryKey: ['fx', 'my-docs'], queryFn: myDocuments, enabled: !!me });
+  const { data: docs = [] } = useQuery({
+    queryKey: byId ? ['fx', 'emp-signed-docs', employeeId] : ['fx', 'my-docs'],
+    queryFn: () => (byId ? employeeDocuments(employeeId!) : myDocuments()),
+    enabled: !!me,
+  });
   const [requestOpen, setRequestOpen] = useState(false);
 
   const copy = (text: string) => {
@@ -36,10 +42,10 @@ export default function ProfileOverviewPage() {
   if (isError) {
     return (
       <ProfileTemplate
-        breadcrumb={[{ label: 'Профиль' }]}
+        breadcrumb={byId ? [{ label: 'Сотрудники', href: '/factorial/employees' }, { label: me?.user_name || 'Профиль' }] : [{ label: 'Профиль' }]}
         titleIcon={TITLE_ICON}
-        title="Профиль"
-        subNav={CABINET_TABS}
+        title={byId ? (me?.user_name || 'Профиль') : 'Профиль'}
+        subNav={buildProfileTabs(base)}
         leftColumn={
           <article className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-6 text-fx-sm text-text-muted">
             Профиль сотрудника ещё не заведён. Обратитесь к HR, чтобы вас добавили в систему.
@@ -56,10 +62,10 @@ export default function ProfileOverviewPage() {
 
   return (
     <ProfileTemplate
-      breadcrumb={[{ label: 'Профиль' }]}
+      breadcrumb={byId ? [{ label: 'Сотрудники', href: '/factorial/employees' }, { label: me?.user_name || 'Профиль' }] : [{ label: 'Профиль' }]}
       titleIcon={TITLE_ICON}
-      title="Профиль"
-      subNav={CABINET_TABS}
+      title={byId ? (me?.user_name || 'Профиль') : 'Профиль'}
+      subNav={buildProfileTabs(base)}
       leftColumn={
         <>
           <LeaveBalanceCard balance={balance} onRequest={() => setRequestOpen(true)} />

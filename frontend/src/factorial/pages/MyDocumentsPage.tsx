@@ -4,10 +4,11 @@ import { ColumnDef } from '@tanstack/react-table';
 import { useQuery } from '@tanstack/react-query';
 import TableTemplate from '@/factorial/templates/TableTemplate';
 import SignDocumentModal from '@/factorial/components/SignDocumentModal';
-import { myDocuments } from '@/factorial/api/documents';
+import { myDocuments, employeeDocuments } from '@/factorial/api/documents';
 import type { SignedDoc } from '@/factorial/api/types';
 import { formatDateRu } from '@/factorial/lib/formatDate';
-import { CABINET_TABS } from '@/factorial/lib/routes';
+import { buildProfileTabs } from '@/factorial/lib/routes';
+import { useProfileEmployee } from '@/factorial/lib/useProfileEmployee';
 import ContractCard from '@/factorial/components/cabinet/ContractCard';
 
 interface DocRow {
@@ -20,8 +21,15 @@ interface DocRow {
 }
 
 export default function MyDocumentsPage() {
-  // Реальные документы текущего пользователя из бэкенда Энцеладуса.
-  const { data: docs = [] } = useQuery({ queryKey: ['fx', 'my-docs'], queryFn: myDocuments });
+  const { data: me, byId, employeeId } = useProfileEmployee();
+  const base = byId ? `/factorial/employees/${employeeId}` : '/factorial/profile';
+
+  // Реальные документы — текущего пользователя или конкретного сотрудника (HR-вид).
+  const { data: docs = [] } = useQuery({
+    queryKey: byId ? ['fx', 'emp-signed-docs', employeeId] : ['fx', 'my-docs'],
+    queryFn: () => (byId ? employeeDocuments(employeeId!) : myDocuments()),
+    enabled: byId ? !!employeeId : true,
+  });
   const [signId, setSignId] = useState<number | null>(null);
 
   const rows: DocRow[] = docs.map((d: SignedDoc) => ({
@@ -65,14 +73,18 @@ export default function MyDocumentsPage() {
   return (
     <>
       <TableTemplate
-        breadcrumb={[{ label: 'Соглашения' }]}
+        breadcrumb={
+          byId
+            ? [{ label: 'Сотрудники', href: '/factorial/employees' }, { label: me?.user_name || 'Соглашения' }]
+            : [{ label: 'Профиль' }, { label: 'Соглашения' }]
+        }
         titleIcon={
           <div className="w-9 h-9 rounded-fx-lg bg-amber-100 flex items-center justify-center">
             <FolderOpen className="w-5 h-5 text-amber-600" />
           </div>
         }
-        title="Соглашения"
-        secondaryNav={CABINET_TABS}
+        title={byId ? (me?.user_name || 'Профиль') : 'Профиль'}
+        secondaryNav={buildProfileTabs(base)}
         beforeToolbar={<ContractCard />}
         toolbar={{ searchKey: 'name', searchPlaceholder: 'Поиск документа...' }}
         columns={columns}

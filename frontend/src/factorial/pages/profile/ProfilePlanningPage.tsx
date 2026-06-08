@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { User } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import ProfileTemplate from '@/factorial/templates/ProfileTemplate';
-import { getMyProfile, getLeaveBalance, listLeaveRequests } from '@/factorial/api/employees';
-import { CABINET_TABS } from '@/factorial/lib/routes';
+import { getLeaveBalance, listLeaveRequests } from '@/factorial/api/employees';
+import { buildProfileTabs } from '@/factorial/lib/routes';
+import { useProfileEmployee } from '@/factorial/lib/useProfileEmployee';
 import { formatDateRu } from '@/factorial/lib/formatDate';
 import LeaveBalanceCard from '@/factorial/components/cabinet/LeaveBalanceCard';
 import VacationCounters from '@/factorial/components/cabinet/VacationCounters';
@@ -45,7 +46,8 @@ function RequestRow({ r }: { r: LeaveRequest }) {
 }
 
 export default function ProfilePlanningPage() {
-  const { data: me, isError } = useQuery({ queryKey: ['fx', 'me'], queryFn: getMyProfile, retry: false });
+  const { data: me, isError, byId, employeeId } = useProfileEmployee();
+  const base = byId ? `/factorial/employees/${employeeId}` : '/factorial/profile';
   const { data: balance } = useQuery({
     queryKey: ['fx', 'leave-balance', me?.id],
     queryFn: () => getLeaveBalance(me!.id),
@@ -72,10 +74,10 @@ export default function ProfilePlanningPage() {
 
   return (
     <ProfileTemplate
-      breadcrumb={[{ label: 'Профиль' }, { label: 'Планирование' }]}
+      breadcrumb={byId ? [{ label: 'Сотрудники', href: '/factorial/employees' }, { label: me?.user_name || 'Профиль' }] : [{ label: 'Профиль' }, { label: 'Планирование' }]}
       titleIcon={TITLE_ICON}
-      title="Профиль"
-      subNav={CABINET_TABS}
+      title={byId ? (me?.user_name || 'Профиль') : 'Профиль'}
+      subNav={buildProfileTabs(base)}
       leftColumn={
         isError ? (
           <article className="bg-card-translucent border border-card-border-soft rounded-card shadow-card p-6 text-fx-sm text-text-muted">

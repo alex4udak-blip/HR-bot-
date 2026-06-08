@@ -35,11 +35,15 @@ export const ROUTES = {
   settings: '/factorial/settings',
 } as const;
 
-// Вкладки «Личного кабинета» (внутри страницы кабинета, верхний переключатель).
-export const CABINET_TABS = [
-  { label: 'Обзор', href: '/factorial/profile', end: true },
-  { label: 'Детали работы', href: '/factorial/profile/work-details' },
-  { label: 'Личные данные', href: '/factorial/profile/personal' },
-  { label: 'Соглашения', href: '/factorial/my-documents' },
-  { label: 'Планирование', href: '/factorial/profile/planning_versions' },
-];
+// Вкладки профиля (6 шт.). base = '/factorial/profile' (свой ЛК) или '/factorial/employees/:id' (HR-вид).
+export function buildProfileTabs(base: string) {
+  return [
+    { label: 'Обзор', href: base, end: true },
+    { label: 'Детали работы', href: `${base}/work-details` },
+    { label: 'Личные данные', href: `${base}/personal` },
+    { label: 'Соглашения', href: base === '/factorial/profile' ? '/factorial/my-documents' : `${base}/agreements` },
+    { label: 'Документы', href: `${base}/documents` },
+    { label: 'Отпуска', href: `${base}/time-off` },
+  ];
+}
+export const CABINET_TABS = buildProfileTabs('/factorial/profile');

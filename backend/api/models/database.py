@@ -1625,6 +1625,20 @@ class LeaveRequest(Base):
     approver = relationship("User", foreign_keys=[approved_by])
 
 
+class EmployeeDocument(Base):
+    """Файл, загруженный в карточку сотрудника (вкладка «Документы»)."""
+    __tablename__ = "employee_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename = Column(String, nullable=False)
+    content_type = Column(String, nullable=True)
+    size = Column(Integer, nullable=True)
+    path = Column(String, nullable=False)  # путь к зашифрованному файлу на диске
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+
 # ============================================================
 # DOCUMENT SIGNING (Templates, Signed Documents, Canvas Signature)
 # ============================================================

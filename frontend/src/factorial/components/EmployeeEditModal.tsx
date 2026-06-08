@@ -10,11 +10,13 @@ import { formatPhone } from '../lib/phone';
 export default function EmployeeEditModal({
   employeeId,
   selfMode = false,
+  section = 'all',
   onClose,
   onSaved,
 }: {
   employeeId?: number;
   selfMode?: boolean;
+  section?: 'work' | 'personal' | 'all';
   onClose: () => void;
   onSaved?: () => void;
 }) {
@@ -49,6 +51,8 @@ export default function EmployeeEditModal({
       passport_issued_by: s(e.passport_issued_by),
       passport_issued: d(e.passport_issued),
       address: s(e.address),
+      payment_method: s(e.payment_method),
+      payment_details: s(e.payment_details),
       emergency_contact_name: s(e.emergency_contact_name),
       emergency_contact_phone: formatPhone(s(e.emergency_contact_phone)),
     });
@@ -87,6 +91,8 @@ export default function EmployeeEditModal({
         passport_issued_by: u(form.passport_issued_by),
         passport_issued: u(form.passport_issued),
         address: u(form.address),
+        payment_method: u(form.payment_method),
+        payment_details: u(form.payment_details),
         emergency_contact_name: u(form.emergency_contact_name),
         emergency_contact_phone: u(form.emergency_contact_phone),
       };
@@ -113,68 +119,102 @@ export default function EmployeeEditModal({
     save.mutate();
   };
 
+  // Какие группы полей показывать. Каждая вкладка ЛК редактирует только своё.
+  const showWork = section === 'work' || section === 'all';
+  const showPersonal = section === 'personal' || section === 'all';
+  const title =
+    section === 'work'
+      ? 'Редактировать детали работы'
+      : section === 'personal'
+        ? 'Редактировать личные данные'
+        : selfMode
+          ? 'Редактировать профиль'
+          : 'Редактировать сотрудника';
+
   return createPortal(
     <div className="factorial-root" style={{ height: 'auto', background: 'transparent' }}>
     <div className="fx-modal-overlay" onClick={onClose}>
       <form className="fx-modal" style={{ width: 560, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h3>{selfMode ? 'Редактировать профиль' : 'Редактировать сотрудника'}</h3>
+        <h3>{title}</h3>
         {isLoading || !emp ? (
           <div className="fx-sub">Загрузка…</div>
         ) : (
           <>
-            <div className="fx-field">
-              <label>Должность</label>
-              <select className="fx-select" value={form.position} onChange={(e) => set('position', e.target.value)}>
-                <option value="">— Не выбрана —</option>
-                {positions.map((p) => (<option key={p} value={p}>{p}</option>))}
-                {form.position && !positions.includes(form.position) && <option value={form.position}>{form.position}</option>}
-              </select>
-            </div>
-
-            <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <label>Телефон</label>
-                <input className="fx-input" value={form.phone} onChange={(e) => set('phone', formatPhone(e.target.value))} placeholder="+7 (___) ___-__-__" inputMode="tel" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label>Telegram</label>
-                <input className="fx-input" value={form.telegram_username} onChange={(e) => set('telegram_username', e.target.value)} />
-              </div>
-            </div>
-
-            <div className="fx-field">
-              <label>Дата начала работы</label>
-              <DatePickerFactorial value={form.department_start_date} onChange={(v) => set('department_start_date', v)} />
-            </div>
-
-            <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
-              <div style={{ flex: 1 }}><label>Фамилия</label><input className="fx-input" value={form.last_name} onChange={(e) => set('last_name', e.target.value)} /></div>
-              <div style={{ flex: 1 }}><label>Имя</label><input className="fx-input" value={form.first_name} onChange={(e) => set('first_name', e.target.value)} /></div>
-              <div style={{ flex: 1 }}><label>Отчество</label><input className="fx-input" value={form.middle_name} onChange={(e) => set('middle_name', e.target.value)} /></div>
-            </div>
-
-            {!selfMode && (emp.extra_data as Record<string, unknown> | null)?.passport != null && (
-              <div className="fx-field">
-                <label>Паспорт (скан)</label>
-                <button type="button" className="fx-btn fx-btn--secondary" onClick={downloadPassport}>Скачать скан паспорта</button>
-              </div>
+            {showWork && (
+              <>
+                <div className="fx-field">
+                  <label>Должность</label>
+                  <select className="fx-select" value={form.position} onChange={(e) => set('position', e.target.value)}>
+                    <option value="">— Не выбрана —</option>
+                    {positions.map((p) => (<option key={p} value={p}>{p}</option>))}
+                    {form.position && !positions.includes(form.position) && <option value={form.position}>{form.position}</option>}
+                  </select>
+                </div>
+                <div className="fx-field">
+                  <label>Дата начала работы</label>
+                  <DatePickerFactorial value={form.department_start_date} onChange={(v) => set('department_start_date', v)} />
+                </div>
+              </>
             )}
 
-            {selfMode && (
+            {showPersonal && (
               <>
                 <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flex: 1 }}><label>Дата рождения</label><DatePickerFactorial value={form.birth_date} onChange={(v) => set('birth_date', v)} /></div>
-                  <div style={{ flex: 1 }}><label>Паспорт №</label><input className="fx-input" value={form.passport_number} onChange={(e) => set('passport_number', e.target.value)} /></div>
+                  <div style={{ flex: 1, minWidth: 0 }}><label>Фамилия</label><input className="fx-input" value={form.last_name} onChange={(e) => set('last_name', e.target.value)} /></div>
+                  <div style={{ flex: 1, minWidth: 0 }}><label>Имя</label><input className="fx-input" value={form.first_name} onChange={(e) => set('first_name', e.target.value)} /></div>
+                  <div style={{ flex: 1, minWidth: 0 }}><label>Отчество</label><input className="fx-input" value={form.middle_name} onChange={(e) => set('middle_name', e.target.value)} /></div>
                 </div>
                 <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flex: 2 }}><label>Кем выдан</label><input className="fx-input" value={form.passport_issued_by} onChange={(e) => set('passport_issued_by', e.target.value)} /></div>
-                  <div style={{ flex: 1 }}><label>Дата выдачи</label><DatePickerFactorial value={form.passport_issued} onChange={(v) => set('passport_issued', v)} /></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label>Телефон</label>
+                    <input className="fx-input" value={form.phone} onChange={(e) => set('phone', formatPhone(e.target.value))} placeholder="+7 (___) ___-__-__" inputMode="tel" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label>Telegram</label>
+                    <input className="fx-input" value={form.telegram_username} onChange={(e) => set('telegram_username', e.target.value)} />
+                  </div>
                 </div>
-                <div className="fx-field"><label>Адрес</label><input className="fx-input" value={form.address} onChange={(e) => set('address', e.target.value)} /></div>
-                <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flex: 1 }}><label>Экстренный контакт — имя</label><input className="fx-input" value={form.emergency_contact_name} onChange={(e) => set('emergency_contact_name', e.target.value)} /></div>
-                  <div style={{ flex: 1 }}><label>Экстренный контакт — телефон</label><input className="fx-input" value={form.emergency_contact_phone} onChange={(e) => set('emergency_contact_phone', formatPhone(e.target.value))} inputMode="tel" /></div>
-                </div>
+
+                {!selfMode && (emp.extra_data as Record<string, unknown> | null)?.passport != null && (
+                  <div className="fx-field">
+                    <label>Паспорт (скан)</label>
+                    <button type="button" className="fx-btn fx-btn--secondary" onClick={downloadPassport}>Скачать скан паспорта</button>
+                  </div>
+                )}
+
+                {selfMode && (
+                  <>
+                    <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}><label>Дата рождения</label><DatePickerFactorial value={form.birth_date} onChange={(v) => set('birth_date', v)} /></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><label>Паспорт №</label><input className="fx-input" value={form.passport_number} onChange={(e) => set('passport_number', e.target.value)} /></div>
+                    </div>
+                    <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
+                      <div style={{ flex: 2, minWidth: 0 }}><label>Кем выдан</label><input className="fx-input" value={form.passport_issued_by} onChange={(e) => set('passport_issued_by', e.target.value)} /></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><label>Дата выдачи</label><DatePickerFactorial value={form.passport_issued} onChange={(v) => set('passport_issued', v)} /></div>
+                    </div>
+                    <div className="fx-field"><label>Адрес</label><input className="fx-input" value={form.address} onChange={(e) => set('address', e.target.value)} /></div>
+                    <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <label>Способ выплаты</label>
+                        <select className="fx-select" value={form.payment_method} onChange={(e) => set('payment_method', e.target.value)}>
+                          <option value="">— Не выбран —</option>
+                          <option value="card">Карта</option>
+                          <option value="crypto">Криптокошелёк</option>
+                          <option value="bank">Банковский счёт</option>
+                          <option value="other">Другое</option>
+                        </select>
+                      </div>
+                      <div style={{ flex: 2, minWidth: 0 }}>
+                        <label>Реквизиты</label>
+                        <input className="fx-input" value={form.payment_details} onChange={(e) => set('payment_details', e.target.value)} placeholder="номер карты / адрес кошелька / реквизиты счёта" />
+                      </div>
+                    </div>
+                    <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}><label>Экстренный контакт — имя</label><input className="fx-input" value={form.emergency_contact_name} onChange={(e) => set('emergency_contact_name', e.target.value)} /></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><label>Экстренный контакт — телефон</label><input className="fx-input" value={form.emergency_contact_phone} onChange={(e) => set('emergency_contact_phone', formatPhone(e.target.value))} inputMode="tel" /></div>
+                    </div>
+                  </>
+                )}
               </>
             )}
 
