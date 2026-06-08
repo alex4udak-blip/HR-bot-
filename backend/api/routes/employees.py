@@ -29,6 +29,9 @@ logger = logging.getLogger("hr-analyzer.employees")
 
 router = APIRouter()
 
+# Лимит одобренных отпусков за один рабочий год (год от даты приёма сотрудника).
+VACATION_REQUESTS_PER_CYCLE = 2
+
 
 # ─── Pydantic schemas ───────────────────────────────────────
 
@@ -113,6 +116,10 @@ class LeaveBalanceResponse(BaseModel):
     family_leave_total: int
     family_leave_used: int
     family_leave_remaining: int
+    cycle_start: Optional[datetime] = None
+    cycle_end: Optional[datetime] = None
+    vacation_requests_used: int = 0
+    vacation_requests_limit: int = VACATION_REQUESTS_PER_CYCLE
 
 
 class LeaveRequestCreate(BaseModel):
@@ -161,21 +168,43 @@ def _auto_calculate_dates(emp: Employee):
         emp.one_year_date = None
 
 
-def _calculate_vacation_days(department_start_date: Optional[datetime]) -> int:
-    """Calculate accumulated vacation days: 2 per month from department_start_date, max 24/year."""
+def _calculate_vacation_days(
+    department_start_date: Optional[datetime], now: Optional[datetime] = None
+) -> int:
+    """Накоплено отпуска в ТЕКУЩЕМ рабочем году: 2 дня за каждый полный
+    отработанный месяц цикла; СБРОС В НОЛЬ ровно на годовщине приёма
+    (use-it-or-lose-it — неиспользованные дни сгорают в годовщину).
+    Прогрессия: 0,2,4,…,22, затем на годовщине снова 0.
+    `now` инъектируется в тестах для детерминизма; по умолчанию — текущий UTC."""
     if not department_start_date:
         return 0
-    now = datetime.utcnow()
+    if now is None:
+        now = datetime.utcnow()
     if now < department_start_date:
         return 0
     delta = relativedelta(now, department_start_date)
-    total_months = delta.years * 12 + delta.months
-    # Within current year cycle: max 24 per year
-    months_in_current_year = total_months % 12
-    full_years = total_months // 12
-    current_year_days = min(months_in_current_year * 2, 24)
-    # Add 24 for each full year (unused carry-over simplified)
-    return full_years * 24 + current_year_days
+    months = delta.years * 12 + delta.months  # полных месяцев с даты приёма
+    months_in_cycle = months % 12  # 0..11 (на годовщине обнуляется)
+    return months_in_cycle * 2  # 0..22
+
+
+def _cycle_start(
+    department_start_date: Optional[datetime], now: Optional[datetime] = None
+) -> Optional[datetime]:
+    """Дата начала текущего рабочего года (последняя годовщина приёма;
+    сама годовщина уже относится к новому циклу).
+    `now` инъектируется в тестах; по умолчанию — текущий UTC."""
+    if not department_start_date:
+        return None
+    if now is None:
+        now = datetime.utcnow()
+    if now < department_start_date:
+        # Приём ещё не наступил — цикл формально начинается с даты приёма.
+        return department_start_date
+    delta = relativedelta(now, department_start_date)
+    months = delta.years * 12 + delta.months
+    cycle_index = months // 12
+    return department_start_date + relativedelta(months=cycle_index * 12)
 
 
 async def _is_admin_or_owner(user: User, org_id: int, db: AsyncSession) -> bool:
@@ -679,23 +708,46 @@ async def get_leave_balance(
         if not org or not await _is_admin_or_owner(current_user, emp.org_id, db):
             raise HTTPException(status_code=403, detail="Access denied")
 
-    vac_total = _calculate_vacation_days(emp.department_start_date)
-    vac_used = emp.vacation_days_used or 0
-    sick_total = emp.sick_days_total or 10
-    sick_used = emp.sick_days_used or 0
-    fl_total = emp.family_leave_days_total or 3
-    fl_used = emp.family_leave_days_used or 0
+    now = datetime.utcnow()
+    vac_total = _calculate_vacation_days(emp.department_start_date, now=now)
+    cstart = _cycle_start(emp.department_start_date, now=now)
+    cend = (cstart + relativedelta(months=12)) if cstart else None
 
+    # «Использовано» считаем по одобренным заявкам, чья ДАТА НАЧАЛА попадает в текущий
+    # цикл (start_date >= cstart). Заявку относим к циклу по дате начала — по спеке.
+    used = {"vacation": 0, "sick": 0, "family_leave": 0}
+    vacation_requests_used = 0
+    if cstart:
+        rows = (await db.execute(
+            select(LeaveRequest.type, LeaveRequest.days).where(
+                LeaveRequest.employee_id == emp.id,
+                LeaveRequest.status == "approved",
+                LeaveRequest.start_date >= cstart,
+                LeaveRequest.start_date < cend,
+            )
+        )).all()
+        for t, d in rows:
+            if t in used:
+                used[t] += (d or 0)
+            if t == "vacation":
+                vacation_requests_used += 1
+
+    sick_total = 7
+    fl_total = 2
     return LeaveBalanceResponse(
         vacation_total=vac_total,
-        vacation_used=vac_used,
-        vacation_remaining=max(0, vac_total - vac_used),
+        vacation_used=used["vacation"],
+        vacation_remaining=max(0, vac_total - used["vacation"]),
         sick_total=sick_total,
-        sick_used=sick_used,
-        sick_remaining=max(0, sick_total - sick_used),
+        sick_used=used["sick"],
+        sick_remaining=max(0, sick_total - used["sick"]),
         family_leave_total=fl_total,
-        family_leave_used=fl_used,
-        family_leave_remaining=max(0, fl_total - fl_used),
+        family_leave_used=used["family_leave"],
+        family_leave_remaining=max(0, fl_total - used["family_leave"]),
+        cycle_start=cstart,
+        cycle_end=cend,
+        vacation_requests_used=vacation_requests_used,
+        vacation_requests_limit=VACATION_REQUESTS_PER_CYCLE,
     )
 
 
@@ -779,13 +831,38 @@ async def approve_leave_request(
     if lr.status != "pending":
         raise HTTPException(status_code=400, detail="Request is not pending")
 
+    # Сотрудник нужен и для проверки лимита, и для обновления счётчиков (один запрос).
+    emp_result = await db.execute(select(Employee).where(Employee.id == lr.employee_id))
+    emp = emp_result.scalar_one_or_none()
+
+    # Лимит: не более VACATION_REQUESTS_PER_CYCLE одобренных отпусков за рабочий год.
+    # Текущая заявка ещё "pending" и не входит в подсчёт.
+    if lr.type == "vacation" and emp:
+        # Нет даты приёма → _cycle_start вернёт None и лимит не проверяется
+        # (by design: неполные данные не блокируем).
+        cstart = _cycle_start(emp.department_start_date)
+        if cstart:
+            cend = cstart + relativedelta(months=12)
+            approved_vac = (await db.execute(
+                select(func.count()).select_from(LeaveRequest).where(
+                    LeaveRequest.employee_id == lr.employee_id,
+                    LeaveRequest.type == "vacation",
+                    LeaveRequest.status == "approved",
+                    LeaveRequest.start_date >= cstart,
+                    LeaveRequest.start_date < cend,
+                )
+            )).scalar() or 0
+            if approved_vac >= VACATION_REQUESTS_PER_CYCLE:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Достигнут лимит: {VACATION_REQUESTS_PER_CYCLE} отпуска за рабочий год",
+                )
+
     lr.status = "approved"
     lr.approved_by = current_user.id
     lr.approved_at = datetime.utcnow()
 
-    # Update employee leave counters
-    emp_result = await db.execute(select(Employee).where(Employee.id == lr.employee_id))
-    emp = emp_result.scalar_one_or_none()
+    # Обновляем legacy-счётчики сотрудника (их читает старый HR-портал).
     if emp:
         if lr.type == "vacation":
             emp.vacation_days_used = (emp.vacation_days_used or 0) + lr.days

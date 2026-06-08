@@ -43,6 +43,10 @@ export interface LeaveBalance {
   family_leave_total: number;
   family_leave_used: number;
   family_leave_remaining: number;
+  cycle_start: string | null;
+  cycle_end: string | null;
+  vacation_requests_used: number;
+  vacation_requests_limit: number;
 }
 
 export type LeaveType = 'vacation' | 'sick' | 'family_leave' | 'bereavement';
