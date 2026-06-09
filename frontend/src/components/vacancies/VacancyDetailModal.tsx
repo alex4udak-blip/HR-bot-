@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import ReactMarkdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 import {
   X,
   MapPin,
@@ -288,9 +287,10 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           {vacancy.requirements && (
             <div className="p-4 glass-light rounded-lg">
               <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-60)] mb-2">Требования</h3>
-              <div className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]">
-                <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.requirements}</ReactMarkdown>
-              </div>
+              <div
+                className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]"
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(vacancy.requirements) }}
+              />
             </div>
           )}
 
@@ -298,9 +298,10 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           {vacancy.responsibilities && (
             <div className="p-4 glass-light rounded-lg">
               <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-60)] mb-2">Обязанности</h3>
-              <div className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]">
-                <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.responsibilities}</ReactMarkdown>
-              </div>
+              <div
+                className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]"
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(vacancy.responsibilities) }}
+              />
             </div>
           )}
 

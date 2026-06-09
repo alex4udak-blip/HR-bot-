@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import ReactMarkdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 import {
   MapPin,
   DollarSign,
@@ -205,18 +204,20 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
         {vacancy.requirements && (
           <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3">Требования</h3>
-            <div className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]">
-              <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.requirements}</ReactMarkdown>
-            </div>
+            <div
+              className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]"
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(vacancy.requirements) }}
+            />
           </div>
         )}
 
         {vacancy.responsibilities && (
           <div className="p-6 glass-light rounded-xl">
             <h3 className="text-lg font-semibold mb-3">Обязанности</h3>
-            <div className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]">
-              <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{vacancy.responsibilities}</ReactMarkdown>
-            </div>
+            <div
+              className="prose prose-invert prose-sm max-w-none text-[color:var(--hf-white-alpha-80)] prose-li:marker:text-[color:var(--hf-white-alpha-60)]"
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(vacancy.responsibilities) }}
+            />
           </div>
         )}
 

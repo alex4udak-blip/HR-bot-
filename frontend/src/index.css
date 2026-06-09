@@ -1592,6 +1592,27 @@
   outline: none;
 }
 
+/* F1: WYSIWYG rich-text редактор (contentEditable). Tailwind сбрасывает маркеры
+   списков — возвращаем их внутри редактора, плюс стиль ссылок. */
+.hf-vacancy-richtext {
+  overflow-y: auto;
+  cursor: text;
+}
+.hf-vacancy-richtext ul {
+  list-style: disc;
+  margin: 0.25em 0;
+  padding-left: 1.5em;
+}
+.hf-vacancy-richtext ol {
+  list-style: decimal;
+  margin: 0.25em 0;
+  padding-left: 1.5em;
+}
+.hf-vacancy-richtext a {
+  color: var(--hf-cyan-700);
+  text-decoration: underline;
+}
+
 .hf-vacancy-attach-btn {
   display: inline-flex;
   height: var(--hf-vacancy-pill-h);

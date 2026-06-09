@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
@@ -8,8 +8,6 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import ReactMarkdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
@@ -54,6 +52,101 @@ function HfSpriteIcon({ id, className }: { id: string; className?: string }) {
     <svg className={className} viewBox="0 0 20 20" aria-hidden="true">
       <use href={`/huntflow-sprite.svg#${id}`} />
     </svg>
+  );
+}
+
+// F1: WYSIWYG rich-text редактор (contentEditable). Кнопки реально форматируют
+// через execCommand, списки продолжаются по Enter (нативно в браузере), значение
+// хранится как HTML и рендерится с санитайзером в VacancyDetail/VacancyDetailModal.
+function RichTextField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Инициализация / внешняя синхронизация без перезаписи при наборе (курсор не прыгает).
+  useEffect(() => {
+    const el = ref.current;
+    if (el && el.innerHTML !== (value || '')) el.innerHTML = value || '';
+  }, [value]);
+
+  const sync = () => onChange(ref.current?.innerHTML || '');
+
+  const exec = (command: string, arg?: string) => {
+    if (disabled) return;
+    ref.current?.focus();
+    document.execCommand(command, false, arg);
+    sync();
+  };
+
+  const addLink = () => {
+    if (disabled) return;
+    const url = (window.prompt('Ссылка (URL):', 'https://') || '').trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      toast.error('Ссылка должна начинаться с http:// или https://');
+      return;
+    }
+    ref.current?.focus();
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      document.execCommand('createLink', false, url);
+    } else {
+      document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>`);
+    }
+    sync();
+  };
+
+  const btnClass = 'hf-vacancy-editor-btn flex items-center justify-center';
+
+  return (
+    <div className="hf-vacancy-editor">
+      <div className="hf-vacancy-editor-toolbar flex items-center">
+        <button type="button" aria-label="Жирный" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('bold'); }}>
+          <HfSpriteIcon id="bold" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" aria-label="Курсив" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('italic'); }}>
+          <HfSpriteIcon id="italic" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" aria-label="Подчёркнутый" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('underline'); }}>
+          <span className="text-[13px] font-semibold leading-none underline">U</span>
+        </button>
+        <button type="button" aria-label="Маркированный список" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('insertUnorderedList'); }}>
+          <HfSpriteIcon id="bullet-list" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" aria-label="Нумерованный список" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('insertOrderedList'); }}>
+          <HfSpriteIcon id="numbered-list" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" aria-label="Ссылка" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); addLink(); }}>
+          <HfSpriteIcon id="link" className="hf-vacancy-editor-icon" />
+        </button>
+      </div>
+      <div
+        ref={ref}
+        contentEditable={!disabled}
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
+        onInput={sync}
+        onPaste={(e) => {
+          e.preventDefault();
+          const text = e.clipboardData.getData('text/plain');
+          document.execCommand('insertText', false, text);
+        }}
+        className="hf-vacancy-textarea hf-vacancy-richtext"
+      />
+    </div>
   );
 }
 
@@ -296,8 +389,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
   const hfLabelClass = "hf-vacancy-label";
   const hfInputClass = "hf-vacancy-input";
-  const hfTextareaClass = "hf-vacancy-textarea";
-  const hfToolbarButtonClass = "hf-vacancy-editor-btn flex items-center justify-center";
 
   const HfSelect = ({
     id,
@@ -384,134 +475,13 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     );
   };
 
-  // F1-fix: поле требований/обязанностей — это Markdown (рендерится через
-  // ReactMarkdown в VacancyDetail). Раньше вставка ВЫДЕЛЯЛА плейсхолдер, и при
-  // первом нажатии клавиши он удалялся. Теперь ставим разметку и оставляем
-  // СХЛОПНУТЫЙ курсор в нужном месте — ничего не теряется. Под полем — живое превью.
-  const applyEditorFormat = (
-    btn: HTMLElement,
-    type: "bold" | "italic" | "bullet" | "numbered" | "link",
-    onChange: (value: string) => void,
-  ) => {
-    const ta = btn
-      .closest(".hf-vacancy-editor")
-      ?.querySelector("textarea") as HTMLTextAreaElement | null;
-    if (!ta) return;
-    const start = ta.selectionStart ?? ta.value.length;
-    const end = ta.selectionEnd ?? start;
-    const val = ta.value;
-    const sel = val.slice(start, end);
-    let nextValue = val;
-    let caret = start;
-
-    const wrap = (mark: string) => {
-      if (sel) {
-        nextValue = val.slice(0, start) + mark + sel + mark + val.slice(end);
-        caret = end + mark.length * 2;
-      } else {
-        nextValue = val.slice(0, start) + mark + mark + val.slice(end);
-        caret = start + mark.length; // курсор МЕЖДУ маркерами
-      }
-    };
-    const prefixLines = (make: (i: number) => string) => {
-      const lineStart = val.lastIndexOf("\n", start - 1) + 1;
-      if (sel) {
-        const prefixed = val
-          .slice(lineStart, end)
-          .split("\n")
-          .map((l, i) => make(i) + l)
-          .join("\n");
-        nextValue = val.slice(0, lineStart) + prefixed + val.slice(end);
-        caret = lineStart + prefixed.length;
-      } else {
-        const p = make(0);
-        nextValue = val.slice(0, lineStart) + p + val.slice(lineStart);
-        caret = start + p.length; // курсор после "- " / "1. "
-      }
-    };
-
-    switch (type) {
-      case "bold":
-        wrap("**");
-        break;
-      case "italic":
-        wrap("_");
-        break;
-      case "bullet":
-        prefixLines(() => "- ");
-        break;
-      case "numbered":
-        prefixLines((i) => `${i + 1}. `);
-        break;
-      case "link": {
-        const url = (window.prompt("Ссылка (URL):", "https://") || "").trim();
-        if (!url) return;
-        if (sel) {
-          const md = `[${sel}](${url})`;
-          nextValue = val.slice(0, start) + md + val.slice(end);
-          caret = start + md.length;
-        } else {
-          nextValue = val.slice(0, start) + `[](${url})` + val.slice(end);
-          caret = start + 1; // курсор внутри [ ] — печатаешь текст ссылки
-        }
-        break;
-      }
-    }
-
-    onChange(nextValue);
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.setSelectionRange(caret, caret); // СХЛОПНУТЫЙ курсор — ничего не выделено
-    });
-  };
+  // markdown applyEditorFormat удалён — теперь WYSIWYG (см. RichTextField выше).
 
   const renderEditor = (
     value: string,
     onChange: (value: string) => void,
   ) => (
-    <div className="hf-vacancy-editor">
-      <div className="hf-vacancy-editor-toolbar flex items-center">
-        <button type="button" className={hfToolbarButtonClass} aria-label="bold"
-          disabled={isReadOnlyRequest}
-          onClick={(e) => applyEditorFormat(e.currentTarget, "bold", onChange)}>
-          <HfSpriteIcon id="bold" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="italic"
-          disabled={isReadOnlyRequest}
-          onClick={(e) => applyEditorFormat(e.currentTarget, "italic", onChange)}>
-          <HfSpriteIcon id="italic" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="bullet-list"
-          disabled={isReadOnlyRequest}
-          onClick={(e) => applyEditorFormat(e.currentTarget, "bullet", onChange)}>
-          <HfSpriteIcon id="bullet-list" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="numbered-list"
-          disabled={isReadOnlyRequest}
-          onClick={(e) => applyEditorFormat(e.currentTarget, "numbered", onChange)}>
-          <HfSpriteIcon id="numbered-list" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="link"
-          disabled={isReadOnlyRequest}
-          onClick={(e) => applyEditorFormat(e.currentTarget, "link", onChange)}>
-          <HfSpriteIcon id="link" className="hf-vacancy-editor-icon" />
-        </button>
-      </div>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={isReadOnlyRequest}
-        className={hfTextareaClass}
-      />
-      {value && value.trim() && (
-        <div className="mt-[8px] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-divider)] bg-[var(--hf-bg-panel)] px-[12px] py-[8px]">
-          <div className="mb-[4px] text-[10px] font-medium uppercase tracking-wide text-[var(--hf-main-600)]">Превью</div>
-          <div className="prose prose-sm max-w-none text-[var(--hf-main-900)]">
-            <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{value}</ReactMarkdown>
-          </div>
-        </div>
-      )}
-    </div>
+    <RichTextField value={value} onChange={onChange} disabled={isReadOnlyRequest} />
   );
 
   return (
