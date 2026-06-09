@@ -1533,6 +1533,11 @@ export default function AllCandidatesPage() {
               handleCardUpdated(updated);
               setShowEditModal(false);
             }}
+            onDeleted={() => {
+              setShowEditModal(false);
+              setSelectedCard(null);
+              fetchBoard();
+            }}
           />
         )}
         {showAddToVacancy && selectedCard && (
@@ -4137,10 +4142,12 @@ export function EditCandidateModal({
   card,
   onClose,
   onSaved,
+  onDeleted,
 }: {
   card: KanbanCard;
   onClose: () => void;
   onSaved: (updated: Partial<KanbanCard>) => void;
+  onDeleted: () => void;
 }) {
   const initialNameParts = card.name.trim().split(/\s+/);
   const [lastName, setLastName] = useState(initialNameParts[0] || "");
@@ -4164,6 +4171,7 @@ export function EditCandidateModal({
     buildEditResumeText(card, resumeDemo),
   );
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const fullName = [lastName, firstName, middleName]
     .map((part) => part.trim())
@@ -4223,6 +4231,24 @@ export function EditCandidateModal({
       setSaving(false);
     }
   };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    if (!window.confirm(`Удалить кандидата «${card.name || "без имени"}»? Действие необратимо.`)) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteEntity(card.id);
+      toast.success("Кандидат удалён");
+      onDeleted();
+    } catch {
+      toast.error("Ошибка при удалении");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const resumeFileName =
     (card.extra_data?.resume_file_name as string | undefined) ||
     `${card.name}.pdf`;
@@ -4419,9 +4445,11 @@ export function EditCandidateModal({
           </div>
           <button
             type="button"
-            className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-delete-min-w)] items-center rounded-[var(--hf-edit-btn-radius)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-ui-delete)] transition-colors hover:text-[var(--hf-red-500)]"
+            onClick={handleDelete}
+            disabled={deleting || saving}
+            className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-delete-min-w)] items-center rounded-[var(--hf-edit-btn-radius)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-ui-delete)] transition-colors hover:text-[var(--hf-red-500)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Удалить
+            {deleting ? "Удаление…" : "Удалить"}
           </button>
         </div>
       </motion.div>

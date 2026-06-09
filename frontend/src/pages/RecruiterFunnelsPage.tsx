@@ -3107,6 +3107,10 @@ export default function RecruiterFunnelsPage() {
           card={editingCandidateCard}
           onClose={() => setEditingCandidateCard(null)}
           onSaved={handleCandidateSaved}
+          onDeleted={() => {
+            setCandidates((items) => items.filter((c) => c.entity_id !== editingCandidateCard?.id));
+            setEditingCandidateCard(null);
+          }}
         />
       )}
 

@@ -27,7 +27,16 @@ document.getElementById('togglePassword')?.addEventListener('click', () => {
 document.addEventListener('DOMContentLoaded', async () => {
   // Load saved settings
   const stored = await chrome.storage.local.get(['serverUrl', 'authToken']);
-  serverUrl = stored.serverUrl || 'https://hr-bot-production-c613.up.railway.app';
+  // Актуальный прод-сервер один и тот же для всех. У старых пользователей в
+  // chrome.storage мог остаться прежний адрес и «залипал» в поле входа —
+  // поэтому всегда подставляем канонический сервер, кроме локальной разработки.
+  const DEFAULT_SERVER_URL = 'https://hr-bot-production-c613.up.railway.app';
+  const storedServer = stored.serverUrl || '';
+  const isLocalDev = /localhost|127\.0\.0\.1/.test(storedServer);
+  serverUrl = isLocalDev ? storedServer : DEFAULT_SERVER_URL;
+  if (serverUrl !== storedServer) {
+    await chrome.storage.local.set({ serverUrl });
+  }
   authToken = stored.authToken || '';
 
   document.getElementById('serverUrl').value = serverUrl;

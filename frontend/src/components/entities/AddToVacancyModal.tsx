@@ -56,10 +56,20 @@ export default function AddToVacancyModal({
         const data = await getVacancies({
           status: "open",
         });
+        // Заявка-оригинал после «Взять в работу» переходит в open и висит рядом
+        // со своим клоном (рабочей вакансией) → дубль. Прячем оригиналы, у
+        // которых уже есть клон — как это делает сайдбар в Layout.
+        const clonedSourceIds = new Set<number>();
+        data.forEach((v) => {
+          const src = (v.extra_data as Record<string, unknown> | undefined)
+            ?.cloned_from_request_id;
+          if (typeof src === "number") clonedSourceIds.add(src);
+        });
+        const deduped = data.filter((v) => !clonedSourceIds.has(v.id));
         const myVacancies =
           user && !isHrAdmin
-            ? data.filter((v) => v.created_by === user.id)
-            : data;
+            ? deduped.filter((v) => v.created_by === user.id)
+            : deduped;
         const query = searchQuery.trim().toLowerCase();
         const filtered = query
           ? myVacancies.filter((v) =>
