@@ -1344,8 +1344,10 @@ export default function RecruiterFunnelsPage() {
       // Re-fetch entity files so они показались в правой панели
       const fresh = await getEntityFiles(selectedCandidate.entity_id);
       setEntityFiles(fresh);
-    } catch {
-      toast.error('Ошибка загрузки файла');
+    } catch (err) {
+      // B7-fix: показываем реальную причину с бэка (размер/тип/нет места и т.п.)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail || 'Ошибка загрузки файла');
     } finally {
       setCandidateFileUploading(false);
       if (e.target) e.target.value = '';

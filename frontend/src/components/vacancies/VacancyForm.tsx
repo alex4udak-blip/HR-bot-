@@ -382,25 +382,77 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     );
   };
 
+  // F1-fix: тулбар форматирования был чисто декоративный (кнопки без onClick,
+  // поле — обычная textarea), поэтому «форматирование не работало». Теперь кнопки
+  // вставляют markdown-разметку в выделение/курсор. Это лёгкое форматирование,
+  // не WYSIWYG (полноценный rich-text потребовал бы HTML-редактор и HTML-рендер).
+  const applyEditorFormat = (
+    btn: HTMLElement,
+    type: "bold" | "italic" | "bullet" | "numbered" | "link",
+    onChange: (value: string) => void,
+  ) => {
+    const textarea = btn
+      .closest(".hf-vacancy-editor")
+      ?.querySelector("textarea") as HTMLTextAreaElement | null;
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    const val = textarea.value;
+    const sel = val.slice(start, end);
+    let insert = sel;
+    switch (type) {
+      case "bold":
+        insert = `**${sel || "текст"}**`;
+        break;
+      case "italic":
+        insert = `_${sel || "текст"}_`;
+        break;
+      case "bullet":
+        insert = (sel || "пункт").split("\n").map((l) => `- ${l}`).join("\n");
+        break;
+      case "numbered":
+        insert = (sel || "пункт").split("\n").map((l, i) => `${i + 1}. ${l}`).join("\n");
+        break;
+      case "link":
+        insert = `[${sel || "текст"}](https://)`;
+        break;
+    }
+    onChange(val.slice(0, start) + insert + val.slice(end));
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start, start + insert.length);
+    });
+  };
+
   const renderEditor = (
     value: string,
     onChange: (value: string) => void,
   ) => (
     <div className="hf-vacancy-editor">
       <div className="hf-vacancy-editor-toolbar flex items-center">
-        <button type="button" className={hfToolbarButtonClass} aria-label="bold">
+        <button type="button" className={hfToolbarButtonClass} aria-label="bold"
+          disabled={isReadOnlyRequest}
+          onClick={(e) => applyEditorFormat(e.currentTarget, "bold", onChange)}>
           <HfSpriteIcon id="bold" className="hf-vacancy-editor-icon" />
         </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="italic">
+        <button type="button" className={hfToolbarButtonClass} aria-label="italic"
+          disabled={isReadOnlyRequest}
+          onClick={(e) => applyEditorFormat(e.currentTarget, "italic", onChange)}>
           <HfSpriteIcon id="italic" className="hf-vacancy-editor-icon" />
         </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="bullet-list">
+        <button type="button" className={hfToolbarButtonClass} aria-label="bullet-list"
+          disabled={isReadOnlyRequest}
+          onClick={(e) => applyEditorFormat(e.currentTarget, "bullet", onChange)}>
           <HfSpriteIcon id="bullet-list" className="hf-vacancy-editor-icon" />
         </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="numbered-list">
+        <button type="button" className={hfToolbarButtonClass} aria-label="numbered-list"
+          disabled={isReadOnlyRequest}
+          onClick={(e) => applyEditorFormat(e.currentTarget, "numbered", onChange)}>
           <HfSpriteIcon id="numbered-list" className="hf-vacancy-editor-icon" />
         </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="link">
+        <button type="button" className={hfToolbarButtonClass} aria-label="link"
+          disabled={isReadOnlyRequest}
+          onClick={(e) => applyEditorFormat(e.currentTarget, "link", onChange)}>
           <HfSpriteIcon id="link" className="hf-vacancy-editor-icon" />
         </button>
       </div>

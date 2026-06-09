@@ -468,6 +468,10 @@ async def bulk_move_applications(
         app.stage = data.stage
         app.stage_order = max_order + (i + 1) * 1000
         app.last_stage_change_at = now
+        # B2-fix: ставим updated_at явно (Python-значением), иначе после commit
+        # server-side onupdate делает атрибут expired -> ленивая подгрузка в
+        # ответе вне async-контекста -> MissingGreenlet (500).
+        app.updated_at = now
 
         # Sync entity status
         if new_entity_status:

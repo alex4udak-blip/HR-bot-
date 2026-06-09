@@ -5752,9 +5752,11 @@ body.performance-mode .glass-card:hover {
 
 .hf-interview-body {
   display: grid;
-  height: var(--hf-interview-body-h);
+  /* F5-fix: было фикс. height 710px + flex-shrink:0 — на невысоких экранах
+     футер с кнопками «Сохранить/Отмена» уезжал за обрез модалки. Делаем тело
+     гибким (сжимается), внутренняя колонка .hf-interview-main и так скроллится. */
   min-height: 0;
-  flex-shrink: 0;
+  flex: 1 1 auto;
   grid-template-columns: var(--hf-interview-main-w) minmax(0, var(--hf-interview-side-w));
   margin-inline: var(--hf-interview-body-mx);
   overflow: hidden;

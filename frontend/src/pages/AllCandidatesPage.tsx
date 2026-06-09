@@ -28,7 +28,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  MessageCircle,
   Maximize2,
   Type,
   Upload,
@@ -499,6 +498,10 @@ export default function AllCandidatesPage() {
   const [selectedStatus, setSelectedStatus] = useState("");
   const [detailTab, setDetailTab] = useState<"info" | "resume">("resume");
   const [showListSettings, setShowListSettings] = useState(false);
+  // F7-fix: настройки списка (scope + видимые поля) — persist + применяются к карточкам.
+  const [listSettings, setListSettings] = useState<CandidateListSettings>(
+    loadCandidateListSettings,
+  );
   const [showStageSettings, setShowStageSettings] = useState(false);
   const [showStatusTemplates, setShowStatusTemplates] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -1121,7 +1124,9 @@ export default function AllCandidatesPage() {
                     .map(({ card, status }) => {
                       const isSelected = selectedCard?.id === card.id;
                       const isChecked = selectedIds.has(card.id);
-                      const listMetaPrimary = card.company || card.vacancy_name;
+                      const listMetaPrimary =
+                        (listSettings.fields.lastCompany ? card.company : undefined) ||
+                        card.vacancy_name;
                       const showListDate = !card.company;
                       return (
                         <div
@@ -1203,7 +1208,7 @@ export default function AllCandidatesPage() {
                                 {card.name}
                               </div>
                             </div>
-                            {card.position && (
+                            {listSettings.fields.lastPosition && card.position && (
                               <div className="hf-candidate-row-subtitle">
                                 {card.position}
                               </div>
@@ -1472,7 +1477,11 @@ export default function AllCandidatesPage() {
           />
         )}
         {showListSettings && (
-          <ListSettingsModal onClose={() => setShowListSettings(false)} />
+          <ListSettingsModal
+            onClose={() => setShowListSettings(false)}
+            initial={listSettings}
+            onApply={setListSettings}
+          />
         )}
         {showStageSettings && (
           <StageSettingsModal
@@ -1837,8 +1846,10 @@ const InfoTab = memo(function InfoTab({
     try {
       await uploadEntityFile(card.id, file, "resume");
       toast.success(`Файл "${file.name}" загружен`);
-    } catch {
-      toast.error("Ошибка загрузки файла");
+    } catch (err) {
+      // B7-fix: показываем реальную причину с бэка (размер/тип/нет места и т.п.)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail || "Ошибка загрузки файла");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -2158,14 +2169,6 @@ const InfoTab = memo(function InfoTab({
                   title="Telegram"
                 >
                   <Send className="w-[11px] h-[11px] text-[var(--hf-white)]" />
-                </a>
-                <a
-                  href={`viber://chat?number=${card.phone.replace(/\D/g, "")}`}
-                  rel="noopener noreferrer"
-                  className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-viber)] flex items-center justify-center hover:opacity-80"
-                  title="Viber"
-                >
-                  <MessageCircle className="w-[11px] h-[11px] text-[var(--hf-white)]" />
                 </a>
               </div>
             </InfoRow>
@@ -2776,7 +2779,6 @@ const InfoTab = memo(function InfoTab({
         {detailSection === "info" && (
           <PersonalNotesTab
             card={card}
-            onEmail={handleEmail}
             onFile={() => fileInputRef.current?.click()}
             uploading={uploading}
           />
@@ -2789,12 +2791,10 @@ const InfoTab = memo(function InfoTab({
 
 const PersonalNotesTab = memo(function PersonalNotesTab({
   card,
-  onEmail,
   onFile,
   uploading,
 }: {
   card: KanbanCard;
-  onEmail: React.MouseEventHandler<HTMLButtonElement>;
   onFile: () => void;
   uploading: boolean;
 }) {
@@ -2892,7 +2892,7 @@ const PersonalNotesTab = memo(function PersonalNotesTab({
         }}
         saving={saving}
         actions={[
-          { icon: Mail, label: "Письмо", onClick: onEmail },
+          // F6-fix: убрали «Письмо» из личных заметок — там оно не нужно.
           {
             icon: Paperclip,
             label: "Файл",
@@ -4476,9 +4476,30 @@ function EditField({
 // LIST SETTINGS MODAL (Huntflow user settings)
 // ================================================================
 
-function ListSettingsModal({ onClose }: { onClose: () => void }) {
-  const [scope, setScope] = useState<"mine" | "all">("mine");
-  const [fields, setFields] = useState({
+// F7-fix: настройки списка кандидатов теперь СОХРАНЯЮТСЯ (localStorage) и
+// применяются к карточкам. В компактном списке реально выводятся только
+// «должность» (lastPosition) и «компания» (lastCompany) — их тумблеры влияют
+// на отображение. Остальные поля и scope в этом списке пока не выводятся.
+type CandidateListFields = {
+  name: boolean;
+  desiredPosition: boolean;
+  desiredSalary: boolean;
+  age: boolean;
+  experience: boolean;
+  lastPosition: boolean;
+  lastCompany: boolean;
+  source: boolean;
+  vacanciesCount: boolean;
+  tags: boolean;
+};
+type CandidateListSettings = {
+  scope: "mine" | "all";
+  fields: CandidateListFields;
+};
+const CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings";
+const DEFAULT_CANDIDATE_LIST_SETTINGS: CandidateListSettings = {
+  scope: "mine",
+  fields: {
     name: true,
     desiredPosition: false,
     desiredSalary: false,
@@ -4489,14 +4510,50 @@ function ListSettingsModal({ onClose }: { onClose: () => void }) {
     source: false,
     vacanciesCount: false,
     tags: false,
-  });
+  },
+};
+function loadCandidateListSettings(): CandidateListSettings {
+  try {
+    const raw = localStorage.getItem(CANDIDATE_LIST_SETTINGS_KEY);
+    if (!raw) return DEFAULT_CANDIDATE_LIST_SETTINGS;
+    const parsed = JSON.parse(raw);
+    return {
+      scope: parsed?.scope === "all" ? "all" : "mine",
+      fields: { ...DEFAULT_CANDIDATE_LIST_SETTINGS.fields, ...(parsed?.fields || {}) },
+    };
+  } catch {
+    return DEFAULT_CANDIDATE_LIST_SETTINGS;
+  }
+}
+function saveCandidateListSettings(settings: CandidateListSettings) {
+  try {
+    localStorage.setItem(CANDIDATE_LIST_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    /* ignore */
+  }
+}
 
-  const setField = (key: keyof typeof fields, checked: boolean) => {
+function ListSettingsModal({
+  onClose,
+  initial,
+  onApply,
+}: {
+  onClose: () => void;
+  initial: CandidateListSettings;
+  onApply: (settings: CandidateListSettings) => void;
+}) {
+  const [scope, setScope] = useState<"mine" | "all">(initial.scope);
+  const [fields, setFields] = useState<CandidateListFields>(initial.fields);
+
+  const setField = (key: keyof CandidateListFields, checked: boolean) => {
     if (key === "name") return;
     setFields((prev) => ({ ...prev, [key]: checked }));
   };
 
   const handleSave = () => {
+    const next: CandidateListSettings = { scope, fields };
+    saveCandidateListSettings(next);
+    onApply(next);
     toast.success("Настройки списка сохранены");
     onClose();
   };

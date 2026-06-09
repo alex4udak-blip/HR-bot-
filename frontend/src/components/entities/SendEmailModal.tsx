@@ -114,14 +114,20 @@ export default function SendEmailModal({
     }
     setSending(true);
     try {
-      await sendEmail({
+      const res = await sendEmail({
         template_id: selectedTemplateId,
         entity_id: entityId,
         vacancy_id: vacancyId,
         subject_override: subject,
         body_override: body,
       });
-      toast.success(`Письмо отправлено на ${entityEmail}`);
+      // B5-fix: бэк возвращает реальный статус. "sent" — реально ушло; иначе
+      // письмо лишь поставлено в очередь (SMTP не настроен).
+      if (res?.status === "sent") {
+        toast.success(`Письмо отправлено на ${entityEmail}`);
+      } else {
+        toast(`Письмо в очереди: отправка почты ещё не настроена`, { icon: "📭" });
+      }
       onSuccess?.();
       onClose();
     } catch {
@@ -150,15 +156,25 @@ export default function SendEmailModal({
     label.toLowerCase().includes(templateSearch.trim().toLowerCase()),
   );
   const popoverWidth = 400;
+  const popoverHeight = 520; // = max-h поповера ниже; нужно для вертикального клампа
   const viewportWidth =
     typeof window === "undefined" ? 1920 : window.innerWidth;
+  const viewportHeight =
+    typeof window === "undefined" ? 1080 : window.innerHeight;
   const popoverLeft = anchorRect
     ? Math.min(
         viewportWidth - popoverWidth - 8,
         Math.max(8, anchorRect.left),
       )
     : 710;
-  const popoverTop = anchorRect ? anchorRect.bottom + 10 : 430;
+  // F4-fix: раньше был только горизонтальный кламп — если кнопка «Письмо» внизу
+  // экрана, поповер «съезжал» за нижний край. Теперь держим его в пределах вьюпорта.
+  const popoverTop = anchorRect
+    ? Math.max(
+        8,
+        Math.min(viewportHeight - popoverHeight - 8, anchorRect.bottom + 10),
+      )
+    : 430;
 
   return (
     <motion.div

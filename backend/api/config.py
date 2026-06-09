@@ -57,6 +57,15 @@ class Settings(BaseSettings):
         alias="FIREFLIES_API_KEY"
     )
 
+    # SMTP — исходящая почта кандидатам (B5). Если SMTP_HOST/SMTP_FROM пусты,
+    # письмо не отправляется (помечается pending), а не врёт "отправлено".
+    smtp_host: str = Field(default="", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_user: str = Field(default="", alias="SMTP_USER")
+    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from: str = Field(default="", alias="SMTP_FROM")
+    smtp_use_tls: bool = Field(default=True, alias="SMTP_USE_TLS")
+
     # Superadmin credentials - MUST be set in Railway Variables
     superadmin_email: str = Field(
         alias="SUPERADMIN_EMAIL"

@@ -342,9 +342,17 @@ class VacancyCreate(BaseModel):
     @field_validator("salary_min", "salary_max")
     @classmethod
     def validate_salary_positive(cls, v: Optional[int]) -> Optional[int]:
-        """Validate salary values are non-negative."""
-        if v is not None and v < 0:
-            raise ValueError("salary cannot be negative")
+        """Validate salary: non-negative and within INT column range (B4-fix).
+
+        Без верхней границы значение вроде 14_124_124_124_124 проходило
+        Pydantic, но падало на INSERT/UPDATE в Postgres (integer out of range)
+        -> 500 при создании/редактировании заявки.
+        """
+        if v is not None:
+            if v < 0:
+                raise ValueError("salary cannot be negative")
+            if v > 2_147_483_647:
+                raise ValueError("Зарплата слишком большая (максимум 2 147 483 647)")
         return v
 
     @field_validator("priority")
@@ -441,9 +449,17 @@ class VacancyUpdate(BaseModel):
     @field_validator("salary_min", "salary_max")
     @classmethod
     def validate_salary_positive(cls, v: Optional[int]) -> Optional[int]:
-        """Validate salary values are non-negative."""
-        if v is not None and v < 0:
-            raise ValueError("salary cannot be negative")
+        """Validate salary: non-negative and within INT column range (B4-fix).
+
+        Без верхней границы значение вроде 14_124_124_124_124 проходило
+        Pydantic, но падало на INSERT/UPDATE в Postgres (integer out of range)
+        -> 500 при создании/редактировании заявки.
+        """
+        if v is not None:
+            if v < 0:
+                raise ValueError("salary cannot be negative")
+            if v > 2_147_483_647:
+                raise ValueError("Зарплата слишком большая (максимум 2 147 483 647)")
         return v
 
     @field_validator("priority")

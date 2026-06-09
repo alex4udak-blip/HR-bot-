@@ -334,13 +334,29 @@ async def send_email(
     await db.commit()
     await db.refresh(email_log)
 
-    # TODO: Actually send email via SMTP/SendGrid
-    # For now, just mark as sent
-    email_log.status = EmailStatus.sent
-    email_log.sent_at = datetime.utcnow()
+    # B5-fix: реально отправляем через SMTP, если настроено. Если SMTP не задан
+    # или отправка упала — честно помечаем pending, а не врём "отправлено".
+    from ...services.email_sender import send_email_smtp
+    actually_sent = False
+    try:
+        actually_sent = await send_email_smtp(entity.email, rendered_subject, rendered_body)
+    except Exception:
+        logger.exception(f"SMTP send failed: to={entity.email}, template={template.name}")
+        actually_sent = False
+
+    if actually_sent:
+        email_log.status = EmailStatus.sent
+        email_log.sent_at = datetime.utcnow()
+        result_message = "Email отправлен"
+    else:
+        email_log.status = EmailStatus.pending
+        result_message = "Письмо поставлено в очередь (SMTP не настроен — реальная отправка отключена)"
     await db.commit()
 
-    logger.info(f"Email sent: template={template.name}, to={entity.email}, by user {current_user.id}")
+    logger.info(
+        f"Email {email_log.status.value}: template={template.name}, "
+        f"to={entity.email}, by user {current_user.id}"
+    )
 
     return SendEmailResponse(
         id=email_log.id,
@@ -348,7 +364,7 @@ async def send_email(
         recipient_email=entity.email,
         recipient_name=entity.name,
         subject=rendered_subject,
-        message="Email отправлен успешно"
+        message=result_message
     )
 
 
