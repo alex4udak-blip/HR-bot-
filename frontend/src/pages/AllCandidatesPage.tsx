@@ -575,11 +575,18 @@ export default function AllCandidatesPage() {
   // (без него были репорты что переключение таба не обновляет список).
   const filteredCards = useMemo(() => {
     if (!board) return [];
+    // F7: scope «Только по моим вакансиям» — показываем кандидатов, где рекрутёр
+    // = текущий пользователь. recruiter_name приходит из User.name (как и user.name),
+    // поэтому сравнение точное и список не обнуляется из-за расхождения форматов.
+    const myName = (user?.name || "").trim();
+    const scopeMine = listSettings.scope === "mine" && myName.length > 0;
     const items: { card: KanbanCard; status: string; label: string }[] = [];
     for (const col of board.columns) {
       if (activeTab === "all" || col.status === activeTab) {
-        for (const c of col.cards)
+        for (const c of col.cards) {
+          if (scopeMine && (c.recruiter_name || "").trim() !== myName) continue;
           items.push({ card: c, status: col.status, label: col.label });
+        }
       }
     }
     if (activeTab === "all") {
@@ -590,7 +597,7 @@ export default function AllCandidatesPage() {
       );
     }
     return items;
-  }, [board, activeTab]);
+  }, [board, activeTab, listSettings.scope, user?.name]);
 
   const displayedCards = filteredCards;
 
@@ -1235,6 +1242,30 @@ export default function AllCandidatesPage() {
                                 </span>
                               )}
                             </div>
+                            {/* F7: доп. поля списка по настройке (если есть в данных карточки) */}
+                            {(() => {
+                              const extras = [
+                                listSettings.fields.desiredSalary && card.salary,
+                                listSettings.fields.age && card.age,
+                                listSettings.fields.experience && card.total_experience,
+                                listSettings.fields.source && card.source,
+                              ].filter(Boolean) as string[];
+                              if (!extras.length) return null;
+                              return (
+                                <div className="hf-candidate-row-meta">
+                                  {extras.map((t, ei) => (
+                                    <span key={ei} className="hf-candidate-row-meta-text" title={t}>{t}</span>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                            {listSettings.fields.tags && card.tags && card.tags.length > 0 && (
+                              <div className="hf-candidate-row-meta" style={{ flexWrap: "wrap" }}>
+                                {card.tags.slice(0, 6).map((tag, ti) => (
+                                  <span key={ti} className="hf-candidate-row-meta-text">#{tag}</span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

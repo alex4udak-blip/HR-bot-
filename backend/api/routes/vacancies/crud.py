@@ -245,10 +245,15 @@ async def create_vacancy(
         created_by=current_user.id,
         published_at=datetime.utcnow() if data.status == VacancyStatus.open else None,
     )
+    # custom_stages/kanban_card_fields приходят Pydantic-моделями (CustomStagesSchema),
+    # а колонки — JSON. Кладём dict, иначе json.dumps падает на commit -> 500
+    # («Object of type CustomStagesSchema is not JSON serializable»).
     if hasattr(Vacancy, 'custom_stages'):
-        vacancy_kwargs['custom_stages'] = data.custom_stages
+        cs = data.custom_stages
+        vacancy_kwargs['custom_stages'] = cs.model_dump() if hasattr(cs, 'model_dump') else cs
     if hasattr(Vacancy, 'kanban_card_fields'):
-        vacancy_kwargs['kanban_card_fields'] = data.kanban_card_fields
+        kcf = data.kanban_card_fields
+        vacancy_kwargs['kanban_card_fields'] = kcf.model_dump() if hasattr(kcf, 'model_dump') else kcf
     vacancy = Vacancy(**vacancy_kwargs)
 
     db.add(vacancy)

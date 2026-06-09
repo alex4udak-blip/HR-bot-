@@ -8,6 +8,8 @@ import {
   PlayCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
@@ -382,45 +384,84 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     );
   };
 
-  // F1-fix: тулбар форматирования был чисто декоративный (кнопки без onClick,
-  // поле — обычная textarea), поэтому «форматирование не работало». Теперь кнопки
-  // вставляют markdown-разметку в выделение/курсор. Это лёгкое форматирование,
-  // не WYSIWYG (полноценный rich-text потребовал бы HTML-редактор и HTML-рендер).
+  // F1-fix: поле требований/обязанностей — это Markdown (рендерится через
+  // ReactMarkdown в VacancyDetail). Раньше вставка ВЫДЕЛЯЛА плейсхолдер, и при
+  // первом нажатии клавиши он удалялся. Теперь ставим разметку и оставляем
+  // СХЛОПНУТЫЙ курсор в нужном месте — ничего не теряется. Под полем — живое превью.
   const applyEditorFormat = (
     btn: HTMLElement,
     type: "bold" | "italic" | "bullet" | "numbered" | "link",
     onChange: (value: string) => void,
   ) => {
-    const textarea = btn
+    const ta = btn
       .closest(".hf-vacancy-editor")
       ?.querySelector("textarea") as HTMLTextAreaElement | null;
-    if (!textarea) return;
-    const start = textarea.selectionStart ?? textarea.value.length;
-    const end = textarea.selectionEnd ?? textarea.value.length;
-    const val = textarea.value;
+    if (!ta) return;
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? start;
+    const val = ta.value;
     const sel = val.slice(start, end);
-    let insert = sel;
+    let nextValue = val;
+    let caret = start;
+
+    const wrap = (mark: string) => {
+      if (sel) {
+        nextValue = val.slice(0, start) + mark + sel + mark + val.slice(end);
+        caret = end + mark.length * 2;
+      } else {
+        nextValue = val.slice(0, start) + mark + mark + val.slice(end);
+        caret = start + mark.length; // курсор МЕЖДУ маркерами
+      }
+    };
+    const prefixLines = (make: (i: number) => string) => {
+      const lineStart = val.lastIndexOf("\n", start - 1) + 1;
+      if (sel) {
+        const prefixed = val
+          .slice(lineStart, end)
+          .split("\n")
+          .map((l, i) => make(i) + l)
+          .join("\n");
+        nextValue = val.slice(0, lineStart) + prefixed + val.slice(end);
+        caret = lineStart + prefixed.length;
+      } else {
+        const p = make(0);
+        nextValue = val.slice(0, lineStart) + p + val.slice(lineStart);
+        caret = start + p.length; // курсор после "- " / "1. "
+      }
+    };
+
     switch (type) {
       case "bold":
-        insert = `**${sel || "текст"}**`;
+        wrap("**");
         break;
       case "italic":
-        insert = `_${sel || "текст"}_`;
+        wrap("_");
         break;
       case "bullet":
-        insert = (sel || "пункт").split("\n").map((l) => `- ${l}`).join("\n");
+        prefixLines(() => "- ");
         break;
       case "numbered":
-        insert = (sel || "пункт").split("\n").map((l, i) => `${i + 1}. ${l}`).join("\n");
+        prefixLines((i) => `${i + 1}. `);
         break;
-      case "link":
-        insert = `[${sel || "текст"}](https://)`;
+      case "link": {
+        const url = (window.prompt("Ссылка (URL):", "https://") || "").trim();
+        if (!url) return;
+        if (sel) {
+          const md = `[${sel}](${url})`;
+          nextValue = val.slice(0, start) + md + val.slice(end);
+          caret = start + md.length;
+        } else {
+          nextValue = val.slice(0, start) + `[](${url})` + val.slice(end);
+          caret = start + 1; // курсор внутри [ ] — печатаешь текст ссылки
+        }
         break;
+      }
     }
-    onChange(val.slice(0, start) + insert + val.slice(end));
+
+    onChange(nextValue);
     requestAnimationFrame(() => {
-      textarea.focus();
-      textarea.setSelectionRange(start, start + insert.length);
+      ta.focus();
+      ta.setSelectionRange(caret, caret); // СХЛОПНУТЫЙ курсор — ничего не выделено
     });
   };
 
@@ -462,6 +503,14 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         disabled={isReadOnlyRequest}
         className={hfTextareaClass}
       />
+      {value && value.trim() && (
+        <div className="mt-[8px] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-divider)] bg-[var(--hf-bg-panel)] px-[12px] py-[8px]">
+          <div className="mb-[4px] text-[10px] font-medium uppercase tracking-wide text-[var(--hf-main-600)]">Превью</div>
+          <div className="prose prose-sm max-w-none text-[var(--hf-main-900)]">
+            <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{value}</ReactMarkdown>
+          </div>
+        </div>
+      )}
     </div>
   );
 
