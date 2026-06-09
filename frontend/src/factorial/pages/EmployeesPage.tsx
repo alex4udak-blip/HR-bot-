@@ -7,7 +7,7 @@ import * as XLSX from 'xlsx';
 import TableTemplate from '@/factorial/templates/TableTemplate';
 import UserAvatar from '@/factorial/components/UserAvatar';
 import StatusPill from '@/factorial/components/StatusPill';
-import { listEmployees, dismissEmployee } from '@/factorial/api/employees';
+import { listEmployees, dismissEmployee, downloadEmployeeTemplate } from '@/factorial/api/employees';
 import { getOrgChart, assignEmployee } from '@/factorial/api/orgUnits';
 import { formatHiredAgo } from '@/factorial/lib/formatDate';
 import InviteEmployeeModal from '@/factorial/components/InviteEmployeeModal';
@@ -74,6 +74,8 @@ export default function EmployeesPage() {
     if (!selected.size) return;
     if (window.confirm(`Уволить выбранных (${selected.size})? Станут неактивными, данные не удаляются.`)) dismissM.mutate();
   };
+  const onExportAll = () => { void downloadEmployeeTemplate({ filled: true }); };
+
   const onExport = () => {
     const sel = employees.filter((e) => selected.has(e.id));
     const data = sel.map((e) => ({
@@ -163,13 +165,22 @@ export default function EmployeesPage() {
           filterAction: () => alert('Demo mode — фильтры'),
           exportAction: () => navigate('/factorial/employees/export'),
           moreActions: (
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-fx-lg border border-border bg-white hover:bg-sidebar-hover text-fx-sm"
-              onClick={() => navigate('/factorial/employees/import')}
-            >
-              Импорт
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-fx-lg border border-border bg-white hover:bg-sidebar-hover text-fx-sm"
+                onClick={onExportAll}
+              >
+                Экспорт
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-fx-lg border border-border bg-white hover:bg-sidebar-hover text-fx-sm"
+                onClick={() => navigate('/factorial/employees/import')}
+              >
+                Импорт
+              </button>
+            </div>
           ),
           primaryCta: { label: 'Добавить сотрудника', onClick: () => setInvite(true) },
         }}

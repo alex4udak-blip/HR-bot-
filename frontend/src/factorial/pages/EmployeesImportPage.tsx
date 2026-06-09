@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useNavigate } from 'react-router-dom';
-import { bulkImportEmployees } from '@/factorial/api/employees';
+import { bulkImportEmployees, downloadEmployeeTemplate } from '@/factorial/api/employees';
 import type { BulkImportResult } from '@/factorial/api/types';
 
 const COLS: Record<string, string> = {
@@ -17,12 +17,7 @@ export default function EmployeesImportPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.aoa_to_sheet([Object.keys(COLS)]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Сотрудники');
-    XLSX.writeFile(wb, 'template_employees.xlsx');
-  };
+  const downloadTemplate = () => { void downloadEmployeeTemplate(); };
 
   const onFile = async (file: File) => {
     setBusy(true); setResult(null); setErr('');

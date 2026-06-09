@@ -5,6 +5,14 @@ import { getEmployee, updateEmployee, getMyProfile, updateMyProfile, listEmploye
 import DatePickerFactorial from './DatePickerFactorial';
 import { formatPhone } from '../lib/phone';
 
+// Подсказка для поля «Реквизиты» меняется под выбранный способ выплаты.
+const PAY_PLACEHOLDER: Record<string, string> = {
+  card: 'Номер карты (16 цифр)',
+  crypto: 'Адрес кошелька (напр. USDT TRC-20)',
+  bank: 'Банк, расчётный счёт, БИК, получатель',
+  other: 'Реквизиты для выплаты',
+};
+
 // Редактирование сотрудника. selfMode=false — HR из реестра (рабочие поля, без паспорта).
 // selfMode=true — сам сотрудник в ЛК (личные/паспортные данные тоже). extra_data мёржится.
 export default function EmployeeEditModal({
@@ -182,7 +190,7 @@ export default function EmployeeEditModal({
                   </div>
                 )}
 
-                {selfMode && (
+                {section === 'personal' && (
                   <>
                     <div className="fx-field" style={{ display: 'flex', gap: 12 }}>
                       <div style={{ flex: 1, minWidth: 0 }}><label>Дата рождения</label><DatePickerFactorial value={form.birth_date} onChange={(v) => set('birth_date', v)} /></div>
@@ -206,7 +214,7 @@ export default function EmployeeEditModal({
                       </div>
                       <div style={{ flex: 2, minWidth: 0 }}>
                         <label>Реквизиты</label>
-                        <input className="fx-input" value={form.payment_details} onChange={(e) => set('payment_details', e.target.value)} placeholder="номер карты / адрес кошелька / реквизиты счёта" />
+                        <input className="fx-input" value={form.payment_details} onChange={(e) => set('payment_details', e.target.value)} placeholder={PAY_PLACEHOLDER[form.payment_method] || 'Номер карты / адрес кошелька / реквизиты счёта'} />
                       </div>
                     </div>
                     <div className="fx-field" style={{ display: 'flex', gap: 12 }}>

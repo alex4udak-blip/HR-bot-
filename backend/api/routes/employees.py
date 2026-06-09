@@ -7,12 +7,13 @@ Endpoints:
 - Leave balance & leave requests
 - Auto-reminders for probation/anniversary dates
 """
+import io
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List
 
 from dateutil.relativedelta import relativedelta
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,142 @@ from api.services.auth import get_current_user, get_user_org
 logger = logging.getLogger("hr-analyzer.employees")
 
 router = APIRouter()
+
+
+# ─── openpyxl imports ──────────────────────────────────────
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.utils import get_column_letter
+
+TEMPLATE_HEADERS = ['Email', 'Фамилия', 'Имя', 'Отчество', 'Должность', 'Телефон', 'Telegram',
+                    'Дата начала (ДД.ММ.ГГГГ)', 'Адрес', 'Паспорт №', 'Способ выплаты', 'Реквизиты']
+_TEMPLATE_WIDTHS = [26, 16, 14, 16, 20, 20, 16, 24, 32, 16, 18, 30]
+_PAY_LABELS = ['Карта', 'Криптокошелёк', 'Банковский счёт', 'Другое']
+_PAY_KEY_TO_LABEL = {'card': 'Карта', 'crypto': 'Криптокошелёк', 'bank': 'Банковский счёт', 'other': 'Другое'}
+_PAY_LABEL_TO_KEY = {v: k for k, v in _PAY_KEY_TO_LABEL.items()}
+
+
+def _normalize_pay_method(v):
+    if v is None:
+        return None
+    s = str(v).strip()
+    return _PAY_LABEL_TO_KEY.get(s, s)
+
+
+def _employee_to_template_row(emp) -> dict:
+    e = emp.extra_data or {}
+    def s(x):
+        return '' if x is None else str(x)
+    email = emp.user.email if getattr(emp, 'user', None) else ''
+    date_str = emp.department_start_date.strftime('%d.%m.%Y') if emp.department_start_date else ''
+    method = e.get('payment_method')
+    return {
+        'Email': s(email),
+        'Фамилия': s(e.get('last_name')),
+        'Имя': s(e.get('first_name')),
+        'Отчество': s(e.get('middle_name')),
+        'Должность': s(emp.position),
+        'Телефон': s(emp.phone),
+        'Telegram': s(emp.telegram_username),
+        'Дата начала (ДД.ММ.ГГГГ)': date_str,
+        'Адрес': s(e.get('address')),
+        'Паспорт №': s(e.get('passport_number')),
+        'Способ выплаты': _PAY_KEY_TO_LABEL.get(method, s(method)),
+        'Реквизиты': s(e.get('payment_details')),
+    }
+
+
+def _build_template_xlsx(rows: list, positions: list, with_example: bool) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Сотрудники'
+    head_fill = PatternFill('solid', fgColor='2F5496')
+    key_fill = PatternFill('solid', fgColor='C00000')
+    head_font = Font(bold=True, color='FFFFFF', size=11)
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    thin = Side(style='thin', color='BFBFBF')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    ex_font = Font(italic=True, color='909090')
+    for i, h in enumerate(TEMPLATE_HEADERS, start=1):
+        c = ws.cell(row=1, column=i, value=h)
+        c.fill = key_fill if i == 1 else head_fill
+        c.font = head_font
+        c.alignment = center
+        c.border = border
+    for i, w in enumerate(_TEMPLATE_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.row_dimensions[1].height = 30
+    ws.freeze_panes = 'A2'
+    last_col = get_column_letter(len(TEMPLATE_HEADERS))
+    ws.auto_filter.ref = f'A1:{last_col}1'
+
+    dv_pay = DataValidation(type='list', formula1='"%s"' % ','.join(_PAY_LABELS), allow_blank=True)
+    dv_pay.promptTitle = 'Способ выплаты'
+    dv_pay.prompt = 'Выберите из списка'
+    ws.add_data_validation(dv_pay)
+    pay_col = get_column_letter(TEMPLATE_HEADERS.index('Способ выплаты') + 1)
+    dv_pay.add(f'{pay_col}2:{pay_col}1000')
+
+    clean_pos = [p for p in dict.fromkeys(positions) if p]
+    if clean_pos:
+        lst = wb.create_sheet('Списки')
+        for i, p in enumerate(clean_pos, start=1):
+            lst.cell(row=i, column=1, value=p)
+        lst.sheet_state = 'hidden'
+        dv_pos = DataValidation(type='list', formula1=f'Списки!$A$1:$A${len(clean_pos)}', allow_blank=True)
+        dv_pos.promptTitle = 'Должность'
+        dv_pos.prompt = 'Выберите из текущих должностей компании'
+        ws.add_data_validation(dv_pos)
+        pos_col = get_column_letter(TEMPLATE_HEADERS.index('Должность') + 1)
+        dv_pos.add(f'{pos_col}2:{pos_col}1000')
+
+    dv_date = DataValidation(type='date', operator='greaterThan', formula1='date(2000,1,1)', allow_blank=True)
+    dv_date.promptTitle = 'Дата начала'
+    dv_date.prompt = 'Формат ДД.ММ.ГГГГ'
+    ws.add_data_validation(dv_date)
+    date_col = get_column_letter(TEMPLATE_HEADERS.index('Дата начала (ДД.ММ.ГГГГ)') + 1)
+    dv_date.add(f'{date_col}2:{date_col}1000')
+
+    r = 2
+    if with_example and not rows:
+        example = ['ivanov@mail.ru', 'Иванов', 'Иван', 'Иванович', 'Разработчик',
+                   '+7 (999) 123-45-67', '@ivanov', '08.06.2026', 'г. Москва, ул. Ленина 1',
+                   '4509 123456', 'Карта', '2200 1234 5678 9010']
+        for i, v in enumerate(example, start=1):
+            cc = ws.cell(row=r, column=i, value=v)
+            cc.font = ex_font
+            cc.border = border
+        r += 1
+    for row in rows:
+        for i, h in enumerate(TEMPLATE_HEADERS, start=1):
+            ws.cell(row=r, column=i, value=row.get(h, ''))
+        r += 1
+
+    ins = wb.create_sheet('Инструкция')
+    ins.column_dimensions['A'].width = 28
+    ins.column_dimensions['B'].width = 72
+    ins.append(['Колонка', 'Как заполнять'])
+    for cell in (ins['A1'], ins['B1']):
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = head_fill
+    for pair in [
+        ('Email', 'КЛЮЧ сопоставления — НЕ менять.'),
+        ('Фамилия / Имя / Отчество', 'ФИО сотрудника.'),
+        ('Должность', 'Выберите из списка или впишите.'),
+        ('Телефон', '+7 (999) 123-45-67.'),
+        ('Telegram', '@username.'),
+        ('Дата начала (ДД.ММ.ГГГГ)', 'Напр. 08.06.2026.'),
+        ('Адрес', 'Адрес проживания.'),
+        ('Паспорт №', 'Серия и номер.'),
+        ('Способ выплаты', 'Карта / Криптокошелёк / Банковский счёт / Другое.'),
+        ('Реквизиты', 'Номер карты / адрес кошелька / банковские реквизиты.'),
+    ]:
+        ins.append(list(pair))
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 # ─── Pydantic schemas ───────────────────────────────────────
@@ -454,10 +591,58 @@ async def bulk_import_employees(
             v = getattr(r, k)
             if v is not None and str(v).strip():
                 patch[k] = str(v).strip()
+        if patch.get('payment_method'):
+            patch['payment_method'] = _normalize_pay_method(patch['payment_method'])
         emp.extra_data = _merge_extra(emp.extra_data, patch)
         updated += 1
     await db.commit()
     return {"updated": updated, "skipped": skipped, "errors": errors}
+
+
+@router.get("/import-template")
+async def import_template(
+    filled: int = 0,
+    id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=403, detail="No organization")
+    is_hr = await _is_admin_or_owner(current_user, org.id, db)
+
+    rows = []
+    with_example = False
+    if id is not None:
+        emp = (await db.execute(
+            select(Employee).options(selectinload(Employee.user)).where(Employee.id == id)
+        )).scalar_one_or_none()
+        if not emp:
+            raise HTTPException(status_code=404, detail="Employee not found")
+        if not is_hr and emp.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        rows = [_employee_to_template_row(emp)]
+    else:
+        if not is_hr:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        if filled:
+            emps = (await db.execute(
+                select(Employee).options(selectinload(Employee.user)).where(Employee.org_id == org.id)
+            )).scalars().all()
+            rows = [_employee_to_template_row(e) for e in emps]
+        else:
+            with_example = True
+
+    positions = [p for (p,) in (await db.execute(
+        select(Employee.position).where(Employee.org_id == org.id, Employee.position.isnot(None))
+    )).all()]
+    data = _build_template_xlsx(rows=rows, positions=positions, with_example=with_example)
+    fname = "employees.xlsx" if (filled or id) else "template_employees.xlsx"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @router.get("/me", response_model=EmployeeResponse)

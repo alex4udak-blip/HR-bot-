@@ -74,3 +74,16 @@ export const deleteEmployeeDocument = (id: number, docId: number) =>
 
 export const bulkImportEmployees = (rows: Record<string, unknown>[]) =>
   api.post<BulkImportResult>('/employees/bulk-import', rows).then((r) => r.data);
+
+export const downloadEmployeeTemplate = async (params?: { filled?: boolean; id?: number }) => {
+  const qs = params?.id != null ? `?id=${params.id}` : params?.filled ? '?filled=1' : '';
+  const res = await api.get(`/employees/import-template${qs}`, { responseType: 'blob' });
+  const url = URL.createObjectURL(res.data as Blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = params?.id != null || params?.filled ? 'employees.xlsx' : 'template_employees.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};

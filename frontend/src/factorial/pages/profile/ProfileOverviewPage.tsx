@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Copy, User } from 'lucide-react';
+import { Copy, User, Download } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from '@/factorial/components/ui/toast';
 import ProfileTemplate from '@/factorial/templates/ProfileTemplate';
-import { getLeaveBalance } from '@/factorial/api/employees';
+import { getLeaveBalance, downloadEmployeeTemplate } from '@/factorial/api/employees';
 import { myDocuments, employeeDocuments } from '@/factorial/api/documents';
 import { formatDateRu, formatTenure } from '@/factorial/lib/formatDate';
 import { buildProfileTabs } from '@/factorial/lib/routes';
@@ -68,6 +68,17 @@ export default function ProfileOverviewPage() {
       subNav={buildProfileTabs(base)}
       leftColumn={
         <>
+          <div className="flex justify-end mb-2">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-fx-xs font-medium border border-card-border-soft rounded-fx-lg hover:bg-sidebar-hover"
+              onClick={() => { if (me) void downloadEmployeeTemplate({ id: me.id }); }}
+              disabled={!me}
+            >
+              <Download className="w-3.5 h-3.5" />
+              Экспорт
+            </button>
+          </div>
           <LeaveBalanceCard balance={balance} onRequest={() => setRequestOpen(true)} />
           <MyDocsMini docs={docs} />
           <EmployeeStatusCard
