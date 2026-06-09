@@ -1,4 +1,5 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
+import { sanitizeHtml } from "../utils/sanitizeHtml";
 import {
   LayoutDashboard,
   Users,
@@ -169,15 +170,27 @@ function formatSidebarVacancyDate(date?: string | null) {
 function RequestPreviewBlock({
   title,
   children,
+  html,
 }: {
   title: string;
   children?: ReactNode;
+  html?: string | null;
 }) {
-  if (!children) return null;
+  // html — rich-text поле (обязанности/требования/условия) хранится как HTML.
+  // Рендерим через санитайзер, иначе теги <ul>/<li>/<b> видны как текст.
+  const hasHtml = typeof html === "string" && html.trim().length > 0;
+  if (!children && !hasHtml) return null;
   return (
     <div className="hf-request-preview-block">
       <div className="hf-request-preview-label">{title}</div>
-      <div className="hf-request-preview-value">{children}</div>
+      {hasHtml ? (
+        <div
+          className="hf-request-preview-value prose prose-sm max-w-none"
+          dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
+        />
+      ) : (
+        <div className="hf-request-preview-value">{children}</div>
+      )}
     </div>
   );
 }
@@ -296,17 +309,22 @@ export function SidebarRequestPreviewModal({
               <RequestPreviewBlock title="Отдел, подразделение">
                 {departmentName}
               </RequestPreviewBlock>
-              <RequestPreviewBlock title="Обязанности кандидата">
-                {vacancy.responsibilities || vacancy.description}
-              </RequestPreviewBlock>
-              <RequestPreviewBlock title="Требования к кандидату">
-                {vacancy.requirements}
-              </RequestPreviewBlock>
-              <RequestPreviewBlock title="Условия работы">
-                {vacancy.description && vacancy.responsibilities
-                  ? vacancy.description
-                  : null}
-              </RequestPreviewBlock>
+              <RequestPreviewBlock
+                title="Обязанности кандидата"
+                html={vacancy.responsibilities || vacancy.description}
+              />
+              <RequestPreviewBlock
+                title="Требования к кандидату"
+                html={vacancy.requirements}
+              />
+              <RequestPreviewBlock
+                title="Условия работы"
+                html={
+                  vacancy.description && vacancy.responsibilities
+                    ? vacancy.description
+                    : null
+                }
+              />
             </div>
 
             <aside className="hf-vacancy-modal-aside hf-request-preview-aside">
