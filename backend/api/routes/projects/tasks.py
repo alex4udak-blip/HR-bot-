@@ -68,7 +68,7 @@ async def _close_linked_blocker_on_done(
         try:
             from ...bot import send_telegram_notification
             import os
-            frontend_url = os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+            frontend_url = os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
             await send_telegram_notification(
                 blocker.user_id,
                 f"✅ <b>Блокер закрыт — можно проверять</b>\n\n"
@@ -261,7 +261,7 @@ async def create_task(
         try:
             from ...bot import send_telegram_notification
             import os
-            frontend_url = os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+            frontend_url = os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
             await send_telegram_notification(
                 task.assignee_id,
                 f"\U0001f4cb <b>\u041d\u043e\u0432\u0430\u044f \u0437\u0430\u0434\u0430\u0447\u0430 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u0430 \u0432\u0430\u0441</b>\n\n"
@@ -375,7 +375,7 @@ async def update_task(
         try:
             from ...bot import send_telegram_notification
             import os
-            frontend_url = os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+            frontend_url = os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
             await send_telegram_notification(
                 data.assignee_id,
                 f"\U0001f4cb <b>\u041d\u043e\u0432\u0430\u044f \u0437\u0430\u0434\u0430\u0447\u0430 \u043d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0430 \u043d\u0430 \u0432\u0430\u0441</b>\n\n"

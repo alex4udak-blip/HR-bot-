@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Актуальный прод-сервер один и тот же для всех. У старых пользователей в
   // chrome.storage мог остаться прежний адрес и «залипал» в поле входа —
   // поэтому всегда подставляем канонический сервер, кроме локальной разработки.
-  const DEFAULT_SERVER_URL = 'https://hr-bot-production-c613.up.railway.app';
+  const DEFAULT_SERVER_URL = 'https://enceladus-7oylzk.saturn.ac';
   const storedServer = stored.serverUrl || '';
   const isLocalDev = /localhost|127\.0\.0\.1/.test(storedServer);
   serverUrl = isLocalDev ? storedServer : DEFAULT_SERVER_URL;
