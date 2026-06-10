@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { RefObject } from 'react';
+import { useHorizontalScroll } from '../hooks/useHorizontalScroll';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -191,10 +191,6 @@ function ClosedVacancyDetail({
   stageKeys,
   stagesConfig,
   groupedByStageMap,
-  stageScrollRef,
-  onStageScroll,
-  canScroll,
-  onScrollStages,
   onReopen,
   onEdit,
 }: {
@@ -202,13 +198,17 @@ function ClosedVacancyDetail({
   stageKeys: string[];
   stagesConfig: VacancyStagesConfig;
   groupedByStageMap: Record<string, VacancyApplication[]>;
-  stageScrollRef: RefObject<HTMLDivElement>;
-  onStageScroll: () => void;
-  canScroll: { left: boolean; right: boolean };
-  onScrollStages: (direction: 'left' | 'right') => void;
   onReopen: () => void;
   onEdit: () => void;
 }) {
+  // Горизонтальный скролл табов этапов — самодостаточно через единый хук.
+  const {
+    ref: stageScrollRef,
+    canScrollLeft,
+    canScrollRight,
+    scrollLeft: scrollStagesLeft,
+    scrollRight: scrollStagesRight,
+  } = useHorizontalScroll<HTMLDivElement>({ step: 520 });
   const [activeClosedStage, setActiveClosedStage] = useState<'summary' | string>('summary');
   const activeStageCandidates =
     activeClosedStage === 'summary'
@@ -236,7 +236,6 @@ function ClosedVacancyDetail({
         </div>
         <div
           ref={stageScrollRef}
-          onScroll={onStageScroll}
           className="hf-vacancy-stage-tabs hf-top-stage-tabs hf-top-stage-tabs-padded no-scrollbar"
         >
           {stageKeys.map((key) => {
@@ -272,20 +271,20 @@ function ClosedVacancyDetail({
             <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
           </button>
         </div>
-        {canScroll.left ? (
+        {canScrollLeft ? (
           <button
             type="button"
-            onClick={() => onScrollStages('left')}
+            onClick={scrollStagesLeft}
             className="hf-top-stage-arrow hf-top-stage-arrow-left"
             title="Прокрутить этапы влево"
           >
             <ChevronLeft className="hf-top-stage-arrow-icon" />
           </button>
         ) : null}
-        {canScroll.right ? (
+        {canScrollRight ? (
           <button
             type="button"
-            onClick={() => onScrollStages('right')}
+            onClick={scrollStagesRight}
             className="hf-top-stage-arrow hf-top-stage-arrow-right"
             title="Прокрутить этапы вправо"
           >
@@ -387,11 +386,14 @@ export default function RecruiterFunnelsPage() {
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
-  const vacancyStageScrollRef = useRef<HTMLDivElement>(null);
-  const [vacancyStageCanScroll, setVacancyStageCanScroll] = useState({
-    left: false,
-    right: false,
-  });
+  // Горизонтальный скролл табов этапов (инлайн detail-view) — единый хук.
+  const {
+    ref: vacancyStageScrollRef,
+    canScrollLeft: vacancyStageCanScrollLeft,
+    canScrollRight: vacancyStageCanScrollRight,
+    scrollLeft: scrollVacancyStagesLeft,
+    scrollRight: scrollVacancyStagesRight,
+  } = useHorizontalScroll<HTMLDivElement>({ step: 520 });
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -614,29 +616,6 @@ export default function RecruiterFunnelsPage() {
     setSelectedIds(new Set());
   }, [selectedVacancyId]);
 
-  const updateVacancyStageScrollState = useCallback(() => {
-    const el = vacancyStageScrollRef.current;
-    if (!el) return;
-    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
-    setVacancyStageCanScroll({
-      left: el.scrollLeft > 1,
-      right: el.scrollLeft < maxScrollLeft - 1,
-    });
-  }, []);
-
-  const scrollVacancyStageTabs = useCallback(
-    (direction: 'left' | 'right') => {
-      const el = vacancyStageScrollRef.current;
-      if (!el) return;
-      el.scrollBy({
-        left: direction === 'left' ? -520 : 520,
-        behavior: 'smooth',
-      });
-      window.setTimeout(updateVacancyStageScrollState, 320);
-    },
-    [updateVacancyStageScrollState],
-  );
-
   const loadCandidates = useCallback(async (vacancyId: number) => {
     setCandidatesLoading(true);
     try {
@@ -782,22 +761,6 @@ export default function RecruiterFunnelsPage() {
   const vacancyVisibleStageKeys = useMemo(() => {
     return vacancyWorkflowKeys;
   }, [vacancyWorkflowKeys]);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(updateVacancyStageScrollState);
-    const timer = window.setTimeout(updateVacancyStageScrollState, 260);
-    window.addEventListener('resize', updateVacancyStageScrollState);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-      window.removeEventListener('resize', updateVacancyStageScrollState);
-    };
-  }, [
-    candidatesLoading,
-    vacancyVisibleStageKeys.length,
-    selectedVacancyId,
-    updateVacancyStageScrollState,
-  ]);
 
   // Master-detail derived data
   const selectedCandidate = useMemo(
@@ -1929,10 +1892,6 @@ export default function RecruiterFunnelsPage() {
             stageKeys={vacancyVisibleStageKeys}
             stagesConfig={stagesConfig}
             groupedByStageMap={groupedByStageMap}
-            stageScrollRef={vacancyStageScrollRef}
-            onStageScroll={updateVacancyStageScrollState}
-            canScroll={vacancyStageCanScroll}
-            onScrollStages={scrollVacancyStageTabs}
             onReopen={() => handleReopenVacancy(selectedVacancy)}
             onEdit={() => setEditingVacancy(selectedVacancy)}
           />
@@ -1980,7 +1939,6 @@ export default function RecruiterFunnelsPage() {
                 <div className="hf-vacancy-stage-shell hf-top-stage-shell">
                   <div
                     ref={vacancyStageScrollRef}
-                    onScroll={updateVacancyStageScrollState}
                     className={clsx(
                       'hf-vacancy-stage-tabs hf-top-stage-tabs no-scrollbar',
                       !showVacancyTopSearch && 'hf-top-stage-tabs-padded',
@@ -2072,20 +2030,20 @@ export default function RecruiterFunnelsPage() {
                       <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
                     </button>
                   </div>
-                  {vacancyStageCanScroll.left && !showVacancyTopSearch && !candidateSearch ? (
+                  {vacancyStageCanScrollLeft && !showVacancyTopSearch && !candidateSearch ? (
                     <button
                       type="button"
-                      onClick={() => scrollVacancyStageTabs('left')}
+                      onClick={scrollVacancyStagesLeft}
                       className="hf-top-stage-arrow hf-top-stage-arrow-left"
                       title="Прокрутить этапы влево"
                     >
                       <ChevronLeft className="hf-top-stage-arrow-icon" />
                     </button>
                   ) : null}
-                  {vacancyStageCanScroll.right && !showVacancyTopSearch && !candidateSearch ? (
+                  {vacancyStageCanScrollRight && !showVacancyTopSearch && !candidateSearch ? (
                     <button
                       type="button"
-                      onClick={() => scrollVacancyStageTabs('right')}
+                      onClick={scrollVacancyStagesRight}
                       className="hf-top-stage-arrow hf-top-stage-arrow-right"
                       title="Прокрутить этапы вправо"
                     >

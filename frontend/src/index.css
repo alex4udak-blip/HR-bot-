@@ -4973,6 +4973,81 @@ select option {
 }
 
 /* ============================================
+   HORIZONTAL SCROLLER — переиспользуемая лента табов
+   (hooks/useHorizontalScroll + components/ui/HorizontalScroller)
+   ============================================ */
+.hf-hscroll {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0; /* чтобы flex-родитель не распирал ленту наружу */
+}
+.hf-hscroll__viewport {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain; /* не «пробрасывать» горизонтальный скролл странице */
+  -ms-overflow-style: none; /* IE / старый Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.hf-hscroll__viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none; /* WebKit: Chrome / Safari / новый Edge */
+}
+.hf-hscroll__arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+  color: var(--hf-main-700, #334155);
+  background: var(--hf-white, #ffffff);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
+  transition: background-color 100ms ease-out;
+}
+.hf-hscroll__arrow:hover {
+  background: var(--hf-ui-hover, #f1f5f9);
+}
+.hf-hscroll__arrow:active {
+  background: var(--hf-main-200, #e2e8f0);
+}
+.hf-hscroll__arrow--left {
+  left: 0;
+}
+.hf-hscroll__arrow--right {
+  right: 0;
+}
+.hf-hscroll__arrow-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Тёмная тема — стрелки на тёмном фоне */
+.hf-legacy-dark .hf-hscroll__arrow,
+[data-theme="dark"] .hf-hscroll__arrow {
+  color: var(--hf-white, #ffffff);
+  background: var(--hf-bg-dark, #1e293b);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.hf-legacy-dark .hf-hscroll__arrow:hover,
+[data-theme="dark"] .hf-hscroll__arrow:hover {
+  background: var(--hf-bg-dark-deep, #0f172a);
+}
+
+/* ============================================
    PAUSE ANIMATIONS WHEN TAB NOT VISIBLE
    Saves CPU/GPU when user switches tabs
    ============================================ */

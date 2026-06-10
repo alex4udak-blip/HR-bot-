@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
+import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
@@ -487,12 +488,16 @@ export default function AllCandidatesPage() {
   const debouncedSearch = useDebounce(searchText, 400);
   const [showTopSearch, setShowTopSearch] = useState(false);
   const topSearchRef = useRef<HTMLInputElement>(null);
-  const topStageScrollRef = useRef<HTMLDivElement>(null);
+  // Горизонтальный скролл табов этапов — единый хук useHorizontalScroll:
+  // стрелки сами пересчитываются на скролл/ресайз/смену набора этапов.
+  const {
+    ref: topStageScrollRef,
+    canScrollLeft: topStageCanScrollLeft,
+    canScrollRight: topStageCanScrollRight,
+    scrollLeft: scrollTopStagesLeft,
+    scrollRight: scrollTopStagesRight,
+  } = useHorizontalScroll<HTMLDivElement>({ step: 520 });
   const [activeTab, setActiveTab] = useState("all");
-  const [topStageCanScroll, setTopStageCanScroll] = useState({
-    left: false,
-    right: false,
-  });
 
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [selectedStatus, setSelectedStatus] = useState("");
@@ -518,29 +523,6 @@ export default function AllCandidatesPage() {
     user?.org_role === "owner" ||
     user?.org_role === "admin";
   const anySelected = selectedIds.size > 0;
-
-  const updateTopStageScrollState = useCallback(() => {
-    const el = topStageScrollRef.current;
-    if (!el) return;
-    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
-    setTopStageCanScroll({
-      left: el.scrollLeft > 1,
-      right: el.scrollLeft < maxScrollLeft - 1,
-    });
-  }, []);
-
-  const scrollTopStageTabs = useCallback(
-    (direction: "left" | "right") => {
-      const el = topStageScrollRef.current;
-      if (!el) return;
-      el.scrollBy({
-        left: direction === "left" ? -520 : 520,
-        behavior: "smooth",
-      });
-      window.setTimeout(updateTopStageScrollState, 320);
-    },
-    [updateTopStageScrollState],
-  );
 
   const fetchBoard = useCallback(async () => {
     setLoading(true);
@@ -847,21 +829,6 @@ export default function AllCandidatesPage() {
     return String(column.count);
   };
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(updateTopStageScrollState);
-    const timer = window.setTimeout(updateTopStageScrollState, 260);
-    window.addEventListener("resize", updateTopStageScrollState);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-      window.removeEventListener("resize", updateTopStageScrollState);
-    };
-  }, [
-    showTopSearch,
-    topStageItems.length,
-    updateTopStageScrollState,
-  ]);
-
   return (
     <div className="hf-all-candidates-page hf-all-candidates-page-root font-hf-body">
       {/* Stage tabs island — huntflow tabs pattern: white island radius 16 h52,
@@ -871,7 +838,6 @@ export default function AllCandidatesPage() {
         {/* Stage tabs */}
         <div
           ref={topStageScrollRef}
-          onScroll={updateTopStageScrollState}
           className={clsx(
             "hf-top-stage-tabs no-scrollbar",
             !showTopSearch && "hf-top-stage-tabs-padded",
@@ -1086,20 +1052,20 @@ export default function AllCandidatesPage() {
             </button>
           </div>
         ) : null}
-        {!showTopSearch && topStageCanScroll.left ? (
+        {!showTopSearch && topStageCanScrollLeft ? (
           <button
             type="button"
-            onClick={() => scrollTopStageTabs("left")}
+            onClick={scrollTopStagesLeft}
             className="hf-top-stage-arrow hf-top-stage-arrow-left"
             title="Прокрутить этапы влево"
           >
             <ChevronLeft className="hf-top-stage-arrow-icon" />
           </button>
         ) : null}
-        {!showTopSearch && topStageCanScroll.right ? (
+        {!showTopSearch && topStageCanScrollRight ? (
           <button
             type="button"
-            onClick={() => scrollTopStageTabs("right")}
+            onClick={scrollTopStagesRight}
             className={clsx(
               "hf-top-stage-arrow",
               isAdmin ? "hf-top-stage-arrow-right-admin" : "hf-top-stage-arrow-right",
