@@ -59,7 +59,6 @@ import {
   deleteEntityNote,
 } from "@/services/api/entities";
 import { getOrgStages, updateOrgStages } from "@/services/api/auth";
-import { useStageColors, hexToRgba } from "@/hooks/useStageColors";
 import StatusTemplatesModal from "@/components/vacancies/StatusTemplatesModal";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import type { EntityFile } from "@/services/api/entities";
@@ -1573,7 +1572,6 @@ const InfoTab = memo(function InfoTab({
   onEdit: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
-  const { getStageColor } = useStageColors();
   const isAdmin =
     currentUser?.role === "superadmin" ||
     currentUser?.org_role === "owner" ||
@@ -1647,16 +1645,14 @@ const InfoTab = memo(function InfoTab({
     status === "rejected" && card.rejection_reason
       ? `Отказ. ${card.rejection_reason}`
       : statusLabel;
-  // Цвет карточки этапа = цвет этапа из настроек воронки. Отказ/архив — серый.
-  const stageAccent = NEUTRAL_STAGE_STATUSES.has(status)
+  // Карточка этапа — всего 2 цвета (по фидбэку): активный этап зелёный,
+  // отказ/уволен/архив — серый.
+  const stageCardStyle: CSSProperties | undefined = NEUTRAL_STAGE_STATUSES.has(status)
     ? undefined
-    : getStageColor(status, statusLabel);
-  const stageCardStyle = stageAccent
-    ? ({
-        "--hf-stage-accent": stageAccent,
-        "--hf-stage-card-bg": hexToRgba(stageAccent, 0.1),
-      } as CSSProperties)
-    : undefined;
+    : ({
+        "--hf-stage-accent": "#22c55e",
+        "--hf-stage-card-bg": "rgba(34, 197, 94, 0.1)",
+      } as CSSProperties);
   const stagePickerOptions = useMemo(() => {
     return columns.map((column) => ({
       label: column.label,

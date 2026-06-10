@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import type { CSSProperties } from 'react';
 import { useHorizontalScroll } from '../hooks/useHorizontalScroll';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -777,6 +778,12 @@ export default function RecruiterFunnelsPage() {
     [candidates, selectedCandidateId],
   );
 
+  // Карточка этапа — 2 цвета: активный этап зелёный, отказ/отозван — серый.
+  const stageCardStyle: CSSProperties | undefined =
+    selectedCandidate && !['rejected', 'withdrawn'].includes(selectedCandidate.stage as string)
+      ? ({ '--hf-stage-accent': '#22c55e', '--hf-stage-card-bg': 'rgba(34, 197, 94, 0.1)' } as CSSProperties)
+      : undefined;
+
   const tabFilteredCandidates = useMemo(() => {
     if (selectedTab === 'all') return filteredCandidates;
     return filteredCandidates.filter(c => {
@@ -1152,15 +1159,18 @@ export default function RecruiterFunnelsPage() {
       if (confirmDialog.type === 'close') {
         await updateVacancy(confirmDialog.vacancy.id, { status: 'closed' });
         toast.success('Вакансия закрыта');
+        fetchVacancies();
       } else {
         await deleteVacancy(confirmDialog.vacancy.id);
         toast.success('Вакансия удалена');
+        // НЕ рефетчим после удаления: store уже убрал вакансию из списка.
+        // Рефетч сразу после delete мог вернуть её обратно из-за read-after-write
+        // задержки (реплика/кэш) — отсюда «удаляется только со второго раза».
         if (selectedVacancyId === confirmDialog.vacancy.id) {
           setSearchParams({});
         }
       }
       setConfirmDialog(null);
-      fetchVacancies();
     } catch {
       toast.error(confirmDialog.type === 'close' ? 'Ошибка при закрытии' : 'Ошибка при удалении');
     } finally {
@@ -2504,7 +2514,7 @@ export default function RecruiterFunnelsPage() {
                               </div>
 
                               {/* Current stage — Huntflow style block */}
-                              <div className="hf-stage-card">
+                              <div className="hf-stage-card" style={stageCardStyle}>
                                 <div className="hf-stage-card-head">
                                   <div className="hf-stage-card-head-row">
                                     <div>
