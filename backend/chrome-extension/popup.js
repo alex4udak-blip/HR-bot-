@@ -321,13 +321,17 @@ async function checkDuplicatesOnLoad() {
   try {
     const manualEmail = document.getElementById('manualEmail')?.value;
     const manualNameForCheck = document.getElementById('manualName')?.value?.trim();
-    const checkResp = await apiRequest('POST', '/api/magic-button/check-duplicate', {
+    // Дубль-чек — некритичная фоновая проверка при открытии попапа. НЕ гоняем её
+    // через refresh-ретрай apiRequest (иначе 401 увёл бы на экран входа прямо из
+    // авто-проверки) и держим короткий таймаут 12с, чтобы спиннер «Проверяем
+    // базу…» не висел. Авторизацию разрулит уже сам «Добавить».
+    const checkResp = await rawApiRequest('POST', '/api/magic-button/check-duplicate', {
       full_name: (parsedData.name_is_placeholder && manualNameForCheck) ? manualNameForCheck : parsedData.full_name,
       email: parsedData.email || manualEmail || null,
       phone: parsedData.phone || null,
       telegram: parsedData.telegram || null,
       source_url: parsedData.source_url || null,
-    });
+    }, 12000);
 
     if (!checkResp.success) {
       // Проверка упала (авторизация/сеть) — НЕ выдаём ложное «дубликатов нет».
