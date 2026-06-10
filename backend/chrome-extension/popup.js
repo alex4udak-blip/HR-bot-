@@ -26,6 +26,11 @@ document.getElementById('togglePassword')?.addEventListener('click', () => {
 
 // Init
 document.addEventListener('DOMContentLoaded', async () => {
+  // Показать версию билда в футере — видно, что встал свежий extension.
+  try {
+    const verEl = document.getElementById('extVersion');
+    if (verEl && chrome.runtime?.getManifest) verEl.textContent = 'v' + chrome.runtime.getManifest().version;
+  } catch (_) {}
   // Load saved settings
   const stored = await chrome.storage.local.get(['serverUrl', 'authToken', 'refreshToken']);
   // Актуальный прод-сервер один и тот же для всех. У старых пользователей в
