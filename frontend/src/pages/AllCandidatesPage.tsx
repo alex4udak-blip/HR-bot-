@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment } from "react";
+import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -58,6 +59,7 @@ import {
   deleteEntityNote,
 } from "@/services/api/entities";
 import { getOrgStages, updateOrgStages } from "@/services/api/auth";
+import { useStageColors, hexToRgba } from "@/hooks/useStageColors";
 import StatusTemplatesModal from "@/components/vacancies/StatusTemplatesModal";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import type { EntityFile } from "@/services/api/entities";
@@ -1546,6 +1548,9 @@ export default function AllCandidatesPage() {
 
 type DetailSection = "info" | "resume";
 
+// Этапы, при которых карточка остаётся нейтрально-серой (не «в процессе»).
+const NEUTRAL_STAGE_STATUSES = new Set(["rejected", "fired", "archived"]);
+
 const InfoTab = memo(function InfoTab({
   card,
   status,
@@ -1568,6 +1573,7 @@ const InfoTab = memo(function InfoTab({
   onEdit: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
+  const { getStageColor } = useStageColors();
   const isAdmin =
     currentUser?.role === "superadmin" ||
     currentUser?.org_role === "owner" ||
@@ -1641,6 +1647,16 @@ const InfoTab = memo(function InfoTab({
     status === "rejected" && card.rejection_reason
       ? `Отказ. ${card.rejection_reason}`
       : statusLabel;
+  // Цвет карточки этапа = цвет этапа из настроек воронки. Отказ/архив — серый.
+  const stageAccent = NEUTRAL_STAGE_STATUSES.has(status)
+    ? undefined
+    : getStageColor(status, statusLabel);
+  const stageCardStyle = stageAccent
+    ? ({
+        "--hf-stage-accent": stageAccent,
+        "--hf-stage-card-bg": hexToRgba(stageAccent, 0.1),
+      } as CSSProperties)
+    : undefined;
   const stagePickerOptions = useMemo(() => {
     return columns.map((column) => ({
       label: column.label,
@@ -2324,7 +2340,7 @@ const InfoTab = memo(function InfoTab({
         </div>
       </div>
 
-      <div className="hf-stage-card">
+      <div className="hf-stage-card" style={stageCardStyle}>
         {/* ---- Stage block (Huntflow: colored bg + vacancy name + change button) ---- */}
         <div className="hf-stage-card-head">
           <div className="hf-stage-card-head-row">

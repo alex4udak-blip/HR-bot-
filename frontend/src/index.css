@@ -6970,9 +6970,9 @@ body.performance-mode .glass-card:hover {
   max-width: 1220px;
   overflow: visible;
   margin-bottom: var(--hf-space-xl);
-  border-left: 6px solid var(--hf-main-300);
+  border-left: 6px solid var(--hf-stage-accent, var(--hf-main-300));
   border-radius: var(--hf-radius-l);
-  background: var(--hf-bg-stage);
+  background: var(--hf-stage-card-bg, var(--hf-bg-stage));
 }
 
 .hf-stage-card-head {
@@ -6986,7 +6986,7 @@ body.performance-mode .glass-card:hover {
 }
 
 .hf-stage-card-title {
-  color: var(--hf-ui-muted-2);
+  color: var(--hf-stage-accent, var(--hf-ui-muted-2));
   font-size: 24px;
   font-weight: 600;
   line-height: var(--hf-lh-h2);
