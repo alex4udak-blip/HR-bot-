@@ -735,9 +735,18 @@ export default function RecruiterFunnelsPage() {
         // Put in first matching column
         map.get(targetKeys[0])!.push(c);
       } else {
-        // Unknown stage — show in its own group
-        if (!map.has(c.stage)) map.set(c.stage, []);
-        map.get(c.stage)!.push(c);
+        // Этап аппликации не маппится ни в одну ВИДИМУЮ колонку (например,
+        // кандидата добавили со stage=applied, а в кастомной воронке нет
+        // колонки «Новый»). Раньше он уезжал в отдельную группу, которой нет в
+        // vacancyVisibleStageKeys → колонка не рендерилась и кандидат ИСЧЕЗАЛ.
+        // Теперь кладём его в первую видимую колонку, чтобы он не пропадал.
+        const fallbackKey = stagesConfig.keys[0];
+        if (fallbackKey) {
+          map.get(fallbackKey)!.push(c);
+        } else {
+          if (!map.has(c.stage)) map.set(c.stage, []);
+          map.get(c.stage)!.push(c);
+        }
       }
     }
     const result: [string, VacancyApplication[]][] = [];
@@ -771,7 +780,15 @@ export default function RecruiterFunnelsPage() {
   const tabFilteredCandidates = useMemo(() => {
     if (selectedTab === 'all') return filteredCandidates;
     return filteredCandidates.filter(c => {
-      const candidateStageKeys = stagesConfig.enumToKeys[c.stage] || [];
+      const mapped = stagesConfig.enumToKeys[c.stage];
+      // Тот же фолбэк, что в groupedByStage: кандидат без маппинга этапа
+      // относится к первой видимой колонке, иначе он невидим в любой вкладке.
+      const candidateStageKeys =
+        mapped && mapped.length > 0
+          ? mapped
+          : stagesConfig.keys[0]
+            ? [stagesConfig.keys[0]]
+            : [];
       return candidateStageKeys.includes(selectedTab);
     });
   }, [filteredCandidates, selectedTab, stagesConfig]);
