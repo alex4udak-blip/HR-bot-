@@ -1,6 +1,7 @@
 // State
 let serverUrl = '';
 let authToken = '';
+let refreshToken = '';
 let parsedData = null;
 let vacancies = [];
 
@@ -26,7 +27,7 @@ document.getElementById('togglePassword')?.addEventListener('click', () => {
 // Init
 document.addEventListener('DOMContentLoaded', async () => {
   // Load saved settings
-  const stored = await chrome.storage.local.get(['serverUrl', 'authToken']);
+  const stored = await chrome.storage.local.get(['serverUrl', 'authToken', 'refreshToken']);
   // Актуальный прод-сервер один и тот же для всех. У старых пользователей в
   // chrome.storage мог остаться прежний адрес и «залипал» в поле входа —
   // поэтому всегда подставляем канонический сервер, кроме локальной разработки.
@@ -38,6 +39,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await chrome.storage.local.set({ serverUrl });
   }
   authToken = stored.authToken || '';
+  refreshToken = stored.refreshToken || '';
 
   document.getElementById('serverUrl').value = serverUrl;
 
@@ -322,7 +324,14 @@ async function checkDuplicatesOnLoad() {
       source_url: parsedData.source_url || null,
     });
 
-    if (checkResp.success && checkResp.data.is_duplicate) {
+    if (!checkResp.success) {
+      // Проверка упала (авторизация/сеть) — НЕ выдаём ложное «дубликатов нет».
+      // Если это был 401, apiRequest уже увёл на экран входа.
+      dupStatus.className = 'dup-status checking';
+      dupStatus.innerHTML = '⚠️ Не удалось проверить дубликаты';
+      return;
+    }
+    if (checkResp.data.is_duplicate) {
       const dups = checkResp.data.duplicates;
       dupStatus.className = 'dup-status found';
       dupStatus.innerHTML = `⚠️ <b>Уже в базе (${dups.length}):</b>` +
@@ -435,7 +444,9 @@ async function loadVacancies() {
   select.disabled = false;
 }
 
-async function apiRequest(method, path, body, timeoutMs = 30000) {
+// Низкоуровневый запрос через фоновый процесс (CORS bypass).
+// Возвращает { success, data?, error?, status? }.
+async function rawApiRequest(method, path, body, timeoutMs = 30000) {
   const url = (serverUrl || document.getElementById('serverUrl').value) + path;
 
   // MV3 service worker может заснуть посреди запроса и sendResponse теряется
@@ -469,6 +480,64 @@ async function apiRequest(method, path, body, timeoutMs = 30000) {
   });
 }
 
+// Похоже ли на ошибку авторизации (истёк access-токен и т.п.).
+function isAuthError(resp) {
+  if (!resp || resp.success) return false;
+  if (resp.status === 401) return true;
+  const e = String(resp.error || '').toLowerCase();
+  return e.includes('not authenticated') || e.includes('invalid token') ||
+    e.includes('token has been invalidated') || e.includes('refresh token');
+}
+
+// Молчаливое обновление access-токена по refresh-токену (как в вебе).
+// Single-flight: параллельные 401-ы не должны рефрешить наперегонки.
+let _refreshing = null;
+async function tryRefresh() {
+  if (!refreshToken) return false;
+  if (_refreshing) return _refreshing;
+  _refreshing = (async () => {
+    const resp = await rawApiRequest('POST', '/api/auth/refresh', { refresh_token: refreshToken });
+    if (resp.success && resp.data && resp.data.access_token) {
+      authToken = resp.data.access_token;
+      if (resp.data.refresh_token) refreshToken = resp.data.refresh_token;
+      await chrome.storage.local.set({ authToken, refreshToken });
+      return true;
+    }
+    return false;
+  })();
+  try {
+    return await _refreshing;
+  } finally {
+    _refreshing = null;
+  }
+}
+
+// Сессия окончательно истекла (нет/протух refresh) — чистим и на экран входа.
+async function handleAuthExpired() {
+  authToken = '';
+  refreshToken = '';
+  await chrome.storage.local.remove(['authToken', 'refreshToken']);
+  const le = document.getElementById('loginError');
+  if (le) le.textContent = 'Сессия истекла — войдите снова';
+  showView('login');
+}
+
+// Высокоуровневый запрос: при 401 один раз молча рефрешит токен и повторяет.
+// Не вышло обновить — чистый возврат на экран входа.
+async function apiRequest(method, path, body, timeoutMs = 30000) {
+  let resp = await rawApiRequest(method, path, body, timeoutMs);
+  if (isAuthError(resp)) {
+    const refreshed = refreshToken ? await tryRefresh() : false;
+    if (refreshed) {
+      resp = await rawApiRequest(method, path, body, timeoutMs);
+    }
+    if (isAuthError(resp)) {
+      await handleAuthExpired();
+    }
+  }
+  return resp;
+}
+
 // Login
 document.getElementById('loginBtn').addEventListener('click', async () => {
   const email = document.getElementById('loginEmail').value;
@@ -487,15 +556,18 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
     const resp = await fetch(serverUrl + '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      // include_refresh: расширению нужен refresh-токен в теле (silent-refresh) —
+      // куки SameSite=Lax на кросс-сайтовый POST из расширения не уходят.
+      body: JSON.stringify({ email, password, include_refresh: true }),
       credentials: 'include',
     });
 
     if (resp.ok) {
       const data = await resp.json();
-      // Backend returns { access_token, token_type, user } in response body
+      // Backend returns { access_token, refresh_token, token_type, user } in body
       authToken = data.access_token;
-      await chrome.storage.local.set({ serverUrl, authToken, userName: data.user?.name || '' });
+      refreshToken = data.refresh_token || '';
+      await chrome.storage.local.set({ serverUrl, authToken, refreshToken, userName: data.user?.name || '' });
 
       document.getElementById('loginError').textContent = '';
 

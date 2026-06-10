@@ -682,4 +682,19 @@ async def get_my_vacancies_for_extension(
         ).order_by(Vacancy.title)
     )
     vacancies = result.scalars().all()
-    return [{"id": v.id, "title": v.title} for v in vacancies]
+    # Схлопываем «заявку + её клон»: если у рекрутёра есть личный клон заявки
+    # (extra_data.cloned_from_request_id == X), оригинал X из дропдауна убираем —
+    # иначе одна воронка двоится («Mob dev ×2 / Трафик ×2»). Тот же дедуп, что
+    # на фронте (hasAlreadyTaken в VacanciesPage/RecruiterFunnelsPage).
+    cloned_request_ids = set()
+    for v in vacancies:
+        src = (v.extra_data or {}).get("cloned_from_request_id")
+        try:
+            cloned_request_ids.add(int(src))
+        except (TypeError, ValueError):
+            pass
+    return [
+        {"id": v.id, "title": v.title}
+        for v in vacancies
+        if v.id not in cloned_request_ids
+    ]

@@ -114,7 +114,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const json = JSON.parse(text);
             detail = json.detail || detail;
           } catch (_) {}
-          sendResponse({ success: false, error: detail });
+          sendResponse({ success: false, error: detail, status: r.status });
         });
       }
       const contentType = r.headers.get('content-type') || '';

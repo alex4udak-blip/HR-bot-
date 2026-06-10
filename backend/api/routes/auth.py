@@ -11,7 +11,7 @@ from ..models.database import User, UserRole, OrgMember, OrgRole, Organization, 
 from ..models.schemas import (
     LoginRequest, TokenResponse, ChangePasswordRequest,
     LinkTelegramRequest, UserResponse, UserCreate,
-    RefreshTokenResponse, SessionResponse, SessionsListResponse, LogoutAllResponse
+    RefreshTokenResponse, RefreshRequest, SessionResponse, SessionsListResponse, LogoutAllResponse
 )
 from ..services.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -227,6 +227,9 @@ async def login(
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
+        # Расширению отдаём refresh-токен в теле (для silent-refresh из
+        # chrome.storage). Вебу — нет, у него httpOnly-кука.
+        refresh_token=refresh_token if login_request.include_refresh else None,
         user=UserResponse(
             id=authenticated_user.id, email=authenticated_user.email, name=authenticated_user.name,
             role=authenticated_user.role.value,
@@ -283,19 +286,26 @@ async def logout(
 async def refresh_access_token(
     request: Request,
     response: Response,
+    body: Optional[RefreshRequest] = None,
     refresh_token: Optional[str] = Cookie(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Refresh the access token using a valid refresh token.
 
     This endpoint:
-    1. Validates the refresh token from httpOnly cookie
+    1. Validates the refresh token from httpOnly cookie ИЛИ из тела (расширение)
     2. Rotates the refresh token (old one is revoked, new one is issued)
     3. Issues a new short-lived access token
 
     SECURITY: Token rotation prevents replay attacks and allows detection
     of token theft (if a revoked token is presented).
     """
+    # Источник refresh-токена: тело (расширение, без кук) приоритетнее куки.
+    # Если токен пришёл из тела — новые токены вернём в теле, иначе только в куках.
+    body_token = body.refresh_token if (body and body.refresh_token) else None
+    token_from_body = body_token is not None
+    refresh_token = body_token or refresh_token
+
     if not refresh_token:
         raise HTTPException(
             status_code=401,
@@ -370,7 +380,13 @@ async def refresh_access_token(
         path="/api/auth"
     )
 
-    return RefreshTokenResponse(message="Token refreshed successfully")
+    return RefreshTokenResponse(
+        message="Token refreshed successfully",
+        # Только для расширения (refresh пришёл из тела) — иначе None, веб берёт
+        # обновлённые токены из кук.
+        access_token=access_token if token_from_body else None,
+        refresh_token=new_refresh_token if token_from_body else None,
+    )
 
 
 @router.post("/logout-all", response_model=LogoutAllResponse)
