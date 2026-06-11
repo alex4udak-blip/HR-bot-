@@ -77,12 +77,16 @@
       if (!src || typeof src !== 'string') return false;
       if (!src.startsWith('http') && !src.startsWith('//')) return false;
       const lower = src.toLowerCase();
-      // Reject obvious placeholders / icons / ui chrome
+      // Reject obvious placeholders / icons / ui chrome / company logos.
+      // hh.ru employer logos live under .../employer-logo/... and would
+      // otherwise be picked up as the candidate's photo when the resume has
+      // no personal photo (e.g. FONBET logo from the work-experience block).
       if (lower.includes('placeholder') || lower.includes('empty-avatar') ||
           lower.includes('default-avatar') || lower.includes('silhouette') ||
           lower.includes('no-photo') || lower.includes('noavatar') ||
           lower.endsWith('.svg') ||
-          lower.includes('/icons/') || lower.includes('/logo/') ||
+          lower.includes('/icons/') || lower.includes('logo') ||
+          lower.includes('employer') ||
           lower.includes('sprite')) return false;
       // Must look like a real image file (jpg/jpeg/png/webp anywhere in the URL,
       // including before a query string)

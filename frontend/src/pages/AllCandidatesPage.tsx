@@ -1848,6 +1848,33 @@ const InfoTab = memo(function InfoTab({
     }
   };
 
+  // Комментарий из дропдауна смены этапа («Записать комментарий»). Раньше текст
+  // из этого поля никуда не отправлялся — кнопка «Сохранить» меняла только этап.
+  // Теперь шлём note так же, как обычный комментарий, независимо от смены этапа.
+  const saveStageChangeComment = async () => {
+    const text = stageChangeComment.trim();
+    if (!text) return;
+    try {
+      const resp = await addEntityNote(card.id, {
+        text,
+        stage: status,
+        stage_label: statusLabel,
+      });
+      if (!card.extra_data) card.extra_data = {};
+      const existingNotes: Array<Record<string, unknown>> = Array.isArray(
+        card.extra_data.notes,
+      )
+        ? card.extra_data.notes
+        : [];
+      card.extra_data.notes = [...existingNotes, resp.note];
+      toast.success("Комментарий сохранён");
+      setStageChangeComment("");
+    } catch (err) {
+      console.error("Failed to save stage-change comment:", err);
+      toast.error("Ошибка сохранения комментария");
+    }
+  };
+
   const handleOffer = () => {
     onStatusChange("offer");
     toast.success(`${card.name} → Оффер`);
@@ -2457,10 +2484,15 @@ const InfoTab = memo(function InfoTab({
                     <div className="hf-stage-picker-footer">
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={async () => {
                           const selectedOption = stagePickerOptions.find(
                             (option) => option.status === pendingStage,
                           );
+                          // Сначала сохраняем комментарий (если написан) —
+                          // даже когда этап не меняется.
+                          if (stageChangeComment.trim()) {
+                            await saveStageChangeComment();
+                          }
                           if (
                             pendingStage !== status &&
                             selectedOption?.isRealStage
