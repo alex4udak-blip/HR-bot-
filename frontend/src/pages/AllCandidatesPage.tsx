@@ -1855,10 +1855,16 @@ const InfoTab = memo(function InfoTab({
     const text = stageChangeComment.trim();
     if (!text) return;
     try {
+      // Привязываем комментарий к ВЫБРАННОМУ этапу (pendingStage) — тому, на
+      // который переносим кандидата, а не к текущему. Дату ставит сервер,
+      // поэтому в ленте «Действия» виден этап + период, когда коммент оставлен.
+      const targetOption = stagePickerOptions.find(
+        (option) => option.status === pendingStage,
+      );
       const resp = await addEntityNote(card.id, {
         text,
-        stage: status,
-        stage_label: statusLabel,
+        stage: pendingStage,
+        stage_label: targetOption?.label || statusLabel,
       });
       if (!card.extra_data) card.extra_data = {};
       const existingNotes: Array<Record<string, unknown>> = Array.isArray(

@@ -28,7 +28,7 @@ interface VacancyState {
   selectedApplicationIds: number[];
 
   // Actions - Vacancies
-  fetchVacancies: () => Promise<void>;
+  fetchVacancies: (silent?: boolean) => Promise<void>;
   fetchVacanciesForSelect: () => Promise<void>;
   fetchVacancy: (id: number) => Promise<void>;
   createVacancy: (data: api.VacancyCreate) => Promise<Vacancy>;
@@ -78,14 +78,17 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
 
   // === VACANCIES ===
 
-  fetchVacancies: async () => {
-    set({ isLoading: true, error: null });
+  fetchVacancies: async (silent = false) => {
+    // silent=true: фоновый рефреш без скелетона (например, при возврате на вкладку),
+    // чтобы список не «моргал» как перезагрузка страницы.
+    if (!silent) set({ isLoading: true });
+    set({ error: null });
     try {
       const vacancies = await api.getVacancies(get().filters);
-      set({ vacancies, isLoading: false });
+      set(silent ? { vacancies } : { vacancies, isLoading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch vacancies';
-      set({ error: message, isLoading: false });
+      set(silent ? { error: message } : { error: message, isLoading: false });
     }
   },
 

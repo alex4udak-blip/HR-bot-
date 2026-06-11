@@ -617,25 +617,32 @@ export default function RecruiterFunnelsPage() {
     setSelectedIds(new Set());
   }, [selectedVacancyId]);
 
-  const loadCandidates = useCallback(async (vacancyId: number) => {
-    setCandidatesLoading(true);
+  const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
+    if (!silent) setCandidatesLoading(true);
     try {
       const apps = await getApplications(vacancyId);
       setCandidates(apps);
     } catch {
-      setCandidates([]);
+      if (!silent) setCandidates([]);
     } finally {
-      setCandidatesLoading(false);
+      if (!silent) setCandidatesLoading(false);
     }
   }, []);
 
   // Авто-refresh когда юзер возвращается на вкладку браузера —
   // например, после добавления кандидата через волшебную кнопку из
   // другой вкладки. Иначе нужен F5 чтобы увидеть новых.
+  // ВАЖНО: рефреш ТИХИЙ (silent) — без скелетонов-лоадеров. Раньше обычный
+  // alt-tab перерисовывал список со скелетоном и выглядел как перезагрузка
+  // страницы. Плюс троттл: не чаще раза в 3с.
   useEffect(() => {
+    let lastRun = 0;
     const onFocus = () => {
-      if (selectedVacancyId) loadCandidates(selectedVacancyId);
-      fetchVacancies();
+      const now = Date.now();
+      if (now - lastRun < 3000) return;
+      lastRun = now;
+      if (selectedVacancyId) loadCandidates(selectedVacancyId, true);
+      fetchVacancies(true);
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
@@ -2811,17 +2818,8 @@ export default function RecruiterFunnelsPage() {
                                   }}
                                   saving={commentSaving}
                                   actions={[
-                                    {
-                                      icon: Mail,
-                                      label: 'Письмо',
-                                      onClick: () => {
-                                        if (selectedCandidate.entity_email) {
-                                          window.open(`mailto:${selectedCandidate.entity_email}`);
-                                        } else {
-                                          toast.error('Email кандидата не указан');
-                                        }
-                                      },
-                                    },
+                                    // Убрали «Письмо» из личных заметок — заметки личные,
+                                    // письмо кандидату отсюда не нужно (как в AllCandidatesPage).
                                     {
                                       icon: Paperclip,
                                       label: 'Файл',
