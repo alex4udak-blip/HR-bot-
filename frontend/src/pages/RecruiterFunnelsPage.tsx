@@ -50,6 +50,7 @@ import { EditCandidateModal } from './AllCandidatesPage';
 import { HuntflowComposer } from '@/components/hr/HuntflowComposer';
 import {
   HuntflowActionChip,
+  HuntflowEditorIcon,
   HuntflowInfoRow,
   HuntflowOptionsIcon,
 } from '@/components/hr/HuntflowControls';
@@ -1233,6 +1234,24 @@ export default function RecruiterFunnelsPage() {
   const commentRef = useRef<HTMLTextAreaElement | null>(null);
   const [commentSaving, setCommentSaving] = useState(false);
 
+  // ─── Богатый пикер смены этапа (как на «Все кандидаты»): список этапов +
+  // редактор «Записать комментарий». Заменяет узкий StageDropdown. ───
+  const [stagePickerOpen, setStagePickerOpen] = useState(false);
+  const [stagePickerPending, setStagePickerPending] = useState<ApplicationStage | null>(null);
+  const [stagePickerComment, setStagePickerComment] = useState('');
+  const stagePickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!stagePickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (stagePickerRef.current && !stagePickerRef.current.contains(e.target as Node)) {
+        setStagePickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [stagePickerOpen]);
+
   const saveEntityNote = useCallback(async (
     text: string,
     stage?: string | null,
@@ -1287,6 +1306,40 @@ export default function RecruiterFunnelsPage() {
     setStageCommentText('');
     setStageCommentComposerOpen(false);
   }, [handleSaveComment, stageCommentText]);
+
+  // Этапы для пикера — тот же список и лейблы, что были в StageDropdown.
+  const stagePickerOptions = useMemo(
+    () =>
+      STAGE_ORDER.map((stage) => ({
+        status: stage as ApplicationStage,
+        label: vacancyStageDropdownLabels[stage] || STAGE_LABELS[stage] || stage,
+      })),
+    [vacancyStageDropdownLabels],
+  );
+
+  // Сохранение из пикера: коммент привязывается к ВЫБРАННОМУ этапу (дату ставит
+  // сервер), затем кандидат переносится. Коммент необязателен — можно просто
+  // сменить этап.
+  const handleStagePickerSave = useCallback(async () => {
+    if (!selectedCandidate) return;
+    const target = (stagePickerPending ?? (selectedCandidate.stage as ApplicationStage)) as ApplicationStage;
+    const text = stagePickerComment.trim();
+    if (text) {
+      await saveEntityNote(text, target as string, getVacancyStageLabel(target as string));
+    }
+    if (target !== selectedCandidate.stage) {
+      await handleStageChange(selectedCandidate.id, target);
+    }
+    setStagePickerComment('');
+    setStagePickerOpen(false);
+  }, [
+    selectedCandidate,
+    stagePickerPending,
+    stagePickerComment,
+    saveEntityNote,
+    getVacancyStageLabel,
+    handleStageChange,
+  ]);
 
   const renderVacancyNoteCard = useCallback((note: Record<string, unknown>, i: number) => {
     const stage = note.stage as string | undefined;
@@ -2533,15 +2586,121 @@ export default function RecruiterFunnelsPage() {
                                         {selectedVacancy?.department_name ? ` (${selectedVacancy.department_name})` : ''}
                                       </div>
                                     </div>
-                                  <StageDropdown
-                                    currentStage={selectedCandidate.stage as ApplicationStage}
-                                    onChangeStage={(newStage) => handleStageChange(selectedCandidate.id, newStage)}
-                                    customLabels={vacancyStageDropdownLabels}
-                                    buttonClassName="hf-stage-change-btn"
-                                    buttonLabel="Сменить этап подбора"
-                                    menuAlign="right"
-                                    menuVariant="light"
-                                  />
+                                  <div className="relative" ref={stagePickerRef}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setStagePickerPending(selectedCandidate.stage as ApplicationStage);
+                                        setStagePickerComment('');
+                                        setStagePickerOpen((v) => !v);
+                                      }}
+                                      className="hf-stage-change-btn"
+                                    >
+                                      Сменить этап подбора
+                                    </button>
+                                    {stagePickerOpen && (
+                                      <div className="hf-stage-picker">
+                                        <div className="hf-stage-picker-list huntflow-scrollbar">
+                                          {stagePickerOptions.map((option) => {
+                                            const isSelected =
+                                              (stagePickerPending ?? selectedCandidate.stage) === option.status;
+                                            return (
+                                              <button
+                                                type="button"
+                                                key={option.status}
+                                                onClick={() => setStagePickerPending(option.status)}
+                                                className={clsx(
+                                                  'hf-stage-picker-option',
+                                                  isSelected
+                                                    ? 'hf-stage-picker-option-active'
+                                                    : 'hf-stage-picker-option-idle',
+                                                )}
+                                              >
+                                                <span className="truncate">{option.label}</span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                        <div className="hf-stage-picker-editor-wrap">
+                                          <div className="hf-stage-picker-editor">
+                                            <div className="hf-stage-picker-toolbar">
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="bold" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="italic" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="bullet-list" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="numbered-list" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="link" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="at" /></button>
+                                            </div>
+                                            <textarea
+                                              value={stagePickerComment}
+                                              onChange={(event) => setStagePickerComment(event.target.value)}
+                                              placeholder="Записать комментарий"
+                                              className="hf-stage-picker-textarea"
+                                            />
+                                            <div className="hf-stage-picker-actions">
+                                              <HuntflowActionChip
+                                                icon={Mail}
+                                                label="Письмо"
+                                                onClick={() => {
+                                                  if (selectedCandidate.entity_email) {
+                                                    window.open(`mailto:${selectedCandidate.entity_email}`);
+                                                  } else {
+                                                    toast.error('Email кандидата не указан');
+                                                  }
+                                                }}
+                                              />
+                                              <HuntflowActionChip
+                                                icon={Calendar}
+                                                label="Интервью"
+                                                onClick={() => {
+                                                  setInterviewForCandidate(selectedCandidate);
+                                                  const cur = selectedCandidate.next_interview_at;
+                                                  if (cur) {
+                                                    const d = new Date(cur);
+                                                    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+                                                      .toISOString()
+                                                      .slice(0, 16);
+                                                    setInterviewDateTime(local);
+                                                  } else {
+                                                    setInterviewDateTime('');
+                                                  }
+                                                }}
+                                              />
+                                              <HuntflowActionChip
+                                                icon={ThumbsUp}
+                                                label="Оффер"
+                                                onClick={() => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage)}
+                                              />
+                                              <HuntflowActionChip
+                                                icon={Paperclip}
+                                                label="Файл"
+                                                onClick={() => candidateFileInputRef.current?.click()}
+                                              />
+                                            </div>
+                                          </div>
+                                          <div className="hf-stage-picker-footer">
+                                            <button
+                                              type="button"
+                                              onClick={handleStagePickerSave}
+                                              className="inline-flex h-[33px] min-w-[74px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)]"
+                                            >
+                                              Сохранить
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setStagePickerComment('');
+                                                setStagePickerOpen(false);
+                                              }}
+                                              className="inline-flex h-[33px] min-w-[65px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)]"
+                                            >
+                                              Отмена
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
                                   </div>
                                 </div>
 
@@ -3154,89 +3313,5 @@ export default function RecruiterFunnelsPage() {
   );
 }
 
-/* ===================== Stage Dropdown ===================== */
-
-function StageDropdown({
-  currentStage,
-  onChangeStage,
-  customLabels,
-  buttonClassName,
-  buttonLabel,
-  menuAlign = 'left',
-  menuVariant = 'light',
-}: {
-  currentStage: ApplicationStage;
-  onChangeStage: (stage: ApplicationStage) => void;
-  customLabels?: Record<string, string>;
-  buttonClassName?: string;
-  buttonLabel?: string;
-  menuAlign?: 'left' | 'right';
-  menuVariant?: 'dark' | 'light';
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const colors = STAGE_COLORS[currentStage] || fallbackColor;
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className={buttonClassName || clsx(
-          'text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer transition-all',
-          'hover:ring-2 hover:ring-[var(--hf-white-alpha-10)]',
-          colors.badge,
-        )}
-      >
-        {buttonLabel || customLabels?.[currentStage] || STAGE_LABELS[currentStage] || currentStage}
-      </button>
-
-      {open && (
-        <div className={clsx(
-          'hf-stage-dropdown-menu absolute top-full mt-1 z-50 w-56 py-1 overflow-hidden',
-          menuVariant === 'light' ? 'hf-stage-dropdown-menu-light' : 'hf-stage-dropdown-menu-dark',
-          menuAlign === 'right' ? 'right-0' : 'left-0',
-        )}>
-          <div className="hf-stage-dropdown-header">
-            Перенести в
-          </div>
-          {STAGE_ORDER.map((stage) => {
-            const sc = STAGE_COLORS[stage] || fallbackColor;
-            const isCurrent = stage === currentStage;
-            return (
-              <button
-                key={stage}
-                onClick={() => {
-                  if (!isCurrent) onChangeStage(stage as ApplicationStage);
-                  setOpen(false);
-                }}
-                className={clsx(
-                  'hf-stage-dropdown-option',
-                  isCurrent ? 'hf-stage-dropdown-option-current' : 'hf-stage-dropdown-option-idle',
-                )}
-              >
-                <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
-                <span className="flex-1">{customLabels?.[stage] || STAGE_LABELS[stage] || stage}</span>
-                {isCurrent && (
-                  <span className="hf-stage-dropdown-current-note">текущий</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+/* StageDropdown удалён — на воронке смена этапа теперь через богатый пикер
+   (список этапов + «Записать комментарий») прямо в карточке кандидата. */
