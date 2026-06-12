@@ -2644,6 +2644,7 @@ export default function RecruiterFunnelsPage() {
                                         {selectedVacancy?.department_name ? ` (${selectedVacancy.department_name})` : ''}
                                       </div>
                                     </div>
+                                  <div className="flex items-center gap-2">
                                   <div className="relative" ref={stagePickerRef}>
                                     <button
                                       type="button"
@@ -2759,7 +2760,7 @@ export default function RecruiterFunnelsPage() {
                                       </div>
                                     )}
                                   </div>
-                                  <div className="relative ml-1" ref={candidateMenuRef}>
+                                  <div className="relative" ref={candidateMenuRef}>
                                     <button
                                       type="button"
                                       onClick={() => setCandidateMenuOpen((v) => !v)}
@@ -2793,6 +2794,7 @@ export default function RecruiterFunnelsPage() {
                                         </button>
                                       </div>
                                     )}
+                                  </div>
                                   </div>
                                   </div>
                                 </div>
