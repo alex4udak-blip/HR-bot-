@@ -31,12 +31,14 @@ import {
   Archive,
   Trash2,
   Inbox,
+  MoreHorizontal,
+  RotateCcw,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, deleteApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
@@ -1254,6 +1256,59 @@ export default function RecruiterFunnelsPage() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [stagePickerOpen]);
+
+  // ─── Меню действий со статусом («⋯»): убрать из вакансии / откатить этап ───
+  const [candidateMenuOpen, setCandidateMenuOpen] = useState(false);
+  const candidateMenuRef = useRef<HTMLDivElement>(null);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+  const [removeBusy, setRemoveBusy] = useState(false);
+
+  useEffect(() => {
+    if (!candidateMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (candidateMenuRef.current && !candidateMenuRef.current.contains(e.target as Node)) {
+        setCandidateMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [candidateMenuOpen]);
+
+  // Прошлый этап для отката — from_stage самой свежей записи истории
+  // (to_stage у неё = текущий этап).
+  const prevStage = useMemo<ApplicationStage | null>(() => {
+    if (!Array.isArray(candidateHistory) || candidateHistory.length === 0) return null;
+    const latest = [...candidateHistory].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0];
+    return (latest?.from_stage as ApplicationStage | null) || null;
+  }, [candidateHistory]);
+
+  const handleRevertStage = useCallback(async () => {
+    if (!selectedCandidate || !prevStage) return;
+    setCandidateMenuOpen(false);
+    await handleStageChange(selectedCandidate.id, prevStage);
+  }, [selectedCandidate, prevStage, handleStageChange]);
+
+  const handleRemoveFromVacancy = useCallback(async () => {
+    if (!selectedCandidate) return;
+    setRemoveBusy(true);
+    try {
+      await deleteApplication(selectedCandidate.id);
+      // Локально убираем отклик — кандидат исчезает из текущего списка; выбором
+      // дальше управляет эффект (как при смене этапа): останемся на вкладке,
+      // последний → заглушка «На этом этапе пока нет кандидатов».
+      setCandidates((prev) => prev.filter((c) => c.id !== selectedCandidate.id));
+      toast.success('Кандидат убран из вакансии');
+      setRemoveConfirmOpen(false);
+      setCandidateMenuOpen(false);
+      fetchVacancies();
+    } catch {
+      toast.error('Не удалось убрать из вакансии');
+    } finally {
+      setRemoveBusy(false);
+    }
+  }, [selectedCandidate, fetchVacancies]);
 
   const saveEntityNote = useCallback(async (
     text: string,
@@ -2704,6 +2759,41 @@ export default function RecruiterFunnelsPage() {
                                       </div>
                                     )}
                                   </div>
+                                  <div className="relative ml-1" ref={candidateMenuRef}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCandidateMenuOpen((v) => !v)}
+                                      title="Действия со статусом"
+                                      className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] text-[var(--hf-main-700)] transition-colors hover:bg-[var(--hf-ui-hover)]"
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </button>
+                                    {candidateMenuOpen && (
+                                      <div className="absolute right-0 top-full z-[260] mt-1 w-[240px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-white)] py-1 shadow-[0_2px_16px_var(--hf-alpha-300)]">
+                                        {prevStage && prevStage !== selectedCandidate.stage && (
+                                          <button
+                                            type="button"
+                                            onClick={handleRevertStage}
+                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:var(--hf-fs-xs)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-bg-panel)]"
+                                          >
+                                            <RotateCcw className="h-4 w-4 flex-shrink-0" />
+                                            <span className="truncate">Вернуть на «{getVacancyStageLabel(prevStage)}»</span>
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setCandidateMenuOpen(false);
+                                            setRemoveConfirmOpen(true);
+                                          }}
+                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:var(--hf-fs-xs)] text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-bg-panel)]"
+                                        >
+                                          <Trash2 className="h-4 w-4 flex-shrink-0" />
+                                          <span>Убрать из вакансии</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
                                   </div>
                                 </div>
 
@@ -3306,6 +3396,44 @@ export default function RecruiterFunnelsPage() {
                 {confirmBusy
                   ? 'Применяем…'
                   : confirmDialog.type === 'close' ? 'Закрыть' : 'Удалить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {removeConfirmOpen && selectedCandidate && (
+        <div
+          className="hf-confirm-modal-backdrop"
+          onClick={() => !removeBusy && setRemoveConfirmOpen(false)}
+        >
+          <div
+            className="hf-confirm-modal hf-confirm-modal-delete"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="hf-confirm-modal-title">Убрать из вакансии?</h3>
+              <p className="hf-confirm-modal-subtitle">
+                «{selectedCandidate.entity_name?.trim() || 'Кандидат'}»
+              </p>
+              <p className="hf-confirm-modal-danger-text">
+                Кандидат пропадёт из этой воронки, но останется в общей базе («Все кандидаты»).
+              </p>
+            </div>
+            <div className="hf-confirm-modal-actions">
+              <button
+                onClick={() => setRemoveConfirmOpen(false)}
+                disabled={removeBusy}
+                className="hf-confirm-modal-cancel"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleRemoveFromVacancy}
+                disabled={removeBusy}
+                className="hf-confirm-modal-submit hf-confirm-modal-submit-danger"
+              >
+                {removeBusy ? 'Убираем…' : 'Убрать'}
               </button>
             </div>
           </div>
