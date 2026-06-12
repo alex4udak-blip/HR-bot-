@@ -1190,19 +1190,22 @@ export default function RecruiterFunnelsPage() {
   const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage) => {
     try {
       await updateApplication(applicationId, { stage: newStage });
-      // Update local state immediately
+      // Локально двигаем кандидата на новый этап.
       setCandidates((prev) =>
         prev.map((c) => c.id === applicationId ? { ...c, stage: newStage } : c)
       );
-      setSelectedTab(stagesConfig.enumToKeys[newStage]?.[0] || newStage);
-      setSelectedCandidateId(applicationId);
+      // НЕ переключаем вкладку и НЕ «следуем» за кандидатом (требование Маши):
+      // остаёмся на текущем этапе, карточка просто исчезает из текущего списка.
+      // Дальше выбором управляет эффект [selectedCandidateId, tabFilteredCandidates]:
+      // если на этапе никого не осталось — выбор снимается и показывается заглушка
+      // «На этом этапе пока нет кандидатов»; иначе выбирается первый оставшийся.
       toast.success(`Статус изменён → ${getVacancyStageLabel(newStage)}`);
       // Refresh vacancy store for updated counts
       fetchVacancies();
     } catch {
       toast.error('Ошибка смены статуса');
     }
-  }, [fetchVacancies, getVacancyStageLabel, stagesConfig.enumToKeys]);
+  }, [fetchVacancies, getVacancyStageLabel]);
 
   // ─── Interview scheduling modal ───
   const [interviewForCandidate, setInterviewForCandidate] = useState<typeof selectedCandidate | null>(null);
