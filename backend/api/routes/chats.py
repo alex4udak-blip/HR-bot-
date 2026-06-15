@@ -78,7 +78,7 @@ async def get_chats(
     user: User = Depends(get_current_user),
     search: str = Query(None, max_length=255),
     chat_type: str = Query(None, description="Filter by chat type"),
-    limit: int = Query(50, le=100),  # Reduced for better performance
+    limit: int = Query(500, le=2000),  # Поиск в UI клиентский — нужно загружать весь список юзера, иначе чаты за пределами лимита невидимы
     offset: int = Query(0, ge=0, le=5000),  # Reduced offset limit
 ):
     # Merge detached user into current session
