@@ -87,6 +87,7 @@ from .matching import (
 # Import history handlers
 from .history import (
     get_application_history,
+    delete_application_history,
     StageTransitionResponse,
 )
 
@@ -114,6 +115,7 @@ router.add_api_route("/applications/bulk-move", bulk_move_applications, methods=
 
 # Application stage transition history
 router.add_api_route("/applications/{application_id}/history", get_application_history, methods=["GET"], tags=["vacancy-applications"])
+router.add_api_route("/applications/{application_id}/history/{history_id}", delete_application_history, methods=["DELETE"], tags=["vacancy-applications"])
 
 # Applications update/delete by ID: /applications/{application_id}
 router.add_api_route("/applications/{application_id}", update_application, methods=["PUT"], tags=["vacancy-applications"])

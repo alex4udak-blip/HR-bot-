@@ -449,6 +449,16 @@ export const getApplicationHistory = async (
   return data;
 };
 
+export const deleteApplicationHistory = async (
+  applicationId: number,
+  historyId: number
+): Promise<void> => {
+  await debouncedMutation<void>(
+    'delete',
+    `/vacancies/applications/${applicationId}/history/${historyId}`
+  );
+};
+
 // ============================================================
 // VACANCY SHARING API
 // ============================================================

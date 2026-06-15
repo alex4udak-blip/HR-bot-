@@ -38,7 +38,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, deleteApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, deleteApplication, getApplicationHistory, deleteApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
@@ -1421,6 +1421,17 @@ export default function RecruiterFunnelsPage() {
       toast.error('Не удалось удалить комментарий');
     }
   }, [selectedCandidate?.entity_id]);
+
+  const handleDeleteHistory = useCallback(async (historyId: number) => {
+    if (!selectedCandidate || !historyId) return;
+    try {
+      await deleteApplicationHistory(selectedCandidate.id, historyId);
+      setCandidateHistory((prev) => prev.filter((h: any) => h.id !== historyId));
+      toast.success('Запись истории удалена');
+    } catch {
+      toast.error('Не удалось удалить запись');
+    }
+  }, [selectedCandidate]);
 
   const renderVacancyNoteCard = useCallback((note: Record<string, unknown>, i: number) => {
     const stage = note.stage as string | undefined;
@@ -3011,7 +3022,17 @@ export default function RecruiterFunnelsPage() {
                                         (!Number.isFinite(changedById) ? entry.changed_by : null);
 
                                       return (
-                                        <div key={i} className="relative pb-5 last:pb-0">
+                                        <div key={entry.id ?? i} className="relative pb-5 last:pb-0">
+                                          {entry.id ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteHistory(entry.id)}
+                                              title="Удалить запись"
+                                              className="absolute right-0 top-0 rounded p-1 text-[var(--hf-dark-500)] transition-colors hover:text-[var(--hf-status-red)]"
+                                            >
+                                              <Trash2 className="h-[14px] w-[14px]" />
+                                            </button>
+                                          ) : null}
                                           {/* Timeline dot */}
                                           <div className={clsx(
                                             'absolute -left-[25px] w-3 h-3 rounded-full border-2 border-[color:var(--hf-dark-800)]',

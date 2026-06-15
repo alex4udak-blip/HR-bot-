@@ -88,3 +88,41 @@ async def get_application_history(
         )
         for t in transitions
     ]
+
+
+async def delete_application_history(
+    application_id: int,
+    history_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access),
+):
+    """Delete a single stage-transition history entry (ошибочная запись)."""
+    org = await get_user_org(current_user, db)
+
+    app_result = await db.execute(
+        select(VacancyApplication).where(VacancyApplication.id == application_id)
+    )
+    application = app_result.scalar()
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    vacancy_result = await db.execute(
+        select(Vacancy).where(Vacancy.id == application.vacancy_id)
+    )
+    vacancy = vacancy_result.scalar()
+    if vacancy and not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
+
+    tr_result = await db.execute(
+        select(StageTransition).where(
+            StageTransition.id == history_id,
+            StageTransition.application_id == application_id,
+        )
+    )
+    transition = tr_result.scalar()
+    if not transition:
+        raise HTTPException(status_code=404, detail="History entry not found")
+
+    await db.delete(transition)
+    await db.commit()
+    return {"success": True}
