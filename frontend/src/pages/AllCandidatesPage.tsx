@@ -4571,9 +4571,13 @@ type CandidateListSettings = {
   scope: "mine" | "all";
   fields: CandidateListFields;
 };
-const CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings";
+// v2: дефолт scope = "all" — все рекрутёры видят ВСЕХ кандидатов орги (требование).
+// Ключ обновлён на .v2, чтобы у существующих юзеров слетел старый сохранённый
+// "mine" (иначе он продолжал бы прятать чужих кандидатов из localStorage).
+const CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings.v2";
+const LEGACY_CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings";
 const DEFAULT_CANDIDATE_LIST_SETTINGS: CandidateListSettings = {
-  scope: "mine",
+  scope: "all",
   fields: {
     name: true,
     desiredPosition: false,
@@ -4590,12 +4594,25 @@ const DEFAULT_CANDIDATE_LIST_SETTINGS: CandidateListSettings = {
 function loadCandidateListSettings(): CandidateListSettings {
   try {
     const raw = localStorage.getItem(CANDIDATE_LIST_SETTINGS_KEY);
-    if (!raw) return DEFAULT_CANDIDATE_LIST_SETTINGS;
-    const parsed = JSON.parse(raw);
-    return {
-      scope: parsed?.scope === "all" ? "all" : "mine",
-      fields: { ...DEFAULT_CANDIDATE_LIST_SETTINGS.fields, ...(parsed?.fields || {}) },
-    };
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        // в v2 дефолт — "all"; "mine" остаётся, только если юзер ЯВНО его выбрал
+        scope: parsed?.scope === "mine" ? "mine" : "all",
+        fields: { ...DEFAULT_CANDIDATE_LIST_SETTINGS.fields, ...(parsed?.fields || {}) },
+      };
+    }
+    // Миграция со старого ключа: переносим настройки полей, а scope сбрасываем
+    // на новый дефолт "all" (старый сохранённый "mine" больше не прячет чужих).
+    const legacy = localStorage.getItem(LEGACY_CANDIDATE_LIST_SETTINGS_KEY);
+    if (legacy) {
+      const old = JSON.parse(legacy);
+      return {
+        scope: "all",
+        fields: { ...DEFAULT_CANDIDATE_LIST_SETTINGS.fields, ...(old?.fields || {}) },
+      };
+    }
+    return DEFAULT_CANDIDATE_LIST_SETTINGS;
   } catch {
     return DEFAULT_CANDIDATE_LIST_SETTINGS;
   }
