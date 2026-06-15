@@ -40,6 +40,7 @@ import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
+  getCandidateStageHistory,
 } from "@/services/api/candidates";
 import type {
   KanbanBoardResponse,
@@ -1609,9 +1610,58 @@ const InfoTab = memo(function InfoTab({
         author?: string;
       }>)
     : [];
+  // Сквозная история смены этапов (реальные StageTransition по всем откликам
+  // кандидата) — чтобы глобальная карточка показывала тот же лог, что и воронка.
+  const [stageHistory, setStageHistory] = useState<any[]>([]);
+  useEffect(() => {
+    if (!card.id) {
+      setStageHistory([]);
+      return;
+    }
+    let cancelled = false;
+    getCandidateStageHistory(card.id)
+      .then((rows) => {
+        if (!cancelled) setStageHistory(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setStageHistory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [card.id]);
+  const stageHistoryTimelineItems = useMemo<
+    Array<{ date?: string; title?: string; body?: string; author?: string }>
+  >(() => {
+    const LABELS: Record<string, string> = {
+      applied: "Новый",
+      screening: "Скрининг",
+      phone_screen: "Практика",
+      interview: "Тех-практика",
+      assessment: "ИС",
+      offer: "Оффер",
+      hired: "Принят",
+      rejected: "Отклонён",
+      withdrawn: "Отозван",
+    };
+    return (stageHistory as any[]).map((t) => {
+      const to = LABELS[t.to_stage] || t.to_stage;
+      const from = t.from_stage ? LABELS[t.from_stage] || t.from_stage : null;
+      return {
+        date: t.created_at || undefined,
+        title: from ? `${from} → ${to}` : `Этап: ${to}`,
+        body: [t.vacancy_title, t.comment].filter(Boolean).join(" · ") || undefined,
+        author: t.changed_by_name || undefined,
+      };
+    });
+  }, [stageHistory]);
   const timelineItems =
-    timelineEvents.length > 0
-      ? timelineEvents
+    stageHistoryTimelineItems.length > 0 || timelineEvents.length > 0
+      ? [...stageHistoryTimelineItems, ...timelineEvents].sort((a, b) => {
+          const ta = a.date ? new Date(a.date).getTime() : 0;
+          const tb = b.date ? new Date(b.date).getTime() : 0;
+          return tb - ta;
+        })
       : [{ date: card.created_at, title: "Кандидат добавлен", author: "Я" }];
   const normalizedTimelineItems = timelineItems
     .filter(

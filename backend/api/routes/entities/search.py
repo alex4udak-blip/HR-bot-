@@ -479,6 +479,21 @@ async def apply_entity_to_vacancy(
     await db.commit()
     await db.refresh(application)
 
+    # Начальный транзишн в историю (как в create_application) — иначе у кандидатов,
+    # импортированных в воронку из общей базы, не было записи о появлении на этапе,
+    # а лента истории оставалась пустой.
+    from ...services.stage_transitions import record_transition
+    await record_transition(
+        db=db,
+        application_id=application.id,
+        entity_id=entity_id,
+        from_stage=None,
+        to_stage=application.stage.value,
+        changed_by_id=current_user.id,
+        comment="Initial application",
+    )
+    await db.commit()
+
     logger.info(f"Entity {entity_id} applied to vacancy {data.vacancy_id} by user {current_user.id}")
 
     return {

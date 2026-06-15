@@ -34,6 +34,7 @@ from api.models.database import (
     Vacancy,
     VacancyApplication,
     ApplicationStage,
+    StageTransition,
     AccessLevel,
 )
 from api.services.auth import get_current_user, get_user_org, has_full_database_access
@@ -396,7 +397,9 @@ async def bulk_action(
         )
         existing_ids = {row[0] for row in existing_result.all()}
 
+        from api.services.stage_transitions import record_transition
         added = 0
+        created_apps = []
         for entity in entities:
             if entity.id not in existing_ids:
                 app = VacancyApplication(
@@ -406,9 +409,24 @@ async def bulk_action(
                     source="bulk_crm",
                 )
                 db.add(app)
+                created_apps.append((app, entity.id))
                 added += 1
 
         await db.commit()
+        # Начальный транзишн в историю для каждого добавленного отклика.
+        for app, ent_id in created_apps:
+            await db.refresh(app)
+            await record_transition(
+                db=db,
+                application_id=app.id,
+                entity_id=ent_id,
+                from_stage=None,
+                to_stage=app.stage.value if hasattr(app.stage, "value") else str(app.stage),
+                changed_by_id=current_user.id,
+                comment="Initial application",
+            )
+        if created_apps:
+            await db.commit()
         return {"success": True, "action": "add_to_vacancy", "affected": added, "skipped": len(existing_ids)}
 
     # --- change_status ---
@@ -515,6 +533,7 @@ async def change_candidate_status(
     # (/my-funnels читает VacancyApplication.stage) кандидат оставался
     # в старой колонке — выглядело как «не перемещается».
     from api.models.database import STATUS_SYNC_MAP
+    from api.services.stage_transitions import record_transition
     synced_apps = 0
     if new_status in STATUS_SYNC_MAP:
         target_stage = STATUS_SYNC_MAP[new_status]
@@ -523,9 +542,21 @@ async def change_candidate_status(
         )
         for app in apps_result.scalars().all():
             if app.stage != target_stage:
+                old_app_stage = app.stage
                 app.stage = target_stage
                 app.last_stage_change_at = datetime.utcnow()
                 synced_apps += 1
+                # Пишем транзишн в историю — иначе смена этапа из «Все кандидаты»
+                # меняла VacancyApplication.stage, но не попадала в ленту истории
+                # кандидата (главный баг с импортированными кандидатами).
+                await record_transition(
+                    db=db,
+                    application_id=app.id,
+                    entity_id=entity_id,
+                    from_stage=old_app_stage.value if hasattr(old_app_stage, "value") else (str(old_app_stage) if old_app_stage else None),
+                    to_stage=target_stage.value if hasattr(target_stage, "value") else str(target_stage),
+                    changed_by_id=current_user.id,
+                )
 
     await db.commit()
 
@@ -541,6 +572,63 @@ async def change_candidate_status(
         "old_status": old_status.value if hasattr(old_status, "value") else str(old_status),
         "new_status": new_status.value,
     }
+
+
+@router.get("/{entity_id}/stage-history")
+async def get_candidate_stage_history(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Сквозная история смены этапов кандидата по ВСЕМ его откликам.
+
+    Используется глобальной карточкой в «Все кандидаты», чтобы показывать
+    тот же лог переходов, что и карточка в воронке (единая история).
+    """
+    current_user = await db.merge(current_user)
+    org_id = await _get_org_id(current_user, db)
+
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.type == EntityType.candidate)
+    )
+    entity = entity_result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Candidate not found")
+    if org_id and entity.org_id != org_id and current_user.role != UserRole.superadmin:
+        raise HTTPException(404, "Candidate not found")
+
+    rows = (await db.execute(
+        select(StageTransition, Vacancy.title)
+        .join(VacancyApplication, StageTransition.application_id == VacancyApplication.id)
+        .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
+        .where(StageTransition.entity_id == entity_id)
+        .order_by(StageTransition.created_at.desc())
+    )).all()
+
+    user_ids = [t.changed_by for t, _ in rows if t.changed_by]
+    names = {}
+    if user_ids:
+        names = {
+            r[0]: r[1]
+            for r in (await db.execute(
+                select(User.id, User.name).where(User.id.in_(user_ids))
+            )).all()
+        }
+
+    return [
+        {
+            "id": t.id,
+            "application_id": t.application_id,
+            "vacancy_title": vac_title,
+            "from_stage": t.from_stage,
+            "to_stage": t.to_stage,
+            "changed_by": t.changed_by,
+            "changed_by_name": names.get(t.changed_by),
+            "comment": t.comment,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+        }
+        for t, vac_title in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
