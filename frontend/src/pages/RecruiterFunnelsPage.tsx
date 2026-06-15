@@ -1399,15 +1399,22 @@ export default function RecruiterFunnelsPage() {
     handleStageChange,
   ]);
 
-  const handleDeleteNote = useCallback(async (noteId: string) => {
-    if (!selectedCandidate?.entity_id || !noteId) return;
+  const handleDeleteNote = useCallback(async (note: Record<string, unknown>) => {
+    if (!selectedCandidate?.entity_id) return;
+    // Новые заметки удаляются по id; у старых (до коммита 9bac610) id нет —
+    // бэкенд поддерживает фолбэк по дате через ключ "date:<iso>".
+    const key = (note.id as string) || (note.date ? `date:${note.date as string}` : '');
+    if (!key) {
+      toast.error('Не удалось определить комментарий');
+      return;
+    }
     try {
-      await deleteEntityNote(selectedCandidate.entity_id, noteId);
+      await deleteEntityNote(selectedCandidate.entity_id, key);
       setEntityExtraData((prev) => {
         const existing = Array.isArray(prev?.notes)
           ? (prev!.notes as Array<Record<string, unknown>>)
           : [];
-        return { ...(prev || {}), notes: existing.filter((n) => n.id !== noteId) };
+        return { ...(prev || {}), notes: existing.filter((n) => n !== note) };
       });
       toast.success('Комментарий удалён');
     } catch {
@@ -1445,10 +1452,10 @@ export default function RecruiterFunnelsPage() {
               <span className="hf-vacancy-note-stage">{stageLabel}</span>
             )}
             <span className="hf-vacancy-note-date">{dateStr}</span>
-            {note.id ? (
+            {(note.id || note.date) ? (
               <button
                 type="button"
-                onClick={() => handleDeleteNote(note.id as string)}
+                onClick={() => handleDeleteNote(note)}
                 title="Удалить комментарий"
                 className="ml-auto flex-shrink-0 rounded p-0.5 text-[var(--hf-main-400)] transition-colors hover:text-[var(--hf-status-red)]"
               >
