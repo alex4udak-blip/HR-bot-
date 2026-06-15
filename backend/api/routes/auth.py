@@ -543,16 +543,6 @@ DEFAULT_ORG_STAGES = [
 ALLOWED_STAGE_KEYS = {s["key"] for s in DEFAULT_ORG_STAGES}
 
 
-class StageItem(BaseModel):
-    key: str
-    label: str = Field(..., min_length=1, max_length=64)
-    color: str = Field(..., pattern=r'^#[0-9a-fA-F]{6}$')
-
-
-class OrgStagesUpdate(BaseModel):
-    stages: List[StageItem]
-
-
 async def _get_user_org_or_404(user: User, db: AsyncSession) -> Organization:
     res = await db.execute(
         select(Organization).join(OrgMember, OrgMember.org_id == Organization.id)
@@ -584,50 +574,9 @@ async def get_org_stages(
     return {"stages": _read_org_stages(org)}
 
 
-@router.put("/org-stages")
-async def update_org_stages(
-    data: OrgStagesUpdate,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Сохранить конфигурацию этапов. Только superadmin/owner/admin."""
-    org = await _get_user_org_or_404(user, db)
-
-    # Право редактировать — только админ оргa или платформенный админ
-    is_platform_admin = user.role == UserRole.superadmin
-    if not is_platform_admin:
-        member_res = await db.execute(
-            select(OrgMember.role).where(
-                OrgMember.user_id == user.id,
-                OrgMember.org_id == org.id,
-            )
-        )
-        role_val = member_res.scalar_one_or_none()
-        if role_val not in (OrgRole.owner, OrgRole.admin):
-            raise HTTPException(403, "Только админ организации может менять этапы")
-
-    # Валидация: все ключи должны быть из allowed-списка, без дубликатов.
-    seen = set()
-    cleaned = []
-    for s in data.stages:
-        if s.key not in ALLOWED_STAGE_KEYS:
-            raise HTTPException(400, f"Неизвестный ключ этапа: {s.key}")
-        if s.key in seen:
-            raise HTTPException(400, f"Дублирующийся этап: {s.key}")
-        seen.add(s.key)
-        cleaned.append({"key": s.key, "label": s.label.strip(), "color": s.color.lower()})
-
-    if not cleaned:
-        raise HTTPException(400, "Список этапов не может быть пустым")
-
-    # Сохраняем в settings JSON (поле уже есть, миграция не нужна).
-    new_settings = dict(org.settings or {})
-    new_settings["stage_config"] = cleaned
-    org.settings = new_settings
-    flag_modified(org, "settings")  # SQLAlchemy не видит мутации dict без подсказки
-    await db.commit()
-
-    return {"success": True, "stages": cleaned}
+# (Редактор «Настройка этапов» убран из UI — этапы зафиксированы на каноне
+# DEFAULT_ORG_STAGES; PUT /org-stages удалён. GET остаётся: его читают и
+# «Все кандидаты», и воронка для подписей этапов.)
 
 
 # (Система «шаблонов статусов» удалена: была мёртвой — сохранялась в

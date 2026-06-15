@@ -46,11 +46,6 @@ export const getOrgStages = async (): Promise<{ stages: OrgStage[] }> => {
   return data;
 };
 
-export const updateOrgStages = async (stages: OrgStage[]): Promise<{ success: boolean; stages: OrgStage[] }> => {
-  const { data } = await api.put('/auth/org-stages', { stages });
-  return data;
-};
-
 /**
  * Refresh the access token using the refresh token stored in httpOnly cookie.
  * This is called automatically by the interceptor on 401 errors.

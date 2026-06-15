@@ -5,9 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
   X,
-  ShieldCheck,
-  Save,
-  GripVertical,
   Users,
   PlusCircle,
   Paperclip,
@@ -58,7 +55,6 @@ import {
   updateEntityNote,
   deleteEntityNote,
 } from "@/services/api/entities";
-import { getOrgStages, updateOrgStages } from "@/services/api/auth";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import type { EntityFile } from "@/services/api/entities";
 import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
@@ -507,7 +503,6 @@ export default function AllCandidatesPage() {
   const [listSettings, setListSettings] = useState<CandidateListSettings>(
     loadCandidateListSettings,
   );
-  const [showStageSettings, setShowStageSettings] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
   const [addToVacancyAnchor, setAddToVacancyAnchor] = useState<{
@@ -1027,18 +1022,6 @@ export default function AllCandidatesPage() {
             <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
           </button>
         </div>
-        {isAdmin ? (
-          <div className="hf-top-stage-action-cell">
-            <button
-              type="button"
-              onClick={() => setShowStageSettings(true)}
-              className="hf-top-stage-admin-btn"
-              title="Админ: настройка этапов"
-            >
-              <ShieldCheck className="hf-top-stage-admin-icon" />
-            </button>
-          </div>
-        ) : null}
         {!showTopSearch && topStageCanScrollLeft ? (
           <button
             type="button"
@@ -1465,12 +1448,6 @@ export default function AllCandidatesPage() {
             onClose={() => setShowListSettings(false)}
             initial={listSettings}
             onApply={setListSettings}
-          />
-        )}
-        {showStageSettings && (
-          <StageSettingsModal
-            onClose={() => setShowStageSettings(false)}
-            onSaved={() => fetchBoard()}
           />
         )}
         {showEditModal && selectedCard && (
@@ -4901,164 +4878,5 @@ function ListSettingRadio({
       </span>
       {label}
     </label>
-  );
-}
-
-// ================================================================
-// STAGE SETTINGS MODAL (admin only)
-// ================================================================
-
-function StageSettingsModal({
-  onClose,
-  onSaved,
-}: {
-  onClose: () => void;
-  onSaved?: () => void;
-}) {
-  const [stages, setStages] = useState<
-    Array<{ key: string; label: string; color: string }>
-  >([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    getOrgStages()
-      .then((r) => setStages(r.stages))
-      .catch(() => toast.error("Не удалось загрузить настройки"))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const handleSave = async () => {
-    if (stages.some((s) => !s.label.trim())) {
-      toast.error("Названия этапов не могут быть пустыми");
-      return;
-    }
-    setSaving(true);
-    try {
-      await updateOrgStages(
-        stages.map((s) => ({
-          key: s.key,
-          label: s.label.trim(),
-          color: s.color,
-        })),
-      );
-      toast.success("Этапы сохранены");
-      onSaved?.();
-      onClose();
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail || "Не удалось сохранить";
-      toast.error(msg);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-30)]"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92vh] w-full max-w-[672px] flex-col overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-bg-muted)] shadow-[0_18px_60px_var(--hf-black-alpha-30)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]"
-      >
-        <div className="flex h-[68px] flex-shrink-0 items-center justify-between border-b border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
-          <div className="flex items-center gap-[12px]">
-            <span className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] bg-[var(--hf-white)] text-[var(--hf-cyan-500)] shadow-[0_1px_2px_var(--hf-alpha-100)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)]">
-              <ShieldCheck className="h-[20px] w-[20px]" />
-            </span>
-            <h3 className="text-[20px] font-semibold leading-[var(--hf-lh-h2)] text-[var(--hf-ui-text-strong)] hf-dark-disabled:text-[var(--hf-white)]">
-              Настройка этапов
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] text-[var(--hf-ui-text-strong)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hf-dark-disabled:text-[color:var(--hf-white-alpha-70)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
-            aria-label="Закрыть"
-          >
-            <X className="h-[22px] w-[22px]" />
-          </button>
-        </div>
-        <div className="overflow-y-auto px-[var(--hf-space-xxl)] py-[var(--hf-space-l)]">
-          <p className="mb-[16px] text-[length:var(--hf-fs-2xs)] leading-[18px] text-[var(--hf-ui-text-muted)] hf-dark-disabled:text-[color:var(--hf-white-alpha-50)]">
-            Настройте названия и цвета этапов воронки. Применится ко всей
-            организации.
-          </p>
-          {loading ? (
-            <div className="space-y-[8px] py-[var(--hf-space-s)]">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <HfSkeletonBlock
-                  key={index}
-                  className="h-[48px] w-full rounded-[var(--hf-radius-s)]"
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-[8px]">
-              {stages.map((s, i) => (
-                <div
-                  key={s.key}
-                  className="flex h-[48px] items-center gap-[10px] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-transparent px-[10px] transition-colors hover:border-[var(--hf-ui-border-hover)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:hover:border-[color:var(--hf-white-alpha-20)]"
-                >
-                  <GripVertical className="h-[16px] w-[16px] cursor-grab text-[var(--hf-main-600)]" />
-                  <input
-                    type="color"
-                    value={s.color}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setStages((p) =>
-                        p.map((x, j) =>
-                          j === i ? { ...x, color: e.target.value } : x,
-                        ),
-                      )
-                    }
-                    className="h-[28px] w-[28px] cursor-pointer rounded border-0 bg-transparent disabled:opacity-50"
-                  />
-                  <input
-                    type="text"
-                    value={s.label}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setStages((p) =>
-                        p.map((x, j) =>
-                          j === i ? { ...x, label: e.target.value } : x,
-                        ),
-                      )
-                    }
-                    className="h-full flex-1 bg-transparent text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-ui-text-strong)] focus:outline-none disabled:opacity-50 hf-dark-disabled:text-[var(--hf-white)]"
-                  />
-                  <span className="font-mono text-[length:var(--hf-fs-4xs)] text-[var(--hf-main-600)]">
-                    {s.key}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="flex h-[72px] flex-shrink-0 items-center justify-end gap-[12px] border-t border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="inline-flex h-[40px] items-center rounded-[var(--hf-radius-s)] px-[var(--hf-space-xxl)] text-[length:var(--hf-fs-xs)] font-medium text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] disabled:opacity-50 hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:hover:text-[var(--hf-white)]"
-          >
-            Отмена
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || loading}
-            className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] bg-[var(--hf-main-900)] px-[18px] text-[length:var(--hf-fs-xs)] font-semibold text-[var(--hf-white)] transition-colors duration-[100ms] hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] hf-dark-disabled:bg-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-90)] hf-dark-disabled:disabled:bg-[var(--hf-white-alpha-08)] hf-dark-disabled:disabled:text-[color:var(--hf-white-alpha-35)]"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? "Сохраняем…" : "Сохранить"}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
   );
 }
