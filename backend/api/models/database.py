@@ -63,6 +63,7 @@ class EntityStatus(str, enum.Enum):
     offer = "offer"               # Оффер - offer extended
     hired = "hired"               # Принят - accepted and hired
     rejected = "rejected"         # Отказ - rejected
+    withdrawn = "withdrawn"       # Отозван - кандидат отозвал отклик
     reserve = "reserve"           # Резерв - отложен в резерв
 
     # General entity statuses (for clients, partners, etc.)
@@ -168,6 +169,7 @@ STATUS_SYNC_MAP = {
     EntityStatus.offer: ApplicationStage.offer,
     EntityStatus.hired: ApplicationStage.hired,
     EntityStatus.rejected: ApplicationStage.rejected,
+    EntityStatus.withdrawn: ApplicationStage.withdrawn,
     EntityStatus.reserve: ApplicationStage.reserve,
 }
 

@@ -468,12 +468,12 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
   // Единые HR-лейблы: держим в синхронизации с KANBAN_STATUS_LABELS
   // и APPLICATION_STAGE_LABELS.
   new: 'Новый',
-  screening: 'Скрининг',
-  practice: 'Практика',
-  tech_practice: 'Тех-практика',
-  is_interview: 'ИС',
-  offer: 'Оффер',
-  hired: 'Принят',
+  screening: 'Выполняет ТЗ',
+  practice: 'Интервью с HR',
+  tech_practice: 'Интервью с заказчиком',
+  is_interview: 'Принятие решения',
+  offer: 'Выставлен оффер',
+  hired: 'Оффер принят',
   rejected: 'Отказ',
   withdrawn: 'Отозван',
   reserve: 'Резерв',
@@ -484,10 +484,10 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
   converted: 'Сконвертирован',
   ended: 'Завершён',
   negotiation: 'Переговоры',
-  interview: 'Тех-практика',
+  interview: 'Интервью с заказчиком',
   applied: 'Новый',
-  phone_screen: 'Практика',
-  assessment: 'ИС'
+  phone_screen: 'Интервью с HR',
+  assessment: 'Принятие решения'
 };
 
 export const STATUS_COLORS: Record<EntityStatus, string> = {
@@ -737,13 +737,13 @@ export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
   // Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
   // и теми, что отображаются на /all-candidates. Не разводить разные наборы.
   applied: 'Новый',
-  screening: 'Скрининг',
-  phone_screen: 'Практика',
-  interview: 'Тех-практика',
-  assessment: 'ИС',
-  offer: 'Оффер',
-  hired: 'Принят',
-  rejected: 'Отклонён',
+  screening: 'Выполняет ТЗ',
+  phone_screen: 'Интервью с HR',
+  interview: 'Интервью с заказчиком',
+  assessment: 'Принятие решения',
+  offer: 'Выставлен оффер',
+  hired: 'Оффер принят',
+  rejected: 'Отказ',
   withdrawn: 'Отозван',
   reserve: 'Резерв'
 };

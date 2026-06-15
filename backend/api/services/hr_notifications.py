@@ -30,12 +30,12 @@ logger = logging.getLogger("hr-analyzer.notifications")
 # Human-readable stage names (Russian)
 STAGE_LABELS = {
     ApplicationStage.applied: "Новый",
-    ApplicationStage.screening: "Скрининг",
-    ApplicationStage.phone_screen: "Практика",
-    ApplicationStage.interview: "Тех-практика",
-    ApplicationStage.assessment: "ИС",
-    ApplicationStage.offer: "Оффер",
-    ApplicationStage.hired: "Принят",
+    ApplicationStage.screening: "Выполняет ТЗ",
+    ApplicationStage.phone_screen: "Интервью с HR",
+    ApplicationStage.interview: "Интервью с заказчиком",
+    ApplicationStage.assessment: "Принятие решения",
+    ApplicationStage.offer: "Выставлен оффер",
+    ApplicationStage.hired: "Оффер принят",
     ApplicationStage.rejected: "Отказ",
     ApplicationStage.withdrawn: "Отозван",
 }

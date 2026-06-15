@@ -529,15 +529,16 @@ async def get_telegram_link(user: User = Depends(get_current_user)):
 # Дефолты — повторяют KANBAN_STATUSES в candidate_search.py.
 # Если у орги ещё нет своей конфигурации, отдаём это.
 DEFAULT_ORG_STAGES = [
-    {"key": "new",           "label": "Новый",       "color": "#3b82f6"},
-    {"key": "screening",     "label": "Скрининг",    "color": "#06b6d4"},
-    {"key": "practice",      "label": "Практика",    "color": "#a855f7"},
-    {"key": "tech_practice", "label": "Тех-практика","color": "#6366f1"},
-    {"key": "is_interview",  "label": "ИС",          "color": "#f97316"},
-    {"key": "offer",         "label": "Оффер",       "color": "#eab308"},
-    {"key": "hired",         "label": "Принят",      "color": "#22c55e"},
-    {"key": "rejected",      "label": "Отклонён",    "color": "#ef4444"},
-    {"key": "reserve",       "label": "Резерв",      "color": "#6b7280"},
+    {"key": "new",           "label": "Новый",                 "color": "#3b82f6"},
+    {"key": "screening",     "label": "Выполняет ТЗ",          "color": "#06b6d4"},
+    {"key": "practice",      "label": "Интервью с HR",         "color": "#a855f7"},
+    {"key": "tech_practice", "label": "Интервью с заказчиком", "color": "#6366f1"},
+    {"key": "is_interview",  "label": "Принятие решения",      "color": "#f97316"},
+    {"key": "offer",         "label": "Выставлен оффер",       "color": "#eab308"},
+    {"key": "hired",         "label": "Оффер принят",          "color": "#22c55e"},
+    {"key": "rejected",      "label": "Отказ",                 "color": "#ef4444"},
+    {"key": "withdrawn",     "label": "Отозван",               "color": "#9ca3af"},
+    {"key": "reserve",       "label": "Резерв",                "color": "#6b7280"},
 ]
 ALLOWED_STAGE_KEYS = {s["key"] for s in DEFAULT_ORG_STAGES}
 

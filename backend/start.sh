@@ -327,6 +327,15 @@ async def ensure_shadow_columns():
             print('Adding reserve value to entitystatus enum...')
             await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'reserve'\"))
             print('Added reserve to entitystatus enum')
+
+        # Add 'withdrawn' to entitystatus enum (статус «Отозван» в «Все кандидаты»)
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'withdrawn' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'entitystatus'))\"
+        ))
+        if not result.scalar():
+            print('Adding withdrawn value to entitystatus enum...')
+            await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'withdrawn'\"))
+            print('Added withdrawn to entitystatus enum')
     await raw_engine.dispose()
 
     # One-time data migration: legacy draft → pending_review
@@ -403,13 +412,13 @@ async def ensure_shadow_columns():
     # 'Отказ' и т.п.). Приводим к канону KANBAN_STATUS_LABELS.
     CANONICAL_LABELS = {
         'applied': 'Новый',
-        'screening': 'Скрининг',
-        'phone_screen': 'Практика',
-        'interview': 'Тех-практика',
-        'assessment': 'ИС',
-        'offer': 'Оффер',
-        'hired': 'Принят',
-        'rejected': 'Отклонён',
+        'screening': 'Выполняет ТЗ',
+        'phone_screen': 'Интервью с HR',
+        'interview': 'Интервью с заказчиком',
+        'assessment': 'Принятие решения',
+        'offer': 'Выставлен оффер',
+        'hired': 'Оффер принят',
+        'rejected': 'Отказ',
         'withdrawn': 'Отозван',
     }
     OLD_LABELS = {'Новая заявка', 'Отбор', 'Собеседование назначено',
