@@ -40,7 +40,7 @@ import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getUsers, getApplications, updateApplication, deleteApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
-import { addEntityNote } from '@/services/api/entities';
+import { addEntityNote, deleteEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
@@ -1399,6 +1399,22 @@ export default function RecruiterFunnelsPage() {
     handleStageChange,
   ]);
 
+  const handleDeleteNote = useCallback(async (noteId: string) => {
+    if (!selectedCandidate?.entity_id || !noteId) return;
+    try {
+      await deleteEntityNote(selectedCandidate.entity_id, noteId);
+      setEntityExtraData((prev) => {
+        const existing = Array.isArray(prev?.notes)
+          ? (prev!.notes as Array<Record<string, unknown>>)
+          : [];
+        return { ...(prev || {}), notes: existing.filter((n) => n.id !== noteId) };
+      });
+      toast.success('Комментарий удалён');
+    } catch {
+      toast.error('Не удалось удалить комментарий');
+    }
+  }, [selectedCandidate?.entity_id]);
+
   const renderVacancyNoteCard = useCallback((note: Record<string, unknown>, i: number) => {
     const stage = note.stage as string | undefined;
     const stageLabel = (note.stage_label as string | undefined)
@@ -1429,6 +1445,16 @@ export default function RecruiterFunnelsPage() {
               <span className="hf-vacancy-note-stage">{stageLabel}</span>
             )}
             <span className="hf-vacancy-note-date">{dateStr}</span>
+            {note.id ? (
+              <button
+                type="button"
+                onClick={() => handleDeleteNote(note.id as string)}
+                title="Удалить комментарий"
+                className="ml-auto flex-shrink-0 rounded p-0.5 text-[var(--hf-main-400)] transition-colors hover:text-[var(--hf-status-red)]"
+              >
+                <Trash2 className="h-[14px] w-[14px]" />
+              </button>
+            ) : null}
           </div>
           <div className="hf-vacancy-note-text">
             {String(note.text)}
@@ -1436,7 +1462,7 @@ export default function RecruiterFunnelsPage() {
         </div>
       </div>
     );
-  }, [getVacancyStageLabel]);
+  }, [getVacancyStageLabel, handleDeleteNote]);
 
   // ─── File attach (Файл button) ───
   const candidateFileInputRef = useRef<HTMLInputElement | null>(null);
