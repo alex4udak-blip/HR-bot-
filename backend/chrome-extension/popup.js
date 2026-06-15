@@ -706,16 +706,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
   }
 });
 
-// Copy form link
-document.getElementById('copyFormLink').addEventListener('click', async () => {
-  const stored = await chrome.storage.local.get(['serverUrl']);
-  const link = (stored.serverUrl || '') + '/form/default';
-  navigator.clipboard.writeText(link).then(() => {
-    const btn = document.getElementById('copyFormLink');
-    btn.textContent = 'Ссылка скопирована!';
-    setTimeout(() => { btn.textContent = 'Копировать ссылку на форму'; }, 2000);
-  });
-});
+// Кнопка «Копировать ссылку на форму» убрана по запросу.
 
 // Add another — сбрасываем форму и подтягиваем активную вкладку через единый
 // загрузчик loadFromActiveTab (он уже умеет re-parse + ретраи).
