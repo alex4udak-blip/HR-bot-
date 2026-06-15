@@ -325,17 +325,25 @@ async function checkDuplicatesOnLoad() {
     // через refresh-ретрай apiRequest (иначе 401 увёл бы на экран входа прямо из
     // авто-проверки) и держим короткий таймаут 12с, чтобы спиннер «Проверяем
     // базу…» не висел. Авторизацию разрулит уже сам «Добавить».
-    const checkResp = await rawApiRequest('POST', '/api/magic-button/check-duplicate', {
+    const dupPayload = {
       full_name: (parsedData.name_is_placeholder && manualNameForCheck) ? manualNameForCheck : parsedData.full_name,
       email: parsedData.email || manualEmail || null,
       phone: parsedData.phone || null,
       telegram: parsedData.telegram || null,
       source_url: parsedData.source_url || null,
-    }, 12000);
+    };
+    let checkResp = await rawApiRequest('POST', '/api/magic-button/check-duplicate', dupPayload, 12000);
+
+    // Access-токен живёт 15 мин. Если он протух — тихо обновим его по refresh-токену
+    // и повторим проверку ОДИН раз, БЕЗ редиректа на экран входа (это фоновая
+    // проверка). Раньше дубль-чек просто падал «⚠️ Не удалось проверить дубликаты»
+    // на любом протухшем токене, хотя «Добавить» (через apiRequest) рефрешил и работал.
+    if (isAuthError(checkResp) && await tryRefresh()) {
+      checkResp = await rawApiRequest('POST', '/api/magic-button/check-duplicate', dupPayload, 12000);
+    }
 
     if (!checkResp.success) {
-      // Проверка упала (авторизация/сеть) — НЕ выдаём ложное «дубликатов нет».
-      // Если это был 401, apiRequest уже увёл на экран входа.
+      // Проверка упала (сеть / нет refresh-токена) — НЕ выдаём ложное «дубликатов нет».
       dupStatus.className = 'dup-status checking';
       dupStatus.innerHTML = '⚠️ Не удалось проверить дубликаты';
       return;
