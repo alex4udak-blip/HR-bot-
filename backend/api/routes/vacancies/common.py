@@ -573,6 +573,7 @@ class ApplicationUpdate(BaseModel):
     rejection_reason: Optional[str] = None
     interview_summary: Optional[str] = None
     next_interview_at: Optional[datetime] = None
+    comment: Optional[str] = None  # коммент к переходу этапа (пишется в историю, не поле заявки)
 
 
 class ApplicationResponse(BaseModel):

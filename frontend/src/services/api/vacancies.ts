@@ -80,6 +80,7 @@ export interface ApplicationUpdate {
   notes?: string;
   rejection_reason?: string;
   next_interview_at?: string;
+  comment?: string;
 }
 
 export const getVacancies = async (filters?: VacancyFilters): Promise<Vacancy[]> => {

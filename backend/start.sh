@@ -309,6 +309,24 @@ async def ensure_shadow_columns():
             print('Adding pending_review value to vacancystatus enum...')
             await raw_conn.execute(text(\"ALTER TYPE vacancystatus ADD VALUE 'pending_review'\"))
             print('Added pending_review to vacancystatus enum')
+
+        # Add 'reserve' to applicationstage enum (этап «Резерв»)
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'reserve' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'applicationstage'))\"
+        ))
+        if not result.scalar():
+            print('Adding reserve value to applicationstage enum...')
+            await raw_conn.execute(text(\"ALTER TYPE applicationstage ADD VALUE 'reserve'\"))
+            print('Added reserve to applicationstage enum')
+
+        # Add 'reserve' to entitystatus enum
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'reserve' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'entitystatus'))\"
+        ))
+        if not result.scalar():
+            print('Adding reserve value to entitystatus enum...')
+            await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'reserve'\"))
+            print('Added reserve to entitystatus enum')
     await raw_engine.dispose()
 
     # One-time data migration: legacy draft → pending_review

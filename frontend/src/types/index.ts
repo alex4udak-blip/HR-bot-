@@ -222,6 +222,7 @@ export type EntityStatus =
   | 'offer'           // Оффер
   | 'hired'           // Принят
   | 'rejected'        // Отклонён
+  | 'reserve'         // Резерв
   // General statuses
   | 'active'
   | 'paused'
@@ -475,6 +476,7 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
   hired: 'Принят',
   rejected: 'Отказ',
   withdrawn: 'Отозван',
+  reserve: 'Резерв',
   // General/Legacy statuses
   active: 'Активный',
   paused: 'На паузе',
@@ -499,6 +501,7 @@ export const STATUS_COLORS: Record<EntityStatus, string> = {
   hired: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
   rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
   withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
+  reserve: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
   // General/Legacy
   active: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]',
   paused: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]',
@@ -548,7 +551,8 @@ export type ApplicationStage =
   | 'offer'         // Оффер
   | 'hired'         // Принят
   | 'rejected'      // Отказ
-  | 'withdrawn';    // Отозван
+  | 'withdrawn'     // Отозван
+  | 'reserve';      // Резерв
 
 // Main pipeline stages in order (using existing PostgreSQL enum values)
 export const PIPELINE_STAGES: ApplicationStage[] = [
@@ -740,7 +744,8 @@ export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
   offer: 'Оффер',
   hired: 'Принят',
   rejected: 'Отклонён',
-  withdrawn: 'Отозван'
+  withdrawn: 'Отозван',
+  reserve: 'Резерв'
 };
 
 export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
@@ -753,7 +758,8 @@ export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
   offer: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)] border-[color:var(--hf-status-yellow-badge)]',
   hired: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
   rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
-  withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]'
+  withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
+  reserve: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]'
 };
 
 // Map EntityStatus to ApplicationStage for synchronization logic
@@ -766,6 +772,7 @@ export const STATUS_TO_STAGE_MAP: Partial<Record<EntityStatus, ApplicationStage>
   offer: 'offer',
   hired: 'hired',
   rejected: 'rejected',
+  reserve: 'reserve',
   // Legacy aliases
   applied: 'applied',
   phone_screen: 'phone_screen',
@@ -782,7 +789,8 @@ export const STAGE_TO_STATUS_MAP: Record<ApplicationStage, EntityStatus> = {
   offer: 'offer',
   hired: 'hired',
   rejected: 'rejected',
-  withdrawn: 'withdrawn'
+  withdrawn: 'withdrawn',
+  reserve: 'reserve'
 };
 
 export const EMPLOYMENT_TYPES = [

@@ -63,6 +63,7 @@ class EntityStatus(str, enum.Enum):
     offer = "offer"               # Оффер - offer extended
     hired = "hired"               # Принят - accepted and hired
     rejected = "rejected"         # Отказ - rejected
+    reserve = "reserve"           # Резерв - отложен в резерв
 
     # General entity statuses (for clients, partners, etc.)
     interview = "interview"       # Legacy: interview stage
@@ -148,6 +149,7 @@ class ApplicationStage(str, enum.Enum):
     hired = "hired"               # Принят - accepted and hired
     rejected = "rejected"         # Отказ - rejected at any stage
     withdrawn = "withdrawn"       # Отозван - candidate withdrew
+    reserve = "reserve"           # Резерв - отложен в резерв
 
     # Deprecated values (these do NOT exist in PostgreSQL enum and will cause errors)
     # DO NOT USE these - they were added but never migrated to the database:
@@ -166,6 +168,7 @@ STATUS_SYNC_MAP = {
     EntityStatus.offer: ApplicationStage.offer,
     EntityStatus.hired: ApplicationStage.hired,
     EntityStatus.rejected: ApplicationStage.rejected,
+    EntityStatus.reserve: ApplicationStage.reserve,
 }
 
 STAGE_SYNC_MAP = {v: k for k, v in STATUS_SYNC_MAP.items()}

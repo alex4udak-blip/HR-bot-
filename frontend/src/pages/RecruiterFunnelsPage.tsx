@@ -87,7 +87,7 @@ const getRecruiterStatusDotClass = (status: VacancyStatus) => {
 
 const STAGE_ORDER = [
   'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'rejected', 'withdrawn',
+  'assessment', 'offer', 'hired', 'rejected', 'withdrawn', 'reserve',
 ] as const;
 
 // Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
@@ -102,6 +102,7 @@ const STAGE_LABELS: Record<string, string> = {
   hired: 'Принят',
   rejected: 'Отклонён',
   withdrawn: 'Отозван',
+  reserve: 'Резерв',
 };
 
 const formatVacancyListDate = (date?: string | null) => {
@@ -131,6 +132,7 @@ const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badg
   hired:        { bg: 'bg-[var(--hf-status-green-bg)]',   text: 'text-[var(--hf-status-green)]',   dot: 'bg-[var(--hf-status-green)]',   badge: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' },
   rejected:     { bg: 'bg-[var(--hf-status-red-bg)]',     text: 'text-[var(--hf-status-red)]',     dot: 'bg-[var(--hf-status-red)]',     badge: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]' },
   withdrawn:    { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
+  reserve:      { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
   // Extra colors for custom stages
   pink:         { bg: 'bg-[var(--hf-status-pink-bg)]',    text: 'text-[var(--hf-status-pink)]',    dot: 'bg-[var(--hf-status-pink)]',    badge: 'bg-[var(--hf-status-pink-badge)] text-[var(--hf-status-pink)]' },
   teal:         { bg: 'bg-[var(--hf-status-teal-bg)]',    text: 'text-[var(--hf-status-teal)]',    dot: 'bg-[var(--hf-status-teal)]',    badge: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)]' },
@@ -1189,9 +1191,9 @@ export default function RecruiterFunnelsPage() {
   };
 
   // Change candidate stage
-  const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage) => {
+  const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage, comment?: string) => {
     try {
-      await updateApplication(applicationId, { stage: newStage });
+      await updateApplication(applicationId, { stage: newStage, ...(comment ? { comment } : {}) });
       // Локально двигаем кандидата на новый этап.
       setCandidates((prev) =>
         prev.map((c) => c.id === applicationId ? { ...c, stage: newStage } : c)
@@ -1382,11 +1384,13 @@ export default function RecruiterFunnelsPage() {
     if (!selectedCandidate) return;
     const target = (stagePickerPending ?? (selectedCandidate.stage as ApplicationStage)) as ApplicationStage;
     const text = stagePickerComment.trim();
-    if (text) {
+    const isMove = target !== selectedCandidate.stage;
+    if (isMove) {
+      // Коммент уходит В САМ переход → в истории «X → Y: текст», отдельную заметку не создаём.
+      await handleStageChange(selectedCandidate.id, target, text || undefined);
+    } else if (text) {
+      // Без смены этапа — обычный коммент к текущему этапу.
       await saveEntityNote(text, target as string, getVacancyStageLabel(target as string));
-    }
-    if (target !== selectedCandidate.stage) {
-      await handleStageChange(selectedCandidate.id, target);
     }
     setStagePickerComment('');
     setStagePickerOpen(false);

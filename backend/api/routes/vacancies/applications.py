@@ -343,6 +343,8 @@ async def update_application(
 
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
+    # comment — не поле VacancyApplication, а коммент к переходу (пишется в историю).
+    transition_comment = update_data.pop("comment", None)
     for field, value in update_data.items():
         if field != 'stage_order' or data.stage_order is not None:  # Don't override auto-calculated order
             setattr(application, field, value)
@@ -373,6 +375,7 @@ async def update_application(
             from_stage=old_stage.value if old_stage else None,
             to_stage=data.stage.value,
             changed_by_id=current_user.id,
+            comment=transition_comment,
         )
 
     await db.commit()
