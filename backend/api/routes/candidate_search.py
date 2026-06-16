@@ -688,7 +688,7 @@ async def list_tags(
 # GET /kanban  — candidates grouped by status for kanban board
 # ---------------------------------------------------------------------------
 
-KANBAN_STATUSES = ["new", "screening", "practice", "tech_practice", "is_interview", "offer", "hired", "rejected", "withdrawn", "reserve"]
+KANBAN_STATUSES = ["new", "screening", "practice", "tech_practice", "is_interview", "offer", "hired", "rejected", "reserve"]
 
 KANBAN_STATUS_LABELS = {
     "new": "Новый",

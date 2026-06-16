@@ -407,7 +407,7 @@ export default function EmployeesOrgChartPage() {
             </div>
             {sel.kind === 'emp' && (
               <div className="p-4 border-t border-card-border-soft">
-                <button type="button" onClick={() => navigate('/factorial/profile')} className="w-full px-3 py-2 rounded-fx-lg text-fx-sm font-medium bg-primary text-white hover:bg-primary-hover">Перейти в профиль</button>
+                <button type="button" onClick={() => sel.empId && navigate('/factorial/employees/' + sel.empId)} className="w-full px-3 py-2 rounded-fx-lg text-fx-sm font-medium bg-primary text-white hover:bg-primary-hover">Перейти в профиль</button>
               </div>
             )}
           </div>

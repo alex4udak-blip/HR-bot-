@@ -629,13 +629,10 @@ async def take_vacancy(
     cloned_extra = dict(source.extra_data or {})
     cloned_extra['cloned_from_request_id'] = source.id
 
-    # Оригинал-заявка переходит в статус 'open' (если был draft/paused),
-    # сигнализируя что её взяли в работу. Сама заявка остаётся доступной
-    # другим назначенным рекрутёрам.
-    if source.status in (VacancyStatus.draft, VacancyStatus.pending_review, VacancyStatus.paused):
-        source.status = VacancyStatus.open
-        if not source.published_at:
-            source.published_at = datetime.utcnow()
+    # Оригинал-заявку НЕ переводим в 'open': иначе она висела бы открытой
+    # вакансией рядом со своим клоном (рабочей копией) — отсюда дубли в списках
+    # «Мои вакансии»/«Взять на вакансию». Заявка остаётся в исходном статусе и
+    # доступна другим назначенным рекрутёрам; рабочей вакансией становится клон.
 
     clone_kwargs = dict(
         org_id=source.org_id,

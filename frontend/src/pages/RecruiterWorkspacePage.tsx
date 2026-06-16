@@ -12,7 +12,7 @@ import * as workspacesApi from '@/services/api/workspaces';
 
 const STAGE_ORDER = [
   'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'rejected', 'withdrawn',
+  'assessment', 'offer', 'hired', 'rejected',
 ] as const;
 
 const STAGE_LABELS: Record<string, string> = {

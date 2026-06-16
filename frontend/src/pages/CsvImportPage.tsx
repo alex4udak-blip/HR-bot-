@@ -65,6 +65,7 @@ const STATUS_OPTIONS: { value: EntityStatus; label: string }[] = [
   { value: 'hired', label: STATUS_LABELS.hired },
   { value: 'rejected', label: STATUS_LABELS.rejected },
   { value: 'withdrawn', label: STATUS_LABELS.withdrawn },
+  { value: 'reserve', label: STATUS_LABELS.reserve },
 ];
 
 const stepVariants = {
@@ -496,7 +497,7 @@ export default function CsvImportPage() {
                         className="w-4 h-4 rounded border-white/20 bg-white/[0.04] text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
                       />
                       <span className="text-sm text-white/70">
-                        Пропускать дубликаты по email
+                        Пропускать дубликаты (по телефону / Telegram / email)
                       </span>
                     </label>
                   </div>

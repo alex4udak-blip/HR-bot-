@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Users, Trash2, FolderInput, Download, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { ColumnDef } from '@tanstack/react-table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
@@ -58,16 +59,34 @@ export default function EmployeesPage() {
     qc.invalidateQueries({ queryKey: ['fx', 'org-chart'] });
   };
 
+  // allSettled: пытаемся обработать ВСЕХ выбранных, считаем частичные ошибки и
+  // всегда показываем фидбэк — деструктивное действие не должно падать молча.
   const dismissM = useMutation({
-    mutationFn: async () => { for (const id of Array.from(selected)) await dismissEmployee(id); },
-    onSuccess: () => { refresh(); clear(); },
+    mutationFn: async () => {
+      const ids = Array.from(selected);
+      const res = await Promise.allSettled(ids.map((id) => dismissEmployee(id)));
+      return { total: ids.length, failed: res.filter((r) => r.status === 'rejected').length };
+    },
+    onSuccess: ({ total, failed }) => {
+      refresh(); clear();
+      if (failed) toast.error(`Уволено ${total - failed} из ${total}, ошибок: ${failed}`);
+      else toast.success(`Уволено: ${total}`);
+    },
+    onError: () => toast.error('Не удалось уволить выбранных'),
   });
   const moveM = useMutation({
     mutationFn: async () => {
       const unitId = moveUnit ? Number(moveUnit) : null;
-      for (const id of Array.from(selected)) await assignEmployee(id, unitId);
+      const ids = Array.from(selected);
+      const res = await Promise.allSettled(ids.map((id) => assignEmployee(id, unitId)));
+      return { total: ids.length, failed: res.filter((r) => r.status === 'rejected').length };
     },
-    onSuccess: () => { refresh(); clear(); setMoveOpen(false); setMoveUnit(''); },
+    onSuccess: ({ total, failed }) => {
+      refresh(); clear(); setMoveOpen(false); setMoveUnit('');
+      if (failed) toast.error(`Перемещено ${total - failed} из ${total}, ошибок: ${failed}`);
+      else toast.success(`Перемещено: ${total}`);
+    },
+    onError: () => toast.error('Не удалось переместить выбранных'),
   });
 
   const onDismiss = () => {

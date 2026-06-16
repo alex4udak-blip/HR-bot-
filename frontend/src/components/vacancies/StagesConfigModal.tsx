@@ -29,7 +29,7 @@ const DEFAULT_STAGES: StageColumn[] = [
 // Real DB enum values that virtual stages can map to
 const ENUM_VALUES: ApplicationStage[] = [
   'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'rejected', 'withdrawn'
+  'assessment', 'offer', 'hired', 'rejected'
 ];
 
 interface StagesConfigModalProps {

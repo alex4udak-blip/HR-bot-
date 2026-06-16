@@ -1438,6 +1438,18 @@ export default function Layout() {
                     />
                     Аналитика
                   </NavLink>
+                  <NavLink
+                    to="/import"
+                    className={({ isActive }) =>
+                      clsx(
+                        "hf-hr-nav-item",
+                        isActive && "hf-hr-nav-item-active",
+                      )
+                    }
+                  >
+                    <FileText className="hf-hr-nav-icon" size={20} />
+                    Импорт CSV
+                  </NavLink>
                 </div>
 
                 <div className="hf-hr-sidebar-divider hf-hr-sidebar-divider-requests" />

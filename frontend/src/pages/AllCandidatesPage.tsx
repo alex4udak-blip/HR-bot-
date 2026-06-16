@@ -3169,6 +3169,173 @@ const CommentCard = memo(function CommentCard({
 // RESUME TAB
 // ================================================================
 
+// ---------- Imported (ClickUp) questionnaire ----------
+// Кандидаты, импортированные из ClickUp, не имеют сгенерированного резюме.
+// Вместо заглушки показываем их анкету: все cf:* поля (вопрос → ответ),
+// местоположение и — свёрнуто — исходное описание задачи ClickUp.
+// Данные приходят как есть в card.extra_data (бэк ничего не вырезает).
+const IMPORT_QUESTIONNAIRE_EXTRA_LABELS: Record<string, string> = {
+  location: "Местонахождение",
+};
+
+function linkifyText(text: string) {
+  const parts = text.split(/(https?:\/\/[^\s]+)/g);
+  return parts.map((part, i) =>
+    /^https?:\/\//.test(part) ? (
+      <a
+        key={i}
+        href={part}
+        target="_blank"
+        rel="noreferrer"
+        className="text-[var(--hf-cyan-700)] underline break-all hf-dark-disabled:text-[var(--hf-cyan-400)]"
+      >
+        {part}
+      </a>
+    ) : (
+      <Fragment key={i}>{part}</Fragment>
+    ),
+  );
+}
+
+function normalizeImportedValue(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v))
+    return v.map((x) => normalizeImportedValue(x)).filter(Boolean).join(", ");
+  return "";
+}
+
+// Разбор текста формы (ClickBot Form Submission) из extra_data.description:
+// строки вида "Вопрос:" → ответ(ы) до следующего вопроса. Это ЕДИНСТВЕННЫЙ
+// достоверный источник пар «вопрос-ответ»: кастомные поля ClickUp (cf:*)
+// подписаны неверно из-за переиспользования слотов формы со временем,
+// поэтому их пары вопрос↔ответ не совпадают (ответ про «финансовый результат»
+// оказывается под колонкой «хачить» и т.п.).
+type QaPair = { question: string; answer: string };
+
+function parseFormSubmission(description: string): QaPair[] {
+  if (!description) return [];
+  const pairs: QaPair[] = [];
+  let question: string | null = null;
+  let answer: string[] = [];
+  const flush = () => {
+    if (question != null) {
+      pairs.push({
+        question: question.replace(/:+\s*$/, "").trim(),
+        answer: answer.join("\n").trim(),
+      });
+    }
+  };
+  for (const rawLine of description.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.endsWith(":")) {
+      flush();
+      question = line;
+      answer = [];
+    } else if (question != null) {
+      answer.push(rawLine);
+    }
+  }
+  flush();
+  return pairs.filter((p) => p.question);
+}
+
+function getImportedQuestionnaire(card: KanbanCard): {
+  rows: Array<{ label: string; value: string }>;
+  clickupUrl: string | null;
+} {
+  const ed = card.extra_data as Record<string, unknown> | undefined;
+  let rows: Array<{ label: string; value: string }> = [];
+  let clickupUrl: string | null = null;
+  if (ed) {
+    clickupUrl = typeof ed.clickup_url === "string" ? ed.clickup_url : null;
+
+    // 1) Структурированные пары, если бэк их когда-нибудь положит сам.
+    const formQa = ed.form_qa;
+    if (Array.isArray(formQa) && formQa.length > 0) {
+      rows = formQa
+        .map((p) => {
+          const o = (p ?? {}) as Record<string, unknown>;
+          return {
+            label: normalizeImportedValue(o.question ?? o.q),
+            value: normalizeImportedValue(o.answer ?? o.a),
+          };
+        })
+        .filter((r) => r.label && r.value);
+    }
+
+    // 2) Иначе парсим текст формы из description — достоверные пары Q→A.
+    if (rows.length === 0) {
+      rows = parseFormSubmission(normalizeImportedValue(ed.description))
+        .map((p) => ({ label: p.question, value: p.answer }))
+        .filter((r) => r.label && r.value);
+    }
+
+    // 3) Фолбэк (списки без формы): сырые cf:* поля как есть.
+    if (rows.length === 0) {
+      for (const [k, raw] of Object.entries(ed)) {
+        let label: string | null = null;
+        if (k.startsWith("cf:")) label = k.slice(3).trim();
+        else if (k in IMPORT_QUESTIONNAIRE_EXTRA_LABELS)
+          label = IMPORT_QUESTIONNAIRE_EXTRA_LABELS[k];
+        else continue;
+        const value = normalizeImportedValue(raw);
+        if (!value || value === "-" || value === "–") continue;
+        rows.push({ label: label || k, value });
+      }
+    }
+  }
+  return { rows, clickupUrl };
+}
+
+const ImportedQuestionnaire = memo(function ImportedQuestionnaire({
+  card,
+}: {
+  card: KanbanCard;
+}) {
+  const { rows, clickupUrl } = getImportedQuestionnaire(card);
+  if (rows.length === 0) return null;
+  return (
+    <div className="p-5 max-w-3xl space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+          Анкета кандидата
+        </h3>
+        {clickupUrl && (
+          <a
+            href={clickupUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-[var(--hf-cyan-700)] hover:underline hf-dark-disabled:text-[var(--hf-cyan-400)]"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Открыть в ClickUp
+          </a>
+        )}
+      </div>
+      {rows.length > 0 && (
+        <div className="rounded-lg border border-[color:var(--hf-main-200)] overflow-hidden hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
+          {rows.map((r, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-1 gap-1 border-b border-[color:var(--hf-main-100)] px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(150px,240px)_1fr] sm:gap-4 hf-dark-disabled:border-[color:var(--hf-white-alpha-05)]"
+            >
+              <div className="text-xs font-medium text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+                {r.label}
+              </div>
+              <div className="whitespace-pre-wrap break-words text-sm text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                {linkifyText(r.value)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   const [files, setFiles] = useState<EntityFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3304,6 +3471,10 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   }
 
   if (resumeFiles.length === 0 && !resumeDemo) {
+    const importedQuestionnaire = getImportedQuestionnaire(card);
+    if (importedQuestionnaire.rows.length > 0) {
+      return <ImportedQuestionnaire card={card} />;
+    }
     return (
       <div className="p-5 max-w-3xl">
         <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-[var(--hf-dark-500)] text-sm min-h-[200px] flex flex-col items-center justify-center gap-2">

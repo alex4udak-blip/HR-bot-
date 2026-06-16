@@ -87,7 +87,7 @@ const getRecruiterStatusDotClass = (status: VacancyStatus) => {
 
 const STAGE_ORDER = [
   'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'rejected', 'withdrawn', 'reserve',
+  'assessment', 'offer', 'hired', 'rejected', 'reserve',
 ] as const;
 
 // Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS

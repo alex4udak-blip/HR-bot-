@@ -519,7 +519,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   type="number"
                   min={0}
                   value={formData.salary_min || formData.salary_max}
-                  onChange={(e) => setFormData({ ...formData, salary_min: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, salary_min: e.target.value, salary_max: e.target.value })}
                   disabled={isReadOnlyRequest}
                   className="hf-vacancy-input hf-vacancy-salary-input"
                 />

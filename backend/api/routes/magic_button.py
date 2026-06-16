@@ -350,7 +350,9 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             return int(cleaned) if cleaned else 0
         numbers = re.findall(r'[\d\s\u00A0\u2009\u202F]+', data.salary)
         nums = [_to_int(n) for n in numbers if any(c.isdigit() for c in n)]
-        nums = [n for n in nums if n > 100]
+        # Отбрасываем мусорные числа: слишком мелкие и больше INT-предела Postgres
+        # (иначе expected_salary_* падали на commit → 500 при добавлении из расширения).
+        nums = [n for n in nums if 100 < n <= 2_147_483_647]
         if len(nums) >= 2:
             salary_min = min(nums)
             salary_max = max(nums)

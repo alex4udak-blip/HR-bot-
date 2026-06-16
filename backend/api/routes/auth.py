@@ -537,7 +537,6 @@ DEFAULT_ORG_STAGES = [
     {"key": "offer",         "label": "Выставлен оффер",       "color": "#eab308"},
     {"key": "hired",         "label": "Оффер принят",          "color": "#22c55e"},
     {"key": "rejected",      "label": "Отказ",                 "color": "#ef4444"},
-    {"key": "withdrawn",     "label": "Отозван",               "color": "#9ca3af"},
     {"key": "reserve",       "label": "Резерв",                "color": "#6b7280"},
 ]
 ALLOWED_STAGE_KEYS = {s["key"] for s in DEFAULT_ORG_STAGES}

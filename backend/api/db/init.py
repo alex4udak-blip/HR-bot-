@@ -141,6 +141,13 @@ async def init_database():
     for status_val in HR_PIPELINE_STAGES:
         await run_migration(engine, f"ALTER TYPE entitystatus ADD VALUE IF NOT EXISTS '{status_val}'", f"Add {status_val} to entitystatus enum")
 
+    # Step 2.4: Add archival/terminal statuses present in EntityStatus model but
+    # missing from the original PG enum (withdrawn = candidate withdrew, reserve =
+    # imported/archived candidates e.g. ClickUp backlog). Without this the enum
+    # drifts from the model and INSERTs crash with "invalid input value for enum".
+    for status_val in ('withdrawn', 'reserve'):
+        await run_migration(engine, f"ALTER TYPE entitystatus ADD VALUE IF NOT EXISTS '{status_val}'", f"Add {status_val} to entitystatus enum")
+
     # Step 3: Create all tables
     logger.info("Creating tables with create_all...")
     try:

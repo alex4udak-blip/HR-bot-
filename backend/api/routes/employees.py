@@ -615,7 +615,9 @@ async def import_template(
     with_example = False
     if id is not None:
         emp = (await db.execute(
-            select(Employee).options(selectinload(Employee.user)).where(Employee.id == id)
+            select(Employee).options(selectinload(Employee.user)).where(
+                Employee.id == id, Employee.org_id == org.id
+            )
         )).scalar_one_or_none()
         if not emp:
             raise HTTPException(status_code=404, detail="Employee not found")
@@ -680,12 +682,18 @@ async def update_my_profile(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee profile not found")
 
+    # Self-service: сотрудник правит ТОЛЬКО безопасные поля. Привилегированные
+    # (счётчики отпусков/больничных, подписание NDA/договора и их даты, дата
+    # найма, отдел) меняет только HR через PUT /{employee_id}.
+    SELF_EDITABLE = {"position", "phone", "telegram_username", "extra_data"}
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
-        setattr(emp, field, value)
-
-    if "department_start_date" in update_data:
-        _auto_calculate_dates(emp)
+        if field not in SELF_EDITABLE:
+            continue
+        if field == "extra_data":
+            emp.extra_data = _merge_extra(emp.extra_data, value)
+        else:
+            setattr(emp, field, value)
 
     emp.vacation_days_total = _calculate_vacation_days(emp.department_start_date)
     emp.updated_at = datetime.utcnow()
@@ -903,7 +911,11 @@ async def update_employee(
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
-        setattr(emp, field, value)
+        if field == "extra_data":
+            # Мёржим, чтобы частичный extra_data не затирал passport/documents и пр.
+            emp.extra_data = _merge_extra(emp.extra_data, value)
+        else:
+            setattr(emp, field, value)
 
     # Recalculate dates if department_start_date changed
     if "department_start_date" in update_data:

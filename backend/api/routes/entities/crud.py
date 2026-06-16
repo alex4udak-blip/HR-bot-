@@ -155,9 +155,11 @@ async def list_entities(
                 Entity.email.ilike(f"%{identifier_term}%"),
                 Entity.phone.ilike(f"%{identifier_term}%"),
                 # For JSON arrays, use PostgreSQL's JSONB operators
-                func.jsonb_array_length(Entity.emails) > 0 and Entity.emails.op('@>')(func.jsonb_build_array(identifier_term)),
-                func.jsonb_array_length(Entity.phones) > 0 and Entity.phones.op('@>')(func.jsonb_build_array(identifier_term)),
-                func.jsonb_array_length(Entity.telegram_usernames) > 0 and Entity.telegram_usernames.op('@>')(func.jsonb_build_array(normalized_username))
+                # Поиск по JSON-массивам через @> (Python-оператор and на ClauseElement
+                # тут ронял запрос TypeError; @> сам корректно обрабатывает NULL/пустые).
+                Entity.emails.op('@>')(func.jsonb_build_array(identifier_term)),
+                Entity.phones.op('@>')(func.jsonb_build_array(identifier_term)),
+                Entity.telegram_usernames.op('@>')(func.jsonb_build_array(normalized_username))
             )
         )
     if tags:
@@ -846,19 +848,20 @@ async def update_entity(
     if 'status' in update_data and data.status in STATUS_SYNC_MAP:
         new_stage = STATUS_SYNC_MAP[data.status]
         # Find active application for this entity
-        app_result = await db.execute(
+        apps = (await db.execute(
             select(VacancyApplication)
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
             .where(
                 VacancyApplication.entity_id == entity_id,
                 Vacancy.status != VacancyStatus.closed
             )
-        )
-        application = app_result.scalar()
-        if application and application.stage != new_stage:
-            application.stage = new_stage
-            application.last_stage_change_at = datetime.utcnow()
-            logger.info(f"PUT /entities/{entity_id}: Synchronized status {data.status} -> application {application.id} stage {new_stage}")
+        )).scalars().all()
+        # Синхронизируем этап ТОЛЬКО когда отклик ровно один — иначе непонятно,
+        # в какой вакансии менять этап, и можно затереть чужую воронку.
+        if len(apps) == 1 and apps[0].stage != new_stage:
+            apps[0].stage = new_stage
+            apps[0].last_stage_change_at = datetime.utcnow()
+            logger.info(f"PUT /entities/{entity_id}: Synchronized status {data.status} -> application {apps[0].id} stage {new_stage}")
 
     await db.commit()
     await db.refresh(entity)
@@ -1161,19 +1164,19 @@ async def update_entity_status(
     if data.status in STATUS_SYNC_MAP:
         new_stage = STATUS_SYNC_MAP[data.status]
         # Find active application for this entity
-        app_result = await db.execute(
+        apps = (await db.execute(
             select(VacancyApplication)
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
             .where(
                 VacancyApplication.entity_id == entity_id,
                 Vacancy.status != VacancyStatus.closed
             )
-        )
-        application = app_result.scalar()
-        if application and application.stage != new_stage:
-            application.stage = new_stage
-            application.last_stage_change_at = datetime.utcnow()
-            logger.info(f"Synchronized entity {entity_id} status {data.status} to application {application.id} stage {new_stage}")
+        )).scalars().all()
+        # Только при единственном отклике (см. PUT /entities) — иначе не трогаем.
+        if len(apps) == 1 and apps[0].stage != new_stage:
+            apps[0].stage = new_stage
+            apps[0].last_stage_change_at = datetime.utcnow()
+            logger.info(f"Synchronized entity {entity_id} status {data.status} to application {apps[0].id} stage {new_stage}")
 
     await db.commit()
     await db.refresh(entity)
