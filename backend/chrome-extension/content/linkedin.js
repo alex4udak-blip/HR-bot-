@@ -1,122 +1,209 @@
-(function () {
+(function() {
+  // Guard от двойного inject (manifest matches + programmatic).
   if (window.__hr_bot_linkedin_loaded__) return;
   window.__hr_bot_linkedin_loaded__ = true;
 
-  const E = window.__ENC__ || {};
-
-  // Имя из document.title — самый устойчивый якорь LinkedIn (классы обфусцированы,
-  // тега <h1> на странице профиля нет). Формат: "(N) Имя Фамилия | LinkedIn".
-  function nameFromTitle() {
-    let t = (document.title || '').trim();
-    t = t.replace(/^\(\d+\)\s*/, '');                 // счётчик уведомлений
-    t = t.replace(/\s*[|·\-–]\s*LinkedIn.*$/i, '');   // суффикс "| LinkedIn"
-    return t.replace(/\s*\|\s*$/, '').trim();
-  }
-
-  function metaContent(prop) {
-    const el = document.querySelector('meta[property="' + prop + '"], meta[name="' + prop + '"]');
-    return el ? (el.getAttribute('content') || '').trim() : '';
-  }
-
-  // Видимый текст из span[aria-hidden="true"] — устойчивый паттерн LinkedIn
-  // (видимый текст дублируется в aria-hidden span, без обфусцированных классов).
-  function visibleSpans(root) {
-    const out = [];
-    root.querySelectorAll('span[aria-hidden="true"]').forEach(s => {
-      const t = (s.textContent || '').replace(/\s+/g, ' ').trim();
-      if (t && t.length > 1 && t.length < 200) out.push(t);
-    });
-    return out;
-  }
-
-  // Классифицируем <section> по тексту её <h2> (структурный якорь, не классы).
-  function classifySection(sec) {
-    const h = sec.querySelector('h2');
-    const t = ((h && h.textContent) || '').toLowerCase();
-    if (/опыт работы|\bexperience\b|опыт/.test(t)) return 'experience';
-    if (/образован|\beducation\b/.test(t)) return 'education';
-    if (/навыки|\bskills\b/.test(t)) return 'skills';
-    if (/язык|\blanguages?\b/.test(t)) return 'languages';
-    return null;
-  }
-
   function parseLinkedIn() {
     const data = {
-      source: 'linkedin.com', source_url: window.location.href,
-      full_name: '', email: '', phone: '', telegram: '', position: '',
-      city: '', company: '', experience_summary: '', total_experience: '',
-      skills: [], languages: [], education: [],
+      source: 'linkedin.com',
+      source_url: window.location.href,
+      full_name: '',
+      email: '',
+      phone: '',
+      telegram: '',
+      position: '',
+      city: '',
+      company: '',
+      experience_summary: '',
+      total_experience: '',
+      skills: [],
+      languages: [],
     };
 
-    data.full_name = nameFromTitle();
+    // --- Name ---
+    const nameEl = document.querySelector('.text-heading-xlarge') || document.querySelector('h1');
+    if (nameEl) data.full_name = nameEl.textContent.trim();
 
+    // --- Position/headline ---
+    const posEl = document.querySelector('.text-body-medium.break-words') || document.querySelector('.text-body-medium');
+    if (posEl) data.position = posEl.textContent.trim();
+
+    // --- Location/city ---
+    const locEl = document.querySelector('.text-body-small.inline.t-black--light.break-words')
+      || document.querySelector('span.text-body-small[class*="t-black--light"]');
+    if (locEl) data.city = locEl.textContent.trim();
+
+    // --- Current company from "Experience" section or top card ---
+    // Top card often shows "Company Name" as a link
+    const topCompanyEl = document.querySelector('.pv-text-details__right-panel-item-text')
+      || document.querySelector('div[class*="inline-show-more-text"] span[aria-hidden="true"]');
+    if (topCompanyEl) {
+      const companyText = topCompanyEl.textContent.trim();
+      if (companyText && !companyText.includes('connection') && !companyText.includes('follower')) {
+        data.company = companyText;
+      }
+    }
+
+    // --- Experience section ---
     const experiences = [];
-    document.querySelectorAll('section').forEach(sec => {
-      const kind = classifySection(sec);
-      if (!kind) return;
-      const items = sec.querySelectorAll('li');
-      if (kind === 'experience') {
-        items.forEach((li, i) => {
-          if (i >= 6) return;
-          const sp = visibleSpans(li);
-          if (sp.length) {
-            experiences.push(sp.slice(0, 3).join(' | '));
-            if (i === 0 && sp.length >= 2 && !data.company) data.company = sp[1];
+    // New LinkedIn layout: experience items in section#experience
+    const expSection = document.getElementById('experience')
+      || document.querySelector('section[id="experience"]');
+    if (expSection) {
+      // The section element is followed by a div with the list
+      const expContainer = expSection.closest('section')
+        || expSection.parentElement?.closest('section')
+        || expSection.parentElement;
+      if (expContainer) {
+        const expItems = expContainer.querySelectorAll('li.artdeco-list__item');
+        expItems.forEach((item, i) => {
+          if (i >= 5) return;
+          const spans = item.querySelectorAll('span[aria-hidden="true"]');
+          const texts = [];
+          spans.forEach(s => {
+            const t = s.textContent.trim();
+            if (t && t.length > 1 && t.length < 200) texts.push(t);
+          });
+          if (texts.length >= 1) {
+            experiences.push(texts.slice(0, 3).join(' | '));
+            // First experience company
+            if (i === 0 && !data.company && texts.length >= 2) {
+              data.company = texts[1]; // Usually position | company | period
+            }
           }
         });
-      } else if (kind === 'skills') {
-        const sk = new Set();
-        sec.querySelectorAll('span[aria-hidden="true"]').forEach(s => {
-          const t = (s.textContent || '').trim();
-          if (t && t.length >= 2 && t.length <= 60 && !/показать|show all|endorse|·/i.test(t)) sk.add(t);
-        });
-        data.skills = [...sk].slice(0, 30);
-      } else if (kind === 'languages') {
-        items.forEach(li => { const sp = visibleSpans(li); if (sp.length) data.languages.push(sp.join(' — ')); });
-      } else if (kind === 'education') {
-        items.forEach((li, i) => { if (i < 3) { const sp = visibleSpans(li); if (sp.length) data.education.push(sp.slice(0, 2).join(' — ')); } });
       }
-    });
+    }
+
+    // Fallback: old layout experience
+    if (experiences.length === 0) {
+      const expListItems = document.querySelectorAll('.pv-entity__position-group-role-item, .pv-profile-section__list-item');
+      expListItems.forEach((item, i) => {
+        if (i >= 5) return;
+        const title = item.querySelector('.t-bold span[aria-hidden="true"]');
+        const company = item.querySelector('.t-normal span[aria-hidden="true"]');
+        const period = item.querySelector('.pv-entity__date-range span:nth-child(2)');
+        const parts = [];
+        if (title) parts.push(title.textContent.trim());
+        if (company) parts.push(company.textContent.trim());
+        if (period) parts.push(period.textContent.trim());
+        if (parts.length > 0) experiences.push(parts.join(' | '));
+        if (i === 0 && company && !data.company) data.company = company.textContent.trim();
+      });
+    }
+
     data.experience_summary = experiences.join('\n');
 
-    // Должность: заголовок текущего места (надёжнее) → иначе хедлайн из og:description.
-    const expTitle = experiences[0] ? experiences[0].split('|')[0].trim() : '';
-    if (expTitle) data.position = expTitle;
-    else {
-      const og = metaContent('og:description');
-      if (og) data.position = og.split(/[·|]| — | - /)[0].trim().slice(0, 120);
+    // --- Skills section ---
+    const skillsSection = document.getElementById('skills')
+      || document.querySelector('section[id="skills"]');
+    if (skillsSection) {
+      const skillContainer = skillsSection.closest('section')
+        || skillsSection.parentElement?.closest('section')
+        || skillsSection.parentElement;
+      if (skillContainer) {
+        const skillSpans = skillContainer.querySelectorAll('span[aria-hidden="true"]');
+        const skills = new Set();
+        skillSpans.forEach(span => {
+          const text = span.textContent.trim();
+          // Filter: real skills — short text, not UI labels
+          if (text && text.length >= 2 && text.length <= 60
+              && !text.includes('Show all')
+              && !text.includes('Показать все')
+              && !text.includes('endorsement')) {
+            skills.add(text);
+          }
+        });
+        data.skills = [...skills].slice(0, 30);
+      }
     }
 
-    // Контакты: только из ссылок (на LinkedIn почти всегда отсутствуют —
-    // тогда поля пустые, рекрутёр дозаполнит вручную).
-    document.querySelectorAll('a[href]').forEach(a => {
-      const href = a.href || '';
-      if (!data.email && href.startsWith('mailto:')) data.email = href.slice(7).split('?')[0];
-      if (!data.phone && href.startsWith('tel:')) data.phone = href.slice(4);
-      if (!data.telegram && href.includes('t.me/')) data.telegram = href;
+    // --- Languages section ---
+    const langSection = document.getElementById('languages')
+      || document.querySelector('section[id="languages"]');
+    if (langSection) {
+      const langContainer = langSection.closest('section')
+        || langSection.parentElement?.closest('section')
+        || langSection.parentElement;
+      if (langContainer) {
+        const langItems = langContainer.querySelectorAll('li');
+        langItems.forEach(item => {
+          const spans = item.querySelectorAll('span[aria-hidden="true"]');
+          const parts = [];
+          spans.forEach(s => {
+            const t = s.textContent.trim();
+            if (t && t.length > 1 && t.length < 60) parts.push(t);
+          });
+          if (parts.length > 0) data.languages.push(parts.join(' — '));
+        });
+      }
+    }
+
+    // --- Education section (for extra context) ---
+    const eduSection = document.getElementById('education')
+      || document.querySelector('section[id="education"]');
+    if (eduSection) {
+      const eduContainer = eduSection.closest('section')
+        || eduSection.parentElement?.closest('section')
+        || eduSection.parentElement;
+      if (eduContainer) {
+        const eduItems = eduContainer.querySelectorAll('li');
+        const education = [];
+        eduItems.forEach((item, i) => {
+          if (i >= 3) return;
+          const spans = item.querySelectorAll('span[aria-hidden="true"]');
+          const parts = [];
+          spans.forEach(s => {
+            const t = s.textContent.trim();
+            if (t && t.length > 1 && t.length < 150) parts.push(t);
+          });
+          if (parts.length > 0) education.push(parts.join(' | '));
+        });
+        data.education = education;
+      }
+    }
+
+    // --- Contact info (try to get from page, limited availability) ---
+    const contactSection = document.querySelector('.pv-contact-info');
+    if (contactSection) {
+      const emailEl = contactSection.querySelector('a[href^="mailto:"]');
+      if (emailEl) data.email = emailEl.textContent.trim();
+
+      const phoneEl = contactSection.querySelector('.t-14.t-black.t-normal');
+      if (phoneEl) {
+        const phoneText = phoneEl.textContent.trim();
+        if (phoneText.match(/^\+?\d/)) data.phone = phoneText;
+      }
+    }
+
+    // Also scan for visible contact links on profile
+    const allLinks = document.querySelectorAll('a[href]');
+    allLinks.forEach(link => {
+      const href = link.href || '';
+      if (!data.email && href.startsWith('mailto:')) {
+        data.email = href.replace('mailto:', '').split('?')[0];
+      }
+      if (!data.telegram && href.includes('t.me/')) {
+        const match = href.match(/t\.me\/([^\/?]+)/);
+        if (match) data.telegram = '@' + match[1];
+      }
     });
 
-    // Имя не получили (очень редко) — плейсхолдер из URL, чтобы карточка была.
-    if (!data.full_name) {
-      const m = window.location.pathname.match(/\/in\/([^/?#]+)/);
-      data.full_name = m ? 'LinkedIn: ' + decodeURIComponent(m[1]) : 'Кандидат LinkedIn';
-      data.name_is_placeholder = true;
-    }
     return data;
   }
 
   function runAndSend() {
-    let data = parseLinkedIn();
-    if (E.sanitizeRecord) data = E.sanitizeRecord(data);
-    console.log('[HR-Bot Magic Button] LinkedIn parsed:', data);
-    chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data });
-    return data;
+    const parsed = parseLinkedIn();
+    console.log('[HR-Bot Magic Button] Parsed LinkedIn data:', parsed);
+    chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data: parsed });
+    return parsed;
   }
   runAndSend();
-  // LinkedIn — SPA: секции догружаются. Пере-парсим ещё раз, обновляя storage.
-  setTimeout(runAndSend, 1500);
 
-  chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
-    if (msg && msg.type === 'RE_PARSE') { sendResponse({ success: true, data: runAndSend() }); }
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg && msg.type === 'RE_PARSE') {
+      const fresh = runAndSend();
+      sendResponse({ success: true, data: fresh });
+    }
   });
 })();
