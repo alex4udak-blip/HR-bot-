@@ -238,7 +238,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     }
   };
 
-  const { createVacancy, updateVacancy } = useVacancyStore();
+  const { createVacancy, updateVacancy, deleteVacancy } = useVacancyStore();
   const [loading, setLoading] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AssignableUser[]>([]);
@@ -352,6 +352,38 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       toast.error(vacancy ? 'Ошибка при обновлении' : 'Ошибка при создании');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Действия над существующей вакансией: закрыть / в архив / удалить.
+  const [statusAction, setStatusAction] = useState(false);
+  const runStatusAction = async (status: VacancyStatus, msg: string) => {
+    if (!vacancy) return;
+    setStatusAction(true);
+    try {
+      await updateVacancy(vacancy.id, { status });
+      toast.success(msg);
+      onSuccess();
+      onClose();
+    } catch (_) {
+      toast.error('Не удалось изменить статус вакансии');
+    } finally {
+      setStatusAction(false);
+    }
+  };
+  const handleDeleteVacancy = async () => {
+    if (!vacancy) return;
+    if (!window.confirm('Удалить вакансию навсегда? Её заявки и история тоже удалятся. Действие необратимо.')) return;
+    setStatusAction(true);
+    try {
+      await deleteVacancy(vacancy.id);
+      toast.success('Вакансия удалена');
+      onSuccess();
+      onClose();
+    } catch (_) {
+      toast.error('Не удалось удалить вакансию');
+    } finally {
+      setStatusAction(false);
     }
   };
 
@@ -636,6 +668,35 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     disabled={isReadOnlyRequest}
                   />
                 </div>
+                {vacancy && !isReadOnlyRequest && (
+                  <div className="mt-[var(--hf-space-l)] pt-[var(--hf-space-l)] border-t border-[var(--hf-ui-border)] flex flex-col gap-[8px]">
+                    <span className={hfLabelClass}>Действия с вакансией</span>
+                    <button
+                      type="button"
+                      onClick={() => runStatusAction('closed', 'Вакансия закрыта')}
+                      disabled={statusAction}
+                      className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
+                    >
+                      Закрыть вакансию
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runStatusAction('cancelled', 'Вакансия отправлена в архив')}
+                      disabled={statusAction}
+                      className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
+                    >
+                      В архив
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteVacancy}
+                      disabled={statusAction}
+                      className="w-full h-[36px] rounded-[8px] border border-[var(--hf-status-red-badge)] text-[13px] font-medium text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-status-red-badge)] disabled:opacity-50"
+                    >
+                      Удалить вакансию
+                    </button>
+                  </div>
+                )}
               </div>
             </aside>
           </div>
