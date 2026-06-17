@@ -112,11 +112,29 @@
     chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data });
     return data;
   }
-  runAndSend();
-  // LinkedIn — SPA: секции догружаются. Пере-парсим ещё раз, обновляя storage.
-  setTimeout(runAndSend, 1500);
+  // LinkedIn лениво рендерит секции «Опыт»/«Навыки»/«Образование» при скролле
+  // (IntersectionObserver). Без прокрутки в DOM только верхняя карточка → парсер
+  // видит лишь имя. Прокручиваем страницу, чтобы секции отрендерились, и парсим.
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  async function ensureHydrated() {
+    const step = Math.max(400, Math.floor((window.innerHeight || 800) * 0.85));
+    let y = 0;
+    for (let i = 0; i < 40 && y < document.body.scrollHeight; i++) {
+      window.scrollTo(0, y); await sleep(120); y += step;
+    }
+    window.scrollTo(0, document.body.scrollHeight); await sleep(250);
+    window.scrollTo(0, 0); await sleep(150);
+  }
+
+  runAndSend(); // быстрый первый проход (хотя бы имя из title)
 
   chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
-    if (msg && msg.type === 'RE_PARSE') { sendResponse({ success: true, data: runAndSend() }); }
+    if (msg && msg.type === 'RE_PARSE') {
+      (async function () {
+        try { await ensureHydrated(); } catch (_) {}
+        sendResponse({ success: true, data: runAndSend() });
+      })();
+      return true; // sendResponse асинхронный — держим порт открытым
+    }
   });
 })();
