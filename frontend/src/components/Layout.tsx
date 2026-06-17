@@ -373,6 +373,13 @@ const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
     path: "/factorial",
   },
   {
+    title: "Импорт CSV",
+    description: "Загрузка кандидатов из CSV-файла (ClickUp и др.)",
+    icon: FileText,
+    color: "text-[var(--hf-status-cyan)]",
+    path: "/import",
+  },
+  {
     title: "Рекрутеры и заказчики",
     description: "Добавление пользователей и настройка прав",
     icon: Users,
@@ -1437,18 +1444,6 @@ export default function Layout() {
                       className="hf-hr-nav-icon"
                     />
                     Аналитика
-                  </NavLink>
-                  <NavLink
-                    to="/import"
-                    className={({ isActive }) =>
-                      clsx(
-                        "hf-hr-nav-item",
-                        isActive && "hf-hr-nav-item-active",
-                      )
-                    }
-                  >
-                    <FileText className="hf-hr-nav-icon" size={20} />
-                    Импорт CSV
                   </NavLink>
                 </div>
 

@@ -3290,29 +3290,57 @@ function getImportedQuestionnaire(card: KanbanCard): {
   return { rows, clickupUrl };
 }
 
+// HR-рекрутёр кандидата. В ClickUp это assignee ("Инна HR") и/или папка
+// воронки ("Sandbox - Инна"). Имена рекрутёров уникальны (подтверждено
+// админом), поэтому матчим по имени и показываем полное ФИО. Маппинг ведём
+// на всех известных HR, чтобы новые списки подхватывались автоматически.
+const RECRUITER_FULL_NAMES: Record<string, string> = {
+  анастасия: "Пивень Анастасия",
+  инна: "Инна Кравчук",
+  регина: "Регина Рахманкулова",
+  мария: "Голикова Мария",
+  яна: "Дудкина Яна",
+  эльвира: "Ефименко Эльвира",
+};
+
+function resolveRecruiter(
+  extra: Record<string, unknown> | undefined,
+): string | null {
+  if (!extra) return null;
+  const explicit = normalizeImportedValue(extra.recruiter);
+  if (explicit) return explicit;
+  const haystacks = [extra.assignees, extra.funnel_folder, extra.funnel_list]
+    .map((x) => (typeof x === "string" ? x.toLowerCase() : ""))
+    .join(" | ");
+  for (const [firstName, fullName] of Object.entries(RECRUITER_FULL_NAMES)) {
+    if (haystacks.includes(firstName)) return fullName;
+  }
+  return null;
+}
+
 const ImportedQuestionnaire = memo(function ImportedQuestionnaire({
   card,
 }: {
   card: KanbanCard;
 }) {
-  const { rows, clickupUrl } = getImportedQuestionnaire(card);
-  if (rows.length === 0) return null;
+  const { rows } = getImportedQuestionnaire(card);
+  const recruiter = resolveRecruiter(
+    card.extra_data as Record<string, unknown> | undefined,
+  );
+  if (rows.length === 0 && !recruiter) return null;
   return (
     <div className="p-5 max-w-3xl space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="space-y-1">
         <h3 className="text-sm font-semibold text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
           Анкета кандидата
         </h3>
-        {clickupUrl && (
-          <a
-            href={clickupUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-[var(--hf-cyan-700)] hover:underline hf-dark-disabled:text-[var(--hf-cyan-400)]"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Открыть в ClickUp
-          </a>
+        {recruiter && (
+          <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+            Рекрутёр:{" "}
+            <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+              {recruiter}
+            </span>
+          </div>
         )}
       </div>
       {rows.length > 0 && (

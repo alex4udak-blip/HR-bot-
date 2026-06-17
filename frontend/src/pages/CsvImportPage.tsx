@@ -98,6 +98,9 @@ export default function CsvImportPage() {
   // Step 2: preview + mapping
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  // Грид маппинга скрыт по умолчанию (автоопределение надёжно для ClickUp);
+  // раскрывается кнопкой «Изменить» или автоматически, если не нашли «Имя».
+  const [showMapping, setShowMapping] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<EntityStatus>('new');
   const [vacancyId, setVacancyId] = useState<string>('');
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
@@ -161,6 +164,8 @@ export default function CsvImportPage() {
         mapping[header] = data.suggested_mapping[header] || '';
       }
       setColumnMapping(mapping);
+      // Раскрываем грид только если автоопределение не нашло колонку «Имя».
+      setShowMapping(!Object.values(mapping).includes('name'));
 
       // Fetch vacancies for optional dropdown
       try {
@@ -411,38 +416,106 @@ export default function CsvImportPage() {
                 </div>
               </div>
 
-              {/* Column mapping */}
-              <div>
-                <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">
-                  Маппинг колонок
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {preview.headers.map((header) => (
-                    <div
-                      key={header}
-                      className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]"
-                    >
-                      <span className="text-sm text-white/60 font-medium min-w-[100px] truncate">
-                        {header}
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-white/20 flex-shrink-0" />
-                      <select
-                        value={columnMapping[header] || ''}
-                        onChange={(e) =>
-                          setColumnMapping((prev) => ({ ...prev, [header]: e.target.value }))
-                        }
-                        className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent-500/50 transition-colors"
+              {/* Column mapping — определяется автоматически; по умолчанию свёрнут,
+                  редактируется по кнопке (нужно лишь для нестандартных файлов). */}
+              {(() => {
+                const fieldLabel: Record<string, string> = Object.fromEntries(
+                  FIELD_OPTIONS.map((o) => [o.value, o.label]),
+                );
+                const mapped = preview.headers
+                  .filter((h) => columnMapping[h])
+                  .map((h) => ({
+                    header: h,
+                    label: fieldLabel[columnMapping[h]] || columnMapping[h],
+                  }));
+                const hasName = preview.headers.some(
+                  (h) => columnMapping[h] === 'name',
+                );
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">
+                        Маппинг колонок
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={() => setShowMapping((v) => !v)}
+                        className="flex items-center gap-1 text-xs font-medium text-accent-400 hover:text-accent-300 transition-colors"
                       >
-                        {FIELD_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
+                        {showMapping ? (
+                          <>
+                            <ChevronUp className="w-3.5 h-3.5" />
+                            Свернуть
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-3.5 h-3.5" />
+                            Изменить
+                          </>
+                        )}
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
+
+                    {!hasName && (
+                      <div className="flex items-center gap-2 p-3 mb-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        Не определена колонка с именем — выберите её вручную («Имя»), иначе кандидаты не загрузятся.
+                      </div>
+                    )}
+
+                    {!showMapping ? (
+                      <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-emerald-400">
+                          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                          Колонки определены автоматически
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {mapped.map((m) => (
+                            <span
+                              key={m.header}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.05] border border-white/[0.08] text-xs text-white/70"
+                            >
+                              <span className="text-white/90 font-medium">{m.label}</span>
+                              <span className="text-white/30">←</span>
+                              <span className="text-white/50 truncate max-w-[160px]">{m.header}</span>
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-xs text-white/40 pt-1">
+                          Остальные колонки сохранятся в карточку кандидата и будут видны в анкете.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {preview.headers.map((header) => (
+                          <div
+                            key={header}
+                            className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]"
+                          >
+                            <span className="text-sm text-white/60 font-medium min-w-[100px] truncate">
+                              {header}
+                            </span>
+                            <ChevronRight className="w-4 h-4 text-white/20 flex-shrink-0" />
+                            <select
+                              value={columnMapping[header] || ''}
+                              onChange={(e) =>
+                                setColumnMapping((prev) => ({ ...prev, [header]: e.target.value }))
+                              }
+                              className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-accent-500/50 transition-colors"
+                            >
+                              {FIELD_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Settings */}
               <div>
@@ -522,10 +595,10 @@ export default function CsvImportPage() {
                 </button>
                 <button
                   onClick={executeImport}
-                  disabled={importing}
+                  disabled={importing || !Object.values(columnMapping).includes('name')}
                   className={clsx(
                     'flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
-                    !importing
+                    !importing && Object.values(columnMapping).includes('name')
                       ? 'bg-gradient-to-r from-accent-500 to-accent-600 text-white hover:from-accent-600 hover:to-accent-700 shadow-lg shadow-accent-500/20'
                       : 'bg-white/[0.06] text-white/30 cursor-not-allowed'
                   )}
