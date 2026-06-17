@@ -372,6 +372,10 @@ async def ensure_shadow_columns():
             print('Adding transferred value to entitystatus enum...')
             await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'transferred'\"))
             print('Added transferred to entitystatus enum')
+
+        # Мягкое удаление вакансий: колонка deleted_at (идемпотентно)
+        await raw_conn.execute(text(\"ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP\"))
+        print('Ensured vacancies.deleted_at column')
     await raw_engine.dispose()
 
     # One-time data migration: legacy draft → pending_review

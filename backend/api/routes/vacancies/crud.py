@@ -29,6 +29,7 @@ router = APIRouter()
 @router.get("", response_model=List[VacancyResponse])
 async def list_vacancies(
     status: Optional[VacancyStatus] = None,
+    deleted: bool = False,
     department_id: Optional[int] = None,
     search: Optional[str] = None,
     skip: int = Query(0, ge=0),
@@ -47,6 +48,12 @@ async def list_vacancies(
 
     # Base query - filter by organization
     query = select(Vacancy).where(Vacancy.org_id == org.id if org else True)
+
+    # Мягкое удаление: по умолчанию удалённые скрыты; фильтр «Удалённые» — только они.
+    if deleted:
+        query = query.where(Vacancy.deleted_at.isnot(None))
+    else:
+        query = query.where(Vacancy.deleted_at.is_(None))
 
     # Apply access control based on user role
     # Full access: superadmin, owner, or member with has_full_access flag
@@ -497,10 +504,12 @@ async def delete_vacancy(
     if not await can_edit_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="You don't have permission to delete this vacancy")
 
-    await db.delete(vacancy)
+    # Мягкое удаление: вакансия исчезает из всех активных списков (deleted_at IS
+    # NULL фильтруется), но видна в фильтре «Удалённые». Восстановимо через update.
+    vacancy.deleted_at = datetime.utcnow()
     await db.commit()
 
-    logger.info(f"Deleted vacancy {vacancy_id}")
+    logger.info(f"Soft-deleted vacancy {vacancy_id}")
 
 
 @router.get("/assignable-users")

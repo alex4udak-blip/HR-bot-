@@ -599,6 +599,7 @@ export interface Vacancy {
   closes_at?: string;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
   applications_count: number;
   stage_counts: Record<string, number>;
   source_url?: string;

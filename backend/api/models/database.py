@@ -911,6 +911,7 @@ class Vacancy(Base):
     # Dates
     published_at = Column(DateTime, nullable=True)
     closes_at = Column(DateTime, nullable=True)  # Application deadline
+    deleted_at = Column(DateTime, nullable=True, index=True)  # Мягкое удаление: NULL = активна
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 

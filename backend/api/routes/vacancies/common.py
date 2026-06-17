@@ -568,6 +568,7 @@ class VacancyResponse(BaseModel):
     closes_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    deleted_at: Optional[datetime] = None
     applications_count: int = 0
     # Stage counts for quick overview
     stage_counts: dict = {}

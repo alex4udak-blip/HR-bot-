@@ -46,6 +46,7 @@ import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
+import { getVacancies } from '@/services/api/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import { EditCandidateModal } from './AllCandidatesPage';
@@ -377,8 +378,15 @@ export default function RecruiterFunnelsPage() {
   // UI state
   const [search, setSearch] = useState('');
   const [recruiterSearch, setRecruiterSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all' | 'deleted'>('all');
   const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState<number | null>(null);
+  // «Удалённые»: мягко-удалённые вакансии тянем отдельным запросом (deleted=true).
+  const [deletedVacancies, setDeletedVacancies] = useState<Vacancy[]>([]);
+  useEffect(() => {
+    if (statusFilter === 'deleted') {
+      getVacancies({ deleted: true }).then(setDeletedVacancies).catch(() => setDeletedVacancies([]));
+    }
+  }, [statusFilter]);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showRecruiterMenu, setShowRecruiterMenu] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -483,7 +491,7 @@ export default function RecruiterFunnelsPage() {
     const urlStatus = searchParams.get('status');
     const nextStatus =
       urlStatus && STATUS_FILTER_IDS.has(urlStatus)
-        ? (urlStatus as VacancyStatus | 'all')
+        ? (urlStatus as VacancyStatus | 'all' | 'deleted')
         : 'all';
     if (nextStatus !== statusFilter) {
       setStatusFilter(nextStatus);
@@ -501,6 +509,11 @@ export default function RecruiterFunnelsPage() {
   }, [isHrAdmin]);
 
   const scopedVacancies = useMemo(() => {
+    if (statusFilter === 'deleted') {
+      return (!isHrAdmin && user)
+        ? deletedVacancies.filter((v) => v.created_by === user.id)
+        : deletedVacancies;
+    }
     let result = vacancies;
     // Исходные заявки, у которых уже есть клон («взяли в работу»), —
     // это НЕ рабочие вакансии, а заявки. После «Взять в работу» оригинал
@@ -520,7 +533,7 @@ export default function RecruiterFunnelsPage() {
       result = result.filter((v) => v.status === statusFilter);
     }
     return result;
-  }, [vacancies, user, isHrAdmin, statusFilter]);
+  }, [vacancies, deletedVacancies, user, isHrAdmin, statusFilter]);
 
   // Filter vacancies
   const filteredVacancies = useMemo(() => {
@@ -1103,7 +1116,7 @@ export default function RecruiterFunnelsPage() {
     });
   };
 
-  const handleStatusFilterChange = (nextStatus: VacancyStatus | 'all') => {
+  const handleStatusFilterChange = (nextStatus: VacancyStatus | 'all' | 'deleted') => {
     setStatusFilter(nextStatus);
     setShowStatusMenu(false);
     if (!selectedVacancyId) {

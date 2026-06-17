@@ -12,6 +12,7 @@ import { deduplicatedGet, debouncedMutation } from './client';
 
 export interface VacancyFilters {
   status?: VacancyStatus;
+  deleted?: boolean;
   department_id?: number;
   search?: string;
   skip?: number;
