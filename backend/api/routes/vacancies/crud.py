@@ -504,6 +504,23 @@ async def delete_vacancy(
     if not await can_edit_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="You don't have permission to delete this vacancy")
 
+    # Если удаляем КЛОН заявки — «закрываем» оригинал у этого рекрутёра (как при
+    # закрытии клона), иначе после удаления рабочей вакансии исходная заявка снова
+    # всплывает в «Заявки» (она перестаёт считаться «уже взятой»).
+    cloned_from = (vacancy.extra_data or {}).get("cloned_from_request_id")
+    if isinstance(cloned_from, int):
+        original = await db.get(Vacancy, cloned_from)
+        if original is not None:
+            assigned = list(original.assigned_to or [])
+            if current_user.id in assigned:
+                original.assigned_to = [u for u in assigned if u != current_user.id]
+            orig_extra = dict(original.extra_data or {})
+            dismissed = list(orig_extra.get("dismissed_by") or [])
+            if current_user.id not in dismissed:
+                dismissed.append(current_user.id)
+                orig_extra["dismissed_by"] = dismissed
+                original.extra_data = orig_extra
+
     # Мягкое удаление: вакансия исчезает из всех активных списков (deleted_at IS
     # NULL фильтруется), но видна в фильтре «Удалённые». Восстановимо через update.
     vacancy.deleted_at = datetime.utcnow()
