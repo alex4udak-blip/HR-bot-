@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Enceladus Magic Button",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "description": "Добавляйте кандидатов в Enceladus одним кликом",
   "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": [
@@ -24,15 +24,15 @@
   "content_scripts": [
     {
       "matches": ["https://hh.ru/resume/*", "https://*.hh.ru/resume/*"],
-      "js": ["content/hh.js"]
+      "js": ["content/common.js", "content/hh.js"]
     },
     {
       "matches": ["https://career.habr.com/*/profile", "https://career.habr.com/*"],
-      "js": ["content/habr.js"]
+      "js": ["content/common.js", "content/habr.js"]
     },
     {
       "matches": ["https://www.linkedin.com/in/*"],
-      "js": ["content/linkedin.js"]
+      "js": ["content/common.js", "content/linkedin.js"]
     }
   ],
   "background": {

@@ -457,7 +457,9 @@
 
   // Parse and send to background
   function runAndSend() {
-    const parsed = parseHHResume();
+    let parsed = parseHHResume();
+    // Подстраховка единым санитайзером (common.js инжектится первым).
+    if (window.__ENC__ && window.__ENC__.sanitizeRecord) parsed = window.__ENC__.sanitizeRecord(parsed);
     console.log('[HR-Bot Magic Button] Parsed resume data:', parsed);
     chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data: parsed });
     return parsed;
