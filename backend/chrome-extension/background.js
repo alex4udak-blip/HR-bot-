@@ -57,7 +57,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
           await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            files: [scriptFile],
+            // common.js первым — парсеры зависят от window.__ENC__.
+            files: ['content/common.js', scriptFile],
           });
           // После инжекта content-скрипт сам вызовет PARSE_RESULT, либо
           // RE_PARSE listener зарегистрируется и ответит на повторный запрос.

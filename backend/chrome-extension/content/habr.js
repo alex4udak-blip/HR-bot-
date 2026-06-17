@@ -1,189 +1,124 @@
-(function() {
-  // Guard от двойного inject (manifest matches + programmatic).
+(function () {
   if (window.__hr_bot_habr_loaded__) return;
   window.__hr_bot_habr_loaded__ = true;
 
-  function parseHabrProfile() {
+  const E = window.__ENC__ || {};
+
+  function txt(sel) {
+    const el = document.querySelector(sel);
+    return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+  }
+
+  // --- Маппинг встроенного JSON-профиля Habr (структура: skills[], age,
+  // experience, location, salary, contacts.items[]). Узел ищем эвристикой. ---
+  function findProfileNode(j) {
+    const stack = [j]; let steps = 0;
+    while (stack.length && steps < 20000) {
+      steps++;
+      const cur = stack.pop();
+      if (cur && typeof cur === 'object' && !Array.isArray(cur)) {
+        const k = Object.keys(cur);
+        if ((k.includes('skills') && k.includes('experience')) ||
+            (k.includes('age') && k.includes('location'))) return cur;
+        for (const key of k) { const v = cur[key]; if (v && typeof v === 'object') stack.push(v); }
+      } else if (Array.isArray(cur)) {
+        for (const v of cur) if (v && typeof v === 'object') stack.push(v);
+      }
+    }
+    return null;
+  }
+
+  function mapJson(j, data) {
+    const n = findProfileNode(j);
+    if (!n) return;
+    if (n.age != null) data.age = String(n.age);
+    if (n.location) data.city = typeof n.location === 'string' ? n.location : (n.location.title || '');
+    if (n.experience != null) data.total_experience = String(n.experience);
+    if (Array.isArray(n.skills)) data.skills = n.skills.map(s => (s && (s.title || s.name)) || s).filter(v => typeof v === 'string');
+    if (n.salary) data.salary = typeof n.salary === 'string' ? n.salary : (n.salary.amount ? (n.salary.amount + ' ' + (n.salary.currency || '')) : '');
+    const items = n.contacts && n.contacts.items;
+    if (Array.isArray(items)) items.forEach(c => {
+      const kind = String(c.kind || c.type || '').toLowerCase();
+      const val = c.value && (typeof c.value === 'string' ? c.value : (c.value.title || c.value.href)) || '';
+      if (!val || typeof val !== 'string') return;
+      if (/phone/.test(kind) && !data.phone) data.phone = val;
+      else if (/telegram/.test(kind) && !data.telegram) data.telegram = val;
+      else if (/mail/.test(kind) && !data.email) data.email = val;
+    });
+  }
+
+  function parseHabr() {
     const data = {
-      source: 'career.habr.com',
-      source_url: window.location.href,
-      full_name: '',
-      email: '',
-      phone: '',
-      telegram: '',
-      position: '',
-      city: '',
-      company: '',
-      salary: '',
-      age: '',
-      gender: '',
-      experience_summary: '',
-      skills: [],
-      languages: [],
+      source: 'career.habr.com', source_url: window.location.href,
+      full_name: '', email: '', phone: '', telegram: '', position: '',
+      city: '', company: '', salary: '', age: '', gender: '',
+      experience_summary: '', total_experience: '', skills: [], languages: [], education: [],
     };
 
-    // --- Name ---
-    const nameEl = document.querySelector('.page-title__title') || document.querySelector('h1');
-    if (nameEl) data.full_name = nameEl.textContent.trim();
-
-    // --- Position (specialty) ---
-    const posEl = document.querySelector('.page-title__subtitle')
-      || document.querySelector('.profile-speciality')
-      || document.querySelector('[class*="profession"]');
-    if (posEl) data.position = posEl.textContent.trim();
-
-    // Try sidebar for more detail
-    const sidebar = document.querySelector('.sidebar_left') || document.querySelector('[class*="sidebar"]');
-    if (sidebar) {
-      const sidebarText = sidebar.innerText;
-
-      // Telegram
-      const tgMatch = sidebarText.match(/телеграм\s+(\S+)/i) || sidebarText.match(/telegram\s+(\S+)/i);
-      if (tgMatch) data.telegram = tgMatch[1].replace(/,/g, '');
-
-      // Position fallback from sidebar
-      if (!data.position) {
-        const specMatch = sidebarText.match(/•\s*([^•\n]+)\s*•\s*([^•\n]+)/);
-        if (specMatch) {
-          data.position = (specMatch[1].trim() + ' — ' + specMatch[2].trim());
-        }
-      }
+    // 1) JSON-остров (если есть) — чистые структурированные данные.
+    if (E.extractProfileJson) {
+      const pj = E.extractProfileJson(['skills', 'experience']) || E.extractProfileJson(['age', 'location']);
+      if (pj) { try { mapJson(pj, data); } catch (e) { console.warn('[HR-Bot] Habr JSON map failed', e); } }
     }
 
-    // --- City/location ---
-    const cityEl = document.querySelector('.inline-list a[href*="/resumes?city"]')
-      || document.querySelector('[class*="location"]')
-      || document.querySelector('.basic-section__location');
-    if (cityEl) {
-      data.city = cityEl.textContent.trim();
-    }
-    // Fallback: look for city in page text
-    if (!data.city) {
-      const infoItems = document.querySelectorAll('.basic-section__info-item, .profile-info-item');
-      infoItems.forEach(item => {
-        const text = item.textContent.trim();
-        // Usually cities in Habr are like "Москва", "Алматы"
-        if (!data.city && !text.includes('@') && !text.startsWith('+') && text.length < 40) {
-          const labelEl = item.querySelector('.basic-section__info-label, .profile-info-label');
-          if (labelEl && /город|город|location|city/i.test(labelEl.textContent)) {
-            data.city = text.replace(labelEl.textContent, '').trim();
-          }
+    // 2) DOM — ТОЛЬКО точечные селекторы (никаких широких [class*=...]).
+    if (!data.full_name) data.full_name = txt('.page-title__title') || txt('h1');
+    if (!data.position) data.position = txt('.page-title__subtitle') || txt('.user-spec__title');
+    if (!data.city) data.city = txt('.basic-section__location');
+    if (!data.salary) data.salary = txt('.basic-section__salary');
+    if (!data.age) data.age = txt('.basic-section__age');
+
+    if (!data.experience_summary) {
+      const exp = [];
+      document.querySelectorAll('.experience-section__item, .resume-experience__item').forEach((b, i) => {
+        if (i >= 6) return;
+        const pos = b.querySelector('.experience-section__title, .resume-experience__title, h3');
+        const comp = b.querySelector('.experience-section__company, .company-name, a[href*="/companies/"]');
+        const per = b.querySelector('.experience-section__period, .resume-experience__period');
+        const parts = [pos, comp, per].map(x => (x ? x.textContent.replace(/\s+/g, ' ').trim() : '')).filter(Boolean);
+        if (parts.length) {
+          exp.push(parts.join(' | '));
+          if (i === 0 && comp && !data.company) data.company = comp.textContent.trim();
         }
       });
+      if (exp.length) data.experience_summary = exp.join('\n');
     }
 
-    // --- Salary expectation ---
-    const salaryEl = document.querySelector('.basic-section__salary')
-      || document.querySelector('[class*="salary"]');
-    if (salaryEl) data.salary = salaryEl.textContent.trim();
-    // Fallback: look for "от X руб" pattern
-    if (!data.salary) {
-      const allText = document.body.innerText;
-      const salaryMatch = allText.match(/(?:от|зп|зарплата|salary)[:\s]*([0-9\s]+(?:000|₽|руб|тенге|\$|€|USD|KZT)[\s\S]{0,20})/i);
-      if (salaryMatch) data.salary = salaryMatch[0].trim().substring(0, 60);
-    }
-
-    // --- Age ---
-    const ageEl = document.querySelector('.basic-section__age, [class*="age"]');
-    if (ageEl) data.age = ageEl.textContent.trim();
-
-    // --- Gender ---
-    const genderEl = document.querySelector('.basic-section__gender, [class*="gender"]');
-    if (genderEl) data.gender = genderEl.textContent.trim();
-
-    // --- Current company ---
-    const companyEl = document.querySelector('.experience-company a')
-      || document.querySelector('.experience-section .company-name');
-    if (companyEl) data.company = companyEl.textContent.trim();
-
-    // --- Experience section ---
-    const experiences = [];
-    const expBlocks = document.querySelectorAll('.experience-section__item, .experience-item, .content-section[class*="experience"] li');
-    expBlocks.forEach((block, i) => {
-      if (i >= 5) return;
-      const titleEl = block.querySelector('.experience-section__title, .experience-title, h3');
-      const compEl = block.querySelector('.experience-section__company, .experience-company, .company-name');
-      const periodEl = block.querySelector('.experience-section__period, .experience-period, .date-range');
-      const parts = [];
-      if (titleEl) parts.push(titleEl.textContent.trim());
-      if (compEl) parts.push(compEl.textContent.trim());
-      if (periodEl) parts.push(periodEl.textContent.trim());
-      if (parts.length > 0) {
-        experiences.push(parts.join(' | '));
-        if (i === 0 && compEl && !data.company) data.company = compEl.textContent.trim();
-      }
-    });
-    data.experience_summary = experiences.join('\n');
-
-    // --- Skills ---
-    const skillEls = document.querySelectorAll('.tags-item, .skill-tag, [class*="tag-item"], .content-section[class*="skill"] .inline-list a');
-    if (skillEls.length > 0) {
-      const skills = new Set();
-      skillEls.forEach(el => {
-        const text = el.textContent.trim();
-        if (text && text.length >= 2 && text.length <= 60) skills.add(text);
+    if (!data.skills.length) {
+      const sk = new Set();
+      document.querySelectorAll('a[href*="/resumes?skills"], .user-skills__item').forEach(el => {
+        const t = el.textContent.replace(/\s+/g, ' ').trim();
+        if (t && t.length >= 2 && t.length <= 60) sk.add(t);
       });
-      data.skills = [...skills].slice(0, 30);
-    }
-    // Fallback: professional skills in sidebar
-    if (data.skills.length === 0 && sidebar) {
-      const skillLinks = sidebar.querySelectorAll('a[href*="/resumes?skills"]');
-      skillLinks.forEach(link => {
-        const text = link.textContent.trim();
-        if (text && text.length >= 2) data.skills.push(text);
-      });
+      data.skills = [...sk].slice(0, 30);
     }
 
-    // --- Languages ---
-    const langEls = document.querySelectorAll('.content-section[class*="language"] li, .language-item');
-    langEls.forEach(el => {
-      const text = el.textContent.trim();
-      if (text) data.languages.push(text);
+    // Контакты — только из ссылок mailto/tel/t.me (никаких текстовых эвристик).
+    document.querySelectorAll('a[href]').forEach(a => {
+      const href = a.href || '';
+      if (!data.email && href.startsWith('mailto:')) data.email = href.slice(7).split('?')[0];
+      if (!data.phone && href.startsWith('tel:')) data.phone = href.slice(4);
+      if (!data.telegram && href.includes('t.me/')) data.telegram = href;
     });
 
-    // --- Contacts (links) ---
-    const allLinks = document.querySelectorAll('a[href]');
-    allLinks.forEach(link => {
-      const href = link.href || '';
-      const text = link.textContent.trim();
-      if (href.includes('t.me/') && !data.telegram) {
-        data.telegram = href.replace('https://t.me/', '').replace('http://t.me/', '');
-      }
-      if (href.startsWith('mailto:') && !data.email) {
-        data.email = href.replace('mailto:', '');
-      }
-      if (href.startsWith('tel:') && !data.phone) {
-        data.phone = href.replace('tel:', '');
-      }
-    });
-
-    // Contact items
-    const contactEls = document.querySelectorAll('.contact-item, .profile-contact, [class*="contact"]');
-    contactEls.forEach(el => {
-      const text = el.textContent.trim();
-      if (text.includes('@') && text.includes('.') && !data.email) data.email = text;
-      else if (text.startsWith('+') && !data.phone) data.phone = text;
-      else if (text.includes('t.me') && !data.telegram) {
-        const m = text.match(/t\.me\/(\S+)/);
-        if (m) data.telegram = m[1];
-      }
-    });
-
+    if (!data.full_name) {
+      const m = window.location.pathname.match(/career\.habr\.com\/([^/?#]+)/) || window.location.pathname.match(/\/([^/?#]+)$/);
+      data.full_name = m ? 'Habr: ' + decodeURIComponent(m[1]) : 'Кандидат Habr';
+      data.name_is_placeholder = true;
+    }
     return data;
   }
 
   function runAndSend() {
-    const parsed = parseHabrProfile();
-    console.log('[HR-Bot Magic Button] Parsed Habr Career data:', parsed);
-    chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data: parsed });
-    return parsed;
+    let data = parseHabr();
+    if (E.sanitizeRecord) data = E.sanitizeRecord(data);
+    console.log('[HR-Bot Magic Button] Habr parsed:', data);
+    chrome.runtime.sendMessage({ type: 'PARSE_RESULT', data });
+    return data;
   }
   runAndSend();
 
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg && msg.type === 'RE_PARSE') {
-      const fresh = runAndSend();
-      sendResponse({ success: true, data: fresh });
-    }
+  chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+    if (msg && msg.type === 'RE_PARSE') { sendResponse({ success: true, data: runAndSend() }); }
   });
 })();
