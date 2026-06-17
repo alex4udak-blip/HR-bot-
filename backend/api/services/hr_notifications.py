@@ -36,6 +36,8 @@ STAGE_LABELS = {
     ApplicationStage.assessment: "Принятие решения",
     ApplicationStage.offer: "Выставлен оффер",
     ApplicationStage.hired: "Оффер принят",
+    ApplicationStage.probation: "Практика",
+    ApplicationStage.transferred: "Перешёл в отдел",
     ApplicationStage.rejected: "Отказ",
     ApplicationStage.withdrawn: "Отозван",
 }

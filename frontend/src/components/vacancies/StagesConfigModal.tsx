@@ -23,13 +23,15 @@ const DEFAULT_STAGES: StageColumn[] = [
   { key: 'assessment', label: 'Принятие решения', visible: true },
   { key: 'offer', label: 'Выставлен оффер', visible: true },
   { key: 'hired', label: 'Оффер принят', visible: true },
+  { key: 'probation', label: 'Практика', visible: true },
+  { key: 'transferred', label: 'Перешёл в отдел', visible: true },
   { key: 'rejected', label: 'Отказ', visible: true },
 ];
 
 // Real DB enum values that virtual stages can map to
 const ENUM_VALUES: ApplicationStage[] = [
   'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'rejected'
+  'assessment', 'offer', 'hired', 'probation', 'transferred', 'rejected'
 ];
 
 interface StagesConfigModalProps {

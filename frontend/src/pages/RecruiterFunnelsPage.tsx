@@ -87,7 +87,7 @@ const getRecruiterStatusDotClass = (status: VacancyStatus) => {
 
 const STAGE_ORDER = [
   'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'rejected', 'reserve',
+  'assessment', 'offer', 'hired', 'probation', 'transferred', 'rejected', 'reserve',
 ] as const;
 
 // Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
@@ -100,6 +100,8 @@ const STAGE_LABELS: Record<string, string> = {
   assessment: 'Принятие решения',
   offer: 'Выставлен оффер',
   hired: 'Оффер принят',
+  probation: 'Практика',
+  transferred: 'Перешёл в отдел',
   rejected: 'Отказ',
   withdrawn: 'Отозван',
   reserve: 'Резерв',
@@ -130,6 +132,8 @@ const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badg
   assessment:   { bg: 'bg-[var(--hf-status-orange-bg)]',  text: 'text-[var(--hf-status-orange)]',  dot: 'bg-[var(--hf-status-orange)]',  badge: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]' },
   offer:        { bg: 'bg-[var(--hf-status-yellow-bg)]',  text: 'text-[var(--hf-status-yellow)]',  dot: 'bg-[var(--hf-status-yellow)]',  badge: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
   hired:        { bg: 'bg-[var(--hf-status-green-bg)]',   text: 'text-[var(--hf-status-green)]',   dot: 'bg-[var(--hf-status-green)]',   badge: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' },
+  probation:    { bg: 'bg-[var(--hf-status-teal-bg)]',    text: 'text-[var(--hf-status-teal)]',    dot: 'bg-[var(--hf-status-teal)]',    badge: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)]' },
+  transferred:  { bg: 'bg-[var(--hf-status-lime-bg)]',    text: 'text-[var(--hf-status-lime)]',    dot: 'bg-[var(--hf-status-lime)]',    badge: 'bg-[var(--hf-status-lime-badge)] text-[var(--hf-status-lime)]' },
   rejected:     { bg: 'bg-[var(--hf-status-red-bg)]',     text: 'text-[var(--hf-status-red)]',     dot: 'bg-[var(--hf-status-red)]',     badge: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]' },
   withdrawn:    { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
   reserve:      { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
@@ -455,6 +459,8 @@ export default function RecruiterFunnelsPage() {
     assessment: 'is_interview',
     offer: 'offer',
     hired: 'hired',
+    probation: 'probation',
+    transferred: 'transferred',
     rejected: 'rejected',
   };
   const [orgStageOverrides, setOrgStageOverrides] = useState<Record<string, string>>({});

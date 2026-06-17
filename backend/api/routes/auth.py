@@ -536,6 +536,8 @@ DEFAULT_ORG_STAGES = [
     {"key": "is_interview",  "label": "Принятие решения",      "color": "#f97316"},
     {"key": "offer",         "label": "Выставлен оффер",       "color": "#eab308"},
     {"key": "hired",         "label": "Оффер принят",          "color": "#22c55e"},
+    {"key": "probation",     "label": "Практика",              "color": "#14b8a6"},
+    {"key": "transferred",   "label": "Перешёл в отдел",       "color": "#16a34a"},
     {"key": "rejected",      "label": "Отказ",                 "color": "#ef4444"},
     {"key": "reserve",       "label": "Резерв",                "color": "#6b7280"},
 ]

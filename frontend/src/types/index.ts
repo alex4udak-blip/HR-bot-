@@ -221,6 +221,8 @@ export type EntityStatus =
   | 'is_interview'    // ИС
   | 'offer'           // Оффер
   | 'hired'           // Принят
+  | 'probation'       // Практика
+  | 'transferred'     // Перешёл в отдел
   | 'rejected'        // Отклонён
   | 'reserve'         // Резерв
   // General statuses
@@ -474,6 +476,8 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
   is_interview: 'Принятие решения',
   offer: 'Выставлен оффер',
   hired: 'Оффер принят',
+  probation: 'Практика',
+  transferred: 'Перешёл в отдел',
   rejected: 'Отказ',
   withdrawn: 'Отозван',
   reserve: 'Резерв',
@@ -499,6 +503,8 @@ export const STATUS_COLORS: Record<EntityStatus, string> = {
   is_interview: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border-[color:var(--hf-status-purple-badge)]',
   offer: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
   hired: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
+  probation: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)] border-[color:var(--hf-status-teal-badge)]',
+  transferred: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
   rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
   withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
   reserve: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
@@ -550,6 +556,8 @@ export type ApplicationStage =
   | 'assessment'    // ИС (displayed as "ИС" in UI)
   | 'offer'         // Оффер
   | 'hired'         // Принят
+  | 'probation'     // Практика
+  | 'transferred'   // Перешёл в отдел
   | 'rejected'      // Отказ
   | 'withdrawn'     // Отозван
   | 'reserve';      // Резерв
@@ -743,6 +751,8 @@ export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
   assessment: 'Принятие решения',
   offer: 'Выставлен оффер',
   hired: 'Оффер принят',
+  probation: 'Практика',
+  transferred: 'Перешёл в отдел',
   rejected: 'Отказ',
   withdrawn: 'Отозван',
   reserve: 'Резерв'
@@ -757,6 +767,8 @@ export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
   assessment: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)] border-[color:var(--hf-status-orange-badge)]',   // "ИС"
   offer: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)] border-[color:var(--hf-status-yellow-badge)]',
   hired: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
+  probation: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)] border-[color:var(--hf-status-teal-badge)]',
+  transferred: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
   rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
   withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
   reserve: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]'
@@ -771,6 +783,8 @@ export const STATUS_TO_STAGE_MAP: Partial<Record<EntityStatus, ApplicationStage>
   is_interview: 'assessment',
   offer: 'offer',
   hired: 'hired',
+  probation: 'probation',
+  transferred: 'transferred',
   rejected: 'rejected',
   reserve: 'reserve',
   // Legacy aliases
@@ -788,6 +802,8 @@ export const STAGE_TO_STATUS_MAP: Record<ApplicationStage, EntityStatus> = {
   assessment: 'is_interview',
   offer: 'offer',
   hired: 'hired',
+  probation: 'probation',
+  transferred: 'transferred',
   rejected: 'rejected',
   withdrawn: 'withdrawn',
   reserve: 'reserve'

@@ -62,6 +62,8 @@ class EntityStatus(str, enum.Enum):
     is_interview = "is_interview" # ИС - final interview
     offer = "offer"               # Оффер - offer extended
     hired = "hired"               # Принят - accepted and hired
+    probation = "probation"       # Практика - пробный период после оффера
+    transferred = "transferred"   # Перешёл в отдел - оформлен в штат
     rejected = "rejected"         # Отказ - rejected
     withdrawn = "withdrawn"       # Отозван - кандидат отозвал отклик
     reserve = "reserve"           # Резерв - отложен в резерв
@@ -148,6 +150,8 @@ class ApplicationStage(str, enum.Enum):
     assessment = "assessment"     # ИС - final interview (displayed as "ИС")
     offer = "offer"               # Оффер - offer extended
     hired = "hired"               # Принят - accepted and hired
+    probation = "probation"       # Практика - пробный период после оффера
+    transferred = "transferred"   # Перешёл в отдел - оформлен в штат
     rejected = "rejected"         # Отказ - rejected at any stage
     withdrawn = "withdrawn"       # Отозван - candidate withdrew
     reserve = "reserve"           # Резерв - отложен в резерв
@@ -168,6 +172,8 @@ STATUS_SYNC_MAP = {
     EntityStatus.is_interview: ApplicationStage.assessment,
     EntityStatus.offer: ApplicationStage.offer,
     EntityStatus.hired: ApplicationStage.hired,
+    EntityStatus.probation: ApplicationStage.probation,
+    EntityStatus.transferred: ApplicationStage.transferred,
     EntityStatus.rejected: ApplicationStage.rejected,
     EntityStatus.withdrawn: ApplicationStage.withdrawn,
     EntityStatus.reserve: ApplicationStage.reserve,

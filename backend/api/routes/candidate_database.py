@@ -40,6 +40,8 @@ APPLICATION_STAGE_LABELS = {
     "assessment": "Принятие решения",
     "offer": "Выставлен оффер",
     "hired": "Оффер принят",
+    "probation": "Практика",
+    "transferred": "Перешёл в отдел",
     "rejected": "Отказ",
     "withdrawn": "Отозван",
 }

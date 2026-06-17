@@ -336,6 +336,42 @@ async def ensure_shadow_columns():
             print('Adding withdrawn value to entitystatus enum...')
             await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'withdrawn'\"))
             print('Added withdrawn to entitystatus enum')
+
+        # Add 'probation' to applicationstage enum (этап «Практика»)
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'probation' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'applicationstage'))\"
+        ))
+        if not result.scalar():
+            print('Adding probation value to applicationstage enum...')
+            await raw_conn.execute(text(\"ALTER TYPE applicationstage ADD VALUE 'probation'\"))
+            print('Added probation to applicationstage enum')
+
+        # Add 'transferred' to applicationstage enum (этап «Перешёл в отдел»)
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'transferred' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'applicationstage'))\"
+        ))
+        if not result.scalar():
+            print('Adding transferred value to applicationstage enum...')
+            await raw_conn.execute(text(\"ALTER TYPE applicationstage ADD VALUE 'transferred'\"))
+            print('Added transferred to applicationstage enum')
+
+        # Add 'probation' to entitystatus enum
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'probation' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'entitystatus'))\"
+        ))
+        if not result.scalar():
+            print('Adding probation value to entitystatus enum...')
+            await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'probation'\"))
+            print('Added probation to entitystatus enum')
+
+        # Add 'transferred' to entitystatus enum
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'transferred' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'entitystatus'))\"
+        ))
+        if not result.scalar():
+            print('Adding transferred value to entitystatus enum...')
+            await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'transferred'\"))
+            print('Added transferred to entitystatus enum')
     await raw_engine.dispose()
 
     # One-time data migration: legacy draft → pending_review
@@ -418,6 +454,8 @@ async def ensure_shadow_columns():
         'assessment': 'Принятие решения',
         'offer': 'Выставлен оффер',
         'hired': 'Оффер принят',
+        'probation': 'Практика',
+        'transferred': 'Перешёл в отдел',
         'rejected': 'Отказ',
         'withdrawn': 'Отозван',
     }
