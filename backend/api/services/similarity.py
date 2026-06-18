@@ -951,7 +951,8 @@ similarity_service = SimilarityService()
 
 async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optional[int]:
     """Найти кандидата в теневой базе (is_archived=true), совпадающего с новым
-    кандидатом по нормализованному email или телефону (последние 10 цифр).
+    кандидатом по нормализованному email, телефону (последние 10 цифр) или
+    telegram-username.
 
     Вызывается на путях создания АКТИВНОГО кандидата (ручное добавление,
     расширение, загрузка резюме), чтобы пометить новый профиль флагом
@@ -977,7 +978,13 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
         if len(d) >= 10:
             phones10.add(d[-10:])
 
-    if not emails and not phones10:
+    tg_names: Set[str] = set()
+    for t in (entity.telegram_usernames or []):
+        nt = str(t or "").strip().lstrip("@").lower()
+        if nt:
+            tg_names.add(nt)
+
+    if not emails and not phones10 and not tg_names:
         return None
 
     # «Разъединённые» ранее совпадения не поднимаем повторно
@@ -992,7 +999,7 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
     # Грузим архивных кандидатов организации и сравниваем нормализованные контакты
     # в Python — портируемо (Postgres + SQLite-тесты), тот же подход, что в
     # detect_duplicates. На create-пути архив одной org обычно невелик.
-    q = select(Entity.id, Entity.email, Entity.phone).where(
+    q = select(Entity.id, Entity.email, Entity.phone, Entity.telegram_usernames).where(
         Entity.is_archived.is_(True),
         Entity.type == EntityType.candidate,
         Entity.id != entity.id,
@@ -1003,11 +1010,15 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
 
     res = await db.execute(q)
     phone_match: Optional[int] = None
-    for cand_id, cand_email, cand_phone in res.all():
+    for cand_id, cand_email, cand_phone, cand_tg in res.all():
         if cand_id in dismissed:
             continue
         if emails and normalize_email(cand_email or "") in emails:
             return cand_id  # email — сильнейшее совпадение, возвращаем сразу
+        if tg_names and any(
+            str(t or "").strip().lstrip("@").lower() in tg_names for t in (cand_tg or [])
+        ):
+            return cand_id  # telegram-username — тоже надёжный идентификатор
         if phone_match is None and phones10:
             d = normalize_phone(cand_phone or "")
             if len(d) >= 10 and d[-10:] in phones10:

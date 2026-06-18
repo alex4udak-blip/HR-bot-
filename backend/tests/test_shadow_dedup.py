@@ -48,6 +48,16 @@ async def test_detect_phone_match_ignores_formatting(db_session, organization):
 
 
 @pytest.mark.asyncio
+async def test_detect_telegram_match_normalizes_at_and_case(db_session, organization):
+    archived = await _mk(db_session, organization.id, "ТГ архив",
+                         telegram_usernames=["ivan_hr"], is_archived=True)
+    newc = await _mk(db_session, organization.id, "ТГ новый",
+                     telegram_usernames=["@Ivan_HR"])  # @ + другой регистр
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) == archived.id
+
+
+@pytest.mark.asyncio
 async def test_detect_no_match_returns_none(db_session, organization):
     await _mk(db_session, organization.id, "Архив", email="someone@x.com", is_archived=True)
     newc = await _mk(db_session, organization.id, "Новый", email="other@x.com", phone="+7 999 0000000")
