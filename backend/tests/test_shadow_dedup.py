@@ -58,6 +58,24 @@ async def test_detect_telegram_match_normalizes_at_and_case(db_session, organiza
 
 
 @pytest.mark.asyncio
+async def test_detect_matches_by_full_name(db_session, organization):
+    # одинаковое полное ФИО (≥2 слов) без общих контактов → дубль
+    existing = await _mk(db_session, organization.id, "Хисамов Вадим Ринатович")
+    newc = await _mk(db_session, organization.id, "Хисамов Вадим Ринатович")
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) == existing.id
+
+
+@pytest.mark.asyncio
+async def test_detect_single_word_name_not_matched(db_session, organization):
+    # одно слово («Владимир») — по имени НЕ матчим (слишком общо)
+    await _mk(db_session, organization.id, "Владимир")
+    newc = await _mk(db_session, organization.id, "Владимир")
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) is None
+
+
+@pytest.mark.asyncio
 async def test_detect_no_match_returns_none(db_session, organization):
     await _mk(db_session, organization.id, "Архив", email="someone@x.com", is_archived=True)
     newc = await _mk(db_session, organization.id, "Новый", email="other@x.com", phone="+7 999 0000000")

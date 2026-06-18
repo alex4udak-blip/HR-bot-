@@ -1471,8 +1471,11 @@ async def rescan_active_duplicates(
 
     from ...services.similarity import normalize_email, normalize_phone
 
-    def _keys(email, phone, tg):
+    def _keys(name, email, phone, tg):
         ks = []
+        nm = " ".join((name or "").strip().lower().split())
+        if len(nm.split()) >= 2:
+            ks.append("n:" + nm)
         ne = normalize_email(email or "")
         if ne:
             ks.append("e:" + ne)
@@ -1496,7 +1499,7 @@ async def rescan_active_duplicates(
     names: dict = {}
     for cid, cname, cemail, cphone, ctg in (await db.execute(all_q)).all():
         names[cid] = cname
-        for k in _keys(cemail, cphone, ctg):
+        for k in _keys(cname, cemail, cphone, ctg):
             key_ids.setdefault(k, []).append(cid)
 
     if not key_ids:
@@ -1524,7 +1527,7 @@ async def rescan_active_duplicates(
                 pass
 
         dup_id = None
-        for k in _keys(e.email, e.phone, e.telegram_usernames):
+        for k in _keys(e.name, e.email, e.phone, e.telegram_usernames):
             for cand in key_ids.get(k, []):
                 if cand != e.id and cand not in dismissed:
                     dup_id = cand

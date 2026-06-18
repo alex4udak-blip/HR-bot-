@@ -1006,7 +1006,12 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
         if nt:
             tg_names.add(nt)
 
-    if not emails and not phones10 and not tg_names:
+    # Полное ФИО (≥2 слов): совпадение по нему тоже считаем дублем — кандидаты из
+    # импорта/других источников часто без контактов, с одинаковым ФИО.
+    my_name = " ".join((entity.name or "").strip().lower().split())
+    name_ok = len(my_name.split()) >= 2
+
+    if not emails and not phones10 and not tg_names and not name_ok:
         return None
 
     # «Разъединённые» ранее совпадения не поднимаем повторно
@@ -1021,7 +1026,7 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
     # Грузим ВСЕХ кандидатов организации (активные + архив) и сравниваем
     # нормализованные контакты в Python — портируемо (Postgres + SQLite-тесты),
     # тот же подход, что в detect_duplicates.
-    q = select(Entity.id, Entity.email, Entity.phone, Entity.telegram_usernames).where(
+    q = select(Entity.id, Entity.name, Entity.email, Entity.phone, Entity.telegram_usernames).where(
         Entity.type == EntityType.candidate,
         Entity.id != entity.id,
     )
@@ -1032,7 +1037,7 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
     res = await db.execute(q)
     match_id: Optional[int] = None
     phone_match: Optional[int] = None
-    for cand_id, cand_email, cand_phone, cand_tg in res.all():
+    for cand_id, cand_name, cand_email, cand_phone, cand_tg in res.all():
         if cand_id in dismissed:
             continue
         if emails and normalize_email(cand_email or "") in emails:
@@ -1042,6 +1047,9 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
             str(t or "").strip().lstrip("@").lower() in tg_names for t in (cand_tg or [])
         ):
             match_id = cand_id  # telegram-username — тоже надёжный идентификатор
+            break
+        if name_ok and " ".join((cand_name or "").strip().lower().split()) == my_name:
+            match_id = cand_id  # одинаковое полное ФИО
             break
         if phone_match is None and phones10:
             d = normalize_phone(cand_phone or "")
