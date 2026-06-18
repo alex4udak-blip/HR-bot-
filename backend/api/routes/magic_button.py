@@ -713,8 +713,18 @@ async def get_my_vacancies_for_extension(
             cloned_request_ids.add(int(src))
         except (TypeError, ValueError):
             pass
-    return [
-        {"id": v.id, "title": v.title}
-        for v in vacancies
-        if v.id not in cloned_request_ids
-    ]
+    # После клон-схлопывания дополнительно убираем повторы по названию: одну
+    # воронку рекрутёр мог «взять» несколько раз → несколько клонов с одинаковым
+    # названием («tesy / tesy / tesy»), которые в списке не различить. Оставляем
+    # по одной записи на название.
+    seen_titles: set = set()
+    out = []
+    for v in vacancies:
+        if v.id in cloned_request_ids:
+            continue
+        key = (v.title or "").strip().lower()
+        if key in seen_titles:
+            continue
+        seen_titles.add(key)
+        out.append({"id": v.id, "title": v.title})
+    return out
