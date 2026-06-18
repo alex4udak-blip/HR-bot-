@@ -937,8 +937,10 @@ async def merge_shadow_duplicate(
         select(Entity).where(Entity.id == request.duplicate_id, Entity.org_id == org.id)
     )
     source_entity = source_result.scalar_one_or_none()
-    if not source_entity or not source_entity.is_archived:
-        raise HTTPException(404, "Archived duplicate not found")
+    if not source_entity:
+        # Дубль может быть и активным, и архивным — объединяем в survivor (target),
+        # is_archived survivor не меняется.
+        raise HTTPException(404, "Duplicate not found")
 
     try:
         merged = await similarity_service.merge_entities(

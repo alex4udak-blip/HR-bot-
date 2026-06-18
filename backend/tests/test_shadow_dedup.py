@@ -66,12 +66,12 @@ async def test_detect_no_match_returns_none(db_session, organization):
 
 
 @pytest.mark.asyncio
-async def test_detect_ignores_active_candidates(db_session, organization):
-    # совпадение с АКТИВНЫМ (не архивным) кандидатом не должно срабатывать
-    await _mk(db_session, organization.id, "Актив", email="dup@x.com", is_archived=False)
+async def test_detect_matches_active_candidates(db_session, organization):
+    # детект теперь ловит дубль и среди АКТИВНЫХ (не только архив)
+    active = await _mk(db_session, organization.id, "Актив", email="dup@x.com", is_archived=False)
     newc = await _mk(db_session, organization.id, "Новый", email="dup@x.com")
     await db_session.commit()
-    assert await detect_archived_duplicate(db_session, newc) is None
+    assert await detect_archived_duplicate(db_session, newc) == active.id
 
 
 @pytest.mark.asyncio
@@ -283,19 +283,20 @@ async def test_merge_shadow_endpoint(
 
 
 @pytest.mark.asyncio
-async def test_merge_shadow_rejects_non_archived(
+async def test_merge_shadow_merges_active_duplicate(
     client, db_session, organization, admin_user, org_owner, admin_token,
 ):
-    # «source» не в архиве → merge-shadow не должен его трогать (404)
-    active = await _mk(db_session, organization.id, "Активный", email="na@x.com", is_archived=False)
+    # merge-shadow теперь объединяет и АКТИВНЫЙ дубль (не только архивный)
+    source = await _mk(db_session, organization.id, "Активный дубль", email="na@x.com", is_archived=False)
     await db_session.flush()
     target = await _mk(db_session, organization.id, "Новый", email="na2@x.com", created_by=admin_user.id)
     await db_session.commit()
 
     r = await client.post(
         f"/api/entities/{target.id}/merge-shadow",
-        json={"duplicate_id": active.id}, headers=_h(admin_token),
+        json={"duplicate_id": source.id}, headers=_h(admin_token),
     )
-    assert r.status_code == 404
-    # активный кандидат не тронут
-    assert await db_session.get(Entity, active.id) is not None
+    assert r.status_code == 200, r.text
+    # источник-дубль удалён, survivor остался
+    assert await db_session.get(Entity, source.id) is None
+    assert await db_session.get(Entity, target.id) is not None

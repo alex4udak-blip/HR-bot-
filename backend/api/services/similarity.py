@@ -950,9 +950,9 @@ similarity_service = SimilarityService()
 
 
 async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optional[int]:
-    """Найти кандидата в теневой базе (is_archived=true), совпадающего с новым
-    кандидатом по нормализованному email, телефону (последние 10 цифр) или
-    telegram-username.
+    """Найти дубликат среди кандидатов организации — активные И архив (кроме self),
+    совпадение по нормализованному email, телефону (последние 10 цифр) или
+    telegram-username. (Раньше сверял только с архивом — теперь и активных между собой.)
 
     Вызывается на путях создания АКТИВНОГО кандидата (ручное добавление,
     расширение, загрузка резюме), чтобы пометить новый профиль флагом
@@ -996,11 +996,10 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
             except (TypeError, ValueError):
                 continue
 
-    # Грузим архивных кандидатов организации и сравниваем нормализованные контакты
-    # в Python — портируемо (Postgres + SQLite-тесты), тот же подход, что в
-    # detect_duplicates. На create-пути архив одной org обычно невелик.
+    # Грузим ВСЕХ кандидатов организации (активные + архив) и сравниваем
+    # нормализованные контакты в Python — портируемо (Postgres + SQLite-тесты),
+    # тот же подход, что в detect_duplicates.
     q = select(Entity.id, Entity.email, Entity.phone, Entity.telegram_usernames).where(
-        Entity.is_archived.is_(True),
         Entity.type == EntityType.candidate,
         Entity.id != entity.id,
     )

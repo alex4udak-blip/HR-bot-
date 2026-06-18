@@ -136,14 +136,14 @@ export default function CandidateArchivePage() {
           onClick={handleRescan}
           disabled={rescanning}
           className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-          title="Прогнать детект по всем активным кандидатам против архива и проставить баннеры"
+          title="Найти дубли среди активных — против архива И друг друга — и проставить баннеры на карточках"
         >
           {rescanning ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <ScanSearch className="w-4 h-4" />
           )}
-          Сверить активных с архивом
+          Сверить активных кандидатов
         </button>
         <button
           onClick={handleFindDuplicates}
