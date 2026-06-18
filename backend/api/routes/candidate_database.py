@@ -386,9 +386,11 @@ async def merge_candidates(
         raise HTTPException(status_code=404, detail="One or both candidates not found")
 
     try:
-        from api.services.similarity import merge_entities
-        result = await merge_entities(source_id, target_id, db)
-        return {"success": True, "merged_into": target_id, "details": result}
+        from ..services.similarity import similarity_service
+        merged = await similarity_service.merge_entities(
+            db=db, source_entity=source, target_entity=target
+        )
+        return {"success": True, "merged_into": target_id, "details": {"merged_entity_id": merged.id}}
     except Exception as e:
         logger.error(f"Merge failed: {e}")
         raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")

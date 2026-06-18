@@ -409,7 +409,8 @@ class SimilarityService:
             and_(
                 Entity.org_id == org_id,
                 Entity.id != entity.id,
-                Entity.type == EntityType.candidate
+                Entity.type == EntityType.candidate,
+                Entity.is_archived.is_not(True),  # архив не показываем в «похожих»
             )
         )
         result = await db.execute(query)
@@ -681,7 +682,8 @@ class SimilarityService:
         query = select(Entity).where(
             and_(
                 Entity.org_id == org_id,
-                Entity.id != entity.id
+                Entity.id != entity.id,
+                Entity.is_archived.is_not(True),  # архив исключаем из детекции дубликатов
             )
         )
         result = await db.execute(query)
@@ -853,7 +855,14 @@ class SimilarityService:
 
         # Переносим связанные записи
         # Чаты
-        from ..models.database import Chat, CallRecording, AnalysisHistory
+        from ..models.database import (
+            Chat, CallRecording, AnalysisHistory,
+            VacancyApplication, StageTransition, EntityAnalysis,
+            EntityAIConversation, EntityFile, EntityTransfer,
+            FormSubmission, RecruiterBonus,
+            EntityCriteria, PrometheusReviewCache,
+        )
+        from sqlalchemy import text as _sql_text
 
         await db.execute(
             Chat.__table__.update()
@@ -875,6 +884,55 @@ class SimilarityService:
             .values(entity_id=target_entity.id)
         )
 
+        # Заявки уникальны по (vacancy_id, entity_id): сперва удаляем заявки source
+        # на вакансии, где у target уже есть заявка (иначе UNIQUE-конфликт),
+        # затем переносим оставшиеся.
+        await db.execute(
+            VacancyApplication.__table__.delete().where(
+                VacancyApplication.entity_id == source_entity.id,
+                VacancyApplication.vacancy_id.in_(
+                    select(VacancyApplication.vacancy_id).where(
+                        VacancyApplication.entity_id == target_entity.id
+                    )
+                ),
+            )
+        )
+
+        # Переносим остальную историю кандидата на target (единый таймлайн):
+        # заявки, переходы этапов, AI-анализы и беседы, файлы, трансферы,
+        # отправки анкет, бонусы рекрутёра.
+        for _hist_model in (
+            VacancyApplication, StageTransition, EntityAnalysis,
+            EntityAIConversation, EntityFile, EntityTransfer,
+            FormSubmission, RecruiterBonus,
+        ):
+            await db.execute(
+                _hist_model.__table__.update()
+                .where(_hist_model.entity_id == source_entity.id)
+                .values(entity_id=target_entity.id)
+            )
+
+        # One-to-one записи (unique entity_id): приоритет у target, копии source удаляем
+        for _uniq_model in (EntityCriteria, PrometheusReviewCache):
+            await db.execute(
+                _uniq_model.__table__.delete().where(
+                    _uniq_model.entity_id == source_entity.id
+                )
+            )
+
+        # M2M-теги: связи source удаляем (теги уже слиты в target.tags выше)
+        await db.execute(
+            _sql_text("DELETE FROM entity_tags WHERE entity_id = :sid"),
+            {"sid": source_entity.id},
+        )
+
+        # Снимаем флаг теневого дубля с survivor — баннер «Проверить» исчезает
+        if isinstance(target_entity.extra_data, dict) and \
+                "hidden_duplicate_id" in target_entity.extra_data:
+            _te = dict(target_entity.extra_data)
+            _te.pop("hidden_duplicate_id", None)
+            target_entity.extra_data = _te
+
         # Удаляем исходную сущность
         await db.delete(source_entity)
 
@@ -889,3 +947,69 @@ class SimilarityService:
 
 # Singleton instance
 similarity_service = SimilarityService()
+
+
+async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optional[int]:
+    """Найти кандидата в теневой базе (is_archived=true), совпадающего с новым
+    кандидатом по нормализованному email или телефону (последние 10 цифр).
+
+    Вызывается на путях создания АКТИВНОГО кандидата (ручное добавление,
+    расширение, загрузка резюме), чтобы пометить новый профиль флагом
+    extra_data.hidden_duplicate_id. Возвращает id архивного совпадения или None.
+    Исключает self и id из extra_data.dismissed_duplicate_ids.
+    """
+    # Нормализованные идентификаторы нового кандидата (основной + доп. массивы)
+    emails: Set[str] = set()
+    primary_email = normalize_email(entity.email or "")
+    if primary_email:
+        emails.add(primary_email)
+    for e in (entity.emails or []):
+        ne = normalize_email(e or "")
+        if ne:
+            emails.add(ne)
+
+    phones10: Set[str] = set()
+    primary_digits = normalize_phone(entity.phone or "")
+    if len(primary_digits) >= 10:
+        phones10.add(primary_digits[-10:])
+    for p in (entity.phones or []):
+        d = normalize_phone(p or "")
+        if len(d) >= 10:
+            phones10.add(d[-10:])
+
+    if not emails and not phones10:
+        return None
+
+    # «Разъединённые» ранее совпадения не поднимаем повторно
+    dismissed: Set[int] = set()
+    if isinstance(entity.extra_data, dict):
+        for x in (entity.extra_data.get("dismissed_duplicate_ids") or []):
+            try:
+                dismissed.add(int(x))
+            except (TypeError, ValueError):
+                continue
+
+    # Грузим архивных кандидатов организации и сравниваем нормализованные контакты
+    # в Python — портируемо (Postgres + SQLite-тесты), тот же подход, что в
+    # detect_duplicates. На create-пути архив одной org обычно невелик.
+    q = select(Entity.id, Entity.email, Entity.phone).where(
+        Entity.is_archived.is_(True),
+        Entity.type == EntityType.candidate,
+        Entity.id != entity.id,
+    )
+    if entity.org_id is not None:
+        q = q.where(Entity.org_id == entity.org_id)
+    q = q.order_by(Entity.id.desc())
+
+    res = await db.execute(q)
+    phone_match: Optional[int] = None
+    for cand_id, cand_email, cand_phone in res.all():
+        if cand_id in dismissed:
+            continue
+        if emails and normalize_email(cand_email or "") in emails:
+            return cand_id  # email — сильнейшее совпадение, возвращаем сразу
+        if phone_match is None and phones10:
+            d = normalize_phone(cand_phone or "")
+            if len(d) >= 10 and d[-10:] in phones10:
+                phone_match = cand_id
+    return phone_match

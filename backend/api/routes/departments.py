@@ -261,7 +261,7 @@ async def list_departments(
         from ..models.database import Entity
         entities_counts_result = await db.execute(
             select(Entity.department_id, func.count(Entity.id))
-            .where(Entity.department_id.in_(dept_ids))
+            .where(Entity.department_id.in_(dept_ids), Entity.is_archived.is_not(True))
             .group_by(Entity.department_id)
         )
         entities_counts = {row[0]: row[1] for row in entities_counts_result.fetchall()}
@@ -613,7 +613,7 @@ async def get_department_children(
     from ..models.database import Entity
     entities_counts_result = await db.execute(
         select(Entity.department_id, func.count(Entity.id))
-        .where(Entity.department_id.in_(dept_ids))
+        .where(Entity.department_id.in_(dept_ids), Entity.is_archived.is_not(True))
         .group_by(Entity.department_id)
     )
     entities_counts = {row[0]: row[1] for row in entities_counts_result.fetchall()}
@@ -1148,7 +1148,7 @@ async def get_my_departments(
     from ..models.database import Entity
     entities_counts_result = await db.execute(
         select(Entity.department_id, func.count(Entity.id))
-        .where(Entity.department_id.in_(dept_ids))
+        .where(Entity.department_id.in_(dept_ids), Entity.is_archived.is_not(True))
         .group_by(Entity.department_id)
     )
     entities_counts = {row[0]: row[1] for row in entities_counts_result.fetchall()}

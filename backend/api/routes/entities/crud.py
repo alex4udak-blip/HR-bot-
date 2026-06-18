@@ -131,6 +131,9 @@ async def list_entities(
                     or_(*conditions)
                 )
 
+    # Теневая база: архивные кандидаты скрыты из активного списка
+    query = query.where(Entity.is_archived.is_not(True))
+
     if type:
         query = query.where(Entity.type == type)
     if status:
@@ -448,6 +451,22 @@ async def create_entity(
     await db.commit()
     await db.refresh(entity)
 
+    # Теневая дедупликация: сверяем нового активного кандидата с архивом.
+    # При совпадении помечаем профиль флагом — фронт покажет баннер «Проверить».
+    hidden_duplicate_id = None
+    if entity.type == EntityType.candidate:
+        try:
+            from ...services.similarity import detect_archived_duplicate
+            hidden_duplicate_id = await detect_archived_duplicate(db, entity)
+            if hidden_duplicate_id:
+                extra = dict(entity.extra_data or {})
+                extra["hidden_duplicate_id"] = hidden_duplicate_id
+                entity.extra_data = extra
+                await db.commit()
+                await db.refresh(entity)
+        except Exception as e:
+            logger.warning(f"shadow-dedup detect failed for new entity {entity.id}: {e}")
+
     response_data = {
         "id": entity.id,
         "type": entity.type,
@@ -472,7 +491,9 @@ async def create_entity(
         "calls_count": 0,
         "expected_salary_min": entity.expected_salary_min,
         "expected_salary_max": entity.expected_salary_max,
-        "expected_salary_currency": entity.expected_salary_currency or 'RUB'
+        "expected_salary_currency": entity.expected_salary_currency or 'RUB',
+        "has_hidden_duplicate": bool(hidden_duplicate_id),
+        "hidden_duplicate_id": hidden_duplicate_id,
     }
 
     # Broadcast entity.created event
@@ -1294,7 +1315,7 @@ async def get_entities_stats_by_type(
 
     result = await db.execute(
         select(Entity.type, func.count(Entity.id))
-        .where(Entity.org_id == org.id)
+        .where(Entity.org_id == org.id, Entity.is_archived.is_not(True))
         .group_by(Entity.type)
     )
     stats = {row[0].value: row[1] for row in result.all()}
@@ -1313,7 +1334,9 @@ async def get_entities_stats_by_status(
     if not org:
         return {}
 
-    query = select(Entity.status, func.count(Entity.id)).where(Entity.org_id == org.id)
+    query = select(Entity.status, func.count(Entity.id)).where(
+        Entity.org_id == org.id, Entity.is_archived.is_not(True)
+    )
     if type:
         query = query.where(Entity.type == type)
     query = query.group_by(Entity.status)
@@ -1321,3 +1344,111 @@ async def get_entities_stats_by_status(
     result = await db.execute(query)
     stats = {row[0].value: row[1] for row in result.all()}
     return stats
+
+
+# ============================================================
+# Теневая база (архив): список для суперадмина + действия архивации
+# ============================================================
+
+@router.get("/archive/list")
+async def list_archived_candidates(
+    q: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Теневая база: список архивных кандидатов. Только суперадмин."""
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Архив доступен только суперадмину")
+
+    base = select(Entity).where(
+        Entity.is_archived.is_(True),
+        Entity.type == EntityType.candidate,
+    )
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        base = base.where(or_(
+            Entity.name.ilike(like),
+            Entity.email.ilike(like),
+            Entity.phone.ilike(like),
+            Entity.position.ilike(like),
+        ))
+
+    count_result = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = count_result.scalar() or 0
+
+    rows = await db.execute(
+        base.order_by(Entity.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    items = []
+    for e in rows.scalars().all():
+        extra = e.extra_data or {}
+        items.append({
+            "id": e.id,
+            "name": e.name,
+            "email": e.email,
+            "phone": e.phone,
+            "position": e.position,
+            "company": e.company,
+            "status": e.status.value if e.status else None,
+            "tags": e.tags or [],
+            "photo_url": extra.get("photo_url"),
+            "source": extra.get("source"),
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        })
+    return {"items": items, "total": total, "page": page, "per_page": per_page}
+
+
+@router.post("/{entity_id}/archive")
+async def archive_entity(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """«В архив»: убрать кандидата в теневую базу (скрыть из активных списков).
+    Доступно тому, кто имеет доступ к карточке."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org and current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    has_access = await check_entity_access(entity, current_user, entity.org_id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(403, "No access to this candidate")
+
+    entity.is_archived = True
+    await db.commit()
+    # Кандидат исчезает из активных списков — уведомляем клиентов
+    await broadcast_entity_deleted(entity.org_id, entity.id)
+    return {"success": True, "is_archived": True}
+
+
+@router.post("/{entity_id}/unarchive")
+async def unarchive_entity(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Вернуть кандидата из архива в активную базу. Только суперадмин."""
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Только суперадмин может возвращать из архива")
+
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    entity.is_archived = False
+    await db.commit()
+    await broadcast_entity_updated(entity.org_id, entity.id)
+    return {"success": True, "is_archived": False}

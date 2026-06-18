@@ -99,6 +99,7 @@ const TimeOffPage = lazyWithRetry(() => import('@/pages/TimeOffPage'));
 const BlockersPage = lazyWithRetry(() => import('@/pages/BlockersPage'));
 const HRReportsPage = lazyWithRetry(() => import('@/pages/HRReportsPage'));
 const FactorialModule = lazyWithRetry(() => import('@/factorial/FactorialModule'));
+const CandidateArchivePage = lazyWithRetry(() => import('@/pages/CandidateArchivePage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -237,6 +238,7 @@ export default function App() {
 
           {/* Superadmin only */}
           <Route path="users" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><UsersPage /></RoleRoute></Suspense>} />
+          <Route path="candidate-archive" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><CandidateArchivePage /></RoleRoute></Suspense>} />
           <Route path="admin" element={<Navigate to="/admin/simulator" replace />} />
           <Route path="admin/simulator" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><AdminSimulatorPage /></RoleRoute></Suspense>} />
           {/* Catch-all for unknown routes */}

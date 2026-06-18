@@ -376,6 +376,12 @@ async def ensure_shadow_columns():
         # Мягкое удаление вакансий: колонка deleted_at (идемпотентно)
         await raw_conn.execute(text(\"ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP\"))
         print('Ensured vacancies.deleted_at column')
+
+        # Теневая база дедупликации: entities.is_archived (идемпотентно).
+        # bulk/CSV/парсер-импорт ставит true; индекс — для фильтра активных списков.
+        await raw_conn.execute(text(\"ALTER TABLE entities ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false\"))
+        await raw_conn.execute(text(\"CREATE INDEX IF NOT EXISTS ix_entities_is_archived ON entities (is_archived)\"))
+        print('Ensured entities.is_archived column + index')
     await raw_engine.dispose()
 
     # One-time data migration: legacy draft → pending_review

@@ -894,6 +894,112 @@ async def merge_entities(
         raise HTTPException(500, f"Error merging: {str(e)}")
 
 
+# === Теневая дедупликация: действия по баннеру «Похожий кандидат есть в базе» ===
+
+class ShadowDuplicateActionRequest(BaseModel):
+    duplicate_id: int  # id архивного (теневого) кандидата-совпадения
+
+
+@router.post("/{entity_id}/merge-shadow")
+async def merge_shadow_duplicate(
+    entity_id: int,
+    request: ShadowDuplicateActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """«Объединить»: слить активного кандидата с его теневым (архивным) дубликатом.
+
+    Survivor = активный кандидат (entity_id); архивный (duplicate_id) удаляется,
+    вся его история переносится на активного (единый таймлайн). Флаг
+    hidden_duplicate_id снимается. Доступно тому, кто имеет доступ к карточке
+    (а не только admin/owner) — баннер показывается добавившему кандидата HR.
+    """
+    from ...services.similarity import similarity_service
+    from .common import broadcast_entity_updated, broadcast_entity_deleted
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    target_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    target_entity = target_result.scalar_one_or_none()
+    if not target_entity:
+        raise HTTPException(404, "Candidate not found")
+
+    has_access = await check_entity_access(target_entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(403, "No access to this candidate")
+
+    source_result = await db.execute(
+        select(Entity).where(Entity.id == request.duplicate_id, Entity.org_id == org.id)
+    )
+    source_entity = source_result.scalar_one_or_none()
+    if not source_entity or not source_entity.is_archived:
+        raise HTTPException(404, "Archived duplicate not found")
+
+    try:
+        merged = await similarity_service.merge_entities(
+            db=db, source_entity=source_entity, target_entity=target_entity
+        )
+        await broadcast_entity_updated(org.id, merged.id)
+        await broadcast_entity_deleted(org.id, request.duplicate_id)
+        return {
+            "success": True,
+            "merged_entity_id": merged.id,
+            "deleted_entity_id": request.duplicate_id,
+        }
+    except Exception as e:
+        logger.error(f"shadow merge failed: {e}")
+        raise HTTPException(500, f"Merge failed: {str(e)}")
+
+
+@router.post("/{entity_id}/dismiss-duplicate")
+async def dismiss_shadow_duplicate(
+    entity_id: int,
+    request: ShadowDuplicateActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """«Нет, это разные люди»: разорвать связь с теневым дубликатом.
+
+    Добавляет duplicate_id в extra_data.dismissed_duplicate_ids (повторный детект
+    его не поднимет) и снимает флаг hidden_duplicate_id — баннер исчезает навсегда.
+    Оба профиля остаются: активный — в работе, архивный — в архиве.
+    """
+    from .common import broadcast_entity_updated
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Candidate not found")
+
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(403, "No access to this candidate")
+
+    extra = dict(entity.extra_data or {})
+    dismissed = list(extra.get("dismissed_duplicate_ids") or [])
+    if request.duplicate_id not in dismissed:
+        dismissed.append(request.duplicate_id)
+    extra["dismissed_duplicate_ids"] = dismissed
+    extra.pop("hidden_duplicate_id", None)
+    entity.extra_data = extra
+    await db.commit()
+
+    await broadcast_entity_updated(org.id, entity.id)
+    return {"success": True, "dismissed_duplicate_id": request.duplicate_id}
+
+
 @router.get("/{entity_id}/compare/{other_entity_id}", response_model=SimilarCandidateResponse)
 async def compare_candidates(
     entity_id: int,

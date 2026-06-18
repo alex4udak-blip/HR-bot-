@@ -116,6 +116,7 @@ def _base_candidate_query(org_id: Optional[int], current_user: User, isolated_id
     q = select(Entity).where(
         Entity.type == EntityType.candidate,
         Entity.is_transferred.is_not(True),
+        Entity.is_archived.is_not(True),  # теневая база скрыта из активного поиска/списков/канбана
     )
     if current_user.role == UserRole.superadmin:
         if isolated_ids:

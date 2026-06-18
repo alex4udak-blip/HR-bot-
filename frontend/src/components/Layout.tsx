@@ -35,6 +35,7 @@ import {
   Code2,
   Palette,
   Filter,
+  Archive,
   Layers,
   FileText,
   Link2,
@@ -153,6 +154,7 @@ type HrSettingsItem = {
   color: string;
   path?: string;
   adminOnly?: boolean;
+  superadminOnly?: boolean;
   missing?: boolean;
 };
 
@@ -437,6 +439,14 @@ const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
     color: "text-[var(--hf-status-blue)]",
     missing: true,
   },
+  {
+    title: "Архив кандидатов",
+    description: "Теневая база: скрытые дубликаты и архив (только суперадмин)",
+    icon: Archive,
+    color: "text-[var(--hf-status-orange)]",
+    path: "/candidate-archive",
+    superadminOnly: true,
+  },
 ];
 
 const HR_SETTINGS_MY_ITEMS: HrSettingsItem[] = [
@@ -512,23 +522,28 @@ function HrSettingsCard({
 
 function HrSettingsModal({
   canUseAdmin,
+  isSuperadmin,
   onClose,
   onNavigate,
 }: {
   canUseAdmin: boolean;
+  isSuperadmin: boolean;
   onClose: () => void;
   onNavigate: (path: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
-  const filterItems = (items: HrSettingsItem[]) =>
-    normalizedQuery
-      ? items.filter((item) =>
+  const filterItems = (items: HrSettingsItem[]) => {
+    // Суперадм-только пункты (напр. «Архив кандидатов») скрываем от остальных
+    const visible = items.filter((item) => !item.superadminOnly || isSuperadmin);
+    return normalizedQuery
+      ? visible.filter((item) =>
           `${item.title} ${item.description}`
             .toLowerCase()
             .includes(normalizedQuery),
         )
-      : items;
+      : visible;
+  };
   const orgItems = filterItems(HR_SETTINGS_ORG_ITEMS);
   const myItems = filterItems(HR_SETTINGS_MY_ITEMS);
 
@@ -539,6 +554,10 @@ function HrSettingsModal({
     }
     if (item.adminOnly && !canUseAdmin) {
       toast("Раздел доступен только администратору");
+      return;
+    }
+    if (item.superadminOnly && !isSuperadmin) {
+      toast("Раздел доступен только суперадмину");
       return;
     }
     if (item.path) {
@@ -1301,6 +1320,7 @@ export default function Layout() {
         {showHrSettingsModal && (
           <HrSettingsModal
             canUseAdmin={isHrSidebarAdmin}
+            isSuperadmin={user?.role === "superadmin"}
             onClose={() => setShowHrSettingsModal(false)}
             onNavigate={handleHrSettingsNavigate}
           />

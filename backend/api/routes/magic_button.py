@@ -139,6 +139,7 @@ async def check_duplicate(
         select(Entity).where(
             Entity.org_id == org.id,
             Entity.type == EntityType.candidate,
+            Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
             or_(*conditions)
         ).limit(5)
     )
@@ -234,6 +235,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             select(Entity).where(
                 Entity.org_id == org.id,
                 Entity.type == EntityType.candidate,
+                Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
                 Entity.extra_data.op('->>')('source_url') == data.source_url,
             ).limit(1)
         )
@@ -259,6 +261,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
                 select(Entity).where(
                     Entity.org_id == org.id,
                     Entity.type == EntityType.candidate,
+                    Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
                     or_(*conditions)
                 ).limit(1)
             )
@@ -427,6 +430,21 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             source=data.source,
         )
         db.add(app)
+
+    # Теневая дедупликация: сверяем нового кандидата с архивом до коммита.
+    # При совпадении помечаем профиль флагом — веб-карточка покажет баннер «Проверить».
+    try:
+        from ..services.similarity import detect_archived_duplicate
+        _hidden_dup = await detect_archived_duplicate(db, entity)
+        if _hidden_dup:
+            _extra = dict(entity.extra_data or {})
+            _extra["hidden_duplicate_id"] = _hidden_dup
+            entity.extra_data = _extra
+    except Exception:
+        import logging
+        logging.getLogger("hr-analyzer.magic-button").warning(
+            "shadow-dedup detect failed (non-critical)", exc_info=True
+        )
 
     await db.commit()
 

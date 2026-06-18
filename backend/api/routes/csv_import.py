@@ -428,6 +428,7 @@ async def import_execute(
                 telegram_usernames=tg_list,
                 extra_data=extra_data if extra_data else {},
                 created_by=current_user.id,
+                is_archived=True,  # bulk CSV-импорт → теневая база (архив)
             )
 
             db.add(entity)

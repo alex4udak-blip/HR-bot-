@@ -17,6 +17,7 @@ import {
   Download,
   Pencil,
   PenSquare,
+  Archive,
   Phone,
   Send,
   Check,
@@ -50,6 +51,7 @@ import {
   getEntityFiles,
   downloadEntityFile,
   deleteEntity,
+  archiveEntity,
   getEntity,
   addEntityNote,
   updateEntityNote,
@@ -58,6 +60,7 @@ import {
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import type { EntityFile } from "@/services/api/entities";
 import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
+import ShadowDuplicateBanner from "@/components/entities/ShadowDuplicateBanner";
 import ParserModal from "@/components/parser/ParserModal";
 import { useAuthStore } from "@/stores/authStore";
 import { HuntflowComposer } from "@/components/hr/HuntflowComposer";
@@ -1241,6 +1244,10 @@ export default function AllCandidatesPage() {
                   setShowAddToVacancy(true);
                 }}
                   onEdit={() => setShowEditModal(true)}
+                  onArchived={() => {
+                    setSelectedCard(null);
+                    fetchBoard();
+                  }}
                 />
               </div>
             ) : (
@@ -1518,6 +1525,7 @@ const InfoTab = memo(function InfoTab({
   onStatusChange,
   onAddToVacancy,
   onEdit,
+  onArchived,
 }: {
   card: KanbanCard;
   status: string;
@@ -1528,12 +1536,27 @@ const InfoTab = memo(function InfoTab({
   onStatusChange: (s: string) => void;
   onAddToVacancy: (rect?: { left: number; bottom: number }) => void;
   onEdit: () => void;
+  onArchived: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
   const isAdmin =
     currentUser?.role === "superadmin" ||
     currentUser?.org_role === "owner" ||
     currentUser?.org_role === "admin";
+  const [archiving, setArchiving] = useState(false);
+  const handleArchive = async () => {
+    if (!window.confirm("Убрать кандидата в архив? Он скроется из активных списков.")) return;
+    setArchiving(true);
+    try {
+      await archiveEntity(card.id);
+      toast.success("Кандидат убран в архив");
+      onArchived();
+    } catch {
+      toast.error("Не удалось архивировать");
+    } finally {
+      setArchiving(false);
+    }
+  };
   const [showStageDD, setShowStageDD] = useState(false);
   const [pendingStage, setPendingStage] = useState(status);
   const [stageChangeComment, setStageChangeComment] = useState("");
@@ -2151,6 +2174,9 @@ const InfoTab = memo(function InfoTab({
         </div>
       )}
 
+      {/* Теневой дубль: баннер «Похожий кандидат есть в базе» над action-баром */}
+      <ShadowDuplicateBanner card={card} />
+
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
       <div className="hf-profile-action-bar">
         <button
@@ -2176,6 +2202,13 @@ const InfoTab = memo(function InfoTab({
           className="hf-profile-action-btn"
         >
           <PenSquare className="hf-profile-action-icon" /> Редактировать
+        </button>
+        <button
+          onClick={handleArchive}
+          disabled={archiving}
+          className="hf-profile-action-btn"
+        >
+          <Archive className="hf-profile-action-icon" /> В архив
         </button>
       </div>
 

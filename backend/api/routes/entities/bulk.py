@@ -300,6 +300,20 @@ async def create_entity_from_resume(
             await db.flush()
             file_id = entity_file.id
 
+        # Теневая дедупликация: сверяем загруженного кандидата с архивом до коммита
+        try:
+            from ...services.similarity import detect_archived_duplicate
+            _hidden_dup = await detect_archived_duplicate(db, entity)
+            if _hidden_dup:
+                _extra = dict(entity.extra_data or {})
+                _extra["hidden_duplicate_id"] = _hidden_dup
+                entity.extra_data = _extra
+        except Exception:
+            import logging
+            logging.getLogger("hr-analyzer.bulk").warning(
+                "shadow-dedup detect failed (non-critical)", exc_info=True
+            )
+
         await db.commit()
         await db.refresh(entity)
 
@@ -327,7 +341,9 @@ async def create_entity_from_resume(
             "calls_count": 0,
             "expected_salary_min": entity.expected_salary_min,
             "expected_salary_max": entity.expected_salary_max,
-            "expected_salary_currency": entity.expected_salary_currency or 'RUB'
+            "expected_salary_currency": entity.expected_salary_currency or 'RUB',
+            "has_hidden_duplicate": bool((entity.extra_data or {}).get("hidden_duplicate_id")),
+            "hidden_duplicate_id": (entity.extra_data or {}).get("hidden_duplicate_id"),
         }
 
         parsed_response = ParsedResumeResponse(

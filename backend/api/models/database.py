@@ -556,6 +556,11 @@ class Entity(Base):
     transferred_to_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     transferred_at = Column(DateTime, nullable=True)
 
+    # Shadow/archive base — candidates from bulk import (CSV/parser) or manually
+    # archived. Hidden from all active lists/kanban/search/analytics; the full
+    # archive is visible only to superadmin. See shadow-dedup design spec.
+    is_archived = Column(Boolean, default=False, nullable=False, index=True)
+
     organization = relationship("Organization", back_populates="entities")
     department = relationship("Department", back_populates="entities")
     creator = relationship("User", foreign_keys=[created_by])
