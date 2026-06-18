@@ -602,3 +602,8 @@ async def broadcast_call_failed(org_id: int, call_data: Dict[str, Any]):
             - status: "failed"
     """
     await manager.broadcast_to_org(org_id, "call.failed", call_data)
+
+
+async def broadcast_form_submission(org_id: int, payload: Dict[str, Any]):
+    """Broadcast form.submission event to organization."""
+    await manager.broadcast_to_org(org_id, "form.submission", payload)

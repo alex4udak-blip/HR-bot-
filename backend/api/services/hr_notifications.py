@@ -132,6 +132,26 @@ async def notify_new_candidate(
 
 
 # ---------------------------------------------------------------------------
+# 1b. Form answer received (dispatch submitted by candidate)
+# ---------------------------------------------------------------------------
+
+async def notify_form_submitted(db: AsyncSession, dispatch, entity, form) -> None:
+    """Уведомить отправителя анкеты о полученном ответе кандидата."""
+    try:
+        if not dispatch.created_by:
+            return
+        title = "Ответ на анкету"
+        cand = entity.name if entity else "Кандидат"
+        message = f"{cand} заполнил(а) анкету «{form.title}»"
+        link = "/all-candidates"
+        await _create_notification(db, dispatch.created_by, "form_submitted", title, message, link)
+        await db.commit()
+    except Exception:
+        logger.exception("notify_form_submitted failed")
+        await db.rollback()
+
+
+# ---------------------------------------------------------------------------
 # 2. Candidate stage change
 # ---------------------------------------------------------------------------
 

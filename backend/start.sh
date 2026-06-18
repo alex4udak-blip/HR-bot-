@@ -287,6 +287,38 @@ async def ensure_shadow_columns():
                         '[]'::json, now(), now())
                 \"\"\"), {'oid': oid})
 
+        # form_dispatches: персональная отправка анкеты кандидату
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'form_dispatches')\"
+        ))
+        if not result.scalar():
+            print('Creating form_dispatches table...')
+            await conn.execute(text('''
+                CREATE TABLE form_dispatches (
+                    id SERIAL PRIMARY KEY,
+                    form_id INTEGER NOT NULL REFERENCES form_templates(id) ON DELETE CASCADE,
+                    entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    token VARCHAR(64) NOT NULL UNIQUE,
+                    status VARCHAR(20) DEFAULT 'sent',
+                    submission_id INTEGER REFERENCES form_submissions(id) ON DELETE SET NULL,
+                    seen_by_recruiter BOOLEAN DEFAULT false,
+                    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    created_at TIMESTAMP DEFAULT now(),
+                    opened_at TIMESTAMP,
+                    submitted_at TIMESTAMP
+                )
+            '''))
+            await conn.execute(text('CREATE INDEX ix_form_dispatch_entity ON form_dispatches (entity_id)'))
+            await conn.execute(text('CREATE INDEX ix_form_dispatch_token ON form_dispatches (token)'))
+
+        # form_submissions.dispatch_id
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'form_submissions' AND column_name = 'dispatch_id')\"
+        ))
+        if not result.scalar():
+            print('Adding dispatch_id column to form_submissions...')
+            await conn.execute(text('ALTER TABLE form_submissions ADD COLUMN dispatch_id INTEGER REFERENCES form_dispatches(id) ON DELETE SET NULL'))
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection

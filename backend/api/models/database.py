@@ -1528,6 +1528,7 @@ class FormSubmission(Base):
     form_id = Column(Integer, ForeignKey("form_templates.id", ondelete="CASCADE"), nullable=False, index=True)
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
     data = Column(JSON, nullable=False)  # {field_id: value, ...}
+    dispatch_id = Column(Integer, ForeignKey("form_dispatches.id", ondelete="SET NULL"), nullable=True, index=True)
     submitted_at = Column(DateTime, default=func.now())
 
     form = relationship("FormTemplate", back_populates="submissions")
@@ -1549,6 +1550,26 @@ class FormVacancy(Base):
 
     form = relationship("FormTemplate")
     vacancy = relationship("Vacancy")
+
+
+class FormDispatch(Base):
+    """Анкета, отправленная конкретному существующему кандидату по личной ссылке."""
+    __tablename__ = "form_dispatches"
+
+    id = Column(Integer, primary_key=True)
+    form_id = Column(Integer, ForeignKey("form_templates.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    status = Column(String(20), default="sent")            # sent | opened | submitted
+    submission_id = Column(Integer, ForeignKey("form_submissions.id", ondelete="SET NULL", use_alter=True), nullable=True)
+    seen_by_recruiter = Column(Boolean, default=False)     # управляет бейджем на кнопке
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    opened_at = Column(DateTime, nullable=True)
+    submitted_at = Column(DateTime, nullable=True)
+
+    form = relationship("FormTemplate")
+    entity = relationship("Entity")
 
 
 # ============================================================
