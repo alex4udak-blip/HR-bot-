@@ -1559,3 +1559,110 @@ async def rescan_active_duplicates(
         "newly_flagged": changed,
         "matches": matches,
     }
+
+
+@router.post("/archive/find-duplicates")
+async def find_archive_duplicates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Найти дубликаты ВНУТРИ архива: группы архивных кандидатов, совпадающих
+    по email / телефону (10 цифр) / telegram. Возвращает группы из ≥2 профилей.
+    Только суперадмин."""
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Только для суперадмина")
+    org = await get_user_org(current_user, db)
+
+    from ...services.similarity import normalize_email, normalize_phone
+
+    q = select(
+        Entity.id, Entity.name, Entity.email, Entity.phone,
+        Entity.telegram_usernames, Entity.position,
+    ).where(Entity.is_archived.is_(True), Entity.type == EntityType.candidate)
+    if org is not None:
+        q = q.where(Entity.org_id == org.id)
+    rows = (await db.execute(q)).all()
+
+    # Union-find: связываем профили, делящие хотя бы один идентификатор
+    parent: dict = {}
+
+    def find(x):
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    info: dict = {}
+    key_to_id: dict = {}
+    for rid, name, email, phone, tg, position in rows:
+        parent.setdefault(rid, rid)
+        info[rid] = {
+            "id": rid, "name": name, "email": email, "phone": phone,
+            "telegram": (tg[0] if tg else None), "position": position,
+        }
+        keys = []
+        ne = normalize_email(email or "")
+        if ne:
+            keys.append("e:" + ne)
+        d = normalize_phone(phone or "")
+        if len(d) >= 10:
+            keys.append("p:" + d[-10:])
+        for t in (tg or []):
+            nt = str(t or "").strip().lstrip("@").lower()
+            if nt:
+                keys.append("t:" + nt)
+        for k in keys:
+            if k in key_to_id:
+                union(key_to_id[k], rid)
+            else:
+                key_to_id[k] = rid
+
+    groups_map: dict = {}
+    for rid in info:
+        groups_map.setdefault(find(rid), []).append(info[rid])
+    groups = [m for m in groups_map.values() if len(m) >= 2]
+    groups.sort(key=lambda m: -len(m))
+    return {
+        "groups": groups,
+        "total_groups": len(groups),
+        "total_dupes": sum(len(g) for g in groups),
+    }
+
+
+class _MergeArchivedRequest(BaseModel):
+    source_id: int
+
+
+@router.post("/{entity_id}/merge-archived")
+async def merge_archived_duplicate(
+    entity_id: int,
+    body: _MergeArchivedRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Объединить два АРХИВНЫХ профиля: source_id вливается в survivor (entity_id),
+    survivor остаётся в архиве. Только суперадмин."""
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Только для суперадмина")
+
+    survivor = (await db.execute(select(Entity).where(Entity.id == entity_id))).scalar_one_or_none()
+    source = (await db.execute(select(Entity).where(Entity.id == body.source_id))).scalar_one_or_none()
+    if not survivor or not survivor.is_archived:
+        raise HTTPException(404, "Кандидат-приёмник не в архиве")
+    if not source or not source.is_archived:
+        raise HTTPException(404, "Кандидат-источник не в архиве")
+    if survivor.id == source.id:
+        raise HTTPException(400, "Нельзя объединить профиль сам с собой")
+
+    from ...services.similarity import similarity_service
+    await similarity_service.merge_entities(db=db, source_entity=source, target_entity=survivor)
+    return {"success": True, "survivor_id": survivor.id}

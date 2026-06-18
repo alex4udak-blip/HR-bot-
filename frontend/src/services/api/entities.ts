@@ -517,6 +517,40 @@ export const rescanArchiveDuplicates = async (): Promise<RescanResult> => {
   return data;
 };
 
+/** Дубликаты ВНУТРИ архива — группы совпадающих профилей. */
+export interface ArchiveDupMember {
+  id: number;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  telegram?: string | null;
+  position?: string | null;
+}
+export interface ArchiveDupGroups {
+  groups: ArchiveDupMember[][];
+  total_groups: number;
+  total_dupes: number;
+}
+
+/** Найти группы дубликатов внутри архива. Только суперадмин. */
+export const findArchiveDuplicates = async (): Promise<ArchiveDupGroups> => {
+  const { data } = await debouncedMutation<ArchiveDupGroups>(
+    'post', '/entities/archive/find-duplicates', {}
+  );
+  return data;
+};
+
+/** Объединить два архивных профиля (source → survivor). Только суперадмин. */
+export const mergeArchivedInto = async (
+  survivorId: number,
+  sourceId: number,
+): Promise<{ success: boolean }> => {
+  const { data } = await debouncedMutation<{ success: boolean }>(
+    'post', `/entities/${survivorId}/merge-archived`, { source_id: sourceId }
+  );
+  return data;
+};
+
 /**
  * Compare two candidates.
  *

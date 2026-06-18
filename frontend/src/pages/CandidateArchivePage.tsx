@@ -1,13 +1,16 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Archive, Search, RotateCcw, Loader2, ScanSearch } from "lucide-react";
+import { Archive, Search, RotateCcw, Loader2, ScanSearch, Users, GitMerge } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   listArchivedCandidates,
   unarchiveEntity,
   rescanArchiveDuplicates,
+  findArchiveDuplicates,
+  mergeArchivedInto,
   type ArchivedCandidate,
   type RescanResult,
+  type ArchiveDupGroups,
 } from "@/services/api/entities";
 
 /**
@@ -24,6 +27,10 @@ export default function CandidateArchivePage() {
   const navigate = useNavigate();
   const [rescanning, setRescanning] = useState(false);
   const [rescanResult, setRescanResult] = useState<RescanResult | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [dupGroups, setDupGroups] = useState<ArchiveDupGroups | null>(null);
+  const [groupSurvivor, setGroupSurvivor] = useState<Record<number, number>>({});
+  const [mergingGroup, setMergingGroup] = useState<number | null>(null);
 
   const load = useCallback(async (query: string) => {
     setLoading(true);
@@ -74,6 +81,44 @@ export default function CandidateArchivePage() {
     }
   };
 
+  const handleFindDuplicates = async () => {
+    setFinding(true);
+    setDupGroups(null);
+    try {
+      const res = await findArchiveDuplicates();
+      setDupGroups(res);
+      toast.success(
+        res.total_groups
+          ? `Найдено групп дубликатов: ${res.total_groups} (${res.total_dupes} профилей)`
+          : "Дубликатов в архиве не найдено"
+      );
+    } catch {
+      toast.error("Не удалось найти дубликаты");
+    } finally {
+      setFinding(false);
+    }
+  };
+
+  const mergeGroup = async (
+    gi: number,
+    members: { id: number }[],
+    survivorId: number,
+  ) => {
+    setMergingGroup(gi);
+    try {
+      for (const m of members) {
+        if (m.id !== survivorId) await mergeArchivedInto(survivorId, m.id);
+      }
+      toast.success("Дубликаты объединены");
+      await load(q);
+      setDupGroups(await findArchiveDuplicates());
+    } catch {
+      toast.error("Не удалось объединить");
+    } finally {
+      setMergingGroup(null);
+    }
+  };
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center gap-3 mb-2">
@@ -86,19 +131,30 @@ export default function CandidateArchivePage() {
         суперадмину.
       </p>
 
-      <button
-        onClick={handleRescan}
-        disabled={rescanning}
-        className="mb-4 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-        title="Прогнать детект по всем активным кандидатам против архива и проставить баннеры"
-      >
-        {rescanning ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <ScanSearch className="w-4 h-4" />
-        )}
-        Сверить активных с архивом
-      </button>
+      <div className="flex flex-wrap gap-2 mb-4">
+        <button
+          onClick={handleRescan}
+          disabled={rescanning}
+          className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+          title="Прогнать детект по всем активным кандидатам против архива и проставить баннеры"
+        >
+          {rescanning ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <ScanSearch className="w-4 h-4" />
+          )}
+          Сверить активных с архивом
+        </button>
+        <button
+          onClick={handleFindDuplicates}
+          disabled={finding}
+          className="inline-flex items-center gap-2 rounded-lg border border-amber-600 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+          title="Найти дубликаты внутри архива (по email / телефону / Telegram)"
+        >
+          {finding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+          Найти дубликаты в архиве
+        </button>
+      </div>
 
       {rescanResult && (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
@@ -131,6 +187,69 @@ export default function CandidateArchivePage() {
           ) : (
             <div className="text-sm text-amber-800/80">Совпадений не найдено.</div>
           )}
+        </div>
+      )}
+
+      {dupGroups && dupGroups.groups.length > 0 && (
+        <div className="mb-4 space-y-3">
+          <div className="text-sm text-gray-600">
+            Дубликаты в архиве: <b>{dupGroups.total_groups}</b> групп · {dupGroups.total_dupes} профилей.
+            Выбери, кого оставить, и объедини.
+          </div>
+          {dupGroups.groups.map((group, gi) => {
+            const survivorId = groupSurvivor[gi] ?? group[0].id;
+            const survivorName = group.find((m) => m.id === survivorId)?.name || "";
+            return (
+              <div key={gi} className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                <div className="text-xs text-amber-700 mb-2">
+                  Группа {gi + 1} · {group.length} профиля
+                </div>
+                <div className="space-y-1 mb-3">
+                  {group.map((m) => (
+                    <label
+                      key={m.id}
+                      className="flex items-center gap-2 text-sm cursor-pointer rounded px-1.5 py-1 hover:bg-amber-100"
+                    >
+                      <input
+                        type="radio"
+                        name={`grp-${gi}`}
+                        checked={survivorId === m.id}
+                        onChange={() => setGroupSurvivor((p) => ({ ...p, [gi]: m.id }))}
+                      />
+                      <span className="font-medium text-gray-800 shrink-0">{m.name}</span>
+                      <span className="text-xs text-gray-500 truncate">
+                        {[m.telegram ? "@" + m.telegram : "", m.phone, m.email, m.position]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigate(`/all-candidates?entity=${m.id}&archived=1`);
+                        }}
+                        className="ml-auto text-xs text-amber-700 hover:underline shrink-0"
+                      >
+                        открыть
+                      </button>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  onClick={() => mergeGroup(gi, group, survivorId)}
+                  disabled={mergingGroup === gi}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {mergingGroup === gi ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <GitMerge className="w-4 h-4" />
+                  )}
+                  Объединить в «{survivorName}»
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
