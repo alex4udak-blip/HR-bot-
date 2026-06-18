@@ -3,174 +3,291 @@ import { AlertTriangle, X, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
 import type { EntityWithRelations } from "@/types";
+import { STATUS_LABELS } from "@/types";
 import { getEntity, mergeShadowDuplicate, dismissDuplicate } from "@/services/api/entities";
 
 /**
- * Баннер «Похожий кандидат есть в базе» + полноэкранный экран сравнения
- * «Проверка похожих кандидатов»: новый активный кандидат vs его теневой
- * (архивный) дубль — две колонки с фото и полями, совпадения подсвечены жёлтым.
- *
- * Показывается, когда у карточки есть extra_data.hidden_duplicate_id.
- * Три действия: Объединить (merge) / Нет, это разные люди (dismiss) / Закрыть.
+ * Баннер «Похожий кандидат есть в базе» + БЕЛЫЙ экран сравнения двух анкет
+ * целиком: шапка, блок статуса (этап + причина/дата отказа + история этапов),
+ * поля профиля и резюме. Совпадения подсвечены. Объединить / Разные / Закрыть.
  */
 
 interface ShadowDuplicateBannerProps {
   card: KanbanCard;
+  status?: string; // текущий этап открытой карточки (ключ EntityStatus)
   onResolved?: () => void;
 }
 
-type CompareSide = {
+interface ResumeDemo {
+  title?: string;
+  subtitle?: string;
+  salary?: string;
+  vacancy_title?: string;
+  sections?: Array<{ title?: string; lines?: string[] }>;
+}
+
+interface TimelineEvent {
+  date?: string;
+  title?: string;
+}
+
+type Side = {
   name: string;
+  photo: string;
   position: string;
   company: string;
-  salary: string;
   phone: string;
   email: string;
-  skype: string;
   telegram: string;
   age: string;
-  photo: string;
+  city: string;
+  salary: string;
+  experience: string;
+  source: string;
+  statusLabel: string;
+  isRejected: boolean;
+  rejectReason: string;
+  rejectedAt: string;
+  history: TimelineEvent[];
+  resumes: ResumeDemo[];
 };
 
-type FieldKey = "salary" | "phone" | "email" | "skype" | "telegram" | "age";
+type FieldKey = "phone" | "email" | "telegram" | "age" | "city" | "salary" | "experience" | "source";
 
 const norm = (v: string) => (v || "").trim().toLowerCase();
 const normPhone = (v: string) => (v || "").replace(/\D/g, "").slice(-10);
 const normTg = (v: string) => (v || "").trim().replace(/^@/, "").toLowerCase();
+const HL = "bg-amber-100 text-amber-900 rounded px-1.5 py-0.5";
 
-const ROWS: { key: FieldKey; label: string }[] = [
-  { key: "salary", label: "Зарплата" },
+const FIELDS: { key: FieldKey; label: string }[] = [
   { key: "phone", label: "Телефон" },
   { key: "email", label: "Эл. почта" },
-  { key: "skype", label: "Скайп" },
   { key: "telegram", label: "Telegram" },
   { key: "age", label: "Возраст" },
+  { key: "city", label: "Город" },
+  { key: "salary", label: "Зарплата" },
+  { key: "experience", label: "Опыт" },
+  { key: "source", label: "Источник" },
 ];
 
 function computeAge(birthDate?: string): string {
   if (!birthDate) return "";
   const m = /(\d{4})-(\d{2})-(\d{2})/.exec(birthDate);
   if (!m) return "";
-  const birthYear = parseInt(m[1], 10);
   const today = new Date();
-  let age = today.getFullYear() - birthYear;
-  const md = (today.getMonth() + 1) * 100 + today.getDate();
-  const bmd = parseInt(m[2], 10) * 100 + parseInt(m[3], 10);
-  if (md < bmd) age -= 1;
-  if (age < 14 || age > 100) return "";
-  return `${age} лет`;
+  let age = today.getFullYear() - parseInt(m[1], 10);
+  if ((today.getMonth() + 1) * 100 + today.getDate() < parseInt(m[2], 10) * 100 + parseInt(m[3], 10)) age -= 1;
+  return age >= 14 && age <= 100 ? `${age} лет` : "";
 }
 
-function salaryFromEntity(e: EntityWithRelations): string {
-  const cur = e.expected_salary_currency || "";
-  const lo = e.expected_salary_min;
-  const hi = e.expected_salary_max;
-  if (lo && hi) return `${lo.toLocaleString()}–${hi.toLocaleString()} ${cur}`.trim();
-  if (lo) return `от ${lo.toLocaleString()} ${cur}`.trim();
-  if (hi) return `до ${hi.toLocaleString()} ${cur}`.trim();
-  return "";
+function statusLabelOf(key?: string): string {
+  if (!key) return "";
+  const map = STATUS_LABELS as Record<string, string>;
+  return map[key] || key;
 }
 
-function fromCard(card: KanbanCard): CompareSide {
+function timelineFrom(extra: Record<string, unknown> | undefined): TimelineEvent[] {
+  const ev = extra?.timeline_events;
+  return Array.isArray(ev) ? (ev as TimelineEvent[]) : [];
+}
+
+function rejectedDate(history: TimelineEvent[]): string {
+  const ev = history.find((e) => (e.title || "").toLowerCase().includes("отказ"));
+  return ev?.date || "";
+}
+
+function resumesFrom(extra: Record<string, unknown> | undefined): ResumeDemo[] {
+  if (!extra) return [];
+  if (Array.isArray(extra.resume_demos)) return (extra.resume_demos as ResumeDemo[]).filter(Boolean);
+  if (extra.resume_demo) return [extra.resume_demo as ResumeDemo];
+  return [];
+}
+
+function fromCard(card: KanbanCard, statusKey?: string): Side {
   const extra = (card.extra_data || {}) as Record<string, unknown>;
+  const history = timelineFrom(extra);
+  const isRejected = statusKey === "rejected";
   return {
     name: card.name || "",
+    photo: card.photo_url || ((extra.photo_url as string) || ""),
     position: card.position || "",
     company: card.company || "",
-    salary: card.salary || "",
     phone: card.phone || "",
     email: card.email || "",
-    skype: (extra.skype as string) || "",
     telegram: card.telegram_username || "",
     age: card.age || computeAge(extra.birth_date as string | undefined),
-    photo: card.photo_url || ((extra.photo_url as string) || ""),
+    city: card.city || ((extra.city as string) || ""),
+    salary: card.salary || "",
+    experience: card.total_experience || ((extra.total_experience as string) || ""),
+    source: card.source || ((extra.source as string) || ""),
+    statusLabel: statusLabelOf(statusKey),
+    isRejected,
+    rejectReason: (card.rejection_reason as string) || ((extra.rejection_reason as string) || ""),
+    rejectedAt: isRejected ? rejectedDate(history) : "",
+    history,
+    resumes: resumesFrom(extra),
   };
 }
 
-function fromEntity(e: EntityWithRelations): CompareSide {
+function fromEntity(e: EntityWithRelations): Side {
+  const ent = e as unknown as Record<string, unknown>;
   const extra = (e.extra_data || {}) as Record<string, unknown>;
+  const history = timelineFrom(extra);
+  const statusKey = (ent.status as string) || "";
+  const isRejected = statusKey === "rejected";
+  const lo = e.expected_salary_min;
+  const hi = e.expected_salary_max;
+  const cur = e.expected_salary_currency || "";
+  let salary = "";
+  if (lo && hi) salary = `${lo.toLocaleString()}–${hi.toLocaleString()} ${cur}`.trim();
+  else if (lo) salary = `от ${lo.toLocaleString()} ${cur}`.trim();
+  else if (hi) salary = `до ${hi.toLocaleString()} ${cur}`.trim();
   return {
     name: e.name || "",
+    photo: (extra.photo_url as string) || "",
     position: e.position || "",
     company: e.company || "",
-    salary: salaryFromEntity(e),
     phone: e.phone || "",
     email: e.email || "",
-    skype: (extra.skype as string) || "",
     telegram: (e.telegram_usernames && e.telegram_usernames[0]) || "",
     age: (extra.age as string) || computeAge(extra.birth_date as string | undefined),
-    photo: (extra.photo_url as string) || "",
+    city: (ent.city as string) || ((extra.city as string) || ""),
+    salary,
+    experience: ((ent.total_experience as string) || (extra.total_experience as string) || ""),
+    source: (ent.source as string) || ((extra.source as string) || ""),
+    statusLabel: statusLabelOf(statusKey),
+    isRejected,
+    rejectReason: (ent.rejection_reason as string) || ((extra.rejection_reason as string) || ""),
+    rejectedAt: isRejected ? rejectedDate(history) : "",
+    history,
+    resumes: resumesFrom(extra),
   };
 }
 
 function initialsOf(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((s) => s[0])
-    .join("")
-    .toUpperCase();
+  return name.split(" ").filter(Boolean).slice(0, 2).map((s) => s[0]).join("").toUpperCase();
 }
 
-const HL = "bg-yellow-200 text-slate-900";
+function StatusBlock({ side }: { side: Side }) {
+  if (!side.statusLabel && side.history.length === 0) return null;
+  return (
+    <div className={`rounded-lg p-2.5 mb-3 ${side.isRejected ? "bg-red-50" : "bg-slate-50"}`}>
+      <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">Статус</div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span
+          className={`text-xs font-medium rounded px-2 py-0.5 ${
+            side.isRejected ? "bg-red-200 text-red-800" : "bg-blue-100 text-blue-800"
+          }`}
+        >
+          {side.statusLabel || "—"}
+        </span>
+        {side.isRejected && side.rejectedAt && (
+          <span className="text-xs text-red-600">отклонён {side.rejectedAt}</span>
+        )}
+      </div>
+      {side.isRejected && side.rejectReason && (
+        <div className="text-xs text-slate-700 mt-1.5">
+          <span className="text-slate-400">Причина:</span> {side.rejectReason}
+        </div>
+      )}
+      {side.history.length > 0 && (
+        <div className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+          {side.history
+            .slice(-4)
+            .map((h) => [h.date, h.title].filter(Boolean).join(" "))
+            .filter(Boolean)
+            .join(" → ")}
+        </div>
+      )}
+    </div>
+  );
+}
 
-function ColumnView({
+function ResumeBlock({ resumes }: { resumes: ResumeDemo[] }) {
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-200">
+      <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
+        Резюме{resumes.length > 1 ? ` (${resumes.length})` : ""}
+      </div>
+      {resumes.length === 0 ? (
+        <div className="text-sm text-slate-400">—</div>
+      ) : (
+        <div className="space-y-2">
+          {resumes.map((r, i) => (
+            <div key={i} className="rounded-lg bg-slate-50 p-2.5 text-xs">
+              {r.title && <div className="font-medium text-slate-800">{r.title}</div>}
+              {r.subtitle && <div className="text-slate-500">{r.subtitle}</div>}
+              {(r.sections || []).map((s, j) => (
+                <div key={j} className="mt-1.5">
+                  {s.title && <div className="text-slate-500">{s.title}</div>}
+                  {(s.lines || []).length > 0 && (
+                    <div className="text-slate-800 leading-relaxed whitespace-pre-wrap">
+                      {(s.lines || []).join("\n")}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Column({
   title,
   side,
   matched,
 }: {
   title: string;
-  side: CompareSide | null;
+  side: Side | null;
   matched: (key: FieldKey | "name") => boolean;
 }) {
   if (!side) {
-    return <div className="rounded-2xl bg-white/[0.03] p-6 text-white/40">—</div>;
+    return <div className="rounded-xl border border-slate-200 p-4 text-slate-400">—</div>;
   }
-  const subtitle = [side.position, side.company].filter(Boolean).join(" • ");
+  const subtitle = [side.position, side.company].filter(Boolean).join(" · ");
   return (
-    <div className="rounded-2xl bg-white/[0.03] ring-1 ring-white/10 p-6">
-      <div className="text-[11px] uppercase tracking-wide text-white/30 mb-4">{title}</div>
-
-      <div className="flex items-start gap-4 mb-4">
+    <div className="rounded-xl border border-slate-200 p-4 min-w-0">
+      <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-3">{title}</div>
+      <div className="flex items-start gap-3 mb-3">
         {side.photo ? (
-          <img src={side.photo} alt={side.name} className="w-24 h-24 rounded-2xl object-cover shrink-0" />
+          <img src={side.photo} alt={side.name} className="w-12 h-12 rounded-xl object-cover shrink-0" />
         ) : (
-          <div className="w-24 h-24 rounded-2xl bg-white/10 flex items-center justify-center text-white/70 text-xl font-semibold shrink-0">
+          <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 text-sm font-semibold shrink-0">
             {initialsOf(side.name) || "?"}
           </div>
         )}
-        <div className="min-w-0 pt-1">
-          <span
-            className={`inline-block text-xl font-bold leading-snug rounded px-1.5 py-0.5 ${
-              matched("name") ? HL : "text-white"
-            }`}
-          >
+        <div className="min-w-0">
+          <span className={`text-[15px] font-semibold ${matched("name") ? HL : "text-slate-900"}`}>
             {side.name || "—"}
           </span>
-          {subtitle && <div className="mt-2 text-sm text-white/50 leading-snug">{subtitle}</div>}
+          {subtitle && <div className="text-xs text-slate-500 mt-1">{subtitle}</div>}
         </div>
       </div>
 
-      <div className="space-y-3">
-        {ROWS.map(({ key, label }) => (
-          <div key={key} className="flex flex-col gap-0.5">
-            <span className="text-xs text-white/40">{label}</span>
-            <span
-              className={`text-[15px] rounded px-1.5 py-0.5 self-start ${
-                matched(key) ? HL : "text-white/90"
-              }`}
-            >
-              {side[key] || "—"}
-            </span>
-          </div>
-        ))}
-      </div>
+      <StatusBlock side={side} />
+
+      <table className="w-full text-[13px]">
+        <tbody>
+          {FIELDS.map(({ key, label }) => (
+            <tr key={key}>
+              <td className="text-slate-400 py-0.5 align-top w-[90px]">{label}</td>
+              <td className="py-0.5 text-right">
+                <span className={matched(key) ? HL : "text-slate-700"}>{side[key] || "—"}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <ResumeBlock resumes={side.resumes} />
     </div>
   );
 }
 
-export default function ShadowDuplicateBanner({ card, onResolved }: ShadowDuplicateBannerProps) {
+export default function ShadowDuplicateBanner({ card, status, onResolved }: ShadowDuplicateBannerProps) {
   const hiddenId = (card.extra_data?.hidden_duplicate_id as number | undefined) ?? null;
   const [resolved, setResolved] = useState(false);
   const [open, setOpen] = useState(false);
@@ -187,7 +304,7 @@ export default function ShadowDuplicateBanner({ card, onResolved }: ShadowDuplic
       try {
         setArchived(await getEntity(hiddenId));
       } catch {
-        toast.error("Не удалось загрузить архивный профиль");
+        toast.error("Не удалось загрузить профиль дубликата");
       } finally {
         setLoading(false);
       }
@@ -224,19 +341,24 @@ export default function ShadowDuplicateBanner({ card, onResolved }: ShadowDuplic
     }
   };
 
-  const cardArchived = !!(card.extra_data?.is_archived as boolean | undefined);
-  const left = fromCard(card);
+  const left = fromCard(card, status);
   const right = archived ? fromEntity(archived) : null;
+  const cardArchived = !!(card.extra_data?.is_archived as boolean | undefined);
 
   const matched = (key: FieldKey | "name"): boolean => {
     if (!right) return false;
-    const a = left[key];
-    const b = right[key];
+    const a = (left as unknown as Record<string, string>)[key];
+    const b = (right as unknown as Record<string, string>)[key];
     if (!a || !b) return false;
     if (key === "phone") return normPhone(a).length > 0 && normPhone(a) === normPhone(b);
     if (key === "telegram") return normTg(a) === normTg(b);
     return norm(a) === norm(b);
   };
+
+  const matchedKeys = right
+    ? (["name", ...FIELDS.map((f) => f.key)] as (FieldKey | "name")[]).filter((k) => matched(k))
+    : [];
+  const LBL: Record<string, string> = { name: "Имя", ...Object.fromEntries(FIELDS.map((f) => [f.key, f.label])) };
 
   return (
     <>
@@ -254,61 +376,75 @@ export default function ShadowDuplicateBanner({ card, onResolved }: ShadowDuplic
         </button>
       </div>
 
-      {/* Полноэкранный экран сравнения */}
+      {/* Белый экран сравнения */}
       {open && (
-        <div className="fixed inset-0 z-[1000] flex flex-col bg-slate-900/95 backdrop-blur-sm">
-          <div className="relative flex items-center justify-center px-6 py-4 border-b border-white/10 shrink-0">
-            <h2 className="text-base font-medium text-white/90">Проверка похожих кандидатов</h2>
-            <button
-              onClick={() => setOpen(false)}
-              className="absolute right-6 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
-              aria-label="Закрыть"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+          onClick={() => !busy && setOpen(false)}
+        >
+          <div
+            className="w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
+              <h2 className="text-base font-semibold text-slate-900">Проверка похожих кандидатов</h2>
+              <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600" aria-label="Закрыть">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-          <div className="relative flex-1 overflow-hidden">
-            {loading ? (
-              <div className="flex items-center justify-center h-full text-white/50">
-                <Loader2 className="w-7 h-7 animate-spin" />
-              </div>
-            ) : (
-              <>
-                <div className="h-full overflow-auto px-6 py-6">
-                  <div className="mx-auto max-w-5xl grid grid-cols-2 gap-6">
-                    <ColumnView title={cardArchived ? "Этот кандидат (в архиве)" : "Этот кандидат"} side={left} matched={matched} />
-                    <ColumnView title="Найденный дубликат" side={right} matched={matched} />
+            <div className="flex-1 overflow-auto p-5">
+              {loading ? (
+                <div className="flex items-center justify-center py-16 text-slate-400">
+                  <Loader2 className="w-7 h-7 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  {matchedKeys.length > 0 && (
+                    <div className="mb-4 text-sm text-amber-700">
+                      Совпадение по:{" "}
+                      <span className="font-semibold text-amber-800">
+                        {matchedKeys.map((k) => LBL[k]).join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <Column title={cardArchived ? "Эта анкета (в архиве)" : "Новый кандидат"} side={left} matched={matched} />
+                    <Column title="Старая анкета (дубликат)" side={right} matched={matched} />
                   </div>
-                </div>
+                </>
+              )}
+            </div>
 
-                {/* Кнопки действий — плавающей стопкой по центру */}
-                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-full max-w-sm px-4 flex flex-col gap-3">
-                  <button
-                    disabled={busy}
-                    onClick={handleMerge}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-white shadow-lg hover:bg-emerald-600 disabled:opacity-50 transition-colors"
-                  >
-                    {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Объединить
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={handleDismiss}
-                    className="rounded-xl bg-red-500 px-4 py-3 font-semibold text-white shadow-lg hover:bg-red-600 disabled:opacity-50 transition-colors"
-                  >
-                    Нет, это разные люди
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => setOpen(false)}
-                    className="rounded-xl bg-white px-4 py-3 font-semibold text-slate-700 shadow-lg hover:bg-slate-100 disabled:opacity-50 transition-colors"
-                  >
-                    Закрыть
-                  </button>
-                </div>
-              </>
-            )}
+            <div className="border-t border-slate-200 px-5 py-4 shrink-0 flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-400">
+                После объединения у кандидата сохранятся оба резюме и история статусов.
+              </p>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  disabled={busy}
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Закрыть
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={handleDismiss}
+                  className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Нет, это разные люди
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={handleMerge}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Объединить
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

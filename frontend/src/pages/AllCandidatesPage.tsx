@@ -2232,7 +2232,7 @@ const InfoTab = memo(function InfoTab({
       )}
 
       {/* Теневой дубль: баннер «Похожий кандидат есть в базе» над action-баром */}
-      <ShadowDuplicateBanner card={card} />
+      <ShadowDuplicateBanner card={card} status={status} />
 
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
       <div className="hf-profile-action-bar">

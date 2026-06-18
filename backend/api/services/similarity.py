@@ -926,12 +926,34 @@ class SimilarityService:
             {"sid": source_entity.id},
         )
 
-        # Снимаем флаг теневого дубля с survivor — баннер «Проверить» исчезает
-        if isinstance(target_entity.extra_data, dict) and \
-                "hidden_duplicate_id" in target_entity.extra_data:
-            _te = dict(target_entity.extra_data)
-            _te.pop("hidden_duplicate_id", None)
-            target_entity.extra_data = _te
+        # Survivor: сохраняем ОБА резюме (своё + источника) — после объединения
+        # рядом со старым резюме появляется новое. Плюс снимаем флаг теневого дубля.
+        _te = dict(target_entity.extra_data) if isinstance(target_entity.extra_data, dict) else {}
+        _se = source_entity.extra_data if isinstance(source_entity.extra_data, dict) else {}
+
+        def _resumes(extra):
+            rs = extra.get("resume_demos")
+            if isinstance(rs, list) and rs:
+                return [r for r in rs if r]
+            r = extra.get("resume_demo")
+            return [r] if r else []
+
+        combined = _resumes(_te) + _resumes(_se)
+        if combined:
+            seen = set()
+            uniq = []
+            for r in combined:
+                key = (
+                    (r.get("title"), r.get("saved_at")) if isinstance(r, dict) else (str(r), None)
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                uniq.append(r)
+            _te["resume_demos"] = uniq
+
+        _te.pop("hidden_duplicate_id", None)
+        target_entity.extra_data = _te
 
         # Удаляем исходную сущность
         await db.delete(source_entity)
