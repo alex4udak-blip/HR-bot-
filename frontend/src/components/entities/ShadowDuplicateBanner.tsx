@@ -50,6 +50,7 @@ type Side = {
   rejectedAt: string;
   history: TimelineEvent[];
   resumes: ResumeDemo[];
+  resumeText: string;
 };
 
 type FieldKey = "phone" | "email" | "telegram" | "age" | "city" | "salary" | "experience" | "source";
@@ -126,6 +127,7 @@ function fromCard(card: KanbanCard, statusKey?: string): Side {
     rejectedAt: isRejected ? rejectedDate(history) : "",
     history,
     resumes: resumesFrom(extra),
+    resumeText: (extra.resume_text as string) || "",
   };
 }
 
@@ -161,6 +163,7 @@ function fromEntity(e: EntityWithRelations): Side {
     rejectedAt: isRejected ? rejectedDate(history) : "",
     history,
     resumes: resumesFrom(extra),
+    resumeText: (extra.resume_text as string) || "",
   };
 }
 
@@ -203,13 +206,14 @@ function StatusBlock({ side }: { side: Side }) {
   );
 }
 
-function ResumeBlock({ resumes }: { resumes: ResumeDemo[] }) {
+function ResumeBlock({ resumes, text }: { resumes: ResumeDemo[]; text: string }) {
+  const empty = resumes.length === 0 && !text;
   return (
     <div className="mt-3 pt-3 border-t border-slate-200">
       <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
         Резюме{resumes.length > 1 ? ` (${resumes.length})` : ""}
       </div>
-      {resumes.length === 0 ? (
+      {empty ? (
         <div className="text-sm text-slate-400">—</div>
       ) : (
         <div className="space-y-2">
@@ -229,6 +233,11 @@ function ResumeBlock({ resumes }: { resumes: ResumeDemo[] }) {
               ))}
             </div>
           ))}
+          {text && (
+            <div className="rounded-lg bg-slate-50 p-2.5 text-xs whitespace-pre-wrap text-slate-800">
+              {text}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -282,7 +291,7 @@ function Column({
         </tbody>
       </table>
 
-      <ResumeBlock resumes={side.resumes} />
+      <ResumeBlock resumes={side.resumes} text={side.resumeText} />
     </div>
   );
 }
