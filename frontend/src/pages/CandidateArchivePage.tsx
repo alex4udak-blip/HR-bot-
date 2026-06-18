@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Archive, Search, RotateCcw, Loader2 } from "lucide-react";
+import { Archive, Search, RotateCcw, Loader2, ScanSearch } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   listArchivedCandidates,
   unarchiveEntity,
+  rescanArchiveDuplicates,
   type ArchivedCandidate,
+  type RescanResult,
 } from "@/services/api/entities";
 
 /**
@@ -20,6 +22,8 @@ export default function CandidateArchivePage() {
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState<number | null>(null);
   const navigate = useNavigate();
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanResult, setRescanResult] = useState<RescanResult | null>(null);
 
   const load = useCallback(async (query: string) => {
     setLoading(true);
@@ -53,6 +57,23 @@ export default function CandidateArchivePage() {
     }
   };
 
+  const handleRescan = async () => {
+    setRescanning(true);
+    setRescanResult(null);
+    try {
+      const res = await rescanArchiveDuplicates();
+      setRescanResult(res);
+      toast.success(
+        `Сверено активных: ${res.scanned}. Совпадений: ${res.flagged}` +
+          (res.newly_flagged ? ` (новых: ${res.newly_flagged})` : "")
+      );
+    } catch {
+      toast.error("Не удалось выполнить сверку");
+    } finally {
+      setRescanning(false);
+    }
+  };
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center gap-3 mb-2">
@@ -64,6 +85,54 @@ export default function CandidateArchivePage() {
         архивированные. Скрыты из активных списков, канбана и поиска; видны только
         суперадмину.
       </p>
+
+      <button
+        onClick={handleRescan}
+        disabled={rescanning}
+        className="mb-4 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+        title="Прогнать детект по всем активным кандидатам против архива и проставить баннеры"
+      >
+        {rescanning ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <ScanSearch className="w-4 h-4" />
+        )}
+        Сверить активных с архивом
+      </button>
+
+      {rescanResult && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <div className="text-sm text-amber-900 mb-2">
+            Сверено активных: <b>{rescanResult.scanned}</b> · совпадений с архивом:{" "}
+            <b>{rescanResult.flagged}</b>
+            {rescanResult.newly_flagged ? (
+              <>
+                {" "}
+                · новых отмечено: <b>{rescanResult.newly_flagged}</b>
+              </>
+            ) : null}
+          </div>
+          {rescanResult.matches.length > 0 ? (
+            <div className="max-h-60 overflow-y-auto space-y-1">
+              {rescanResult.matches.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => navigate(`/all-candidates?entity=${m.id}`)}
+                  className="w-full text-left text-sm px-2 py-1 rounded hover:bg-amber-100 flex items-center gap-2"
+                  title="Открыть активного кандидата (там будет баннер дубля)"
+                >
+                  <span className="font-medium text-amber-900">{m.name}</span>
+                  <span className="text-amber-700/80">
+                    ↔ {m.duplicate_name || `#${m.duplicate_id}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-amber-800/80">Совпадений не найдено.</div>
+          )}
+        </div>
+      )}
 
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />

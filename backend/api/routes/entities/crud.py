@@ -1452,3 +1452,110 @@ async def unarchive_entity(
     await db.commit()
     await broadcast_entity_updated(entity.org_id, entity.id)
     return {"success": True, "is_archived": False}
+
+
+@router.post("/archive/rescan")
+async def rescan_active_duplicates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Разовый прогон детекта по ВСЕМ активным кандидатам против архива.
+
+    Детект-на-создании покрывает только новых кандидатов; этот прогон нужен,
+    чтобы пометить уже существующих (созданных до появления архива). Проставляет
+    extra_data.hidden_duplicate_id — на карточках появится баннер «Проверить».
+    Только суперадмин. Эффективно: архив грузим в lookup-карты один раз.
+    """
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Только для суперадмина")
+    org = await get_user_org(current_user, db)
+
+    from ...services.similarity import normalize_email, normalize_phone
+
+    # 1) Архив → карты: email / последние 10 цифр телефона / tg-username → id
+    arch_q = select(
+        Entity.id, Entity.name, Entity.email, Entity.phone, Entity.telegram_usernames
+    ).where(Entity.is_archived.is_(True), Entity.type == EntityType.candidate)
+    if org is not None:
+        arch_q = arch_q.where(Entity.org_id == org.id)
+
+    email_map: dict = {}
+    phone_map: dict = {}
+    tg_map: dict = {}
+    arch_names: dict = {}
+    for aid, aname, aemail, aphone, atg in (await db.execute(arch_q)).all():
+        arch_names[aid] = aname
+        ne = normalize_email(aemail or "")
+        if ne:
+            email_map.setdefault(ne, aid)
+        d = normalize_phone(aphone or "")
+        if len(d) >= 10:
+            phone_map.setdefault(d[-10:], aid)
+        for t in (atg or []):
+            nt = str(t or "").strip().lstrip("@").lower()
+            if nt:
+                tg_map.setdefault(nt, aid)
+
+    if not (email_map or phone_map or tg_map):
+        return {"scanned": 0, "flagged": 0, "newly_flagged": 0, "matches": []}
+
+    # 2) Активные кандидаты — сверяем (email → tg → phone, как в детекте)
+    act_q = select(Entity).where(
+        Entity.is_archived.is_not(True), Entity.type == EntityType.candidate
+    )
+    if org is not None:
+        act_q = act_q.where(Entity.org_id == org.id)
+    actives = (await db.execute(act_q)).scalars().all()
+
+    matches = []
+    scanned = 0
+    changed = 0
+    for e in actives:
+        scanned += 1
+        extra = e.extra_data if isinstance(e.extra_data, dict) else {}
+        dismissed = set()
+        for x in (extra.get("dismissed_duplicate_ids") or []):
+            try:
+                dismissed.add(int(x))
+            except (TypeError, ValueError):
+                pass
+
+        dup_id = None
+        ne = normalize_email(e.email or "")
+        if ne and ne in email_map:
+            dup_id = email_map[ne]
+        if dup_id is None:
+            for t in (e.telegram_usernames or []):
+                nt = str(t or "").strip().lstrip("@").lower()
+                if nt and nt in tg_map:
+                    dup_id = tg_map[nt]
+                    break
+        if dup_id is None:
+            d = normalize_phone(e.phone or "")
+            if len(d) >= 10 and d[-10:] in phone_map:
+                dup_id = phone_map[d[-10:]]
+
+        if dup_id is None or dup_id == e.id or dup_id in dismissed:
+            continue
+
+        matches.append({
+            "id": e.id,
+            "name": e.name,
+            "duplicate_id": dup_id,
+            "duplicate_name": arch_names.get(dup_id),
+        })
+        if extra.get("hidden_duplicate_id") != dup_id:
+            new_extra = dict(extra)
+            new_extra["hidden_duplicate_id"] = dup_id
+            e.extra_data = new_extra
+            changed += 1
+
+    if changed:
+        await db.commit()
+    return {
+        "scanned": scanned,
+        "flagged": len(matches),
+        "newly_flagged": changed,
+        "matches": matches,
+    }

@@ -496,6 +496,27 @@ export const unarchiveEntity = async (entityId: number): Promise<{ success: bool
   return data;
 };
 
+/** Результат разовой сверки активных кандидатов с архивом. */
+export interface RescanResult {
+  scanned: number;
+  flagged: number;
+  newly_flagged: number;
+  matches: {
+    id: number;
+    name: string;
+    duplicate_id: number;
+    duplicate_name?: string | null;
+  }[];
+}
+
+/** Прогнать детект по всем активным кандидатам против архива. Только суперадмин. */
+export const rescanArchiveDuplicates = async (): Promise<RescanResult> => {
+  const { data } = await debouncedMutation<RescanResult>(
+    'post', '/entities/archive/rescan', {}
+  );
+  return data;
+};
+
 /**
  * Compare two candidates.
  *
