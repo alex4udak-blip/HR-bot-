@@ -107,3 +107,4 @@ recover.ps1
 backend/run_local.sh
 backend/requirements.win.txt
 backend/requirements.local.txt
+docs/superpowers/
