@@ -16,8 +16,6 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
-import { STATUS_LABELS } from '@/types';
-import type { EntityStatus } from '@/types';
 
 // ---------- types ----------
 
@@ -55,19 +53,6 @@ const FIELD_OPTIONS: { value: string; label: string }[] = [
   { value: 'comment', label: 'Комментарий' },
 ];
 
-const STATUS_OPTIONS: { value: EntityStatus; label: string }[] = [
-  { value: 'new', label: STATUS_LABELS.new },
-  { value: 'screening', label: STATUS_LABELS.screening },
-  { value: 'practice', label: STATUS_LABELS.practice },
-  { value: 'tech_practice', label: STATUS_LABELS.tech_practice },
-  { value: 'is_interview', label: STATUS_LABELS.is_interview },
-  { value: 'offer', label: STATUS_LABELS.offer },
-  { value: 'hired', label: STATUS_LABELS.hired },
-  { value: 'rejected', label: STATUS_LABELS.rejected },
-  { value: 'withdrawn', label: STATUS_LABELS.withdrawn },
-  { value: 'reserve', label: STATUS_LABELS.reserve },
-];
-
 const stepVariants = {
   enter: { opacity: 0, x: 40 },
   center: { opacity: 1, x: 0 },
@@ -101,7 +86,6 @@ export default function CsvImportPage() {
   // Грид маппинга скрыт по умолчанию (автоопределение надёжно для ClickUp);
   // раскрывается кнопкой «Изменить» или автоматически, если не нашли «Имя».
   const [showMapping, setShowMapping] = useState(false);
-  const [defaultStatus, setDefaultStatus] = useState<EntityStatus>('new');
   const [vacancyId, setVacancyId] = useState<string>('');
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
@@ -196,7 +180,6 @@ export default function CsvImportPage() {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('column_mapping', JSON.stringify(columnMapping));
-      formData.append('default_status', defaultStatus);
       formData.append('skip_duplicates', String(skipDuplicates));
       if (vacancyId) formData.append('vacancy_id', vacancyId);
 
@@ -220,7 +203,6 @@ export default function CsvImportPage() {
     setFile(null);
     setPreview(null);
     setColumnMapping({});
-    setDefaultStatus('new');
     setVacancyId('');
     setSkipDuplicates(true);
     setResult(null);
@@ -523,22 +505,13 @@ export default function CsvImportPage() {
                   Настройки импорта
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Default status */}
-                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                    <label className="block text-xs text-white/40 mb-2 font-medium">
-                      Статус по умолчанию
-                    </label>
-                    <select
-                      value={defaultStatus}
-                      onChange={(e) => setDefaultStatus(e.target.value as EntityStatus)}
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent-500/50 transition-colors"
-                    >
-                      {STATUS_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                  {/* Импорт идёт в архив со статусами из CSV — общий дефолт не нужен */}
+                  <div className="p-4 rounded-xl bg-amber-500/[0.06] border border-amber-500/20 sm:col-span-2">
+                    <p className="text-xs text-amber-200/80 leading-relaxed">
+                      Кандидаты импортируются в <b>архив</b> со статусами из колонки CSV
+                      («отказ», «на рассмотрении» и т.д.). Архив виден суперадмину в
+                      разделе «Архив кандидатов».
+                    </p>
                   </div>
 
                   {/* Vacancy (optional) */}

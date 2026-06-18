@@ -74,6 +74,11 @@ STATUS_MAP: Dict[str, EntityStatus] = {
     "принят": EntityStatus.hired,
     "rejected": EntityStatus.rejected,
     "отказ": EntityStatus.rejected,
+    "на рассмотрении": EntityStatus.screening,
+    "рассмотрение": EntityStatus.screening,
+    "интервью": EntityStatus.is_interview,
+    "резерв": EntityStatus.reserve,
+    "отозван": EntityStatus.withdrawn,
 }
 
 
@@ -413,6 +418,10 @@ async def import_execute(
                 status_for_row = default_entity_status  # archival; original kept in extra_data
             else:
                 status_for_row = _parse_status(status_val, default_entity_status)
+                if status_val:
+                    # Исходную метку статуса из CSV сохраняем как есть — не теряем её,
+                    # даже если она не легла в EntityStatus (кандидат уходит в архив).
+                    extra_data["import_status"] = status_val
 
             entity = Entity(
                 org_id=org.id,
