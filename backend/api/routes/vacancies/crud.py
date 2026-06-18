@@ -638,6 +638,11 @@ async def take_vacancy(
         existing = await db.execute(
             select(Vacancy.id).where(
                 Vacancy.created_by == current_user.id,
+                # Дублем считаем только АКТИВНЫЙ клон. Закрытый/отменённый/удалённый
+                # клон рекрутёр уже не видит в списках — иначе guard блокировал
+                # повторное взятие заявки, клона которой по факту нет («первой не видно»).
+                Vacancy.deleted_at.is_(None),
+                Vacancy.status.notin_([VacancyStatus.closed, VacancyStatus.cancelled]),
                 text(
                     f"vacancies.extra_data::jsonb @> '{{\"cloned_from_request_id\": {src_id}}}'::jsonb"
                 ),
