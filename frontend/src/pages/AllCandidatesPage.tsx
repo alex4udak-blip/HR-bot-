@@ -613,11 +613,13 @@ export default function AllCandidatesPage() {
   // Auto-select from URL ?entity=ID or first card
   const entityParam = searchParams.get("entity");
   const editParam = searchParams.get("edit");
+  const archivedParam = searchParams.get("archived");
   const clearCandidateDeepLink = useCallback(() => {
-    if (!searchParams.has("entity") && !searchParams.has("edit")) return;
+    if (!searchParams.has("entity") && !searchParams.has("edit") && !searchParams.has("archived")) return;
     const next = new URLSearchParams(searchParams);
     next.delete("entity");
     next.delete("edit");
+    next.delete("archived");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
   // Чтобы не тянуть entity повторно после неудачной попытки селекта.
@@ -625,6 +627,7 @@ export default function AllCandidatesPage() {
   useEffect(() => {
     if (!board) return;
     if (entityParam) {
+      if (archivedParam === "1") return;  // архивного открывает отдельный эффект ниже
       const entityId = parseInt(entityParam);
       const match = filteredCards.find((fc) => fc.card.id === entityId);
       if (match) {
@@ -673,7 +676,45 @@ export default function AllCandidatesPage() {
       setSelectedCard(initial.card);
       setSelectedStatus(initial.status);
     }
-  }, [filteredCards, entityParam, editParam, board, selectedCard, clearCandidateDeepLink]);
+  }, [filteredCards, entityParam, editParam, archivedParam, board, selectedCard, clearCandidateDeepLink]);
+
+  // Архивный кандидат (?archived=1): на доске его нет (отфильтрован is_archived),
+  // поэтому грузим по id и открываем ту же стандартную карточку напрямую.
+  // CSV-комментарий (extra_data.comment) показываем как личный коммент.
+  useEffect(() => {
+    if (!entityParam || archivedParam !== "1") return;
+    const entityId = parseInt(entityParam);
+    if (Number.isNaN(entityId) || entityFetchTriedRef.current === entityId) return;
+    entityFetchTriedRef.current = entityId;
+    getEntity(entityId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then((e: any) => {
+        if (!e?.id) {
+          toast.error("Кандидат не найден");
+          return;
+        }
+        const extra: Record<string, any> = { ...(e.extra_data || {}) };
+        if ((!Array.isArray(extra.notes) || extra.notes.length === 0) && extra.comment) {
+          extra.notes = [{ text: String(extra.comment), date: e.created_at, author_name: "Импорт" }];
+        }
+        setSelectedCard({
+          id: e.id,
+          name: e.name,
+          email: e.email || undefined,
+          phone: e.phone || undefined,
+          telegram_username: (e.telegram_usernames && e.telegram_usernames[0]) || undefined,
+          position: e.position || undefined,
+          company: e.company || undefined,
+          source: e.source || extra.source || undefined,
+          created_at: e.created_at || "",
+          tags: e.tags || [],
+          photo_url: e.photo_url || undefined,
+          extra_data: extra,
+        } as KanbanCard);
+        setSelectedStatus((e.status as string) || "");
+      })
+      .catch(() => toast.error("Не удалось открыть кандидата"));
+  }, [entityParam, archivedParam]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedCard || newStatus === selectedStatus) return;

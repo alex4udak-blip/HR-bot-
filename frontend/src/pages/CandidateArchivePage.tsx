@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Archive, Search, RotateCcw, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -18,6 +19,7 @@ export default function CandidateArchivePage() {
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState<number | null>(null);
+  const navigate = useNavigate();
 
   const load = useCallback(async (query: string) => {
     setLoading(true);
@@ -86,7 +88,9 @@ export default function CandidateArchivePage() {
           {items.map((c) => (
             <div
               key={c.id}
-              className="flex items-center gap-4 rounded-lg border border-gray-200 bg-white px-4 py-3"
+              onClick={() => navigate(`/all-candidates?entity=${c.id}&archived=1`)}
+              title="Открыть карточку кандидата"
+              className="flex items-center gap-4 rounded-lg border border-gray-200 bg-white px-4 py-3 cursor-pointer hover:border-amber-300 hover:bg-amber-50/40 transition-colors"
             >
               {c.photo_url ? (
                 <img
@@ -111,7 +115,10 @@ export default function CandidateArchivePage() {
                 <span className="text-xs text-gray-400 shrink-0">{c.source}</span>
               )}
               <button
-                onClick={() => handleRestore(c.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRestore(c.id);
+                }}
                 disabled={restoring === c.id}
                 className="shrink-0 flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
               >
