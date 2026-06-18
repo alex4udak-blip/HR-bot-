@@ -506,8 +506,8 @@ export default function CsvImportPage() {
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Импорт идёт в архив со статусами из CSV — общий дефолт не нужен */}
-                  <div className="p-4 rounded-xl bg-amber-500/[0.06] border border-amber-500/20 sm:col-span-2">
-                    <p className="text-xs text-amber-200/80 leading-relaxed">
+                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 sm:col-span-2">
+                    <p className="text-xs text-amber-900 leading-relaxed">
                       Кандидаты импортируются в <b>архив</b> со статусами из колонки CSV
                       («отказ», «на рассмотрении» и т.д.). Архив виден суперадмину в
                       разделе «Архив кандидатов».
