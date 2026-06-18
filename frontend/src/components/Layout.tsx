@@ -45,6 +45,7 @@ import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } fr
 import type { ReactNode } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useVacancyStore } from "@/stores/vacancyStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import * as notificationsApi from "@/services/api/notifications";
 import type { Notification as AppNotification } from "@/services/api/notifications";
 import BackgroundEffects from "./BackgroundEffects";
@@ -952,7 +953,8 @@ export default function Layout() {
   }, [vacancies, user]);
 
   // Notifications state
-  const [unreadCount, setUnreadCount] = useState(0);
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
+  const setUnreadCount = useNotificationStore((s) => s.setUnreadCount);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationsList, setNotificationsList] = useState<AppNotification[]>(
     [],

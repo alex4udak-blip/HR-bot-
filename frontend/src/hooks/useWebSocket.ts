@@ -55,6 +55,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     onChatUpdated,
     onChatDeleted,
     onChatMessage,
+    onFormSubmission,
     autoReconnect = true,
     reconnectInterval = 3000,  // Kept for backwards compatibility, but overridden by backoff
   } = options;
@@ -201,6 +202,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               onChatMessage?.(message.payload);
               break;
 
+            case 'form.submission':
+              onFormSubmission?.(message.payload);
+              break;
+
             default: {
               // Exhaustiveness check - TypeScript will error if we miss a case
               const _exhaustive: never = message;
@@ -216,7 +221,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       setError(err instanceof Error ? err : new Error('Failed to connect'));
       setStatus('error');
     }
-  }, [user, autoReconnect, reconnectInterval, onCallProgress, onCallCompleted, onCallFailed, onEntityCreated, onEntityUpdated, onEntityDeleted, onChatCreated, onChatUpdated, onChatDeleted, onChatMessage]);
+  }, [user, autoReconnect, reconnectInterval, onCallProgress, onCallCompleted, onCallFailed, onEntityCreated, onEntityUpdated, onEntityDeleted, onChatCreated, onChatUpdated, onChatDeleted, onChatMessage, onFormSubmission]);
 
   const disconnect = useCallback(() => {
     isManualClose.current = true;

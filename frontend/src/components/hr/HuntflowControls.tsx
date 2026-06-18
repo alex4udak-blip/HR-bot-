@@ -86,6 +86,7 @@ export type HuntflowActionChipProps = {
   loading?: boolean;
   disabled?: boolean;
   hasNotification?: boolean;
+  notificationCount?: number;
   className?: string;
 };
 
@@ -98,6 +99,7 @@ export function HuntflowActionChip({
   loading,
   disabled,
   hasNotification,
+  notificationCount,
   className,
 }: HuntflowActionChipProps) {
   return (
@@ -123,6 +125,11 @@ export function HuntflowActionChip({
         {hasNotification && (
           <span className="hf-action-chip-unavailable">
             <HuntflowUnavailableIcon />
+          </span>
+        )}
+        {!loading && typeof notificationCount === 'number' && notificationCount > 0 && (
+          <span className="hf-action-chip-badge" aria-label={`${notificationCount} новых ответов`}>
+            {notificationCount > 9 ? '9+' : notificationCount}
           </span>
         )}
       </span>

@@ -1,9 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useCallStore } from '@/stores/callStore';
 import { useEntityStore } from '@/stores/entityStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useFormBadgeStore } from '@/stores/formBadgeStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 import { logger } from '@/utils/logger';
+import type { FormSubmissionPayload } from '@/types/websocket';
 
 /**
  * WebSocket Provider Component
@@ -41,6 +44,20 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     handleChatMessage
   } = useChatStore();
 
+  const bumpEntityBadge = useFormBadgeStore((s) => s.bump);
+  const bumpUnread = useNotificationStore((s) => s.bumpUnread);
+
+  // Must be stable: an inline fn here makes useWebSocket's `connect` change every
+  // render, which (when the WS can't connect) turns reconnects into a render-loop
+  // storm that freezes the page. useCallback keeps `connect` stable.
+  const onFormSubmission = useCallback(
+    (p: FormSubmissionPayload) => {
+      bumpEntityBadge(p.entity_id);
+      bumpUnread();
+    },
+    [bumpEntityBadge, bumpUnread],
+  );
+
   const { isConnected, status } = useWebSocket({
     // Call events
     onCallProgress: handleCallProgress,
@@ -55,6 +72,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     onChatUpdated: handleChatUpdated,
     onChatDeleted: handleChatDeleted,
     onChatMessage: handleChatMessage,
+    onFormSubmission,
     // Connection settings
     autoReconnect: true,
     reconnectInterval: 3000,

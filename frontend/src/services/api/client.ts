@@ -72,8 +72,14 @@ const attemptTokenRefresh = async (): Promise<boolean> => {
  * Redirect to login page (used after refresh token failure)
  */
 const redirectToLogin = (): void => {
-  // Clear any stored state before redirecting
-  if (window.location.pathname !== '/login' && !window.location.pathname.startsWith('/invite')) {
+  // Clear any stored state before redirecting.
+  // Public, no-auth pages (login, invite, candidate form links) must never be
+  // bounced to /login by a background 401.
+  if (
+    window.location.pathname !== '/login' &&
+    !window.location.pathname.startsWith('/invite') &&
+    !window.location.pathname.startsWith('/form/')
+  ) {
     window.location.href = '/login';
   }
 };

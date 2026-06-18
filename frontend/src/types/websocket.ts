@@ -19,7 +19,8 @@ export type WebSocketEventType =
   | 'chat.created'
   | 'chat.updated'
   | 'chat.deleted'
-  | 'chat.message';
+  | 'chat.message'
+  | 'form.submission';
 
 // ============================================
 // Call Event Payloads
@@ -107,6 +108,14 @@ export interface ChatMessagePayload {
   message_count?: number;
 }
 
+export interface FormSubmissionPayload {
+  entity_id: number;
+  form_id: number;
+  dispatch_id: number;
+  form_title: string;
+  candidate_name: string | null;
+}
+
 // ============================================
 // WebSocket Event Union Types
 // ============================================
@@ -121,7 +130,8 @@ export type WebSocketPayload =
   | ChatCreatedPayload
   | ChatUpdatedPayload
   | ChatDeletedPayload
-  | ChatMessagePayload;
+  | ChatMessagePayload
+  | FormSubmissionPayload;
 
 // ============================================
 // WebSocket Event Structure (Discriminated Union)
@@ -186,6 +196,11 @@ export interface ChatMessageMessage extends BaseWebSocketMessage {
   payload: ChatMessagePayload;
 }
 
+export interface FormSubmissionMessage extends BaseWebSocketMessage {
+  type: 'form.submission';
+  payload: FormSubmissionPayload;
+}
+
 /**
  * Discriminated union of all WebSocket messages.
  * TypeScript will narrow the payload type based on the `type` field.
@@ -201,7 +216,8 @@ export type WebSocketMessage =
   | ChatCreatedMessage
   | ChatUpdatedMessage
   | ChatDeletedMessage
-  | ChatMessageMessage;
+  | ChatMessageMessage
+  | FormSubmissionMessage;
 
 // ============================================
 // WebSocket Hook Options Types
@@ -218,6 +234,7 @@ export interface WebSocketEventHandlers {
   onChatUpdated?: (data: ChatUpdatedPayload) => void;
   onChatDeleted?: (data: ChatDeletedPayload) => void;
   onChatMessage?: (data: ChatMessagePayload) => void;
+  onFormSubmission?: (data: FormSubmissionPayload) => void;
 }
 
 export interface WebSocketConnectionOptions {

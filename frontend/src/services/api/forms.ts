@@ -9,11 +9,13 @@ import api from './client';
 
 export interface FormField {
   id: string;
-  type: 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'multiselect' | 'radio' | 'file' | 'url';
+  type: 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'multiselect' | 'radio' | 'file' | 'url' | 'scale';
   label: string;
   required: boolean;
   placeholder?: string;
   options?: string[];
+  min?: number;   // для scale
+  max?: number;   // для scale
 }
 
 export interface FormTemplate {
@@ -134,5 +136,41 @@ export const submitPublicFormWithFiles = async (
   const { data } = await api.post(`/forms/public/${slug}/submit-with-files`, body, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+  return data;
+};
+
+export interface FormDispatchInfo {
+  id: number; form_id: number; form_title: string | null; token: string;
+  status: 'sent' | 'opened' | 'submitted'; seen_by_recruiter: boolean;
+  submission_id: number | null; answers: Record<string, unknown> | null;
+  created_at: string | null; submitted_at: string | null;
+}
+
+export const createDispatch = async (formId: number, entityId: number): Promise<{ token: string; url: string; id: number }> => {
+  const { data } = await api.post(`/forms/${formId}/dispatch`, { entity_id: entityId });
+  return data;
+};
+
+export const getEntityDispatches = async (entityId: number): Promise<FormDispatchInfo[]> => {
+  const { data } = await api.get(`/forms/entity/${entityId}/dispatches`);
+  return data;
+};
+
+export const getEntityFormsUnreadCount = async (entityId: number): Promise<{ count: number }> => {
+  const { data } = await api.get(`/forms/entity/${entityId}/unread-count`);
+  return data;
+};
+
+export const markEntityDispatchesSeen = async (entityId: number): Promise<void> => {
+  await api.patch(`/forms/entity/${entityId}/dispatches/seen`);
+};
+
+export const getPublicFormByToken = async (token: string): Promise<PublicFormData & { candidate_name: string | null; already_submitted: boolean }> => {
+  const { data } = await api.get(`/forms/public/d/${token}`);
+  return data;
+};
+
+export const submitPublicFormByToken = async (token: string, formData: Record<string, unknown>): Promise<{ message: string }> => {
+  const { data } = await api.post(`/forms/public/d/${token}/submit`, { data: formData });
   return data;
 };

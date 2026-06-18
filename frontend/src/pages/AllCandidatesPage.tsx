@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -30,6 +30,7 @@ import {
   Maximize2,
   Type,
   Upload,
+  ClipboardList,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -70,6 +71,11 @@ import {
   HuntflowInfoRow as InfoRow,
   HuntflowOptionsIcon,
 } from "@/components/hr/HuntflowControls";
+import { useFormBadgeStore } from "@/stores/formBadgeStore";
+import { getEntityFormsUnreadCount } from "@/services/api/forms";
+const AnketaDrawer = lazy(() =>
+  import("@/features/forms/AnketaDrawer").then((m) => ({ default: m.AnketaDrawer })),
+);
 
 // ---------- constants ----------
 
@@ -1571,6 +1577,9 @@ const InfoTab = memo(function InfoTab({
   const [comment, setComment] = useState("");
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [anketaOpen, setAnketaOpen] = useState(false);
+  const anketaCount = useFormBadgeStore((s) => s.counts[card.id] ?? 0);
+  const setAnketaCount = useFormBadgeStore((s) => s.setCount);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
@@ -1610,6 +1619,12 @@ const InfoTab = memo(function InfoTab({
       cancelled = true;
     };
   }, [card.id]);
+  useEffect(() => {
+    if (!card.id) return;
+    getEntityFormsUnreadCount(card.id)
+      .then((r) => setAnketaCount(card.id, r.count))
+      .catch(() => {});
+  }, [card.id, setAnketaCount]);
   const stageHistoryTimelineItems = useMemo<
     Array<{ date?: string; title?: string; body?: string; author?: string }>
   >(() => {
@@ -2248,15 +2263,19 @@ const InfoTab = memo(function InfoTab({
                 >
                   <Phone className="w-[11px] h-[11px] text-[var(--hf-white)]" />
                 </a>
-                <a
-                  href={`https://t.me/${card.telegram_username || card.phone}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-telegram)] flex items-center justify-center hover:opacity-80"
-                  title="Telegram"
-                >
-                  <Send className="w-[11px] h-[11px] text-[var(--hf-white)]" />
-                </a>
+                {/* Telegram-иконка — только при реальном username: по номеру
+                    телефона валидной публичной t.me-ссылки не существует. */}
+                {card.telegram_username && (
+                  <a
+                    href={`https://t.me/${card.telegram_username.replace(/^@/, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-telegram)] flex items-center justify-center hover:opacity-80"
+                    title="Telegram"
+                  >
+                    <Send className="w-[11px] h-[11px] text-[var(--hf-white)]" />
+                  </a>
+                )}
               </div>
             </InfoRow>
           )}
@@ -2609,6 +2628,12 @@ const InfoTab = memo(function InfoTab({
               />
               <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
               <ActionChip
+                icon={ClipboardList}
+                label="Анкета"
+                notificationCount={anketaCount}
+                onClick={() => setAnketaOpen(true)}
+              />
+              <ActionChip
                 icon={Paperclip}
                 label="Файл"
                 onClick={() => fileInputRef.current?.click()}
@@ -2617,6 +2642,16 @@ const InfoTab = memo(function InfoTab({
             </>
           )}
         </div>
+        {anketaOpen && (
+          <Suspense fallback={null}>
+            <AnketaDrawer
+              open={anketaOpen}
+              onOpenChange={setAnketaOpen}
+              entityId={card.id}
+              entityName={card.name}
+            />
+          </Suspense>
+        )}
 
         {/* ---- Комментарии: отдельный блок, фон по стадии в момент комментария ---- */}
         {Array.isArray(card.extra_data?.notes) &&
