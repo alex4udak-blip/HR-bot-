@@ -6,8 +6,9 @@ import type { EntityWithRelations } from "@/types";
 import { getEntity, mergeShadowDuplicate, dismissDuplicate } from "@/services/api/entities";
 
 /**
- * Баннер «Похожий кандидат есть в базе» + центрированная модалка сравнения
- * нового активного кандидата с его теневым (архивным) дубликатом.
+ * Баннер «Похожий кандидат есть в базе» + полноэкранный экран сравнения
+ * «Проверка похожих кандидатов»: новый активный кандидат vs его теневой
+ * (архивный) дубль — две колонки с фото и полями, совпадения подсвечены жёлтым.
  *
  * Показывается, когда у карточки есть extra_data.hidden_duplicate_id.
  * Три действия: Объединить (merge) / Нет, это разные люди (dismiss) / Закрыть.
@@ -20,64 +21,85 @@ interface ShadowDuplicateBannerProps {
 
 type CompareSide = {
   name: string;
-  telegram: string;
   position: string;
   company: string;
+  salary: string;
   phone: string;
   email: string;
-  salary: string;
+  skype: string;
+  telegram: string;
+  age: string;
   photo: string;
 };
 
-type FieldKey = Exclude<keyof CompareSide, "photo">;
+type FieldKey = "salary" | "phone" | "email" | "skype" | "telegram" | "age";
 
 const norm = (v: string) => (v || "").trim().toLowerCase();
 const normPhone = (v: string) => (v || "").replace(/\D/g, "").slice(-10);
 const normTg = (v: string) => (v || "").trim().replace(/^@/, "").toLowerCase();
 
-const LABELS: Record<FieldKey, string> = {
-  name: "Имя",
-  telegram: "Telegram",
-  position: "Должность",
-  company: "Компания",
-  phone: "Телефон",
-  email: "Email",
-  salary: "Зарплата",
-};
+const ROWS: { key: FieldKey; label: string }[] = [
+  { key: "salary", label: "Зарплата" },
+  { key: "phone", label: "Телефон" },
+  { key: "email", label: "Эл. почта" },
+  { key: "skype", label: "Скайп" },
+  { key: "telegram", label: "Telegram" },
+  { key: "age", label: "Возраст" },
+];
 
-// Строки таблицы сравнения (имя выводится отдельно в шапке колонки)
-const ROWS: FieldKey[] = ["position", "company", "phone", "email", "telegram", "salary"];
+function computeAge(birthDate?: string): string {
+  if (!birthDate) return "";
+  const m = /(\d{4})-(\d{2})-(\d{2})/.exec(birthDate);
+  if (!m) return "";
+  const birthYear = parseInt(m[1], 10);
+  const today = new Date();
+  let age = today.getFullYear() - birthYear;
+  const md = (today.getMonth() + 1) * 100 + today.getDate();
+  const bmd = parseInt(m[2], 10) * 100 + parseInt(m[3], 10);
+  if (md < bmd) age -= 1;
+  if (age < 14 || age > 100) return "";
+  return `${age} лет`;
+}
+
+function salaryFromEntity(e: EntityWithRelations): string {
+  const cur = e.expected_salary_currency || "";
+  const lo = e.expected_salary_min;
+  const hi = e.expected_salary_max;
+  if (lo && hi) return `${lo.toLocaleString()}–${hi.toLocaleString()} ${cur}`.trim();
+  if (lo) return `от ${lo.toLocaleString()} ${cur}`.trim();
+  if (hi) return `до ${hi.toLocaleString()} ${cur}`.trim();
+  return "";
+}
 
 function fromCard(card: KanbanCard): CompareSide {
+  const extra = (card.extra_data || {}) as Record<string, unknown>;
   return {
     name: card.name || "",
-    telegram: card.telegram_username || "",
     position: card.position || "",
     company: card.company || "",
+    salary: card.salary || "",
     phone: card.phone || "",
     email: card.email || "",
-    salary: card.salary || "",
-    photo: card.photo_url || ((card.extra_data?.photo_url as string) || ""),
+    skype: (extra.skype as string) || "",
+    telegram: card.telegram_username || "",
+    age: card.age || computeAge(extra.birth_date as string | undefined),
+    photo: card.photo_url || ((extra.photo_url as string) || ""),
   };
 }
 
 function fromEntity(e: EntityWithRelations): CompareSide {
-  const cur = e.expected_salary_currency || "";
-  const lo = e.expected_salary_min;
-  const hi = e.expected_salary_max;
-  let salary = "";
-  if (lo && hi) salary = `${lo.toLocaleString()}–${hi.toLocaleString()} ${cur}`.trim();
-  else if (lo) salary = `от ${lo.toLocaleString()} ${cur}`.trim();
-  else if (hi) salary = `до ${hi.toLocaleString()} ${cur}`.trim();
+  const extra = (e.extra_data || {}) as Record<string, unknown>;
   return {
     name: e.name || "",
-    telegram: (e.telegram_usernames && e.telegram_usernames[0]) || "",
     position: e.position || "",
     company: e.company || "",
+    salary: salaryFromEntity(e),
     phone: e.phone || "",
     email: e.email || "",
-    salary,
-    photo: (e.extra_data?.photo_url as string) || "",
+    skype: (extra.skype as string) || "",
+    telegram: (e.telegram_usernames && e.telegram_usernames[0]) || "",
+    age: (extra.age as string) || computeAge(extra.birth_date as string | undefined),
+    photo: (extra.photo_url as string) || "",
   };
 }
 
@@ -91,51 +113,52 @@ function initialsOf(name: string) {
     .toUpperCase();
 }
 
+const HL = "bg-yellow-200 text-slate-900";
+
 function ColumnView({
   title,
   side,
-  rows,
   matched,
 }: {
   title: string;
   side: CompareSide | null;
-  rows: FieldKey[];
-  matched: (key: FieldKey) => boolean;
+  matched: (key: FieldKey | "name") => boolean;
 }) {
   if (!side) {
-    return (
-      <div className="rounded-xl bg-white/[0.04] ring-1 ring-white/10 p-4 text-white/40 text-sm">
-        —
-      </div>
-    );
+    return <div className="rounded-2xl bg-white/[0.03] p-6 text-white/40">—</div>;
   }
-  const hl = "bg-amber-400/15 text-amber-200 ring-1 ring-amber-400/30";
+  const subtitle = [side.position, side.company].filter(Boolean).join(" • ");
   return (
-    <div className="rounded-xl bg-white/[0.04] ring-1 ring-white/10 p-4">
-      <div className="text-[11px] uppercase tracking-wide text-white/40 mb-3">{title}</div>
-      <div className="flex items-center gap-3 mb-4">
+    <div className="rounded-2xl bg-white/[0.03] ring-1 ring-white/10 p-6">
+      <div className="text-[11px] uppercase tracking-wide text-white/30 mb-4">{title}</div>
+
+      <div className="flex items-start gap-4 mb-4">
         {side.photo ? (
-          <img src={side.photo} alt={side.name} className="w-12 h-12 rounded-full object-cover shrink-0" />
+          <img src={side.photo} alt={side.name} className="w-24 h-24 rounded-2xl object-cover shrink-0" />
         ) : (
-          <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white/80 text-sm font-semibold shrink-0">
+          <div className="w-24 h-24 rounded-2xl bg-white/10 flex items-center justify-center text-white/70 text-xl font-semibold shrink-0">
             {initialsOf(side.name) || "?"}
           </div>
         )}
-        <span
-          className={`text-base font-semibold rounded px-1.5 py-0.5 ${
-            matched("name") ? hl : "text-white"
-          }`}
-        >
-          {side.name || "—"}
-        </span>
+        <div className="min-w-0 pt-1">
+          <span
+            className={`inline-block text-xl font-bold leading-snug rounded px-1.5 py-0.5 ${
+              matched("name") ? HL : "text-white"
+            }`}
+          >
+            {side.name || "—"}
+          </span>
+          {subtitle && <div className="mt-2 text-sm text-white/50 leading-snug">{subtitle}</div>}
+        </div>
       </div>
-      <div className="space-y-2.5">
-        {rows.map((key) => (
+
+      <div className="space-y-3">
+        {ROWS.map(({ key, label }) => (
           <div key={key} className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-white/40">{LABELS[key]}</span>
+            <span className="text-xs text-white/40">{label}</span>
             <span
-              className={`text-sm rounded px-1.5 py-0.5 self-start ${
-                matched(key) ? hl : "text-white/85"
+              className={`text-[15px] rounded px-1.5 py-0.5 self-start ${
+                matched(key) ? HL : "text-white/90"
               }`}
             >
               {side[key] || "—"}
@@ -204,7 +227,7 @@ export default function ShadowDuplicateBanner({ card, onResolved }: ShadowDuplic
   const left = fromCard(card);
   const right = archived ? fromEntity(archived) : null;
 
-  const matched = (key: FieldKey): boolean => {
+  const matched = (key: FieldKey | "name"): boolean => {
     if (!right) return false;
     const a = left[key];
     const b = right[key];
@@ -213,14 +236,6 @@ export default function ShadowDuplicateBanner({ card, onResolved }: ShadowDuplic
     if (key === "telegram") return normTg(a) === normTg(b);
     return norm(a) === norm(b);
   };
-
-  // Какие поля совпали — для строки «Совпадение по: …»
-  const matchedKeys: FieldKey[] = right
-    ? (["name", ...ROWS] as FieldKey[]).filter((k) => matched(k))
-    : [];
-  // Показываем строку, только если хоть у одной стороны есть значение (или совпадение) —
-  // чтобы не было «простыни» из «—».
-  const visibleRows = ROWS.filter((key) => left[key] || (right && right[key]) || matched(key));
 
   return (
     <>
@@ -238,79 +253,61 @@ export default function ShadowDuplicateBanner({ card, onResolved }: ShadowDuplic
         </button>
       </div>
 
-      {/* Центрированная модалка сравнения */}
+      {/* Полноэкранный экран сравнения */}
       {open && (
-        <div
-          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={() => !busy && setOpen(false)}
-        >
-          <div
-            className="w-full max-w-2xl max-h-[88vh] flex flex-col rounded-2xl bg-slate-800 text-white shadow-2xl ring-1 ring-white/10 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-              <h2 className="text-base font-semibold">Похожий кандидат в архиве</h2>
-              <button
-                onClick={() => setOpen(false)}
-                className="text-white/50 hover:text-white transition-colors"
-                aria-label="Закрыть"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <div className="fixed inset-0 z-[1000] flex flex-col bg-slate-900/95 backdrop-blur-sm">
+          <div className="relative flex items-center justify-center px-6 py-4 border-b border-white/10 shrink-0">
+            <h2 className="text-base font-medium text-white/90">Проверка похожих кандидатов</h2>
+            <button
+              onClick={() => setOpen(false)}
+              className="absolute right-6 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+              aria-label="Закрыть"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
 
-            <div className="flex-1 overflow-auto p-5">
-              {loading ? (
-                <div className="flex items-center justify-center py-16 text-white/50">
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                </div>
-              ) : (
-                <>
-                  {matchedKeys.length > 0 && (
-                    <div className="mb-4 text-sm text-amber-300/90">
-                      Совпадение по:{" "}
-                      <span className="font-medium">
-                        {matchedKeys.map((k) => LABELS[k]).join(", ")}
-                      </span>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-4">
-                    <ColumnView title="Новый (активный)" side={left} rows={visibleRows} matched={matched} />
-                    <ColumnView title="В архиве" side={right} rows={visibleRows} matched={matched} />
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="border-t border-white/10 px-5 py-4">
-              <p className="text-xs text-white/40 mb-3">
-                «Объединить» перенесёт историю архивного профиля в этого кандидата и уберёт дубль из архива.
-              </p>
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  disabled={busy}
-                  onClick={() => setOpen(false)}
-                  className="rounded-lg px-4 py-2 text-sm text-white/60 hover:bg-white/5 disabled:opacity-50 transition-colors"
-                >
-                  Закрыть
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={handleDismiss}
-                  className="rounded-lg border border-red-400/40 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50 transition-colors"
-                >
-                  Нет, это разные люди
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={handleMerge}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
-                >
-                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Объединить
-                </button>
+          <div className="relative flex-1 overflow-hidden">
+            {loading ? (
+              <div className="flex items-center justify-center h-full text-white/50">
+                <Loader2 className="w-7 h-7 animate-spin" />
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="h-full overflow-auto px-6 py-6">
+                  <div className="mx-auto max-w-5xl grid grid-cols-2 gap-6">
+                    <ColumnView title="Новый кандидат" side={left} matched={matched} />
+                    <ColumnView title="В архиве" side={right} matched={matched} />
+                  </div>
+                </div>
+
+                {/* Кнопки действий — плавающей стопкой по центру */}
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-full max-w-sm px-4 flex flex-col gap-3">
+                  <button
+                    disabled={busy}
+                    onClick={handleMerge}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 font-semibold text-white shadow-lg hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+                  >
+                    {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Объединить
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={handleDismiss}
+                    className="rounded-xl bg-red-500 px-4 py-3 font-semibold text-white shadow-lg hover:bg-red-600 disabled:opacity-50 transition-colors"
+                  >
+                    Нет, это разные люди
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => setOpen(false)}
+                    className="rounded-xl bg-white px-4 py-3 font-semibold text-slate-700 shadow-lg hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                  >
+                    Закрыть
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
