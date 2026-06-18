@@ -44,6 +44,7 @@ type Side = {
   salary: string;
   experience: string;
   source: string;
+  tags: string;
   statusLabel: string;
   isRejected: boolean;
   rejectReason: string;
@@ -51,9 +52,10 @@ type Side = {
   history: TimelineEvent[];
   resumes: ResumeDemo[];
   resumeText: string;
+  notes: Array<{ text?: string; author?: string; date?: string }>;
 };
 
-type FieldKey = "phone" | "email" | "telegram" | "age" | "city" | "salary" | "experience" | "source";
+type FieldKey = "phone" | "email" | "telegram" | "age" | "city" | "salary" | "experience" | "source" | "tags";
 
 const norm = (v: string) => (v || "").trim().toLowerCase();
 const normPhone = (v: string) => (v || "").replace(/\D/g, "").slice(-10);
@@ -69,6 +71,7 @@ const FIELDS: { key: FieldKey; label: string }[] = [
   { key: "salary", label: "Зарплата" },
   { key: "experience", label: "Опыт" },
   { key: "source", label: "Источник" },
+  { key: "tags", label: "Метки" },
 ];
 
 function computeAge(birthDate?: string): string {
@@ -104,6 +107,14 @@ function resumesFrom(extra: Record<string, unknown> | undefined): ResumeDemo[] {
   return [];
 }
 
+function notesFrom(extra: Record<string, unknown> | undefined): Array<{ text?: string; author?: string; date?: string }> {
+  const ns = extra?.notes;
+  if (!Array.isArray(ns)) return [];
+  return (ns as Array<Record<string, unknown>>)
+    .filter((n) => n && n.text)
+    .map((n) => ({ text: n.text as string, author: n.author_name as string, date: n.date as string }));
+}
+
 function fromCard(card: KanbanCard, statusKey?: string): Side {
   const extra = (card.extra_data || {}) as Record<string, unknown>;
   const history = timelineFrom(extra);
@@ -121,6 +132,7 @@ function fromCard(card: KanbanCard, statusKey?: string): Side {
     salary: card.salary || "",
     experience: card.total_experience || ((extra.total_experience as string) || ""),
     source: card.source || ((extra.source as string) || ""),
+    tags: ((card.tags as string[] | undefined) || []).join(", "),
     statusLabel: statusLabelOf(statusKey),
     isRejected,
     rejectReason: (card.rejection_reason as string) || ((extra.rejection_reason as string) || ""),
@@ -128,6 +140,7 @@ function fromCard(card: KanbanCard, statusKey?: string): Side {
     history,
     resumes: resumesFrom(extra),
     resumeText: (extra.resume_text as string) || "",
+    notes: notesFrom(extra),
   };
 }
 
@@ -157,6 +170,7 @@ function fromEntity(e: EntityWithRelations): Side {
     salary,
     experience: ((ent.total_experience as string) || (extra.total_experience as string) || ""),
     source: (ent.source as string) || ((extra.source as string) || ""),
+    tags: ((ent.tags as string[] | undefined) || []).join(", "),
     statusLabel: statusLabelOf(statusKey),
     isRejected,
     rejectReason: (ent.rejection_reason as string) || ((extra.rejection_reason as string) || ""),
@@ -164,6 +178,7 @@ function fromEntity(e: EntityWithRelations): Side {
     history,
     resumes: resumesFrom(extra),
     resumeText: (extra.resume_text as string) || "",
+    notes: notesFrom(extra),
   };
 }
 
@@ -244,6 +259,23 @@ function ResumeBlock({ resumes, text }: { resumes: ResumeDemo[]; text: string })
   );
 }
 
+function NotesBlock({ notes }: { notes: Array<{ text?: string; author?: string; date?: string }> }) {
+  if (notes.length === 0) return null;
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-200">
+      <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">Заметки</div>
+      <div className="space-y-1.5">
+        {notes.map((n, i) => (
+          <div key={i} className="rounded-lg bg-slate-50 p-2 text-xs">
+            <div className="text-slate-800 whitespace-pre-wrap">{n.text}</div>
+            <div className="text-slate-400 mt-1">{[n.author, n.date].filter(Boolean).join(" · ")}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Column({
   title,
   side,
@@ -292,6 +324,7 @@ function Column({
       </table>
 
       <ResumeBlock resumes={side.resumes} text={side.resumeText} />
+      <NotesBlock notes={side.notes} />
     </div>
   );
 }

@@ -1030,18 +1030,40 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
     q = q.order_by(Entity.id.desc())
 
     res = await db.execute(q)
+    match_id: Optional[int] = None
     phone_match: Optional[int] = None
     for cand_id, cand_email, cand_phone, cand_tg in res.all():
         if cand_id in dismissed:
             continue
         if emails and normalize_email(cand_email or "") in emails:
-            return cand_id  # email — сильнейшее совпадение, возвращаем сразу
+            match_id = cand_id  # email — сильнейшее совпадение
+            break
         if tg_names and any(
             str(t or "").strip().lstrip("@").lower() in tg_names for t in (cand_tg or [])
         ):
-            return cand_id  # telegram-username — тоже надёжный идентификатор
+            match_id = cand_id  # telegram-username — тоже надёжный идентификатор
+            break
         if phone_match is None and phones10:
             d = normalize_phone(cand_phone or "")
             if len(d) >= 10 and d[-10:] in phones10:
                 phone_match = cand_id
-    return phone_match
+    if match_id is None:
+        match_id = phone_match
+
+    # Помечаем найденного дубля ОБРАТНОЙ ссылкой (его hidden_duplicate_id → наш id),
+    # чтобы баннер «Похожий кандидат» появлялся у ОБОИХ профилей пары.
+    if match_id is not None and getattr(entity, "id", None):
+        dup = (await db.execute(select(Entity).where(Entity.id == match_id))).scalar_one_or_none()
+        if dup is not None:
+            de = dup.extra_data if isinstance(dup.extra_data, dict) else {}
+            ddis = set()
+            for x in (de.get("dismissed_duplicate_ids") or []):
+                try:
+                    ddis.add(int(x))
+                except (TypeError, ValueError):
+                    pass
+            if entity.id not in ddis and de.get("hidden_duplicate_id") != entity.id:
+                nde = dict(de)
+                nde["hidden_duplicate_id"] = entity.id
+                dup.extra_data = nde
+    return match_id
