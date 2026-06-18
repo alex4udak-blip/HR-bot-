@@ -1630,6 +1630,40 @@ async def find_archive_duplicates(
         groups_map.setdefault(find(rid), []).append(info[rid])
     groups = [m for m in groups_map.values() if len(m) >= 2]
     groups.sort(key=lambda m: -len(m))
+
+    # Помечаем участников групп флагом hidden_duplicate_id → при открытии карточки
+    # архивного появится баннер сравнения (как у активных). Каждый указывает на
+    # «соседа» по группе (первый — на второго, остальные — на первого).
+    member_ids = [m["id"] for g in groups for m in g]
+    if member_ids:
+        ents = (await db.execute(
+            select(Entity).where(Entity.id.in_(member_ids))
+        )).scalars().all()
+        by_id = {e.id: e for e in ents}
+        changed = False
+        for g in groups:
+            ids = [m["id"] for m in g]
+            for idx, mid in enumerate(ids):
+                sibling = ids[1] if idx == 0 else ids[0]
+                ent = by_id.get(mid)
+                if ent is None:
+                    continue
+                extra = ent.extra_data if isinstance(ent.extra_data, dict) else {}
+                dismissed = set()
+                for x in (extra.get("dismissed_duplicate_ids") or []):
+                    try:
+                        dismissed.add(int(x))
+                    except (TypeError, ValueError):
+                        pass
+                if sibling in dismissed or extra.get("hidden_duplicate_id") == sibling:
+                    continue
+                ne = dict(extra)
+                ne["hidden_duplicate_id"] = sibling
+                ent.extra_data = ne
+                changed = True
+        if changed:
+            await db.commit()
+
     return {
         "groups": groups,
         "total_groups": len(groups),

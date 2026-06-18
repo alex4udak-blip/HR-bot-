@@ -224,6 +224,7 @@ export default function ShadowDuplicateBanner({ card, onResolved }: ShadowDuplic
     }
   };
 
+  const cardArchived = !!(card.extra_data?.is_archived as boolean | undefined);
   const left = fromCard(card);
   const right = archived ? fromEntity(archived) : null;
 
@@ -276,7 +277,7 @@ export default function ShadowDuplicateBanner({ card, onResolved }: ShadowDuplic
               <>
                 <div className="h-full overflow-auto px-6 py-6">
                   <div className="mx-auto max-w-5xl grid grid-cols-2 gap-6">
-                    <ColumnView title="Новый кандидат" side={left} matched={matched} />
+                    <ColumnView title={cardArchived ? "Этот профиль (в архиве)" : "Новый кандидат"} side={left} matched={matched} />
                     <ColumnView title="В архиве" side={right} matched={matched} />
                   </div>
                 </div>

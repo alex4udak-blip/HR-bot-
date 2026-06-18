@@ -697,6 +697,7 @@ export default function AllCandidatesPage() {
         if ((!Array.isArray(extra.notes) || extra.notes.length === 0) && extra.comment) {
           extra.notes = [{ text: String(extra.comment), date: e.created_at, author_name: "Импорт" }];
         }
+        extra.is_archived = true;
         setSelectedCard({
           id: e.id,
           name: e.name,
