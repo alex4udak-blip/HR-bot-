@@ -537,6 +537,15 @@ async def ensure_shadow_columns():
                 print(f\"Failed to backfill custom_stages on vacancy {row.id}: {e}\")
         print(f\"Backfilled custom_stages labels on {cs_fixed} vacancies\")
 
+    # Backfill: легаси английский комментарий первичной заявки → русский.
+    # Старые stage_transitions писались с comment='Initial application'; код теперь
+    # пишет 'Первичная заявка'. Идемпотентно (WHERE comment='Initial application').
+    async with engine.begin() as ia_conn:
+        res = await ia_conn.execute(text(
+            \"UPDATE stage_transitions SET comment='Первичная заявка' WHERE comment='Initial application'\"
+        ))
+        print(f\"Backfilled {res.rowcount} stage_transitions: Initial application -> Первичная заявка\")
+
     await engine.dispose()
 
 asyncio.run(ensure_shadow_columns())

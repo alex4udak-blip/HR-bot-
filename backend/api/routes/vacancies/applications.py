@@ -251,7 +251,7 @@ async def create_application(
         from_stage=None,
         to_stage=initial_stage.value,
         changed_by_id=current_user.id,
-        comment="Initial application",
+        comment="Первичная заявка",
     )
     await db.commit()
 

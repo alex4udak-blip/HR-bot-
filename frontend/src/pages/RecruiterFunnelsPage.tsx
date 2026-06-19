@@ -3213,9 +3213,8 @@ export default function RecruiterFunnelsPage() {
                                     <div className="flex items-center gap-3">
                                       {resumeOriginal && (
                                         <a
-                                          href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
+                                          href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download?download=1`}
+                                          download={resumeOriginal.file_name}
                                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-08)] text-xs text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                         >
                                           <FileText className="w-3.5 h-3.5" />
