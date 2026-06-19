@@ -3566,6 +3566,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   const [loading, setLoading] = useState(true);
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
   const [currentResumeIndex, setCurrentResumeIndex] = useState(0);
+  const [pdfIndex, setPdfIndex] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -3593,6 +3594,13 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
 
   const resumeFiles = files.filter((f) => f.file_type === "resume");
   const pdfFile = resumeFiles.find((f) => f.mime_type === "application/pdf");
+  // Все PDF-резюме, новое сверху: после объединения кандидатов PDF'ы
+  // накапливаются, и нужно понимать, где новое, а где старое.
+  const pdfFiles = resumeFiles
+    .filter((f) => f.mime_type === "application/pdf")
+    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  const safePdfIndex = Math.min(pdfIndex, Math.max(0, pdfFiles.length - 1));
+  const currentPdf = pdfFiles[safePdfIndex] || pdfFile;
   const imageFiles = resumeFiles.filter((f) =>
     f.mime_type?.startsWith("image/"),
   );
@@ -3626,6 +3634,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
 
   useEffect(() => {
     setCurrentResumeIndex(0);
+    setPdfIndex(0);
   }, [card.id]);
 
   useEffect(() => {
@@ -4088,19 +4097,43 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
             </div>
           ))}
         </div>
-      ) : pdfFile ? (
+      ) : currentPdf ? (
         <div className="space-y-2">
-          {/* Инлайн-превью PDF: download-эндпоинт отдаёт inline (files.py), поэтому
-              резюме открывается прямо в карточке, а не скачивается. */}
+          {/* Несколько резюме (после объединения PDF'ы накапливаются) — переключатель,
+              новое сверху, чтобы видно было, где новое, а где старое. */}
+          {pdfFiles.length > 1 && (
+            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+              {pdfFiles.map((f, i) => (
+                <button
+                  key={f.id}
+                  onClick={() => setPdfIndex(i)}
+                  title={f.file_name}
+                  className={clsx(
+                    "px-2.5 py-1 rounded-md text-xs border transition-colors",
+                    i === safePdfIndex
+                      ? "border-[color:var(--hf-accent)] text-[var(--hf-accent)] bg-[var(--hf-accent-bg-10)]"
+                      : "border-[color:var(--hf-main-200)] text-[var(--hf-main-600)] hover:bg-[var(--hf-white-alpha-04)]",
+                  )}
+                >
+                  Резюме {i + 1}{i === 0 ? " · новое" : ""}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* #toolbar=0&navpanes=0 — прячем редакторскую панель Chrome PDF-вьюера: чистый просмотр. */}
           <iframe
-            src={`/api/entities/${card.id}/files/${pdfFile.id}/download`}
-            title={pdfFile.file_name}
+            key={currentPdf.id}
+            src={`/api/entities/${card.id}/files/${currentPdf.id}/download#toolbar=0&navpanes=0`}
+            title={currentPdf.file_name}
             className="w-full min-h-[760px] rounded-lg border border-[color:var(--hf-white-alpha-06)] bg-white"
           />
           <div className="flex items-center justify-between gap-2 px-1 text-xs text-[var(--hf-dark-500)]">
-            <span className="truncate">{pdfFile.file_name} · {(pdfFile.file_size / 1024).toFixed(0)} КБ</span>
+            <span className="truncate">
+              {currentPdf.file_name} · {(currentPdf.file_size / 1024).toFixed(0)} КБ
+              {currentPdf.created_at ? ` · загружено ${formatDateFull(currentPdf.created_at)}` : ""}
+            </span>
             <button
-              onClick={() => handleDownload(pdfFile)}
+              onClick={() => handleDownload(currentPdf)}
               className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] rounded-lg hover:bg-[var(--hf-accent-bg-30)] transition-colors"
             >
               <Download className="w-3.5 h-3.5" /> Скачать
