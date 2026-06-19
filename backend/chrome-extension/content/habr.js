@@ -28,23 +28,62 @@
     return null;
   }
 
+  // Узел с местами работы — он НЕ внутри профильного /user, а под /resume.
+  function findCompanies(j) {
+    const stack = [j]; let steps = 0;
+    while (stack.length && steps < 20000) {
+      steps++;
+      const cur = stack.pop();
+      if (cur && typeof cur === 'object' && !Array.isArray(cur)) {
+        if (cur.companies && cur.companies.items) return cur.companies;
+        for (const key of Object.keys(cur)) { const v = cur[key]; if (v && typeof v === 'object') stack.push(v); }
+      } else if (Array.isArray(cur)) {
+        for (const v of cur) if (v && typeof v === 'object') stack.push(v);
+      }
+    }
+    return null;
+  }
+
   function mapJson(j, data) {
     const n = findProfileNode(j);
-    if (!n) return;
-    if (n.age != null) data.age = String(n.age);
-    if (n.location) data.city = typeof n.location === 'string' ? n.location : (n.location.title || '');
-    if (n.experience != null) data.total_experience = String(n.experience);
-    if (Array.isArray(n.skills)) data.skills = n.skills.map(s => (s && (s.title || s.name)) || s).filter(v => typeof v === 'string');
-    if (n.salary) data.salary = typeof n.salary === 'string' ? n.salary : (n.salary.amount ? (n.salary.amount + ' ' + (n.salary.currency || '')) : '');
-    const items = n.contacts && n.contacts.items;
-    if (Array.isArray(items)) items.forEach(c => {
-      const kind = String(c.kind || c.type || '').toLowerCase();
-      const val = c.value && (typeof c.value === 'string' ? c.value : (c.value.title || c.value.href)) || '';
-      if (!val || typeof val !== 'string') return;
-      if (/phone/.test(kind) && !data.phone) data.phone = val;
-      else if (/telegram/.test(kind) && !data.telegram) data.telegram = val;
-      else if (/mail/.test(kind) && !data.email) data.email = val;
-    });
+    if (n) {
+      if (!data.full_name && typeof n.title === 'string') data.full_name = n.title;
+      // Должность: специализация (+ грейд/квалификация). specialization — объект {title}.
+      const spec = n.specialization && (typeof n.specialization === 'string' ? n.specialization : (n.specialization.title || ''));
+      const qual = typeof n.qualification === 'string' ? n.qualification : (n.qualification && n.qualification.title || '');
+      const pos = [spec, qual].filter(Boolean).join(' · ');
+      if (pos && !data.position) data.position = pos;
+      if (n.age != null) data.age = typeof n.age === 'string' ? n.age : String(n.age);
+      if (n.location) data.city = typeof n.location === 'string' ? n.location : (n.location.title || '');
+      if (n.experience != null) data.total_experience = typeof n.experience === 'string' ? n.experience : String(n.experience);
+      if (Array.isArray(n.skills)) data.skills = n.skills.map(s => (s && (s.title || s.name)) || s).filter(v => typeof v === 'string');
+      if (n.salary) data.salary = typeof n.salary === 'string' ? n.salary : (n.salary.amount ? (n.salary.amount + ' ' + (n.salary.currency || '')) : '');
+      const items = n.contacts && n.contacts.items;
+      if (Array.isArray(items)) items.forEach(c => {
+        const kind = String(c.kind || c.type || '').toLowerCase();
+        const val = c.value && (typeof c.value === 'string' ? c.value : (c.value.title || c.value.href)) || '';
+        if (!val || typeof val !== 'string') return;
+        if (/phone/.test(kind) && !data.phone) data.phone = val;
+        else if (/telegram/.test(kind) && !data.telegram) data.telegram = val;
+        else if (/mail/.test(kind) && !data.email) data.email = val;
+      });
+    }
+    // Опыт работы: companies.items[].positions[] (title компании + должность + период).
+    const companies = findCompanies(j);
+    if (companies && Array.isArray(companies.items)) {
+      const exp = [];
+      companies.items.slice(0, 6).forEach(co => {
+        const comp = (co && co.title) || '';
+        ((co && co.positions) || []).forEach(p => {
+          const parts = [p && p.title, comp, p && p.duration].filter(Boolean);
+          if (parts.length) exp.push(parts.join(' | '));
+        });
+      });
+      if (exp.length) {
+        if (!data.experience_summary) data.experience_summary = exp.join('\n');
+        if (!data.company && companies.items[0]) data.company = companies.items[0].title || '';
+      }
+    }
   }
 
   function parseHabr() {

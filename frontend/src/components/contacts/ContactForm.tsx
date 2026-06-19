@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, UserCheck, Building2, Wrench, Target, Users, User, DollarSign } from 'lucide-react';
+import { X, UserCheck, Building2, Wrench, Target, Users, User, DollarSign, Upload } from 'lucide-react';
 import clsx from 'clsx';
+import toast from 'react-hot-toast';
 import { useEntityStore } from '@/stores/entityStore';
+import { parseResumeFromFile, uploadEntityFile } from '@/services/api';
 import type { Entity, EntityType, EntityStatus, CurrencyCode } from '@/types';
 import { ENTITY_TYPES, STATUS_LABELS, CURRENCIES } from '@/types';
 
@@ -98,6 +100,41 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [parsing, setParsing] = useState(false);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // PDF/резюме → автозаполнение формы тем же AI-парсером, что и «Парсинг резюме».
+  // HR грузит файл, поля заполняются, он проверяет и создаёт кандидата.
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!file) return;
+    setParsing(true);
+    try {
+      const r = await parseResumeFromFile(file);
+      setResumeFile(file);
+      setFormData((prev) => ({
+        ...prev,
+        name: r.name || prev.name,
+        emails: r.email || prev.emails,
+        phones: r.phone || prev.phones,
+        telegram_usernames: r.telegram || prev.telegram_usernames,
+        company: r.company || prev.company,
+        position: r.position || prev.position,
+        tags: (r.skills && r.skills.length) ? r.skills.join(', ') : prev.tags,
+        expected_salary_min: r.salary_min != null ? String(r.salary_min) : prev.expected_salary_min,
+        expected_salary_max: r.salary_max != null ? String(r.salary_max) : prev.expected_salary_max,
+        expected_salary_currency: (r.salary_currency as CurrencyCode) || prev.expected_salary_currency,
+      }));
+      toast.success('Резюме распознано — проверьте поля и создайте');
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail || (err instanceof Error ? err.message : 'Не удалось распознать резюме'));
+    } finally {
+      setParsing(false);
+    }
+  };
 
   const availableStatuses = ENTITY_TYPES[formData.type].statuses;
 
@@ -175,6 +212,11 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
         result = { ...entity, ...data } as Entity;
       } else {
         result = await createEntity(data);
+        // Автозаполняли из файла — прикрепим оригинал резюме к карточке кандидата.
+        if (resumeFile && result?.id) {
+          try { await uploadEntityFile(result.id, resumeFile, 'resume', 'Резюме (автозаполнение)'); }
+          catch { /* кандидат уже создан — вложение не критично */ }
+        }
       }
       onSuccess(result);
     } catch (err) {
@@ -212,6 +254,35 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto flex-1">
+          {/* Автозаполнение из резюме (PDF) — только при создании нового контакта */}
+          {!entity && (
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt,.rtf"
+                onChange={handleResumeUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={parsing}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors disabled:opacity-60"
+              >
+                {parsing ? (
+                  <div className="w-5 h-5 border-2 border-cyan-300/40 border-t-cyan-300 rounded-full animate-spin" />
+                ) : (
+                  <Upload size={18} />
+                )}
+                {parsing ? 'Распознаю резюме…' : 'Загрузить резюме (PDF) — заполнить автоматически'}
+              </button>
+              <p className="text-xs text-white/40 mt-1 text-center">
+                PDF, DOC, DOCX, TXT — поля заполнятся из файла, проверьте и создайте
+              </p>
+            </div>
+          )}
+
           {/* Entity Type */}
           <div>
             <label className="block text-sm font-medium text-white/60 mb-2">Тип</label>
