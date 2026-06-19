@@ -1987,7 +1987,7 @@ async def _parse_vacancy_text(text: str) -> dict:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=api_key)
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=1500,
             messages=[{"role": "user", "content": f"""Разбери заявку на вакансию в структурированные поля. Входной текст — произвольный.
 

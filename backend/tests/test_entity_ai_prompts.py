@@ -110,7 +110,7 @@ class TestEntityAIService:
         service = EntityAIService()
 
         assert service._client is None  # Lazy initialization
-        assert service.model == "claude-sonnet-4-20250514"
+        assert service.model == "claude-sonnet-4-6"
 
     def test_get_available_actions(self):
         """Verify get_available_actions returns all actions."""

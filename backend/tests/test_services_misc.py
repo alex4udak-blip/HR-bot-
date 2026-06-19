@@ -166,7 +166,7 @@ class TestEntityAIService:
         """Test EntityAIService initialization."""
         service = EntityAIService()
         assert service._client is None
-        assert service.model == "claude-sonnet-4-20250514"
+        assert service.model == "claude-sonnet-4-6"
 
     def test_client_property_with_api_key(self, mock_settings):
         """Test client property when API key is configured."""

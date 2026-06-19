@@ -138,7 +138,7 @@ async def generate_ai_summary(candidate_data: dict) -> str:
     try:
         client = anthropic.AsyncAnthropic(api_key=api_key)
         response = await client.messages.create(
-            model="claude-haiku-4-20250414",
+            model="claude-haiku-4-5",
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )

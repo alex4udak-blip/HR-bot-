@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # Claude model name
     claude_model: str = Field(
-        default="claude-sonnet-4-20250514",
+        default="claude-sonnet-4-6",
         alias="CLAUDE_MODEL"
     )
 
