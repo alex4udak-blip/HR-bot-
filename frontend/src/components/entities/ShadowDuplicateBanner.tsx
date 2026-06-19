@@ -67,9 +67,11 @@ type Side = {
 
 type FieldKey = "phone" | "email" | "telegram" | "age" | "city" | "salary" | "experience" | "source" | "tags";
 
-const norm = (v: string) => (v || "").trim().toLowerCase();
-const normPhone = (v: string) => (v || "").replace(/\D/g, "").slice(-10);
-const normTg = (v: string) => (v || "").trim().replace(/^@/, "").toLowerCase();
+// String() coercion: значения полей (age/salary/experience) из API могут прийти
+// числом, а не строкой — без приведения .trim() падает «(e||"").trim is not a function».
+const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
+const normPhone = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
+const normTg = (v: unknown) => String(v ?? "").trim().replace(/^@/, "").toLowerCase();
 const HL = "bg-amber-100 text-amber-900 rounded px-1.5 py-0.5";
 
 const FIELDS: { key: FieldKey; label: string }[] = [
@@ -158,10 +160,10 @@ function fromCard(card: KanbanCard, statusKey?: string): Side {
     phone: card.phone || "",
     email: card.email || "",
     telegram: card.telegram_username || "",
-    age: card.age || computeAge(extra.birth_date as string | undefined),
+    age: card.age ? String(card.age) : computeAge(extra.birth_date as string | undefined),
     city: card.city || ((extra.city as string) || ""),
-    salary: card.salary || "",
-    experience: card.total_experience || ((extra.total_experience as string) || ""),
+    salary: card.salary ? String(card.salary) : "",
+    experience: card.total_experience ? String(card.total_experience) : ((extra.total_experience as string) || ""),
     source: card.source || ((extra.source as string) || ""),
     tags: ((card.tags as string[] | undefined) || []).join(", "),
     statusLabel: statusLabelOf(statusKey),
