@@ -73,7 +73,8 @@ import {
   HuntflowOptionsIcon,
 } from "@/components/hr/HuntflowControls";
 import { useFormBadgeStore } from "@/stores/formBadgeStore";
-import { getEntityFormsUnreadCount } from "@/services/api/forms";
+import { getEntityFormsUnreadCount, getEntityDispatches, markEntityDispatchesSeen, type FormDispatchInfo } from "@/services/api/forms";
+import { AnketaResponses } from "@/features/forms/AnketaResponses";
 const AnketaDrawer = lazy(() =>
   import("@/features/forms/AnketaDrawer").then((m) => ({ default: m.AnketaDrawer })),
 );
@@ -507,7 +508,7 @@ export default function AllCandidatesPage() {
 
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [selectedStatus, setSelectedStatus] = useState("");
-  const [detailTab, setDetailTab] = useState<"info" | "resume">("resume");
+  const [detailTab, setDetailTab] = useState<DetailSection>("resume");
   const [showListSettings, setShowListSettings] = useState(false);
   // F7-fix: настройки списка (scope + видимые поля) — persist + применяются к карточкам.
   const [listSettings, setListSettings] = useState<CandidateListSettings>(
@@ -1594,7 +1595,7 @@ export default function AllCandidatesPage() {
 // INFO TAB — Huntflow-style detail panel with working actions
 // ================================================================
 
-type DetailSection = "info" | "resume";
+type DetailSection = "info" | "resume" | "anketa";
 
 // Этапы, при которых карточка остаётся нейтрально-серой (не «в процессе»).
 const NEUTRAL_STAGE_STATUSES = new Set(["rejected", "fired", "archived"]);
@@ -2980,6 +2981,23 @@ const InfoTab = memo(function InfoTab({
           >
             Резюме
           </button>
+          <button
+            type="button"
+            onClick={() => onDetailSectionChange("anketa")}
+            className={clsx(
+              "relative h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+              detailSection === "anketa"
+                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
+                : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
+            )}
+          >
+            Анкеты
+            {anketaCount > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
+                {anketaCount > 9 ? "9+" : anketaCount}
+              </span>
+            )}
+          </button>
         </div>
         {detailSection === "info" && (
           <PersonalNotesTab
@@ -2989,10 +3007,31 @@ const InfoTab = memo(function InfoTab({
           />
         )}
         {detailSection === "resume" && <ResumeTab card={card} />}
+        {detailSection === "anketa" && <AnketaTab card={card} />}
       </div>
     </div>
   );
 });
+
+function AnketaTab({ card }: { card: KanbanCard }) {
+  const [dispatches, setDispatches] = useState<FormDispatchInfo[]>([]);
+  const clearBadge = useFormBadgeStore((s) => s.clear);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await getEntityDispatches(card.id);
+        if (alive) setDispatches(rows);
+        await markEntityDispatchesSeen(card.id);
+        clearBadge(card.id);
+      } catch {
+        /* пустой/ошибка — покажем пустое состояние */
+      }
+    })();
+    return () => { alive = false; };
+  }, [card.id, clearBadge]);
+  return <AnketaResponses dispatches={dispatches} />;
+}
 
 const PersonalNotesTab = memo(function PersonalNotesTab({
   card,

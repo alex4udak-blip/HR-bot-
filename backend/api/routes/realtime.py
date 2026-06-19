@@ -604,6 +604,6 @@ async def broadcast_call_failed(org_id: int, call_data: Dict[str, Any]):
     await manager.broadcast_to_org(org_id, "call.failed", call_data)
 
 
-async def broadcast_form_submission(org_id: int, payload: Dict[str, Any]):
-    """Broadcast form.submission event to organization."""
-    await manager.broadcast_to_org(org_id, "form.submission", payload)
+async def broadcast_form_submission(user_id: int, payload: Dict[str, Any]):
+    """Notify ONLY the recruiter who sent the form (dispatch.created_by)."""
+    await manager.broadcast_to_user(user_id, "form.submission", payload)

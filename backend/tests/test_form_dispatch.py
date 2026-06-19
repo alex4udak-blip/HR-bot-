@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import select
 
 from api.models.database import (
-    FormTemplate, FormDispatch, FormSubmission, Entity, EntityType, EntityStatus, Organization,
+    FormTemplate, FormDispatch, FormSubmission, Entity, EntityType, EntityStatus, Organization, Notification,
 )
 from api.services.auth import create_access_token
 
@@ -130,3 +130,91 @@ async def test_submit_creates_notification(client, db_session, organization, adm
     )).scalars().all()
     assert len(notifs) == 1
     assert "анкет" in notifs[0].title.lower()
+
+
+@pytest.mark.asyncio
+async def test_submitted_answer_visible_in_entity_dispatches(client, db_session, organization, admin_user, org_owner):
+    # «Анкета дошла»: после сабмита ответ виден в /entity/{id}/dispatches со статусом и answers.
+    form = FormTemplate(org_id=organization.id, created_by=admin_user.id, title="Скрининг", slug="scr-vis",
+                        fields=[{"id": "f1", "type": "text", "label": "ФИО", "required": True}])
+    entity = Entity(org_id=organization.id, type=EntityType.candidate, name="Анна", status=EntityStatus.new)
+    db_session.add_all([form, entity])
+    await db_session.flush()
+    db_session.add(FormDispatch(form_id=form.id, entity_id=entity.id, token="t-vis", created_by=admin_user.id))
+    await db_session.commit()
+
+    sub = await client.post("/api/forms/public/d/t-vis/submit", json={"data": {"f1": "Иван Петров"}})
+    assert sub.status_code == 200, sub.text
+
+    r = await client.get(f"/api/forms/entity/{entity.id}/dispatches", headers=_headers(admin_user))
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    assert len(rows) == 1
+    assert rows[0]["status"] == "submitted"
+    assert rows[0]["answers"]["f1"] == "Иван Петров"
+
+
+@pytest.mark.asyncio
+async def test_notification_only_to_sender(client, db_session, organization, admin_user, second_user):
+    # Уведомление о заполнении идёт ТОЛЬКО отправителю (dispatch.created_by), не другим HR.
+    form = FormTemplate(org_id=organization.id, created_by=admin_user.id, title="S", slug="scr-only", fields=[])
+    entity = Entity(org_id=organization.id, type=EntityType.candidate, name="Анна", status=EntityStatus.new)
+    db_session.add_all([form, entity])
+    await db_session.flush()
+    db_session.add(FormDispatch(form_id=form.id, entity_id=entity.id, token="t-only", created_by=admin_user.id))
+    await db_session.commit()
+
+    await client.post("/api/forms/public/d/t-only/submit", json={"data": {}})
+
+    sender = (await db_session.execute(select(Notification).where(
+        Notification.user_id == admin_user.id, Notification.type == "form_submitted"))).scalars().all()
+    other = (await db_session.execute(select(Notification).where(
+        Notification.user_id == second_user.id, Notification.type == "form_submitted"))).scalars().all()
+    assert len(sender) == 1
+    assert len(other) == 0
+
+
+@pytest.mark.asyncio
+async def test_realtime_targets_only_sender(client, db_session, organization, admin_user, monkeypatch):
+    # realtime form.submission уходит конкретному отправителю (broadcast_to_user),
+    # а не всему оргу (broadcast_to_org). Проверяем по ВЫЗВАННОМУ методу — устойчиво,
+    # даже если org.id и user.id численно совпадают (оба =1 в тестах).
+    from api.routes import realtime as rt
+    to_user, to_org = [], []
+    async def fake_to_user(user_id, event_type, payload):
+        if event_type == "form.submission":
+            to_user.append(user_id)
+    async def fake_to_org(org_id, event_type, payload):
+        if event_type == "form.submission":
+            to_org.append(org_id)
+    monkeypatch.setattr(rt.manager, "broadcast_to_user", fake_to_user)
+    monkeypatch.setattr(rt.manager, "broadcast_to_org", fake_to_org)
+
+    form = FormTemplate(org_id=organization.id, created_by=admin_user.id, title="S", slug="scr-rt", fields=[])
+    entity = Entity(org_id=organization.id, type=EntityType.candidate, name="Анна", status=EntityStatus.new)
+    db_session.add_all([form, entity])
+    await db_session.flush()
+    db_session.add(FormDispatch(form_id=form.id, entity_id=entity.id, token="t-rt", created_by=admin_user.id))
+    await db_session.commit()
+
+    r = await client.post("/api/forms/public/d/t-rt/submit", json={"data": {}})
+    assert r.status_code == 200, r.text
+    assert to_user == [admin_user.id]   # ушло отправителю
+    assert to_org == []                 # НЕ ушло всему оргу
+
+
+@pytest.mark.asyncio
+async def test_submit_null_created_by_no_crash(client, db_session, organization, admin_user):
+    # dispatch без created_by: сабмит 200, уведомление не создаётся, без краша.
+    form = FormTemplate(org_id=organization.id, created_by=admin_user.id, title="S", slug="scr-null", fields=[])
+    entity = Entity(org_id=organization.id, type=EntityType.candidate, name="Анна", status=EntityStatus.new)
+    db_session.add_all([form, entity])
+    await db_session.flush()
+    db_session.add(FormDispatch(form_id=form.id, entity_id=entity.id, token="t-null", created_by=None))
+    await db_session.commit()
+
+    r = await client.post("/api/forms/public/d/t-null/submit", json={"data": {}})
+    assert r.status_code == 200, r.text
+    notifs = (await db_session.execute(select(Notification).where(
+        Notification.type == "form_submitted"))).scalars().all()
+    assert len(notifs) == 0

@@ -980,11 +980,14 @@ async def submit_public_form_by_token(
         from ..services.hr_notifications import notify_form_submitted
         await notify_form_submitted(db, dispatch, entity, form)
         from .realtime import broadcast_form_submission
-        await broadcast_form_submission(form.org_id, {
-            "entity_id": dispatch.entity_id, "form_id": form.id, "dispatch_id": dispatch.id,
-            "form_title": form.title, "candidate_name": entity.name if entity else None,
-        })
+        if dispatch.created_by:
+            await broadcast_form_submission(dispatch.created_by, {
+                "entity_id": dispatch.entity_id, "form_id": form.id, "dispatch_id": dispatch.id,
+                "form_title": form.title, "candidate_name": entity.name if entity else None,
+            })
+        else:
+            logger.warning("form.submission: dispatch %s has no created_by — no realtime sent", dispatch.id)
     except Exception:
-        logger.exception("form.submission notify/broadcast failed (non-critical)")
+        logger.error("form.submission notify/broadcast FAILED for dispatch %s", dispatch.id, exc_info=True)
 
     return {"message": "Спасибо! Ваша анкета успешно отправлена.", "entity_id": dispatch.entity_id}

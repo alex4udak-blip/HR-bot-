@@ -139,9 +139,13 @@ async def notify_form_submitted(db: AsyncSession, dispatch, entity, form) -> Non
     """Уведомить отправителя анкеты о полученном ответе кандидата."""
     try:
         if not dispatch.created_by:
+            logger.warning(
+                "notify_form_submitted: dispatch %s has no created_by — recruiter not notified",
+                getattr(dispatch, "id", None),
+            )
             return
         title = "Ответ на анкету"
-        cand = entity.name if entity else "Кандидат"
+        cand = (entity.name if entity else None) or "Кандидат"
         message = f"{cand} заполнил(а) анкету «{form.title}»"
         link = "/all-candidates"
         await _create_notification(db, dispatch.created_by, "form_submitted", title, message, link)
