@@ -31,6 +31,15 @@ interface TimelineEvent {
   title?: string;
 }
 
+// Резюме-текста часто нет (анонимные hh-анкеты из расширения), но есть
+// структурные поля — показываем их как резюме, чтобы блок не был пустым.
+type ResumeExtra = {
+  experience: string;
+  skills: string;
+  languages: string;
+  education: string;
+};
+
 type Side = {
   name: string;
   photo: string;
@@ -52,6 +61,7 @@ type Side = {
   history: TimelineEvent[];
   resumes: ResumeDemo[];
   resumeText: string;
+  resumeExtra: ResumeExtra;
   notes: Array<{ text?: string; author?: string; date?: string }>;
 };
 
@@ -107,6 +117,27 @@ function resumesFrom(extra: Record<string, unknown> | undefined): ResumeDemo[] {
   return [];
 }
 
+function joinStrs(v: unknown, sep = ", "): string {
+  if (Array.isArray(v)) return (v as unknown[]).filter((x) => typeof x === "string" && x.trim()).join(sep);
+  return typeof v === "string" ? v : "";
+}
+
+// Собираем «резюме из структурных полей» (опыт/навыки/языки/образование) —
+// fallback, когда полноценного resume_text/resume_demos нет.
+function resumeExtraFrom(extra: Record<string, unknown> | undefined): ResumeExtra {
+  const e = extra || {};
+  const exp = [
+    typeof e.experience_summary === "string" ? e.experience_summary : "",
+    joinStrs(e.experience_descriptions, "\n\n"),
+  ].filter(Boolean).join("\n\n");
+  return {
+    experience: exp,
+    skills: joinStrs(e.skills),
+    languages: joinStrs(e.languages),
+    education: joinStrs(e.education, "; "),
+  };
+}
+
 function notesFrom(extra: Record<string, unknown> | undefined): Array<{ text?: string; author?: string; date?: string }> {
   const ns = extra?.notes;
   if (!Array.isArray(ns)) return [];
@@ -140,6 +171,7 @@ function fromCard(card: KanbanCard, statusKey?: string): Side {
     history,
     resumes: resumesFrom(extra),
     resumeText: (extra.resume_text as string) || "",
+    resumeExtra: resumeExtraFrom(extra),
     notes: notesFrom(extra),
   };
 }
@@ -178,6 +210,7 @@ function fromEntity(e: EntityWithRelations): Side {
     history,
     resumes: resumesFrom(extra),
     resumeText: (extra.resume_text as string) || "",
+    resumeExtra: resumeExtraFrom(extra),
     notes: notesFrom(extra),
   };
 }
@@ -221,16 +254,25 @@ function StatusBlock({ side }: { side: Side }) {
   );
 }
 
-function ResumeBlock({ resumes, text }: { resumes: ResumeDemo[]; text: string }) {
-  const empty = resumes.length === 0 && !text;
+function ResumeFallbackRow({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+  return (
+    <div className="rounded-lg bg-slate-50 p-2.5 text-xs">
+      <div className="text-slate-500 mb-0.5">{label}</div>
+      <div className="text-slate-800 leading-relaxed whitespace-pre-wrap">{value}</div>
+    </div>
+  );
+}
+
+function ResumeBlock({ resumes, text, extra }: { resumes: ResumeDemo[]; text: string; extra: ResumeExtra }) {
+  const hasResume = resumes.length > 0 || !!text;
+  const hasExtra = !!(extra.experience || extra.skills || extra.languages || extra.education);
   return (
     <div className="mt-3 pt-3 border-t border-slate-200">
       <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
         Резюме{resumes.length > 1 ? ` (${resumes.length})` : ""}
       </div>
-      {empty ? (
-        <div className="text-sm text-slate-400">—</div>
-      ) : (
+      {hasResume ? (
         <div className="space-y-2">
           {resumes.map((r, i) => (
             <div key={i} className="rounded-lg bg-slate-50 p-2.5 text-xs">
@@ -254,6 +296,16 @@ function ResumeBlock({ resumes, text }: { resumes: ResumeDemo[]; text: string })
             </div>
           )}
         </div>
+      ) : hasExtra ? (
+        // Полного резюме нет — показываем структурные поля (анкеты из расширения)
+        <div className="space-y-2">
+          <ResumeFallbackRow label="Опыт" value={extra.experience} />
+          <ResumeFallbackRow label="Навыки" value={extra.skills} />
+          <ResumeFallbackRow label="Языки" value={extra.languages} />
+          <ResumeFallbackRow label="Образование" value={extra.education} />
+        </div>
+      ) : (
+        <div className="text-sm text-slate-400">—</div>
       )}
     </div>
   );
@@ -276,6 +328,27 @@ function NotesBlock({ notes }: { notes: Array<{ text?: string; author?: string; 
   );
 }
 
+// Фото из hh — временные ссылки, протухают. На ошибку загрузки показываем
+// инициалы вместо «битой картинки».
+function Avatar({ photo, name }: { photo: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  if (photo && !failed) {
+    return (
+      <img
+        src={photo}
+        alt={name}
+        className="w-12 h-12 rounded-xl object-cover shrink-0"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 text-sm font-semibold shrink-0">
+      {initialsOf(name) || "?"}
+    </div>
+  );
+}
+
 function Column({
   title,
   side,
@@ -293,13 +366,7 @@ function Column({
     <div className="rounded-xl border border-slate-200 p-4 min-w-0">
       <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-3">{title}</div>
       <div className="flex items-start gap-3 mb-3">
-        {side.photo ? (
-          <img src={side.photo} alt={side.name} className="w-12 h-12 rounded-xl object-cover shrink-0" />
-        ) : (
-          <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 text-sm font-semibold shrink-0">
-            {initialsOf(side.name) || "?"}
-          </div>
-        )}
+        <Avatar photo={side.photo} name={side.name} />
         <div className="min-w-0">
           <span className={`text-[15px] font-semibold ${matched("name") ? HL : "text-slate-900"}`}>
             {side.name || "—"}
@@ -323,7 +390,7 @@ function Column({
         </tbody>
       </table>
 
-      <ResumeBlock resumes={side.resumes} text={side.resumeText} />
+      <ResumeBlock resumes={side.resumes} text={side.resumeText} extra={side.resumeExtra} />
       <NotesBlock notes={side.notes} />
     </div>
   );
