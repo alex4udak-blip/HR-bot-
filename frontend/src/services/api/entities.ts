@@ -441,6 +441,20 @@ export const dismissDuplicate = async (
   return data;
 };
 
+/**
+ * Живой поиск дубля при ОТКРЫТИИ карточки. Ловит уже существующих дублей,
+ * созданных до появления детекта (импорт/другой источник), без ручного
+ * «Сверить». Помечает обе стороны, возвращает id найденного дубля или null.
+ */
+export const detectDuplicate = async (
+  entityId: number
+): Promise<{ duplicate_id: number | null }> => {
+  const { data } = await debouncedMutation<{ duplicate_id: number | null }>(
+    'post', `/entities/${entityId}/detect-duplicate`, {}
+  );
+  return data;
+};
+
 // === Теневая база (архив) ===
 
 export interface ArchivedCandidate {

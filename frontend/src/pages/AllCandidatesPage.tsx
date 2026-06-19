@@ -54,6 +54,7 @@ import {
   deleteEntity,
   archiveEntity,
   getEntity,
+  detectDuplicate,
   addEntityNote,
   updateEntityNote,
   deleteEntityNote,
@@ -624,6 +625,7 @@ export default function AllCandidatesPage() {
   }, [searchParams, setSearchParams]);
   // Чтобы не тянуть entity повторно после неудачной попытки селекта.
   const entityFetchTriedRef = useRef<number | null>(null);
+  const detectTriedRef = useRef<number | null>(null);
   useEffect(() => {
     if (!board) return;
     if (entityParam) {
@@ -716,6 +718,40 @@ export default function AllCandidatesPage() {
       })
       .catch(() => toast.error("Не удалось открыть кандидата"));
   }, [entityParam, archivedParam]);
+
+  // Живой детект дубля при ОТКРЫТИИ карточки. Если флаг ещё не стоит — спрашиваем
+  // бэкенд: ловит уже существующих дублей (импорт/другой источник), созданных до
+  // появления детекта, без ручного «Сверить». Нашёлся — ставим hidden_duplicate_id
+  // локально, и баннер появляется сам (бэкенд помечает и вторую сторону).
+  useEffect(() => {
+    const card = selectedCard;
+    if (!card) return;
+    const extra = (card.extra_data || {}) as Record<string, unknown>;
+    if (extra.hidden_duplicate_id) return; // флаг уже есть — баннер покажется и так
+    if (detectTriedRef.current === card.id) return; // эту карточку уже проверяли
+    detectTriedRef.current = card.id;
+    let cancelled = false;
+    detectDuplicate(card.id)
+      .then((r) => {
+        if (cancelled || !r?.duplicate_id) return;
+        setSelectedCard((prev) =>
+          prev && prev.id === card.id
+            ? {
+                ...prev,
+                extra_data: {
+                  ...(prev.extra_data || {}),
+                  hidden_duplicate_id: r.duplicate_id,
+                },
+              }
+            : prev
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCard?.id]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedCard || newStatus === selectedStatus) return;

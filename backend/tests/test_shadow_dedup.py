@@ -12,7 +12,9 @@ from api.models.database import (
     Entity, EntityType, EntityStatus, Organization, User,
     Vacancy, VacancyApplication, StageTransition,
 )
-from api.services.similarity import detect_archived_duplicate, similarity_service
+from api.services.similarity import (
+    detect_archived_duplicate, similarity_service, looks_like_person_name,
+)
 from api.services.auth import create_access_token
 
 
@@ -318,3 +320,173 @@ async def test_merge_shadow_merges_active_duplicate(
     # источник-дубль удалён, survivor остался
     assert await db_session.get(Entity, source.id) is None
     assert await db_session.get(Entity, target.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_detect_duplicate_endpoint_flags_both_sides(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    # Сценарий «Хисамовых»: два идентичных активных кандидата, созданных ДО детекта,
+    # без флагов. Открытие карточки одного (detect-duplicate при открытии) должно
+    # найти второго и пометить ОБЕ стороны → баннер появляется у обоих.
+    a = await _mk(db_session, organization.id, "Хисамов Вадим Ринатович",
+                  email="dnsvadim6@gmail.com", phone="+7 999 203 8926",
+                  created_by=admin_user.id)
+    b = await _mk(db_session, organization.id, "Хисамов Вадим Ринатович",
+                  email="dnsvadim6@gmail.com", phone="+7 999 203 8926",
+                  created_by=admin_user.id)
+    await db_session.commit()
+
+    r = await client.post(f"/api/entities/{a.id}/detect-duplicate", headers=_h(admin_token))
+    assert r.status_code == 200, r.text
+    assert r.json()["duplicate_id"] == b.id
+
+    fresh_a = await db_session.get(Entity, a.id)
+    await db_session.refresh(fresh_a)
+    assert (fresh_a.extra_data or {}).get("hidden_duplicate_id") == b.id
+    fresh_b = await db_session.get(Entity, b.id)
+    await db_session.refresh(fresh_b)
+    assert (fresh_b.extra_data or {}).get("hidden_duplicate_id") == a.id
+
+
+@pytest.mark.asyncio
+async def test_detect_duplicate_endpoint_no_match_returns_null(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    a = await _mk(db_session, organization.id, "Уникальный Кандидат",
+                  email="uniq-detect@x.com", created_by=admin_user.id)
+    await db_session.commit()
+    r = await client.post(f"/api/entities/{a.id}/detect-duplicate", headers=_h(admin_token))
+    assert r.status_code == 200, r.text
+    assert r.json()["duplicate_id"] is None
+
+
+# ============================================================
+# Мусорные / общие telegram-значения (ярлыки источника из импорта)
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_detect_junk_telegram_not_matched(db_session, organization):
+    # «telegram» — ярлык источника, а не личный хэндл → по нему НЕ матчим
+    await _mk(db_session, organization.id, "Иванов Иван", telegram_usernames=["telegram"])
+    newc = await _mk(db_session, organization.id, "Петров Пётр", telegram_usernames=["telegram"])
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) is None
+
+
+@pytest.mark.asyncio
+async def test_detect_common_telegram_not_matched(db_session, organization):
+    # одно и то же tg-значение у ≥3 кандидатов → это не хэндл, а мусор; не матчим
+    for nm in ("Иванов Иван", "Петров Пётр", "Сидоров Сидор"):
+        await _mk(db_session, organization.id, nm, telegram_usernames=["sharedtag"])
+    newc = await _mk(db_session, organization.id, "Кузнецов Кузьма", telegram_usernames=["sharedtag"])
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) is None
+
+
+@pytest.mark.asyncio
+async def test_detect_real_unique_telegram_still_matched(db_session, organization):
+    # настоящий уникальный telegram-хэндл по-прежнему ловит дубль (регрессия)
+    existing = await _mk(db_session, organization.id, "Анна Анина",
+                         telegram_usernames=["anna_unique_hr"])
+    newc = await _mk(db_session, organization.id, "Совсем Другая",
+                     telegram_usernames=["@Anna_Unique_HR"])  # @ + регистр
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) == existing.id
+
+
+@pytest.mark.asyncio
+async def test_rescan_clears_stale_flag_from_junk_telegram(
+    client, db_session, organization, admin_user, org_owner,
+    superadmin_user, superadmin_token,
+):
+    # Двое РАЗНЫХ людей, ранее склеенных по мусорному telegram («telegram»):
+    # стоит hidden_duplicate_id, но реального совпадения нет. Rescan снимает флаг.
+    a = await _mk(db_session, organization.id, "Иванов Иван", email="stale-a@x.com",
+                  telegram_usernames=["telegram"])
+    b = await _mk(db_session, organization.id, "Петров Пётр", email="stale-b@x.com",
+                  telegram_usernames=["telegram"])
+    await db_session.flush()
+    a.extra_data = {"hidden_duplicate_id": b.id}
+    b.extra_data = {"hidden_duplicate_id": a.id}
+    await db_session.commit()
+
+    r = await client.post("/api/entities/archive/rescan", headers=_h(superadmin_token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["cleared"] >= 2
+
+    for e in (a, b):
+        fresh = await db_session.get(Entity, e.id)
+        await db_session.refresh(fresh)
+        assert "hidden_duplicate_id" not in (fresh.extra_data or {})
+
+
+# ============================================================
+# Имя-должность не должно матчить (баг расширения: имя = «Flutter Developer …»)
+# ============================================================
+
+def test_looks_like_person_name_rejects_positions():
+    # настоящие ФИО
+    assert looks_like_person_name("Хисамов Вадим Ринатович")
+    assert looks_like_person_name("Александра Симонова")
+    assert looks_like_person_name("Иван Петров")
+    # должность/мусор/placeholder — не ФИО
+    assert not looks_like_person_name("Flutter Developer, Минск, 25 лет")  # запятая+цифры
+    assert not looks_like_person_name("Flutter Developer")                  # слово-должность
+    assert not looks_like_person_name("Flutter-developer")                  # должность через дефис
+    assert not looks_like_person_name("Backend разработчик")
+    assert not looks_like_person_name("Владимир")                          # одно слово
+    assert not looks_like_person_name("")
+
+
+@pytest.mark.asyncio
+async def test_detect_position_name_not_matched(db_session, organization):
+    # имя-должность без общих контактов НЕ считаем дублем (иначе все «Flutter
+    # Developer» слипаются), в отличие от настоящего ФИО (см. matches_by_full_name)
+    await _mk(db_session, organization.id, "Flutter Developer, Минск, 26 лет")
+    newc = await _mk(db_session, organization.id, "Flutter Developer, Москва, 29 лет")
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) is None
+
+
+@pytest.mark.asyncio
+async def test_check_duplicate_ignores_position_name_and_junk_telegram(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    # Баг расширения: имя = должность, telegram = ярлык источника «hh_b2b».
+    # Разные люди (разные email/телефон) НЕ должны попадать в «Уже в базе».
+    await _mk(db_session, organization.id, "Flutter Developer, Минск, 26 лет",
+              email="evgeniy@x.com", phone="+375 29 271-14-25",
+              telegram_usernames=["hh_b2b"], created_by=admin_user.id)
+    await _mk(db_session, organization.id, "Flutter-developer, Москва, 29 лет",
+              email="anatoliy@x.com", phone="+7 919 836-45-14",
+              telegram_usernames=["hh_b2b"], created_by=admin_user.id)
+    await db_session.commit()
+
+    r = await client.post(
+        "/api/magic-button/check-duplicate",
+        json={"full_name": "Flutter Developer, Минск, 25 лет",
+              "telegram": "hh_b2b", "phone": "+375 29 521 00 00"},
+        headers=_h(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["is_duplicate"] is False
+
+
+@pytest.mark.asyncio
+async def test_check_duplicate_real_identifier_still_flags(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    # настоящий идентификатор (email) по-прежнему ловит дубль
+    await _mk(db_session, organization.id, "Хисамов Вадим Ринатович",
+              email="dnsvadim6@gmail.com", phone="+7 999 203-89-26",
+              created_by=admin_user.id)
+    await db_session.commit()
+    r = await client.post(
+        "/api/magic-button/check-duplicate",
+        json={"full_name": "Хисамов Вадим Ринатович", "email": "dnsvadim6@gmail.com"},
+        headers=_h(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["is_duplicate"] is True

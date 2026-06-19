@@ -111,6 +111,8 @@ async def check_duplicate(
     if not org:
         raise HTTPException(400, "User not in organization")
 
+    from ..services.similarity import is_matchable_telegram, looks_like_person_name
+
     conditions = []
     # Primary identifier: resume URL (works even when contacts are hidden).
     if data.source_url:
@@ -119,18 +121,18 @@ async def check_duplicate(
         conditions.append(Entity.email == data.email)
     if data.phone:
         conditions.append(Entity.phone == data.phone)
-    if data.telegram:
+    # Telegram — только если это реальный хэндл, а не мусорный ярлык источника
+    # («hh_b2b», «telegram», …): иначе по нему совпадают десятки разных людей.
+    if data.telegram and is_matchable_telegram(data.telegram):
         conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
-    # Name match — skip for generic placeholders so every "Кандидат ..."
-    # doesn't match every other placeholder in the DB.
+    # Имя — только если это похоже на ФИО, а не на должность («Flutter Developer,
+    # Минск, 25 лет») и не placeholder («Кандидат …»). Иначе по «имени-должности»
+    # матчатся все одинаковые должности между собой.
     name_lower = (data.full_name or "").strip().lower()
-    is_placeholder_name = name_lower.startswith("кандидат")
-    if data.full_name and not is_placeholder_name:
+    is_placeholder_name = name_lower.startswith("кандидат") or name_lower.startswith("candidate")
+    if data.full_name and not is_placeholder_name and looks_like_person_name(data.full_name):
         name_parts = data.full_name.strip().split()
-        if len(name_parts) >= 2:
-            conditions.append(Entity.name.ilike(f"%{name_parts[0]}%{name_parts[1]}%"))
-        else:
-            conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
+        conditions.append(Entity.name.ilike(f"%{name_parts[0]}%{name_parts[1]}%"))
 
     if not conditions:
         return DuplicateCheckResponse(is_duplicate=False, duplicates=[])
@@ -242,18 +244,21 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         duplicate = dup_by_url.scalar_one_or_none()
 
     if duplicate is None:
+        from ..services.similarity import is_matchable_telegram, looks_like_person_name
         conditions = []
         if data.email:
             conditions.append(Entity.email == data.email)
         if data.phone:
             conditions.append(Entity.phone == data.phone)
-        if data.telegram:
-            # telegram_usernames is a JSON array, check if it contains the value
+        # Telegram — только реальный хэндл, не мусорный ярлык источника («hh_b2b»,
+        # «telegram»): иначе «дубликат найден» срабатывает на десятках разных людей.
+        if data.telegram and is_matchable_telegram(data.telegram):
             conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
-        # Name match ONLY when the name is specific (not a "Кандидат ..." placeholder)
+        # Имя — только если похоже на ФИО, а не должность («Flutter Developer, …»)
+        # и не placeholder («Кандидат …»).
         name_lower = (data.full_name or "").strip().lower()
-        is_placeholder_name = name_lower.startswith("кандидат")
-        if data.full_name and not is_placeholder_name:
+        is_placeholder_name = name_lower.startswith("кандидат") or name_lower.startswith("candidate")
+        if data.full_name and not is_placeholder_name and looks_like_person_name(data.full_name):
             conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
 
         if conditions:

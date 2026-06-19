@@ -1469,13 +1469,35 @@ async def rescan_active_duplicates(
         raise HTTPException(403, "Только для суперадмина")
     org = await get_user_org(current_user, db)
 
-    from ...services.similarity import normalize_email, normalize_phone
+    from ...services.similarity import (
+        normalize_email, normalize_phone, normalize_telegram,
+        is_matchable_telegram, looks_like_person_name,
+    )
+
+    # 1) ВСЕ кандидаты org (активные + архив) — грузим заранее, чтобы посчитать
+    # частоту telegram-значений и отсеять мусорные ярлыки источника
+    # («telegram», «hh_b2b», «hh_news_hr»), из-за которых десятки РАЗНЫХ людей
+    # матчатся друг с другом в один ложный кластер.
+    all_q = select(
+        Entity.id, Entity.name, Entity.email, Entity.phone, Entity.telegram_usernames
+    ).where(Entity.type == EntityType.candidate)
+    if org is not None:
+        all_q = all_q.where(Entity.org_id == org.id)
+    all_rows = (await db.execute(all_q)).all()
+
+    tg_freq: dict = {}
+    for _cid, _cn, _ce, _cp, ctg in all_rows:
+        for t in (ctg or []):
+            k = normalize_telegram(t)
+            if k:
+                tg_freq[k] = tg_freq.get(k, 0) + 1
 
     def _keys(name, email, phone, tg):
         ks = []
-        nm = " ".join((name or "").strip().lower().split())
-        if len(nm.split()) >= 2:
-            ks.append("n:" + nm)
+        # ФИО как ключ — только если это похоже на имя человека, а не на должность
+        # («Flutter Developer, Минск, 25 лет») и не placeholder.
+        if looks_like_person_name(name):
+            ks.append("n:" + " ".join((name or "").strip().lower().split()))
         ne = normalize_email(email or "")
         if ne:
             ks.append("e:" + ne)
@@ -1483,27 +1505,18 @@ async def rescan_active_duplicates(
         if len(d) >= 10:
             ks.append("p:" + d[-10:])
         for t in (tg or []):
-            nt = str(t or "").strip().lstrip("@").lower()
-            if nt:
-                ks.append("t:" + nt)
+            if is_matchable_telegram(t, tg_freq):
+                ks.append("t:" + normalize_telegram(t))
         return ks
-
-    # 1) ВСЕ кандидаты org (активные + архив) → карты ключ → [ids] + имена
-    all_q = select(
-        Entity.id, Entity.name, Entity.email, Entity.phone, Entity.telegram_usernames
-    ).where(Entity.type == EntityType.candidate)
-    if org is not None:
-        all_q = all_q.where(Entity.org_id == org.id)
 
     key_ids: dict = {}
     names: dict = {}
-    for cid, cname, cemail, cphone, ctg in (await db.execute(all_q)).all():
+    for cid, cname, cemail, cphone, ctg in all_rows:
         names[cid] = cname
         for k in _keys(cname, cemail, cphone, ctg):
             key_ids.setdefault(k, []).append(cid)
-
-    if not key_ids:
-        return {"scanned": 0, "flagged": 0, "newly_flagged": 0, "matches": []}
+    # key_ids может оказаться пустым — это нормально: ниже всё равно снимем
+    # устаревшие авто-флаги (reconcile), поэтому раннего выхода нет.
 
     # 2) Активные кандидаты — каждому ищем дубль (активный или архивный), кроме self
     act_q = select(Entity).where(
@@ -1516,6 +1529,7 @@ async def rescan_active_duplicates(
     matches = []
     scanned = 0
     changed = 0
+    cleared = 0
     for e in actives:
         scanned += 1
         extra = e.extra_data if isinstance(e.extra_data, dict) else {}
@@ -1534,27 +1548,35 @@ async def rescan_active_duplicates(
                     break
             if dup_id is not None:
                 break
-        if dup_id is None:
-            continue
 
-        matches.append({
-            "id": e.id,
-            "name": e.name,
-            "duplicate_id": dup_id,
-            "duplicate_name": names.get(dup_id),
-        })
-        if extra.get("hidden_duplicate_id") != dup_id:
+        cur = extra.get("hidden_duplicate_id")
+        if dup_id is not None:
+            matches.append({
+                "id": e.id,
+                "name": e.name,
+                "duplicate_id": dup_id,
+                "duplicate_name": names.get(dup_id),
+            })
+            if cur != dup_id:
+                new_extra = dict(extra)
+                new_extra["hidden_duplicate_id"] = dup_id
+                e.extra_data = new_extra
+                changed += 1
+        elif cur is not None:
+            # Реального дубля больше нет (напр. ушло ложное совпадение по мусорному
+            # telegram) — снимаем устаревший авто-флаг, чтобы баннер исчез.
             new_extra = dict(extra)
-            new_extra["hidden_duplicate_id"] = dup_id
+            new_extra.pop("hidden_duplicate_id", None)
             e.extra_data = new_extra
-            changed += 1
+            cleared += 1
 
-    if changed:
+    if changed or cleared:
         await db.commit()
     return {
         "scanned": scanned,
         "flagged": len(matches),
         "newly_flagged": changed,
+        "cleared": cleared,
         "matches": matches,
     }
 
@@ -1572,7 +1594,9 @@ async def find_archive_duplicates(
         raise HTTPException(403, "Только для суперадмина")
     org = await get_user_org(current_user, db)
 
-    from ...services.similarity import normalize_email, normalize_phone
+    from ...services.similarity import (
+        normalize_email, normalize_phone, normalize_telegram, is_matchable_telegram,
+    )
 
     q = select(
         Entity.id, Entity.name, Entity.email, Entity.phone,
@@ -1581,6 +1605,15 @@ async def find_archive_duplicates(
     if org is not None:
         q = q.where(Entity.org_id == org.id)
     rows = (await db.execute(q)).all()
+
+    # Частота telegram-значений: мусорные ярлыки источника («telegram», «hh_b2b»)
+    # и прочие «общие» хэндлы НЕ матчим — иначе разные люди слипаются в одну группу.
+    tg_freq: dict = {}
+    for _r in rows:
+        for t in (_r[4] or []):
+            k = normalize_telegram(t)
+            if k:
+                tg_freq[k] = tg_freq.get(k, 0) + 1
 
     # Union-find: связываем профили, делящие хотя бы один идентификатор
     parent: dict = {}
@@ -1614,9 +1647,8 @@ async def find_archive_duplicates(
         if len(d) >= 10:
             keys.append("p:" + d[-10:])
         for t in (tg or []):
-            nt = str(t or "").strip().lstrip("@").lower()
-            if nt:
-                keys.append("t:" + nt)
+            if is_matchable_telegram(t, tg_freq):
+                keys.append("t:" + normalize_telegram(t))
         for k in keys:
             if k in key_to_id:
                 union(key_to_id[k], rid)
@@ -1698,3 +1730,32 @@ async def merge_archived_duplicate(
     from ...services.similarity import similarity_service
     await similarity_service.merge_entities(db=db, source_entity=source, target_entity=survivor)
     return {"success": True, "survivor_id": survivor.id}
+
+
+@router.post("/{entity_id}/detect-duplicate")
+async def detect_duplicate_now(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Живой поиск дубля для кандидата (вызывается при ОТКРЫТИИ карточки) —
+    ловит уже существующих дублей без ручного прогона. Помечает обе стороны
+    (detect ставит обратную ссылку), возвращает id найденного дубля или null."""
+    current_user = await db.merge(current_user)
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+    has_access = await check_entity_access(entity, current_user, entity.org_id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(403, "No access to this candidate")
+
+    from ...services.similarity import detect_archived_duplicate
+    dup_id = await detect_archived_duplicate(db, entity)
+    if dup_id:
+        extra = dict(entity.extra_data) if isinstance(entity.extra_data, dict) else {}
+        if extra.get("hidden_duplicate_id") != dup_id:
+            extra["hidden_duplicate_id"] = dup_id
+            entity.extra_data = extra
+        await db.commit()
+    return {"duplicate_id": dup_id}

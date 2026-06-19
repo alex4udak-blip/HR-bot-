@@ -220,6 +220,68 @@ def normalize_email(email: str) -> str:
     return email.lower().strip()
 
 
+def normalize_telegram(value: str) -> str:
+    """Нормализация telegram-username: без @, нижний регистр, без пробелов."""
+    return str(value or "").strip().lstrip("@").lower()
+
+
+# Значения, попадающие в telegram_usernames при импорте (HH/CSV), но НЕ являющиеся
+# личными хэндлами — это ярлыки источника/площадки. Матчить дубли по ним нельзя:
+# десятки разных людей с одним «telegram»/«hh_b2b» слипаются в один ложный кластер.
+JUNK_TELEGRAM_USERNAMES = {
+    "telegram", "tg", "telega", "hh", "hh_b2b", "hh_news", "hh_news_hr", "hhnews",
+    "headhunter", "hhru", "vk", "vkontakte", "avito", "superjob", "habr", "linkedin",
+    "email", "mail", "phone", "tel", "resume", "cv", "source", "none", "no",
+    "n/a", "na", "null", "-", "—",
+}
+
+# Если одно и то же telegram-значение встречается у стольких кандидатов и более —
+# это заведомо не личный хэндл (мусор/ярлык), а массовое совпадение. Не матчим.
+TG_COMMON_THRESHOLD = 3
+
+
+def is_matchable_telegram(value: str, freq: Optional[dict] = None) -> bool:
+    """Годен ли telegram-username как идентификатор для дедупа: не пустой,
+    не из денилиста источников и (если передана частота) не «общий» (≥ порога)."""
+    k = normalize_telegram(value)
+    if not k or k in JUNK_TELEGRAM_USERNAMES:
+        return False
+    if freq is not None and freq.get(k, 0) >= TG_COMMON_THRESHOLD:
+        return False
+    return True
+
+
+# Слова-маркеры должностей. Расширение иногда кладёт в поле «имя» должность
+# («Flutter Developer, Минск, 25 лет») — по таким «именам» матчить дубли нельзя:
+# все «Flutter Developer» слипаются между собой.
+_POSITION_HINT_WORDS = {
+    "developer", "разработчик", "разработчица", "manager", "менеджер",
+    "designer", "дизайнер", "analyst", "аналитик", "engineer", "инженер",
+    "specialist", "специалист", "lead", "директор", "director", "маркетолог",
+    "marketer", "тестировщик", "qa", "devops", "frontend", "backend", "fullstack",
+    "копирайтер", "рекрутер", "recruiter", "бухгалтер", "оператор", "sales",
+    "продаж", "продажник", "smm", "программист", "администратор", "admin",
+    "support", "поддержка", "продавец", "консультант", "ассистент",
+}
+
+
+def looks_like_person_name(name: str) -> bool:
+    """Похоже ли значение на ФИО человека, а не на должность/мусор. Расширение
+    иногда кладёт в имя должность («Flutter Developer, Минск, 25 лет»), а импорт —
+    placeholder'ы. По таким «именам» матчить дубли нельзя. Критерии: нет цифр
+    (возраст), нет запятой («Должность, Город, …»), ≥2 слов, и ни одно слово не
+    является явным маркером должности."""
+    n = (name or "").strip()
+    if not n or any(ch.isdigit() for ch in n) or "," in n:
+        return False
+    words = n.lower().replace("-", " ").split()
+    if len(words) < 2:
+        return False
+    if any(w.strip("().") in _POSITION_HINT_WORDS for w in words):
+        return False
+    return True
+
+
 def extract_skills(extra_data: dict) -> Set[str]:
     """Извлечение навыков из extra_data."""
     skills = set()
@@ -703,10 +765,12 @@ class SimilarityService:
             match_reasons = []
             matched_fields: Dict[str, Tuple[str, str]] = {}
 
-            # 1. Проверка имени (40 баллов)
+            # 1. Проверка имени (40 баллов) — только если ОБА значения похожи на
+            # ФИО, а не на должность/мусор («Flutter Developer, Минск, 25 лет»).
+            # Иначе кандидаты с именем-должностью массово слипаются.
             candidate_name_variants = generate_name_variants(candidate.name)
             name_match = bool(name_variants & candidate_name_variants)
-            if name_match:
+            if name_match and looks_like_person_name(entity.name) and looks_like_person_name(candidate.name):
                 confidence += 40
                 match_reasons.append("Совпадение имени (с учетом транслитерации)")
                 matched_fields['name'] = (entity.name, candidate.name)
@@ -1002,14 +1066,16 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
 
     tg_names: Set[str] = set()
     for t in (entity.telegram_usernames or []):
-        nt = str(t or "").strip().lstrip("@").lower()
+        nt = normalize_telegram(t)
         if nt:
             tg_names.add(nt)
 
-    # Полное ФИО (≥2 слов): совпадение по нему тоже считаем дублем — кандидаты из
-    # импорта/других источников часто без контактов, с одинаковым ФИО.
+    # Полное ФИО: совпадение по нему тоже считаем дублем — кандидаты из импорта
+    # часто без контактов, с одинаковым ФИО. НО только если это похоже на ФИО, а не
+    # на должность/мусор («Flutter Developer, Минск, 25 лет»), иначе все «Flutter
+    # Developer» слипаются между собой.
     my_name = " ".join((entity.name or "").strip().lower().split())
-    name_ok = len(my_name.split()) >= 2
+    name_ok = looks_like_person_name(entity.name)
 
     if not emails and not phones10 and not tg_names and not name_ok:
         return None
@@ -1034,17 +1100,31 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
         q = q.where(Entity.org_id == entity.org_id)
     q = q.order_by(Entity.id.desc())
 
-    res = await db.execute(q)
+    rows = (await db.execute(q)).all()
+
+    # Частота telegram-значений по всей выборке: «общие» (≥ порога) и мусорные
+    # ярлыки источника («telegram», «hh_b2b», …) — НЕ личные хэндлы. Матчить по
+    # ним нельзя, иначе десятки разных людей слипаются в один ложный дубль.
+    tg_freq: dict = {}
+    for r in rows:
+        for t in (r[4] or []):
+            k = normalize_telegram(t)
+            if k:
+                tg_freq[k] = tg_freq.get(k, 0) + 1
+    for k in tg_names:
+        tg_freq[k] = tg_freq.get(k, 0) + 1
+    tg_names = {t for t in tg_names if is_matchable_telegram(t, tg_freq)}
+
     match_id: Optional[int] = None
     phone_match: Optional[int] = None
-    for cand_id, cand_name, cand_email, cand_phone, cand_tg in res.all():
+    for cand_id, cand_name, cand_email, cand_phone, cand_tg in rows:
         if cand_id in dismissed:
             continue
         if emails and normalize_email(cand_email or "") in emails:
             match_id = cand_id  # email — сильнейшее совпадение
             break
         if tg_names and any(
-            str(t or "").strip().lstrip("@").lower() in tg_names for t in (cand_tg or [])
+            normalize_telegram(t) in tg_names for t in (cand_tg or [])
         ):
             match_id = cand_id  # telegram-username — тоже надёжный идентификатор
             break
