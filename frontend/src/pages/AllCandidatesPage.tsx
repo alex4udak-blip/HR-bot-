@@ -4089,18 +4089,23 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
           ))}
         </div>
       ) : pdfFile ? (
-        <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-6 text-center">
-          <FileText className="w-10 h-10 mx-auto mb-3 text-[var(--hf-dark-400)]" />
-          <p className="text-sm text-[var(--hf-dark-300)] mb-2">{pdfFile.file_name}</p>
-          <p className="text-xs text-[var(--hf-dark-500)] mb-3">
-            {(pdfFile.file_size / 1024).toFixed(0)} КБ
-          </p>
-          <button
-            onClick={() => handleDownload(pdfFile)}
-            className="px-4 py-2 bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] rounded-lg text-sm hover:bg-[var(--hf-accent-bg-30)] transition-colors"
-          >
-            <Download className="w-4 h-4 inline mr-1.5" /> Скачать
-          </button>
+        <div className="space-y-2">
+          {/* Инлайн-превью PDF: download-эндпоинт отдаёт inline (files.py), поэтому
+              резюме открывается прямо в карточке, а не скачивается. */}
+          <iframe
+            src={`/api/entities/${card.id}/files/${pdfFile.id}/download`}
+            title={pdfFile.file_name}
+            className="w-full min-h-[760px] rounded-lg border border-[color:var(--hf-white-alpha-06)] bg-white"
+          />
+          <div className="flex items-center justify-between gap-2 px-1 text-xs text-[var(--hf-dark-500)]">
+            <span className="truncate">{pdfFile.file_name} · {(pdfFile.file_size / 1024).toFixed(0)} КБ</span>
+            <button
+              onClick={() => handleDownload(pdfFile)}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] rounded-lg hover:bg-[var(--hf-accent-bg-30)] transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" /> Скачать
+            </button>
+          </div>
         </div>
       ) : (
         <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-[var(--hf-dark-500)] text-sm">
