@@ -126,6 +126,19 @@ def _base_candidate_query(org_id: Optional[int], current_user: User, isolated_id
     return q
 
 
+def _as_str(v):
+    """Привести JSON-значение к str для str-полей схемы (KanbanCard.*).
+
+    Парсер/PDF-автозаполнение кладёт age/salary/experience в extra_data ЧИСЛОМ
+    (например age=29), а KanbanCard.* типизированы Optional[str]. Pydantic v2 не
+    коэрсит int→str → валидация падает → кандидат МОЛЧА выпадал с канбана
+    (см. except «Skipping entity … in kanban»). Приводим заранее.
+    """
+    if v is None:
+        return None
+    return v if isinstance(v, str) else str(v)
+
+
 async def _get_org_id(current_user: User, db: AsyncSession) -> Optional[int]:
     if current_user.role == UserRole.superadmin:
         return None
@@ -887,10 +900,10 @@ async def get_candidates_kanban(
                 # /api/entities/.../files/.../download грузится по куке.
                 photo_url=photo_file_map.get(e.id) or (ed.get("photo_url") if ed else None),
                 company=getattr(e, 'company', None),
-                city=ed.get("city"),
-                age=ed.get("age"),
-                salary=ed.get("salary"),
-                total_experience=ed.get("total_experience"),
+                city=_as_str(ed.get("city")),
+                age=_as_str(ed.get("age")),
+                salary=_as_str(ed.get("salary")),
+                total_experience=_as_str(ed.get("total_experience")),
                 vacancy_name=vacancy_map.get(e.id),
                 rejection_reason=rejection_map.get(e.id),
                 extra_data=ed if ed else None,
