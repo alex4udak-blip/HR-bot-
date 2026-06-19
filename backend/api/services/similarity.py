@@ -860,7 +860,8 @@ class SimilarityService:
         db: AsyncSession,
         source_entity: Entity,
         target_entity: Entity,
-        keep_source_data: bool = False
+        keep_source_data: bool = False,
+        merged_by_name=None,
     ) -> Entity:
         """
         Объединение двух сущностей (дубликатов).
@@ -1041,6 +1042,18 @@ class SimilarityService:
                 seen.add(key)
                 uniq.append(r)
             _te["resume_demos"] = uniq
+
+        # Сохраняем резюме/анкету источника отдельным блоком (merged_from), чтобы
+        # показать его «вторым резюме» рядом с основным — особенно импортированную
+        # анкету (cf:*), которую плоское объединение extra_data затирает.
+        from datetime import datetime as _dt
+        _te["merged_from"] = list(_te.get("merged_from") or []) + [{
+            "entity_id": source_entity.id,
+            "name": source_entity.name,
+            "merged_at": _dt.utcnow().isoformat(),
+            "merged_by_name": merged_by_name,
+            "extra_data": _se,
+        }]
 
         _te.pop("hidden_duplicate_id", None)
         target_entity.extra_data = _te

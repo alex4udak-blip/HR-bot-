@@ -944,7 +944,8 @@ async def merge_shadow_duplicate(
 
     try:
         merged = await similarity_service.merge_entities(
-            db=db, source_entity=source_entity, target_entity=target_entity
+            db=db, source_entity=source_entity, target_entity=target_entity,
+            merged_by_name=current_user.name,
         )
         await broadcast_entity_updated(org.id, merged.id)
         await broadcast_entity_deleted(org.id, request.duplicate_id)

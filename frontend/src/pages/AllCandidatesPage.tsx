@@ -3430,6 +3430,15 @@ function parseFormSubmission(description: string): QaPair[] {
   return pairs.filter((p) => p.question);
 }
 
+type MergedFrom = {
+  entity_id: number;
+  name: string | null;
+  merged_at: string;
+  merged_by: number;
+  merged_by_name: string | null;
+  extra_data: Record<string, unknown>;
+};
+
 function getImportedQuestionnaire(card: KanbanCard): {
   rows: Array<{ label: string; value: string }>;
   clickupUrl: string | null;
@@ -3607,6 +3616,14 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   const hasPreviousResume = currentResumeIndex > 0;
   const hasNextResume = currentResumeIndex < resumeCarouselLength - 1;
 
+  const mergedFrom = (
+    Array.isArray(
+      (card.extra_data as Record<string, unknown> | undefined)?.merged_from,
+    )
+      ? ((card.extra_data as Record<string, unknown>).merged_from as MergedFrom[])
+      : []
+  );
+
   useEffect(() => {
     setCurrentResumeIndex(0);
   }, [card.id]);
@@ -3688,10 +3705,9 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
 
   if (resumeFiles.length === 0 && !resumeDemo) {
     const importedQuestionnaire = getImportedQuestionnaire(card);
-    if (importedQuestionnaire.rows.length > 0) {
-      return <ImportedQuestionnaire card={card} />;
-    }
-    return (
+    const qMainContent = importedQuestionnaire.rows.length > 0 ? (
+      <ImportedQuestionnaire card={card} />
+    ) : (
       <div className="p-5 max-w-3xl">
         <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-[var(--hf-dark-500)] text-sm min-h-[200px] flex flex-col items-center justify-center gap-2">
           <FileText className="w-8 h-8 opacity-30" />
@@ -3700,6 +3716,29 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
             Резюме создаётся автоматически после добавления кандидата через
             Волшебную кнопку
           </p>
+        </div>
+      </div>
+    );
+    if (mergedFrom.length === 0) return qMainContent;
+    return (
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 min-w-0">{qMainContent}</div>
+        <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] space-y-4 p-5">
+          {mergedFrom.map((m, i) => (
+            <div key={m.entity_id ?? i}>
+              <div className="mb-2 text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+                Объединено:{" "}
+                <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                  {m.name || "Кандидат"}
+                </span>
+                {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
+                {m.merged_at ? ` · ${new Date(m.merged_at).toLocaleString("ru")}` : ""}
+              </div>
+              <ImportedQuestionnaire
+                card={{ ...card, name: m.name || card.name, extra_data: m.extra_data } as KanbanCard}
+              />
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -3746,7 +3785,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       </section>
     );
 
-    return (
+    const mainContent = (
       <div className="pt-[var(--hf-space-xxl)] max-w-[1180px]">
         <div className="overflow-hidden rounded-[16px] border border-[color:var(--hf-black-alpha-10)] bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-white-alpha-04)] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
           <div className="rounded-t-[16px] bg-[var(--hf-main-50)] px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[27px] hf-dark-disabled:bg-[var(--hf-white-alpha-03)]">
@@ -3964,9 +4003,40 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
         </div>
       </div>
     );
+    if (mergedFrom.length === 0) return mainContent;
+    return (
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 min-w-0">{mainContent}</div>
+        <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] space-y-4">
+          {mergedFrom.map((m, i) => (
+            <div key={m.entity_id ?? i}>
+              <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] mb-2">
+                Объединено:{" "}
+                <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                  {m.name || "Кандидат"}
+                </span>
+                {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
+                {m.merged_at
+                  ? ` · ${new Date(m.merged_at).toLocaleString("ru")}`
+                  : ""}
+              </div>
+              <ImportedQuestionnaire
+                card={
+                  {
+                    ...card,
+                    name: m.name || card.name,
+                    extra_data: m.extra_data,
+                  } as KanbanCard
+                }
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
-  return (
+  const fileMainContent = (
     <div className="py-hf-l max-w-[1180px]">
       <p className="text-hf-3xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)] mb-hf-m">
         Сохранено{" "}
@@ -4039,6 +4109,37 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
           ))}
         </div>
       )}
+    </div>
+  );
+  if (mergedFrom.length === 0) return fileMainContent;
+  return (
+    <div className="flex flex-col lg:flex-row gap-4">
+      <div className="flex-1 min-w-0">{fileMainContent}</div>
+      <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] space-y-4">
+        {mergedFrom.map((m, i) => (
+          <div key={m.entity_id ?? i}>
+            <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] mb-2">
+              Объединено:{" "}
+              <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                {m.name || "Кандидат"}
+              </span>
+              {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
+              {m.merged_at
+                ? ` · ${new Date(m.merged_at).toLocaleString("ru")}`
+                : ""}
+            </div>
+            <ImportedQuestionnaire
+              card={
+                {
+                  ...card,
+                  name: m.name || card.name,
+                  extra_data: m.extra_data,
+                } as KanbanCard
+              }
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 });
