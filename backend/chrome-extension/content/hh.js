@@ -36,16 +36,26 @@
     );
     const beforeBoundary = (el) =>
       !boundary || !!(el.compareDocumentPosition(boundary) & Node.DOCUMENT_POSITION_FOLLOWING);
+    // НЕ исключаем по широкому [class*="header"]/[class*="menu"]: имя кандидата
+    // лежит в ШАПКЕ РЕЗЮМЕ (class вроде resume-header…), и этот фильтр её убивал —
+    // имя «в принципе не ловилось». Исключаем только реальный хром сайта hh
+    // (supernova-навигация и аккаунт работодателя), а не блок резюме.
     const inSiteChrome = (el) => el.closest(
-      'header, nav, footer, [data-qa*="mainmenu"], [data-qa*="applicantProfile"], ' +
-      '[class*="supernova"], [class*="header"], [class*="menu"]'
+      'header[class*="supernova"], nav, footer, [data-qa*="mainmenu"], ' +
+      '[data-qa*="applicantProfile"], [class*="supernova"], [role="navigation"]'
     );
-    for (const el of document.querySelectorAll('h1,h2,h3,span,div,a,p,strong,b')) {
-      if (el.children.length) continue;            // только листовые узлы (собственный текст)
-      const txt = (el.textContent || '').trim();
-      if (txt.length < 5 || txt.length > 60 || !FIO_RE.test(txt)) continue;
-      if (inSiteChrome(el) || !beforeBoundary(el)) continue;
-      return txt;
+    // hh (magritte) держит ФИО в шапке резюме data-qa="resume-main-info__header";
+    // сначала ищем точечно в ней (надёжнее), затем — скан всего документа.
+    const header = document.querySelector('[data-qa="resume-main-info__header"]');
+    const scopes = header ? [header, document] : [document];
+    for (const scope of scopes) {
+      for (const el of scope.querySelectorAll('h1,h2,h3,span,div,a,p,strong,b')) {
+        if (el.children.length) continue;          // только листовые узлы (собственный текст)
+        const txt = (el.textContent || '').trim();
+        if (txt.length < 5 || txt.length > 60 || !FIO_RE.test(txt)) continue;
+        if (inSiteChrome(el) || !beforeBoundary(el)) continue;
+        return txt;
+      }
     }
     return '';
   }
