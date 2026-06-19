@@ -1471,7 +1471,7 @@ async def rescan_active_duplicates(
 
     from ...services.similarity import (
         normalize_email, normalize_phone, normalize_telegram,
-        is_matchable_telegram, looks_like_person_name,
+        is_matchable_telegram, looks_like_person_name, normalize_source_url,
     )
 
     # 1) ВСЕ кандидаты org (активные + архив) — грузим заранее, чтобы посчитать
@@ -1479,20 +1479,21 @@ async def rescan_active_duplicates(
     # («telegram», «hh_b2b», «hh_news_hr»), из-за которых десятки РАЗНЫХ людей
     # матчатся друг с другом в один ложный кластер.
     all_q = select(
-        Entity.id, Entity.name, Entity.email, Entity.phone, Entity.telegram_usernames
+        Entity.id, Entity.name, Entity.email, Entity.phone,
+        Entity.telegram_usernames, Entity.extra_data,
     ).where(Entity.type == EntityType.candidate)
     if org is not None:
         all_q = all_q.where(Entity.org_id == org.id)
     all_rows = (await db.execute(all_q)).all()
 
     tg_freq: dict = {}
-    for _cid, _cn, _ce, _cp, ctg in all_rows:
+    for _cid, _cn, _ce, _cp, ctg, _cx in all_rows:
         for t in (ctg or []):
             k = normalize_telegram(t)
             if k:
                 tg_freq[k] = tg_freq.get(k, 0) + 1
 
-    def _keys(name, email, phone, tg):
+    def _keys(name, email, phone, tg, extra):
         ks = []
         # ФИО как ключ — только если это похоже на имя человека, а не на должность
         # («Flutter Developer, Минск, 25 лет») и не placeholder.
@@ -1507,13 +1508,19 @@ async def rescan_active_duplicates(
         for t in (tg or []):
             if is_matchable_telegram(t, tg_freq):
                 ks.append("t:" + normalize_telegram(t))
+        # source_url резюме (hh) — стабильный ключ: ловит один и тот же профиль,
+        # добавленный дважды, когда контакты скрыты и имя — заглушка-должность.
+        ex = extra if isinstance(extra, dict) else {}
+        sk = normalize_source_url(ex.get("source_url") or ex.get("source_key") or "")
+        if sk:
+            ks.append("s:" + sk)
         return ks
 
     key_ids: dict = {}
     names: dict = {}
-    for cid, cname, cemail, cphone, ctg in all_rows:
+    for cid, cname, cemail, cphone, ctg, cx in all_rows:
         names[cid] = cname
-        for k in _keys(cname, cemail, cphone, ctg):
+        for k in _keys(cname, cemail, cphone, ctg, cx):
             key_ids.setdefault(k, []).append(cid)
     # key_ids может оказаться пустым — это нормально: ниже всё равно снимем
     # устаревшие авто-флаги (reconcile), поэтому раннего выхода нет.
@@ -1541,7 +1548,7 @@ async def rescan_active_duplicates(
                 pass
 
         dup_id = None
-        for k in _keys(e.name, e.email, e.phone, e.telegram_usernames):
+        for k in _keys(e.name, e.email, e.phone, e.telegram_usernames, e.extra_data):
             for cand in key_ids.get(k, []):
                 if cand != e.id and cand not in dismissed:
                     dup_id = cand
@@ -1596,11 +1603,12 @@ async def find_archive_duplicates(
 
     from ...services.similarity import (
         normalize_email, normalize_phone, normalize_telegram, is_matchable_telegram,
+        normalize_source_url,
     )
 
     q = select(
         Entity.id, Entity.name, Entity.email, Entity.phone,
-        Entity.telegram_usernames, Entity.position,
+        Entity.telegram_usernames, Entity.position, Entity.extra_data,
     ).where(Entity.is_archived.is_(True), Entity.type == EntityType.candidate)
     if org is not None:
         q = q.where(Entity.org_id == org.id)
@@ -1633,7 +1641,7 @@ async def find_archive_duplicates(
 
     info: dict = {}
     key_to_id: dict = {}
-    for rid, name, email, phone, tg, position in rows:
+    for rid, name, email, phone, tg, position, extra in rows:
         parent.setdefault(rid, rid)
         info[rid] = {
             "id": rid, "name": name, "email": email, "phone": phone,
@@ -1649,6 +1657,11 @@ async def find_archive_duplicates(
         for t in (tg or []):
             if is_matchable_telegram(t, tg_freq):
                 keys.append("t:" + normalize_telegram(t))
+        # source_url резюме (hh) — стабильный ключ (без волатильных query hh)
+        ex = extra if isinstance(extra, dict) else {}
+        sk = normalize_source_url(ex.get("source_url") or ex.get("source_key") or "")
+        if sk:
+            keys.append("s:" + sk)
         for k in keys:
             if k in key_to_id:
                 union(key_to_id[k], rid)

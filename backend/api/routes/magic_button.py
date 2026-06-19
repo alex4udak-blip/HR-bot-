@@ -111,12 +111,17 @@ async def check_duplicate(
     if not org:
         raise HTTPException(400, "User not in organization")
 
-    from ..services.similarity import is_matchable_telegram, looks_like_person_name
+    from ..services.similarity import is_matchable_telegram, looks_like_person_name, normalize_source_url
 
     conditions = []
     # Primary identifier: resume URL (works even when contacts are hidden).
+    # Сравниваем и по сырому URL, и по нормализованному ключу — query-параметры hh
+    # (?t=…&vacancyId=…) меняются при каждом открытии и ломают точное сравнение.
     if data.source_url:
         conditions.append(Entity.extra_data.op('->>')('source_url') == data.source_url)
+        _skey = normalize_source_url(data.source_url)
+        if _skey:
+            conditions.append(Entity.extra_data.op('->>')('source_key') == _skey)
     if data.email:
         conditions.append(Entity.email == data.email)
     if data.phone:
@@ -231,14 +236,22 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     # even when contacts are hidden on hh.ru), then fall back to contact-based
     # matching. Name-based matching is skipped if the name looks like a generic
     # placeholder so we don't collapse all "Кандидат" entries into one record.
+    from ..services.similarity import normalize_source_url
+    source_key = normalize_source_url(data.source_url or "")
     duplicate = None
     if data.source_url:
+        # Сравниваем по нормализованному ключу (без волатильных query-параметров
+        # hh: ?t=…&vacancyId=…) И по сырому URL — иначе одно и то же резюме,
+        # открытое дважды, считается разным и добавляется повторно.
+        url_conds = [Entity.extra_data.op('->>')('source_url') == data.source_url]
+        if source_key:
+            url_conds.append(Entity.extra_data.op('->>')('source_key') == source_key)
         dup_by_url = await db.execute(
             select(Entity).where(
                 Entity.org_id == org.id,
                 Entity.type == EntityType.candidate,
                 Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
-                Entity.extra_data.op('->>')('source_url') == data.source_url,
+                or_(*url_conds),
             ).limit(1)
         )
         duplicate = dup_by_url.scalar_one_or_none()
@@ -291,6 +304,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     extra = {
         "source": data.source,
         "source_url": data.source_url,
+        "source_key": source_key or None,  # стабильный ключ резюме для дедупа
         "magic_button": True,
         "comment": data.comment,
     }

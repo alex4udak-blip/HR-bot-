@@ -282,6 +282,32 @@ def looks_like_person_name(name: str) -> bool:
     return True
 
 
+def normalize_source_url(url: str) -> str:
+    """Стабильный ключ резюме из URL источника — БЕЗ волатильных query-параметров.
+
+    hh.ru отдаёт ссылки вида /resume/<hash>?hhtmFrom=chat&vacancyId=..&t=<timestamp>,
+    где query МЕНЯЕТСЯ при каждом открытии. Сравнение полного href ломало дедуп:
+    одно и то же резюме, открытое дважды, выглядело как два разных source_url —
+    и кандидат добавлялся повторно. Возвращаем канонический ключ: для hh —
+    hh:resume:<hash> (стабилен), иначе host+path без query/fragment.
+    """
+    if not url:
+        return ""
+    s = str(url).strip()
+    if not s:
+        return ""
+    m = re.search(r"/resume/([0-9a-f]{16,})", s, re.IGNORECASE)
+    if m:
+        return f"hh:resume:{m.group(1).lower()}"
+    m = re.search(r"[?&]resumeId=(\d+)", s, re.IGNORECASE)
+    if m:
+        return f"hh:resumeId:{m.group(1)}"
+    s = re.sub(r"#.*$", "", s)
+    s = re.sub(r"\?.*$", "", s)
+    s = re.sub(r"^https?://", "", s, flags=re.IGNORECASE)
+    return s.rstrip("/").lower()
+
+
 def extract_skills(extra_data: dict) -> Set[str]:
     """Извлечение навыков из extra_data."""
     skills = set()
@@ -1077,7 +1103,13 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
     my_name = " ".join((entity.name or "").strip().lower().split())
     name_ok = looks_like_person_name(entity.name)
 
-    if not emails and not phones10 and not tg_names and not name_ok:
+    # source_url резюме — самый надёжный ключ: один и тот же URL = один человек,
+    # даже когда контакты скрыты, а имя — заглушка-должность. Нормализуем (убираем
+    # волатильные query-параметры hh), иначе один и тот же href ломает сравнение.
+    my_extra = entity.extra_data if isinstance(entity.extra_data, dict) else {}
+    my_source_key = normalize_source_url(my_extra.get("source_url") or my_extra.get("source_key") or "")
+
+    if not emails and not phones10 and not tg_names and not name_ok and not my_source_key:
         return None
 
     # «Разъединённые» ранее совпадения не поднимаем повторно
@@ -1092,7 +1124,10 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
     # Грузим ВСЕХ кандидатов организации (активные + архив) и сравниваем
     # нормализованные контакты в Python — портируемо (Postgres + SQLite-тесты),
     # тот же подход, что в detect_duplicates.
-    q = select(Entity.id, Entity.name, Entity.email, Entity.phone, Entity.telegram_usernames).where(
+    q = select(
+        Entity.id, Entity.name, Entity.email, Entity.phone,
+        Entity.telegram_usernames, Entity.extra_data,
+    ).where(
         Entity.type == EntityType.candidate,
         Entity.id != entity.id,
     )
@@ -1117,9 +1152,14 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
 
     match_id: Optional[int] = None
     phone_match: Optional[int] = None
-    for cand_id, cand_name, cand_email, cand_phone, cand_tg in rows:
+    for cand_id, cand_name, cand_email, cand_phone, cand_tg, cand_extra in rows:
         if cand_id in dismissed:
             continue
+        if my_source_key:
+            ce = cand_extra if isinstance(cand_extra, dict) else {}
+            if normalize_source_url(ce.get("source_url") or ce.get("source_key") or "") == my_source_key:
+                match_id = cand_id  # тот же URL резюме — однозначный дубль
+                break
         if emails and normalize_email(cand_email or "") in emails:
             match_id = cand_id  # email — сильнейшее совпадение
             break

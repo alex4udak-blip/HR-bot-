@@ -490,3 +490,76 @@ async def test_check_duplicate_real_identifier_still_flags(
     )
     assert r.status_code == 200, r.text
     assert r.json()["is_duplicate"] is True
+
+
+# ============================================================
+# source_url дедуп (резюме hh — стабильный ключ, без query-параметров)
+# ============================================================
+
+def test_normalize_source_url_strips_volatile_query():
+    # hh даёт один и тот же /resume/<hash> с РАЗНЫМИ query (?t=…&vacancyId=…) при
+    # каждом открытии — ключ должен быть одинаковым, иначе дедуп по URL не работает.
+    from api.services.similarity import normalize_source_url
+    a = normalize_source_url("https://hh.ru/resume/7f3d95b2000d88ec4300b539db6b4f67504341?hhtmFrom=chat&vacancyId=133912255&t=537111")
+    b = normalize_source_url("https://hh.ru/resume/7f3d95b2000d88ec4300b539db6b4f67504341?hhtmFrom=chat&vacancyId=999&t=537999")
+    assert a == b == "hh:resume:7f3d95b2000d88ec4300b539db6b4f67504341"
+
+
+def test_normalize_source_url_different_resumes_differ():
+    from api.services.similarity import normalize_source_url
+    a = normalize_source_url("https://hh.ru/resume/aaaa0000bbbb1111cccc2222?t=1")
+    b = normalize_source_url("https://hh.ru/resume/dddd3333eeee4444ffff5555?t=2")
+    assert a and b and a != b
+
+
+@pytest.mark.asyncio
+async def test_detect_same_resume_url_matched_despite_query(db_session, organization):
+    # Одно и то же резюме hh, открытое дважды с разными query-параметрами, без
+    # контактов и с именем-заглушкой (должность). Раньше дедуп пропускал → дубль.
+    url1 = "https://hh.ru/resume/7f3d95b2000d88ec4300b539db6b4f67504341?hhtmFrom=chat&vacancyId=1&t=100"
+    url2 = "https://hh.ru/resume/7f3d95b2000d88ec4300b539db6b4f67504341?hhtmFrom=chat&vacancyId=2&t=200"
+    existing = await _mk(db_session, organization.id, "специалист, Баку, 32 года",
+                         telegram_usernames=["hh_b2b"], extra_data={"source_url": url1})
+    newc = await _mk(db_session, organization.id, "специалист, Баку, 32 года",
+                     telegram_usernames=["hh_b2b"], extra_data={"source_url": url2})
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) == existing.id
+
+
+@pytest.mark.asyncio
+async def test_detect_different_resume_url_not_matched(db_session, organization):
+    # Разные резюме (разный hash) — НЕ дубль, даже при одинаковом мусорном telegram
+    # и имени-должности.
+    await _mk(db_session, organization.id, "специалист, Баку, 32 года",
+              telegram_usernames=["hh_b2b"],
+              extra_data={"source_url": "https://hh.ru/resume/aaaa0000bbbb1111cccc2222dddd3333eeee4444?t=1"})
+    newc = await _mk(db_session, organization.id, "специалист, Минск, 28 лет",
+                     telegram_usernames=["hh_b2b"],
+                     extra_data={"source_url": "https://hh.ru/resume/9999000088887777666655554444333322221111?t=2"})
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) is None
+
+
+@pytest.mark.asyncio
+async def test_rescan_flags_same_resume_url(
+    client, db_session, organization, admin_user, org_owner,
+    superadmin_user, superadmin_token,
+):
+    # «Сверить»: один и тот же резюме hh, добавленный дважды (разные query), без
+    # контактов и с именем-заглушкой — раньше rescan не находил, теперь флагует оба.
+    url1 = "https://hh.ru/resume/abcdef0123456789abcdef0123456789abcdef01?vacancyId=1&t=1"
+    url2 = "https://hh.ru/resume/abcdef0123456789abcdef0123456789abcdef01?vacancyId=2&t=2"
+    a = await _mk(db_session, organization.id, "специалист, Баку, 32 года",
+                  telegram_usernames=["hh_b2b"], extra_data={"source_url": url1})
+    b = await _mk(db_session, organization.id, "специалист, Баку, 32 года",
+                  telegram_usernames=["hh_b2b"], extra_data={"source_url": url2})
+    await db_session.commit()
+
+    r = await client.post("/api/entities/archive/rescan", headers=_h(superadmin_token))
+    assert r.status_code == 200, r.text
+    assert r.json()["flagged"] >= 2
+
+    for e in (a, b):
+        fresh = await db_session.get(Entity, e.id)
+        await db_session.refresh(fresh)
+        assert (fresh.extra_data or {}).get("hidden_duplicate_id") is not None
