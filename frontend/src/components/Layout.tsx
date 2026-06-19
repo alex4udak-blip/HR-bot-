@@ -724,6 +724,7 @@ function getBlockForPath(path: string): string | null {
       "/factorial",
       "/dashboard",
       "/all-candidates",
+      "/candidate-archive",
       "/workspaces",
       "/my-funnels",
       "/form-builder",
