@@ -53,6 +53,8 @@ export interface PublicFormData {
   description: string | null;
   fields: FormField[];
   vacancy_title: string | null;
+  already_submitted?: boolean;
+  answers?: Record<string, unknown> | null;
 }
 
 export interface FormCreateData {

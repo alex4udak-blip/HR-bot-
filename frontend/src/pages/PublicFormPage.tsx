@@ -122,6 +122,40 @@ export default function PublicFormPage() {
 
   if (!form) return null;
 
+  // Анкета уже заполнена (рекрутёр открыл по ссылке) — показываем ответы кандидата
+  // read-only, а не пустую форму.
+  if (form.already_submitted && form.answers) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
+          <div className="text-center mb-8">
+            <div className="text-sm font-semibold text-blue-600 tracking-wide uppercase mb-2">Enceladus</div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{form.title}</h1>
+            <p className="text-green-600 mt-2 text-sm">✓ Анкета заполнена</p>
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 space-y-4">
+            {form.fields.map(field => {
+              const raw = form.answers?.[field.id];
+              const text = Array.isArray(raw) ? raw.join(', ') : (raw == null || raw === '' ? '—' : String(raw));
+              const isUrl = /^https?:\/\//i.test(text);
+              return (
+                <div key={field.id}>
+                  <div className="text-sm text-gray-500">{field.label}</div>
+                  {isUrl ? (
+                    <a href={text} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{text}</a>
+                  ) : (
+                    <div className="text-gray-900 break-words whitespace-pre-wrap">{text}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-center text-xs text-gray-400 mt-6">Powered by Enceladus</p>
+        </div>
+      </div>
+    );
+  }
+
   if (submitted) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">

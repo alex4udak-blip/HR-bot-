@@ -1,5 +1,5 @@
 import toast from 'react-hot-toast';
-import { Copy } from 'lucide-react';
+import { Copy, ExternalLink } from 'lucide-react';
 import type { FormDispatchInfo } from '@/services/api/forms';
 
 export function AnketaResponses({ dispatches }: { dispatches: FormDispatchInfo[] }) {
@@ -12,20 +12,35 @@ export function AnketaResponses({ dispatches }: { dispatches: FormDispatchInfo[]
         <div key={d.id} className="border rounded-xl p-4">
           <div className="flex items-center justify-between">
             <p className="font-medium text-sm text-gray-900">{d.form_title || 'Анкета'}</p>
-            <span className="text-xs text-gray-500">{d.status}</span>
+            <span className="text-xs text-gray-500">
+              {d.status === 'submitted' ? 'Заполнена' : d.status === 'opened' ? 'Открыта' : 'Отправлена'}
+            </span>
           </div>
-          <button
-            onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/form/d/${d.token}`); toast.success('Ссылка скопирована'); }}
-            className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
-          >
-            <Copy className="w-3 h-3" /> Скопировать ссылку
-          </button>
+          <div className="mt-1 flex items-center gap-3">
+            <a
+              href={`${window.location.origin}/form/d/${d.token}`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+            >
+              <ExternalLink className="w-3 h-3" /> Открыть анкету
+            </a>
+            <button
+              onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/form/d/${d.token}`); toast.success('Ссылка скопирована'); }}
+              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+            >
+              <Copy className="w-3 h-3" /> Скопировать ссылку
+            </button>
+          </div>
           {d.answers && (
             <div className="mt-3 border-t pt-2 space-y-1">
               {Object.entries(d.answers).map(([k, v]) => (
                 <div key={k} className="flex gap-2 text-xs">
                   <span className="text-gray-400">{d.field_labels?.[k] || k}:</span>
-                  <span className="text-gray-800">{String(v)}</span>
+                  {/^https?:\/\//i.test(String(v)) ? (
+                    <a href={String(v)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{String(v)}</a>
+                  ) : (
+                    <span className="text-gray-800 break-all">{String(v)}</span>
+                  )}
                 </div>
               ))}
             </div>

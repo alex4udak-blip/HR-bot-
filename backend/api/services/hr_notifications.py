@@ -147,7 +147,7 @@ async def notify_form_submitted(db: AsyncSession, dispatch, entity, form) -> Non
         title = "Ответ на анкету"
         cand = (entity.name if entity else None) or "Кандидат"
         message = f"{cand} заполнил(а) анкету «{form.title}»"
-        link = "/all-candidates"
+        link = f"/all-candidates?entity={dispatch.entity_id}&tab=anketa"
         await _create_notification(db, dispatch.created_by, "form_submitted", title, message, link)
         await db.commit()
     except Exception:

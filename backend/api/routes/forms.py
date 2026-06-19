@@ -942,11 +942,21 @@ async def get_public_form_by_token(token: str, db: AsyncSession = Depends(get_db
         dispatch.opened_at = datetime.utcnow()
         await db.commit()
 
+    # Уже заполнено — отдаём ответы, чтобы по ссылке открывалась ЗАПОЛНЕННАЯ анкета
+    # (рекрутёр может открыть/поделиться), а не пустая форма.
+    answers = None
+    if dispatch.status == "submitted" and dispatch.submission_id:
+        sub = (await db.execute(
+            select(FormSubmission).where(FormSubmission.id == dispatch.submission_id)
+        )).scalar_one_or_none()
+        answers = sub.data if sub else None
+
     return {
         "id": form.id, "title": form.title, "description": form.description,
         "fields": form.fields or [],
         "candidate_name": entity.name if entity else None,
         "already_submitted": dispatch.status == "submitted",
+        "answers": answers,
     }
 
 

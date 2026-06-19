@@ -1,4 +1,6 @@
 import { useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useCallStore } from '@/stores/callStore';
 import { useEntityStore } from '@/stores/entityStore';
@@ -46,6 +48,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
   const bumpEntityBadge = useFormBadgeStore((s) => s.bump);
   const bumpUnread = useNotificationStore((s) => s.bumpUnread);
+  const navigate = useNavigate();
 
   // Must be stable: an inline fn here makes useWebSocket's `connect` change every
   // render, which (when the WS can't connect) turns reconnects into a render-loop
@@ -54,8 +57,18 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     (p: FormSubmissionPayload) => {
       bumpEntityBadge(p.entity_id);
       bumpUnread();
+      // Реалтайм-тост: HR сразу видит, что кандидат заполнил анкету; клик открывает
+      // карточку этого кандидата на табе «Анкеты».
+      toast((t) => (
+        <span
+          onClick={() => { navigate(`/all-candidates?entity=${p.entity_id}&tab=anketa`); toast.dismiss(t.id); }}
+          style={{ cursor: 'pointer' }}
+        >
+          📋 {p.candidate_name || 'Кандидат'} заполнил анкету{p.form_title ? ` «${p.form_title}»` : ''}
+        </span>
+      ), { duration: 8000 });
     },
-    [bumpEntityBadge, bumpUnread],
+    [bumpEntityBadge, bumpUnread, navigate],
   );
 
   const { isConnected, status } = useWebSocket({

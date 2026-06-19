@@ -616,12 +616,14 @@ export default function AllCandidatesPage() {
   const entityParam = searchParams.get("entity");
   const editParam = searchParams.get("edit");
   const archivedParam = searchParams.get("archived");
+  const tabParam = searchParams.get("tab");
   const clearCandidateDeepLink = useCallback(() => {
-    if (!searchParams.has("entity") && !searchParams.has("edit") && !searchParams.has("archived")) return;
+    if (!searchParams.has("entity") && !searchParams.has("edit") && !searchParams.has("archived") && !searchParams.has("tab")) return;
     const next = new URLSearchParams(searchParams);
     next.delete("entity");
     next.delete("edit");
     next.delete("archived");
+    next.delete("tab");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
   // Чтобы не тянуть entity повторно после неудачной попытки селекта.
@@ -639,6 +641,7 @@ export default function AllCandidatesPage() {
         if (editParam === "1") {
           setShowEditModal(true);
         }
+        if (tabParam === "anketa") setDetailTab("anketa");
         clearCandidateDeepLink();
         return;
       }
@@ -679,7 +682,7 @@ export default function AllCandidatesPage() {
       setSelectedCard(initial.card);
       setSelectedStatus(initial.status);
     }
-  }, [filteredCards, entityParam, editParam, archivedParam, board, selectedCard, clearCandidateDeepLink]);
+  }, [filteredCards, entityParam, editParam, archivedParam, tabParam, board, selectedCard, clearCandidateDeepLink]);
 
   // Архивный кандидат (?archived=1): на доске его нет (отфильтрован is_archived),
   // поэтому грузим по id и открываем ту же стандартную карточку напрямую.
