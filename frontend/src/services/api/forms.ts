@@ -143,6 +143,7 @@ export interface FormDispatchInfo {
   id: number; form_id: number; form_title: string | null; token: string;
   status: 'sent' | 'opened' | 'submitted'; seen_by_recruiter: boolean;
   submission_id: number | null; answers: Record<string, unknown> | null;
+  field_labels?: Record<string, string>;
   created_at: string | null; submitted_at: string | null;
 }
 

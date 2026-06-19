@@ -690,7 +690,8 @@ export const uploadEntityFile = async (
   if (description) formData.append('description', description);
 
   const { data } = await api.post(`/entities/${entityId}/files`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000 // 2 мин — конвертация PDF→картинки на бэке бывает долгой
   });
   return data;
 };
@@ -952,7 +953,8 @@ export const createEntityFromResume = async (file: File): Promise<CreateEntityFr
   formData.append('file', file);
   formData.append('auto_attach_file', 'true');
   const { data } = await api.post('/entities/from-resume', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000 // 3 мин — парсинг PDF + создание + AI-профиль
   });
   return data;
 };

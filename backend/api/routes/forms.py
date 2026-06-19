@@ -493,9 +493,17 @@ async def list_entity_dispatches(entity_id: int, db: AsyncSession = Depends(get_
     )).scalars().all()
     form_ids = {d.form_id for d in rows}
     titles = {}
+    labels_by_form = {}  # form_id -> {field_id: label} — чтобы показывать вопросы, а не id полей
     if form_ids:
-        for fid, title in (await db.execute(select(FormTemplate.id, FormTemplate.title).where(FormTemplate.id.in_(form_ids)))).all():
+        for fid, title, fields in (await db.execute(
+            select(FormTemplate.id, FormTemplate.title, FormTemplate.fields).where(FormTemplate.id.in_(form_ids))
+        )).all():
             titles[fid] = title
+            lbl = {}
+            for f in (fields or []):
+                if isinstance(f, dict) and f.get("id"):
+                    lbl[f["id"]] = f.get("label") or f["id"]
+            labels_by_form[fid] = lbl
     subs = {}
     sub_ids = [d.submission_id for d in rows if d.submission_id]
     if sub_ids:
@@ -505,6 +513,7 @@ async def list_entity_dispatches(entity_id: int, db: AsyncSession = Depends(get_
         "id": d.id, "form_id": d.form_id, "form_title": titles.get(d.form_id), "token": d.token,
         "status": d.status, "seen_by_recruiter": d.seen_by_recruiter,
         "submission_id": d.submission_id, "answers": subs.get(d.submission_id),
+        "field_labels": labels_by_form.get(d.form_id, {}),
         "created_at": d.created_at.isoformat() if d.created_at else None,
         "submitted_at": d.submitted_at.isoformat() if d.submitted_at else None,
     } for d in rows]

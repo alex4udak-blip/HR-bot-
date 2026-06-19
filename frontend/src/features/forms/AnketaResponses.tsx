@@ -24,7 +24,7 @@ export function AnketaResponses({ dispatches }: { dispatches: FormDispatchInfo[]
             <div className="mt-3 border-t pt-2 space-y-1">
               {Object.entries(d.answers).map(([k, v]) => (
                 <div key={k} className="flex gap-2 text-xs">
-                  <span className="text-gray-400">{k}:</span>
+                  <span className="text-gray-400">{d.field_labels?.[k] || k}:</span>
                   <span className="text-gray-800">{String(v)}</span>
                 </div>
               ))}
