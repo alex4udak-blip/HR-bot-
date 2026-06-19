@@ -24,6 +24,32 @@
     return '';
   }
 
+  // Helper: найти ФИО по ВИДУ текста, не завязываясь на конкретные data-qa/классы
+  // (hh периодически меняет вёрстку, и точечные селекторы имени отваливаются).
+  // ФИО = 2–3 слова кириллицей с заглавной (фамилия может быть через дефис).
+  // Ищем только в ВЕРХНЕЙ части резюме (до блока опыта/образования), чтобы случайно
+  // не принять за имя название компании из опыта работы, и не лезем в шапку сайта.
+  function findFioByPattern() {
+    const FIO_RE = /^[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?$/;
+    const boundary = document.querySelector(
+      '[data-qa="resume-block-experience"], [data-qa*="experience"], [data-qa*="education"]'
+    );
+    const beforeBoundary = (el) =>
+      !boundary || !!(el.compareDocumentPosition(boundary) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const inSiteChrome = (el) => el.closest(
+      'header, nav, footer, [data-qa*="mainmenu"], [data-qa*="applicantProfile"], ' +
+      '[class*="supernova"], [class*="header"], [class*="menu"]'
+    );
+    for (const el of document.querySelectorAll('h1,h2,h3,span,div,a,p,strong,b')) {
+      if (el.children.length) continue;            // только листовые узлы (собственный текст)
+      const txt = (el.textContent || '').trim();
+      if (txt.length < 5 || txt.length > 60 || !FIO_RE.test(txt)) continue;
+      if (inSiteChrome(el) || !beforeBoundary(el)) continue;
+      return txt;
+    }
+    return '';
+  }
+
   // Parse resume data from DOM
   function parseHHResume() {
     const data = {
@@ -53,6 +79,13 @@
       'h1[data-qa*="personal"]',
       'h2[data-qa="resume-personal-name"]',
     ]);
+    // Точечные селекторы выше ломаются, когда hh меняет вёрстку (так имя кандидата
+    // и приезжало как «Должность, Город, Возраст»). Фолбэк: ищем ФИО по виду текста
+    // в шапке резюме — независимо от data-qa. Берём только если нашли настоящее ФИО.
+    if (!data.full_name || /^\s*кандидат\s*$/i.test(data.full_name)) {
+      const fio = findFioByPattern();
+      if (fio) data.full_name = fio;
+    }
     // Detect closed-contact placeholder: hh.ru renders heading as "Кандидат"
     // when contacts require paid unlock. Mark this so we build a better
     // placeholder AFTER we've parsed position/city/age below.
