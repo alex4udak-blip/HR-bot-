@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AlertTriangle, X, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
@@ -406,6 +406,14 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Подгружаем профиль дубля сразу (не только по клику «Проверить»), чтобы заранее
+  // понять — это реальное совпадение или мусорный/устаревший флаг.
+  useEffect(() => {
+    if (hiddenId && !archived) {
+      getEntity(hiddenId).then(setArchived).catch(() => {});
+    }
+  }, [hiddenId, archived]);
+
   if (!hiddenId || resolved) return null;
 
   const openModal = async () => {
@@ -472,6 +480,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   const IDENTITY_KEYS: (FieldKey | "name")[] = ["name", "phone", "email", "telegram"];
   const matchedKeys = right ? IDENTITY_KEYS.filter((k) => matched(k)) : [];
   const LBL: Record<string, string> = { name: "Имя", ...Object.fromEntries(FIELDS.map((f) => [f.key, f.label])) };
+
+  // Баннер показываем ТОЛЬКО при реальном совпадении по контактам
+  // (имя/телефон/почта/telegram). Дубль не загрузился или совпадений нет —
+  // это ложный/устаревший флаг, баннер не мозолит глаза.
+  if (!archived || matchedKeys.length === 0) return null;
 
   return (
     <>

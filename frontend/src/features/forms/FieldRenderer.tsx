@@ -49,8 +49,10 @@ export function FieldRenderer({
       {field.type === 'phone' && (
         <input
           type="tel"
+          inputMode="tel"
           value={String(value || '')}
-          onChange={e => onChange(e.target.value)}
+          // Только телефонные символы: цифры, +, пробел, скобки, дефис. Буквы не пускаем.
+          onChange={e => onChange(e.target.value.replace(/[^\d+()\-\s]/g, ''))}
           placeholder={field.placeholder || '+7 (999) 123-45-67'}
           className={inputClasses}
         />
