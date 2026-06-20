@@ -56,20 +56,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   // storm that freezes the page. useCallback keeps `connect` stable.
   const onFormSubmission = useCallback(
     (p: FormSubmissionPayload) => {
+      // Только бейдж карточки (если WS жив). Всплывающий тост даёт поллинг уведомлений
+      // ниже — он надёжнее (WS form.submission на проде не доставляет), и так без дублей.
       bumpEntityBadge(p.entity_id);
-      // Реалтайм-тост (когда WS подключён): HR сразу видит заполнение анкеты; клик
-      // открывает карточку кандидата на табе «Анкеты». Когда WS не доходит — тост
-      // даёт поллинг уведомлений ниже (чтобы не дублировать).
-      toast((t) => (
-        <span
-          onClick={() => { navigate(`/all-candidates?entity=${p.entity_id}&tab=anketa`); toast.dismiss(t.id); }}
-          style={{ cursor: 'pointer' }}
-        >
-          📋 {p.candidate_name || 'Кандидат'} заполнил анкету{p.form_title ? ` «${p.form_title}»` : ''}
-        </span>
-      ), { duration: 8000 });
     },
-    [bumpEntityBadge, navigate],
+    [bumpEntityBadge],
   );
 
   const { isConnected, status } = useWebSocket({
@@ -102,12 +93,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     logger.log(`[WebSocketProvider] Status: ${status}, Connected: ${isConnected}`);
   }, [status, isConnected]);
 
-  // Realtime по WebSocket на проде может не доходить (прокси/доставка). Поэтому поллим
-  // уведомления: счётчик колокольчика обновляем всегда, а ВСПЛЫВАЮЩИЙ тост о новом
-  // уведомлении (в т.ч. «кандидат заполнил анкету») показываем когда WS НЕ подключён
-  // (если подключён — тост уже даёт onFormSubmission, не дублируем).
-  const isConnectedRef = useRef(false);
-  useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
+  // Realtime по WebSocket на проде НЕ доставляет form.submission (уведомления в БД
+  // создаются, но событие до клиента не доходит). Поэтому popup даём поллингом:
+  // счётчик колокольчика обновляем всегда + ВСПЛЫВАЮЩИЙ тост на каждое НОВОЕ
+  // уведомление (анкета и пр.), независимо от состояния WS. (Тост из onFormSubmission
+  // убран, чтобы не дублить.)
   const lastSeenNotifId = useRef<number>(-1);
   useEffect(() => {
     let alive = true;
@@ -119,7 +109,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         const maxId = list.reduce((m, n) => Math.max(m, n.id), -1);
         const prev = lastSeenNotifId.current;
         lastSeenNotifId.current = Math.max(prev, maxId);
-        if (prev < 0 || isConnectedRef.current) return; // первый прогон / WS активен — без тостов
+        if (prev < 0) return; // первый прогон — не спамим существующими уведомлениями
         for (const n of list.filter((n) => n.id > prev).sort((a, b) => a.id - b.id)) {
           const m = /entity=(\d+)/.exec(n.link || '');
           if (n.type === 'form_submitted' && m) bumpEntityBadge(parseInt(m[1], 10));
