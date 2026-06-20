@@ -9,8 +9,8 @@ import {
   parseResumeFromFile,
   parseVacancyFromUrl,
   getEntities,
+  createEntity,
   uploadEntityFile,
-  createEntityFromResume,
   getVacancies,
   createApplication,
 } from '@/services/api';
@@ -301,8 +301,35 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
       let createdEntityId: number | null = null;
 
       if (uploadedFile) {
-        const resp = await createEntityFromResume(uploadedFile);
-        createdEntityId = resp?.entity?.id ?? null;
+        // Создаём из ОТРЕДАКТИРОВАННЫХ полей (parsedData), а не повторным парсингом
+        // файла — иначе правки пользователя (имя и пр.) терялись. Файл прикрепляем
+        // отдельно: upload конвертит PDF в картинки-страницы → чистый просмотр.
+        const r = parsedData as ParsedResume;
+        const created = await createEntity({
+          type: 'candidate',
+          name: r.name!.trim(),
+          email: r.email?.trim() || undefined,
+          phone: r.phone?.trim() || undefined,
+          telegram_usernames: r.telegram?.trim() ? [r.telegram.trim().replace(/^@/, '')] : undefined,
+          position: r.position?.trim() || undefined,
+          company: r.company?.trim() || undefined,
+          expected_salary_min: r.salary_min ?? undefined,
+          expected_salary_max: r.salary_max ?? undefined,
+          expected_salary_currency: r.salary_currency || undefined,
+          extra_data: {
+            source: 'resume_upload',
+            ...(r.location ? { city: r.location, location: r.location } : {}),
+            ...(r.experience_years != null ? { experience_years: r.experience_years } : {}),
+            ...(r.skills?.length ? { skills: r.skills } : {}),
+            ...(r.summary ? { summary: r.summary, resume_text: r.summary } : {}),
+          },
+        });
+        createdEntityId = created.id;
+        try {
+          await uploadEntityFile(created.id, uploadedFile, 'resume');
+        } catch (e) {
+          console.error('attach resume file failed', e);
+        }
       } else {
         // URL-парсинг — оставляем парент-flow (CandidatesDatabase открывает
         // pre-filled CreateCandidateModal). Просто пробрасываем данные.
