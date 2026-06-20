@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -8,6 +8,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useFormBadgeStore } from '@/stores/formBadgeStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { logger } from '@/utils/logger';
+import { getNotifications } from '@/services/api/notifications';
 import type { FormSubmissionPayload } from '@/types/websocket';
 
 /**
@@ -47,7 +48,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   } = useChatStore();
 
   const bumpEntityBadge = useFormBadgeStore((s) => s.bump);
-  const bumpUnread = useNotificationStore((s) => s.bumpUnread);
+  const setUnreadCount = useNotificationStore((s) => s.setUnreadCount);
   const navigate = useNavigate();
 
   // Must be stable: an inline fn here makes useWebSocket's `connect` change every
@@ -56,9 +57,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const onFormSubmission = useCallback(
     (p: FormSubmissionPayload) => {
       bumpEntityBadge(p.entity_id);
-      bumpUnread();
-      // Реалтайм-тост: HR сразу видит, что кандидат заполнил анкету; клик открывает
-      // карточку этого кандидата на табе «Анкеты».
+      // Реалтайм-тост (когда WS подключён): HR сразу видит заполнение анкеты; клик
+      // открывает карточку кандидата на табе «Анкеты». Когда WS не доходит — тост
+      // даёт поллинг уведомлений ниже (чтобы не дублировать).
       toast((t) => (
         <span
           onClick={() => { navigate(`/all-candidates?entity=${p.entity_id}&tab=anketa`); toast.dismiss(t.id); }}
@@ -68,7 +69,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         </span>
       ), { duration: 8000 });
     },
-    [bumpEntityBadge, bumpUnread, navigate],
+    [bumpEntityBadge, navigate],
   );
 
   const { isConnected, status } = useWebSocket({
@@ -100,6 +101,43 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     logger.log(`[WebSocketProvider] Status: ${status}, Connected: ${isConnected}`);
   }, [status, isConnected]);
+
+  // Realtime по WebSocket на проде может не доходить (прокси/доставка). Поэтому поллим
+  // уведомления: счётчик колокольчика обновляем всегда, а ВСПЛЫВАЮЩИЙ тост о новом
+  // уведомлении (в т.ч. «кандидат заполнил анкету») показываем когда WS НЕ подключён
+  // (если подключён — тост уже даёт onFormSubmission, не дублируем).
+  const isConnectedRef = useRef(false);
+  useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
+  const lastSeenNotifId = useRef<number>(-1);
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => {
+      try {
+        const list = await getNotifications();
+        if (!alive) return;
+        setUnreadCount(list.filter((n) => !n.is_read).length);
+        const maxId = list.reduce((m, n) => Math.max(m, n.id), -1);
+        const prev = lastSeenNotifId.current;
+        lastSeenNotifId.current = Math.max(prev, maxId);
+        if (prev < 0 || isConnectedRef.current) return; // первый прогон / WS активен — без тостов
+        for (const n of list.filter((n) => n.id > prev).sort((a, b) => a.id - b.id)) {
+          const m = /entity=(\d+)/.exec(n.link || '');
+          if (n.type === 'form_submitted' && m) bumpEntityBadge(parseInt(m[1], 10));
+          toast((t) => (
+            <span
+              onClick={() => { if (n.link) navigate(n.link); toast.dismiss(t.id); }}
+              style={{ cursor: 'pointer' }}
+            >
+              {n.type === 'form_submitted' ? '📋 ' : '🔔 '}{n.message || n.title}
+            </span>
+          ), { duration: 8000 });
+        }
+      } catch { /* ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, 25000);
+    return () => { alive = false; clearInterval(id); };
+  }, [setUnreadCount, bumpEntityBadge, navigate]);
 
   // Cleanup polling on unmount to prevent memory leaks
   useEffect(() => {

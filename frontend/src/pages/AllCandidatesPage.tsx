@@ -3021,17 +3021,23 @@ function AnketaTab({ card }: { card: KanbanCard }) {
   const clearBadge = useFormBadgeStore((s) => s.clear);
   useEffect(() => {
     let alive = true;
-    (async () => {
+    const fetchRows = async () => {
       try {
         const rows = await getEntityDispatches(card.id);
         if (alive) setDispatches(rows);
-        await markEntityDispatchesSeen(card.id);
-        clearBadge(card.id);
       } catch {
         /* пустой/ошибка — покажем пустое состояние */
       }
+    };
+    (async () => {
+      await fetchRows();
+      try { await markEntityDispatchesSeen(card.id); clearBadge(card.id); } catch { /* ignore */ }
     })();
-    return () => { alive = false; };
+    // Поллинг: realtime по WebSocket на проде может не доходить (прокси/доставка),
+    // поэтому раз в 15с подтягиваем ответы — заполненная анкета появляется без
+    // перезагрузки страницы.
+    const t = setInterval(fetchRows, 15000);
+    return () => { alive = false; clearInterval(t); };
   }, [card.id, clearBadge]);
   return <AnketaResponses dispatches={dispatches} />;
 }
