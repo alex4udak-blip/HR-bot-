@@ -466,9 +466,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     return norm(a) === norm(b);
   };
 
-  const matchedKeys = right
-    ? (["name", ...FIELDS.map((f) => f.key)] as (FieldKey | "name")[]).filter((k) => matched(k))
-    : [];
+  // Только реальные идентификаторы — по ним и матчит дедуп. Источник (hh.ru), город,
+  // возраст, зарплата, опыт, метки совпадают у РАЗНЫХ людей и не являются причиной
+  // слияния — не показываем их как «совпадение», иначе «Совпадение по: Источник» врёт.
+  const IDENTITY_KEYS: (FieldKey | "name")[] = ["name", "phone", "email", "telegram"];
+  const matchedKeys = right ? IDENTITY_KEYS.filter((k) => matched(k)) : [];
   const LBL: Record<string, string> = { name: "Имя", ...Object.fromEntries(FIELDS.map((f) => [f.key, f.label])) };
 
   return (
@@ -511,12 +513,16 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                 </div>
               ) : (
                 <>
-                  {matchedKeys.length > 0 && (
+                  {matchedKeys.length > 0 ? (
                     <div className="mb-4 text-sm text-amber-700">
                       Совпадение по:{" "}
                       <span className="font-semibold text-amber-800">
                         {matchedKeys.map((k) => LBL[k]).join(", ")}
                       </span>
+                    </div>
+                  ) : (
+                    <div className="mb-4 text-sm text-rose-600">
+                      Нет совпадений по контактам (имя / телефон / почта / telegram) — вероятно, это разные люди.
                     </div>
                   )}
                   <div className="grid grid-cols-2 gap-4">
