@@ -9,8 +9,8 @@ import {
   parseResumeFromFile,
   parseVacancyFromUrl,
   getEntities,
+  createEntity,
   uploadEntityFile,
-  createEntityFromResume,
   getVacancies,
   createApplication,
 } from '@/services/api';
@@ -301,8 +301,35 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
       let createdEntityId: number | null = null;
 
       if (uploadedFile) {
-        const resp = await createEntityFromResume(uploadedFile);
-        createdEntityId = resp?.entity?.id ?? null;
+        // Создаём из ОТРЕДАКТИРОВАННЫХ полей (parsedData), а не повторным парсингом
+        // файла — иначе правки пользователя (имя и пр.) терялись. Файл прикрепляем
+        // отдельно: upload конвертит PDF в картинки-страницы → чистый просмотр.
+        const r = parsedData as ParsedResume;
+        const created = await createEntity({
+          type: 'candidate',
+          name: r.name!.trim(),
+          email: r.email?.trim() || undefined,
+          phone: r.phone?.trim() || undefined,
+          telegram_usernames: r.telegram?.trim() ? [r.telegram.trim().replace(/^@/, '')] : undefined,
+          position: r.position?.trim() || undefined,
+          company: r.company?.trim() || undefined,
+          expected_salary_min: r.salary_min ?? undefined,
+          expected_salary_max: r.salary_max ?? undefined,
+          expected_salary_currency: r.salary_currency || undefined,
+          extra_data: {
+            source: 'resume_upload',
+            ...(r.location ? { city: r.location, location: r.location } : {}),
+            ...(r.experience_years != null ? { experience_years: r.experience_years } : {}),
+            ...(r.skills?.length ? { skills: r.skills } : {}),
+            ...(r.summary ? { summary: r.summary, resume_text: r.summary } : {}),
+          },
+        });
+        createdEntityId = created.id;
+        try {
+          await uploadEntityFile(created.id, uploadedFile, 'resume');
+        } catch (e) {
+          console.error('attach resume file failed', e);
+        }
       } else {
         // URL-парсинг — оставляем парент-flow (CandidatesDatabase открывает
         // pre-filled CreateCandidateModal). Просто пробрасываем данные.
@@ -364,10 +391,10 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="glass rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-white text-slate-900 shadow-xl border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-[color:var(--hf-white-alpha-10)] flex-shrink-0">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-[var(--hf-status-cyan-badge)] rounded-lg">
               <Search className="w-5 h-5 text-[var(--hf-cyan-400)]" aria-hidden="true" />
@@ -378,7 +405,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
             aria-label="Закрыть окно"
           >
             <X className="w-5 h-5" aria-hidden="true" />
@@ -386,7 +413,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         </div>
 
         {/* Tabs - only show file tab for resume */}
-        <div className="flex border-b border-[color:var(--hf-white-alpha-10)] flex-shrink-0" role="tablist" aria-label="Способ загрузки">
+        <div className="flex border-b border-slate-200 flex-shrink-0" role="tablist" aria-label="Способ загрузки">
           <button
             onClick={() => {
               setActiveTab('url');
@@ -396,8 +423,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
             className={clsx(
               'flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors',
               activeTab === 'url'
-                ? 'glass-light text-[var(--hf-white)] border-b-2 border-[color:var(--hf-cyan-500)]'
-                : 'text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-dark-panel-alpha-50)]'
+                ? 'bg-slate-50 text-slate-900 border-b-2 border-[color:var(--hf-cyan-500)]'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
             )}
             role="tab"
             aria-selected={activeTab === 'url'}
@@ -417,8 +444,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
               className={clsx(
                 'flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors',
                 activeTab === 'file'
-                  ? 'glass-light text-[var(--hf-white)] border-b-2 border-[color:var(--hf-cyan-500)]'
-                  : 'text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] hover:bg-[var(--hf-dark-panel-alpha-50)]'
+                  ? 'bg-slate-50 text-slate-900 border-b-2 border-[color:var(--hf-cyan-500)]'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
               )}
               role="tab"
               aria-selected={activeTab === 'file'}
@@ -443,7 +470,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                   id="parser-url-panel"
                   aria-labelledby="parser-url-tab"
                 >
-                  <label htmlFor="parser-url-input" className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-2">
+                  <label htmlFor="parser-url-input" className="block text-sm text-slate-500 mb-2">
                     Ссылка на {isResume ? 'резюме' : 'вакансию'}
                   </label>
                   <div className="relative">
@@ -467,8 +494,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                         : 'https://hh.ru/vacancy/123456'
                       }
                       className={clsx(
-                        'w-full px-4 py-3 glass-light border rounded-lg focus:outline-none text-sm pr-24',
-                        error ? 'border-[color:var(--hf-status-red-badge)]' : 'border-[color:var(--hf-white-alpha-10)] focus:border-[color:var(--hf-cyan-500)]'
+                        'w-full px-4 py-3 bg-slate-50 border rounded-lg focus:outline-none text-sm pr-24',
+                        error ? 'border-[color:var(--hf-status-red-badge)]' : 'border-slate-200 focus:border-[color:var(--hf-cyan-500)]'
                       )}
                       disabled={loading}
                       aria-invalid={error ? 'true' : 'false'}
@@ -513,7 +540,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                       'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
                       isDragging
                         ? 'border-[color:var(--hf-cyan-500)] bg-[var(--hf-status-cyan-bg)]'
-                        : 'border-[color:var(--hf-white-alpha-20)] hover:border-[color:var(--hf-white-alpha-40)] hover:bg-[var(--hf-dark-panel-alpha-50)]'
+                        : 'border-slate-300 hover:border-slate-400 hover:bg-slate-100'
                     )}
                     role="button"
                     tabIndex={0}
@@ -529,15 +556,15 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                     />
                     <Upload className={clsx(
                       'w-10 h-10 mx-auto mb-4',
-                      isDragging ? 'text-[var(--hf-cyan-400)]' : 'text-[color:var(--hf-white-alpha-40)]'
+                      isDragging ? 'text-[var(--hf-cyan-400)]' : 'text-slate-400'
                     )} aria-hidden="true" />
-                    <p className="text-[color:var(--hf-white-alpha-60)] mb-2">
+                    <p className="text-slate-500 mb-2">
                       {isDragging
                         ? 'Отпустите файл для загрузки'
                         : 'Перетащите файл сюда или нажмите для выбора'
                       }
                     </p>
-                    <p className="text-xs text-[color:var(--hf-white-alpha-40)]">
+                    <p className="text-xs text-slate-400">
                       PDF, DOC, DOCX или TXT (максимум 10 МБ)
                     </p>
                     {error && (
@@ -558,8 +585,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                   className={clsx(
                     'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-colors',
                     loading || !isUrlValid
-                      ? 'glass-light text-[color:var(--hf-white-alpha-40)] cursor-not-allowed'
-                      : 'bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-500)] text-[var(--hf-white)]'
+                      ? 'bg-slate-50 text-slate-400 cursor-not-allowed'
+                      : 'bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-500)] text-slate-900'
                   )}
                   aria-busy={loading}
                 >
@@ -598,15 +625,15 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                   Для URL-резюме сначала открывается форма редактирования карточки,
                   поэтому пикер тут не имеет смысла. */}
               {isResume && uploadedFile && (
-                <div className="border-t border-[color:var(--hf-white-alpha-10)] pt-4">
-                  <label className="block text-sm font-medium text-[color:var(--hf-white-alpha-70)] mb-2 flex items-center gap-2">
+                <div className="border-t border-slate-200 pt-4">
+                  <label className="block text-sm font-medium text-slate-600 mb-2 flex items-center gap-2">
                     <Briefcase className="w-4 h-4" />
                     Добавить на воронку (опционально)
                   </label>
                   <select
                     value={selectedVacancyId}
                     onChange={(e) => setSelectedVacancyId(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full px-3 py-2.5 glass-light border border-[color:var(--hf-white-alpha-10)] rounded-lg text-sm focus:outline-none focus:border-[color:var(--hf-cyan-500)]"
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[color:var(--hf-cyan-500)]"
                     disabled={isCreating}
                   >
                     <option value="">— без воронки —</option>
@@ -615,20 +642,20 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                     ))}
                   </select>
                   {vacancyOptions.length === 0 && (
-                    <p className="text-xs text-[color:var(--hf-white-alpha-40)] mt-1.5">У вас нет открытых воронок</p>
+                    <p className="text-xs text-slate-400 mt-1.5">У вас нет открытых воронок</p>
                   )}
                 </div>
               )}
 
               {/* Matched candidates section for resume */}
               {isResume && (isSearchingCandidates || matchedCandidates.length > 0) && (
-                <div className="border-t border-[color:var(--hf-white-alpha-10)] pt-4">
-                  <h3 className="text-sm font-medium text-[color:var(--hf-white-alpha-70)] mb-3 flex items-center gap-2">
+                <div className="border-t border-slate-200 pt-4">
+                  <h3 className="text-sm font-medium text-slate-600 mb-3 flex items-center gap-2">
                     <UserCheck className="w-4 h-4" />
                     {isSearchingCandidates ? 'Поиск совпадений...' : `Найденные кандидаты (${matchedCandidates.length})`}
                   </h3>
                   {isSearchingCandidates ? (
-                    <div className="flex items-center gap-2 text-[color:var(--hf-white-alpha-40)] text-sm py-2">
+                    <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Поиск существующих кандидатов...
                     </div>
@@ -637,18 +664,18 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                       {matchedCandidates.map((candidate) => (
                         <div
                           key={candidate.id}
-                          className="flex items-center justify-between p-3 glass-light rounded-lg"
+                          className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
                         >
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-[var(--hf-white)] truncate">{candidate.name}</p>
-                            <p className="text-xs text-[color:var(--hf-white-alpha-40)] truncate">
+                            <p className="text-sm font-medium text-slate-900 truncate">{candidate.name}</p>
+                            <p className="text-xs text-slate-400 truncate">
                               {[candidate.email, candidate.phone, candidate.position].filter(Boolean).join(' · ')}
                             </p>
                           </div>
                           <button
                             onClick={() => handleAttachToCandidate(candidate.id)}
                             disabled={isAttaching}
-                            className="flex-shrink-0 ml-3 px-3 py-1.5 text-xs font-medium bg-[var(--hf-green-600)] hover:bg-[var(--hf-green-500)] text-[var(--hf-white)] rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                            className="flex-shrink-0 ml-3 px-3 py-1.5 text-xs font-medium bg-[var(--hf-green-600)] hover:bg-[var(--hf-green-500)] text-slate-900 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
                           >
                             {isAttaching ? (
                               <Loader2 className="w-3 h-3 animate-spin" />
@@ -668,10 +695,10 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-4 border-t border-[color:var(--hf-white-alpha-10)] flex-shrink-0">
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-200 flex-shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-[color:var(--hf-white-alpha-60)] hover:text-[var(--hf-white)] transition-colors"
+            className="px-4 py-2 text-slate-500 hover:text-slate-900 transition-colors"
           >
             Отмена
           </button>
@@ -679,7 +706,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
             <button
               onClick={handleCreate}
               disabled={isCreating}
-              className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-500)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--hf-white)] rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-500)] disabled:opacity-50 disabled:cursor-not-allowed text-slate-900 rounded-lg transition-colors"
             >
               {isCreating ? (
                 <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />

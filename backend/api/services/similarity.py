@@ -220,6 +220,94 @@ def normalize_email(email: str) -> str:
     return email.lower().strip()
 
 
+def normalize_telegram(value: str) -> str:
+    """Нормализация telegram-username: без @, нижний регистр, без пробелов."""
+    return str(value or "").strip().lstrip("@").lower()
+
+
+# Значения, попадающие в telegram_usernames при импорте (HH/CSV), но НЕ являющиеся
+# личными хэндлами — это ярлыки источника/площадки. Матчить дубли по ним нельзя:
+# десятки разных людей с одним «telegram»/«hh_b2b» слипаются в один ложный кластер.
+JUNK_TELEGRAM_USERNAMES = {
+    "telegram", "tg", "telega", "hh", "hh_b2b", "hh_news", "hh_news_hr", "hhnews",
+    "headhunter", "hhru", "vk", "vkontakte", "avito", "superjob", "habr", "linkedin",
+    "email", "mail", "phone", "tel", "resume", "cv", "source", "none", "no",
+    "n/a", "na", "null", "-", "—",
+}
+
+# Если одно и то же telegram-значение встречается у стольких кандидатов и более —
+# это заведомо не личный хэндл (мусор/ярлык), а массовое совпадение. Не матчим.
+TG_COMMON_THRESHOLD = 3
+
+
+def is_matchable_telegram(value: str, freq: Optional[dict] = None) -> bool:
+    """Годен ли telegram-username как идентификатор для дедупа: не пустой,
+    не из денилиста источников и (если передана частота) не «общий» (≥ порога)."""
+    k = normalize_telegram(value)
+    if not k or k in JUNK_TELEGRAM_USERNAMES:
+        return False
+    if freq is not None and freq.get(k, 0) >= TG_COMMON_THRESHOLD:
+        return False
+    return True
+
+
+# Слова-маркеры должностей. Расширение иногда кладёт в поле «имя» должность
+# («Flutter Developer, Минск, 25 лет») — по таким «именам» матчить дубли нельзя:
+# все «Flutter Developer» слипаются между собой.
+_POSITION_HINT_WORDS = {
+    "developer", "разработчик", "разработчица", "manager", "менеджер",
+    "designer", "дизайнер", "analyst", "аналитик", "engineer", "инженер",
+    "specialist", "специалист", "lead", "директор", "director", "маркетолог",
+    "marketer", "тестировщик", "qa", "devops", "frontend", "backend", "fullstack",
+    "копирайтер", "рекрутер", "recruiter", "бухгалтер", "оператор", "sales",
+    "продаж", "продажник", "smm", "программист", "администратор", "admin",
+    "support", "поддержка", "продавец", "консультант", "ассистент",
+}
+
+
+def looks_like_person_name(name: str) -> bool:
+    """Похоже ли значение на ФИО человека, а не на должность/мусор. Расширение
+    иногда кладёт в имя должность («Flutter Developer, Минск, 25 лет»), а импорт —
+    placeholder'ы. По таким «именам» матчить дубли нельзя. Критерии: нет цифр
+    (возраст), нет запятой («Должность, Город, …»), ≥2 слов, и ни одно слово не
+    является явным маркером должности."""
+    n = (name or "").strip()
+    if not n or any(ch.isdigit() for ch in n) or "," in n:
+        return False
+    words = n.lower().replace("-", " ").split()
+    if len(words) < 2:
+        return False
+    if any(w.strip("().") in _POSITION_HINT_WORDS for w in words):
+        return False
+    return True
+
+
+def normalize_source_url(url: str) -> str:
+    """Стабильный ключ резюме из URL источника — БЕЗ волатильных query-параметров.
+
+    hh.ru отдаёт ссылки вида /resume/<hash>?hhtmFrom=chat&vacancyId=..&t=<timestamp>,
+    где query МЕНЯЕТСЯ при каждом открытии. Сравнение полного href ломало дедуп:
+    одно и то же резюме, открытое дважды, выглядело как два разных source_url —
+    и кандидат добавлялся повторно. Возвращаем канонический ключ: для hh —
+    hh:resume:<hash> (стабилен), иначе host+path без query/fragment.
+    """
+    if not url:
+        return ""
+    s = str(url).strip()
+    if not s:
+        return ""
+    m = re.search(r"/resume/([0-9a-f]{16,})", s, re.IGNORECASE)
+    if m:
+        return f"hh:resume:{m.group(1).lower()}"
+    m = re.search(r"[?&]resumeId=(\d+)", s, re.IGNORECASE)
+    if m:
+        return f"hh:resumeId:{m.group(1)}"
+    s = re.sub(r"#.*$", "", s)
+    s = re.sub(r"\?.*$", "", s)
+    s = re.sub(r"^https?://", "", s, flags=re.IGNORECASE)
+    return s.rstrip("/").lower()
+
+
 def extract_skills(extra_data: dict) -> Set[str]:
     """Извлечение навыков из extra_data."""
     skills = set()
@@ -409,7 +497,8 @@ class SimilarityService:
             and_(
                 Entity.org_id == org_id,
                 Entity.id != entity.id,
-                Entity.type == EntityType.candidate
+                Entity.type == EntityType.candidate,
+                Entity.is_archived.is_not(True),  # архив не показываем в «похожих»
             )
         )
         result = await db.execute(query)
@@ -681,7 +770,8 @@ class SimilarityService:
         query = select(Entity).where(
             and_(
                 Entity.org_id == org_id,
-                Entity.id != entity.id
+                Entity.id != entity.id,
+                Entity.is_archived.is_not(True),  # архив исключаем из детекции дубликатов
             )
         )
         result = await db.execute(query)
@@ -701,10 +791,12 @@ class SimilarityService:
             match_reasons = []
             matched_fields: Dict[str, Tuple[str, str]] = {}
 
-            # 1. Проверка имени (40 баллов)
+            # 1. Проверка имени (40 баллов) — только если ОБА значения похожи на
+            # ФИО, а не на должность/мусор («Flutter Developer, Минск, 25 лет»).
+            # Иначе кандидаты с именем-должностью массово слипаются.
             candidate_name_variants = generate_name_variants(candidate.name)
             name_match = bool(name_variants & candidate_name_variants)
-            if name_match:
+            if name_match and looks_like_person_name(entity.name) and looks_like_person_name(candidate.name):
                 confidence += 40
                 match_reasons.append("Совпадение имени (с учетом транслитерации)")
                 matched_fields['name'] = (entity.name, candidate.name)
@@ -768,7 +860,8 @@ class SimilarityService:
         db: AsyncSession,
         source_entity: Entity,
         target_entity: Entity,
-        keep_source_data: bool = False
+        keep_source_data: bool = False,
+        merged_by_name=None,
     ) -> Entity:
         """
         Объединение двух сущностей (дубликатов).
@@ -832,6 +925,19 @@ class SimilarityService:
         source_skills = extract_skills(source_extra)
         merged_extra['skills'] = list(target_skills | source_skills)
 
+        # Заметки — объединяем массивы, не теряем заметки источника (дедуп по id).
+        def _notes(extra):
+            n = extra.get("notes")
+            return n if isinstance(n, list) else []
+        _t_notes = _notes(target_extra)
+        _seen_ids = {n.get("id") for n in _t_notes if isinstance(n, dict) and n.get("id")}
+        merged_notes = _t_notes + [
+            n for n in _notes(source_extra)
+            if not (isinstance(n, dict) and n.get("id") in _seen_ids) and n not in _t_notes
+        ]
+        if merged_notes:
+            merged_extra["notes"] = merged_notes
+
         target_entity.extra_data = merged_extra
 
         # Обновляем зарплатные ожидания (берем более широкий диапазон)
@@ -853,7 +959,14 @@ class SimilarityService:
 
         # Переносим связанные записи
         # Чаты
-        from ..models.database import Chat, CallRecording, AnalysisHistory
+        from ..models.database import (
+            Chat, CallRecording, AnalysisHistory,
+            VacancyApplication, StageTransition, EntityAnalysis,
+            EntityAIConversation, EntityFile, EntityTransfer,
+            FormSubmission, RecruiterBonus,
+            EntityCriteria, PrometheusReviewCache,
+        )
+        from sqlalchemy import text as _sql_text
 
         await db.execute(
             Chat.__table__.update()
@@ -875,6 +988,115 @@ class SimilarityService:
             .values(entity_id=target_entity.id)
         )
 
+        # --- Заявки на вакансии: сливаем БЕЗ потери истории ---
+        # UNIQUE(vacancy_id, entity_id): две заявки на одну вакансию нельзя.
+        # Карта vacancy_id -> ORM-объект выжившего (target).
+        target_app_objs = (await db.execute(
+            select(VacancyApplication)
+            .where(VacancyApplication.entity_id == target_entity.id)
+        )).scalars().all()
+        target_app_by_vacancy = {a.vacancy_id: a for a in target_app_objs}
+
+        source_apps = (await db.execute(
+            select(VacancyApplication)
+            .where(VacancyApplication.entity_id == source_entity.id)
+        )).scalars().all()
+
+        for s_app in source_apps:
+            t_app = target_app_by_vacancy.get(s_app.vacancy_id)
+            if t_app is None:
+                # Нет коллизии — переносим заявку на target отдельным блоком.
+                s_app.entity_id = target_entity.id
+                # Явно перепривязываем переходы этой заявки на target.
+                await db.execute(
+                    StageTransition.__table__.update()
+                    .where(StageTransition.application_id == s_app.id)
+                    .values(entity_id=target_entity.id)
+                )
+                continue
+            # Коллизия по вакансии: историю источника перепривязываем к заявке
+            # target ДО удаления заявки (иначе FK CASCADE снесёт StageTransition).
+            await db.execute(
+                StageTransition.__table__.update()
+                .where(StageTransition.application_id == s_app.id)
+                .values(application_id=t_app.id, entity_id=target_entity.id)
+            )
+            # Скалярные поля переносим только если у target пусто (не затираем).
+            for _field in ("notes", "rating", "interview_summary", "rejection_reason", "source"):
+                if getattr(t_app, _field, None) is None and getattr(s_app, _field, None) is not None:
+                    setattr(t_app, _field, getattr(s_app, _field))
+            await db.delete(s_app)
+
+        # Остальную историю переносим на target. VacancyApplication уже обработан
+        # выше — здесь его НЕ трогаем. StageTransition тоже обработан явно в цикле
+        # source_apps (каждый переход принадлежит конкретной заявке, application_id
+        # NOT NULL), поэтому здесь его НЕ включаем.
+        for _hist_model in (
+            EntityAnalysis,
+            EntityAIConversation, EntityFile, EntityTransfer,
+            FormSubmission, RecruiterBonus,
+        ):
+            await db.execute(
+                _hist_model.__table__.update()
+                .where(_hist_model.entity_id == source_entity.id)
+                .values(entity_id=target_entity.id)
+            )
+
+        # One-to-one записи (unique entity_id): приоритет у target, копии source удаляем
+        for _uniq_model in (EntityCriteria, PrometheusReviewCache):
+            await db.execute(
+                _uniq_model.__table__.delete().where(
+                    _uniq_model.entity_id == source_entity.id
+                )
+            )
+
+        # M2M-теги: связи source удаляем (теги уже слиты в target.tags выше)
+        await db.execute(
+            _sql_text("DELETE FROM entity_tags WHERE entity_id = :sid"),
+            {"sid": source_entity.id},
+        )
+
+        # Survivor: сохраняем ОБА резюме (своё + источника) — после объединения
+        # рядом со старым резюме появляется новое. Плюс снимаем флаг теневого дубля.
+        _te = dict(target_entity.extra_data) if isinstance(target_entity.extra_data, dict) else {}
+        _se = source_entity.extra_data if isinstance(source_entity.extra_data, dict) else {}
+
+        def _resumes(extra):
+            rs = extra.get("resume_demos")
+            if isinstance(rs, list) and rs:
+                return [r for r in rs if r]
+            r = extra.get("resume_demo")
+            return [r] if r else []
+
+        combined = _resumes(_te) + _resumes(_se)
+        if combined:
+            seen = set()
+            uniq = []
+            for r in combined:
+                key = (
+                    (r.get("title"), r.get("saved_at")) if isinstance(r, dict) else (str(r), None)
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                uniq.append(r)
+            _te["resume_demos"] = uniq
+
+        # Сохраняем резюме/анкету источника отдельным блоком (merged_from), чтобы
+        # показать его «вторым резюме» рядом с основным — особенно импортированную
+        # анкету (cf:*), которую плоское объединение extra_data затирает.
+        from datetime import datetime as _dt
+        _te["merged_from"] = list(_te.get("merged_from") or []) + [{
+            "entity_id": source_entity.id,
+            "name": source_entity.name,
+            "merged_at": _dt.utcnow().isoformat(),
+            "merged_by_name": merged_by_name,
+            "extra_data": _se,
+        }]
+
+        _te.pop("hidden_duplicate_id", None)
+        target_entity.extra_data = _te
+
         # Удаляем исходную сущность
         await db.delete(source_entity)
 
@@ -889,3 +1111,139 @@ class SimilarityService:
 
 # Singleton instance
 similarity_service = SimilarityService()
+
+
+async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optional[int]:
+    """Найти дубликат среди кандидатов организации — активные И архив (кроме self),
+    совпадение по нормализованному email, телефону (последние 10 цифр) или
+    telegram-username. (Раньше сверял только с архивом — теперь и активных между собой.)
+
+    Вызывается на путях создания АКТИВНОГО кандидата (ручное добавление,
+    расширение, загрузка резюме), чтобы пометить новый профиль флагом
+    extra_data.hidden_duplicate_id. Возвращает id архивного совпадения или None.
+    Исключает self и id из extra_data.dismissed_duplicate_ids.
+    """
+    # Нормализованные идентификаторы нового кандидата (основной + доп. массивы)
+    emails: Set[str] = set()
+    primary_email = normalize_email(entity.email or "")
+    if primary_email:
+        emails.add(primary_email)
+    for e in (entity.emails or []):
+        ne = normalize_email(e or "")
+        if ne:
+            emails.add(ne)
+
+    phones10: Set[str] = set()
+    primary_digits = normalize_phone(entity.phone or "")
+    if len(primary_digits) >= 10:
+        phones10.add(primary_digits[-10:])
+    for p in (entity.phones or []):
+        d = normalize_phone(p or "")
+        if len(d) >= 10:
+            phones10.add(d[-10:])
+
+    tg_names: Set[str] = set()
+    for t in (entity.telegram_usernames or []):
+        nt = normalize_telegram(t)
+        if nt:
+            tg_names.add(nt)
+
+    # Полное ФИО: совпадение по нему тоже считаем дублем — кандидаты из импорта
+    # часто без контактов, с одинаковым ФИО. НО только если это похоже на ФИО, а не
+    # на должность/мусор («Flutter Developer, Минск, 25 лет»), иначе все «Flutter
+    # Developer» слипаются между собой.
+    my_name = " ".join((entity.name or "").strip().lower().split())
+    name_ok = looks_like_person_name(entity.name)
+
+    # source_url резюме — самый надёжный ключ: один и тот же URL = один человек,
+    # даже когда контакты скрыты, а имя — заглушка-должность. Нормализуем (убираем
+    # волатильные query-параметры hh), иначе один и тот же href ломает сравнение.
+    my_extra = entity.extra_data if isinstance(entity.extra_data, dict) else {}
+    my_source_key = normalize_source_url(my_extra.get("source_url") or my_extra.get("source_key") or "")
+
+    if not emails and not phones10 and not tg_names and not name_ok and not my_source_key:
+        return None
+
+    # «Разъединённые» ранее совпадения не поднимаем повторно
+    dismissed: Set[int] = set()
+    if isinstance(entity.extra_data, dict):
+        for x in (entity.extra_data.get("dismissed_duplicate_ids") or []):
+            try:
+                dismissed.add(int(x))
+            except (TypeError, ValueError):
+                continue
+
+    # Грузим ВСЕХ кандидатов организации (активные + архив) и сравниваем
+    # нормализованные контакты в Python — портируемо (Postgres + SQLite-тесты),
+    # тот же подход, что в detect_duplicates.
+    q = select(
+        Entity.id, Entity.name, Entity.email, Entity.phone,
+        Entity.telegram_usernames, Entity.extra_data,
+    ).where(
+        Entity.type == EntityType.candidate,
+        Entity.id != entity.id,
+    )
+    if entity.org_id is not None:
+        q = q.where(Entity.org_id == entity.org_id)
+    q = q.order_by(Entity.id.desc())
+
+    rows = (await db.execute(q)).all()
+
+    # Частота telegram-значений по всей выборке: «общие» (≥ порога) и мусорные
+    # ярлыки источника («telegram», «hh_b2b», …) — НЕ личные хэндлы. Матчить по
+    # ним нельзя, иначе десятки разных людей слипаются в один ложный дубль.
+    tg_freq: dict = {}
+    for r in rows:
+        for t in (r[4] or []):
+            k = normalize_telegram(t)
+            if k:
+                tg_freq[k] = tg_freq.get(k, 0) + 1
+    for k in tg_names:
+        tg_freq[k] = tg_freq.get(k, 0) + 1
+    tg_names = {t for t in tg_names if is_matchable_telegram(t, tg_freq)}
+
+    match_id: Optional[int] = None
+    phone_match: Optional[int] = None
+    for cand_id, cand_name, cand_email, cand_phone, cand_tg, cand_extra in rows:
+        if cand_id in dismissed:
+            continue
+        if my_source_key:
+            ce = cand_extra if isinstance(cand_extra, dict) else {}
+            if normalize_source_url(ce.get("source_url") or ce.get("source_key") or "") == my_source_key:
+                match_id = cand_id  # тот же URL резюме — однозначный дубль
+                break
+        if emails and normalize_email(cand_email or "") in emails:
+            match_id = cand_id  # email — сильнейшее совпадение
+            break
+        if tg_names and any(
+            normalize_telegram(t) in tg_names for t in (cand_tg or [])
+        ):
+            match_id = cand_id  # telegram-username — тоже надёжный идентификатор
+            break
+        if name_ok and " ".join((cand_name or "").strip().lower().split()) == my_name:
+            match_id = cand_id  # одинаковое полное ФИО
+            break
+        if phone_match is None and phones10:
+            d = normalize_phone(cand_phone or "")
+            if len(d) >= 10 and d[-10:] in phones10:
+                phone_match = cand_id
+    if match_id is None:
+        match_id = phone_match
+
+    # Помечаем найденного дубля ОБРАТНОЙ ссылкой (его hidden_duplicate_id → наш id),
+    # чтобы баннер «Похожий кандидат» появлялся у ОБОИХ профилей пары.
+    if match_id is not None and getattr(entity, "id", None):
+        dup = (await db.execute(select(Entity).where(Entity.id == match_id))).scalar_one_or_none()
+        if dup is not None:
+            de = dup.extra_data if isinstance(dup.extra_data, dict) else {}
+            ddis = set()
+            for x in (de.get("dismissed_duplicate_ids") or []):
+                try:
+                    ddis.add(int(x))
+                except (TypeError, ValueError):
+                    pass
+            if entity.id not in ddis and de.get("hidden_duplicate_id") != entity.id:
+                nde = dict(de)
+                nde["hidden_duplicate_id"] = entity.id
+                dup.extra_data = nde
+    return match_id

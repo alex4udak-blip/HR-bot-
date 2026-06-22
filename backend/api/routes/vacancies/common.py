@@ -225,6 +225,29 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     return False
 
 
+async def can_manage_applications(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
+    """Кто может ДВИГАТЬ/УДАЛЯТЬ отклики в воронке вакансии.
+
+    Те, кто реально ведёт вакансию: владелец/админ орга (full access),
+    создатель/наниматель, назначенные рекрутёры (assigned_to / assigned_to_all),
+    лид отдела, edit-шара. В отличие от can_access_vacancy НЕ даёт право мутации
+    случайному члену орга только по visible_to_all (это видимость, а не работа).
+    """
+    if await has_full_database_access(user, org, db):
+        return True
+    if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
+        return True
+    if getattr(vacancy, 'assigned_to_all', False):
+        return True
+    if user.id in (vacancy.assigned_to or []):
+        return True
+    if vacancy.department_id and await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
+        return True
+    if await has_shared_vacancy_access(vacancy.id, user.id, db, AccessLevel.edit):
+        return True
+    return False
+
+
 async def can_share_vacancy(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
     """
     Check if user can share a specific vacancy with others.
@@ -342,9 +365,17 @@ class VacancyCreate(BaseModel):
     @field_validator("salary_min", "salary_max")
     @classmethod
     def validate_salary_positive(cls, v: Optional[int]) -> Optional[int]:
-        """Validate salary values are non-negative."""
-        if v is not None and v < 0:
-            raise ValueError("salary cannot be negative")
+        """Validate salary: non-negative and within INT column range (B4-fix).
+
+        Без верхней границы значение вроде 14_124_124_124_124 проходило
+        Pydantic, но падало на INSERT/UPDATE в Postgres (integer out of range)
+        -> 500 при создании/редактировании заявки.
+        """
+        if v is not None:
+            if v < 0:
+                raise ValueError("salary cannot be negative")
+            if v > 2_147_483_647:
+                raise ValueError("Зарплата слишком большая (максимум 2 147 483 647)")
         return v
 
     @field_validator("priority")
@@ -441,9 +472,17 @@ class VacancyUpdate(BaseModel):
     @field_validator("salary_min", "salary_max")
     @classmethod
     def validate_salary_positive(cls, v: Optional[int]) -> Optional[int]:
-        """Validate salary values are non-negative."""
-        if v is not None and v < 0:
-            raise ValueError("salary cannot be negative")
+        """Validate salary: non-negative and within INT column range (B4-fix).
+
+        Без верхней границы значение вроде 14_124_124_124_124 проходило
+        Pydantic, но падало на INSERT/UPDATE в Postgres (integer out of range)
+        -> 500 при создании/редактировании заявки.
+        """
+        if v is not None:
+            if v < 0:
+                raise ValueError("salary cannot be negative")
+            if v > 2_147_483_647:
+                raise ValueError("Зарплата слишком большая (максимум 2 147 483 647)")
         return v
 
     @field_validator("priority")
@@ -529,6 +568,7 @@ class VacancyResponse(BaseModel):
     closes_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    deleted_at: Optional[datetime] = None
     applications_count: int = 0
     # Stage counts for quick overview
     stage_counts: dict = {}
@@ -557,6 +597,7 @@ class ApplicationUpdate(BaseModel):
     rejection_reason: Optional[str] = None
     interview_summary: Optional[str] = None
     next_interview_at: Optional[datetime] = None
+    comment: Optional[str] = None  # коммент к переходу этапа (пишется в историю, не поле заявки)
 
 
 class ApplicationResponse(BaseModel):

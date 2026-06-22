@@ -1947,7 +1947,7 @@ async def cmd_blocker(message: types.Message):
 
                     # DM-пинг ассайни
                     import os as _os
-                    frontend_url = _os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+                    frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
                     for t in created_tasks:
                         assignee_id = t.get("assignee_id")
                         creator_id = t.get("creator_id")
@@ -1987,7 +1987,7 @@ async def _parse_vacancy_text(text: str) -> dict:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=api_key)
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=1500,
             messages=[{"role": "user", "content": f"""Разбери заявку на вакансию в структурированные поля. Входной текст — произвольный.
 
@@ -2101,7 +2101,7 @@ async def cmd_vacancy(message: types.Message):
             await session.refresh(vacancy)
 
             import os as _os
-            frontend_url = _os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+            frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
 
             # Сформировать читаемое summary
             salary = ""
@@ -2409,7 +2409,7 @@ async def collect_group_message(message: types.Message):
 
                             # DM-пинг каждому ассайни (кроме автора сообщения)
                             import os as _os
-                            frontend_url = _os.getenv("FRONTEND_URL", "https://hr-bot-production-c613.up.railway.app")
+                            frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
                             for t in created_tasks:
                                 assignee_id = t.get("assignee_id")
                                 creator_id = t.get("creator_id")

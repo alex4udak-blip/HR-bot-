@@ -46,30 +46,6 @@ export const getOrgStages = async (): Promise<{ stages: OrgStage[] }> => {
   return data;
 };
 
-export const updateOrgStages = async (stages: OrgStage[]): Promise<{ success: boolean; stages: OrgStage[] }> => {
-  const { data } = await api.put('/auth/org-stages', { stages });
-  return data;
-};
-
-// Шаблоны статусов — именованные наборы этапов воронки.
-export interface StatusTemplate {
-  id: string;
-  name: string;
-  stages: OrgStage[];
-}
-
-export const getStatusTemplates = async (): Promise<{ templates: StatusTemplate[] }> => {
-  const { data } = await api.get('/auth/status-templates');
-  return data;
-};
-
-export const updateStatusTemplates = async (
-  templates: StatusTemplate[],
-): Promise<{ success: boolean; templates: StatusTemplate[] }> => {
-  const { data } = await api.put('/auth/status-templates', { templates });
-  return data;
-};
-
 /**
  * Refresh the access token using the refresh token stored in httpOnly cookie.
  * This is called automatically by the interceptor on 401 errors.

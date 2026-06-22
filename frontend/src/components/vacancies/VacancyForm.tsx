@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
@@ -13,20 +13,6 @@ import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { getDepartments, getAssignableUsers, assignVacancy, takeVacancy } from '@/services/api';
 import type { Department, AssignableUser } from '@/services/api';
-import { getStatusTemplates, type StatusTemplate } from '@/services/api/auth';
-
-// EntityStatus-ключ шаблона → ApplicationStage-ключ колонки канбана.
-// custom_stages.columns должны содержать ApplicationStage-значения.
-const TEMPLATE_KEY_TO_APP_STAGE: Record<string, string> = {
-  new: 'applied',
-  screening: 'screening',
-  practice: 'phone_screen',
-  tech_practice: 'interview',
-  is_interview: 'assessment',
-  offer: 'offer',
-  hired: 'hired',
-  rejected: 'rejected',
-};
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
@@ -52,6 +38,101 @@ function HfSpriteIcon({ id, className }: { id: string; className?: string }) {
     <svg className={className} viewBox="0 0 20 20" aria-hidden="true">
       <use href={`/huntflow-sprite.svg#${id}`} />
     </svg>
+  );
+}
+
+// F1: WYSIWYG rich-text редактор (contentEditable). Кнопки реально форматируют
+// через execCommand, списки продолжаются по Enter (нативно в браузере), значение
+// хранится как HTML и рендерится с санитайзером в VacancyDetail/VacancyDetailModal.
+function RichTextField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Инициализация / внешняя синхронизация без перезаписи при наборе (курсор не прыгает).
+  useEffect(() => {
+    const el = ref.current;
+    if (el && el.innerHTML !== (value || '')) el.innerHTML = value || '';
+  }, [value]);
+
+  const sync = () => onChange(ref.current?.innerHTML || '');
+
+  const exec = (command: string, arg?: string) => {
+    if (disabled) return;
+    ref.current?.focus();
+    document.execCommand(command, false, arg);
+    sync();
+  };
+
+  const addLink = () => {
+    if (disabled) return;
+    const url = (window.prompt('Ссылка (URL):', 'https://') || '').trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      toast.error('Ссылка должна начинаться с http:// или https://');
+      return;
+    }
+    ref.current?.focus();
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      document.execCommand('createLink', false, url);
+    } else {
+      document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>`);
+    }
+    sync();
+  };
+
+  const btnClass = 'hf-vacancy-editor-btn flex items-center justify-center';
+
+  return (
+    <div className="hf-vacancy-editor">
+      <div className="hf-vacancy-editor-toolbar flex items-center">
+        <button type="button" aria-label="Жирный" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('bold'); }}>
+          <HfSpriteIcon id="bold" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" aria-label="Курсив" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('italic'); }}>
+          <HfSpriteIcon id="italic" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" aria-label="Подчёркнутый" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('underline'); }}>
+          <span className="text-[13px] font-semibold leading-none underline">U</span>
+        </button>
+        <button type="button" aria-label="Маркированный список" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('insertUnorderedList'); }}>
+          <HfSpriteIcon id="bullet-list" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" aria-label="Нумерованный список" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); exec('insertOrderedList'); }}>
+          <HfSpriteIcon id="numbered-list" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" aria-label="Ссылка" disabled={disabled} className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); addLink(); }}>
+          <HfSpriteIcon id="link" className="hf-vacancy-editor-icon" />
+        </button>
+      </div>
+      <div
+        ref={ref}
+        contentEditable={!disabled}
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
+        onInput={sync}
+        onPaste={(e) => {
+          e.preventDefault();
+          const text = e.clipboardData.getData('text/plain');
+          document.execCommand('insertText', false, text);
+        }}
+        className="hf-vacancy-textarea hf-vacancy-richtext"
+      />
+    </div>
   );
 }
 
@@ -157,12 +238,10 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     }
   };
 
-  const { createVacancy, updateVacancy } = useVacancyStore();
+  const { createVacancy, updateVacancy, deleteVacancy } = useVacancyStore();
   const [loading, setLoading] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AssignableUser[]>([]);
-  const [statusTemplates, setStatusTemplates] = useState<StatusTemplate[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState('');
 
   // Use prefillData when creating new vacancy, vacancy when editing
   const initialData = vacancy || prefillData;
@@ -200,9 +279,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     getAssignableUsers()
       .then(setUsers)
       .catch((err) => console.error('Failed to load assignable users:', err));
-    getStatusTemplates()
-      .then((r) => setStatusTemplates(r.templates))
-      .catch((err) => console.error('Failed to load status templates:', err));
   }, []);
 
   useEffect(() => {
@@ -239,18 +315,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
     setLoading(true);
     try {
-      // Выбранный шаблон статусов → custom_stages воронки. Ключи шаблона
-      // (EntityStatus) конвертируем в ApplicationStage для колонок канбана.
-      const selectedTemplate = statusTemplates.find(t => t.id === selectedTemplateId);
-      const customStages = selectedTemplate
-        ? {
-            columns: selectedTemplate.stages.map(s => {
-              const appKey = TEMPLATE_KEY_TO_APP_STAGE[s.key] || s.key;
-              return { key: appKey, maps_to: appKey, label: s.label, visible: true };
-            }),
-          }
-        : undefined;
-
       const data = {
         title: formData.title.trim(),
         description: formData.description.trim() || undefined,
@@ -268,7 +332,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         visible_to_all: formData.visible_to_all,
         department_id: formData.department_id ? parseInt(String(formData.department_id)) : undefined,
         hiring_manager_id: formData.hiring_manager_id ? parseInt(String(formData.hiring_manager_id)) : undefined,
-        ...(customStages ? { custom_stages: customStages } : {}),
       };
 
       if (vacancy) {
@@ -292,10 +355,40 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     }
   };
 
+  // Действия над существующей вакансией: закрыть / в архив / удалить.
+  const [statusAction, setStatusAction] = useState(false);
+  const runStatusAction = async (status: VacancyStatus, msg: string) => {
+    if (!vacancy) return;
+    setStatusAction(true);
+    try {
+      await updateVacancy(vacancy.id, { status });
+      toast.success(msg);
+      onSuccess();
+      onClose();
+    } catch (_) {
+      toast.error('Не удалось изменить статус вакансии');
+    } finally {
+      setStatusAction(false);
+    }
+  };
+  const handleDeleteVacancy = async () => {
+    if (!vacancy) return;
+    if (!window.confirm('Удалить вакансию навсегда? Её заявки и история тоже удалятся. Действие необратимо.')) return;
+    setStatusAction(true);
+    try {
+      await deleteVacancy(vacancy.id);
+      toast.success('Вакансия удалена');
+      onSuccess();
+      onClose();
+    } catch (_) {
+      toast.error('Не удалось удалить вакансию');
+    } finally {
+      setStatusAction(false);
+    }
+  };
+
   const hfLabelClass = "hf-vacancy-label";
   const hfInputClass = "hf-vacancy-input";
-  const hfTextareaClass = "hf-vacancy-textarea";
-  const hfToolbarButtonClass = "hf-vacancy-editor-btn flex items-center justify-center";
 
   const HfSelect = ({
     id,
@@ -382,35 +475,13 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     );
   };
 
+  // markdown applyEditorFormat удалён — теперь WYSIWYG (см. RichTextField выше).
+
   const renderEditor = (
     value: string,
     onChange: (value: string) => void,
   ) => (
-    <div className="hf-vacancy-editor">
-      <div className="hf-vacancy-editor-toolbar flex items-center">
-        <button type="button" className={hfToolbarButtonClass} aria-label="bold">
-          <HfSpriteIcon id="bold" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="italic">
-          <HfSpriteIcon id="italic" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="bullet-list">
-          <HfSpriteIcon id="bullet-list" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="numbered-list">
-          <HfSpriteIcon id="numbered-list" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" className={hfToolbarButtonClass} aria-label="link">
-          <HfSpriteIcon id="link" className="hf-vacancy-editor-icon" />
-        </button>
-      </div>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={isReadOnlyRequest}
-        className={hfTextareaClass}
-      />
-    </div>
+    <RichTextField value={value} onChange={onChange} disabled={isReadOnlyRequest} />
   );
 
   return (
@@ -480,7 +551,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   type="number"
                   min={0}
                   value={formData.salary_min || formData.salary_max}
-                  onChange={(e) => setFormData({ ...formData, salary_min: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, salary_min: e.target.value, salary_max: e.target.value })}
                   disabled={isReadOnlyRequest}
                   className="hf-vacancy-input hf-vacancy-salary-input"
                 />
@@ -597,20 +668,35 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     disabled={isReadOnlyRequest}
                   />
                 </div>
-                <div>
-                  <label className={hfLabelClass}>Шаблон статусов</label>
-                  <HfSelect
-                    id="status-template"
-                    value={selectedTemplateId}
-                    options={[
-                      { value: "", label: "Все этапы (по умолчанию)" },
-                      ...statusTemplates.map((t) => ({ value: t.id, label: t.name })),
-                    ]}
-                    onChange={(value) => setSelectedTemplateId(String(value))}
-                    showSelectedIcon
-                    disabled={isReadOnlyRequest}
-                  />
-                </div>
+                {vacancy && !isReadOnlyRequest && (
+                  <div className="mt-[var(--hf-space-l)] pt-[var(--hf-space-l)] border-t border-[var(--hf-ui-border)] flex flex-col gap-[8px]">
+                    <span className={hfLabelClass}>Действия с вакансией</span>
+                    <button
+                      type="button"
+                      onClick={() => runStatusAction('closed', 'Вакансия закрыта')}
+                      disabled={statusAction}
+                      className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
+                    >
+                      Закрыть вакансию
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runStatusAction('cancelled', 'Вакансия отправлена в архив')}
+                      disabled={statusAction}
+                      className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
+                    >
+                      В архив
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteVacancy}
+                      disabled={statusAction}
+                      className="w-full h-[36px] rounded-[8px] border border-[var(--hf-status-red-badge)] text-[13px] font-medium text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-status-red-badge)] disabled:opacity-50"
+                    >
+                      Удалить вакансию
+                    </button>
+                  </div>
+                )}
               </div>
             </aside>
           </div>

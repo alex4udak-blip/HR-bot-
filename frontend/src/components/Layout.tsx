@@ -1,4 +1,5 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
+import { sanitizeHtml } from "../utils/sanitizeHtml";
 import {
   LayoutDashboard,
   Users,
@@ -34,6 +35,7 @@ import {
   Code2,
   Palette,
   Filter,
+  Archive,
   Layers,
   FileText,
   Link2,
@@ -43,6 +45,7 @@ import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } fr
 import type { ReactNode } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useVacancyStore } from "@/stores/vacancyStore";
+import { useNotificationStore } from "@/stores/notificationStore";
 import * as notificationsApi from "@/services/api/notifications";
 import type { Notification as AppNotification } from "@/services/api/notifications";
 import BackgroundEffects from "./BackgroundEffects";
@@ -152,6 +155,7 @@ type HrSettingsItem = {
   color: string;
   path?: string;
   adminOnly?: boolean;
+  superadminOnly?: boolean;
   missing?: boolean;
 };
 
@@ -169,15 +173,27 @@ function formatSidebarVacancyDate(date?: string | null) {
 function RequestPreviewBlock({
   title,
   children,
+  html,
 }: {
   title: string;
   children?: ReactNode;
+  html?: string | null;
 }) {
-  if (!children) return null;
+  // html — rich-text поле (обязанности/требования/условия) хранится как HTML.
+  // Рендерим через санитайзер, иначе теги <ul>/<li>/<b> видны как текст.
+  const hasHtml = typeof html === "string" && html.trim().length > 0;
+  if (!children && !hasHtml) return null;
   return (
     <div className="hf-request-preview-block">
       <div className="hf-request-preview-label">{title}</div>
-      <div className="hf-request-preview-value">{children}</div>
+      {hasHtml ? (
+        <div
+          className="hf-request-preview-value prose prose-sm max-w-none"
+          dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
+        />
+      ) : (
+        <div className="hf-request-preview-value">{children}</div>
+      )}
     </div>
   );
 }
@@ -296,17 +312,22 @@ export function SidebarRequestPreviewModal({
               <RequestPreviewBlock title="Отдел, подразделение">
                 {departmentName}
               </RequestPreviewBlock>
-              <RequestPreviewBlock title="Обязанности кандидата">
-                {vacancy.responsibilities || vacancy.description}
-              </RequestPreviewBlock>
-              <RequestPreviewBlock title="Требования к кандидату">
-                {vacancy.requirements}
-              </RequestPreviewBlock>
-              <RequestPreviewBlock title="Условия работы">
-                {vacancy.description && vacancy.responsibilities
-                  ? vacancy.description
-                  : null}
-              </RequestPreviewBlock>
+              <RequestPreviewBlock
+                title="Обязанности кандидата"
+                html={vacancy.responsibilities || vacancy.description}
+              />
+              <RequestPreviewBlock
+                title="Требования к кандидату"
+                html={vacancy.requirements}
+              />
+              <RequestPreviewBlock
+                title="Условия работы"
+                html={
+                  vacancy.description && vacancy.responsibilities
+                    ? vacancy.description
+                    : null
+                }
+              />
             </div>
 
             <aside className="hf-vacancy-modal-aside hf-request-preview-aside">
@@ -347,6 +368,20 @@ export function SidebarRequestPreviewModal({
 }
 
 const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
+  {
+    title: "Факториал",
+    description: "Сотрудники, документы и личный кабинет",
+    icon: Users,
+    color: "text-[var(--hf-status-indigo)]",
+    path: "/factorial",
+  },
+  {
+    title: "Импорт CSV",
+    description: "Загрузка кандидатов из CSV-файла (ClickUp и др.)",
+    icon: FileText,
+    color: "text-[var(--hf-status-cyan)]",
+    path: "/import",
+  },
   {
     title: "Рекрутеры и заказчики",
     description: "Добавление пользователей и настройка прав",
@@ -404,6 +439,14 @@ const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
     icon: Code2,
     color: "text-[var(--hf-status-blue)]",
     missing: true,
+  },
+  {
+    title: "Архив кандидатов",
+    description: "Теневая база: скрытые дубликаты и архив (только суперадмин)",
+    icon: Archive,
+    color: "text-[var(--hf-status-orange)]",
+    path: "/candidate-archive",
+    superadminOnly: true,
   },
 ];
 
@@ -480,23 +523,28 @@ function HrSettingsCard({
 
 function HrSettingsModal({
   canUseAdmin,
+  isSuperadmin,
   onClose,
   onNavigate,
 }: {
   canUseAdmin: boolean;
+  isSuperadmin: boolean;
   onClose: () => void;
   onNavigate: (path: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
-  const filterItems = (items: HrSettingsItem[]) =>
-    normalizedQuery
-      ? items.filter((item) =>
+  const filterItems = (items: HrSettingsItem[]) => {
+    // Суперадм-только пункты (напр. «Архив кандидатов») скрываем от остальных
+    const visible = items.filter((item) => !item.superadminOnly || isSuperadmin);
+    return normalizedQuery
+      ? visible.filter((item) =>
           `${item.title} ${item.description}`
             .toLowerCase()
             .includes(normalizedQuery),
         )
-      : items;
+      : visible;
+  };
   const orgItems = filterItems(HR_SETTINGS_ORG_ITEMS);
   const myItems = filterItems(HR_SETTINGS_MY_ITEMS);
 
@@ -507,6 +555,10 @@ function HrSettingsModal({
     }
     if (item.adminOnly && !canUseAdmin) {
       toast("Раздел доступен только администратору");
+      return;
+    }
+    if (item.superadminOnly && !isSuperadmin) {
+      toast("Раздел доступен только суперадмину");
       return;
     }
     if (item.path) {
@@ -669,8 +721,10 @@ function getBlockForPath(path: string): string | null {
   }
   if (
     [
+      "/factorial",
       "/dashboard",
       "/all-candidates",
+      "/candidate-archive",
       "/workspaces",
       "/my-funnels",
       "/form-builder",
@@ -735,6 +789,9 @@ export default function Layout() {
   const [sidebarVacancyMode, setSidebarVacancyMode] =
     useState<SidebarVacancyMode>("view");
   const routeBlock = getBlockForPath(location.pathname);
+  // На /factorial чёрное меню показывает модули брифа (Сотрудники/Документы/Кабинет);
+  // вне Факториала всё остаётся прежним.
+  const isFactorial = location.pathname.startsWith("/factorial");
   const activeNavigationBlock = routeBlock || activeBlock;
   const isHrSidebar = routeBlock === "hr";
   const [hrSidebarWidth, setHrSidebarWidth] = useState(readStoredHrSidebarWidth);
@@ -897,7 +954,8 @@ export default function Layout() {
   }, [vacancies, user]);
 
   // Notifications state
-  const [unreadCount, setUnreadCount] = useState(0);
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
+  const setUnreadCount = useNotificationStore((s) => s.setUnreadCount);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationsList, setNotificationsList] = useState<AppNotification[]>(
     [],
@@ -1176,6 +1234,9 @@ export default function Layout() {
     user?.role === "superadmin" ||
     user?.org_role === "owner" ||
     user?.org_role === "admin";
+  // Factorial: «Сотрудники» и «Документы» — только для HR/админа (и рекрутёра).
+  // Обычный сотрудник (org_role=member) видит лишь «Отпуска» и «Личный кабинет».
+  const canManageFactorialPeople = isHrSidebarAdmin || user?.org_role === "hr";
   const sidebarSearchParams = new URLSearchParams(location.search);
   const sidebarSelectedVacancyId = sidebarSearchParams.get("v");
   const isClosedFunnelsView =
@@ -1262,6 +1323,7 @@ export default function Layout() {
         {showHrSettingsModal && (
           <HrSettingsModal
             canUseAdmin={isHrSidebarAdmin}
+            isSuperadmin={user?.role === "superadmin"}
             onClose={() => setShowHrSettingsModal(false)}
             onNavigate={handleHrSettingsNavigate}
           />
@@ -1308,6 +1370,67 @@ export default function Layout() {
                 })}
               </div>
 
+              {isFactorial && (
+                <nav className="hf-hr-nav" aria-label="Factorial navigation">
+                  <div className="hf-hr-nav-list">
+                    {canManageFactorialPeople && (
+                      <>
+                        <NavLink
+                          to="/factorial/employees"
+                          className={({ isActive }) =>
+                            clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                          }
+                        >
+                          <HfSpriteIcon id="home-20" className="hf-hr-nav-icon" />
+                          Сотрудники
+                        </NavLink>
+                        <NavLink
+                          to="/factorial/files"
+                          className={({ isActive }) =>
+                            clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                          }
+                        >
+                          <HfSpriteIcon id="business-folder" className="hf-hr-nav-icon" />
+                          Документы
+                        </NavLink>
+                      </>
+                    )}
+                    <NavLink
+                      to="/factorial/time-off"
+                      className={({ isActive }) =>
+                        clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                      }
+                    >
+                      <Calendar className="hf-hr-nav-icon" strokeWidth={1.8} />
+                      Отпуска
+                    </NavLink>
+                    <NavLink
+                      to="/factorial/profile"
+                      className={() =>
+                        clsx(
+                          "hf-hr-nav-item",
+                          /\/factorial\/(profile|my-documents)/.test(
+                            location.pathname,
+                          ) && "hf-hr-nav-item-active",
+                        )
+                      }
+                    >
+                      <HfSpriteIcon id="edit-2-20" className="hf-hr-nav-icon" />
+                      Личный кабинет
+                    </NavLink>
+                    <NavLink
+                      to="/factorial/my-team"
+                      className={({ isActive }) =>
+                        clsx("hf-hr-nav-item", isActive && "hf-hr-nav-item-active")
+                      }
+                    >
+                      <Users className="hf-hr-nav-icon" strokeWidth={1.8} />
+                      Моя команда
+                    </NavLink>
+                  </div>
+                </nav>
+              )}
+              {!isFactorial && (
               <nav
                 className={clsx(
                   "hf-hr-nav",
@@ -1522,7 +1645,9 @@ export default function Layout() {
                   <span className="min-w-0 flex-1">Закрытые вакансии</span>
                 </NavLink>
               </nav>
+              )}
 
+              {!isFactorial && (
               <div
                 ref={hrFabActionsRef}
                 className="hf-hr-fab-wrap"
@@ -1579,6 +1704,7 @@ export default function Layout() {
                   <Plus className="hf-hr-fab-icon" />
                 </button>
               </div>
+              )}
 
               <div className="hf-hr-sidebar-bottom">
                 <div className="hf-hr-user-row hf-hr-bottom-row">

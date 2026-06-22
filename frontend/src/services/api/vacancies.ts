@@ -12,6 +12,7 @@ import { deduplicatedGet, debouncedMutation } from './client';
 
 export interface VacancyFilters {
   status?: VacancyStatus;
+  deleted?: boolean;
   department_id?: number;
   search?: string;
   skip?: number;
@@ -80,6 +81,7 @@ export interface ApplicationUpdate {
   notes?: string;
   rejection_reason?: string;
   next_interview_at?: string;
+  comment?: string;
 }
 
 export const getVacancies = async (filters?: VacancyFilters): Promise<Vacancy[]> => {
@@ -447,6 +449,16 @@ export const getApplicationHistory = async (
     `/vacancies/applications/${applicationId}/history`
   );
   return data;
+};
+
+export const deleteApplicationHistory = async (
+  applicationId: number,
+  historyId: number
+): Promise<void> => {
+  await debouncedMutation<void>(
+    'delete',
+    `/vacancies/applications/${applicationId}/history/${historyId}`
+  );
 };
 
 // ============================================================

@@ -1,7 +1,7 @@
 import type { MouseEventHandler } from 'react';
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Bold, Italic, List, ListOrdered, Link2, AtSign } from 'lucide-react';
 import clsx from 'clsx';
 
 const HUNTFLOW_ACTION_ICON_BY_LABEL: Record<
@@ -22,24 +22,15 @@ const HUNTFLOW_ACTION_ICON_BY_LABEL: Record<
   'Файл': { id: 'clip-usage', viewBox: '0 0 18 18', label: 'clip' },
 };
 
-const HUNTFLOW_EDITOR_ICON_BY_NAME: Record<
-  string,
-  { id: string; viewBox: string; label: string }
-> = {
-  bold: { id: 'bold-usage', viewBox: '0 0 20 20', label: 'bold' },
-  italic: { id: 'italic-usage', viewBox: '0 0 20 20', label: 'italic' },
-  'bullet-list': {
-    id: 'bullet-list-usage',
-    viewBox: '0 0 20 20',
-    label: 'bullet-list',
-  },
-  'numbered-list': {
-    id: 'numbered-list-usage',
-    viewBox: '0 0 20 20',
-    label: 'numbered-list',
-  },
-  link: { id: 'link-usage', viewBox: '0 0 20 20', label: 'link' },
-  at: { id: 'at-usage', viewBox: '0 0 20 20', label: 'at' },
+// Иконки тулбара редактора — модерн-набор lucide (заменили старые «вордовские»
+// из спрайта). Те же действия (B/I/списки/ссылка/упоминание), другой стиль.
+const EDITOR_LUCIDE_BY_NAME: Record<string, LucideIcon> = {
+  bold: Bold,
+  italic: Italic,
+  'bullet-list': List,
+  'numbered-list': ListOrdered,
+  link: Link2,
+  at: AtSign,
 };
 
 type SvgSpriteIconProps = {
@@ -59,9 +50,9 @@ function SvgSpriteIcon({ icon, className }: SvgSpriteIconProps) {
 }
 
 export function HuntflowEditorIcon({ name }: { name: string }) {
-  const icon = HUNTFLOW_EDITOR_ICON_BY_NAME[name];
-  if (!icon) return null;
-  return <SvgSpriteIcon icon={icon} className="h-[20px] w-[20px]" />;
+  const Icon = EDITOR_LUCIDE_BY_NAME[name];
+  if (!Icon) return null;
+  return <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />;
 }
 
 function HuntflowActionIcon({ label }: { label: string }) {
@@ -95,6 +86,7 @@ export type HuntflowActionChipProps = {
   loading?: boolean;
   disabled?: boolean;
   hasNotification?: boolean;
+  notificationCount?: number;
   className?: string;
 };
 
@@ -107,6 +99,7 @@ export function HuntflowActionChip({
   loading,
   disabled,
   hasNotification,
+  notificationCount,
   className,
 }: HuntflowActionChipProps) {
   return (
@@ -132,6 +125,11 @@ export function HuntflowActionChip({
         {hasNotification && (
           <span className="hf-action-chip-unavailable">
             <HuntflowUnavailableIcon />
+          </span>
+        )}
+        {!loading && typeof notificationCount === 'number' && notificationCount > 0 && (
+          <span className="hf-action-chip-badge" aria-label={`${notificationCount} новых ответов`}>
+            {notificationCount > 9 ? '9+' : notificationCount}
           </span>
         )}
       </span>

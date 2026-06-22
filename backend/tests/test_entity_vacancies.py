@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.database import (
     Entity, EntityType, EntityStatus, Vacancy, VacancyStatus,
-    VacancyApplication, ApplicationStage, User, Organization, Department
+    VacancyApplication, ApplicationStage, User, Organization, Department,
+    StageTransition
 )
 from api.services.auth import create_access_token
 
@@ -833,3 +834,62 @@ class TestVacancyStatus:
         assert len(data) == 1
         assert data[0]["vacancy_status"] == "closed"
         assert data[0]["vacancy_title"] == "Closed Position"
+
+
+# ============================================================================
+# ENTITY ACTIVITY FEED TESTS
+# ============================================================================
+
+class TestGetEntityActivity:
+    """Tests for GET /entities/{id}/activity — единая лента по вакансиям."""
+
+    async def test_activity_blocks_per_vacancy_with_history(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        candidate_entity: Entity,
+        test_vacancy: Vacancy,
+        db_session: AsyncSession,
+        org_owner,
+    ):
+        app = VacancyApplication(
+            vacancy_id=test_vacancy.id, entity_id=candidate_entity.id,
+            stage=ApplicationStage.hired, stage_order=0,
+        )
+        db_session.add(app)
+        await db_session.commit()
+        await db_session.refresh(app)
+        db_session.add(StageTransition(
+            application_id=app.id, entity_id=candidate_entity.id,
+            from_stage="offer", to_stage="hired", comment="Оффер принят",
+        ))
+        await db_session.commit()
+
+        token = create_access_token(data={"sub": str(admin_user.id)})
+        response = await client.get(
+            f"/api/entities/{candidate_entity.id}/activity",
+            headers=auth_headers(token),
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        block = data[0]
+        assert block["vacancy_id"] == test_vacancy.id
+        assert block["current_stage"] == "hired"
+        assert block["application_id"] == app.id
+        assert any(e["comment"] == "Оффер принят" for e in block["events"])
+
+    async def test_activity_empty_when_no_applications(
+        self,
+        client: AsyncClient,
+        admin_user: User,
+        candidate_entity: Entity,
+        org_owner,
+    ):
+        token = create_access_token(data={"sub": str(admin_user.id)})
+        response = await client.get(
+            f"/api/entities/{candidate_entity.id}/activity",
+            headers=auth_headers(token),
+        )
+        assert response.status_code == 200
+        assert response.json() == []

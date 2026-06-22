@@ -202,3 +202,28 @@ export const changeCandidateStatus = async (
   );
   return data;
 };
+
+export type CandidateStageHistoryEntry = {
+  id: number;
+  application_id: number;
+  vacancy_title: string | null;
+  from_stage: string | null;
+  to_stage: string;
+  changed_by: number | null;
+  changed_by_name: string | null;
+  comment: string | null;
+  created_at: string | null;
+};
+
+/**
+ * Сквозная история смены этапов кандидата по всем его откликам.
+ * Тот же лог, что и в карточке воронки, но по entity_id (для «Все кандидаты»).
+ */
+export const getCandidateStageHistory = async (
+  entityId: number,
+): Promise<CandidateStageHistoryEntry[]> => {
+  const { data } = await deduplicatedGet<CandidateStageHistoryEntry[]>(
+    `/candidates/${entityId}/stage-history`,
+  );
+  return data;
+};

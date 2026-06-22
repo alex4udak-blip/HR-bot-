@@ -131,6 +131,9 @@ async def list_entities(
                     or_(*conditions)
                 )
 
+    # Теневая база: архивные кандидаты скрыты из активного списка
+    query = query.where(Entity.is_archived.is_not(True))
+
     if type:
         query = query.where(Entity.type == type)
     if status:
@@ -155,9 +158,11 @@ async def list_entities(
                 Entity.email.ilike(f"%{identifier_term}%"),
                 Entity.phone.ilike(f"%{identifier_term}%"),
                 # For JSON arrays, use PostgreSQL's JSONB operators
-                func.jsonb_array_length(Entity.emails) > 0 and Entity.emails.op('@>')(func.jsonb_build_array(identifier_term)),
-                func.jsonb_array_length(Entity.phones) > 0 and Entity.phones.op('@>')(func.jsonb_build_array(identifier_term)),
-                func.jsonb_array_length(Entity.telegram_usernames) > 0 and Entity.telegram_usernames.op('@>')(func.jsonb_build_array(normalized_username))
+                # Поиск по JSON-массивам через @> (Python-оператор and на ClauseElement
+                # тут ронял запрос TypeError; @> сам корректно обрабатывает NULL/пустые).
+                Entity.emails.op('@>')(func.jsonb_build_array(identifier_term)),
+                Entity.phones.op('@>')(func.jsonb_build_array(identifier_term)),
+                Entity.telegram_usernames.op('@>')(func.jsonb_build_array(normalized_username))
             )
         )
     if tags:
@@ -446,6 +451,22 @@ async def create_entity(
     await db.commit()
     await db.refresh(entity)
 
+    # Теневая дедупликация: сверяем нового активного кандидата с архивом.
+    # При совпадении помечаем профиль флагом — фронт покажет баннер «Проверить».
+    hidden_duplicate_id = None
+    if entity.type == EntityType.candidate:
+        try:
+            from ...services.similarity import detect_archived_duplicate
+            hidden_duplicate_id = await detect_archived_duplicate(db, entity)
+            if hidden_duplicate_id:
+                extra = dict(entity.extra_data or {})
+                extra["hidden_duplicate_id"] = hidden_duplicate_id
+                entity.extra_data = extra
+                await db.commit()
+                await db.refresh(entity)
+        except Exception as e:
+            logger.warning(f"shadow-dedup detect failed for new entity {entity.id}: {e}")
+
     response_data = {
         "id": entity.id,
         "type": entity.type,
@@ -470,7 +491,9 @@ async def create_entity(
         "calls_count": 0,
         "expected_salary_min": entity.expected_salary_min,
         "expected_salary_max": entity.expected_salary_max,
-        "expected_salary_currency": entity.expected_salary_currency or 'RUB'
+        "expected_salary_currency": entity.expected_salary_currency or 'RUB',
+        "has_hidden_duplicate": bool(hidden_duplicate_id),
+        "hidden_duplicate_id": hidden_duplicate_id,
     }
 
     # Broadcast entity.created event
@@ -846,19 +869,20 @@ async def update_entity(
     if 'status' in update_data and data.status in STATUS_SYNC_MAP:
         new_stage = STATUS_SYNC_MAP[data.status]
         # Find active application for this entity
-        app_result = await db.execute(
+        apps = (await db.execute(
             select(VacancyApplication)
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
             .where(
                 VacancyApplication.entity_id == entity_id,
                 Vacancy.status != VacancyStatus.closed
             )
-        )
-        application = app_result.scalar()
-        if application and application.stage != new_stage:
-            application.stage = new_stage
-            application.last_stage_change_at = datetime.utcnow()
-            logger.info(f"PUT /entities/{entity_id}: Synchronized status {data.status} -> application {application.id} stage {new_stage}")
+        )).scalars().all()
+        # Синхронизируем этап ТОЛЬКО когда отклик ровно один — иначе непонятно,
+        # в какой вакансии менять этап, и можно затереть чужую воронку.
+        if len(apps) == 1 and apps[0].stage != new_stage:
+            apps[0].stage = new_stage
+            apps[0].last_stage_change_at = datetime.utcnow()
+            logger.info(f"PUT /entities/{entity_id}: Synchronized status {data.status} -> application {apps[0].id} stage {new_stage}")
 
     await db.commit()
     await db.refresh(entity)
@@ -1161,19 +1185,19 @@ async def update_entity_status(
     if data.status in STATUS_SYNC_MAP:
         new_stage = STATUS_SYNC_MAP[data.status]
         # Find active application for this entity
-        app_result = await db.execute(
+        apps = (await db.execute(
             select(VacancyApplication)
             .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
             .where(
                 VacancyApplication.entity_id == entity_id,
                 Vacancy.status != VacancyStatus.closed
             )
-        )
-        application = app_result.scalar()
-        if application and application.stage != new_stage:
-            application.stage = new_stage
-            application.last_stage_change_at = datetime.utcnow()
-            logger.info(f"Synchronized entity {entity_id} status {data.status} to application {application.id} stage {new_stage}")
+        )).scalars().all()
+        # Только при единственном отклике (см. PUT /entities) — иначе не трогаем.
+        if len(apps) == 1 and apps[0].stage != new_stage:
+            apps[0].stage = new_stage
+            apps[0].last_stage_change_at = datetime.utcnow()
+            logger.info(f"Synchronized entity {entity_id} status {data.status} to application {apps[0].id} stage {new_stage}")
 
     await db.commit()
     await db.refresh(entity)
@@ -1291,7 +1315,7 @@ async def get_entities_stats_by_type(
 
     result = await db.execute(
         select(Entity.type, func.count(Entity.id))
-        .where(Entity.org_id == org.id)
+        .where(Entity.org_id == org.id, Entity.is_archived.is_not(True))
         .group_by(Entity.type)
     )
     stats = {row[0].value: row[1] for row in result.all()}
@@ -1310,7 +1334,9 @@ async def get_entities_stats_by_status(
     if not org:
         return {}
 
-    query = select(Entity.status, func.count(Entity.id)).where(Entity.org_id == org.id)
+    query = select(Entity.status, func.count(Entity.id)).where(
+        Entity.org_id == org.id, Entity.is_archived.is_not(True)
+    )
     if type:
         query = query.where(Entity.type == type)
     query = query.group_by(Entity.status)
@@ -1318,3 +1344,431 @@ async def get_entities_stats_by_status(
     result = await db.execute(query)
     stats = {row[0].value: row[1] for row in result.all()}
     return stats
+
+
+# ============================================================
+# Теневая база (архив): список для суперадмина + действия архивации
+# ============================================================
+
+@router.get("/archive/list")
+async def list_archived_candidates(
+    q: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Теневая база: список архивных кандидатов. Только суперадмин."""
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Архив доступен только суперадмину")
+
+    base = select(Entity).where(
+        Entity.is_archived.is_(True),
+        Entity.type == EntityType.candidate,
+    )
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        base = base.where(or_(
+            Entity.name.ilike(like),
+            Entity.email.ilike(like),
+            Entity.phone.ilike(like),
+            Entity.position.ilike(like),
+        ))
+
+    count_result = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = count_result.scalar() or 0
+
+    rows = await db.execute(
+        base.order_by(Entity.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    items = []
+    for e in rows.scalars().all():
+        extra = e.extra_data or {}
+        items.append({
+            "id": e.id,
+            "name": e.name,
+            "email": e.email,
+            "phone": e.phone,
+            "position": e.position,
+            "company": e.company,
+            "status": e.status.value if e.status else None,
+            "tags": e.tags or [],
+            "photo_url": extra.get("photo_url"),
+            "source": extra.get("source"),
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        })
+    return {"items": items, "total": total, "page": page, "per_page": per_page}
+
+
+@router.post("/{entity_id}/archive")
+async def archive_entity(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """«В архив»: убрать кандидата в теневую базу (скрыть из активных списков).
+    Доступно тому, кто имеет доступ к карточке."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org and current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    has_access = await check_entity_access(entity, current_user, entity.org_id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(403, "No access to this candidate")
+
+    entity.is_archived = True
+    await db.commit()
+    # Кандидат исчезает из активных списков — уведомляем клиентов
+    await broadcast_entity_deleted(entity.org_id, entity.id)
+    return {"success": True, "is_archived": True}
+
+
+@router.post("/{entity_id}/unarchive")
+async def unarchive_entity(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Вернуть кандидата из архива в активную базу. Только суперадмин."""
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Только суперадмин может возвращать из архива")
+
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    entity.is_archived = False
+    await db.commit()
+    await broadcast_entity_updated(entity.org_id, entity.id)
+    return {"success": True, "is_archived": False}
+
+
+@router.post("/archive/rescan")
+async def rescan_active_duplicates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Разовый прогон детекта по ВСЕМ активным кандидатам против всех остальных
+    (активные + архив). Детект-на-создании покрывает только новых; этот прогон
+    помечает уже существующих. Проставляет extra_data.hidden_duplicate_id обоим
+    профилям пары — на карточках появится баннер «Проверить». Только суперадмин.
+    """
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Только для суперадмина")
+    org = await get_user_org(current_user, db)
+
+    from ...services.similarity import (
+        normalize_email, normalize_phone, normalize_telegram,
+        is_matchable_telegram, looks_like_person_name, normalize_source_url,
+    )
+
+    # 1) ВСЕ кандидаты org (активные + архив) — грузим заранее, чтобы посчитать
+    # частоту telegram-значений и отсеять мусорные ярлыки источника
+    # («telegram», «hh_b2b», «hh_news_hr»), из-за которых десятки РАЗНЫХ людей
+    # матчатся друг с другом в один ложный кластер.
+    all_q = select(
+        Entity.id, Entity.name, Entity.email, Entity.phone,
+        Entity.telegram_usernames, Entity.extra_data,
+    ).where(Entity.type == EntityType.candidate)
+    if org is not None:
+        all_q = all_q.where(Entity.org_id == org.id)
+    all_rows = (await db.execute(all_q)).all()
+
+    tg_freq: dict = {}
+    for _cid, _cn, _ce, _cp, ctg, _cx in all_rows:
+        for t in (ctg or []):
+            k = normalize_telegram(t)
+            if k:
+                tg_freq[k] = tg_freq.get(k, 0) + 1
+
+    def _keys(name, email, phone, tg, extra):
+        ks = []
+        # ФИО как ключ — только если это похоже на имя человека, а не на должность
+        # («Flutter Developer, Минск, 25 лет») и не placeholder.
+        if looks_like_person_name(name):
+            ks.append("n:" + " ".join((name or "").strip().lower().split()))
+        ne = normalize_email(email or "")
+        if ne:
+            ks.append("e:" + ne)
+        d = normalize_phone(phone or "")
+        if len(d) >= 10:
+            ks.append("p:" + d[-10:])
+        for t in (tg or []):
+            if is_matchable_telegram(t, tg_freq):
+                ks.append("t:" + normalize_telegram(t))
+        # source_url резюме (hh) — стабильный ключ: ловит один и тот же профиль,
+        # добавленный дважды, когда контакты скрыты и имя — заглушка-должность.
+        ex = extra if isinstance(extra, dict) else {}
+        sk = normalize_source_url(ex.get("source_url") or ex.get("source_key") or "")
+        if sk:
+            ks.append("s:" + sk)
+        return ks
+
+    key_ids: dict = {}
+    names: dict = {}
+    for cid, cname, cemail, cphone, ctg, cx in all_rows:
+        names[cid] = cname
+        for k in _keys(cname, cemail, cphone, ctg, cx):
+            key_ids.setdefault(k, []).append(cid)
+    # key_ids может оказаться пустым — это нормально: ниже всё равно снимем
+    # устаревшие авто-флаги (reconcile), поэтому раннего выхода нет.
+
+    # 2) Активные кандидаты — каждому ищем дубль (активный или архивный), кроме self
+    act_q = select(Entity).where(
+        Entity.is_archived.is_not(True), Entity.type == EntityType.candidate
+    )
+    if org is not None:
+        act_q = act_q.where(Entity.org_id == org.id)
+    actives = (await db.execute(act_q)).scalars().all()
+
+    matches = []
+    scanned = 0
+    changed = 0
+    cleared = 0
+    for e in actives:
+        scanned += 1
+        extra = e.extra_data if isinstance(e.extra_data, dict) else {}
+        dismissed = set()
+        for x in (extra.get("dismissed_duplicate_ids") or []):
+            try:
+                dismissed.add(int(x))
+            except (TypeError, ValueError):
+                pass
+
+        dup_id = None
+        for k in _keys(e.name, e.email, e.phone, e.telegram_usernames, e.extra_data):
+            for cand in key_ids.get(k, []):
+                if cand != e.id and cand not in dismissed:
+                    dup_id = cand
+                    break
+            if dup_id is not None:
+                break
+
+        cur = extra.get("hidden_duplicate_id")
+        if dup_id is not None:
+            matches.append({
+                "id": e.id,
+                "name": e.name,
+                "duplicate_id": dup_id,
+                "duplicate_name": names.get(dup_id),
+            })
+            if cur != dup_id:
+                new_extra = dict(extra)
+                new_extra["hidden_duplicate_id"] = dup_id
+                e.extra_data = new_extra
+                changed += 1
+        elif cur is not None:
+            # Реального дубля больше нет (напр. ушло ложное совпадение по мусорному
+            # telegram) — снимаем устаревший авто-флаг, чтобы баннер исчез.
+            new_extra = dict(extra)
+            new_extra.pop("hidden_duplicate_id", None)
+            e.extra_data = new_extra
+            cleared += 1
+
+    if changed or cleared:
+        await db.commit()
+    return {
+        "scanned": scanned,
+        "flagged": len(matches),
+        "newly_flagged": changed,
+        "cleared": cleared,
+        "matches": matches,
+    }
+
+
+@router.post("/archive/find-duplicates")
+async def find_archive_duplicates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Найти дубликаты ВНУТРИ архива: группы архивных кандидатов, совпадающих
+    по email / телефону (10 цифр) / telegram. Возвращает группы из ≥2 профилей.
+    Только суперадмин."""
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Только для суперадмина")
+    org = await get_user_org(current_user, db)
+
+    from ...services.similarity import (
+        normalize_email, normalize_phone, normalize_telegram, is_matchable_telegram,
+        normalize_source_url,
+    )
+
+    q = select(
+        Entity.id, Entity.name, Entity.email, Entity.phone,
+        Entity.telegram_usernames, Entity.position, Entity.extra_data,
+    ).where(Entity.is_archived.is_(True), Entity.type == EntityType.candidate)
+    if org is not None:
+        q = q.where(Entity.org_id == org.id)
+    rows = (await db.execute(q)).all()
+
+    # Частота telegram-значений: мусорные ярлыки источника («telegram», «hh_b2b»)
+    # и прочие «общие» хэндлы НЕ матчим — иначе разные люди слипаются в одну группу.
+    tg_freq: dict = {}
+    for _r in rows:
+        for t in (_r[4] or []):
+            k = normalize_telegram(t)
+            if k:
+                tg_freq[k] = tg_freq.get(k, 0) + 1
+
+    # Union-find: связываем профили, делящие хотя бы один идентификатор
+    parent: dict = {}
+
+    def find(x):
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    info: dict = {}
+    key_to_id: dict = {}
+    for rid, name, email, phone, tg, position, extra in rows:
+        parent.setdefault(rid, rid)
+        info[rid] = {
+            "id": rid, "name": name, "email": email, "phone": phone,
+            "telegram": (tg[0] if tg else None), "position": position,
+        }
+        keys = []
+        ne = normalize_email(email or "")
+        if ne:
+            keys.append("e:" + ne)
+        d = normalize_phone(phone or "")
+        if len(d) >= 10:
+            keys.append("p:" + d[-10:])
+        for t in (tg or []):
+            if is_matchable_telegram(t, tg_freq):
+                keys.append("t:" + normalize_telegram(t))
+        # source_url резюме (hh) — стабильный ключ (без волатильных query hh)
+        ex = extra if isinstance(extra, dict) else {}
+        sk = normalize_source_url(ex.get("source_url") or ex.get("source_key") or "")
+        if sk:
+            keys.append("s:" + sk)
+        for k in keys:
+            if k in key_to_id:
+                union(key_to_id[k], rid)
+            else:
+                key_to_id[k] = rid
+
+    groups_map: dict = {}
+    for rid in info:
+        groups_map.setdefault(find(rid), []).append(info[rid])
+    groups = [m for m in groups_map.values() if len(m) >= 2]
+    groups.sort(key=lambda m: -len(m))
+
+    # Помечаем участников групп флагом hidden_duplicate_id → при открытии карточки
+    # архивного появится баннер сравнения (как у активных). Каждый указывает на
+    # «соседа» по группе (первый — на второго, остальные — на первого).
+    member_ids = [m["id"] for g in groups for m in g]
+    if member_ids:
+        ents = (await db.execute(
+            select(Entity).where(Entity.id.in_(member_ids))
+        )).scalars().all()
+        by_id = {e.id: e for e in ents}
+        changed = False
+        for g in groups:
+            ids = [m["id"] for m in g]
+            for idx, mid in enumerate(ids):
+                sibling = ids[1] if idx == 0 else ids[0]
+                ent = by_id.get(mid)
+                if ent is None:
+                    continue
+                extra = ent.extra_data if isinstance(ent.extra_data, dict) else {}
+                dismissed = set()
+                for x in (extra.get("dismissed_duplicate_ids") or []):
+                    try:
+                        dismissed.add(int(x))
+                    except (TypeError, ValueError):
+                        pass
+                if sibling in dismissed or extra.get("hidden_duplicate_id") == sibling:
+                    continue
+                ne = dict(extra)
+                ne["hidden_duplicate_id"] = sibling
+                ent.extra_data = ne
+                changed = True
+        if changed:
+            await db.commit()
+
+    return {
+        "groups": groups,
+        "total_groups": len(groups),
+        "total_dupes": sum(len(g) for g in groups),
+    }
+
+
+class _MergeArchivedRequest(BaseModel):
+    source_id: int
+
+
+@router.post("/{entity_id}/merge-archived")
+async def merge_archived_duplicate(
+    entity_id: int,
+    body: _MergeArchivedRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Объединить два АРХИВНЫХ профиля: source_id вливается в survivor (entity_id),
+    survivor остаётся в архиве. Только суперадмин."""
+    current_user = await db.merge(current_user)
+    if current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "Только для суперадмина")
+
+    survivor = (await db.execute(select(Entity).where(Entity.id == entity_id))).scalar_one_or_none()
+    source = (await db.execute(select(Entity).where(Entity.id == body.source_id))).scalar_one_or_none()
+    if not survivor or not survivor.is_archived:
+        raise HTTPException(404, "Кандидат-приёмник не в архиве")
+    if not source or not source.is_archived:
+        raise HTTPException(404, "Кандидат-источник не в архиве")
+    if survivor.id == source.id:
+        raise HTTPException(400, "Нельзя объединить профиль сам с собой")
+
+    from ...services.similarity import similarity_service
+    await similarity_service.merge_entities(db=db, source_entity=source, target_entity=survivor)
+    return {"success": True, "survivor_id": survivor.id}
+
+
+@router.post("/{entity_id}/detect-duplicate")
+async def detect_duplicate_now(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Живой поиск дубля для кандидата (вызывается при ОТКРЫТИИ карточки) —
+    ловит уже существующих дублей без ручного прогона. Помечает обе стороны
+    (detect ставит обратную ссылку), возвращает id найденного дубля или null."""
+    current_user = await db.merge(current_user)
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+    has_access = await check_entity_access(entity, current_user, entity.org_id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(403, "No access to this candidate")
+
+    from ...services.similarity import detect_archived_duplicate
+    dup_id = await detect_archived_duplicate(db, entity)
+    if dup_id:
+        extra = dict(entity.extra_data) if isinstance(entity.extra_data, dict) else {}
+        if extra.get("hidden_duplicate_id") != dup_id:
+            extra["hidden_duplicate_id"] = dup_id
+            entity.extra_data = extra
+        await db.commit()
+    return {"duplicate_id": dup_id}

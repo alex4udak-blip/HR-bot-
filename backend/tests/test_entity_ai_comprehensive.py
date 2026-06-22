@@ -25,7 +25,7 @@ class TestEntityAIServiceInitialization:
         service = EntityAIService()
 
         assert service._client is None
-        assert service.model == "claude-sonnet-4-20250514"
+        assert service.model == "claude-sonnet-4-6"
 
     def test_client_property_lazy_loads(self):
         """Test that client property lazy loads AsyncAnthropic."""

@@ -219,6 +219,7 @@ async def process_parse_job(job_id: int):
                 expected_salary_min=resume.salary_min,
                 expected_salary_max=resume.salary_max,
                 expected_salary_currency=resume.salary_currency or 'RUB',
+                is_archived=True,  # bulk-парсер (async job) → теневая база (архив)
             )
 
             # Handle telegram

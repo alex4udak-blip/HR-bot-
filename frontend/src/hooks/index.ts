@@ -54,3 +54,9 @@ export type {
   UsePrometheusSyncReturn,
   UsePrometheusSingleSyncReturn,
 } from './usePrometheusSync';
+
+export { useHorizontalScroll } from './useHorizontalScroll';
+export type {
+  UseHorizontalScrollOptions,
+  UseHorizontalScrollReturn,
+} from './useHorizontalScroll';

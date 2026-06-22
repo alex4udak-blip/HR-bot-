@@ -34,13 +34,15 @@ APPLICATION_STAGE_LABELS = {
     # Единые лейблы стадий — синхронизированы с KANBAN_STATUS_LABELS
     # (отображаются на /all-candidates). Не разводить разные наборы.
     "applied": "Новый",
-    "screening": "Скрининг",
-    "phone_screen": "Практика",
-    "interview": "Тех-практика",
-    "assessment": "ИС",
-    "offer": "Оффер",
-    "hired": "Принят",
-    "rejected": "Отклонён",
+    "screening": "Выполняет ТЗ",
+    "phone_screen": "Интервью с HR",
+    "interview": "Интервью с заказчиком",
+    "assessment": "Принятие решения",
+    "offer": "Выставлен оффер",
+    "hired": "Оффер принят",
+    "probation": "Практика",
+    "transferred": "Перешёл в отдел",
+    "rejected": "Отказ",
     "withdrawn": "Отозван",
 }
 
@@ -384,9 +386,11 @@ async def merge_candidates(
         raise HTTPException(status_code=404, detail="One or both candidates not found")
 
     try:
-        from api.services.similarity import merge_entities
-        result = await merge_entities(source_id, target_id, db)
-        return {"success": True, "merged_into": target_id, "details": result}
+        from ..services.similarity import similarity_service
+        merged = await similarity_service.merge_entities(
+            db=db, source_entity=source, target_entity=target
+        )
+        return {"success": True, "merged_into": target_id, "details": {"merged_entity_id": merged.id}}
     except Exception as e:
         logger.error(f"Merge failed: {e}")
         raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")

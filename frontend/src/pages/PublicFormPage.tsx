@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { getPublicForm, submitPublicForm, submitPublicFormWithFiles } from '@/services/api/forms';
-import type { PublicFormData, FormField } from '@/services/api/forms';
+import { getPublicForm, submitPublicForm, submitPublicFormWithFiles, getPublicFormByToken, submitPublicFormByToken } from '@/services/api/forms';
+import type { PublicFormData } from '@/services/api/forms';
+import { FieldRenderer } from '@/features/forms/FieldRenderer';
 
 /**
  * PublicFormPage - Light-themed page for candidates to fill out a form.
  * This page is accessible WITHOUT authentication.
  */
 export default function PublicFormPage() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, token } = useParams<{ slug?: string; token?: string }>();
   const [form, setForm] = useState<PublicFormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -19,16 +20,18 @@ export default function PublicFormPage() {
   const [fileUploads, setFileUploads] = useState<Record<string, File>>({});
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug && !token) return;
     (async () => {
       try {
-        const data = await getPublicForm(slug);
+        const data = token ? await getPublicFormByToken(token) : await getPublicForm(slug!);
         setForm(data);
         // Initialize default values
         const defaults: Record<string, unknown> = {};
         for (const field of data.fields) {
           if (field.type === 'multiselect') {
             defaults[field.id] = [];
+          } else if (field.type === 'scale') {
+            defaults[field.id] = null;
           } else {
             defaults[field.id] = '';
           }
@@ -40,7 +43,7 @@ export default function PublicFormPage() {
         setLoading(false);
       }
     })();
-  }, [slug]);
+  }, [slug, token]);
 
   const validate = (): boolean => {
     if (!form) return false;
@@ -66,15 +69,17 @@ export default function PublicFormPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!slug || !validate()) return;
+    if ((!slug && !token) || !validate()) return;
 
     setSubmitting(true);
     try {
       const files = Object.values(fileUploads);
-      if (files.length > 0) {
-        await submitPublicFormWithFiles(slug, values, files);
+      if (token) {
+        await submitPublicFormByToken(token, values);
+      } else if (files.length > 0) {
+        await submitPublicFormWithFiles(slug!, values, files);
       } else {
-        await submitPublicForm(slug, values);
+        await submitPublicForm(slug!, values);
       }
       setSubmitted(true);
     } catch (err: unknown) {
@@ -116,6 +121,40 @@ export default function PublicFormPage() {
   }
 
   if (!form) return null;
+
+  // Анкета уже заполнена (рекрутёр открыл по ссылке) — показываем ответы кандидата
+  // read-only, а не пустую форму.
+  if (form.already_submitted && form.answers) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
+          <div className="text-center mb-8">
+            <div className="text-sm font-semibold text-blue-600 tracking-wide uppercase mb-2">Enceladus</div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{form.title}</h1>
+            <p className="text-green-600 mt-2 text-sm">✓ Анкета заполнена</p>
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 space-y-4">
+            {form.fields.map(field => {
+              const raw = form.answers?.[field.id];
+              const text = Array.isArray(raw) ? raw.join(', ') : (raw == null || raw === '' ? '—' : String(raw));
+              const isUrl = /^https?:\/\//i.test(text);
+              return (
+                <div key={field.id}>
+                  <div className="text-sm text-gray-500">{field.label}</div>
+                  {isUrl ? (
+                    <a href={text} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{text}</a>
+                  ) : (
+                    <div className="text-gray-900 break-words whitespace-pre-wrap">{text}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-center text-xs text-gray-400 mt-6">Powered by Enceladus</p>
+        </div>
+      </div>
+    );
+  }
 
   if (submitted) {
     return (
@@ -159,7 +198,7 @@ export default function PublicFormPage() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 space-y-6">
           {form.fields.map(field => (
-            <FormFieldRenderer
+            <FieldRenderer
               key={field.id}
               field={field}
               value={values[field.id]}
@@ -193,200 +232,6 @@ export default function PublicFormPage() {
           Powered by Enceladus
         </p>
       </div>
-    </div>
-  );
-}
-
-// ============================================================
-// Field renderer
-// ============================================================
-
-function FormFieldRenderer({
-  field,
-  value,
-  onChange,
-  onFileChange,
-  selectedFile,
-  error,
-}: {
-  field: FormField;
-  value: unknown;
-  onChange: (val: unknown) => void;
-  onFileChange?: (file: File | null) => void;
-  selectedFile?: File | null;
-  error?: string;
-}) {
-  const inputClasses = `w-full px-4 py-2.5 border rounded-xl text-gray-900 placeholder-gray-400 outline-none transition-colors focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 ${
-    error ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-  }`;
-
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-        {field.label}
-        {field.required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-
-      {field.type === 'text' && (
-        <input
-          type="text"
-          value={String(value || '')}
-          onChange={e => onChange(e.target.value)}
-          placeholder={field.placeholder}
-          className={inputClasses}
-        />
-      )}
-
-      {field.type === 'email' && (
-        <input
-          type="email"
-          value={String(value || '')}
-          onChange={e => onChange(e.target.value)}
-          placeholder={field.placeholder || 'email@example.com'}
-          className={inputClasses}
-        />
-      )}
-
-      {field.type === 'phone' && (
-        <input
-          type="tel"
-          value={String(value || '')}
-          onChange={e => onChange(e.target.value)}
-          placeholder={field.placeholder || '+7 (999) 123-45-67'}
-          className={inputClasses}
-        />
-      )}
-
-      {field.type === 'textarea' && (
-        <textarea
-          value={String(value || '')}
-          onChange={e => onChange(e.target.value)}
-          placeholder={field.placeholder}
-          rows={4}
-          className={inputClasses + ' resize-y'}
-        />
-      )}
-
-      {field.type === 'select' && (
-        <select
-          value={String(value || '')}
-          onChange={e => onChange(e.target.value)}
-          className={inputClasses}
-        >
-          <option value="">-- Выберите --</option>
-          {(field.options || []).map(opt => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
-      )}
-
-      {field.type === 'radio' && (
-        <div className="space-y-2 mt-1">
-          {(field.options || []).map(opt => (
-            <label key={opt} className="flex items-center gap-3 cursor-pointer group">
-              <input
-                type="radio"
-                name={field.id}
-                value={opt}
-                checked={value === opt}
-                onChange={() => onChange(opt)}
-                className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-              />
-              <span className="text-gray-700 group-hover:text-gray-900 transition-colors">{opt}</span>
-            </label>
-          ))}
-        </div>
-      )}
-
-      {field.type === 'multiselect' && (
-        <div className="space-y-2 mt-1">
-          {(field.options || []).map(opt => {
-            const selected = Array.isArray(value) ? value as string[] : [];
-            const isChecked = selected.includes(opt);
-            return (
-              <label key={opt} className="flex items-center gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={isChecked}
-                  onChange={() => {
-                    if (isChecked) {
-                      onChange(selected.filter(v => v !== opt));
-                    } else {
-                      onChange([...selected, opt]);
-                    }
-                  }}
-                  className="w-4 h-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500"
-                />
-                <span className="text-gray-700 group-hover:text-gray-900 transition-colors">{opt}</span>
-              </label>
-            );
-          })}
-        </div>
-      )}
-
-      {field.type === 'url' && (
-        <input
-          type="url"
-          value={String(value || '')}
-          onChange={e => onChange(e.target.value)}
-          placeholder={field.placeholder || 'https://...'}
-          className={inputClasses}
-        />
-      )}
-
-      {field.type === 'file' && (
-        <div className="mt-1">
-          {selectedFile ? (
-            <div className="flex items-center gap-3 px-4 py-3 border border-gray-300 rounded-xl bg-gray-50">
-              <svg className="w-6 h-6 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-900 truncate">{selectedFile.name}</p>
-                <p className="text-xs text-gray-500">{(selectedFile.size / 1024 / 1024).toFixed(1)} МБ</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onChange('');
-                  onFileChange?.(null);
-                }}
-                className="text-gray-400 hover:text-red-500 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ) : (
-            <label className="flex items-center justify-center w-full px-4 py-6 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors">
-              <div className="text-center">
-                <svg className="w-8 h-8 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                <span className="text-sm text-gray-500">Нажмите для выбора файла</span>
-                <span className="block text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG — до 10 МБ</span>
-              </div>
-              <input
-                type="file"
-                className="hidden"
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                onChange={e => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    onChange(file.name);
-                    onFileChange?.(file);
-                  }
-                }}
-              />
-            </label>
-          )}
-        </div>
-      )}
-
-      {error && (
-        <p className="text-red-500 text-xs mt-1">{error}</p>
-      )}
     </div>
   );
 }

@@ -98,6 +98,8 @@ const CsvImportPage = lazyWithRetry(() => import('@/pages/CsvImportPage'));
 const TimeOffPage = lazyWithRetry(() => import('@/pages/TimeOffPage'));
 const BlockersPage = lazyWithRetry(() => import('@/pages/BlockersPage'));
 const HRReportsPage = lazyWithRetry(() => import('@/pages/HRReportsPage'));
+const FactorialModule = lazyWithRetry(() => import('@/factorial/FactorialModule'));
+const CandidateArchivePage = lazyWithRetry(() => import('@/pages/CandidateArchivePage'));
 
 // Loading fallback component for Suspense
 function PageLoader() {
@@ -173,6 +175,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/invite/:token" element={<InvitePage />} />
         <Route path="/form/:slug" element={<Suspense fallback={<PageLoader />}><PublicFormPage /></Suspense>} />
+        <Route path="/form/d/:token" element={<Suspense fallback={<PageLoader />}><PublicFormPage /></Suspense>} />
         <Route
           path="/"
           element={
@@ -197,6 +200,7 @@ export default function App() {
           <Route path="timeoff" element={<Suspense fallback={<PageLoader />}><TimeOffPage /></Suspense>} />
           <Route path="blockers" element={<Suspense fallback={<PageLoader />}><BlockersPage /></Suspense>} />
           <Route path="my-profile" element={<Suspense fallback={<PageLoader />}><EmployeePortalPage /></Suspense>} />
+          <Route path="factorial/*" element={<Suspense fallback={<PageLoader />}><FactorialModule /></Suspense>} />
 
           {/* HR routes — superadmin, owner, admin, hr (recruiter like Мария) */}
           {/* /candidates and /candidate-database removed — use /all-candidates */}
@@ -235,6 +239,7 @@ export default function App() {
 
           {/* Superadmin only */}
           <Route path="users" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><UsersPage /></RoleRoute></Suspense>} />
+          <Route path="candidate-archive" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><CandidateArchivePage /></RoleRoute></Suspense>} />
           <Route path="admin" element={<Navigate to="/admin/simulator" replace />} />
           <Route path="admin/simulator" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['superadmin']}><AdminSimulatorPage /></RoleRoute></Suspense>} />
           {/* Catch-all for unknown routes */}

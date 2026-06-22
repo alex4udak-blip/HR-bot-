@@ -11,6 +11,25 @@ export default {
   theme: {
     extend: {
       colors: {
+        /* ── Factorial 1:1 port tokens (уникальные ключи; визуально под .factorial-root) ── */
+        'app-bg': '#F4F4F5',
+        'sidebar-hover': 'rgba(5,38,87,0.04)',
+        'sidebar-active': 'rgba(5,38,87,0.06)',
+        'sidebar-muted': '#6B7280',
+        primary: { DEFAULT: '#E61A42', hover: '#CC0D38', focus: '#B30930' },
+        'logo-orange': '#F5A51C',
+        'text-primary': '#0D1626',
+        'text-secondary': '#475569',
+        'text-muted': '#94A3B8',
+        'status-active-bg': '#F3F4F6',
+        'status-active-text': '#374151',
+        'status-progress': '#10B981',
+        'status-overdue': '#EF4444',
+        'status-pending': '#F59E0B',
+        'card-translucent': 'rgba(255,255,255,0.6)',
+        'card-border-soft': 'rgba(15,46,87,0.1)',
+        border: { DEFAULT: '#E5E7EB', hover: '#D1D5DB' },
+        /* ── существующие токены HR-bot ── */
         dark: {
           50: 'var(--tw-dark-50)',
           100: 'var(--tw-dark-100)',
@@ -67,6 +86,9 @@ export default {
         'hf-body': 'var(--hf-workspace-bg)',
       },
       fontSize: {
+        /* Factorial scale (namespaced, чтобы не переопределять дефолт Tailwind на хосте) */
+        'fx-xs': ['12px', '1.4'], 'fx-sm': ['13px', '1.5'], 'fx-base': ['14px', '1.5'], 'fx-lg': ['16px', '1.5'],
+        'fx-xl': ['18px', '1.4'], 'fx-2xl': ['20px', '1.3'], 'fx-3xl': ['24px', '1.25'], 'fx-4xl': ['32px', '1.2'],
         'hf-4xs': ['11px', '14px'],
         'hf-3xs': ['12px', '16px'],
         'hf-xxs': ['14px', '20px'],
@@ -84,16 +106,26 @@ export default {
         'hf-3xl': '32px', 'hf-4xl': '40px', 'hf-5xl': '48px',
       },
       borderRadius: {
+        /* Factorial radii: card/pill уникальны (as-is); sm/md/lg под fx- (не трогаем дефолт) */
+        'fx-sm': '6px', 'fx-md': '8px', 'fx-lg': '10px', 'card': '16px', 'pill': '9999px',
         'hf-xxs': '2px', 'hf-xs': '4px', 'hf-s': '8px', 'hf-m': '12px',
         'hf-l': '16px', 'hf-xl': '20px', 'hf-xxl': '24px',
         'hf-pill': '999px',
       },
       boxShadow: {
+        'card':     '0 2px 20px rgba(13,22,38,0.04)',
+        'card-hover': '0 4px 24px rgba(13,22,38,0.08)',
+        'drawer':   '-2px 0 16px rgba(0,0,0,0.04)',
         'hf-card':     'var(--hf-shadow-card)',
         'hf-card-lg':  'var(--hf-shadow-card-lg)',
         'hf-dropdown': 'var(--hf-shadow-dropdown)',
       },
+      backgroundImage: {
+        'fx-love-banner': 'linear-gradient(to right, rgba(245,165,28,0.3), rgba(229,25,67,0.3), rgba(85,150,246,0.3))',
+        'fx-logo-gradient': 'linear-gradient(135deg, #F5A51C 0%, #E61A42 100%)',
+      },
       fontFamily: {
+        'fx-sans': ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'],
         'hf-body': ['var(--hf-font-body)'],
       },
       backdropBlur: {

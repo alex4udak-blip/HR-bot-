@@ -214,6 +214,42 @@ async def ensure_shadow_columns():
             await conn.execute(text('ALTER TABLE project_tasks ADD COLUMN blocker_id INTEGER REFERENCES blockers(id) ON DELETE SET NULL'))
             await conn.execute(text('CREATE INDEX ix_task_blocker ON project_tasks (blocker_id)'))
 
+        # Org chart (оргсхема): org_units table + employees.org_unit_id / manager_id.
+        # Их добавляет init_database(), но на проде он может не дойти до этого шага —
+        # дублируем в safety-net, иначе SELECT employees падает (500).
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'org_units')\"
+        ))
+        if not result.scalar():
+            print('Creating org_units table...')
+            await conn.execute(text('''
+                CREATE TABLE org_units (
+                    id SERIAL PRIMARY KEY,
+                    org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    parent_id INTEGER REFERENCES org_units(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    color VARCHAR(20),
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT now()
+                )
+            '''))
+            await conn.execute(text('CREATE INDEX ix_org_units_org_id ON org_units (org_id)'))
+            await conn.execute(text('CREATE INDEX ix_org_units_parent_id ON org_units (parent_id)'))
+
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'org_unit_id')\"
+        ))
+        if not result.scalar():
+            print('Adding org_unit_id column to employees...')
+            await conn.execute(text('ALTER TABLE employees ADD COLUMN org_unit_id INTEGER REFERENCES org_units(id) ON DELETE SET NULL'))
+
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'employees' AND column_name = 'manager_id')\"
+        ))
+        if not result.scalar():
+            print('Adding manager_id column to employees...')
+            await conn.execute(text('ALTER TABLE employees ADD COLUMN manager_id INTEGER REFERENCES employees(id) ON DELETE SET NULL'))
+
         # Seed default email templates for all orgs
         result = await conn.execute(text('SELECT id FROM organizations'))
         org_ids = [r[0] for r in result.fetchall()]
@@ -251,6 +287,38 @@ async def ensure_shadow_columns():
                         '[]'::json, now(), now())
                 \"\"\"), {'oid': oid})
 
+        # form_dispatches: персональная отправка анкеты кандидату
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'form_dispatches')\"
+        ))
+        if not result.scalar():
+            print('Creating form_dispatches table...')
+            await conn.execute(text('''
+                CREATE TABLE form_dispatches (
+                    id SERIAL PRIMARY KEY,
+                    form_id INTEGER NOT NULL REFERENCES form_templates(id) ON DELETE CASCADE,
+                    entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    token VARCHAR(64) NOT NULL UNIQUE,
+                    status VARCHAR(20) DEFAULT 'sent',
+                    submission_id INTEGER REFERENCES form_submissions(id) ON DELETE SET NULL,
+                    seen_by_recruiter BOOLEAN DEFAULT false,
+                    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    created_at TIMESTAMP DEFAULT now(),
+                    opened_at TIMESTAMP,
+                    submitted_at TIMESTAMP
+                )
+            '''))
+            await conn.execute(text('CREATE INDEX ix_form_dispatch_entity ON form_dispatches (entity_id)'))
+            await conn.execute(text('CREATE INDEX ix_form_dispatch_token ON form_dispatches (token)'))
+
+        # form_submissions.dispatch_id
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'form_submissions' AND column_name = 'dispatch_id')\"
+        ))
+        if not result.scalar():
+            print('Adding dispatch_id column to form_submissions...')
+            await conn.execute(text('ALTER TABLE form_submissions ADD COLUMN dispatch_id INTEGER REFERENCES form_dispatches(id) ON DELETE SET NULL'))
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection
@@ -273,6 +341,79 @@ async def ensure_shadow_columns():
             print('Adding pending_review value to vacancystatus enum...')
             await raw_conn.execute(text(\"ALTER TYPE vacancystatus ADD VALUE 'pending_review'\"))
             print('Added pending_review to vacancystatus enum')
+
+        # Add 'reserve' to applicationstage enum (этап «Резерв»)
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'reserve' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'applicationstage'))\"
+        ))
+        if not result.scalar():
+            print('Adding reserve value to applicationstage enum...')
+            await raw_conn.execute(text(\"ALTER TYPE applicationstage ADD VALUE 'reserve'\"))
+            print('Added reserve to applicationstage enum')
+
+        # Add 'reserve' to entitystatus enum
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'reserve' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'entitystatus'))\"
+        ))
+        if not result.scalar():
+            print('Adding reserve value to entitystatus enum...')
+            await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'reserve'\"))
+            print('Added reserve to entitystatus enum')
+
+        # Add 'withdrawn' to entitystatus enum (статус «Отозван» в «Все кандидаты»)
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'withdrawn' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'entitystatus'))\"
+        ))
+        if not result.scalar():
+            print('Adding withdrawn value to entitystatus enum...')
+            await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'withdrawn'\"))
+            print('Added withdrawn to entitystatus enum')
+
+        # Add 'probation' to applicationstage enum (этап «Практика»)
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'probation' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'applicationstage'))\"
+        ))
+        if not result.scalar():
+            print('Adding probation value to applicationstage enum...')
+            await raw_conn.execute(text(\"ALTER TYPE applicationstage ADD VALUE 'probation'\"))
+            print('Added probation to applicationstage enum')
+
+        # Add 'transferred' to applicationstage enum (этап «Перешёл в отдел»)
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'transferred' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'applicationstage'))\"
+        ))
+        if not result.scalar():
+            print('Adding transferred value to applicationstage enum...')
+            await raw_conn.execute(text(\"ALTER TYPE applicationstage ADD VALUE 'transferred'\"))
+            print('Added transferred to applicationstage enum')
+
+        # Add 'probation' to entitystatus enum
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'probation' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'entitystatus'))\"
+        ))
+        if not result.scalar():
+            print('Adding probation value to entitystatus enum...')
+            await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'probation'\"))
+            print('Added probation to entitystatus enum')
+
+        # Add 'transferred' to entitystatus enum
+        result = await raw_conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'transferred' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'entitystatus'))\"
+        ))
+        if not result.scalar():
+            print('Adding transferred value to entitystatus enum...')
+            await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'transferred'\"))
+            print('Added transferred to entitystatus enum')
+
+        # Мягкое удаление вакансий: колонка deleted_at (идемпотентно)
+        await raw_conn.execute(text(\"ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP\"))
+        print('Ensured vacancies.deleted_at column')
+
+        # Теневая база дедупликации: entities.is_archived (идемпотентно).
+        # bulk/CSV/парсер-импорт ставит true; индекс — для фильтра активных списков.
+        await raw_conn.execute(text(\"ALTER TABLE entities ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false\"))
+        await raw_conn.execute(text(\"CREATE INDEX IF NOT EXISTS ix_entities_is_archived ON entities (is_archived)\"))
+        print('Ensured entities.is_archived column + index')
     await raw_engine.dispose()
 
     # One-time data migration: legacy draft → pending_review
@@ -349,13 +490,15 @@ async def ensure_shadow_columns():
     # 'Отказ' и т.п.). Приводим к канону KANBAN_STATUS_LABELS.
     CANONICAL_LABELS = {
         'applied': 'Новый',
-        'screening': 'Скрининг',
-        'phone_screen': 'Практика',
-        'interview': 'Тех-практика',
-        'assessment': 'ИС',
-        'offer': 'Оффер',
-        'hired': 'Принят',
-        'rejected': 'Отклонён',
+        'screening': 'Выполняет ТЗ',
+        'phone_screen': 'Интервью с HR',
+        'interview': 'Интервью с заказчиком',
+        'assessment': 'Принятие решения',
+        'offer': 'Выставлен оффер',
+        'hired': 'Оффер принят',
+        'probation': 'Практика',
+        'transferred': 'Перешёл в отдел',
+        'rejected': 'Отказ',
         'withdrawn': 'Отозван',
     }
     OLD_LABELS = {'Новая заявка', 'Отбор', 'Собеседование назначено',
@@ -393,6 +536,15 @@ async def ensure_shadow_columns():
             except Exception as e:
                 print(f\"Failed to backfill custom_stages on vacancy {row.id}: {e}\")
         print(f\"Backfilled custom_stages labels on {cs_fixed} vacancies\")
+
+    # Backfill: легаси английский комментарий первичной заявки → русский.
+    # Старые stage_transitions писались с comment='Initial application'; код теперь
+    # пишет 'Первичная заявка'. Идемпотентно (WHERE comment='Initial application').
+    async with engine.begin() as ia_conn:
+        res = await ia_conn.execute(text(
+            \"UPDATE stage_transitions SET comment='Первичная заявка' WHERE comment='Initial application'\"
+        ))
+        print(f\"Backfilled {res.rowcount} stage_transitions: Initial application -> Первичная заявка\")
 
     await engine.dispose()
 

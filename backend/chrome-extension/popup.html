@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 380px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #fff; }
+    .header { padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; }
+    .header img { width: 28px; height: 28px; }
+    .header h1 { font-size: 16px; font-weight: 600; }
+    .content { padding: 16px; }
+    .login-form, .parse-form, .result { display: none; }
+    .login-form.active, .parse-form.active, .result.active { display: block; }
+
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .field input, .field select, .field textarea { width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: rgba(99,102,241,0.5); }
+    .field textarea { resize: vertical; min-height: 60px; }
+    .field select option { background: #1a1a2e; }
+
+    .parsed-info { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+    .parsed-info .name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .parsed-info .name { font-size: 15px; font-weight: 600; }
+    .parsed-info .details { font-size: 12px; color: rgba(255,255,255,0.5); line-height: 1.5; }
+    .parsed-info .source { display: inline-block; background: rgba(99,102,241,0.2); color: #818cf8; padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-top: 6px; }
+    .candidate-link { color: #818cf8; text-decoration: none; font-size: 13px; font-weight: 500; }
+    .candidate-link:hover { color: #a5b4fc; text-decoration: underline; }
+    .contacts-note { font-size: 11px; color: rgba(245,158,11,0.8); margin-top: 4px; padding: 4px 8px; background: rgba(245,158,11,0.08); border-radius: 4px; }
+
+    .duplicate-warning { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 12px; color: #fcd34d; line-height: 1.8; }
+    .duplicate-warning .icon { color: #f59e0b; font-size: 16px; font-weight: bold; }
+    .dup-link { color: #60a5fa; text-decoration: underline; cursor: pointer; font-weight: 600; }
+    .dup-link:hover { color: #93c5fd; }
+    .dup-details { color: rgba(255,255,255,0.45); font-size: 11px; margin-left: 4px; }
+
+    .dup-status { border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 12px; line-height: 1.7; }
+    .dup-status.checking { background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); color: #a5b4fc; }
+    .dup-status.clean { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+    .dup-status.found { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); color: #fcd34d; }
+    .dup-status .dup-item { display: block; margin-top: 6px; padding: 6px 0; }
+    .dup-status .dup-item + .dup-item { border-top: 1px solid rgba(255,255,255,0.06); }
+    .dup-status .dup-head { display: flex; align-items: center; gap: 6px; }
+    .dup-status .dup-info { margin-top: 2px; font-size: 11px; color: rgba(255,255,255,0.45); }
+    .dup-status .dup-name { color: #60a5fa; cursor: pointer; font-weight: 600; text-decoration: underline; }
+    .dup-status .dup-name:hover { color: #93c5fd; }
+    .dup-status .dup-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+    .dup-status .dup-history { margin-top: 6px; padding: 6px 8px; background: rgba(0,0,0,0.2); border-radius: 6px; font-size: 11px; }
+    .dup-status .dup-history-title { color: rgba(255,255,255,0.55); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .dup-status .dup-history-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: rgba(255,255,255,0.75); }
+    .dup-status .dup-history-vacancy { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dup-status .dup-history-stage { color: #c084fc; font-weight: 500; padding: 0 6px; background: rgba(168,85,247,0.12); border-radius: 3px; font-size: 10px; }
+    .dup-status .dup-history-date { color: rgba(255,255,255,0.35); font-size: 10px; white-space: nowrap; }
+    .dup-status .dup-history-empty { margin-top: 6px; padding: 6px 8px; background: rgba(0,0,0,0.15); border-radius: 6px; font-size: 11px; color: rgba(255,255,255,0.45); font-style: italic; }
+    .dup-status .badge-new { background: rgba(59,130,246,0.2); color: #60a5fa; }
+    .dup-status .badge-interview { background: rgba(168,85,247,0.2); color: #c084fc; }
+    .dup-status .badge-hired { background: rgba(34,197,94,0.2); color: #86efac; }
+    .dup-status .badge-rejected { background: rgba(239,68,68,0.2); color: #fca5a5; }
+    .dup-status .badge-default { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+
+    .btn { width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: rgba(255,255,255,0.1); color: #fff; margin-top: 8px; }
+    .btn.warning { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; }
+
+    .success { text-align: center; padding: 20px; }
+    .success .icon { font-size: 48px; margin-bottom: 12px; }
+    .success h2 { font-size: 16px; margin-bottom: 8px; }
+    .success p { font-size: 13px; color: rgba(255,255,255,0.5); }
+
+    .error { color: #ef4444; font-size: 12px; margin-top: 8px; }
+    .no-data { padding: 24px 18px; color: rgba(255,255,255,0.7); font-size: 13px; }
+    .nodata-icon { display: flex; justify-content: center; margin-bottom: 12px; font-size: 28px; }
+    .nodata-title { text-align: center; font-weight: 600; color: #fff; font-size: 15px; margin-bottom: 8px; }
+    .nodata-text { text-align: center; color: rgba(255,255,255,0.55); margin-bottom: 14px; line-height: 1.5; }
+    .nodata-text b { color: rgba(255,255,255,0.85); }
+    .nodata-sites { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .nodata-site { display: inline-block; padding: 4px 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; font-size: 11px; color: rgba(255,255,255,0.7); }
+    .nodata-example { background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.18); border-radius: 8px; padding: 10px 12px; font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 12px; }
+    .nodata-example b { color: rgba(255,255,255,0.75); }
+    .nodata-current-url { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: rgba(255,255,255,0.35); word-break: break-all; padding: 8px 10px; background: rgba(0,0,0,0.2); border-radius: 6px; line-height: 1.4; }
+    .nodata-current-url-label { font-size: 10px; color: rgba(255,255,255,0.3); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .settings-link { text-align: center; margin-top: 12px; }
+    .settings-link a { color: rgba(255,255,255,0.3); font-size: 11px; text-decoration: none; }
+    .settings-link a:hover { color: rgba(255,255,255,0.6); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div style="width:28px;height:28px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">E</div>
+    <h1>Enceladus</h1>
+  </div>
+
+  <div class="content">
+    <!-- Login Form -->
+    <div class="login-form" id="loginForm">
+      <div class="field">
+        <label>Сервер</label>
+        <input type="text" id="serverUrl" placeholder="https://enceladus-7oylzk.saturn.ac" />
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="loginEmail" placeholder="email@company.com" />
+      </div>
+      <div class="field">
+        <label>Пароль</label>
+        <div style="position:relative;">
+          <input type="password" id="loginPassword" style="padding-right:40px;" />
+          <button type="button" id="togglePassword" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:16px;padding:4px;">👁</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="loginBtn">Войти</button>
+      <div class="error" id="loginError"></div>
+    </div>
+
+    <!-- Parse Form -->
+    <div class="parse-form" id="parseForm">
+      <div class="parsed-info" id="parsedInfo">
+        <div class="name-row">
+          <div id="parsedPhoto" style="display:none;"></div>
+          <div class="name" id="parsedName">&mdash;</div>
+          <button id="refreshBtn" type="button" title="Перечитать кандидата с текущей вкладки" style="margin-left:auto;background:transparent;border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.7);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">↻</button>
+        </div>
+        <div class="details" id="parsedDetails"></div>
+        <div id="contactsNote" class="contacts-note" style="display:none;">Контакты скрыты на hh.ru — кандидат будет добавлен без контактов</div>
+        <div class="source" id="parsedSource"></div>
+      </div>
+
+      <div id="dupStatus" class="dup-status" style="display:none;"></div>
+
+      <div id="duplicateWarning" class="duplicate-warning" style="display:none;">
+        <span class="icon">!</span> <span id="duplicateText"></span>
+      </div>
+
+      <div class="field">
+        <label>Воронка</label>
+        <select id="funnelSelect">
+          <option value="">Без воронки</option>
+        </select>
+      </div>
+
+      <div class="field" id="nameField" style="display:none;">
+        <label>Имя кандидата (не распознано)</label>
+        <input type="text" id="manualName" placeholder="Введите имя вручную" />
+      </div>
+
+      <div class="field" id="emailField" style="display:none;">
+        <label>Email (не распознан)</label>
+        <input type="email" id="manualEmail" placeholder="candidate@email.com" />
+      </div>
+
+      <div class="field" id="phoneField" style="display:none;">
+        <label>Телефон (не распознан)</label>
+        <input type="tel" id="manualPhone" placeholder="+7 999 123-45-67" />
+      </div>
+
+      <div class="field" id="telegramField" style="display:none;">
+        <label>Telegram (не распознан)</label>
+        <input type="text" id="manualTelegram" placeholder="@username" />
+      </div>
+
+      <div class="field">
+        <label>Комментарий</label>
+        <textarea id="commentField" placeholder="Заметки о кандидате..."></textarea>
+      </div>
+
+      <button class="btn btn-primary" id="addBtn">Добавить кандидата</button>
+      <div class="error" id="addError"></div>
+
+      <div class="settings-link">
+        <a href="#" id="logoutLink">Выйти из аккаунта</a>
+        <span id="extVersion" style="margin-left:8px;opacity:0.5;font-size:11px;"></span>
+      </div>
+    </div>
+
+    <!-- No Data — три контекстных варианта в зависимости от URL текущей вкладки -->
+    <div class="no-data" id="noData" style="display:none;">
+      <!-- Состояние 1: юзер не на сайте резюме (любой другой URL) -->
+      <div id="nodataWrongSite" style="display:none;">
+        <div class="nodata-icon">🌐</div>
+        <div class="nodata-title">Эта страница не поддерживается</div>
+        <div class="nodata-text">
+          Расширение читает резюме только с этих сайтов:
+        </div>
+        <div class="nodata-sites">
+          <span class="nodata-site">hh.ru</span>
+          <span class="nodata-site">career.habr.com</span>
+          <span class="nodata-site">linkedin.com</span>
+        </div>
+        <div class="nodata-text">Открой страницу кандидата на одном из них.</div>
+      </div>
+
+      <!-- Состояние 2: юзер на hh.ru / habr / linkedin, но не на конкретной карточке резюме -->
+      <div id="nodataWrongPage" style="display:none;">
+        <div class="nodata-icon">🔍</div>
+        <div class="nodata-title">Это не страница резюме</div>
+        <div class="nodata-text">
+          Ты на правильном сайте, но это <b>не карточка конкретного кандидата</b>.
+          Открой страницу резюме — ту, где видно имя, опыт и контакты.
+        </div>
+        <div class="nodata-example" id="nodataExample">
+          <b>Пример URL для hh.ru:</b><br>
+          <span style="font-family:ui-monospace,monospace;">hh.ru/resume/&lt;id&gt;</span>
+        </div>
+      </div>
+
+      <!-- Состояние 3: юзер на /resume/, но парсер ничего не нашёл -->
+      <div id="nodataNoParse" style="display:none;">
+        <div class="nodata-icon">🤔</div>
+        <div class="nodata-title">Не нашёл данных кандидата</div>
+        <div class="nodata-text">
+          Страница похожа на резюме, но парсер не вытащил данные.<br>
+          Попробуй обновить страницу <b>(F5)</b> или нажми <b>↻</b> в попапе.<br>
+          Если контакты скрыты под подпиской hh.ru — добавь кандидата
+          без них и заполни вручную.
+        </div>
+      </div>
+
+      <!-- Текущий URL — чтобы рекрут видел "вот что я вижу сейчас" -->
+      <div class="nodata-current-url-label">Текущая вкладка</div>
+      <div class="nodata-current-url" id="nodataCurrentUrl">—</div>
+    </div>
+
+    <!-- Success Result -->
+    <div class="result" id="resultView">
+      <div class="success">
+        <div class="icon" id="resultIcon">OK</div>
+        <h2 id="resultTitle">Кандидат добавлен!</h2>
+        <p id="resultMessage"></p>
+        <div id="resultLink" style="display:none;margin-top:12px;"></div>
+        <button class="btn btn-secondary" id="addAnotherBtn" style="margin-top:16px;">Добавить ещё</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

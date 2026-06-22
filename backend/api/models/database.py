@@ -62,7 +62,11 @@ class EntityStatus(str, enum.Enum):
     is_interview = "is_interview" # ИС - final interview
     offer = "offer"               # Оффер - offer extended
     hired = "hired"               # Принят - accepted and hired
+    probation = "probation"       # Практика - пробный период после оффера
+    transferred = "transferred"   # Перешёл в отдел - оформлен в штат
     rejected = "rejected"         # Отказ - rejected
+    withdrawn = "withdrawn"       # Отозван - кандидат отозвал отклик
+    reserve = "reserve"           # Резерв - отложен в резерв
 
     # General entity statuses (for clients, partners, etc.)
     interview = "interview"       # Legacy: interview stage
@@ -146,8 +150,11 @@ class ApplicationStage(str, enum.Enum):
     assessment = "assessment"     # ИС - final interview (displayed as "ИС")
     offer = "offer"               # Оффер - offer extended
     hired = "hired"               # Принят - accepted and hired
+    probation = "probation"       # Практика - пробный период после оффера
+    transferred = "transferred"   # Перешёл в отдел - оформлен в штат
     rejected = "rejected"         # Отказ - rejected at any stage
     withdrawn = "withdrawn"       # Отозван - candidate withdrew
+    reserve = "reserve"           # Резерв - отложен в резерв
 
     # Deprecated values (these do NOT exist in PostgreSQL enum and will cause errors)
     # DO NOT USE these - they were added but never migrated to the database:
@@ -165,7 +172,11 @@ STATUS_SYNC_MAP = {
     EntityStatus.is_interview: ApplicationStage.assessment,
     EntityStatus.offer: ApplicationStage.offer,
     EntityStatus.hired: ApplicationStage.hired,
+    EntityStatus.probation: ApplicationStage.probation,
+    EntityStatus.transferred: ApplicationStage.transferred,
     EntityStatus.rejected: ApplicationStage.rejected,
+    EntityStatus.withdrawn: ApplicationStage.withdrawn,
+    EntityStatus.reserve: ApplicationStage.reserve,
 }
 
 STAGE_SYNC_MAP = {v: k for k, v in STATUS_SYNC_MAP.items()}
@@ -545,6 +556,11 @@ class Entity(Base):
     transferred_to_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     transferred_at = Column(DateTime, nullable=True)
 
+    # Shadow/archive base — candidates from bulk import (CSV/parser) or manually
+    # archived. Hidden from all active lists/kanban/search/analytics; the full
+    # archive is visible only to superadmin. See shadow-dedup design spec.
+    is_archived = Column(Boolean, default=False, nullable=False, index=True)
+
     organization = relationship("Organization", back_populates="entities")
     department = relationship("Department", back_populates="entities")
     creator = relationship("User", foreign_keys=[created_by])
@@ -900,6 +916,7 @@ class Vacancy(Base):
     # Dates
     published_at = Column(DateTime, nullable=True)
     closes_at = Column(DateTime, nullable=True)  # Application deadline
+    deleted_at = Column(DateTime, nullable=True, index=True)  # Мягкое удаление: NULL = активна
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -1511,6 +1528,7 @@ class FormSubmission(Base):
     form_id = Column(Integer, ForeignKey("form_templates.id", ondelete="CASCADE"), nullable=False, index=True)
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
     data = Column(JSON, nullable=False)  # {field_id: value, ...}
+    dispatch_id = Column(Integer, ForeignKey("form_dispatches.id", ondelete="SET NULL"), nullable=True, index=True)
     submitted_at = Column(DateTime, default=func.now())
 
     form = relationship("FormTemplate", back_populates="submissions")
@@ -1534,9 +1552,42 @@ class FormVacancy(Base):
     vacancy = relationship("Vacancy")
 
 
+class FormDispatch(Base):
+    """Анкета, отправленная конкретному существующему кандидату по личной ссылке."""
+    __tablename__ = "form_dispatches"
+
+    id = Column(Integer, primary_key=True)
+    form_id = Column(Integer, ForeignKey("form_templates.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    status = Column(String(20), default="sent")            # sent | opened | submitted
+    submission_id = Column(Integer, ForeignKey("form_submissions.id", ondelete="SET NULL", use_alter=True), nullable=True)
+    seen_by_recruiter = Column(Boolean, default=False)     # управляет бейджем на кнопке
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    opened_at = Column(DateTime, nullable=True)
+    submitted_at = Column(DateTime, nullable=True)
+
+    form = relationship("FormTemplate")
+    entity = relationship("Entity")
+
+
 # ============================================================
 # EMPLOYEE MANAGEMENT (Personal Cabinet, Leave Counter, Reminders)
 # ============================================================
+
+class OrgUnit(Base):
+    """HR org-chart unit — изолировано от рекрутингового Department."""
+    __tablename__ = "org_units"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_id = Column(Integer, ForeignKey("org_units.id", ondelete="CASCADE"), nullable=True, index=True)
+    name = Column(String(255), nullable=False)
+    color = Column(String(20), nullable=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=func.now())
+
 
 class Employee(Base):
     """Employee record — created when candidate transitions to staff"""
@@ -1547,6 +1598,8 @@ class Employee(Base):
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)  # link to candidate record
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
+    org_unit_id = Column(Integer, ForeignKey("org_units.id", ondelete="SET NULL"), nullable=True, index=True)
+    manager_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Personal info
     position = Column(String(300), nullable=True)
@@ -1608,6 +1661,20 @@ class LeaveRequest(Base):
 
     employee = relationship("Employee", back_populates="leave_requests")
     approver = relationship("User", foreign_keys=[approved_by])
+
+
+class EmployeeDocument(Base):
+    """Файл, загруженный в карточку сотрудника (вкладка «Документы»)."""
+    __tablename__ = "employee_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename = Column(String, nullable=False)
+    content_type = Column(String, nullable=True)
+    size = Column(Integer, nullable=True)
+    path = Column(String, nullable=False)  # путь к зашифрованному файлу на диске
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
 
 
 # ============================================================

@@ -30,12 +30,14 @@ logger = logging.getLogger("hr-analyzer.notifications")
 # Human-readable stage names (Russian)
 STAGE_LABELS = {
     ApplicationStage.applied: "Новый",
-    ApplicationStage.screening: "Скрининг",
-    ApplicationStage.phone_screen: "Практика",
-    ApplicationStage.interview: "Тех-практика",
-    ApplicationStage.assessment: "ИС",
-    ApplicationStage.offer: "Оффер",
-    ApplicationStage.hired: "Принят",
+    ApplicationStage.screening: "Выполняет ТЗ",
+    ApplicationStage.phone_screen: "Интервью с HR",
+    ApplicationStage.interview: "Интервью с заказчиком",
+    ApplicationStage.assessment: "Принятие решения",
+    ApplicationStage.offer: "Выставлен оффер",
+    ApplicationStage.hired: "Оффер принят",
+    ApplicationStage.probation: "Практика",
+    ApplicationStage.transferred: "Перешёл в отдел",
     ApplicationStage.rejected: "Отказ",
     ApplicationStage.withdrawn: "Отозван",
 }
@@ -126,6 +128,30 @@ async def notify_new_candidate(
             )
     except Exception:
         logger.exception("notify_new_candidate failed")
+        await db.rollback()
+
+
+# ---------------------------------------------------------------------------
+# 1b. Form answer received (dispatch submitted by candidate)
+# ---------------------------------------------------------------------------
+
+async def notify_form_submitted(db: AsyncSession, dispatch, entity, form) -> None:
+    """Уведомить отправителя анкеты о полученном ответе кандидата."""
+    try:
+        if not dispatch.created_by:
+            logger.warning(
+                "notify_form_submitted: dispatch %s has no created_by — recruiter not notified",
+                getattr(dispatch, "id", None),
+            )
+            return
+        title = "Ответ на анкету"
+        cand = (entity.name if entity else None) or "Кандидат"
+        message = f"{cand} заполнил(а) анкету «{form.title}»"
+        link = f"/all-candidates?entity={dispatch.entity_id}&tab=anketa"
+        await _create_notification(db, dispatch.created_by, "form_submitted", title, message, link)
+        await db.commit()
+    except Exception:
+        logger.exception("notify_form_submitted failed")
         await db.rollback()
 
 

@@ -20,7 +20,7 @@ from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
 from api.routes import auth, users, chats, messages, criteria, ai, stats, entities, calls, entity_ai, organizations, sharing, departments, invitations, realtime, admin, external_links, vacancies, parser, search, scoring, currency, parse_jobs, interns
-from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, magic_button, pen
+from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, org_units, magic_button, pen
 from api.routes import candidate_search, extension_download, prometheus_invite, csv_import
 from api.routes import candidate_database, recruiter_workspaces
 from api.routes import timeoff, blockers, tags, integrations
@@ -457,39 +457,45 @@ async def lifespan(app: FastAPI):
         bool(settings.communication_api_key),
     )
 
-    # Startup - initialize database (wait for it to complete)
-    try:
-        await asyncio.wait_for(init_database(), timeout=120)
-    except asyncio.TimeoutError:
-        logger.error("Database initialization timed out")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
+    # Тяжёлая инициализация (БД, миграции, Redis, Playwright) — В ФОНЕ, чтобы uvicorn
+    # начал отвечать на /health сразу и контейнер проходил healthcheck Saturn. Раньше эти
+    # awaits блокировали startup (init_database + Alembic без таймаута), сервер не успевал
+    # подняться в окно healthcheck (~2.5 мин) и деплой откатывался. Движок БД создаётся при
+    # импорте, поэтому /health (пинг БД) работает и до завершения этой инициализации.
+    async def _deferred_startup():
+        try:
+            await asyncio.wait_for(init_database(), timeout=120)
+        except asyncio.TimeoutError:
+            logger.error("Database initialization timed out")
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}")
 
-    # Run Alembic migrations after init_database
-    try:
-        await asyncio.get_event_loop().run_in_executor(None, run_alembic_migrations_sync)
-    except Exception as e:
-        logger.warning(f"Alembic migration failed: {e}")
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, run_alembic_migrations_sync)
+        except Exception as e:
+            logger.warning(f"Alembic migration failed: {e}")
 
-    # Initialize Redis connection
-    try:
-        redis = await asyncio.wait_for(get_redis(), timeout=10)
-        if redis:
-            logger.info("Redis cache connected successfully")
-        else:
-            logger.warning("Redis unavailable, using in-memory cache fallback")
-    except asyncio.TimeoutError:
-        logger.warning("Redis connection timed out, using in-memory cache")
-    except Exception as e:
-        logger.warning(f"Redis connection failed: {e}, using in-memory cache")
+        try:
+            redis = await asyncio.wait_for(get_redis(), timeout=10)
+            if redis:
+                logger.info("Redis cache connected successfully")
+            else:
+                logger.warning("Redis unavailable, using in-memory cache fallback")
+        except asyncio.TimeoutError:
+            logger.warning("Redis connection timed out, using in-memory cache")
+        except Exception as e:
+            logger.warning(f"Redis connection failed: {e}, using in-memory cache")
 
-    # Check Playwright status (for Fireflies link processing)
-    try:
-        await asyncio.wait_for(check_playwright_status(), timeout=30)
-    except asyncio.TimeoutError:
-        logger.warning("Playwright check timed out")
-    except Exception as e:
-        logger.warning(f"Playwright check failed: {e}")
+        try:
+            await asyncio.wait_for(check_playwright_status(), timeout=30)
+        except asyncio.TimeoutError:
+            logger.warning("Playwright check timed out")
+        except Exception as e:
+            logger.warning(f"Playwright check failed: {e}")
+
+        logger.info("Deferred startup complete (db/migrations/redis/playwright)")
+
+    asyncio.create_task(_deferred_startup())
 
     # Start Telegram bot in background
     bot_task = None
@@ -753,6 +759,14 @@ try:
     logger.info("Documents router registered successfully at /api/documents")
 except Exception as e:
     logger.error(f"FAILED to register documents router: {e}")
+    raise
+
+logger.info("=== REGISTERING ORG UNITS ROUTER ===")
+try:
+    app.include_router(org_units.router, prefix="/api/org-units", tags=["org-units"])
+    logger.info("Org units router registered successfully at /api/org-units")
+except Exception as e:
+    logger.error(f"FAILED to register org units router: {e}")
     raise
 
 logger.info("=== REGISTERING MAGIC BUTTON ROUTER ===")

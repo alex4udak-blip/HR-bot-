@@ -413,6 +413,191 @@ export const mergeEntities = async (
 };
 
 /**
+ * Shadow dedup «Объединить»: merge the archived (shadow) duplicate INTO the
+ * active candidate. Survivor = active (entityId); the archived duplicate is
+ * deleted, its whole history moved over, and the hidden_duplicate_id flag cleared.
+ */
+export const mergeShadowDuplicate = async (
+  entityId: number,
+  duplicateId: number
+): Promise<{ success: boolean; merged_entity_id: number; deleted_entity_id: number }> => {
+  const { data } = await debouncedMutation<{
+    success: boolean; merged_entity_id: number; deleted_entity_id: number;
+  }>('post', `/entities/${entityId}/merge-shadow`, { duplicate_id: duplicateId });
+  return data;
+};
+
+/**
+ * Shadow dedup «Нет, это разные люди»: break the link with the archived
+ * duplicate. Adds it to dismissed_duplicate_ids and clears the banner flag.
+ */
+export const dismissDuplicate = async (
+  entityId: number,
+  duplicateId: number
+): Promise<{ success: boolean; dismissed_duplicate_id: number }> => {
+  const { data } = await debouncedMutation<{
+    success: boolean; dismissed_duplicate_id: number;
+  }>('post', `/entities/${entityId}/dismiss-duplicate`, { duplicate_id: duplicateId });
+  return data;
+};
+
+// ============================================================
+// ENTITY ACTIVITY FEED
+// ============================================================
+
+export interface ActivityEvent {
+  id: number;
+  from_stage: string | null;
+  to_stage: string;
+  comment: string | null;
+  changed_by_name: string | null;
+  created_at: string;
+}
+
+export interface VacancyActivityBlock {
+  application_id: number;
+  vacancy_id: number;
+  vacancy_title: string;
+  current_stage: string;
+  applied_at: string;
+  last_stage_change_at: string;
+  events: ActivityEvent[];
+}
+
+export const getEntityActivity = async (
+  entityId: number
+): Promise<VacancyActivityBlock[]> => {
+  const { data } = await deduplicatedGet<VacancyActivityBlock[]>(
+    `/entities/${entityId}/activity`
+  );
+  return data;
+};
+
+/**
+ * Живой поиск дубля при ОТКРЫТИИ карточки. Ловит уже существующих дублей,
+ * созданных до появления детекта (импорт/другой источник), без ручного
+ * «Сверить». Помечает обе стороны, возвращает id найденного дубля или null.
+ */
+export const detectDuplicate = async (
+  entityId: number
+): Promise<{ duplicate_id: number | null }> => {
+  const { data } = await debouncedMutation<{ duplicate_id: number | null }>(
+    'post', `/entities/${entityId}/detect-duplicate`, {}
+  );
+  return data;
+};
+
+// === Теневая база (архив) ===
+
+export interface ArchivedCandidate {
+  id: number;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  position?: string | null;
+  company?: string | null;
+  status?: string | null;
+  tags: string[];
+  photo_url?: string | null;
+  source?: string | null;
+  created_at?: string | null;
+}
+
+export interface ArchivedCandidatesPage {
+  items: ArchivedCandidate[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+/** Список архивных (теневых) кандидатов. Только суперадмин. */
+export const listArchivedCandidates = async (params?: {
+  q?: string;
+  page?: number;
+  per_page?: number;
+}): Promise<ArchivedCandidatesPage> => {
+  const search: Record<string, string> = {};
+  if (params?.q) search.q = params.q;
+  if (params?.page) search.page = String(params.page);
+  if (params?.per_page) search.per_page = String(params.per_page);
+  const { data } = await deduplicatedGet<ArchivedCandidatesPage>('/entities/archive/list', {
+    params: search,
+  });
+  return data;
+};
+
+/** «В архив»: убрать кандидата в теневую базу. */
+export const archiveEntity = async (entityId: number): Promise<{ success: boolean }> => {
+  const { data } = await debouncedMutation<{ success: boolean }>(
+    'post', `/entities/${entityId}/archive`, {}
+  );
+  return data;
+};
+
+/** Вернуть кандидата из архива в активную базу. Только суперадмин. */
+export const unarchiveEntity = async (entityId: number): Promise<{ success: boolean }> => {
+  const { data } = await debouncedMutation<{ success: boolean }>(
+    'post', `/entities/${entityId}/unarchive`, {}
+  );
+  return data;
+};
+
+/** Результат разовой сверки активных кандидатов с архивом. */
+export interface RescanResult {
+  scanned: number;
+  flagged: number;
+  newly_flagged: number;
+  matches: {
+    id: number;
+    name: string;
+    duplicate_id: number;
+    duplicate_name?: string | null;
+  }[];
+}
+
+/** Прогнать детект по всем активным кандидатам против архива. Только суперадмин. */
+export const rescanArchiveDuplicates = async (): Promise<RescanResult> => {
+  const { data } = await debouncedMutation<RescanResult>(
+    'post', '/entities/archive/rescan', {}
+  );
+  return data;
+};
+
+/** Дубликаты ВНУТРИ архива — группы совпадающих профилей. */
+export interface ArchiveDupMember {
+  id: number;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  telegram?: string | null;
+  position?: string | null;
+}
+export interface ArchiveDupGroups {
+  groups: ArchiveDupMember[][];
+  total_groups: number;
+  total_dupes: number;
+}
+
+/** Найти группы дубликатов внутри архива. Только суперадмин. */
+export const findArchiveDuplicates = async (): Promise<ArchiveDupGroups> => {
+  const { data } = await debouncedMutation<ArchiveDupGroups>(
+    'post', '/entities/archive/find-duplicates', {}
+  );
+  return data;
+};
+
+/** Объединить два архивных профиля (source → survivor). Только суперадмин. */
+export const mergeArchivedInto = async (
+  survivorId: number,
+  sourceId: number,
+): Promise<{ success: boolean }> => {
+  const { data } = await debouncedMutation<{ success: boolean }>(
+    'post', `/entities/${survivorId}/merge-archived`, { source_id: sourceId }
+  );
+  return data;
+};
+
+/**
  * Compare two candidates.
  *
  * @param entityId ID of first candidate
@@ -537,7 +722,8 @@ export const uploadEntityFile = async (
   if (description) formData.append('description', description);
 
   const { data } = await api.post(`/entities/${entityId}/files`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000 // 2 мин — конвертация PDF→картинки на бэке бывает долгой
   });
   return data;
 };
@@ -799,7 +985,8 @@ export const createEntityFromResume = async (file: File): Promise<CreateEntityFr
   formData.append('file', file);
   formData.append('auto_attach_file', 'true');
   const { data } = await api.post('/entities/from-resume', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000 // 3 мин — парсинг PDF + создание + AI-профиль
   });
   return data;
 };

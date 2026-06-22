@@ -221,7 +221,10 @@ export type EntityStatus =
   | 'is_interview'    // ИС
   | 'offer'           // Оффер
   | 'hired'           // Принят
+  | 'probation'       // Практика
+  | 'transferred'     // Перешёл в отдел
   | 'rejected'        // Отклонён
+  | 'reserve'         // Резерв
   // General statuses
   | 'active'
   | 'paused'
@@ -467,14 +470,17 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
   // Единые HR-лейблы: держим в синхронизации с KANBAN_STATUS_LABELS
   // и APPLICATION_STAGE_LABELS.
   new: 'Новый',
-  screening: 'Скрининг',
-  practice: 'Практика',
-  tech_practice: 'Тех-практика',
-  is_interview: 'ИС',
-  offer: 'Оффер',
-  hired: 'Принят',
+  screening: 'Выполняет ТЗ',
+  practice: 'Интервью с HR',
+  tech_practice: 'Интервью с заказчиком',
+  is_interview: 'Принятие решения',
+  offer: 'Выставлен оффер',
+  hired: 'Оффер принят',
+  probation: 'Практика',
+  transferred: 'Перешёл в отдел',
   rejected: 'Отказ',
   withdrawn: 'Отозван',
+  reserve: 'Резерв',
   // General/Legacy statuses
   active: 'Активный',
   paused: 'На паузе',
@@ -482,10 +488,10 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
   converted: 'Сконвертирован',
   ended: 'Завершён',
   negotiation: 'Переговоры',
-  interview: 'Тех-практика',
+  interview: 'Интервью с заказчиком',
   applied: 'Новый',
-  phone_screen: 'Практика',
-  assessment: 'ИС'
+  phone_screen: 'Интервью с HR',
+  assessment: 'Принятие решения'
 };
 
 export const STATUS_COLORS: Record<EntityStatus, string> = {
@@ -497,8 +503,11 @@ export const STATUS_COLORS: Record<EntityStatus, string> = {
   is_interview: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border-[color:var(--hf-status-purple-badge)]',
   offer: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
   hired: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
+  probation: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)] border-[color:var(--hf-status-teal-badge)]',
+  transferred: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
   rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
   withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
+  reserve: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
   // General/Legacy
   active: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]',
   paused: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]',
@@ -547,8 +556,11 @@ export type ApplicationStage =
   | 'assessment'    // ИС (displayed as "ИС" in UI)
   | 'offer'         // Оффер
   | 'hired'         // Принят
+  | 'probation'     // Практика
+  | 'transferred'   // Перешёл в отдел
   | 'rejected'      // Отказ
-  | 'withdrawn';    // Отозван
+  | 'withdrawn'     // Отозван
+  | 'reserve';      // Резерв
 
 // Main pipeline stages in order (using existing PostgreSQL enum values)
 export const PIPELINE_STAGES: ApplicationStage[] = [
@@ -587,6 +599,7 @@ export interface Vacancy {
   closes_at?: string;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
   applications_count: number;
   stage_counts: Record<string, number>;
   source_url?: string;
@@ -733,14 +746,17 @@ export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
   // Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
   // и теми, что отображаются на /all-candidates. Не разводить разные наборы.
   applied: 'Новый',
-  screening: 'Скрининг',
-  phone_screen: 'Практика',
-  interview: 'Тех-практика',
-  assessment: 'ИС',
-  offer: 'Оффер',
-  hired: 'Принят',
-  rejected: 'Отклонён',
-  withdrawn: 'Отозван'
+  screening: 'Выполняет ТЗ',
+  phone_screen: 'Интервью с HR',
+  interview: 'Интервью с заказчиком',
+  assessment: 'Принятие решения',
+  offer: 'Выставлен оффер',
+  hired: 'Оффер принят',
+  probation: 'Практика',
+  transferred: 'Перешёл в отдел',
+  rejected: 'Отказ',
+  withdrawn: 'Отозван',
+  reserve: 'Резерв'
 };
 
 export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
@@ -752,8 +768,11 @@ export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
   assessment: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)] border-[color:var(--hf-status-orange-badge)]',   // "ИС"
   offer: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)] border-[color:var(--hf-status-yellow-badge)]',
   hired: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
+  probation: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)] border-[color:var(--hf-status-teal-badge)]',
+  transferred: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
   rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
-  withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]'
+  withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
+  reserve: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]'
 };
 
 // Map EntityStatus to ApplicationStage for synchronization logic
@@ -765,7 +784,10 @@ export const STATUS_TO_STAGE_MAP: Partial<Record<EntityStatus, ApplicationStage>
   is_interview: 'assessment',
   offer: 'offer',
   hired: 'hired',
+  probation: 'probation',
+  transferred: 'transferred',
   rejected: 'rejected',
+  reserve: 'reserve',
   // Legacy aliases
   applied: 'applied',
   phone_screen: 'phone_screen',
@@ -781,8 +803,11 @@ export const STAGE_TO_STATUS_MAP: Record<ApplicationStage, EntityStatus> = {
   assessment: 'is_interview',
   offer: 'offer',
   hired: 'hired',
+  probation: 'probation',
+  transferred: 'transferred',
   rejected: 'rejected',
-  withdrawn: 'withdrawn'
+  withdrawn: 'withdrawn',
+  reserve: 'reserve'
 };
 
 export const EMPLOYMENT_TYPES = [

@@ -325,6 +325,7 @@ export {
   bulkMoveApplications,
   // History
   getApplicationHistory,
+  deleteApplicationHistory,
   // Stats
   getVacancyStats,
   // Entity-Vacancy

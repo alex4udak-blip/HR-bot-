@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { RefObject } from 'react';
+import type { CSSProperties } from 'react';
+import { useHorizontalScroll } from '../hooks/useHorizontalScroll';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -30,25 +31,33 @@ import {
   Archive,
   Trash2,
   Inbox,
+  MoreHorizontal,
+  RotateCcw,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, getApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, deleteApplication, getApplicationHistory, deleteApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
-import { addEntityNote } from '@/services/api/entities';
+import { addEntityNote, deleteEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
+import { getVacancies } from '@/services/api/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
+import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
+import VacancyActivityBlock from '@/components/entities/VacancyActivityBlock';
+import ResumeTabs from '@/components/entities/ResumeTabs';
+import { getEntityActivity, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
 import { HuntflowComposer } from '@/components/hr/HuntflowComposer';
 import {
   HuntflowActionChip,
+  HuntflowEditorIcon,
   HuntflowInfoRow,
   HuntflowOptionsIcon,
 } from '@/components/hr/HuntflowControls';
@@ -83,21 +92,24 @@ const getRecruiterStatusDotClass = (status: VacancyStatus) => {
 
 const STAGE_ORDER = [
   'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'rejected', 'withdrawn',
+  'assessment', 'offer', 'hired', 'probation', 'transferred', 'rejected', 'reserve',
 ] as const;
 
 // Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
 // (отображаются на /all-candidates). Не разводить разные наборы по страницам.
 const STAGE_LABELS: Record<string, string> = {
   applied: 'Новый',
-  screening: 'Скрининг',
-  phone_screen: 'Практика',
-  interview: 'Тех-практика',
-  assessment: 'ИС',
-  offer: 'Оффер',
-  hired: 'Принят',
-  rejected: 'Отклонён',
+  screening: 'Выполняет ТЗ',
+  phone_screen: 'Интервью с HR',
+  interview: 'Интервью с заказчиком',
+  assessment: 'Принятие решения',
+  offer: 'Выставлен оффер',
+  hired: 'Оффер принят',
+  probation: 'Практика',
+  transferred: 'Перешёл в отдел',
+  rejected: 'Отказ',
   withdrawn: 'Отозван',
+  reserve: 'Резерв',
 };
 
 const formatVacancyListDate = (date?: string | null) => {
@@ -125,8 +137,11 @@ const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badg
   assessment:   { bg: 'bg-[var(--hf-status-orange-bg)]',  text: 'text-[var(--hf-status-orange)]',  dot: 'bg-[var(--hf-status-orange)]',  badge: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]' },
   offer:        { bg: 'bg-[var(--hf-status-yellow-bg)]',  text: 'text-[var(--hf-status-yellow)]',  dot: 'bg-[var(--hf-status-yellow)]',  badge: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
   hired:        { bg: 'bg-[var(--hf-status-green-bg)]',   text: 'text-[var(--hf-status-green)]',   dot: 'bg-[var(--hf-status-green)]',   badge: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' },
+  probation:    { bg: 'bg-[var(--hf-status-teal-bg)]',    text: 'text-[var(--hf-status-teal)]',    dot: 'bg-[var(--hf-status-teal)]',    badge: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)]' },
+  transferred:  { bg: 'bg-[var(--hf-status-lime-bg)]',    text: 'text-[var(--hf-status-lime)]',    dot: 'bg-[var(--hf-status-lime)]',    badge: 'bg-[var(--hf-status-lime-badge)] text-[var(--hf-status-lime)]' },
   rejected:     { bg: 'bg-[var(--hf-status-red-bg)]',     text: 'text-[var(--hf-status-red)]',     dot: 'bg-[var(--hf-status-red)]',     badge: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]' },
   withdrawn:    { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
+  reserve:      { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
   // Extra colors for custom stages
   pink:         { bg: 'bg-[var(--hf-status-pink-bg)]',    text: 'text-[var(--hf-status-pink)]',    dot: 'bg-[var(--hf-status-pink)]',    badge: 'bg-[var(--hf-status-pink-badge)] text-[var(--hf-status-pink)]' },
   teal:         { bg: 'bg-[var(--hf-status-teal-bg)]',    text: 'text-[var(--hf-status-teal)]',    dot: 'bg-[var(--hf-status-teal)]',    badge: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)]' },
@@ -191,10 +206,6 @@ function ClosedVacancyDetail({
   stageKeys,
   stagesConfig,
   groupedByStageMap,
-  stageScrollRef,
-  onStageScroll,
-  canScroll,
-  onScrollStages,
   onReopen,
   onEdit,
 }: {
@@ -202,13 +213,17 @@ function ClosedVacancyDetail({
   stageKeys: string[];
   stagesConfig: VacancyStagesConfig;
   groupedByStageMap: Record<string, VacancyApplication[]>;
-  stageScrollRef: RefObject<HTMLDivElement>;
-  onStageScroll: () => void;
-  canScroll: { left: boolean; right: boolean };
-  onScrollStages: (direction: 'left' | 'right') => void;
   onReopen: () => void;
   onEdit: () => void;
 }) {
+  // Горизонтальный скролл табов этапов — самодостаточно через единый хук.
+  const {
+    ref: stageScrollRef,
+    canScrollLeft,
+    canScrollRight,
+    scrollLeft: scrollStagesLeft,
+    scrollRight: scrollStagesRight,
+  } = useHorizontalScroll<HTMLDivElement>({ step: 520 });
   const [activeClosedStage, setActiveClosedStage] = useState<'summary' | string>('summary');
   const activeStageCandidates =
     activeClosedStage === 'summary'
@@ -236,7 +251,6 @@ function ClosedVacancyDetail({
         </div>
         <div
           ref={stageScrollRef}
-          onScroll={onStageScroll}
           className="hf-vacancy-stage-tabs hf-top-stage-tabs hf-top-stage-tabs-padded no-scrollbar"
         >
           {stageKeys.map((key) => {
@@ -272,20 +286,20 @@ function ClosedVacancyDetail({
             <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
           </button>
         </div>
-        {canScroll.left ? (
+        {canScrollLeft ? (
           <button
             type="button"
-            onClick={() => onScrollStages('left')}
+            onClick={scrollStagesLeft}
             className="hf-top-stage-arrow hf-top-stage-arrow-left"
             title="Прокрутить этапы влево"
           >
             <ChevronLeft className="hf-top-stage-arrow-icon" />
           </button>
         ) : null}
-        {canScroll.right ? (
+        {canScrollRight ? (
           <button
             type="button"
-            onClick={() => onScrollStages('right')}
+            onClick={scrollStagesRight}
             className="hf-top-stage-arrow hf-top-stage-arrow-right"
             title="Прокрутить этапы вправо"
           >
@@ -368,8 +382,15 @@ export default function RecruiterFunnelsPage() {
   // UI state
   const [search, setSearch] = useState('');
   const [recruiterSearch, setRecruiterSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all' | 'deleted'>('all');
   const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState<number | null>(null);
+  // «Удалённые»: мягко-удалённые вакансии тянем отдельным запросом (deleted=true).
+  const [deletedVacancies, setDeletedVacancies] = useState<Vacancy[]>([]);
+  useEffect(() => {
+    if (statusFilter === 'deleted') {
+      getVacancies({ deleted: true }).then(setDeletedVacancies).catch(() => setDeletedVacancies([]));
+    }
+  }, [statusFilter]);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showRecruiterMenu, setShowRecruiterMenu] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -387,11 +408,14 @@ export default function RecruiterFunnelsPage() {
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
-  const vacancyStageScrollRef = useRef<HTMLDivElement>(null);
-  const [vacancyStageCanScroll, setVacancyStageCanScroll] = useState({
-    left: false,
-    right: false,
-  });
+  // Горизонтальный скролл табов этапов (инлайн detail-view) — единый хук.
+  const {
+    ref: vacancyStageScrollRef,
+    canScrollLeft: vacancyStageCanScrollLeft,
+    canScrollRight: vacancyStageCanScrollRight,
+    scrollLeft: scrollVacancyStagesLeft,
+    scrollRight: scrollVacancyStagesRight,
+  } = useHorizontalScroll<HTMLDivElement>({ step: 520 });
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -404,6 +428,8 @@ export default function RecruiterFunnelsPage() {
   const [selectedTab, setSelectedTab] = useState<string>('all');
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
   const [candidateHistory, setCandidateHistory] = useState<any[]>([]);
+  const [entityActivity, setEntityActivity] = useState<ActivityBlockData[]>([]);
+  const [dupCard, setDupCard] = useState<KanbanCard | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
   const [editingCandidateCard, setEditingCandidateCard] = useState<KanbanCard | null>(null);
@@ -447,6 +473,8 @@ export default function RecruiterFunnelsPage() {
     assessment: 'is_interview',
     offer: 'offer',
     hired: 'hired',
+    probation: 'probation',
+    transferred: 'transferred',
     rejected: 'rejected',
   };
   const [orgStageOverrides, setOrgStageOverrides] = useState<Record<string, string>>({});
@@ -469,7 +497,7 @@ export default function RecruiterFunnelsPage() {
     const urlStatus = searchParams.get('status');
     const nextStatus =
       urlStatus && STATUS_FILTER_IDS.has(urlStatus)
-        ? (urlStatus as VacancyStatus | 'all')
+        ? (urlStatus as VacancyStatus | 'all' | 'deleted')
         : 'all';
     if (nextStatus !== statusFilter) {
       setStatusFilter(nextStatus);
@@ -487,6 +515,11 @@ export default function RecruiterFunnelsPage() {
   }, [isHrAdmin]);
 
   const scopedVacancies = useMemo(() => {
+    if (statusFilter === 'deleted') {
+      return (!isHrAdmin && user)
+        ? deletedVacancies.filter((v) => v.created_by === user.id)
+        : deletedVacancies;
+    }
     let result = vacancies;
     // Исходные заявки, у которых уже есть клон («взяли в работу»), —
     // это НЕ рабочие вакансии, а заявки. После «Взять в работу» оригинал
@@ -506,7 +539,7 @@ export default function RecruiterFunnelsPage() {
       result = result.filter((v) => v.status === statusFilter);
     }
     return result;
-  }, [vacancies, user, isHrAdmin, statusFilter]);
+  }, [vacancies, deletedVacancies, user, isHrAdmin, statusFilter]);
 
   // Filter vacancies
   const filteredVacancies = useMemo(() => {
@@ -614,48 +647,32 @@ export default function RecruiterFunnelsPage() {
     setSelectedIds(new Set());
   }, [selectedVacancyId]);
 
-  const updateVacancyStageScrollState = useCallback(() => {
-    const el = vacancyStageScrollRef.current;
-    if (!el) return;
-    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
-    setVacancyStageCanScroll({
-      left: el.scrollLeft > 1,
-      right: el.scrollLeft < maxScrollLeft - 1,
-    });
-  }, []);
-
-  const scrollVacancyStageTabs = useCallback(
-    (direction: 'left' | 'right') => {
-      const el = vacancyStageScrollRef.current;
-      if (!el) return;
-      el.scrollBy({
-        left: direction === 'left' ? -520 : 520,
-        behavior: 'smooth',
-      });
-      window.setTimeout(updateVacancyStageScrollState, 320);
-    },
-    [updateVacancyStageScrollState],
-  );
-
-  const loadCandidates = useCallback(async (vacancyId: number) => {
-    setCandidatesLoading(true);
+  const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
+    if (!silent) setCandidatesLoading(true);
     try {
       const apps = await getApplications(vacancyId);
       setCandidates(apps);
     } catch {
-      setCandidates([]);
+      if (!silent) setCandidates([]);
     } finally {
-      setCandidatesLoading(false);
+      if (!silent) setCandidatesLoading(false);
     }
   }, []);
 
   // Авто-refresh когда юзер возвращается на вкладку браузера —
   // например, после добавления кандидата через волшебную кнопку из
   // другой вкладки. Иначе нужен F5 чтобы увидеть новых.
+  // ВАЖНО: рефреш ТИХИЙ (silent) — без скелетонов-лоадеров. Раньше обычный
+  // alt-tab перерисовывал список со скелетоном и выглядел как перезагрузка
+  // страницы. Плюс троттл: не чаще раза в 3с.
   useEffect(() => {
+    let lastRun = 0;
     const onFocus = () => {
-      if (selectedVacancyId) loadCandidates(selectedVacancyId);
-      fetchVacancies();
+      const now = Date.now();
+      if (now - lastRun < 3000) return;
+      lastRun = now;
+      if (selectedVacancyId) loadCandidates(selectedVacancyId, true);
+      fetchVacancies(true);
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
@@ -756,9 +773,18 @@ export default function RecruiterFunnelsPage() {
         // Put in first matching column
         map.get(targetKeys[0])!.push(c);
       } else {
-        // Unknown stage — show in its own group
-        if (!map.has(c.stage)) map.set(c.stage, []);
-        map.get(c.stage)!.push(c);
+        // Этап аппликации не маппится ни в одну ВИДИМУЮ колонку (например,
+        // кандидата добавили со stage=applied, а в кастомной воронке нет
+        // колонки «Новый»). Раньше он уезжал в отдельную группу, которой нет в
+        // vacancyVisibleStageKeys → колонка не рендерилась и кандидат ИСЧЕЗАЛ.
+        // Теперь кладём его в первую видимую колонку, чтобы он не пропадал.
+        const fallbackKey = stagesConfig.keys[0];
+        if (fallbackKey) {
+          map.get(fallbackKey)!.push(c);
+        } else {
+          if (!map.has(c.stage)) map.set(c.stage, []);
+          map.get(c.stage)!.push(c);
+        }
       }
     }
     const result: [string, VacancyApplication[]][] = [];
@@ -783,32 +809,30 @@ export default function RecruiterFunnelsPage() {
     return vacancyWorkflowKeys;
   }, [vacancyWorkflowKeys]);
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(updateVacancyStageScrollState);
-    const timer = window.setTimeout(updateVacancyStageScrollState, 260);
-    window.addEventListener('resize', updateVacancyStageScrollState);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-      window.removeEventListener('resize', updateVacancyStageScrollState);
-    };
-  }, [
-    candidatesLoading,
-    vacancyVisibleStageKeys.length,
-    selectedVacancyId,
-    updateVacancyStageScrollState,
-  ]);
-
   // Master-detail derived data
   const selectedCandidate = useMemo(
     () => candidates.find(c => c.id === selectedCandidateId) || null,
     [candidates, selectedCandidateId],
   );
 
+  // Карточка этапа — 2 цвета: активный этап зелёный, отказ/отозван — серый.
+  const stageCardStyle: CSSProperties | undefined =
+    selectedCandidate && !['rejected', 'withdrawn'].includes(selectedCandidate.stage as string)
+      ? ({ '--hf-stage-accent': '#22c55e', '--hf-stage-card-bg': 'rgba(34, 197, 94, 0.1)' } as CSSProperties)
+      : undefined;
+
   const tabFilteredCandidates = useMemo(() => {
     if (selectedTab === 'all') return filteredCandidates;
     return filteredCandidates.filter(c => {
-      const candidateStageKeys = stagesConfig.enumToKeys[c.stage] || [];
+      const mapped = stagesConfig.enumToKeys[c.stage];
+      // Тот же фолбэк, что в groupedByStage: кандидат без маппинга этапа
+      // относится к первой видимой колонке, иначе он невидим в любой вкладке.
+      const candidateStageKeys =
+        mapped && mapped.length > 0
+          ? mapped
+          : stagesConfig.keys[0]
+            ? [stagesConfig.keys[0]]
+            : [];
       return candidateStageKeys.includes(selectedTab);
     });
   }, [filteredCandidates, selectedTab, stagesConfig]);
@@ -845,6 +869,15 @@ export default function RecruiterFunnelsPage() {
       .finally(() => setHistoryLoading(false));
   }, [selectedCandidateId]);
 
+  // Load cross-vacancy activity feed when entity changes
+  useEffect(() => {
+    const eid = selectedCandidate?.entity_id;
+    if (!eid) { setEntityActivity([]); return; }
+    getEntityActivity(eid)
+      .then((blocks) => setEntityActivity(Array.isArray(blocks) ? blocks : []))
+      .catch(() => setEntityActivity([]));
+  }, [selectedCandidate?.entity_id]);
+
   // Load entity files (resumes) when candidate selected
   useEffect(() => {
     if (!selectedCandidate?.entity_id) {
@@ -858,14 +891,38 @@ export default function RecruiterFunnelsPage() {
       .finally(() => setFilesLoading(false));
   }, [selectedCandidate?.entity_id]);
 
-  // Load entity extra_data for resume text view
+  // Load entity extra_data for resume text view + дедуп-баннер в воронке
   useEffect(() => {
     setResumeTextMode(false);
     setEntityExtraData(null);
+    setDupCard(null);
     if (!selectedCandidate?.entity_id) return;
     getEntity(selectedCandidate.entity_id)
-      .then(entity => setEntityExtraData(entity.extra_data || null))
-      .catch(() => setEntityExtraData(null));
+      .then(entity => {
+        setEntityExtraData(entity.extra_data || null);
+        // Карточка для ShadowDuplicateBanner — чтобы баннер «Похожий кандидат»
+        // работал и в воронке, а не только в «Все кандидаты».
+        const ed = (entity.extra_data || {}) as Record<string, any>;
+        setDupCard({
+          id: entity.id,
+          name: entity.name || '',
+          email: entity.email || undefined,
+          phone: entity.phone || undefined,
+          telegram_username: entity.telegram_usernames?.[0],
+          position: entity.position || undefined,
+          company: entity.company || undefined,
+          created_at: entity.created_at || '',
+          tags: (entity.tags as string[]) || [],
+          city: ed.city,
+          age: ed.age != null ? String(ed.age) : undefined,
+          salary: ed.salary != null ? String(ed.salary) : undefined,
+          total_experience: ed.total_experience != null ? String(ed.total_experience) : undefined,
+          source: ed.source,
+          source_url: ed.source_url,
+          extra_data: entity.extra_data || undefined,
+        });
+      })
+      .catch(() => { setEntityExtraData(null); setDupCard(null); });
   }, [selectedCandidate?.entity_id]);
 
   useEffect(() => {
@@ -1098,7 +1155,7 @@ export default function RecruiterFunnelsPage() {
     });
   };
 
-  const handleStatusFilterChange = (nextStatus: VacancyStatus | 'all') => {
+  const handleStatusFilterChange = (nextStatus: VacancyStatus | 'all' | 'deleted') => {
     setStatusFilter(nextStatus);
     setShowStatusMenu(false);
     if (!selectedVacancyId) {
@@ -1172,15 +1229,18 @@ export default function RecruiterFunnelsPage() {
       if (confirmDialog.type === 'close') {
         await updateVacancy(confirmDialog.vacancy.id, { status: 'closed' });
         toast.success('Вакансия закрыта');
+        fetchVacancies();
       } else {
         await deleteVacancy(confirmDialog.vacancy.id);
         toast.success('Вакансия удалена');
+        // НЕ рефетчим после удаления: store уже убрал вакансию из списка.
+        // Рефетч сразу после delete мог вернуть её обратно из-за read-after-write
+        // задержки (реплика/кэш) — отсюда «удаляется только со второго раза».
         if (selectedVacancyId === confirmDialog.vacancy.id) {
           setSearchParams({});
         }
       }
       setConfirmDialog(null);
-      fetchVacancies();
     } catch {
       toast.error(confirmDialog.type === 'close' ? 'Ошибка при закрытии' : 'Ошибка при удалении');
     } finally {
@@ -1189,22 +1249,25 @@ export default function RecruiterFunnelsPage() {
   };
 
   // Change candidate stage
-  const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage) => {
+  const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage, comment?: string) => {
     try {
-      await updateApplication(applicationId, { stage: newStage });
-      // Update local state immediately
+      await updateApplication(applicationId, { stage: newStage, ...(comment ? { comment } : {}) });
+      // Локально двигаем кандидата на новый этап.
       setCandidates((prev) =>
         prev.map((c) => c.id === applicationId ? { ...c, stage: newStage } : c)
       );
-      setSelectedTab(stagesConfig.enumToKeys[newStage]?.[0] || newStage);
-      setSelectedCandidateId(applicationId);
+      // НЕ переключаем вкладку и НЕ «следуем» за кандидатом (требование Маши):
+      // остаёмся на текущем этапе, карточка просто исчезает из текущего списка.
+      // Дальше выбором управляет эффект [selectedCandidateId, tabFilteredCandidates]:
+      // если на этапе никого не осталось — выбор снимается и показывается заглушка
+      // «На этом этапе пока нет кандидатов»; иначе выбирается первый оставшийся.
       toast.success(`Статус изменён → ${getVacancyStageLabel(newStage)}`);
       // Refresh vacancy store for updated counts
       fetchVacancies();
     } catch {
       toast.error('Ошибка смены статуса');
     }
-  }, [fetchVacancies, getVacancyStageLabel, stagesConfig.enumToKeys]);
+  }, [fetchVacancies, getVacancyStageLabel]);
 
   // ─── Interview scheduling modal ───
   const [interviewForCandidate, setInterviewForCandidate] = useState<typeof selectedCandidate | null>(null);
@@ -1235,6 +1298,77 @@ export default function RecruiterFunnelsPage() {
   // ─── Comment textarea state ───
   const commentRef = useRef<HTMLTextAreaElement | null>(null);
   const [commentSaving, setCommentSaving] = useState(false);
+
+  // ─── Богатый пикер смены этапа (как на «Все кандидаты»): список этапов +
+  // редактор «Записать комментарий». Заменяет узкий StageDropdown. ───
+  const [stagePickerOpen, setStagePickerOpen] = useState(false);
+  const [stagePickerPending, setStagePickerPending] = useState<ApplicationStage | null>(null);
+  const [stagePickerComment, setStagePickerComment] = useState('');
+  const stagePickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!stagePickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (stagePickerRef.current && !stagePickerRef.current.contains(e.target as Node)) {
+        setStagePickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [stagePickerOpen]);
+
+  // ─── Меню действий со статусом («⋯»): убрать из вакансии / откатить этап ───
+  const [candidateMenuOpen, setCandidateMenuOpen] = useState(false);
+  const candidateMenuRef = useRef<HTMLDivElement>(null);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+  const [removeBusy, setRemoveBusy] = useState(false);
+
+  useEffect(() => {
+    if (!candidateMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (candidateMenuRef.current && !candidateMenuRef.current.contains(e.target as Node)) {
+        setCandidateMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [candidateMenuOpen]);
+
+  // Прошлый этап для отката — from_stage самой свежей записи истории
+  // (to_stage у неё = текущий этап).
+  const prevStage = useMemo<ApplicationStage | null>(() => {
+    if (!Array.isArray(candidateHistory) || candidateHistory.length === 0) return null;
+    const latest = [...candidateHistory].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0];
+    return (latest?.from_stage as ApplicationStage | null) || null;
+  }, [candidateHistory]);
+
+  const handleRevertStage = useCallback(async () => {
+    if (!selectedCandidate || !prevStage) return;
+    setCandidateMenuOpen(false);
+    await handleStageChange(selectedCandidate.id, prevStage);
+  }, [selectedCandidate, prevStage, handleStageChange]);
+
+  const handleRemoveFromVacancy = useCallback(async () => {
+    if (!selectedCandidate) return;
+    setRemoveBusy(true);
+    try {
+      await deleteApplication(selectedCandidate.id);
+      // Локально убираем отклик — кандидат исчезает из текущего списка; выбором
+      // дальше управляет эффект (как при смене этапа): останемся на вкладке,
+      // последний → заглушка «На этом этапе пока нет кандидатов».
+      setCandidates((prev) => prev.filter((c) => c.id !== selectedCandidate.id));
+      toast.success('Кандидат убран из вакансии');
+      setRemoveConfirmOpen(false);
+      setCandidateMenuOpen(false);
+      fetchVacancies();
+    } catch {
+      toast.error('Не удалось убрать из вакансии');
+    } finally {
+      setRemoveBusy(false);
+    }
+  }, [selectedCandidate, fetchVacancies]);
 
   const saveEntityNote = useCallback(async (
     text: string,
@@ -1291,6 +1425,76 @@ export default function RecruiterFunnelsPage() {
     setStageCommentComposerOpen(false);
   }, [handleSaveComment, stageCommentText]);
 
+  // Этапы для пикера — тот же список и лейблы, что были в StageDropdown.
+  const stagePickerOptions = useMemo(
+    () =>
+      STAGE_ORDER.map((stage) => ({
+        status: stage as ApplicationStage,
+        label: vacancyStageDropdownLabels[stage] || STAGE_LABELS[stage] || stage,
+      })),
+    [vacancyStageDropdownLabels],
+  );
+
+  // Сохранение из пикера: коммент привязывается к ВЫБРАННОМУ этапу (дату ставит
+  // сервер), затем кандидат переносится. Коммент необязателен — можно просто
+  // сменить этап.
+  const handleStagePickerSave = useCallback(async () => {
+    if (!selectedCandidate) return;
+    const target = (stagePickerPending ?? (selectedCandidate.stage as ApplicationStage)) as ApplicationStage;
+    const text = stagePickerComment.trim();
+    const isMove = target !== selectedCandidate.stage;
+    if (isMove) {
+      // Коммент уходит В САМ переход → в истории «X → Y: текст», отдельную заметку не создаём.
+      await handleStageChange(selectedCandidate.id, target, text || undefined);
+    } else if (text) {
+      // Без смены этапа — обычный коммент к текущему этапу.
+      await saveEntityNote(text, target as string, getVacancyStageLabel(target as string));
+    }
+    setStagePickerComment('');
+    setStagePickerOpen(false);
+  }, [
+    selectedCandidate,
+    stagePickerPending,
+    stagePickerComment,
+    saveEntityNote,
+    getVacancyStageLabel,
+    handleStageChange,
+  ]);
+
+  const handleDeleteNote = useCallback(async (note: Record<string, unknown>) => {
+    if (!selectedCandidate?.entity_id) return;
+    // Новые заметки удаляются по id; у старых (до коммита 9bac610) id нет —
+    // бэкенд поддерживает фолбэк по дате через ключ "date:<iso>".
+    const key = (note.id as string) || (note.date ? `date:${note.date as string}` : '');
+    if (!key) {
+      toast.error('Не удалось определить комментарий');
+      return;
+    }
+    try {
+      await deleteEntityNote(selectedCandidate.entity_id, key);
+      setEntityExtraData((prev) => {
+        const existing = Array.isArray(prev?.notes)
+          ? (prev!.notes as Array<Record<string, unknown>>)
+          : [];
+        return { ...(prev || {}), notes: existing.filter((n) => n !== note) };
+      });
+      toast.success('Комментарий удалён');
+    } catch {
+      toast.error('Не удалось удалить комментарий');
+    }
+  }, [selectedCandidate?.entity_id]);
+
+  const handleDeleteHistory = useCallback(async (historyId: number) => {
+    if (!selectedCandidate || !historyId) return;
+    try {
+      await deleteApplicationHistory(selectedCandidate.id, historyId);
+      setCandidateHistory((prev) => prev.filter((h: any) => h.id !== historyId));
+      toast.success('Запись истории удалена');
+    } catch {
+      toast.error('Не удалось удалить запись');
+    }
+  }, [selectedCandidate]);
+
   const renderVacancyNoteCard = useCallback((note: Record<string, unknown>, i: number) => {
     const stage = note.stage as string | undefined;
     const stageLabel = (note.stage_label as string | undefined)
@@ -1321,6 +1525,16 @@ export default function RecruiterFunnelsPage() {
               <span className="hf-vacancy-note-stage">{stageLabel}</span>
             )}
             <span className="hf-vacancy-note-date">{dateStr}</span>
+            {(note.id || note.date) ? (
+              <button
+                type="button"
+                onClick={() => handleDeleteNote(note)}
+                title="Удалить комментарий"
+                className="ml-auto flex-shrink-0 rounded p-0.5 text-[var(--hf-main-400)] transition-colors hover:text-[var(--hf-status-red)]"
+              >
+                <Trash2 className="h-[14px] w-[14px]" />
+              </button>
+            ) : null}
           </div>
           <div className="hf-vacancy-note-text">
             {String(note.text)}
@@ -1328,7 +1542,7 @@ export default function RecruiterFunnelsPage() {
         </div>
       </div>
     );
-  }, [getVacancyStageLabel]);
+  }, [getVacancyStageLabel, handleDeleteNote]);
 
   // ─── File attach (Файл button) ───
   const candidateFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1344,8 +1558,10 @@ export default function RecruiterFunnelsPage() {
       // Re-fetch entity files so они показались в правой панели
       const fresh = await getEntityFiles(selectedCandidate.entity_id);
       setEntityFiles(fresh);
-    } catch {
-      toast.error('Ошибка загрузки файла');
+    } catch (err) {
+      // B7-fix: показываем реальную причину с бэка (размер/тип/нет места и т.п.)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail || 'Ошибка загрузки файла');
     } finally {
       setCandidateFileUploading(false);
       if (e.target) e.target.value = '';
@@ -1927,10 +2143,6 @@ export default function RecruiterFunnelsPage() {
             stageKeys={vacancyVisibleStageKeys}
             stagesConfig={stagesConfig}
             groupedByStageMap={groupedByStageMap}
-            stageScrollRef={vacancyStageScrollRef}
-            onStageScroll={updateVacancyStageScrollState}
-            canScroll={vacancyStageCanScroll}
-            onScrollStages={scrollVacancyStageTabs}
             onReopen={() => handleReopenVacancy(selectedVacancy)}
             onEdit={() => setEditingVacancy(selectedVacancy)}
           />
@@ -1978,7 +2190,6 @@ export default function RecruiterFunnelsPage() {
                 <div className="hf-vacancy-stage-shell hf-top-stage-shell">
                   <div
                     ref={vacancyStageScrollRef}
-                    onScroll={updateVacancyStageScrollState}
                     className={clsx(
                       'hf-vacancy-stage-tabs hf-top-stage-tabs no-scrollbar',
                       !showVacancyTopSearch && 'hf-top-stage-tabs-padded',
@@ -2070,20 +2281,20 @@ export default function RecruiterFunnelsPage() {
                       <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
                     </button>
                   </div>
-                  {vacancyStageCanScroll.left && !showVacancyTopSearch && !candidateSearch ? (
+                  {vacancyStageCanScrollLeft && !showVacancyTopSearch && !candidateSearch ? (
                     <button
                       type="button"
-                      onClick={() => scrollVacancyStageTabs('left')}
+                      onClick={scrollVacancyStagesLeft}
                       className="hf-top-stage-arrow hf-top-stage-arrow-left"
                       title="Прокрутить этапы влево"
                     >
                       <ChevronLeft className="hf-top-stage-arrow-icon" />
                     </button>
                   ) : null}
-                  {vacancyStageCanScroll.right && !showVacancyTopSearch && !candidateSearch ? (
+                  {vacancyStageCanScrollRight && !showVacancyTopSearch && !candidateSearch ? (
                     <button
                       type="button"
-                      onClick={() => scrollVacancyStageTabs('right')}
+                      onClick={scrollVacancyStagesRight}
                       className="hf-top-stage-arrow hf-top-stage-arrow-right"
                       title="Прокрутить этапы вправо"
                     >
@@ -2313,6 +2524,13 @@ export default function RecruiterFunnelsPage() {
                         <div className="flex-1 overflow-y-auto">
                           {detailTab === 'info' ? (
                             <div className="p-[var(--hf-space-xxl)] max-w-[1220px]">
+                              {dupCard && (
+                                <ShadowDuplicateBanner
+                                  card={dupCard}
+                                  status={selectedCandidate.stage as string}
+                                  onResolved={() => setDupCard(null)}
+                                />
+                              )}
                               {/* Top action buttons — Huntflow style */}
                               <div className="hf-profile-action-bar">
                                 {selectedCandidate.entity_id && (
@@ -2526,8 +2744,24 @@ export default function RecruiterFunnelsPage() {
                                 )}
                               </div>
 
+                              {/* Cross-vacancy activity feed */}
+                              <div className="px-5 pt-4">
+                                <div className="text-sm font-medium text-[var(--hf-dark-400)] mb-2">Вакансии и история</div>
+                                {entityActivity.length === 0 ? (
+                                  <div className="text-sm text-[var(--hf-dark-600)] mb-3">Нет участий в вакансиях</div>
+                                ) : (
+                                  entityActivity.map((b) => (
+                                    <VacancyActivityBlock
+                                      key={b.application_id}
+                                      block={b}
+                                      stageLabel={getVacancyStageLabel}
+                                    />
+                                  ))
+                                )}
+                              </div>
+
                               {/* Current stage — Huntflow style block */}
-                              <div className="hf-stage-card">
+                              <div className="hf-stage-card" style={stageCardStyle}>
                                 <div className="hf-stage-card-head">
                                   <div className="hf-stage-card-head-row">
                                     <div>
@@ -2539,15 +2773,158 @@ export default function RecruiterFunnelsPage() {
                                         {selectedVacancy?.department_name ? ` (${selectedVacancy.department_name})` : ''}
                                       </div>
                                     </div>
-                                  <StageDropdown
-                                    currentStage={selectedCandidate.stage as ApplicationStage}
-                                    onChangeStage={(newStage) => handleStageChange(selectedCandidate.id, newStage)}
-                                    customLabels={vacancyStageDropdownLabels}
-                                    buttonClassName="hf-stage-change-btn"
-                                    buttonLabel="Сменить этап подбора"
-                                    menuAlign="right"
-                                    menuVariant="light"
-                                  />
+                                  <div className="flex items-center gap-2">
+                                  <div className="relative" ref={stagePickerRef}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setStagePickerPending(selectedCandidate.stage as ApplicationStage);
+                                        setStagePickerComment('');
+                                        setStagePickerOpen((v) => !v);
+                                      }}
+                                      className="hf-stage-change-btn"
+                                    >
+                                      Сменить этап подбора
+                                    </button>
+                                    {stagePickerOpen && (
+                                      <div className="hf-stage-picker">
+                                        <div className="hf-stage-picker-list huntflow-scrollbar">
+                                          {stagePickerOptions.map((option) => {
+                                            const isSelected =
+                                              (stagePickerPending ?? selectedCandidate.stage) === option.status;
+                                            return (
+                                              <button
+                                                type="button"
+                                                key={option.status}
+                                                onClick={() => setStagePickerPending(option.status)}
+                                                className={clsx(
+                                                  'hf-stage-picker-option',
+                                                  isSelected
+                                                    ? 'hf-stage-picker-option-active'
+                                                    : 'hf-stage-picker-option-idle',
+                                                )}
+                                              >
+                                                <span className="truncate">{option.label}</span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                        <div className="hf-stage-picker-editor-wrap">
+                                          <div className="hf-stage-picker-editor">
+                                            <div className="hf-stage-picker-toolbar">
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="bold" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="italic" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="bullet-list" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="numbered-list" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="link" /></button>
+                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="at" /></button>
+                                            </div>
+                                            <textarea
+                                              value={stagePickerComment}
+                                              onChange={(event) => setStagePickerComment(event.target.value)}
+                                              placeholder="Записать комментарий"
+                                              className="hf-stage-picker-textarea"
+                                            />
+                                            <div className="hf-stage-picker-actions">
+                                              <HuntflowActionChip
+                                                icon={Mail}
+                                                label="Письмо"
+                                                onClick={() => {
+                                                  if (selectedCandidate.entity_email) {
+                                                    window.open(`mailto:${selectedCandidate.entity_email}`);
+                                                  } else {
+                                                    toast.error('Email кандидата не указан');
+                                                  }
+                                                }}
+                                              />
+                                              <HuntflowActionChip
+                                                icon={Calendar}
+                                                label="Интервью"
+                                                onClick={() => {
+                                                  setInterviewForCandidate(selectedCandidate);
+                                                  const cur = selectedCandidate.next_interview_at;
+                                                  if (cur) {
+                                                    const d = new Date(cur);
+                                                    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+                                                      .toISOString()
+                                                      .slice(0, 16);
+                                                    setInterviewDateTime(local);
+                                                  } else {
+                                                    setInterviewDateTime('');
+                                                  }
+                                                }}
+                                              />
+                                              <HuntflowActionChip
+                                                icon={ThumbsUp}
+                                                label="Оффер"
+                                                onClick={() => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage)}
+                                              />
+                                              <HuntflowActionChip
+                                                icon={Paperclip}
+                                                label="Файл"
+                                                onClick={() => candidateFileInputRef.current?.click()}
+                                              />
+                                            </div>
+                                          </div>
+                                          <div className="hf-stage-picker-footer">
+                                            <button
+                                              type="button"
+                                              onClick={handleStagePickerSave}
+                                              className="inline-flex h-[33px] min-w-[74px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)]"
+                                            >
+                                              Сохранить
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setStagePickerComment('');
+                                                setStagePickerOpen(false);
+                                              }}
+                                              className="inline-flex h-[33px] min-w-[65px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)]"
+                                            >
+                                              Отмена
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="relative" ref={candidateMenuRef}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCandidateMenuOpen((v) => !v)}
+                                      title="Действия со статусом"
+                                      className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] text-[var(--hf-main-700)] transition-colors hover:bg-[var(--hf-ui-hover)]"
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </button>
+                                    {candidateMenuOpen && (
+                                      <div className="absolute right-0 top-full z-[260] mt-1 w-[240px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-white)] py-1 shadow-[0_2px_16px_var(--hf-alpha-300)]">
+                                        {prevStage && prevStage !== selectedCandidate.stage && (
+                                          <button
+                                            type="button"
+                                            onClick={handleRevertStage}
+                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:var(--hf-fs-xs)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-bg-panel)]"
+                                          >
+                                            <RotateCcw className="h-4 w-4 flex-shrink-0" />
+                                            <span className="truncate">Вернуть на «{getVacancyStageLabel(prevStage)}»</span>
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setCandidateMenuOpen(false);
+                                            setRemoveConfirmOpen(true);
+                                          }}
+                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:var(--hf-fs-xs)] text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-bg-panel)]"
+                                        >
+                                          <Trash2 className="h-4 w-4 flex-shrink-0" />
+                                          <span>Убрать из вакансии</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                  </div>
                                   </div>
                                 </div>
 
@@ -2730,7 +3107,17 @@ export default function RecruiterFunnelsPage() {
                                         (!Number.isFinite(changedById) ? entry.changed_by : null);
 
                                       return (
-                                        <div key={i} className="relative pb-5 last:pb-0">
+                                        <div key={entry.id ?? i} className="relative pb-5 last:pb-0">
+                                          {entry.id ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteHistory(entry.id)}
+                                              title="Удалить запись"
+                                              className="absolute right-0 top-0 rounded p-1 text-[var(--hf-dark-500)] transition-colors hover:text-[var(--hf-status-red)]"
+                                            >
+                                              <Trash2 className="h-[14px] w-[14px]" />
+                                            </button>
+                                          ) : null}
                                           {/* Timeline dot */}
                                           <div className={clsx(
                                             'absolute -left-[25px] w-3 h-3 rounded-full border-2 border-[color:var(--hf-dark-800)]',
@@ -2824,17 +3211,8 @@ export default function RecruiterFunnelsPage() {
                                   }}
                                   saving={commentSaving}
                                   actions={[
-                                    {
-                                      icon: Mail,
-                                      label: 'Письмо',
-                                      onClick: () => {
-                                        if (selectedCandidate.entity_email) {
-                                          window.open(`mailto:${selectedCandidate.entity_email}`);
-                                        } else {
-                                          toast.error('Email кандидата не указан');
-                                        }
-                                      },
-                                    },
+                                    // Убрали «Письмо» из личных заметок — заметки личные,
+                                    // письмо кандидату отсюда не нужно (как в AllCandidatesPage).
                                     {
                                       icon: Paperclip,
                                       label: 'Файл',
@@ -2892,14 +3270,20 @@ export default function RecruiterFunnelsPage() {
                                 </div>
                               ) : (
                                 <div className="flex-1 flex flex-col">
+                                  {/* Per-resume tabs (one per saved resume / date) */}
+                                  <ResumeTabs
+                                    key={selectedCandidate?.entity_id}
+                                    entityFiles={entityFiles}
+                                    extraData={entityExtraData}
+                                    resumeText={resumeTextContent}
+                                  />
                                   {/* Action bar */}
                                   <div className="flex items-center justify-between px-5 py-2.5 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
                                     <div className="flex items-center gap-3">
                                       {resumeOriginal && (
                                         <a
-                                          href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
+                                          href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download?download=1`}
+                                          download={resumeOriginal.file_name}
                                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-08)] text-xs text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
                                         >
                                           <FileText className="w-3.5 h-3.5" />
@@ -3105,6 +3489,10 @@ export default function RecruiterFunnelsPage() {
           card={editingCandidateCard}
           onClose={() => setEditingCandidateCard(null)}
           onSaved={handleCandidateSaved}
+          onDeleted={() => {
+            setCandidates((items) => items.filter((c) => c.entity_id !== editingCandidateCard?.id));
+            setEditingCandidateCard(null);
+          }}
         />
       )}
 
@@ -3161,93 +3549,47 @@ export default function RecruiterFunnelsPage() {
         </div>
       )}
 
-    </div>
-  );
-}
-
-/* ===================== Stage Dropdown ===================== */
-
-function StageDropdown({
-  currentStage,
-  onChangeStage,
-  customLabels,
-  buttonClassName,
-  buttonLabel,
-  menuAlign = 'left',
-  menuVariant = 'light',
-}: {
-  currentStage: ApplicationStage;
-  onChangeStage: (stage: ApplicationStage) => void;
-  customLabels?: Record<string, string>;
-  buttonClassName?: string;
-  buttonLabel?: string;
-  menuAlign?: 'left' | 'right';
-  menuVariant?: 'dark' | 'light';
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const colors = STAGE_COLORS[currentStage] || fallbackColor;
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className={buttonClassName || clsx(
-          'text-xs px-2.5 py-1 rounded-full font-medium cursor-pointer transition-all',
-          'hover:ring-2 hover:ring-[var(--hf-white-alpha-10)]',
-          colors.badge,
-        )}
-      >
-        {buttonLabel || customLabels?.[currentStage] || STAGE_LABELS[currentStage] || currentStage}
-      </button>
-
-      {open && (
-        <div className={clsx(
-          'hf-stage-dropdown-menu absolute top-full mt-1 z-50 w-56 py-1 overflow-hidden',
-          menuVariant === 'light' ? 'hf-stage-dropdown-menu-light' : 'hf-stage-dropdown-menu-dark',
-          menuAlign === 'right' ? 'right-0' : 'left-0',
-        )}>
-          <div className="hf-stage-dropdown-header">
-            Перенести в
-          </div>
-          {STAGE_ORDER.map((stage) => {
-            const sc = STAGE_COLORS[stage] || fallbackColor;
-            const isCurrent = stage === currentStage;
-            return (
+      {removeConfirmOpen && selectedCandidate && (
+        <div
+          className="hf-confirm-modal-backdrop"
+          onClick={() => !removeBusy && setRemoveConfirmOpen(false)}
+        >
+          <div
+            className="hf-confirm-modal hf-confirm-modal-delete"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="hf-confirm-modal-title">Убрать из вакансии?</h3>
+              <p className="hf-confirm-modal-subtitle">
+                «{selectedCandidate.entity_name?.trim() || 'Кандидат'}»
+              </p>
+              <p className="hf-confirm-modal-danger-text">
+                Кандидат пропадёт из этой воронки, но останется в общей базе («Все кандидаты»).
+              </p>
+            </div>
+            <div className="hf-confirm-modal-actions">
               <button
-                key={stage}
-                onClick={() => {
-                  if (!isCurrent) onChangeStage(stage as ApplicationStage);
-                  setOpen(false);
-                }}
-                className={clsx(
-                  'hf-stage-dropdown-option',
-                  isCurrent ? 'hf-stage-dropdown-option-current' : 'hf-stage-dropdown-option-idle',
-                )}
+                onClick={() => setRemoveConfirmOpen(false)}
+                disabled={removeBusy}
+                className="hf-confirm-modal-cancel"
               >
-                <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
-                <span className="flex-1">{customLabels?.[stage] || STAGE_LABELS[stage] || stage}</span>
-                {isCurrent && (
-                  <span className="hf-stage-dropdown-current-note">текущий</span>
-                )}
+                Отмена
               </button>
-            );
-          })}
+              <button
+                onClick={handleRemoveFromVacancy}
+                disabled={removeBusy}
+                className="hf-confirm-modal-submit hf-confirm-modal-submit-danger"
+              >
+                {removeBusy ? 'Убираем…' : 'Убрать'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
+
     </div>
   );
 }
+
+/* StageDropdown удалён — на воронке смена этапа теперь через богатый пикер
+   (список этапов + «Записать комментарий») прямо в карточке кандидата. */

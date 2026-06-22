@@ -802,6 +802,7 @@ async def delete_entity_file(
 async def download_entity_file(
     entity_id: int,
     file_id: int,
+    download: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -859,11 +860,30 @@ async def download_entity_file(
         f"user_id={current_user.id} | user_name='{current_user.name}' | org_id={org.id}"
     )
 
+    # Disposition: inline (предпросмотр в iframe/вьюере) только для безопасных типов —
+    # PDF и растровых картинок; всё остальное (docx, svg, html, неизвестное) — attachment,
+    # чтобы не словить inline-XSS из загруженного файла. ?download=1 всегда форсит скачивание.
+    # nosniff не даёт браузеру переинтерпретировать тип. mime достраиваем по расширению,
+    # если в БД он пустой/octet-stream — иначе PDF не отрендерится во вьюере.
+    serve_mime = (entity_file.mime_type or "").lower()
+    if not serve_mime or serve_mime == "application/octet-stream":
+        _ext = (entity_file.file_name or "").lower().rsplit(".", 1)[-1]
+        serve_mime = {
+            "pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg",
+            "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
+        }.get(_ext, "application/octet-stream")
+    _inline_ok = serve_mime in {
+        "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp",
+    }
+    disposition = "inline" if (_inline_ok and not download) else "attachment"
+
     if disk_exists:
         return FileResponse(
             path=file_path,
             filename=entity_file.file_name,
-            media_type=entity_file.mime_type or "application/octet-stream"
+            media_type=serve_mime,
+            content_disposition_type=disposition,
+            headers={"X-Content-Type-Options": "nosniff"},
         )
 
     # Serve from DB (file_data bytea column)
@@ -874,9 +894,10 @@ async def download_entity_file(
             encoded_name = quote(entity_file.file_name)
             return Response(
                 content=file_data,
-                media_type=entity_file.mime_type or "application/octet-stream",
+                media_type=serve_mime,
                 headers={
-                    "Content-Disposition": f"inline; filename*=UTF-8''{encoded_name}"
+                    "Content-Disposition": f"{disposition}; filename*=UTF-8''{encoded_name}",
+                    "X-Content-Type-Options": "nosniff",
                 }
             )
     except Exception as e:

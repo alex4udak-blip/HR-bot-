@@ -5,7 +5,8 @@ import pytest
 import pytest_asyncio
 from datetime import datetime
 
-from api.models.database import Entity, EntityType, EntityStatus, Organization, Department, User
+from api.models.database import Entity, EntityType, EntityStatus, Organization, Department, User, Vacancy, VacancyStatus, VacancyApplication, ApplicationStage, StageTransition
+from sqlalchemy import select
 from api.services.similarity import (
     similarity_service,
     transliterate_ru_to_en,
@@ -626,3 +627,128 @@ class TestMergeEntities:
         # Should take min of mins and max of maxes
         assert merged.expected_salary_min == 120000
         assert merged.expected_salary_max == 220000
+
+    @pytest.mark.asyncio
+    async def test_merge_preserves_history_on_shared_vacancy(
+        self, db_session, organization, department, admin_user
+    ):
+        """При совпадении вакансии у обоих дублей история этапов источника
+        переносится на выжившую заявку, а не удаляется CASCADE."""
+        target = Entity(
+            org_id=organization.id, department_id=department.id,
+            created_by=admin_user.id, name="Target", type=EntityType.candidate,
+            status=EntityStatus.active, extra_data={}, created_at=datetime.utcnow(),
+        )
+        source = Entity(
+            org_id=organization.id, department_id=department.id,
+            created_by=admin_user.id, name="Source", type=EntityType.candidate,
+            status=EntityStatus.new, extra_data={}, created_at=datetime.utcnow(),
+        )
+        vacancy = Vacancy(
+            org_id=organization.id, department_id=department.id,
+            created_by=admin_user.id, title="BA", status=VacancyStatus.open,
+            created_at=datetime.utcnow(),
+        )
+        db_session.add_all([target, source, vacancy])
+        await db_session.commit()
+
+        target_app = VacancyApplication(
+            vacancy_id=vacancy.id, entity_id=target.id, stage=ApplicationStage.applied,
+        )
+        source_app = VacancyApplication(
+            vacancy_id=vacancy.id, entity_id=source.id, stage=ApplicationStage.hired,
+        )
+        db_session.add_all([target_app, source_app])
+        await db_session.commit()
+
+        db_session.add_all([
+            StageTransition(application_id=source_app.id, entity_id=source.id,
+                            from_stage=None, to_stage="applied"),
+            StageTransition(application_id=source_app.id, entity_id=source.id,
+                            from_stage="applied", to_stage="hired", comment="Оффер принят"),
+        ])
+        await db_session.commit()
+
+        merged = await similarity_service.merge_entities(
+            db=db_session, source_entity=source, target_entity=target,
+        )
+
+        rows = (await db_session.execute(
+            select(StageTransition).where(StageTransition.entity_id == merged.id)
+        )).scalars().all()
+        comments = {t.comment for t in rows}
+        assert "Оффер принят" in comments, "история источника потеряна"
+        assert all(t.application_id == target_app.id for t in rows), \
+            "история не перепривязана к выжившей заявке"
+
+    @pytest.mark.asyncio
+    async def test_merge_combines_notes(
+        self, db_session, organization, department, admin_user
+    ):
+        """Заметки обоих профилей сохраняются (массив объединяется), дубли по id не дублируются."""
+        target = Entity(
+            org_id=organization.id, department_id=department.id,
+            created_by=admin_user.id, name="Target", type=EntityType.candidate,
+            status=EntityStatus.active,
+            extra_data={"notes": [{"id": "a", "text": "t-note"}]},
+            created_at=datetime.utcnow(),
+        )
+        source = Entity(
+            org_id=organization.id, department_id=department.id,
+            created_by=admin_user.id, name="Source", type=EntityType.candidate,
+            status=EntityStatus.new,
+            # "b" is a fresh note; "a" has the same id as target's note — must be deduped
+            extra_data={"notes": [{"id": "b", "text": "s-note"}, {"id": "a", "text": "t-note"}]},
+            created_at=datetime.utcnow(),
+        )
+        db_session.add_all([target, source])
+        await db_session.commit()
+
+        merged = await similarity_service.merge_entities(
+            db=db_session, source_entity=source, target_entity=target,
+        )
+        notes = merged.extra_data.get("notes", [])
+        texts = {n["text"] for n in notes}
+        assert texts == {"t-note", "s-note"}
+        # Duplicate note with id="a" from source must NOT create a second entry.
+        assert len(notes) == 2, f"expected 2 notes after dedup, got {len(notes)}: {notes}"
+
+    @pytest.mark.asyncio
+    async def test_merge_moves_app_on_distinct_vacancy(
+        self, db_session, organization, department, admin_user
+    ):
+        """Заявка источника на ДРУГОЙ вакансии переносится на target отдельным блоком."""
+        target = Entity(org_id=organization.id, department_id=department.id,
+                        created_by=admin_user.id, name="Target", type=EntityType.candidate,
+                        status=EntityStatus.active, extra_data={}, created_at=datetime.utcnow())
+        source = Entity(org_id=organization.id, department_id=department.id,
+                        created_by=admin_user.id, name="Source", type=EntityType.candidate,
+                        status=EntityStatus.new, extra_data={}, created_at=datetime.utcnow())
+        vac_t = Vacancy(org_id=organization.id, department_id=department.id,
+                        created_by=admin_user.id, title="VacT", status=VacancyStatus.open,
+                        created_at=datetime.utcnow())
+        vac_s = Vacancy(org_id=organization.id, department_id=department.id,
+                        created_by=admin_user.id, title="VacS", status=VacancyStatus.open,
+                        created_at=datetime.utcnow())
+        db_session.add_all([target, source, vac_t, vac_s])
+        await db_session.commit()
+        t_app = VacancyApplication(vacancy_id=vac_t.id, entity_id=target.id, stage=ApplicationStage.applied)
+        s_app = VacancyApplication(vacancy_id=vac_s.id, entity_id=source.id, stage=ApplicationStage.interview)
+        db_session.add_all([t_app, s_app])
+        await db_session.commit()
+        db_session.add(StageTransition(application_id=s_app.id, entity_id=source.id,
+                                       from_stage=None, to_stage="interview", comment="src-hist"))
+        await db_session.commit()
+
+        merged = await similarity_service.merge_entities(
+            db=db_session, source_entity=source, target_entity=target)
+
+        apps = (await db_session.execute(
+            select(VacancyApplication).where(VacancyApplication.entity_id == merged.id)
+        )).scalars().all()
+        assert {a.vacancy_id for a in apps} == {vac_t.id, vac_s.id}, \
+            "обе вакансии должны остаться отдельными блоками"
+        hist = (await db_session.execute(
+            select(StageTransition).where(StageTransition.entity_id == merged.id)
+        )).scalars().all()
+        assert any(t.comment == "src-hist" for t in hist), "история перенесённой заявки потеряна"

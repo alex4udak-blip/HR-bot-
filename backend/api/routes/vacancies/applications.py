@@ -11,7 +11,7 @@ from .common import (
     logger, get_db, Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
     Entity, EntityType, User, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
-    check_vacancy_access, can_access_vacancy
+    check_vacancy_access, can_access_vacancy, can_manage_applications
 )
 from ...services.auth import get_user_org
 
@@ -251,7 +251,7 @@ async def create_application(
         from_stage=None,
         to_stage=initial_stage.value,
         changed_by_id=current_user.id,
-        comment="Initial application",
+        comment="Первичная заявка",
     )
     await db.commit()
 
@@ -317,8 +317,8 @@ async def update_application(
         select(Vacancy).where(Vacancy.id == application.vacancy_id)
     )
     vacancy = vacancy_result.scalar()
-    if vacancy and not await can_access_vacancy(vacancy, current_user, org, db):
-        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
+    if vacancy and not await can_manage_applications(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Недостаточно прав для изменения этой вакансии")
 
     # Save old values for notifications
     old_stage = application.stage
@@ -343,6 +343,8 @@ async def update_application(
 
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
+    # comment — не поле VacancyApplication, а коммент к переходу (пишется в историю).
+    transition_comment = update_data.pop("comment", None)
     for field, value in update_data.items():
         if field != 'stage_order' or data.stage_order is not None:  # Don't override auto-calculated order
             setattr(application, field, value)
@@ -373,6 +375,7 @@ async def update_application(
             from_stage=old_stage.value if old_stage else None,
             to_stage=data.stage.value,
             changed_by_id=current_user.id,
+            comment=transition_comment,
         )
 
     await db.commit()
@@ -471,8 +474,8 @@ async def delete_application(
         select(Vacancy).where(Vacancy.id == application.vacancy_id)
     )
     vacancy = vacancy_result.scalar()
-    if vacancy and not await can_access_vacancy(vacancy, current_user, org, db):
-        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
+    if vacancy and not await can_manage_applications(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Недостаточно прав для изменения этой вакансии")
 
     # Get the entity to reset its status
     entity_id = application.entity_id
@@ -481,10 +484,19 @@ async def delete_application(
     )
     entity = entity_result.scalar()
 
+    # Сбрасываем статус кандидата в 'new' ТОЛЬКО если он больше не участвует
+    # ни в одной вакансии. Иначе в других воронках кандидата слетал бы этап.
+    other_apps = await db.execute(
+        select(func.count(VacancyApplication.id)).where(
+            VacancyApplication.entity_id == entity_id,
+            VacancyApplication.id != application_id,
+        )
+    )
+    has_other_apps = (other_apps.scalar() or 0) > 0
+
     await db.delete(application)
 
-    # Reset Entity.status to 'new' since candidate is no longer in any vacancy
-    if entity:
+    if entity and not has_other_apps:
         entity.status = EntityStatus.new
         entity.updated_at = datetime.utcnow()
         logger.info(f"DELETE /applications/{application_id}: Reset entity {entity_id} status to 'new'")

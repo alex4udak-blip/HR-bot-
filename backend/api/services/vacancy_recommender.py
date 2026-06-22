@@ -1094,6 +1094,19 @@ class VacancyRecommenderService:
         await db.commit()
         await db.refresh(application)
 
+        # Начальный транзишн в историю (как в create_application).
+        from .stage_transitions import record_transition
+        await record_transition(
+            db=db,
+            application_id=application.id,
+            entity_id=entity.id,
+            from_stage=None,
+            to_stage=application.stage.value,
+            changed_by_id=created_by,
+            comment="Initial application",
+        )
+        await db.commit()
+
         logger.info(
             f"Auto-applied entity {entity.id} to vacancy {vacancy.id}"
         )

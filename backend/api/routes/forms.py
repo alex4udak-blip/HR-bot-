@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from ..database import get_db
 from ..models.database import (
-    FormTemplate, FormSubmission, FormVacancy,
+    FormTemplate, FormSubmission, FormVacancy, FormDispatch,
     Entity, EntityType, EntityStatus,
     EntityFile, EntityFileType,
     Vacancy, VacancyApplication, ApplicationStage,
@@ -70,6 +70,10 @@ class FormUpdateSchema(BaseModel):
 
 class PublicSubmitSchema(BaseModel):
     data: dict  # {field_id: value}
+
+
+class DispatchCreateSchema(BaseModel):
+    entity_id: int
 
 
 # ============================================================
@@ -431,6 +435,118 @@ async def list_submissions(
     ]
 
 
+@router.post("/{form_id}/dispatch")
+async def create_dispatch(
+    form_id: int,
+    body: DispatchCreateSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Создать персональную отправку анкеты существующему кандидату."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+
+    form = (await db.execute(select(FormTemplate).where(FormTemplate.id == form_id))).scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="Form not found")
+    entity = (await db.execute(select(Entity).where(Entity.id == body.entity_id))).scalar_one_or_none()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    if current_user.role != UserRole.superadmin:
+        if not org or form.org_id != org.id or entity.org_id != org.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    token = uuid.uuid4().hex
+    dispatch = FormDispatch(form_id=form.id, entity_id=entity.id, token=token, created_by=current_user.id)
+    db.add(dispatch)
+    await db.commit()
+    await db.refresh(dispatch)
+
+    return {
+        "id": dispatch.id, "token": token, "url": f"/form/d/{token}",
+        "entity_id": entity.id, "form_id": form.id, "status": dispatch.status,
+    }
+
+
+# ============================================================
+# Entity-scoped dispatch endpoints
+# ============================================================
+
+async def _assert_entity_access(entity_id: int, current_user: User, db: AsyncSession) -> Entity:
+    entity = (await db.execute(select(Entity).where(Entity.id == entity_id))).scalar_one_or_none()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    if current_user.role != UserRole.superadmin:
+        org = await get_user_org(current_user, db)
+        if not org or entity.org_id != org.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    return entity
+
+
+@router.get("/entity/{entity_id}/dispatches")
+async def list_entity_dispatches(entity_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    current_user = await db.merge(current_user)
+    await _assert_entity_access(entity_id, current_user, db)
+    rows = (await db.execute(
+        select(FormDispatch).where(FormDispatch.entity_id == entity_id).order_by(FormDispatch.created_at.desc())
+    )).scalars().all()
+    form_ids = {d.form_id for d in rows}
+    titles = {}
+    labels_by_form = {}  # form_id -> {field_id: label} — чтобы показывать вопросы, а не id полей
+    if form_ids:
+        for fid, title, fields in (await db.execute(
+            select(FormTemplate.id, FormTemplate.title, FormTemplate.fields).where(FormTemplate.id.in_(form_ids))
+        )).all():
+            titles[fid] = title
+            lbl = {}
+            for f in (fields or []):
+                if isinstance(f, dict) and f.get("id"):
+                    lbl[f["id"]] = f.get("label") or f["id"]
+            labels_by_form[fid] = lbl
+    subs = {}
+    sub_ids = [d.submission_id for d in rows if d.submission_id]
+    if sub_ids:
+        for s in (await db.execute(select(FormSubmission).where(FormSubmission.id.in_(sub_ids)))).scalars().all():
+            subs[s.id] = s.data
+    return [{
+        "id": d.id, "form_id": d.form_id, "form_title": titles.get(d.form_id), "token": d.token,
+        "status": d.status, "seen_by_recruiter": d.seen_by_recruiter,
+        "submission_id": d.submission_id, "answers": subs.get(d.submission_id),
+        "field_labels": labels_by_form.get(d.form_id, {}),
+        "created_at": d.created_at.isoformat() if d.created_at else None,
+        "submitted_at": d.submitted_at.isoformat() if d.submitted_at else None,
+    } for d in rows]
+
+
+@router.get("/entity/{entity_id}/unread-count")
+async def entity_forms_unread_count(entity_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    current_user = await db.merge(current_user)
+    await _assert_entity_access(entity_id, current_user, db)
+    count = (await db.execute(
+        select(func.count(FormDispatch.id)).where(
+            FormDispatch.entity_id == entity_id,
+            FormDispatch.status == "submitted",
+            FormDispatch.seen_by_recruiter == False,  # noqa: E712
+        )
+    )).scalar() or 0
+    return {"count": count}
+
+
+@router.patch("/entity/{entity_id}/dispatches/seen")
+async def mark_entity_dispatches_seen(entity_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    current_user = await db.merge(current_user)
+    await _assert_entity_access(entity_id, current_user, db)
+    await db.execute(
+        update(FormDispatch).where(
+            FormDispatch.entity_id == entity_id,
+            FormDispatch.seen_by_recruiter == False,  # noqa: E712
+        ).values(seen_by_recruiter=True)
+    )
+    await db.commit()
+    return {"ok": True}
+
+
 # ============================================================
 # Public routes — NO AUTH (candidate fills form)
 # ============================================================
@@ -523,6 +639,20 @@ async def submit_public_form(
     )
     db.add(entity)
     await db.flush()  # Get entity.id
+
+    # Теневая дедупликация: помечаем, если кандидат уже есть в архиве
+    try:
+        from ..services.similarity import detect_archived_duplicate
+        _hidden_dup = await detect_archived_duplicate(db, entity)
+        if _hidden_dup:
+            _extra = dict(entity.extra_data or {})
+            _extra["hidden_duplicate_id"] = _hidden_dup
+            entity.extra_data = _extra
+    except Exception:
+        import logging
+        logging.getLogger("hr-analyzer.forms").warning(
+            "shadow-dedup detect failed (non-critical)", exc_info=True
+        )
 
     # Create FormSubmission
     submission = FormSubmission(
@@ -647,6 +777,20 @@ async def submit_public_form_with_files(
     )
     db.add(entity)
     await db.flush()
+
+    # Теневая дедупликация: помечаем, если кандидат уже есть в архиве
+    try:
+        from ..services.similarity import detect_archived_duplicate
+        _hidden_dup = await detect_archived_duplicate(db, entity)
+        if _hidden_dup:
+            _extra = dict(entity.extra_data or {})
+            _extra["hidden_duplicate_id"] = _hidden_dup
+            entity.extra_data = _extra
+    except Exception:
+        import logging
+        logging.getLogger("hr-analyzer.forms").warning(
+            "shadow-dedup detect failed (non-critical)", exc_info=True
+        )
 
     # Create FormSubmission
     submission = FormSubmission(
@@ -777,3 +921,92 @@ async def submit_public_form_with_files(
         "entity_id": entity.id,
         "files_saved": len(saved_files),
     }
+
+
+@router.get("/public/d/{token}")
+async def get_public_form_by_token(token: str, db: AsyncSession = Depends(get_db)):
+    """Публичный показ персональной анкеты (без авторизации)."""
+    dispatch = (await db.execute(select(FormDispatch).where(FormDispatch.token == token))).scalar_one_or_none()
+    if not dispatch:
+        raise HTTPException(status_code=404, detail="Анкета не найдена")
+    form = (await db.execute(
+        select(FormTemplate).where(FormTemplate.id == dispatch.form_id, FormTemplate.is_active == True)
+    )).scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="Анкета недоступна")
+
+    entity = (await db.execute(select(Entity).where(Entity.id == dispatch.entity_id))).scalar_one_or_none()
+
+    if dispatch.status == "sent":
+        dispatch.status = "opened"
+        dispatch.opened_at = datetime.utcnow()
+        await db.commit()
+
+    # Уже заполнено — отдаём ответы, чтобы по ссылке открывалась ЗАПОЛНЕННАЯ анкета
+    # (рекрутёр может открыть/поделиться), а не пустая форма.
+    answers = None
+    if dispatch.status == "submitted" and dispatch.submission_id:
+        sub = (await db.execute(
+            select(FormSubmission).where(FormSubmission.id == dispatch.submission_id)
+        )).scalar_one_or_none()
+        answers = sub.data if sub else None
+
+    return {
+        "id": form.id, "title": form.title, "description": form.description,
+        "fields": form.fields or [],
+        "candidate_name": entity.name if entity else None,
+        "already_submitted": dispatch.status == "submitted",
+        "answers": answers,
+    }
+
+
+@router.post("/public/d/{token}/submit")
+async def submit_public_form_by_token(
+    token: str,
+    body: PublicSubmitSchema,
+    db: AsyncSession = Depends(get_db),
+):
+    """Публичная отправка персональной анкеты — привязка к существующему кандидату."""
+    dispatch = (await db.execute(select(FormDispatch).where(FormDispatch.token == token))).scalar_one_or_none()
+    if not dispatch:
+        raise HTTPException(status_code=404, detail="Анкета не найдена")
+    if dispatch.status == "submitted":
+        raise HTTPException(status_code=409, detail="Анкета уже заполнена")
+    form = (await db.execute(
+        select(FormTemplate).where(FormTemplate.id == dispatch.form_id, FormTemplate.is_active == True)
+    )).scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="Анкета недоступна")
+
+    for field in (form.fields or []):
+        if field.get("required") and field.get("type") != "file":
+            val = body.data.get(field["id"])
+            if val is None or (isinstance(val, str) and not val.strip()):
+                raise HTTPException(status_code=422, detail=f"Поле '{field['label']}' обязательно для заполнения")
+
+    submission = FormSubmission(form_id=form.id, entity_id=dispatch.entity_id, data=body.data, dispatch_id=dispatch.id)
+    db.add(submission)
+    await db.flush()
+
+    dispatch.status = "submitted"
+    dispatch.submitted_at = datetime.utcnow()
+    dispatch.submission_id = submission.id
+    dispatch.seen_by_recruiter = False
+    await db.commit()
+
+    try:
+        entity = (await db.execute(select(Entity).where(Entity.id == dispatch.entity_id))).scalar_one_or_none()
+        from ..services.hr_notifications import notify_form_submitted
+        await notify_form_submitted(db, dispatch, entity, form)
+        from .realtime import broadcast_form_submission
+        if dispatch.created_by:
+            await broadcast_form_submission(dispatch.created_by, {
+                "entity_id": dispatch.entity_id, "form_id": form.id, "dispatch_id": dispatch.id,
+                "form_title": form.title, "candidate_name": entity.name if entity else None,
+            })
+        else:
+            logger.warning("form.submission: dispatch %s has no created_by — no realtime sent", dispatch.id)
+    except Exception:
+        logger.error("form.submission notify/broadcast FAILED for dispatch %s", dispatch.id, exc_info=True)
+
+    return {"message": "Спасибо! Ваша анкета успешно отправлена.", "entity_id": dispatch.entity_id}

@@ -372,6 +372,9 @@ Respond ONLY with valid JSON, no explanations."""
         """
         conditions = []
 
+        # Теневая база: архивные кандидаты не участвуют в умном поиске
+        conditions.append(Entity.is_archived.is_not(True))
+
         # Organization filter
         if org_id is not None:
             conditions.append(Entity.org_id == org_id)

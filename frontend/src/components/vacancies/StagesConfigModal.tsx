@@ -17,19 +17,21 @@ export interface StageColumn {
 // (отображается на /all-candidates) и фронтовым STAGE_LABELS.
 const DEFAULT_STAGES: StageColumn[] = [
   { key: 'applied', label: 'Новый', visible: true },
-  { key: 'screening', label: 'Скрининг', visible: true },
-  { key: 'phone_screen', label: 'Практика', visible: true },
-  { key: 'interview', label: 'Тех-практика', visible: true },
-  { key: 'assessment', label: 'ИС', visible: true },
-  { key: 'offer', label: 'Оффер', visible: true },
-  { key: 'hired', label: 'Принят', visible: true },
-  { key: 'rejected', label: 'Отклонён', visible: true },
+  { key: 'screening', label: 'Выполняет ТЗ', visible: true },
+  { key: 'phone_screen', label: 'Интервью с HR', visible: true },
+  { key: 'interview', label: 'Интервью с заказчиком', visible: true },
+  { key: 'assessment', label: 'Принятие решения', visible: true },
+  { key: 'offer', label: 'Выставлен оффер', visible: true },
+  { key: 'hired', label: 'Оффер принят', visible: true },
+  { key: 'probation', label: 'Практика', visible: true },
+  { key: 'transferred', label: 'Перешёл в отдел', visible: true },
+  { key: 'rejected', label: 'Отказ', visible: true },
 ];
 
 // Real DB enum values that virtual stages can map to
 const ENUM_VALUES: ApplicationStage[] = [
   'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'rejected', 'withdrawn'
+  'assessment', 'offer', 'hired', 'probation', 'transferred', 'rejected'
 ];
 
 interface StagesConfigModalProps {

@@ -1,12 +1,10 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense } from "react";
+import type { CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
   X,
-  ShieldCheck,
-  Save,
-  GripVertical,
   Users,
   PlusCircle,
   Paperclip,
@@ -19,6 +17,7 @@ import {
   Download,
   Pencil,
   PenSquare,
+  Archive,
   Phone,
   Send,
   Check,
@@ -28,17 +27,18 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  MessageCircle,
   Maximize2,
   Type,
   Upload,
-  Layers,
+  ClipboardList,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
+import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
+  getCandidateStageHistory,
 } from "@/services/api/candidates";
 import type {
   KanbanBoardResponse,
@@ -52,16 +52,17 @@ import {
   getEntityFiles,
   downloadEntityFile,
   deleteEntity,
+  archiveEntity,
   getEntity,
+  detectDuplicate,
   addEntityNote,
   updateEntityNote,
   deleteEntityNote,
 } from "@/services/api/entities";
-import { getOrgStages, updateOrgStages } from "@/services/api/auth";
-import StatusTemplatesModal from "@/components/vacancies/StatusTemplatesModal";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import type { EntityFile } from "@/services/api/entities";
 import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
+import ShadowDuplicateBanner from "@/components/entities/ShadowDuplicateBanner";
 import ParserModal from "@/components/parser/ParserModal";
 import { useAuthStore } from "@/stores/authStore";
 import { HuntflowComposer } from "@/components/hr/HuntflowComposer";
@@ -71,6 +72,12 @@ import {
   HuntflowInfoRow as InfoRow,
   HuntflowOptionsIcon,
 } from "@/components/hr/HuntflowControls";
+import { useFormBadgeStore } from "@/stores/formBadgeStore";
+import { getEntityFormsUnreadCount, getEntityDispatches, markEntityDispatchesSeen, type FormDispatchInfo } from "@/services/api/forms";
+import { AnketaResponses } from "@/features/forms/AnketaResponses";
+const AnketaDrawer = lazy(() =>
+  import("@/features/forms/AnketaDrawer").then((m) => ({ default: m.AnketaDrawer })),
+);
 
 // ---------- constants ----------
 
@@ -488,19 +495,25 @@ export default function AllCandidatesPage() {
   const debouncedSearch = useDebounce(searchText, 400);
   const [showTopSearch, setShowTopSearch] = useState(false);
   const topSearchRef = useRef<HTMLInputElement>(null);
-  const topStageScrollRef = useRef<HTMLDivElement>(null);
+  // Горизонтальный скролл табов этапов — единый хук useHorizontalScroll:
+  // стрелки сами пересчитываются на скролл/ресайз/смену набора этапов.
+  const {
+    ref: topStageScrollRef,
+    canScrollLeft: topStageCanScrollLeft,
+    canScrollRight: topStageCanScrollRight,
+    scrollLeft: scrollTopStagesLeft,
+    scrollRight: scrollTopStagesRight,
+  } = useHorizontalScroll<HTMLDivElement>({ step: 520 });
   const [activeTab, setActiveTab] = useState("all");
-  const [topStageCanScroll, setTopStageCanScroll] = useState({
-    left: false,
-    right: false,
-  });
 
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [selectedStatus, setSelectedStatus] = useState("");
-  const [detailTab, setDetailTab] = useState<"info" | "resume">("resume");
+  const [detailTab, setDetailTab] = useState<DetailSection>("resume");
   const [showListSettings, setShowListSettings] = useState(false);
-  const [showStageSettings, setShowStageSettings] = useState(false);
-  const [showStatusTemplates, setShowStatusTemplates] = useState(false);
+  // F7-fix: настройки списка (scope + видимые поля) — persist + применяются к карточкам.
+  const [listSettings, setListSettings] = useState<CandidateListSettings>(
+    loadCandidateListSettings,
+  );
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
   const [addToVacancyAnchor, setAddToVacancyAnchor] = useState<{
@@ -515,29 +528,6 @@ export default function AllCandidatesPage() {
     user?.org_role === "owner" ||
     user?.org_role === "admin";
   const anySelected = selectedIds.size > 0;
-
-  const updateTopStageScrollState = useCallback(() => {
-    const el = topStageScrollRef.current;
-    if (!el) return;
-    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
-    setTopStageCanScroll({
-      left: el.scrollLeft > 1,
-      right: el.scrollLeft < maxScrollLeft - 1,
-    });
-  }, []);
-
-  const scrollTopStageTabs = useCallback(
-    (direction: "left" | "right") => {
-      const el = topStageScrollRef.current;
-      if (!el) return;
-      el.scrollBy({
-        left: direction === "left" ? -520 : 520,
-        behavior: "smooth",
-      });
-      window.setTimeout(updateTopStageScrollState, 320);
-    },
-    [updateTopStageScrollState],
-  );
 
   const fetchBoard = useCallback(async () => {
     setLoading(true);
@@ -572,11 +562,18 @@ export default function AllCandidatesPage() {
   // (без него были репорты что переключение таба не обновляет список).
   const filteredCards = useMemo(() => {
     if (!board) return [];
+    // F7: scope «Только по моим вакансиям» — показываем кандидатов, где рекрутёр
+    // = текущий пользователь. recruiter_name приходит из User.name (как и user.name),
+    // поэтому сравнение точное и список не обнуляется из-за расхождения форматов.
+    const myName = (user?.name || "").trim();
+    const scopeMine = listSettings.scope === "mine" && myName.length > 0;
     const items: { card: KanbanCard; status: string; label: string }[] = [];
     for (const col of board.columns) {
       if (activeTab === "all" || col.status === activeTab) {
-        for (const c of col.cards)
+        for (const c of col.cards) {
+          if (scopeMine && (c.recruiter_name || "").trim() !== myName) continue;
           items.push({ card: c, status: col.status, label: col.label });
+        }
       }
     }
     if (activeTab === "all") {
@@ -587,7 +584,7 @@ export default function AllCandidatesPage() {
       );
     }
     return items;
-  }, [board, activeTab]);
+  }, [board, activeTab, listSettings.scope, user?.name]);
 
   const displayedCards = filteredCards;
 
@@ -618,18 +615,24 @@ export default function AllCandidatesPage() {
   // Auto-select from URL ?entity=ID or first card
   const entityParam = searchParams.get("entity");
   const editParam = searchParams.get("edit");
+  const archivedParam = searchParams.get("archived");
+  const tabParam = searchParams.get("tab");
   const clearCandidateDeepLink = useCallback(() => {
-    if (!searchParams.has("entity") && !searchParams.has("edit")) return;
+    if (!searchParams.has("entity") && !searchParams.has("edit") && !searchParams.has("archived") && !searchParams.has("tab")) return;
     const next = new URLSearchParams(searchParams);
     next.delete("entity");
     next.delete("edit");
+    next.delete("archived");
+    next.delete("tab");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
   // Чтобы не тянуть entity повторно после неудачной попытки селекта.
   const entityFetchTriedRef = useRef<number | null>(null);
+  const detectTriedRef = useRef<number | null>(null);
   useEffect(() => {
     if (!board) return;
     if (entityParam) {
+      if (archivedParam === "1") return;  // архивного открывает отдельный эффект ниже
       const entityId = parseInt(entityParam);
       const match = filteredCards.find((fc) => fc.card.id === entityId);
       if (match) {
@@ -638,6 +641,7 @@ export default function AllCandidatesPage() {
         if (editParam === "1") {
           setShowEditModal(true);
         }
+        if (tabParam === "anketa") setDetailTab("anketa");
         clearCandidateDeepLink();
         return;
       }
@@ -678,7 +682,80 @@ export default function AllCandidatesPage() {
       setSelectedCard(initial.card);
       setSelectedStatus(initial.status);
     }
-  }, [filteredCards, entityParam, editParam, board, selectedCard, clearCandidateDeepLink]);
+  }, [filteredCards, entityParam, editParam, archivedParam, tabParam, board, selectedCard, clearCandidateDeepLink]);
+
+  // Архивный кандидат (?archived=1): на доске его нет (отфильтрован is_archived),
+  // поэтому грузим по id и открываем ту же стандартную карточку напрямую.
+  // CSV-комментарий (extra_data.comment) показываем как личный коммент.
+  useEffect(() => {
+    if (!entityParam || archivedParam !== "1") return;
+    const entityId = parseInt(entityParam);
+    if (Number.isNaN(entityId) || entityFetchTriedRef.current === entityId) return;
+    entityFetchTriedRef.current = entityId;
+    getEntity(entityId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then((e: any) => {
+        if (!e?.id) {
+          toast.error("Кандидат не найден");
+          return;
+        }
+        const extra: Record<string, any> = { ...(e.extra_data || {}) };
+        if ((!Array.isArray(extra.notes) || extra.notes.length === 0) && extra.comment) {
+          extra.notes = [{ text: String(extra.comment), date: e.created_at, author_name: "Импорт" }];
+        }
+        extra.is_archived = true;
+        setSelectedCard({
+          id: e.id,
+          name: e.name,
+          email: e.email || undefined,
+          phone: e.phone || undefined,
+          telegram_username: (e.telegram_usernames && e.telegram_usernames[0]) || undefined,
+          position: e.position || undefined,
+          company: e.company || undefined,
+          source: e.source || extra.source || undefined,
+          created_at: e.created_at || "",
+          tags: e.tags || [],
+          photo_url: e.photo_url || undefined,
+          extra_data: extra,
+        } as KanbanCard);
+        setSelectedStatus((e.status as string) || "");
+      })
+      .catch(() => toast.error("Не удалось открыть кандидата"));
+  }, [entityParam, archivedParam]);
+
+  // Живой детект дубля при ОТКРЫТИИ карточки. Если флаг ещё не стоит — спрашиваем
+  // бэкенд: ловит уже существующих дублей (импорт/другой источник), созданных до
+  // появления детекта, без ручного «Сверить». Нашёлся — ставим hidden_duplicate_id
+  // локально, и баннер появляется сам (бэкенд помечает и вторую сторону).
+  useEffect(() => {
+    const card = selectedCard;
+    if (!card) return;
+    const extra = (card.extra_data || {}) as Record<string, unknown>;
+    if (extra.hidden_duplicate_id) return; // флаг уже есть — баннер покажется и так
+    if (detectTriedRef.current === card.id) return; // эту карточку уже проверяли
+    detectTriedRef.current = card.id;
+    let cancelled = false;
+    detectDuplicate(card.id)
+      .then((r) => {
+        if (cancelled || !r?.duplicate_id) return;
+        setSelectedCard((prev) =>
+          prev && prev.id === card.id
+            ? {
+                ...prev,
+                extra_data: {
+                  ...(prev.extra_data || {}),
+                  hidden_duplicate_id: r.duplicate_id,
+                },
+              }
+            : prev
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCard?.id]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedCard || newStatus === selectedStatus) return;
@@ -837,21 +914,6 @@ export default function AllCandidatesPage() {
     return String(column.count);
   };
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(updateTopStageScrollState);
-    const timer = window.setTimeout(updateTopStageScrollState, 260);
-    window.addEventListener("resize", updateTopStageScrollState);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-      window.removeEventListener("resize", updateTopStageScrollState);
-    };
-  }, [
-    showTopSearch,
-    topStageItems.length,
-    updateTopStageScrollState,
-  ]);
-
   return (
     <div className="hf-all-candidates-page hf-all-candidates-page-root font-hf-body">
       {/* Stage tabs island — huntflow tabs pattern: white island radius 16 h52,
@@ -861,7 +923,6 @@ export default function AllCandidatesPage() {
         {/* Stage tabs */}
         <div
           ref={topStageScrollRef}
-          onScroll={updateTopStageScrollState}
           className={clsx(
             "hf-top-stage-tabs no-scrollbar",
             !showTopSearch && "hf-top-stage-tabs-padded",
@@ -1052,44 +1113,20 @@ export default function AllCandidatesPage() {
             <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
           </button>
         </div>
-        {isAdmin ? (
-          <div className="hf-top-stage-action-cell">
-            <button
-              type="button"
-              onClick={() => setShowStageSettings(true)}
-              className="hf-top-stage-admin-btn"
-              title="Админ: настройка этапов"
-            >
-              <ShieldCheck className="hf-top-stage-admin-icon" />
-            </button>
-          </div>
-        ) : null}
-        {isAdmin ? (
-          <div className="hf-top-stage-action-cell">
-            <button
-              type="button"
-              onClick={() => setShowStatusTemplates(true)}
-              className="hf-top-stage-admin-btn"
-              title="Админ: шаблоны статусов"
-            >
-              <Layers className="hf-top-stage-admin-icon" />
-            </button>
-          </div>
-        ) : null}
-        {!showTopSearch && topStageCanScroll.left ? (
+        {!showTopSearch && topStageCanScrollLeft ? (
           <button
             type="button"
-            onClick={() => scrollTopStageTabs("left")}
+            onClick={scrollTopStagesLeft}
             className="hf-top-stage-arrow hf-top-stage-arrow-left"
             title="Прокрутить этапы влево"
           >
             <ChevronLeft className="hf-top-stage-arrow-icon" />
           </button>
         ) : null}
-        {!showTopSearch && topStageCanScroll.right ? (
+        {!showTopSearch && topStageCanScrollRight ? (
           <button
             type="button"
-            onClick={() => scrollTopStageTabs("right")}
+            onClick={scrollTopStagesRight}
             className={clsx(
               "hf-top-stage-arrow",
               isAdmin ? "hf-top-stage-arrow-right-admin" : "hf-top-stage-arrow-right",
@@ -1121,7 +1158,9 @@ export default function AllCandidatesPage() {
                     .map(({ card, status }) => {
                       const isSelected = selectedCard?.id === card.id;
                       const isChecked = selectedIds.has(card.id);
-                      const listMetaPrimary = card.company || card.vacancy_name;
+                      const listMetaPrimary =
+                        (listSettings.fields.lastCompany ? card.company : undefined) ||
+                        card.vacancy_name;
                       const showListDate = !card.company;
                       return (
                         <div
@@ -1203,7 +1242,7 @@ export default function AllCandidatesPage() {
                                 {card.name}
                               </div>
                             </div>
-                            {card.position && (
+                            {listSettings.fields.lastPosition && card.position && (
                               <div className="hf-candidate-row-subtitle">
                                 {card.position}
                               </div>
@@ -1230,6 +1269,30 @@ export default function AllCandidatesPage() {
                                 </span>
                               )}
                             </div>
+                            {/* F7: доп. поля списка по настройке (если есть в данных карточки) */}
+                            {(() => {
+                              const extras = [
+                                listSettings.fields.desiredSalary && card.salary,
+                                listSettings.fields.age && card.age,
+                                listSettings.fields.experience && card.total_experience,
+                                listSettings.fields.source && card.source,
+                              ].filter(Boolean) as string[];
+                              if (!extras.length) return null;
+                              return (
+                                <div className="hf-candidate-row-meta">
+                                  {extras.map((t, ei) => (
+                                    <span key={ei} className="hf-candidate-row-meta-text" title={t}>{t}</span>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                            {listSettings.fields.tags && card.tags && card.tags.length > 0 && (
+                              <div className="hf-candidate-row-meta" style={{ flexWrap: "wrap" }}>
+                                {card.tags.slice(0, 6).map((tag, ti) => (
+                                  <span key={ti} className="hf-candidate-row-meta-text">#{tag}</span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -1269,6 +1332,10 @@ export default function AllCandidatesPage() {
                   setShowAddToVacancy(true);
                 }}
                   onEdit={() => setShowEditModal(true)}
+                  onArchived={() => {
+                    setSelectedCard(null);
+                    fetchBoard();
+                  }}
                 />
               </div>
             ) : (
@@ -1472,17 +1539,10 @@ export default function AllCandidatesPage() {
           />
         )}
         {showListSettings && (
-          <ListSettingsModal onClose={() => setShowListSettings(false)} />
-        )}
-        {showStageSettings && (
-          <StageSettingsModal
-            onClose={() => setShowStageSettings(false)}
-            onSaved={() => fetchBoard()}
-          />
-        )}
-        {showStatusTemplates && (
-          <StatusTemplatesModal
-            onClose={() => setShowStatusTemplates(false)}
+          <ListSettingsModal
+            onClose={() => setShowListSettings(false)}
+            initial={listSettings}
+            onApply={setListSettings}
           />
         )}
         {showEditModal && selectedCard && (
@@ -1492,6 +1552,11 @@ export default function AllCandidatesPage() {
             onSaved={(updated) => {
               handleCardUpdated(updated);
               setShowEditModal(false);
+            }}
+            onDeleted={() => {
+              setShowEditModal(false);
+              setSelectedCard(null);
+              fetchBoard();
             }}
           />
         )}
@@ -1533,7 +1598,10 @@ export default function AllCandidatesPage() {
 // INFO TAB — Huntflow-style detail panel with working actions
 // ================================================================
 
-type DetailSection = "info" | "resume";
+type DetailSection = "info" | "resume" | "anketa";
+
+// Этапы, при которых карточка остаётся нейтрально-серой (не «в процессе»).
+const NEUTRAL_STAGE_STATUSES = new Set(["rejected", "fired", "archived"]);
 
 const InfoTab = memo(function InfoTab({
   card,
@@ -1545,6 +1613,7 @@ const InfoTab = memo(function InfoTab({
   onStatusChange,
   onAddToVacancy,
   onEdit,
+  onArchived,
 }: {
   card: KanbanCard;
   status: string;
@@ -1555,12 +1624,27 @@ const InfoTab = memo(function InfoTab({
   onStatusChange: (s: string) => void;
   onAddToVacancy: (rect?: { left: number; bottom: number }) => void;
   onEdit: () => void;
+  onArchived: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
   const isAdmin =
     currentUser?.role === "superadmin" ||
     currentUser?.org_role === "owner" ||
     currentUser?.org_role === "admin";
+  const [archiving, setArchiving] = useState(false);
+  const handleArchive = async () => {
+    if (!window.confirm("Убрать кандидата в архив? Он скроется из активных списков.")) return;
+    setArchiving(true);
+    try {
+      await archiveEntity(card.id);
+      toast.success("Кандидат убран в архив");
+      onArchived();
+    } catch {
+      toast.error("Не удалось архивировать");
+    } finally {
+      setArchiving(false);
+    }
+  };
   const [showStageDD, setShowStageDD] = useState(false);
   const [pendingStage, setPendingStage] = useState(status);
   const [stageChangeComment, setStageChangeComment] = useState("");
@@ -1575,6 +1659,9 @@ const InfoTab = memo(function InfoTab({
   const [comment, setComment] = useState("");
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [anketaOpen, setAnketaOpen] = useState(false);
+  const anketaCount = useFormBadgeStore((s) => s.counts[card.id] ?? 0);
+  const setAnketaCount = useFormBadgeStore((s) => s.setCount);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
@@ -1594,9 +1681,64 @@ const InfoTab = memo(function InfoTab({
         author?: string;
       }>)
     : [];
+  // Сквозная история смены этапов (реальные StageTransition по всем откликам
+  // кандидата) — чтобы глобальная карточка показывала тот же лог, что и воронка.
+  const [stageHistory, setStageHistory] = useState<any[]>([]);
+  useEffect(() => {
+    if (!card.id) {
+      setStageHistory([]);
+      return;
+    }
+    let cancelled = false;
+    getCandidateStageHistory(card.id)
+      .then((rows) => {
+        if (!cancelled) setStageHistory(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setStageHistory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [card.id]);
+  useEffect(() => {
+    if (!card.id) return;
+    getEntityFormsUnreadCount(card.id)
+      .then((r) => setAnketaCount(card.id, r.count))
+      .catch(() => {});
+  }, [card.id, setAnketaCount]);
+  const stageHistoryTimelineItems = useMemo<
+    Array<{ date?: string; title?: string; body?: string; author?: string }>
+  >(() => {
+    const LABELS: Record<string, string> = {
+      applied: "Новый",
+      screening: "Выполняет ТЗ",
+      phone_screen: "Интервью с HR",
+      interview: "Интервью с заказчиком",
+      assessment: "Принятие решения",
+      offer: "Выставлен оффер",
+      hired: "Оффер принят",
+      rejected: "Отказ",
+      withdrawn: "Отозван",
+    };
+    return (stageHistory as any[]).map((t) => {
+      const to = LABELS[t.to_stage] || t.to_stage;
+      const from = t.from_stage ? LABELS[t.from_stage] || t.from_stage : null;
+      return {
+        date: t.created_at || undefined,
+        title: from ? `${from} → ${to}` : `Этап: ${to}`,
+        body: [t.vacancy_title, t.comment].filter(Boolean).join(" · ") || undefined,
+        author: t.changed_by_name || undefined,
+      };
+    });
+  }, [stageHistory]);
   const timelineItems =
-    timelineEvents.length > 0
-      ? timelineEvents
+    stageHistoryTimelineItems.length > 0 || timelineEvents.length > 0
+      ? [...stageHistoryTimelineItems, ...timelineEvents].sort((a, b) => {
+          const ta = a.date ? new Date(a.date).getTime() : 0;
+          const tb = b.date ? new Date(b.date).getTime() : 0;
+          return tb - ta;
+        })
       : [{ date: card.created_at, title: "Кандидат добавлен", author: "Я" }];
   const normalizedTimelineItems = timelineItems
     .filter(
@@ -1630,6 +1772,14 @@ const InfoTab = memo(function InfoTab({
     status === "rejected" && card.rejection_reason
       ? `Отказ. ${card.rejection_reason}`
       : statusLabel;
+  // Карточка этапа — всего 2 цвета (по фидбэку): активный этап зелёный,
+  // отказ/уволен/архив — серый.
+  const stageCardStyle: CSSProperties | undefined = NEUTRAL_STAGE_STATUSES.has(status)
+    ? undefined
+    : ({
+        "--hf-stage-accent": "#22c55e",
+        "--hf-stage-card-bg": "rgba(34, 197, 94, 0.1)",
+      } as CSSProperties);
   const stagePickerOptions = useMemo(() => {
     return columns.map((column) => ({
       label: column.label,
@@ -1825,6 +1975,39 @@ const InfoTab = memo(function InfoTab({
     }
   };
 
+  // Комментарий из дропдауна смены этапа («Записать комментарий»). Раньше текст
+  // из этого поля никуда не отправлялся — кнопка «Сохранить» меняла только этап.
+  // Теперь шлём note так же, как обычный комментарий, независимо от смены этапа.
+  const saveStageChangeComment = async () => {
+    const text = stageChangeComment.trim();
+    if (!text) return;
+    try {
+      // Привязываем комментарий к ВЫБРАННОМУ этапу (pendingStage) — тому, на
+      // который переносим кандидата, а не к текущему. Дату ставит сервер,
+      // поэтому в ленте «Действия» виден этап + период, когда коммент оставлен.
+      const targetOption = stagePickerOptions.find(
+        (option) => option.status === pendingStage,
+      );
+      const resp = await addEntityNote(card.id, {
+        text,
+        stage: pendingStage,
+        stage_label: targetOption?.label || statusLabel,
+      });
+      if (!card.extra_data) card.extra_data = {};
+      const existingNotes: Array<Record<string, unknown>> = Array.isArray(
+        card.extra_data.notes,
+      )
+        ? card.extra_data.notes
+        : [];
+      card.extra_data.notes = [...existingNotes, resp.note];
+      toast.success("Комментарий сохранён");
+      setStageChangeComment("");
+    } catch (err) {
+      console.error("Failed to save stage-change comment:", err);
+      toast.error("Ошибка сохранения комментария");
+    }
+  };
+
   const handleOffer = () => {
     onStatusChange("offer");
     toast.success(`${card.name} → Оффер`);
@@ -1837,8 +2020,10 @@ const InfoTab = memo(function InfoTab({
     try {
       await uploadEntityFile(card.id, file, "resume");
       toast.success(`Файл "${file.name}" загружен`);
-    } catch {
-      toast.error("Ошибка загрузки файла");
+    } catch (err) {
+      // B7-fix: показываем реальную причину с бэка (размер/тип/нет места и т.п.)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail || "Ошибка загрузки файла");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -2086,6 +2271,9 @@ const InfoTab = memo(function InfoTab({
         </div>
       )}
 
+      {/* Теневой дубль: баннер «Похожий кандидат есть в базе» над action-баром */}
+      <ShadowDuplicateBanner card={card} status={status} />
+
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
       <div className="hf-profile-action-bar">
         <button
@@ -2111,6 +2299,13 @@ const InfoTab = memo(function InfoTab({
           className="hf-profile-action-btn"
         >
           <PenSquare className="hf-profile-action-icon" /> Редактировать
+        </button>
+        <button
+          onClick={handleArchive}
+          disabled={archiving}
+          className="hf-profile-action-btn"
+        >
+          <Archive className="hf-profile-action-icon" /> В архив
         </button>
       </div>
 
@@ -2150,23 +2345,19 @@ const InfoTab = memo(function InfoTab({
                 >
                   <Phone className="w-[11px] h-[11px] text-[var(--hf-white)]" />
                 </a>
-                <a
-                  href={`https://t.me/${card.telegram_username || card.phone}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-telegram)] flex items-center justify-center hover:opacity-80"
-                  title="Telegram"
-                >
-                  <Send className="w-[11px] h-[11px] text-[var(--hf-white)]" />
-                </a>
-                <a
-                  href={`viber://chat?number=${card.phone.replace(/\D/g, "")}`}
-                  rel="noopener noreferrer"
-                  className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-viber)] flex items-center justify-center hover:opacity-80"
-                  title="Viber"
-                >
-                  <MessageCircle className="w-[11px] h-[11px] text-[var(--hf-white)]" />
-                </a>
+                {/* Telegram-иконка — только при реальном username: по номеру
+                    телефона валидной публичной t.me-ссылки не существует. */}
+                {card.telegram_username && (
+                  <a
+                    href={`https://t.me/${card.telegram_username.replace(/^@/, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-telegram)] flex items-center justify-center hover:opacity-80"
+                    title="Telegram"
+                  >
+                    <Send className="w-[11px] h-[11px] text-[var(--hf-white)]" />
+                  </a>
+                )}
               </div>
             </InfoRow>
           )}
@@ -2319,7 +2510,7 @@ const InfoTab = memo(function InfoTab({
         </div>
       </div>
 
-      <div className="hf-stage-card">
+      <div className="hf-stage-card" style={stageCardStyle}>
         {/* ---- Stage block (Huntflow: colored bg + vacancy name + change button) ---- */}
         <div className="hf-stage-card-head">
           <div className="hf-stage-card-head-row">
@@ -2440,10 +2631,15 @@ const InfoTab = memo(function InfoTab({
                     <div className="hf-stage-picker-footer">
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={async () => {
                           const selectedOption = stagePickerOptions.find(
                             (option) => option.status === pendingStage,
                           );
+                          // Сначала сохраняем комментарий (если написан) —
+                          // даже когда этап не меняется.
+                          if (stageChangeComment.trim()) {
+                            await saveStageChangeComment();
+                          }
                           if (
                             pendingStage !== status &&
                             selectedOption?.isRealStage
@@ -2514,6 +2710,12 @@ const InfoTab = memo(function InfoTab({
               />
               <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
               <ActionChip
+                icon={ClipboardList}
+                label="Анкета"
+                notificationCount={anketaCount}
+                onClick={() => setAnketaOpen(true)}
+              />
+              <ActionChip
                 icon={Paperclip}
                 label="Файл"
                 onClick={() => fileInputRef.current?.click()}
@@ -2522,6 +2724,16 @@ const InfoTab = memo(function InfoTab({
             </>
           )}
         </div>
+        {anketaOpen && (
+          <Suspense fallback={null}>
+            <AnketaDrawer
+              open={anketaOpen}
+              onOpenChange={setAnketaOpen}
+              entityId={card.id}
+              entityName={card.name}
+            />
+          </Suspense>
+        )}
 
         {/* ---- Комментарии: отдельный блок, фон по стадии в момент комментария ---- */}
         {Array.isArray(card.extra_data?.notes) &&
@@ -2772,29 +2984,70 @@ const InfoTab = memo(function InfoTab({
           >
             Резюме
           </button>
+          <button
+            type="button"
+            onClick={() => onDetailSectionChange("anketa")}
+            className={clsx(
+              "relative h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+              detailSection === "anketa"
+                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
+                : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
+            )}
+          >
+            Анкеты
+            {anketaCount > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
+                {anketaCount > 9 ? "9+" : anketaCount}
+              </span>
+            )}
+          </button>
         </div>
         {detailSection === "info" && (
           <PersonalNotesTab
             card={card}
-            onEmail={handleEmail}
             onFile={() => fileInputRef.current?.click()}
             uploading={uploading}
           />
         )}
         {detailSection === "resume" && <ResumeTab card={card} />}
+        {detailSection === "anketa" && <AnketaTab card={card} />}
       </div>
     </div>
   );
 });
 
+function AnketaTab({ card }: { card: KanbanCard }) {
+  const [dispatches, setDispatches] = useState<FormDispatchInfo[]>([]);
+  const clearBadge = useFormBadgeStore((s) => s.clear);
+  useEffect(() => {
+    let alive = true;
+    const fetchRows = async () => {
+      try {
+        const rows = await getEntityDispatches(card.id);
+        if (alive) setDispatches(rows);
+      } catch {
+        /* пустой/ошибка — покажем пустое состояние */
+      }
+    };
+    (async () => {
+      await fetchRows();
+      try { await markEntityDispatchesSeen(card.id); clearBadge(card.id); } catch { /* ignore */ }
+    })();
+    // Поллинг: realtime по WebSocket на проде может не доходить (прокси/доставка),
+    // поэтому раз в 15с подтягиваем ответы — заполненная анкета появляется без
+    // перезагрузки страницы.
+    const t = setInterval(fetchRows, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, [card.id, clearBadge]);
+  return <AnketaResponses dispatches={dispatches} />;
+}
+
 const PersonalNotesTab = memo(function PersonalNotesTab({
   card,
-  onEmail,
   onFile,
   uploading,
 }: {
   card: KanbanCard;
-  onEmail: React.MouseEventHandler<HTMLButtonElement>;
   onFile: () => void;
   uploading: boolean;
 }) {
@@ -2892,7 +3145,7 @@ const PersonalNotesTab = memo(function PersonalNotesTab({
         }}
         saving={saving}
         actions={[
-          { icon: Mail, label: "Письмо", onClick: onEmail },
+          // F6-fix: убрали «Письмо» из личных заметок — там оно не нужно.
           {
             icon: Paperclip,
             label: "Файл",
@@ -3110,11 +3363,216 @@ const CommentCard = memo(function CommentCard({
 // RESUME TAB
 // ================================================================
 
+// ---------- Imported (ClickUp) questionnaire ----------
+// Кандидаты, импортированные из ClickUp, не имеют сгенерированного резюме.
+// Вместо заглушки показываем их анкету: все cf:* поля (вопрос → ответ),
+// местоположение и — свёрнуто — исходное описание задачи ClickUp.
+// Данные приходят как есть в card.extra_data (бэк ничего не вырезает).
+const IMPORT_QUESTIONNAIRE_EXTRA_LABELS: Record<string, string> = {
+  location: "Местонахождение",
+};
+
+function linkifyText(text: string) {
+  const parts = text.split(/(https?:\/\/[^\s]+)/g);
+  return parts.map((part, i) =>
+    /^https?:\/\//.test(part) ? (
+      <a
+        key={i}
+        href={part}
+        target="_blank"
+        rel="noreferrer"
+        className="text-[var(--hf-cyan-700)] underline break-all hf-dark-disabled:text-[var(--hf-cyan-400)]"
+      >
+        {part}
+      </a>
+    ) : (
+      <Fragment key={i}>{part}</Fragment>
+    ),
+  );
+}
+
+function normalizeImportedValue(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v))
+    return v.map((x) => normalizeImportedValue(x)).filter(Boolean).join(", ");
+  return "";
+}
+
+// Разбор текста формы (ClickBot Form Submission) из extra_data.description:
+// строки вида "Вопрос:" → ответ(ы) до следующего вопроса. Это ЕДИНСТВЕННЫЙ
+// достоверный источник пар «вопрос-ответ»: кастомные поля ClickUp (cf:*)
+// подписаны неверно из-за переиспользования слотов формы со временем,
+// поэтому их пары вопрос↔ответ не совпадают (ответ про «финансовый результат»
+// оказывается под колонкой «хачить» и т.п.).
+type QaPair = { question: string; answer: string };
+
+function parseFormSubmission(description: string): QaPair[] {
+  if (!description) return [];
+  const pairs: QaPair[] = [];
+  let question: string | null = null;
+  let answer: string[] = [];
+  const flush = () => {
+    if (question != null) {
+      pairs.push({
+        question: question.replace(/:+\s*$/, "").trim(),
+        answer: answer.join("\n").trim(),
+      });
+    }
+  };
+  for (const rawLine of description.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.endsWith(":")) {
+      flush();
+      question = line;
+      answer = [];
+    } else if (question != null) {
+      answer.push(rawLine);
+    }
+  }
+  flush();
+  return pairs.filter((p) => p.question);
+}
+
+type MergedFrom = {
+  entity_id: number;
+  name: string | null;
+  merged_at: string;
+  merged_by: number;
+  merged_by_name: string | null;
+  extra_data: Record<string, unknown>;
+};
+
+function getImportedQuestionnaire(card: KanbanCard): {
+  rows: Array<{ label: string; value: string }>;
+  clickupUrl: string | null;
+} {
+  const ed = card.extra_data as Record<string, unknown> | undefined;
+  let rows: Array<{ label: string; value: string }> = [];
+  let clickupUrl: string | null = null;
+  if (ed) {
+    clickupUrl = typeof ed.clickup_url === "string" ? ed.clickup_url : null;
+
+    // 1) Структурированные пары, если бэк их когда-нибудь положит сам.
+    const formQa = ed.form_qa;
+    if (Array.isArray(formQa) && formQa.length > 0) {
+      rows = formQa
+        .map((p) => {
+          const o = (p ?? {}) as Record<string, unknown>;
+          return {
+            label: normalizeImportedValue(o.question ?? o.q),
+            value: normalizeImportedValue(o.answer ?? o.a),
+          };
+        })
+        .filter((r) => r.label && r.value);
+    }
+
+    // 2) Иначе парсим текст формы из description — достоверные пары Q→A.
+    if (rows.length === 0) {
+      rows = parseFormSubmission(normalizeImportedValue(ed.description))
+        .map((p) => ({ label: p.question, value: p.answer }))
+        .filter((r) => r.label && r.value);
+    }
+
+    // 3) Фолбэк (списки без формы): сырые cf:* поля как есть.
+    if (rows.length === 0) {
+      for (const [k, raw] of Object.entries(ed)) {
+        let label: string | null = null;
+        if (k.startsWith("cf:")) label = k.slice(3).trim();
+        else if (k in IMPORT_QUESTIONNAIRE_EXTRA_LABELS)
+          label = IMPORT_QUESTIONNAIRE_EXTRA_LABELS[k];
+        else continue;
+        const value = normalizeImportedValue(raw);
+        if (!value || value === "-" || value === "–") continue;
+        rows.push({ label: label || k, value });
+      }
+    }
+  }
+  return { rows, clickupUrl };
+}
+
+// HR-рекрутёр кандидата. В ClickUp это assignee ("Инна HR") и/или папка
+// воронки ("Sandbox - Инна"). Имена рекрутёров уникальны (подтверждено
+// админом), поэтому матчим по имени и показываем полное ФИО. Маппинг ведём
+// на всех известных HR, чтобы новые списки подхватывались автоматически.
+const RECRUITER_FULL_NAMES: Record<string, string> = {
+  анастасия: "Пивень Анастасия",
+  инна: "Инна Кравчук",
+  регина: "Регина Рахманкулова",
+  мария: "Голикова Мария",
+  яна: "Дудкина Яна",
+  эльвира: "Ефименко Эльвира",
+};
+
+function resolveRecruiter(
+  extra: Record<string, unknown> | undefined,
+): string | null {
+  if (!extra) return null;
+  const explicit = normalizeImportedValue(extra.recruiter);
+  if (explicit) return explicit;
+  const haystacks = [extra.assignees, extra.funnel_folder, extra.funnel_list]
+    .map((x) => (typeof x === "string" ? x.toLowerCase() : ""))
+    .join(" | ");
+  for (const [firstName, fullName] of Object.entries(RECRUITER_FULL_NAMES)) {
+    if (haystacks.includes(firstName)) return fullName;
+  }
+  return null;
+}
+
+const ImportedQuestionnaire = memo(function ImportedQuestionnaire({
+  card,
+}: {
+  card: KanbanCard;
+}) {
+  const { rows } = getImportedQuestionnaire(card);
+  const recruiter = resolveRecruiter(
+    card.extra_data as Record<string, unknown> | undefined,
+  );
+  if (rows.length === 0 && !recruiter) return null;
+  return (
+    <div className="p-5 max-w-3xl space-y-4">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+          Анкета кандидата
+        </h3>
+        {recruiter && (
+          <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+            Рекрутёр:{" "}
+            <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+              {recruiter}
+            </span>
+          </div>
+        )}
+      </div>
+      {rows.length > 0 && (
+        <div className="rounded-lg border border-[color:var(--hf-main-200)] overflow-hidden hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
+          {rows.map((r, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-1 gap-1 border-b border-[color:var(--hf-main-100)] px-4 py-3 last:border-b-0 sm:grid-cols-[minmax(150px,240px)_1fr] sm:gap-4 hf-dark-disabled:border-[color:var(--hf-white-alpha-05)]"
+            >
+              <div className="text-xs font-medium text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+                {r.label}
+              </div>
+              <div className="whitespace-pre-wrap break-words text-sm text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                {linkifyText(r.value)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   const [files, setFiles] = useState<EntityFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
   const [currentResumeIndex, setCurrentResumeIndex] = useState(0);
+  const [pdfIndex, setPdfIndex] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -3142,6 +3600,13 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
 
   const resumeFiles = files.filter((f) => f.file_type === "resume");
   const pdfFile = resumeFiles.find((f) => f.mime_type === "application/pdf");
+  // Все PDF-резюме, новое сверху: после объединения кандидатов PDF'ы
+  // накапливаются, и нужно понимать, где новое, а где старое.
+  const pdfFiles = resumeFiles
+    .filter((f) => f.mime_type === "application/pdf")
+    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  const safePdfIndex = Math.min(pdfIndex, Math.max(0, pdfFiles.length - 1));
+  const currentPdf = pdfFiles[safePdfIndex] || pdfFile;
   const imageFiles = resumeFiles.filter((f) =>
     f.mime_type?.startsWith("image/"),
   );
@@ -3165,8 +3630,17 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   const hasPreviousResume = currentResumeIndex > 0;
   const hasNextResume = currentResumeIndex < resumeCarouselLength - 1;
 
+  const mergedFrom = (
+    Array.isArray(
+      (card.extra_data as Record<string, unknown> | undefined)?.merged_from,
+    )
+      ? ((card.extra_data as Record<string, unknown>).merged_from as MergedFrom[])
+      : []
+  );
+
   useEffect(() => {
     setCurrentResumeIndex(0);
+    setPdfIndex(0);
   }, [card.id]);
 
   useEffect(() => {
@@ -3245,7 +3719,10 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   }
 
   if (resumeFiles.length === 0 && !resumeDemo) {
-    return (
+    const importedQuestionnaire = getImportedQuestionnaire(card);
+    const qMainContent = importedQuestionnaire.rows.length > 0 ? (
+      <ImportedQuestionnaire card={card} />
+    ) : (
       <div className="p-5 max-w-3xl">
         <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-[var(--hf-dark-500)] text-sm min-h-[200px] flex flex-col items-center justify-center gap-2">
           <FileText className="w-8 h-8 opacity-30" />
@@ -3254,6 +3731,29 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
             Резюме создаётся автоматически после добавления кандидата через
             Волшебную кнопку
           </p>
+        </div>
+      </div>
+    );
+    if (mergedFrom.length === 0) return qMainContent;
+    return (
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 min-w-0">{qMainContent}</div>
+        <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] space-y-4 p-5">
+          {mergedFrom.map((m, i) => (
+            <div key={m.entity_id ?? i}>
+              <div className="mb-2 text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+                Объединено:{" "}
+                <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                  {m.name || "Кандидат"}
+                </span>
+                {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
+                {m.merged_at ? ` · ${new Date(m.merged_at).toLocaleString("ru")}` : ""}
+              </div>
+              <ImportedQuestionnaire
+                card={{ ...card, name: m.name || card.name, extra_data: m.extra_data } as KanbanCard}
+              />
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -3300,7 +3800,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       </section>
     );
 
-    return (
+    const mainContent = (
       <div className="pt-[var(--hf-space-xxl)] max-w-[1180px]">
         <div className="overflow-hidden rounded-[16px] border border-[color:var(--hf-black-alpha-10)] bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-white-alpha-04)] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
           <div className="rounded-t-[16px] bg-[var(--hf-main-50)] px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[27px] hf-dark-disabled:bg-[var(--hf-white-alpha-03)]">
@@ -3518,9 +4018,40 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
         </div>
       </div>
     );
+    if (mergedFrom.length === 0) return mainContent;
+    return (
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 min-w-0">{mainContent}</div>
+        <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] space-y-4">
+          {mergedFrom.map((m, i) => (
+            <div key={m.entity_id ?? i}>
+              <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] mb-2">
+                Объединено:{" "}
+                <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                  {m.name || "Кандидат"}
+                </span>
+                {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
+                {m.merged_at
+                  ? ` · ${new Date(m.merged_at).toLocaleString("ru")}`
+                  : ""}
+              </div>
+              <ImportedQuestionnaire
+                card={
+                  {
+                    ...card,
+                    name: m.name || card.name,
+                    extra_data: m.extra_data,
+                  } as KanbanCard
+                }
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
-  return (
+  const fileMainContent = (
     <div className="py-hf-l max-w-[1180px]">
       <p className="text-hf-3xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)] mb-hf-m">
         Сохранено{" "}
@@ -3572,19 +4103,48 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
             </div>
           ))}
         </div>
-      ) : pdfFile ? (
-        <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-6 text-center">
-          <FileText className="w-10 h-10 mx-auto mb-3 text-[var(--hf-dark-400)]" />
-          <p className="text-sm text-[var(--hf-dark-300)] mb-2">{pdfFile.file_name}</p>
-          <p className="text-xs text-[var(--hf-dark-500)] mb-3">
-            {(pdfFile.file_size / 1024).toFixed(0)} КБ
-          </p>
-          <button
-            onClick={() => handleDownload(pdfFile)}
-            className="px-4 py-2 bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] rounded-lg text-sm hover:bg-[var(--hf-accent-bg-30)] transition-colors"
-          >
-            <Download className="w-4 h-4 inline mr-1.5" /> Скачать
-          </button>
+      ) : currentPdf ? (
+        <div className="space-y-2">
+          {/* Несколько резюме (после объединения PDF'ы накапливаются) — переключатель,
+              новое сверху, чтобы видно было, где новое, а где старое. */}
+          {pdfFiles.length > 1 && (
+            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+              {pdfFiles.map((f, i) => (
+                <button
+                  key={f.id}
+                  onClick={() => setPdfIndex(i)}
+                  title={f.file_name}
+                  className={clsx(
+                    "px-2.5 py-1 rounded-md text-xs border transition-colors",
+                    i === safePdfIndex
+                      ? "border-[color:var(--hf-accent)] text-[var(--hf-accent)] bg-[var(--hf-accent-bg-10)]"
+                      : "border-[color:var(--hf-main-200)] text-[var(--hf-main-600)] hover:bg-[var(--hf-white-alpha-04)]",
+                  )}
+                >
+                  Резюме {i + 1}{i === 0 ? " · новое" : ""}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* #toolbar=0&navpanes=0 — прячем редакторскую панель Chrome PDF-вьюера: чистый просмотр. */}
+          <iframe
+            key={currentPdf.id}
+            src={`/api/entities/${card.id}/files/${currentPdf.id}/download#toolbar=0&navpanes=0`}
+            title={currentPdf.file_name}
+            className="w-full min-h-[760px] rounded-lg border border-[color:var(--hf-white-alpha-06)] bg-white"
+          />
+          <div className="flex items-center justify-between gap-2 px-1 text-xs text-[var(--hf-dark-500)]">
+            <span className="truncate">
+              {currentPdf.file_name} · {(currentPdf.file_size / 1024).toFixed(0)} КБ
+              {currentPdf.created_at ? ` · загружено ${formatDateFull(currentPdf.created_at)}` : ""}
+            </span>
+            <button
+              onClick={() => handleDownload(currentPdf)}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] rounded-lg hover:bg-[var(--hf-accent-bg-30)] transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" /> Скачать
+            </button>
+          </div>
         </div>
       ) : (
         <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-[var(--hf-dark-500)] text-sm">
@@ -3593,6 +4153,37 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
           ))}
         </div>
       )}
+    </div>
+  );
+  if (mergedFrom.length === 0) return fileMainContent;
+  return (
+    <div className="flex flex-col lg:flex-row gap-4">
+      <div className="flex-1 min-w-0">{fileMainContent}</div>
+      <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] space-y-4">
+        {mergedFrom.map((m, i) => (
+          <div key={m.entity_id ?? i}>
+            <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] mb-2">
+              Объединено:{" "}
+              <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                {m.name || "Кандидат"}
+              </span>
+              {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
+              {m.merged_at
+                ? ` · ${new Date(m.merged_at).toLocaleString("ru")}`
+                : ""}
+            </div>
+            <ImportedQuestionnaire
+              card={
+                {
+                  ...card,
+                  name: m.name || card.name,
+                  extra_data: m.extra_data,
+                } as KanbanCard
+              }
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 });
@@ -4106,10 +4697,12 @@ export function EditCandidateModal({
   card,
   onClose,
   onSaved,
+  onDeleted,
 }: {
   card: KanbanCard;
   onClose: () => void;
   onSaved: (updated: Partial<KanbanCard>) => void;
+  onDeleted: () => void;
 }) {
   const initialNameParts = card.name.trim().split(/\s+/);
   const [lastName, setLastName] = useState(initialNameParts[0] || "");
@@ -4133,6 +4726,7 @@ export function EditCandidateModal({
     buildEditResumeText(card, resumeDemo),
   );
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const fullName = [lastName, firstName, middleName]
     .map((part) => part.trim())
@@ -4192,6 +4786,24 @@ export function EditCandidateModal({
       setSaving(false);
     }
   };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    if (!window.confirm(`Удалить кандидата «${card.name || "без имени"}»? Действие необратимо.`)) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteEntity(card.id);
+      toast.success("Кандидат удалён");
+      onDeleted();
+    } catch {
+      toast.error("Ошибка при удалении");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const resumeFileName =
     (card.extra_data?.resume_file_name as string | undefined) ||
     `${card.name}.pdf`;
@@ -4388,9 +5000,11 @@ export function EditCandidateModal({
           </div>
           <button
             type="button"
-            className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-delete-min-w)] items-center rounded-[var(--hf-edit-btn-radius)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-ui-delete)] transition-colors hover:text-[var(--hf-red-500)]"
+            onClick={handleDelete}
+            disabled={deleting || saving}
+            className="inline-flex h-[var(--hf-edit-btn-h)] min-w-[var(--hf-edit-delete-min-w)] items-center rounded-[var(--hf-edit-btn-radius)] px-[var(--hf-edit-btn-px)] text-[length:var(--hf-edit-btn-fs)] font-medium leading-[var(--hf-edit-btn-lh)] text-[var(--hf-ui-delete)] transition-colors hover:text-[var(--hf-red-500)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Удалить
+            {deleting ? "Удаление…" : "Удалить"}
           </button>
         </div>
       </motion.div>
@@ -4476,9 +5090,34 @@ function EditField({
 // LIST SETTINGS MODAL (Huntflow user settings)
 // ================================================================
 
-function ListSettingsModal({ onClose }: { onClose: () => void }) {
-  const [scope, setScope] = useState<"mine" | "all">("mine");
-  const [fields, setFields] = useState({
+// F7-fix: настройки списка кандидатов теперь СОХРАНЯЮТСЯ (localStorage) и
+// применяются к карточкам. В компактном списке реально выводятся только
+// «должность» (lastPosition) и «компания» (lastCompany) — их тумблеры влияют
+// на отображение. Остальные поля и scope в этом списке пока не выводятся.
+type CandidateListFields = {
+  name: boolean;
+  desiredPosition: boolean;
+  desiredSalary: boolean;
+  age: boolean;
+  experience: boolean;
+  lastPosition: boolean;
+  lastCompany: boolean;
+  source: boolean;
+  vacanciesCount: boolean;
+  tags: boolean;
+};
+type CandidateListSettings = {
+  scope: "mine" | "all";
+  fields: CandidateListFields;
+};
+// v2: дефолт scope = "all" — все рекрутёры видят ВСЕХ кандидатов орги (требование).
+// Ключ обновлён на .v2, чтобы у существующих юзеров слетел старый сохранённый
+// "mine" (иначе он продолжал бы прятать чужих кандидатов из localStorage).
+const CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings.v2";
+const LEGACY_CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings";
+const DEFAULT_CANDIDATE_LIST_SETTINGS: CandidateListSettings = {
+  scope: "all",
+  fields: {
     name: true,
     desiredPosition: false,
     desiredSalary: false,
@@ -4489,14 +5128,63 @@ function ListSettingsModal({ onClose }: { onClose: () => void }) {
     source: false,
     vacanciesCount: false,
     tags: false,
-  });
+  },
+};
+function loadCandidateListSettings(): CandidateListSettings {
+  try {
+    const raw = localStorage.getItem(CANDIDATE_LIST_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        // в v2 дефолт — "all"; "mine" остаётся, только если юзер ЯВНО его выбрал
+        scope: parsed?.scope === "mine" ? "mine" : "all",
+        fields: { ...DEFAULT_CANDIDATE_LIST_SETTINGS.fields, ...(parsed?.fields || {}) },
+      };
+    }
+    // Миграция со старого ключа: переносим настройки полей, а scope сбрасываем
+    // на новый дефолт "all" (старый сохранённый "mine" больше не прячет чужих).
+    const legacy = localStorage.getItem(LEGACY_CANDIDATE_LIST_SETTINGS_KEY);
+    if (legacy) {
+      const old = JSON.parse(legacy);
+      return {
+        scope: "all",
+        fields: { ...DEFAULT_CANDIDATE_LIST_SETTINGS.fields, ...(old?.fields || {}) },
+      };
+    }
+    return DEFAULT_CANDIDATE_LIST_SETTINGS;
+  } catch {
+    return DEFAULT_CANDIDATE_LIST_SETTINGS;
+  }
+}
+function saveCandidateListSettings(settings: CandidateListSettings) {
+  try {
+    localStorage.setItem(CANDIDATE_LIST_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    /* ignore */
+  }
+}
 
-  const setField = (key: keyof typeof fields, checked: boolean) => {
+function ListSettingsModal({
+  onClose,
+  initial,
+  onApply,
+}: {
+  onClose: () => void;
+  initial: CandidateListSettings;
+  onApply: (settings: CandidateListSettings) => void;
+}) {
+  const [scope, setScope] = useState<"mine" | "all">(initial.scope);
+  const [fields, setFields] = useState<CandidateListFields>(initial.fields);
+
+  const setField = (key: keyof CandidateListFields, checked: boolean) => {
     if (key === "name") return;
     setFields((prev) => ({ ...prev, [key]: checked }));
   };
 
   const handleSave = () => {
+    const next: CandidateListSettings = { scope, fields };
+    saveCandidateListSettings(next);
+    onApply(next);
     toast.success("Настройки списка сохранены");
     onClose();
   };
@@ -4722,164 +5410,5 @@ function ListSettingRadio({
       </span>
       {label}
     </label>
-  );
-}
-
-// ================================================================
-// STAGE SETTINGS MODAL (admin only)
-// ================================================================
-
-function StageSettingsModal({
-  onClose,
-  onSaved,
-}: {
-  onClose: () => void;
-  onSaved?: () => void;
-}) {
-  const [stages, setStages] = useState<
-    Array<{ key: string; label: string; color: string }>
-  >([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    getOrgStages()
-      .then((r) => setStages(r.stages))
-      .catch(() => toast.error("Не удалось загрузить настройки"))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const handleSave = async () => {
-    if (stages.some((s) => !s.label.trim())) {
-      toast.error("Названия этапов не могут быть пустыми");
-      return;
-    }
-    setSaving(true);
-    try {
-      await updateOrgStages(
-        stages.map((s) => ({
-          key: s.key,
-          label: s.label.trim(),
-          color: s.color,
-        })),
-      );
-      toast.success("Этапы сохранены");
-      onSaved?.();
-      onClose();
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail || "Не удалось сохранить";
-      toast.error(msg);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-30)]"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92vh] w-full max-w-[672px] flex-col overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-bg-muted)] shadow-[0_18px_60px_var(--hf-black-alpha-30)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]"
-      >
-        <div className="flex h-[68px] flex-shrink-0 items-center justify-between border-b border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
-          <div className="flex items-center gap-[12px]">
-            <span className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] bg-[var(--hf-white)] text-[var(--hf-cyan-500)] shadow-[0_1px_2px_var(--hf-alpha-100)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)]">
-              <ShieldCheck className="h-[20px] w-[20px]" />
-            </span>
-            <h3 className="text-[20px] font-semibold leading-[var(--hf-lh-h2)] text-[var(--hf-ui-text-strong)] hf-dark-disabled:text-[var(--hf-white)]">
-              Настройка этапов
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="inline-flex h-[36px] w-[36px] items-center justify-center rounded-[var(--hf-radius-s)] text-[var(--hf-ui-text-strong)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hf-dark-disabled:text-[color:var(--hf-white-alpha-70)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
-            aria-label="Закрыть"
-          >
-            <X className="h-[22px] w-[22px]" />
-          </button>
-        </div>
-        <div className="overflow-y-auto px-[var(--hf-space-xxl)] py-[var(--hf-space-l)]">
-          <p className="mb-[16px] text-[length:var(--hf-fs-2xs)] leading-[18px] text-[var(--hf-ui-text-muted)] hf-dark-disabled:text-[color:var(--hf-white-alpha-50)]">
-            Настройте названия и цвета этапов воронки. Применится ко всей
-            организации.
-          </p>
-          {loading ? (
-            <div className="space-y-[8px] py-[var(--hf-space-s)]">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <HfSkeletonBlock
-                  key={index}
-                  className="h-[48px] w-full rounded-[var(--hf-radius-s)]"
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-[8px]">
-              {stages.map((s, i) => (
-                <div
-                  key={s.key}
-                  className="flex h-[48px] items-center gap-[10px] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-transparent px-[10px] transition-colors hover:border-[var(--hf-ui-border-hover)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:hover:border-[color:var(--hf-white-alpha-20)]"
-                >
-                  <GripVertical className="h-[16px] w-[16px] cursor-grab text-[var(--hf-main-600)]" />
-                  <input
-                    type="color"
-                    value={s.color}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setStages((p) =>
-                        p.map((x, j) =>
-                          j === i ? { ...x, color: e.target.value } : x,
-                        ),
-                      )
-                    }
-                    className="h-[28px] w-[28px] cursor-pointer rounded border-0 bg-transparent disabled:opacity-50"
-                  />
-                  <input
-                    type="text"
-                    value={s.label}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setStages((p) =>
-                        p.map((x, j) =>
-                          j === i ? { ...x, label: e.target.value } : x,
-                        ),
-                      )
-                    }
-                    className="h-full flex-1 bg-transparent text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-ui-text-strong)] focus:outline-none disabled:opacity-50 hf-dark-disabled:text-[var(--hf-white)]"
-                  />
-                  <span className="font-mono text-[length:var(--hf-fs-4xs)] text-[var(--hf-main-600)]">
-                    {s.key}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="flex h-[72px] flex-shrink-0 items-center justify-end gap-[12px] border-t border-[var(--hf-ui-border)] px-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="inline-flex h-[40px] items-center rounded-[var(--hf-radius-s)] px-[var(--hf-space-xxl)] text-[length:var(--hf-fs-xs)] font-medium text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] disabled:opacity-50 hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:hover:text-[var(--hf-white)]"
-          >
-            Отмена
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || loading}
-            className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] bg-[var(--hf-main-900)] px-[18px] text-[length:var(--hf-fs-xs)] font-semibold text-[var(--hf-white)] transition-colors duration-[100ms] hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:bg-[var(--hf-btn-disabled-bg)] disabled:text-[var(--hf-main-600)] disabled:opacity-100 disabled:hover:bg-[var(--hf-btn-disabled-bg)] hf-dark-disabled:bg-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-90)] hf-dark-disabled:disabled:bg-[var(--hf-white-alpha-08)] hf-dark-disabled:disabled:text-[color:var(--hf-white-alpha-35)]"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? "Сохраняем…" : "Сохранить"}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
   );
 }

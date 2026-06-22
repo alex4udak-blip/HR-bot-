@@ -45,6 +45,7 @@ class MagicButtonData(BaseModel):
     languages: Optional[list] = None
     company: Optional[str] = None
     education: Optional[list] = None
+    summary: Optional[str] = None  # «Обо мне» — самоописание кандидата
 
     # Recruiter's choice
     vacancy_id: Optional[int] = None  # which funnel to add to
@@ -111,26 +112,33 @@ async def check_duplicate(
     if not org:
         raise HTTPException(400, "User not in organization")
 
+    from ..services.similarity import is_matchable_telegram, looks_like_person_name, normalize_source_url
+
     conditions = []
     # Primary identifier: resume URL (works even when contacts are hidden).
+    # Сравниваем и по сырому URL, и по нормализованному ключу — query-параметры hh
+    # (?t=…&vacancyId=…) меняются при каждом открытии и ломают точное сравнение.
     if data.source_url:
         conditions.append(Entity.extra_data.op('->>')('source_url') == data.source_url)
+        _skey = normalize_source_url(data.source_url)
+        if _skey:
+            conditions.append(Entity.extra_data.op('->>')('source_key') == _skey)
     if data.email:
         conditions.append(Entity.email == data.email)
     if data.phone:
         conditions.append(Entity.phone == data.phone)
-    if data.telegram:
+    # Telegram — только если это реальный хэндл, а не мусорный ярлык источника
+    # («hh_b2b», «telegram», …): иначе по нему совпадают десятки разных людей.
+    if data.telegram and is_matchable_telegram(data.telegram):
         conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
-    # Name match — skip for generic placeholders so every "Кандидат ..."
-    # doesn't match every other placeholder in the DB.
+    # Имя — только если это похоже на ФИО, а не на должность («Flutter Developer,
+    # Минск, 25 лет») и не placeholder («Кандидат …»). Иначе по «имени-должности»
+    # матчатся все одинаковые должности между собой.
     name_lower = (data.full_name or "").strip().lower()
-    is_placeholder_name = name_lower.startswith("кандидат")
-    if data.full_name and not is_placeholder_name:
+    is_placeholder_name = name_lower.startswith("кандидат") or name_lower.startswith("candidate")
+    if data.full_name and not is_placeholder_name and looks_like_person_name(data.full_name):
         name_parts = data.full_name.strip().split()
-        if len(name_parts) >= 2:
-            conditions.append(Entity.name.ilike(f"%{name_parts[0]}%{name_parts[1]}%"))
-        else:
-            conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
+        conditions.append(Entity.name.ilike(f"%{name_parts[0]}%{name_parts[1]}%"))
 
     if not conditions:
         return DuplicateCheckResponse(is_duplicate=False, duplicates=[])
@@ -139,6 +147,7 @@ async def check_duplicate(
         select(Entity).where(
             Entity.org_id == org.id,
             Entity.type == EntityType.candidate,
+            Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
             or_(*conditions)
         ).limit(5)
     )
@@ -228,30 +237,42 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     # even when contacts are hidden on hh.ru), then fall back to contact-based
     # matching. Name-based matching is skipped if the name looks like a generic
     # placeholder so we don't collapse all "Кандидат" entries into one record.
+    from ..services.similarity import normalize_source_url
+    source_key = normalize_source_url(data.source_url or "")
     duplicate = None
     if data.source_url:
+        # Сравниваем по нормализованному ключу (без волатильных query-параметров
+        # hh: ?t=…&vacancyId=…) И по сырому URL — иначе одно и то же резюме,
+        # открытое дважды, считается разным и добавляется повторно.
+        url_conds = [Entity.extra_data.op('->>')('source_url') == data.source_url]
+        if source_key:
+            url_conds.append(Entity.extra_data.op('->>')('source_key') == source_key)
         dup_by_url = await db.execute(
             select(Entity).where(
                 Entity.org_id == org.id,
                 Entity.type == EntityType.candidate,
-                Entity.extra_data.op('->>')('source_url') == data.source_url,
+                Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
+                or_(*url_conds),
             ).limit(1)
         )
         duplicate = dup_by_url.scalar_one_or_none()
 
     if duplicate is None:
+        from ..services.similarity import is_matchable_telegram, looks_like_person_name
         conditions = []
         if data.email:
             conditions.append(Entity.email == data.email)
         if data.phone:
             conditions.append(Entity.phone == data.phone)
-        if data.telegram:
-            # telegram_usernames is a JSON array, check if it contains the value
+        # Telegram — только реальный хэндл, не мусорный ярлык источника («hh_b2b»,
+        # «telegram»): иначе «дубликат найден» срабатывает на десятках разных людей.
+        if data.telegram and is_matchable_telegram(data.telegram):
             conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
-        # Name match ONLY when the name is specific (not a "Кандидат ..." placeholder)
+        # Имя — только если похоже на ФИО, а не должность («Flutter Developer, …»)
+        # и не placeholder («Кандидат …»).
         name_lower = (data.full_name or "").strip().lower()
-        is_placeholder_name = name_lower.startswith("кандидат")
-        if data.full_name and not is_placeholder_name:
+        is_placeholder_name = name_lower.startswith("кандидат") or name_lower.startswith("candidate")
+        if data.full_name and not is_placeholder_name and looks_like_person_name(data.full_name):
             conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
 
         if conditions:
@@ -259,6 +280,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
                 select(Entity).where(
                     Entity.org_id == org.id,
                     Entity.type == EntityType.candidate,
+                    Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
                     or_(*conditions)
                 ).limit(1)
             )
@@ -283,6 +305,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     extra = {
         "source": data.source,
         "source_url": data.source_url,
+        "source_key": source_key or None,  # стабильный ключ резюме для дедупа
         "magic_button": True,
         "comment": data.comment,
     }
@@ -325,6 +348,8 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         extra["languages"] = data.languages
     if data.education:
         extra["education"] = data.education
+    if data.summary:
+        extra["summary"] = data.summary
 
     # Parse salary into min/max if possible
     salary_min = None
@@ -350,7 +375,9 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             return int(cleaned) if cleaned else 0
         numbers = re.findall(r'[\d\s\u00A0\u2009\u202F]+', data.salary)
         nums = [_to_int(n) for n in numbers if any(c.isdigit() for c in n)]
-        nums = [n for n in nums if n > 100]
+        # Отбрасываем мусорные числа: слишком мелкие и больше INT-предела Postgres
+        # (иначе expected_salary_* падали на commit → 500 при добавлении из расширения).
+        nums = [n for n in nums if 100 < n <= 2_147_483_647]
         if len(nums) >= 2:
             salary_min = min(nums)
             salary_max = max(nums)
@@ -426,6 +453,21 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         )
         db.add(app)
 
+    # Теневая дедупликация: сверяем нового кандидата с архивом до коммита.
+    # При совпадении помечаем профиль флагом — веб-карточка покажет баннер «Проверить».
+    try:
+        from ..services.similarity import detect_archived_duplicate
+        _hidden_dup = await detect_archived_duplicate(db, entity)
+        if _hidden_dup:
+            _extra = dict(entity.extra_data or {})
+            _extra["hidden_duplicate_id"] = _hidden_dup
+            entity.extra_data = _extra
+    except Exception:
+        import logging
+        logging.getLogger("hr-analyzer.magic-button").warning(
+            "shadow-dedup detect failed (non-critical)", exc_info=True
+        )
+
     await db.commit()
 
     # --- Notification: new candidate from magic button ---
@@ -464,6 +506,8 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         "experience_descriptions": data.experience_descriptions,
         "skills": data.skills,
         "languages": data.languages,
+        "education": data.education,
+        "summary": data.summary,
         "photo_url": data.photo_url,
     }
     background_tasks.add_task(
@@ -682,4 +726,29 @@ async def get_my_vacancies_for_extension(
         ).order_by(Vacancy.title)
     )
     vacancies = result.scalars().all()
-    return [{"id": v.id, "title": v.title} for v in vacancies]
+    # Схлопываем «заявку + её клон»: если у рекрутёра есть личный клон заявки
+    # (extra_data.cloned_from_request_id == X), оригинал X из дропдауна убираем —
+    # иначе одна воронка двоится («Mob dev ×2 / Трафик ×2»). Тот же дедуп, что
+    # на фронте (hasAlreadyTaken в VacanciesPage/RecruiterFunnelsPage).
+    cloned_request_ids = set()
+    for v in vacancies:
+        src = (v.extra_data or {}).get("cloned_from_request_id")
+        try:
+            cloned_request_ids.add(int(src))
+        except (TypeError, ValueError):
+            pass
+    # После клон-схлопывания дополнительно убираем повторы по названию: одну
+    # воронку рекрутёр мог «взять» несколько раз → несколько клонов с одинаковым
+    # названием («tesy / tesy / tesy»), которые в списке не различить. Оставляем
+    # по одной записи на название.
+    seen_titles: set = set()
+    out = []
+    for v in vacancies:
+        if v.id in cloned_request_ids:
+            continue
+        key = (v.title or "").strip().lower()
+        if key in seen_titles:
+            continue
+        seen_titles.add(key)
+        out.append({"id": v.id, "title": v.title})
+    return out

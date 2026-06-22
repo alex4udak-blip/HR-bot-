@@ -8,12 +8,19 @@ from .database import ChatType, UserRole, EntityType, EntityStatus, OrgRole, Dep
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    # Расширение (chrome-extension) не умеет httpOnly-куки для кросс-сайтовых
+    # POST → просит refresh-токен в теле ответа, чтобы хранить его в
+    # chrome.storage и самому обновлять access. Веб этот флаг не шлёт.
+    include_refresh: bool = False
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: "UserResponse"
+    # Заполняется только при include_refresh=True (расширение). Для веба None —
+    # там refresh лежит в httpOnly-куке и в тело не попадает.
+    refresh_token: Optional[str] = None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -40,6 +47,15 @@ class LinkTelegramRequest(BaseModel):
 class RefreshTokenResponse(BaseModel):
     """Response after successful token refresh."""
     message: str = "Token refreshed successfully"
+    # Заполняются только при refresh из ТЕЛА (расширение); веб берёт новые токены
+    # из обновлённых httpOnly-кук и эти поля игнорирует.
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+
+
+class RefreshRequest(BaseModel):
+    """Тело /api/auth/refresh для клиентов без кук (расширение)."""
+    refresh_token: Optional[str] = None
 
 
 class SessionResponse(BaseModel):

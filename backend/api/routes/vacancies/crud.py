@@ -29,6 +29,7 @@ router = APIRouter()
 @router.get("", response_model=List[VacancyResponse])
 async def list_vacancies(
     status: Optional[VacancyStatus] = None,
+    deleted: bool = False,
     department_id: Optional[int] = None,
     search: Optional[str] = None,
     skip: int = Query(0, ge=0),
@@ -47,6 +48,12 @@ async def list_vacancies(
 
     # Base query - filter by organization
     query = select(Vacancy).where(Vacancy.org_id == org.id if org else True)
+
+    # Мягкое удаление: по умолчанию удалённые скрыты; фильтр «Удалённые» — только они.
+    if deleted:
+        query = query.where(Vacancy.deleted_at.isnot(None))
+    else:
+        query = query.where(Vacancy.deleted_at.is_(None))
 
     # Apply access control based on user role
     # Full access: superadmin, owner, or member with has_full_access flag
@@ -245,10 +252,15 @@ async def create_vacancy(
         created_by=current_user.id,
         published_at=datetime.utcnow() if data.status == VacancyStatus.open else None,
     )
+    # custom_stages/kanban_card_fields приходят Pydantic-моделями (CustomStagesSchema),
+    # а колонки — JSON. Кладём dict, иначе json.dumps падает на commit -> 500
+    # («Object of type CustomStagesSchema is not JSON serializable»).
     if hasattr(Vacancy, 'custom_stages'):
-        vacancy_kwargs['custom_stages'] = data.custom_stages
+        cs = data.custom_stages
+        vacancy_kwargs['custom_stages'] = cs.model_dump() if hasattr(cs, 'model_dump') else cs
     if hasattr(Vacancy, 'kanban_card_fields'):
-        vacancy_kwargs['kanban_card_fields'] = data.kanban_card_fields
+        kcf = data.kanban_card_fields
+        vacancy_kwargs['kanban_card_fields'] = kcf.model_dump() if hasattr(kcf, 'model_dump') else kcf
     vacancy = Vacancy(**vacancy_kwargs)
 
     db.add(vacancy)
@@ -492,10 +504,29 @@ async def delete_vacancy(
     if not await can_edit_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="You don't have permission to delete this vacancy")
 
-    await db.delete(vacancy)
+    # Если удаляем КЛОН заявки — «закрываем» оригинал у этого рекрутёра (как при
+    # закрытии клона), иначе после удаления рабочей вакансии исходная заявка снова
+    # всплывает в «Заявки» (она перестаёт считаться «уже взятой»).
+    cloned_from = (vacancy.extra_data or {}).get("cloned_from_request_id")
+    if isinstance(cloned_from, int):
+        original = await db.get(Vacancy, cloned_from)
+        if original is not None:
+            assigned = list(original.assigned_to or [])
+            if current_user.id in assigned:
+                original.assigned_to = [u for u in assigned if u != current_user.id]
+            orig_extra = dict(original.extra_data or {})
+            dismissed = list(orig_extra.get("dismissed_by") or [])
+            if current_user.id not in dismissed:
+                dismissed.append(current_user.id)
+                orig_extra["dismissed_by"] = dismissed
+                original.extra_data = orig_extra
+
+    # Мягкое удаление: вакансия исчезает из всех активных списков (deleted_at IS
+    # NULL фильтруется), но видна в фильтре «Удалённые». Восстановимо через update.
+    vacancy.deleted_at = datetime.utcnow()
     await db.commit()
 
-    logger.info(f"Deleted vacancy {vacancy_id}")
+    logger.info(f"Soft-deleted vacancy {vacancy_id}")
 
 
 @router.get("/assignable-users")
@@ -607,6 +638,11 @@ async def take_vacancy(
         existing = await db.execute(
             select(Vacancy.id).where(
                 Vacancy.created_by == current_user.id,
+                # Дублем считаем только АКТИВНЫЙ клон. Закрытый/отменённый/удалённый
+                # клон рекрутёр уже не видит в списках — иначе guard блокировал
+                # повторное взятие заявки, клона которой по факту нет («первой не видно»).
+                Vacancy.deleted_at.is_(None),
+                Vacancy.status.notin_([VacancyStatus.closed, VacancyStatus.cancelled]),
                 text(
                     f"vacancies.extra_data::jsonb @> '{{\"cloned_from_request_id\": {src_id}}}'::jsonb"
                 ),
@@ -624,13 +660,10 @@ async def take_vacancy(
     cloned_extra = dict(source.extra_data or {})
     cloned_extra['cloned_from_request_id'] = source.id
 
-    # Оригинал-заявка переходит в статус 'open' (если был draft/paused),
-    # сигнализируя что её взяли в работу. Сама заявка остаётся доступной
-    # другим назначенным рекрутёрам.
-    if source.status in (VacancyStatus.draft, VacancyStatus.pending_review, VacancyStatus.paused):
-        source.status = VacancyStatus.open
-        if not source.published_at:
-            source.published_at = datetime.utcnow()
+    # Оригинал-заявку НЕ переводим в 'open': иначе она висела бы открытой
+    # вакансией рядом со своим клоном (рабочей копией) — отсюда дубли в списках
+    # «Мои вакансии»/«Взять на вакансию». Заявка остаётся в исходном статусе и
+    # доступна другим назначенным рекрутёрам; рабочей вакансией становится клон.
 
     clone_kwargs = dict(
         org_id=source.org_id,

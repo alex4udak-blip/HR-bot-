@@ -20,10 +20,11 @@ from pydantic import BaseModel, EmailStr
 from ..database import get_db
 from ..models.database import (
     User, UserRole, Organization, OrgMember, OrgRole,
-    Department, DepartmentMember, DeptRole, Invitation
+    Department, DepartmentMember, DeptRole, Invitation, Employee
 )
 from ..services.auth import get_current_user, hash_password, create_access_token
 from .organizations import get_current_org, require_org_admin
+from ..config import settings
 
 router = APIRouter()
 
@@ -413,6 +414,11 @@ async def accept_invitation(
                         role=dept_role
                     )
                     db.add(dept_membership)
+
+        # Create Employee (HR card) for the new user — required by the Factorial module
+        existing_emp = await db.execute(select(Employee).where(Employee.user_id == new_user.id))
+        if existing_emp.scalar_one_or_none() is None:
+            db.add(Employee(user_id=new_user.id, org_id=invitation.org_id))
 
         # Mark invitation as used
         invitation.used_at = datetime.utcnow()

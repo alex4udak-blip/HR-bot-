@@ -46,7 +46,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
         {/* Name */}
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Имя</label>
+          <label className="block text-sm text-slate-600 mb-1">Имя</label>
           <input
             type="text"
             value={resumeData.name || ''}
@@ -59,7 +59,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
         {/* Email & Phone */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Email</label>
+            <label className="block text-sm text-slate-600 mb-1">Email</label>
             <input
               type="email"
               value={resumeData.email || ''}
@@ -69,7 +69,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             />
           </div>
           <div>
-            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Телефон</label>
+            <label className="block text-sm text-slate-600 mb-1">Телефон</label>
             <input
               type="text"
               value={resumeData.phone || ''}
@@ -82,7 +82,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
         {/* Telegram */}
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Telegram</label>
+          <label className="block text-sm text-slate-600 mb-1">Telegram</label>
           <input
             type="text"
             value={resumeData.telegram || ''}
@@ -95,7 +95,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
         {/* Position & Company */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Должность</label>
+            <label className="block text-sm text-slate-600 mb-1">Должность</label>
             <input
               type="text"
               value={resumeData.position || ''}
@@ -105,7 +105,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             />
           </div>
           <div>
-            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Компания</label>
+            <label className="block text-sm text-slate-600 mb-1">Компания</label>
             <input
               type="text"
               value={resumeData.company || ''}
@@ -119,7 +119,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
         {/* Experience & Location */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Опыт (лет)</label>
+            <label className="block text-sm text-slate-600 mb-1">Опыт (лет)</label>
             <input
               type="number"
               value={resumeData.experience_years || ''}
@@ -129,7 +129,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             />
           </div>
           <div>
-            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Локация</label>
+            <label className="block text-sm text-slate-600 mb-1">Локация</label>
             <input
               type="text"
               value={resumeData.location || ''}
@@ -143,7 +143,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
         {/* Salary */}
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Зарплата от</label>
+            <label className="block text-sm text-slate-600 mb-1">Зарплата от</label>
             <input
               type="number"
               value={resumeData.salary_min || ''}
@@ -153,7 +153,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             />
           </div>
           <div>
-            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Зарплата до</label>
+            <label className="block text-sm text-slate-600 mb-1">Зарплата до</label>
             <input
               type="number"
               value={resumeData.salary_max || ''}
@@ -163,7 +163,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             />
           </div>
           <div>
-            <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Валюта</label>
+            <label className="block text-sm text-slate-600 mb-1">Валюта</label>
             <select
               value={resumeData.salary_currency || 'RUB'}
               onChange={(e) => handleChange('salary_currency', e.target.value)}
@@ -179,7 +179,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
         {/* Formatted salary preview */}
         {(resumeData.salary_min || resumeData.salary_max) && (
           <div className="p-3 glass-light rounded-lg">
-            <span className="text-sm text-[color:var(--hf-white-alpha-60)]">Formatted: </span>
+            <span className="text-sm text-slate-600">Formatted: </span>
             <span className="text-sm font-medium">
               {formatSalary(resumeData.salary_min, resumeData.salary_max, resumeData.salary_currency || 'RUB')}
             </span>
@@ -188,7 +188,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
         {/* Skills */}
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Навыки (через запятую)</label>
+          <label className="block text-sm text-slate-600 mb-1">Навыки (через запятую)</label>
           <input
             type="text"
             value={(resumeData.skills || []).join(', ')}
@@ -212,7 +212,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
         {/* Summary */}
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Описание</label>
+          <label className="block text-sm text-slate-600 mb-1">Описание</label>
           <textarea
             value={resumeData.summary || ''}
             onChange={(e) => handleChange('summary', e.target.value)}
@@ -236,7 +236,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
       {/* Title */}
       <div>
-        <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Название вакансии *</label>
+        <label className="block text-sm text-slate-600 mb-1">Название вакансии *</label>
         <input
           type="text"
           value={vacancyData.title || ''}
@@ -258,7 +258,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
       {/* Company & Location */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Компания</label>
+          <label className="block text-sm text-slate-600 mb-1">Компания</label>
           <input
             type="text"
             value={vacancyData.company_name || ''}
@@ -268,7 +268,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           />
         </div>
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Локация</label>
+          <label className="block text-sm text-slate-600 mb-1">Локация</label>
           <input
             type="text"
             value={vacancyData.location || ''}
@@ -282,7 +282,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
       {/* Employment Type & Experience Level */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Тип занятости</label>
+          <label className="block text-sm text-slate-600 mb-1">Тип занятости</label>
           <select
             value={vacancyData.employment_type || ''}
             onChange={(e) => handleChange('employment_type', e.target.value)}
@@ -297,7 +297,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           </select>
         </div>
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Уровень</label>
+          <label className="block text-sm text-slate-600 mb-1">Уровень</label>
           <select
             value={vacancyData.experience_level || ''}
             onChange={(e) => handleChange('experience_level', e.target.value)}
@@ -317,7 +317,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
       {/* Salary */}
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Зарплата от</label>
+          <label className="block text-sm text-slate-600 mb-1">Зарплата от</label>
           <input
             type="number"
             value={vacancyData.salary_min || ''}
@@ -327,7 +327,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           />
         </div>
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Зарплата до</label>
+          <label className="block text-sm text-slate-600 mb-1">Зарплата до</label>
           <input
             type="number"
             value={vacancyData.salary_max || ''}
@@ -337,7 +337,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           />
         </div>
         <div>
-          <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Валюта</label>
+          <label className="block text-sm text-slate-600 mb-1">Валюта</label>
           <select
             value={vacancyData.salary_currency || 'RUB'}
             onChange={(e) => handleChange('salary_currency', e.target.value)}
@@ -353,7 +353,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
       {/* Formatted salary preview */}
       {(vacancyData.salary_min || vacancyData.salary_max) && (
         <div className="p-3 glass-light rounded-lg">
-          <span className="text-sm text-[color:var(--hf-white-alpha-60)]">Formatted: </span>
+          <span className="text-sm text-slate-600">Formatted: </span>
           <span className="text-sm font-medium">
             {formatSalary(vacancyData.salary_min, vacancyData.salary_max, vacancyData.salary_currency || 'RUB')}
           </span>
@@ -362,7 +362,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
       {/* Description */}
       <div>
-        <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Описание</label>
+        <label className="block text-sm text-slate-600 mb-1">Описание</label>
         <textarea
           value={vacancyData.description || ''}
           onChange={(e) => handleChange('description', e.target.value)}
@@ -374,7 +374,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
       {/* Requirements */}
       <div>
-        <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Требования</label>
+        <label className="block text-sm text-slate-600 mb-1">Требования</label>
         <textarea
           value={vacancyData.requirements || ''}
           onChange={(e) => handleChange('requirements', e.target.value)}
@@ -386,7 +386,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
 
       {/* Responsibilities */}
       <div>
-        <label className="block text-sm text-[color:var(--hf-white-alpha-60)] mb-1">Обязанности</label>
+        <label className="block text-sm text-slate-600 mb-1">Обязанности</label>
         <textarea
           value={vacancyData.responsibilities || ''}
           onChange={(e) => handleChange('responsibilities', e.target.value)}

@@ -166,7 +166,7 @@ class TestAIServiceInitialization:
         service = AIService()
 
         assert service._client is None
-        assert service.model == "claude-sonnet-4-20250514"
+        assert service.model == "claude-sonnet-4-6"
 
     def test_client_property_lazy_loads(self, mock_settings):
         """Test that client property lazy loads AsyncAnthropic."""
@@ -545,7 +545,7 @@ class TestChatStream:
 
             call_kwargs = mock_anthropic_client.messages.stream.call_args[1]
 
-            assert call_kwargs['model'] == "claude-sonnet-4-20250514"
+            assert call_kwargs['model'] == "claude-sonnet-4-6"
             assert call_kwargs['max_tokens'] == 4096
             assert 'system' in call_kwargs
             assert 'messages' in call_kwargs
@@ -689,7 +689,7 @@ class TestGenerateReport:
             mock_anthropic_client.messages.create.assert_called_once()
             call_kwargs = mock_anthropic_client.messages.create.call_args[1]
 
-            assert call_kwargs['model'] == "claude-sonnet-4-20250514"
+            assert call_kwargs['model'] == "claude-sonnet-4-6"
             assert call_kwargs['max_tokens'] == 8192
 
     @pytest.mark.asyncio

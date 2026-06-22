@@ -48,7 +48,7 @@ class TestRedFlagsService:
     def test_init(self):
         """Test service initialization."""
         service = RedFlagsService()
-        assert service.model == "claude-sonnet-4-20250514"
+        assert service.model == "claude-sonnet-4-6"
         assert service._client is None
 
     def test_analyze_work_history_no_hopping(self):

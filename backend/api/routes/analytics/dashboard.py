@@ -172,6 +172,9 @@ async def get_dashboard_overview(
                 vacancy_filter = [Vacancy.org_id == org.id, Vacancy.department_id == department_id]
                 entity_filter = [Entity.org_id == org.id, Entity.department_id == department_id]
 
+        # Теневая база: архивные кандидаты не учитываются в статистике дашборда
+        entity_filter.append(Entity.is_archived.is_not(True))
+
         # Vacancies stats
         vacancies_result = await db.execute(
             select(

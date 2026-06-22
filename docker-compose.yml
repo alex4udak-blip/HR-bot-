@@ -18,6 +18,8 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-False}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8000,http://localhost:5173}
     depends_on:
       db:
         condition: service_healthy

@@ -31,13 +31,15 @@ router = APIRouter()
 # KANBAN_STATUS_LABELS в candidate_search.py и фронтом.
 STAGE_LABELS = {
     "applied": "Новый",
-    "screening": "Скрининг",
-    "phone_screen": "Практика",
-    "interview": "Тех-практика",
-    "assessment": "ИС",
-    "offer": "Оффер",
-    "hired": "Принят",
-    "rejected": "Отклонён",
+    "screening": "Выполняет ТЗ",
+    "phone_screen": "Интервью с HR",
+    "interview": "Интервью с заказчиком",
+    "assessment": "Принятие решения",
+    "offer": "Выставлен оффер",
+    "hired": "Оффер принят",
+    "probation": "Практика",
+    "transferred": "Перешёл в отдел",
+    "rejected": "Отказ",
     "withdrawn": "Отозван",
 }
 

@@ -57,6 +57,10 @@ from api.db.migrations import (
     SHARED_ACCESS_CALL_ID,
     SHARED_ACCESS_VACANCY_ID,
     ENTITY_FILES_ORG_ID,
+    CREATE_ORG_UNITS_SQL,
+    ORG_UNITS_INDEXES,
+    EMPLOYEE_ORG_UNIT_COLUMN,
+    EMPLOYEE_MANAGER_COLUMN,
 )
 
 logger = logging.getLogger("hr-analyzer")
@@ -135,6 +139,13 @@ async def init_database():
 
     # Step 2.3: Add HR pipeline stages to entitystatus enum (for Entity.status sync)
     for status_val in HR_PIPELINE_STAGES:
+        await run_migration(engine, f"ALTER TYPE entitystatus ADD VALUE IF NOT EXISTS '{status_val}'", f"Add {status_val} to entitystatus enum")
+
+    # Step 2.4: Add archival/terminal statuses present in EntityStatus model but
+    # missing from the original PG enum (withdrawn = candidate withdrew, reserve =
+    # imported/archived candidates e.g. ClickUp backlog). Without this the enum
+    # drifts from the model and INSERTs crash with "invalid input value for enum".
+    for status_val in ('withdrawn', 'reserve'):
         await run_migration(engine, f"ALTER TYPE entitystatus ADD VALUE IF NOT EXISTS '{status_val}'", f"Add {status_val} to entitystatus enum")
 
     # Step 3: Create all tables
@@ -239,6 +250,17 @@ async def init_database():
     # Entity transfer tracking columns
     for sql, description in ENTITY_TRACKING_COLUMNS:
         await run_migration(engine, sql, description)
+
+    # Step 8.5: Org units (HR org chart) — изолированная HR-структура
+    logger.info("=== SETTING UP ORG UNITS ===")
+    await run_migration(engine, CREATE_ORG_UNITS_SQL, "Create org_units table")
+    for sql, description in ORG_UNITS_INDEXES:
+        await run_migration(engine, sql, description)
+    for sql, description in EMPLOYEE_ORG_UNIT_COLUMN:
+        await run_migration(engine, sql, description)
+    for sql, description in EMPLOYEE_MANAGER_COLUMN:
+        await run_migration(engine, sql, description)
+    logger.info("=== ORG UNITS READY ===")
 
     # Step 8: Invitations table
     logger.info("=== SETTING UP INVITATIONS ===")

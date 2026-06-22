@@ -11,7 +11,7 @@ from ..models.database import User, UserRole, OrgMember, OrgRole, Organization, 
 from ..models.schemas import (
     LoginRequest, TokenResponse, ChangePasswordRequest,
     LinkTelegramRequest, UserResponse, UserCreate,
-    RefreshTokenResponse, SessionResponse, SessionsListResponse, LogoutAllResponse
+    RefreshTokenResponse, RefreshRequest, SessionResponse, SessionsListResponse, LogoutAllResponse
 )
 from ..services.auth import (
     authenticate_user, create_access_token, get_current_user,
@@ -227,6 +227,9 @@ async def login(
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
+        # Расширению отдаём refresh-токен в теле (для silent-refresh из
+        # chrome.storage). Вебу — нет, у него httpOnly-кука.
+        refresh_token=refresh_token if login_request.include_refresh else None,
         user=UserResponse(
             id=authenticated_user.id, email=authenticated_user.email, name=authenticated_user.name,
             role=authenticated_user.role.value,
@@ -283,19 +286,26 @@ async def logout(
 async def refresh_access_token(
     request: Request,
     response: Response,
+    body: Optional[RefreshRequest] = None,
     refresh_token: Optional[str] = Cookie(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Refresh the access token using a valid refresh token.
 
     This endpoint:
-    1. Validates the refresh token from httpOnly cookie
+    1. Validates the refresh token from httpOnly cookie ИЛИ из тела (расширение)
     2. Rotates the refresh token (old one is revoked, new one is issued)
     3. Issues a new short-lived access token
 
     SECURITY: Token rotation prevents replay attacks and allows detection
     of token theft (if a revoked token is presented).
     """
+    # Источник refresh-токена: тело (расширение, без кук) приоритетнее куки.
+    # Если токен пришёл из тела — новые токены вернём в теле, иначе только в куках.
+    body_token = body.refresh_token if (body and body.refresh_token) else None
+    token_from_body = body_token is not None
+    refresh_token = body_token or refresh_token
+
     if not refresh_token:
         raise HTTPException(
             status_code=401,
@@ -370,7 +380,13 @@ async def refresh_access_token(
         path="/api/auth"
     )
 
-    return RefreshTokenResponse(message="Token refreshed successfully")
+    return RefreshTokenResponse(
+        message="Token refreshed successfully",
+        # Только для расширения (refresh пришёл из тела) — иначе None, веб берёт
+        # обновлённые токены из кук.
+        access_token=access_token if token_from_body else None,
+        refresh_token=new_refresh_token if token_from_body else None,
+    )
 
 
 @router.post("/logout-all", response_model=LogoutAllResponse)
@@ -513,26 +529,19 @@ async def get_telegram_link(user: User = Depends(get_current_user)):
 # Дефолты — повторяют KANBAN_STATUSES в candidate_search.py.
 # Если у орги ещё нет своей конфигурации, отдаём это.
 DEFAULT_ORG_STAGES = [
-    {"key": "new",           "label": "Новый",       "color": "#3b82f6"},
-    {"key": "screening",     "label": "Скрининг",    "color": "#06b6d4"},
-    {"key": "practice",      "label": "Практика",    "color": "#a855f7"},
-    {"key": "tech_practice", "label": "Тех-практика","color": "#6366f1"},
-    {"key": "is_interview",  "label": "ИС",          "color": "#f97316"},
-    {"key": "offer",         "label": "Оффер",       "color": "#eab308"},
-    {"key": "hired",         "label": "Принят",      "color": "#22c55e"},
-    {"key": "rejected",      "label": "Отклонён",    "color": "#ef4444"},
+    {"key": "new",           "label": "Новый",                 "color": "#3b82f6"},
+    {"key": "screening",     "label": "Выполняет ТЗ",          "color": "#06b6d4"},
+    {"key": "practice",      "label": "Интервью с HR",         "color": "#a855f7"},
+    {"key": "tech_practice", "label": "Интервью с заказчиком", "color": "#6366f1"},
+    {"key": "is_interview",  "label": "Принятие решения",      "color": "#f97316"},
+    {"key": "offer",         "label": "Выставлен оффер",       "color": "#eab308"},
+    {"key": "hired",         "label": "Оффер принят",          "color": "#22c55e"},
+    {"key": "probation",     "label": "Практика",              "color": "#14b8a6"},
+    {"key": "transferred",   "label": "Перешёл в отдел",       "color": "#16a34a"},
+    {"key": "rejected",      "label": "Отказ",                 "color": "#ef4444"},
+    {"key": "reserve",       "label": "Резерв",                "color": "#6b7280"},
 ]
 ALLOWED_STAGE_KEYS = {s["key"] for s in DEFAULT_ORG_STAGES}
-
-
-class StageItem(BaseModel):
-    key: str
-    label: str = Field(..., min_length=1, max_length=64)
-    color: str = Field(..., pattern=r'^#[0-9a-fA-F]{6}$')
-
-
-class OrgStagesUpdate(BaseModel):
-    stages: List[StageItem]
 
 
 async def _get_user_org_or_404(user: User, db: AsyncSession) -> Organization:
@@ -566,148 +575,14 @@ async def get_org_stages(
     return {"stages": _read_org_stages(org)}
 
 
-@router.put("/org-stages")
-async def update_org_stages(
-    data: OrgStagesUpdate,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Сохранить конфигурацию этапов. Только superadmin/owner/admin."""
-    org = await _get_user_org_or_404(user, db)
-
-    # Право редактировать — только админ оргa или платформенный админ
-    is_platform_admin = user.role == UserRole.superadmin
-    if not is_platform_admin:
-        member_res = await db.execute(
-            select(OrgMember.role).where(
-                OrgMember.user_id == user.id,
-                OrgMember.org_id == org.id,
-            )
-        )
-        role_val = member_res.scalar_one_or_none()
-        if role_val not in (OrgRole.owner, OrgRole.admin):
-            raise HTTPException(403, "Только админ организации может менять этапы")
-
-    # Валидация: все ключи должны быть из allowed-списка, без дубликатов.
-    seen = set()
-    cleaned = []
-    for s in data.stages:
-        if s.key not in ALLOWED_STAGE_KEYS:
-            raise HTTPException(400, f"Неизвестный ключ этапа: {s.key}")
-        if s.key in seen:
-            raise HTTPException(400, f"Дублирующийся этап: {s.key}")
-        seen.add(s.key)
-        cleaned.append({"key": s.key, "label": s.label.strip(), "color": s.color.lower()})
-
-    if not cleaned:
-        raise HTTPException(400, "Список этапов не может быть пустым")
-
-    # Сохраняем в settings JSON (поле уже есть, миграция не нужна).
-    new_settings = dict(org.settings or {})
-    new_settings["stage_config"] = cleaned
-    org.settings = new_settings
-    flag_modified(org, "settings")  # SQLAlchemy не видит мутации dict без подсказки
-    await db.commit()
-
-    return {"success": True, "stages": cleaned}
+# (Редактор «Настройка этапов» убран из UI — этапы зафиксированы на каноне
+# DEFAULT_ORG_STAGES; PUT /org-stages удалён. GET остаётся: его читают и
+# «Все кандидаты», и воронка для подписей этапов.)
 
 
-# ---------------------------------------------------------------------------
-# Шаблоны статусов — именованные наборы этапов воронки. Админ создаёт их в
-# настройках, при создании заявки выбирает нужный шаблон. Храним в
-# Organization.settings.status_templates (JSON, миграция не нужна).
-# ---------------------------------------------------------------------------
-
-class StatusTemplate(BaseModel):
-    id: str = Field(..., min_length=1, max_length=64)
-    name: str = Field(..., min_length=1, max_length=64)
-    stages: List[StageItem]
-
-
-class StatusTemplatesUpdate(BaseModel):
-    templates: List[StatusTemplate]
-
-
-def _read_status_templates(org: Organization) -> list[dict]:
-    """Список шаблонов статусов из settings (или пустой список)."""
-    settings_data = org.settings or {}
-    tpls = settings_data.get("status_templates")
-    if not isinstance(tpls, list):
-        return []
-    result = []
-    for t in tpls:
-        if not isinstance(t, dict) or not t.get("id") or not t.get("name"):
-            continue
-        stages = t.get("stages")
-        if not isinstance(stages, list):
-            continue
-        clean_stages = [
-            s for s in stages
-            if isinstance(s, dict) and s.get("key") in ALLOWED_STAGE_KEYS
-        ]
-        if clean_stages:
-            result.append({"id": t["id"], "name": t["name"], "stages": clean_stages})
-    return result
-
-
-@router.get("/status-templates")
-async def get_status_templates(
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Шаблоны статусов организации."""
-    org = await _get_user_org_or_404(user, db)
-    return {"templates": _read_status_templates(org)}
-
-
-@router.put("/status-templates")
-async def update_status_templates(
-    data: StatusTemplatesUpdate,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Сохранить шаблоны статусов. Только superadmin/owner/admin."""
-    org = await _get_user_org_or_404(user, db)
-
-    is_platform_admin = user.role == UserRole.superadmin
-    if not is_platform_admin:
-        member_res = await db.execute(
-            select(OrgMember.role).where(
-                OrgMember.user_id == user.id,
-                OrgMember.org_id == org.id,
-            )
-        )
-        role_val = member_res.scalar_one_or_none()
-        if role_val not in (OrgRole.owner, OrgRole.admin):
-            raise HTTPException(403, "Только админ организации может менять шаблоны")
-
-    cleaned: list[dict] = []
-    seen_ids: set[str] = set()
-    for tpl in data.templates:
-        if tpl.id in seen_ids:
-            raise HTTPException(400, f"Дублирующийся шаблон: {tpl.id}")
-        seen_ids.add(tpl.id)
-
-        seen_keys: set[str] = set()
-        clean_stages = []
-        for s in tpl.stages:
-            if s.key not in ALLOWED_STAGE_KEYS:
-                raise HTTPException(400, f"Неизвестный ключ этапа: {s.key}")
-            if s.key in seen_keys:
-                raise HTTPException(400, f"Дублирующийся этап в шаблоне «{tpl.name}»: {s.key}")
-            seen_keys.add(s.key)
-            clean_stages.append({"key": s.key, "label": s.label.strip(), "color": s.color.lower()})
-        if not clean_stages:
-            raise HTTPException(400, f"Шаблон «{tpl.name}» должен содержать хотя бы один этап")
-        cleaned.append({"id": tpl.id, "name": tpl.name.strip(), "stages": clean_stages})
-
-    new_settings = dict(org.settings or {})
-    new_settings["status_templates"] = cleaned
-    org.settings = new_settings
-    flag_modified(org, "settings")
-    await db.commit()
-
-    return {"success": True, "templates": cleaned}
+# (Система «шаблонов статусов» удалена: была мёртвой — сохранялась в
+# settings['status_templates'], который никто не читал. Реальные этапы воронки
+# конфигурируются через stage_config / org-stages выше.)
 
 
 @router.post("/change-password")

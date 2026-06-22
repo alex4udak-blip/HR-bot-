@@ -1,0 +1,800 @@
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Plus,
+  Trash2,
+  Eye,
+  Save,
+  ArrowLeft,
+  ArrowUp,
+  ArrowDown,
+  FileText,
+  Mail,
+  Phone,
+  AlignLeft,
+  List,
+  CheckSquare,
+  CircleDot,
+  Upload,
+  ExternalLink,
+  ToggleLeft,
+  ToggleRight,
+  Star,
+  Pencil,
+  Copy,
+  Link2,
+  Users,
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+import clsx from 'clsx';
+import {
+  getForm,
+  updateForm,
+  getFormSubmissions,
+} from '@/services/api/forms';
+import type { FormField, FormSubmission } from '@/services/api/forms';
+import { FieldRenderer } from './FieldRenderer';
+
+// ============================================================
+// Field type config
+// ============================================================
+
+export const FIELD_TYPES: { type: FormField['type']; label: string; icon: React.ElementType }[] = [
+  { type: 'text', label: 'Текст', icon: FileText },
+  { type: 'email', label: 'Email', icon: Mail },
+  { type: 'phone', label: 'Телефон', icon: Phone },
+  { type: 'textarea', label: 'Текстовое поле', icon: AlignLeft },
+  { type: 'select', label: 'Выбор одного', icon: List },
+  { type: 'multiselect', label: 'Множественный выбор', icon: CheckSquare },
+  { type: 'radio', label: 'Радио-кнопки', icon: CircleDot },
+  { type: 'file', label: 'Файл', icon: Upload },
+  { type: 'url', label: 'Ссылка (URL)', icon: ExternalLink },
+  { type: 'scale', label: 'Шкала', icon: Star },
+];
+
+export const TYPE_LABELS: Record<string, string> = {
+  text: 'Текст',
+  email: 'Email',
+  phone: 'Телефон',
+  textarea: 'Текстовое поле',
+  select: 'Выбор одного',
+  multiselect: 'Множественный выбор',
+  radio: 'Радио-кнопки',
+  file: 'Файл',
+  url: 'Ссылка (URL)',
+  scale: 'Шкала',
+};
+
+// Type-picker groups (Survio-style sections)
+const TYPE_GROUPS: { title: string; types: FormField['type'][] }[] = [
+  { title: 'Базовые',   types: ['text', 'textarea', 'radio', 'multiselect', 'select'] },
+  { title: 'Открытые',  types: ['email', 'phone', 'url', 'file'] },
+  { title: 'Оценочные', types: ['scale'] },
+];
+
+let fieldCounter = 0;
+export function nextFieldId(): string {
+  fieldCounter += 1;
+  return `f${Date.now()}_${fieldCounter}`;
+}
+
+// ============================================================
+// Word helpers
+// ============================================================
+
+export function fieldWord(n: number): string {
+  const mod = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 19) return 'полей';
+  if (mod === 1) return 'поле';
+  if (mod >= 2 && mod <= 4) return 'поля';
+  return 'полей';
+}
+
+export function submissionWord(n: number): string {
+  const mod = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 19) return 'ответов';
+  if (mod === 1) return 'ответ';
+  if (mod >= 2 && mod <= 4) return 'ответа';
+  return 'ответов';
+}
+
+// Non-interactive preview value for each field type
+function previewValue(field: FormField): unknown {
+  if (field.type === 'multiselect') return [];
+  if (field.type === 'scale') return null;
+  return '';
+}
+
+// ============================================================
+// FormBuilder component
+// ============================================================
+
+export function FormBuilder({ formId, onClose }: { formId: number; onClose: () => void }) {
+  const [form, setForm] = useState<import('@/services/api/forms').FormTemplate | null>(null);
+  const [fields, setFields] = useState<FormField[]>([]);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [isActive, setIsActive] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
+  const [showSubmissions, setShowSubmissions] = useState(false);
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [selectedVacancyIds, setSelectedVacancyIds] = useState<number[]>([]);
+  const [vacancies, setVacancies] = useState<{ id: number; title: string }[]>([]);
+
+  // WYSIWYG type-picker state
+  const [showTypePicker, setShowTypePicker] = useState(false);
+  const [insertIndex, setInsertIndex] = useState<number>(0);
+
+  useEffect(() => {
+    // Load vacancies for multi-select
+    import('@/services/api').then(api => {
+      api.getVacancies().then((vacs: { id: number; title: string }[]) => setVacancies(vacs));
+    });
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await getForm(formId);
+        setForm(data);
+        setTitle(data.title);
+        setDescription(data.description || '');
+        setIsActive(data.is_active);
+        setFields(data.fields || []);
+        setSelectedVacancyIds(data.vacancy_ids || (data.vacancy_id ? [data.vacancy_id] : []));
+      } catch {
+        toast.error('Форма не найдена');
+        onClose();
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onClose is an unstable caller closure (() => setStep/navigate); depend only on formId, else this effect loops forever and freezes the page
+  }, [formId]);
+
+  const handleSave = async () => {
+    if (!title.trim()) {
+      toast.error('Введите название формы');
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await updateForm(formId, {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        fields,
+        is_active: isActive,
+        vacancy_ids: selectedVacancyIds,
+      });
+      setForm(updated);
+      toast.success('Форма сохранена');
+    } catch {
+      toast.error('Ошибка сохранения');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openTypePicker = (index: number) => {
+    setInsertIndex(index);
+    setShowTypePicker(true);
+  };
+
+  const addFieldAt = (index: number, type: FormField['type']) => {
+    const newField: FormField = {
+      id: nextFieldId(),
+      type,
+      label: TYPE_LABELS[type] || type,
+      required: false,
+    };
+    if (['select', 'multiselect', 'radio'].includes(type)) {
+      newField.options = ['Вариант 1', 'Вариант 2'];
+    }
+    if (type === 'scale') {
+      newField.min = 1;
+      newField.max = 10;
+    }
+    setFields(prev => {
+      const next = [...prev];
+      next.splice(index, 0, newField);
+      return next;
+    });
+    setEditingFieldId(newField.id);
+    setShowTypePicker(false);
+  };
+
+  const duplicateField = (id: string) => {
+    setFields(prev => {
+      const i = prev.findIndex(f => f.id === id);
+      if (i === -1) return prev;
+      const copy: FormField = {
+        ...prev[i],
+        id: nextFieldId(),
+        options: prev[i].options ? [...prev[i].options!] : undefined,
+      };
+      const next = [...prev];
+      next.splice(i + 1, 0, copy);
+      return next;
+    });
+  };
+
+  const moveField = (id: string, dir: -1 | 1) => {
+    setFields(prev => {
+      const i = prev.findIndex(f => f.id === id);
+      const j = i + dir;
+      if (i === -1 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  };
+
+  const removeField = (id: string) => {
+    setFields(prev => prev.filter(f => f.id !== id));
+    if (editingFieldId === id) setEditingFieldId(null);
+  };
+
+  const updateField = (id: string, updates: Partial<FormField>) => {
+    setFields(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+  };
+
+  const loadSubmissions = async () => {
+    try {
+      const data = await getFormSubmissions(formId);
+      setSubmissions(data);
+      setShowSubmissions(true);
+    } catch {
+      toast.error('Не удалось загрузить ответы');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-50">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!form) return null;
+
+  const publicUrl = `${window.location.origin}/form/${form.slug}`;
+
+  return (
+    <div className="min-h-full bg-gray-50 text-gray-900">
+      {/* Header (light bar) */}
+      <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-6 py-3 flex items-center gap-3">
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
+            title="Назад"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="text-xl font-bold text-gray-900 bg-transparent border-none outline-none w-full placeholder-gray-400"
+              placeholder="Название формы"
+            />
+            <button
+              onClick={() => { navigator.clipboard.writeText(publicUrl); toast.success('Ссылка скопирована'); }}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 transition-colors mt-0.5 max-w-full"
+              title="Скопировать ссылку"
+            >
+              <Link2 className="w-3 h-3 shrink-0" />
+              <span className="truncate">{publicUrl}</span>
+            </button>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setIsActive(!isActive)}
+              className={clsx(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border',
+                isActive
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  : 'bg-gray-50 border-gray-200 text-gray-500'
+              )}
+            >
+              {isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+              {isActive ? 'Активна' : 'Неактивна'}
+            </button>
+            <button
+              onClick={loadSubmissions}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm transition-colors"
+            >
+              <Users className="w-4 h-4" />
+              Ответы ({form.submissions_count})
+            </button>
+            <button
+              onClick={() => window.open(publicUrl, '_blank')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm transition-colors"
+            >
+              <Eye className="w-4 h-4" />
+              Предпросмотр
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Сохранение...' : 'Сохранить'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-6 py-6">
+        {/* Description */}
+        <div className="mb-4">
+          <input
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 placeholder-gray-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
+            placeholder="Описание формы (необязательно)"
+          />
+        </div>
+
+        {/* Linked vacancies (multi-select) */}
+        <div className="mb-6">
+          <label className="block text-sm text-gray-500 mb-1.5">Привязанные воронки</label>
+          <div className="flex flex-wrap gap-2">
+            {vacancies.map(v => {
+              const selected = selectedVacancyIds.includes(v.id);
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedVacancyIds(prev =>
+                      selected ? prev.filter(id => id !== v.id) : [...prev, v.id]
+                    );
+                  }}
+                  className={clsx(
+                    'px-3 py-1.5 rounded-lg text-sm border transition-colors',
+                    selected
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                  )}
+                >
+                  {v.title}
+                </button>
+              );
+            })}
+            {vacancies.length === 0 && (
+              <span className="text-gray-400 text-sm">Нет доступных вакансий</span>
+            )}
+          </div>
+        </div>
+
+        {/* Canvas */}
+        <div className="max-w-2xl mx-auto bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          {fields.length === 0 ? (
+            <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-xl">
+              <AlignLeft className="w-8 h-8 mx-auto mb-3 text-gray-300" />
+              <p className="text-gray-500 mb-4">Пока нет вопросов</p>
+              <button
+                onClick={() => openTypePicker(0)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Добавить вопрос
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Inserter before the first block */}
+              <InlineInserter onClick={() => openTypePicker(0)} />
+
+              {fields.map((field, index) => (
+                <div key={field.id}>
+                  <QuestionBlock
+                    field={field}
+                    index={index}
+                    total={fields.length}
+                    isEditing={editingFieldId === field.id}
+                    onEdit={() => setEditingFieldId(editingFieldId === field.id ? null : field.id)}
+                    onDuplicate={() => duplicateField(field.id)}
+                    onRemove={() => removeField(field.id)}
+                    onUpdate={(updates) => updateField(field.id, updates)}
+                    onMoveUp={() => moveField(field.id, -1)}
+                    onMoveDown={() => moveField(field.id, 1)}
+                  />
+                  <InlineInserter onClick={() => openTypePicker(index + 1)} />
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Type-picker modal "Добавить вопрос" */}
+      <AnimatePresence>
+        {showTypePicker && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+            onClick={() => setShowTypePicker(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-white border border-gray-200 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col shadow-xl"
+            >
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">Добавить вопрос</h2>
+                <button
+                  onClick={() => setShowTypePicker(false)}
+                  className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-xl leading-none w-8 h-8 flex items-center justify-center"
+                >
+                  &times;
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {TYPE_GROUPS.map(group => (
+                  <div key={group.title}>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">
+                      {group.title}
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {group.types.map(type => {
+                        const ft = FIELD_TYPES.find(f => f.type === type);
+                        if (!ft) return null;
+                        const Icon = ft.icon;
+                        return (
+                          <button
+                            key={type}
+                            onClick={() => addFieldAt(insertIndex, type)}
+                            className="flex items-center gap-3 px-3 py-3 rounded-xl border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50/50 transition-colors text-left"
+                          >
+                            <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-50 text-blue-600 shrink-0">
+                              <Icon className="w-5 h-5" />
+                            </span>
+                            <span className="text-sm font-medium text-gray-700">{ft.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Submissions modal */}
+      <AnimatePresence>
+        {showSubmissions && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+            onClick={() => setShowSubmissions(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-white border border-gray-200 rounded-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col shadow-xl"
+            >
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">Ответы ({submissions.length})</h2>
+                <button
+                  onClick={() => setShowSubmissions(false)}
+                  className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-xl leading-none w-8 h-8 flex items-center justify-center"
+                >
+                  &times;
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6">
+                {submissions.length === 0 ? (
+                  <p className="text-center text-gray-400 py-8">Пока нет ответов</p>
+                ) : (
+                  <div className="space-y-4">
+                    {submissions.map(sub => (
+                      <div key={sub.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-sm font-medium text-gray-900">
+                            {sub.entity?.name || 'Без имени'}
+                            {sub.entity?.email && (
+                              <span className="text-gray-500 ml-2">{sub.entity.email}</span>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-400">
+                            {sub.submitted_at && new Date(sub.submitted_at).toLocaleString('ru')}
+                          </span>
+                        </div>
+                        <div className="space-y-1 text-sm">
+                          {fields.map(field => {
+                            const val = sub.data[field.id];
+                            if (val === undefined || val === null || val === '') return null;
+                            return (
+                              <div key={field.id} className="flex gap-2">
+                                <span className="text-gray-500 min-w-[120px]">{field.label}:</span>
+                                <span className="text-gray-800">
+                                  {Array.isArray(val) ? val.join(', ') : String(val)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================================
+// Inline "+" inserter (thin full-width hover target)
+// ============================================================
+
+function InlineInserter({ onClick }: { onClick: () => void }) {
+  return (
+    <div className="group/inserter relative h-6 flex items-center justify-center">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center justify-center w-full h-full"
+        title="Добавить вопрос здесь"
+      >
+        <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-blue-300 opacity-0 group-hover/inserter:opacity-100 transition-opacity" />
+        <span className="relative z-10 flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white opacity-0 group-hover/inserter:opacity-100 transition-opacity shadow-sm">
+          <Plus className="w-4 h-4" />
+        </span>
+      </button>
+    </div>
+  );
+}
+
+// ============================================================
+// Question block — WYSIWYG preview + hover toolbar + settings
+// ============================================================
+
+function QuestionBlock({
+  field,
+  index,
+  total,
+  isEditing,
+  onEdit,
+  onDuplicate,
+  onRemove,
+  onUpdate,
+  onMoveUp,
+  onMoveDown,
+}: {
+  field: FormField;
+  index: number;
+  total: number;
+  isEditing: boolean;
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+  onUpdate: (updates: Partial<FormField>) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const hasOptions = ['select', 'multiselect', 'radio'].includes(field.type);
+  const [newOption, setNewOption] = useState('');
+
+  return (
+    <div
+      className={clsx(
+        'relative group rounded-xl border transition-colors p-4',
+        isEditing ? 'border-blue-400 bg-blue-50/30' : 'border-gray-200 hover:border-gray-300 bg-white'
+      )}
+    >
+      {/* Number badge + preview */}
+      <div className="flex gap-3">
+        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-gray-500 text-xs font-medium shrink-0 mt-0.5">
+          {index + 1}
+        </span>
+        <div className="flex-1 min-w-0 pointer-events-none select-none">
+          <FieldRenderer field={field} value={previewValue(field)} onChange={() => {}} />
+        </div>
+      </div>
+
+      {/* Hover toolbar */}
+      <div className="absolute top-3 right-3 flex items-center gap-0.5 bg-white border border-gray-200 rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={onMoveUp}
+          disabled={index === 0}
+          className="p-1.5 text-gray-400 hover:text-gray-700 transition-colors disabled:opacity-30 disabled:hover:text-gray-400"
+          title="Выше"
+        >
+          <ArrowUp className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onMoveDown}
+          disabled={index === total - 1}
+          className="p-1.5 text-gray-400 hover:text-gray-700 transition-colors disabled:opacity-30 disabled:hover:text-gray-400"
+          title="Ниже"
+        >
+          <ArrowDown className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onEdit}
+          className={clsx(
+            'p-1.5 transition-colors',
+            isEditing ? 'text-blue-600' : 'text-gray-400 hover:text-gray-700'
+          )}
+          title="Настроить"
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onDuplicate}
+          className="p-1.5 text-gray-400 hover:text-gray-700 transition-colors"
+          title="Дублировать"
+        >
+          <Copy className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onRemove}
+          className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+          title="Удалить"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Settings panel */}
+      {isEditing && (
+        <div className="mt-4 pt-4 border-t border-gray-200 bg-gray-50 -mx-4 -mb-4 px-4 pb-4 rounded-b-xl space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Название поля</label>
+                  <input
+                    value={field.label}
+                    onChange={e => onUpdate({ label: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Placeholder</label>
+                  <input
+                    value={field.placeholder || ''}
+                    onChange={e => onUpdate({ placeholder: e.target.value || undefined })}
+                    className="w-full px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
+                    placeholder="Подсказка..."
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 flex-wrap">
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={field.required}
+                    onChange={e => onUpdate({ required: e.target.checked })}
+                    className="w-4 h-4 rounded border-gray-300 bg-white text-blue-600 focus:ring-blue-500"
+                  />
+                  Обязательное поле
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-500">Тип:</label>
+                  <select
+                    value={field.type}
+                    onChange={e => {
+                      const newType = e.target.value as FormField['type'];
+                      const updates: Partial<FormField> = { type: newType };
+                      if (['select', 'multiselect', 'radio'].includes(newType) && !field.options?.length) {
+                        updates.options = ['Вариант 1', 'Вариант 2'];
+                      }
+                      onUpdate(updates);
+                    }}
+                    className="px-2 py-1 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 outline-none focus:border-blue-500"
+                  >
+                    {FIELD_TYPES.map(ft => (
+                      <option key={ft.type} value={ft.type}>{ft.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {hasOptions && (
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Варианты ответа</label>
+                  <div className="space-y-1">
+                    {(field.options || []).map((opt, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          value={opt}
+                          onChange={e => {
+                            const newOpts = [...(field.options || [])];
+                            newOpts[i] = e.target.value;
+                            onUpdate({ options: newOpts });
+                          }}
+                          className="flex-1 px-3 py-1 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
+                        />
+                        <button
+                          onClick={() => {
+                            const newOpts = (field.options || []).filter((_, j) => j !== i);
+                            onUpdate({ options: newOpts });
+                          }}
+                          className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={newOption}
+                        onChange={e => setNewOption(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && newOption.trim()) {
+                            onUpdate({ options: [...(field.options || []), newOption.trim()] });
+                            setNewOption('');
+                          }
+                        }}
+                        placeholder="Добавить вариант..."
+                        className="flex-1 px-3 py-1 bg-white border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 outline-none focus:border-blue-500"
+                      />
+                      <button
+                        onClick={() => {
+                          if (newOption.trim()) {
+                            onUpdate({ options: [...(field.options || []), newOption.trim()] });
+                            setNewOption('');
+                          }
+                        }}
+                        className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {field.type === 'scale' && (
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Диапазон шкалы</label>
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <label className="text-xs text-gray-400 mb-0.5 block">Минимум</label>
+                      <input
+                        type="number"
+                        value={field.min ?? 1}
+                        onChange={e => onUpdate({ min: parseInt(e.target.value, 10) || 1 })}
+                        className="w-20 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 mb-0.5 block">Максимум</label>
+                      <input
+                        type="number"
+                        value={field.max ?? 10}
+                        onChange={e => onUpdate({ max: parseInt(e.target.value, 10) || 10 })}
+                        className="w-20 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+        </div>
+      )}
+    </div>
+  );
+}

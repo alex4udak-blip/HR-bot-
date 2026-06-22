@@ -486,7 +486,7 @@ class TestAnalyzeSingle:
         await processor._analyze_single(sample_transcript)
 
         call_kwargs = mock_anthropic_client.messages.create.call_args[1]
-        assert call_kwargs['model'] == "claude-sonnet-4-20250514"
+        assert call_kwargs['model'] == "claude-sonnet-4-6"
         assert call_kwargs['max_tokens'] == 16000
         assert len(call_kwargs['messages']) == 1
         assert call_kwargs['messages'][0]['role'] == 'user'

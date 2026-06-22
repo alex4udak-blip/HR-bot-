@@ -4,12 +4,14 @@ import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, User, Sparkles, CheckCircle, XCircle, Send, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getErrorDetail } from '@/utils';
-import { validateInvitation, acceptInvitation, type InvitationValidation } from '@/services/api';
+import { validateInvitation, acceptInvitation, login, type InvitationValidation } from '@/services/api';
 import BackgroundEffects from '@/components/BackgroundEffects';
+import { useAuthStore } from '@/stores/authStore';
 
 export default function InvitePage() {
   const { token: inviteToken } = useParams<{ token: string }>();
   const navigate = useNavigate();
+  const setUser = useAuthStore((s) => s.setUser);
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -72,8 +74,15 @@ export default function InvitePage() {
     }
   };
 
-  const handleContinue = () => {
-    navigate('/dashboard');
+  const handleContinue = async () => {
+    // After registration, establish the cookie session and land in the Factorial cabinet.
+    try {
+      const user = await login(form.email, form.password);
+      setUser(user);
+      navigate('/factorial');
+    } catch {
+      navigate('/login');
+    }
   };
 
   const roleLabels: Record<string, string> = {

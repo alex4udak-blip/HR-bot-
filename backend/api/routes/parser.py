@@ -913,7 +913,8 @@ async def bulk_import_resumes(
                             tags=resume.skills[:10] if resume.skills else [],
                             extra_data=extra_data,
                             org_id=org.id,
-                            created_by=current_user.id
+                            created_by=current_user.id,
+                            is_archived=True,  # bulk-парсер (ZIP) → теневая база (архив)
                         )
 
                         db.add(entity)
