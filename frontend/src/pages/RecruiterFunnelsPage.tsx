@@ -49,6 +49,7 @@ import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import { getVacancies } from '@/services/api/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
+import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
 import { EditCandidateModal } from './AllCandidatesPage';
 import { HuntflowComposer } from '@/components/hr/HuntflowComposer';
 import {
@@ -424,6 +425,7 @@ export default function RecruiterFunnelsPage() {
   const [selectedTab, setSelectedTab] = useState<string>('all');
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
   const [candidateHistory, setCandidateHistory] = useState<any[]>([]);
+  const [dupCard, setDupCard] = useState<KanbanCard | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
   const [editingCandidateCard, setEditingCandidateCard] = useState<KanbanCard | null>(null);
@@ -876,14 +878,38 @@ export default function RecruiterFunnelsPage() {
       .finally(() => setFilesLoading(false));
   }, [selectedCandidate?.entity_id]);
 
-  // Load entity extra_data for resume text view
+  // Load entity extra_data for resume text view + дедуп-баннер в воронке
   useEffect(() => {
     setResumeTextMode(false);
     setEntityExtraData(null);
+    setDupCard(null);
     if (!selectedCandidate?.entity_id) return;
     getEntity(selectedCandidate.entity_id)
-      .then(entity => setEntityExtraData(entity.extra_data || null))
-      .catch(() => setEntityExtraData(null));
+      .then(entity => {
+        setEntityExtraData(entity.extra_data || null);
+        // Карточка для ShadowDuplicateBanner — чтобы баннер «Похожий кандидат»
+        // работал и в воронке, а не только в «Все кандидаты».
+        const ed = (entity.extra_data || {}) as Record<string, any>;
+        setDupCard({
+          id: entity.id,
+          name: entity.name || '',
+          email: entity.email || undefined,
+          phone: entity.phone || undefined,
+          telegram_username: entity.telegram_usernames?.[0],
+          position: entity.position || undefined,
+          company: entity.company || undefined,
+          created_at: entity.created_at || '',
+          tags: (entity.tags as string[]) || [],
+          city: ed.city,
+          age: ed.age != null ? String(ed.age) : undefined,
+          salary: ed.salary != null ? String(ed.salary) : undefined,
+          total_experience: ed.total_experience != null ? String(ed.total_experience) : undefined,
+          source: ed.source,
+          source_url: ed.source_url,
+          extra_data: entity.extra_data || undefined,
+        });
+      })
+      .catch(() => { setEntityExtraData(null); setDupCard(null); });
   }, [selectedCandidate?.entity_id]);
 
   useEffect(() => {
@@ -2485,6 +2511,13 @@ export default function RecruiterFunnelsPage() {
                         <div className="flex-1 overflow-y-auto">
                           {detailTab === 'info' ? (
                             <div className="p-[var(--hf-space-xxl)] max-w-[1220px]">
+                              {dupCard && (
+                                <ShadowDuplicateBanner
+                                  card={dupCard}
+                                  status={selectedCandidate.stage as string}
+                                  onResolved={() => setDupCard(null)}
+                                />
+                              )}
                               {/* Top action buttons — Huntflow style */}
                               <div className="hf-profile-action-bar">
                                 {selectedCandidate.entity_id && (
