@@ -437,7 +437,7 @@ async def bulk_action(
                 from_stage=None,
                 to_stage=app.stage.value if hasattr(app.stage, "value") else str(app.stage),
                 changed_by_id=current_user.id,
-                comment="Initial application",
+                comment="Первичная заявка",
             )
         if created_apps:
             await db.commit()

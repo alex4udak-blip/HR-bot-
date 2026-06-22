@@ -597,7 +597,7 @@ async def apply_entity_to_vacancy(
         from_stage=None,
         to_stage=application.stage.value,
         changed_by_id=current_user.id,
-        comment="Initial application",
+        comment="Первичная заявка",
     )
     await db.commit()
 

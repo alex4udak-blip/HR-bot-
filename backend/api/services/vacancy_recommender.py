@@ -1103,7 +1103,7 @@ class VacancyRecommenderService:
             from_stage=None,
             to_stage=application.stage.value,
             changed_by_id=created_by,
-            comment="Initial application",
+            comment="Первичная заявка",
         )
         await db.commit()
 
