@@ -49,9 +49,13 @@ export interface VacancyStageCardProps {
   onRemoveFromVacancy: (applicationId: number) => void;
 }
 
-// Серая карточка вместо зелёной: переопределяем акцент/фон через CSS-переменные,
-// которые читает .hf-stage-card (--hf-stage-accent — левый бордер + заголовок,
-// --hf-stage-card-bg — фон).
+// Цвет карточки по этапу: ЗЕЛЁНАЯ для всех активных этапов, СЕРАЯ только для
+// отклонённых (rejected). Переопределяем CSS-переменные, которые читает
+// .hf-stage-card (--hf-stage-accent — левый бордер + заголовок, --hf-stage-card-bg — фон).
+const greenCardStyle: CSSProperties = {
+  '--hf-stage-accent': '#22c55e',
+  '--hf-stage-card-bg': 'rgba(34, 197, 94, 0.1)',
+} as CSSProperties;
 const grayCardStyle: CSSProperties = {
   '--hf-stage-accent': 'var(--hf-main-300)',
   '--hf-stage-card-bg': 'var(--hf-bg-panel)',
@@ -88,14 +92,18 @@ export default function VacancyStageCard({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Прошлый этап для отката — from_stage самой свежей записи истории.
-  const prevStage = (() => {
-    if (!Array.isArray(events) || events.length === 0) return null;
-    const latest = [...events].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    )[0];
-    return latest?.from_stage || null;
-  })();
+  // Самая свежая запись истории = переход в ТЕКУЩИЙ этап (кто и когда его поставил).
+  const latestEvent =
+    Array.isArray(events) && events.length > 0
+      ? [...events].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        )[0]
+      : null;
+  // Прошлый этап для отката — from_stage самой свежей записи.
+  const prevStage = latestEvent?.from_stage || null;
+
+  // Цвет карточки: серая только для отклонённых, иначе зелёная.
+  const cardStyle = currentStage === 'rejected' ? grayCardStyle : greenCardStyle;
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -162,7 +170,7 @@ export default function VacancyStageCard({
   };
 
   return (
-    <div className="hf-stage-card" style={grayCardStyle}>
+    <div className="hf-stage-card" style={cardStyle}>
       <div className="hf-stage-card-head">
         <div className="hf-stage-card-head-row">
           <div>
@@ -171,6 +179,15 @@ export default function VacancyStageCard({
               {vacancyTitle || 'Вакансия'}
               {vacancySubtitle ? ` (${vacancySubtitle})` : ''}
             </div>
+            {latestEvent && (
+              <div className="text-xs text-[var(--hf-dark-500)] mt-1">
+                {new Date(latestEvent.created_at).toLocaleString('ru', {
+                  day: 'numeric', month: 'short', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit',
+                })}
+                {latestEvent.changed_by_name ? ` · ${latestEvent.changed_by_name}` : ''}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <div className="relative" ref={pickerRef}>
