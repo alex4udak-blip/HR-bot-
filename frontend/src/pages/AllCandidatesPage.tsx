@@ -3791,7 +3791,9 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   const resumeSources: ResumeSource[] = [
     ...(resumeDemos.length > 0 ? [{ kind: "parsed" as const }] : []),
     ...pdfFiles.map((file) => ({ kind: "pdf" as const, file })),
-    ...(imageFiles.length > 0 && resumeDemos.length === 0
+    // Сканы-картинки показываем ОТДЕЛЬНОЙ вкладкой только если другого резюме
+    // нет (ни распарсенного, ни PDF) — иначе это дубль и лишний таб.
+    ...(imageFiles.length > 0 && resumeDemos.length === 0 && pdfFiles.length === 0
       ? [{ kind: "images" as const }]
       : []),
   ];
@@ -3801,44 +3803,9 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   );
   const selectedSource = resumeSources[safeSourceIndex];
 
-  // Боковые панели «Объединено: …» рендерятся одинаково во всех путях —
-  // выносим в один helper, чтобы не дублировать JSX трижды. Сохраняем
-  // guard на пустоту (нет ни строк анкеты, ни рекрутёра → панель не рисуем).
-  const renderMergedPanels = () =>
-    mergedFrom.map((m, i) => {
-      const mq = getImportedQuestionnaire({ ...card, extra_data: m.extra_data } as KanbanCard);
-      const mRecruiter = resolveRecruiter(m.extra_data as Record<string, unknown> | undefined);
-      if (mq.rows.length === 0 && !mRecruiter) return null;
-      return (
-        <div key={m.entity_id ?? i}>
-          <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] mb-2">
-            Объединено:{" "}
-            <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
-              {m.name || "Кандидат"}
-            </span>
-            {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
-            {m.merged_at ? ` · ${new Date(m.merged_at).toLocaleString("ru")}` : ""}
-          </div>
-          <ImportedQuestionnaire
-            card={{ ...card, name: m.name || card.name, extra_data: m.extra_data } as KanbanCard}
-          />
-        </div>
-      );
-    });
-
-  // Оборачиваем контент резюме в ту же раскладку «контент + боковые панели»,
-  // что использовали оба пути. Без объединения — возвращаем контент как есть.
-  const wrapWithMerged = (content: ReactNode) => {
-    if (mergedFrom.length === 0) return content;
-    return (
-      <div className="flex flex-col lg:flex-row gap-4">
-        <div className="flex-1 min-w-0">{content}</div>
-        <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] space-y-4">
-          {renderMergedPanels()}
-        </div>
-      </div>
-    );
-  };
+  // Панель «Объединено: … (анкета)» убрана из вкладки «Резюме» по просьбе:
+  // резюме должно быть на всю ширину. Данные объединённого профиля остаются
+  // в extra_data.merged_from (при необходимости вынесем во вкладку «Анкеты»).
 
   // Вкладочная полоса источников (стиль — как у существующих underline-вкладок).
   const resumeSourceTabs =
@@ -4236,11 +4203,12 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
     selectedContent = buildFileContent(currentPdf);
   }
 
-  return wrapWithMerged(
+  // Резюме — на всю ширину, без боковой панели «Объединено».
+  return (
     <>
       {resumeSourceTabs}
       {selectedContent}
-    </>,
+    </>
   );
 });
 
