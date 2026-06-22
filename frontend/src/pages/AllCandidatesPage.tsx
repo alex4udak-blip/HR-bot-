@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1739,7 +1739,13 @@ const InfoTab = memo(function InfoTab({
           const tb = b.date ? new Date(b.date).getTime() : 0;
           return tb - ta;
         })
-      : [{ date: card.created_at, title: "Кандидат добавлен", author: "Я" }];
+      : [
+          {
+            date: card.created_at,
+            title: "Кандидат добавлен",
+            author: card.recruiter_name || currentUser?.name || undefined,
+          },
+        ];
   const normalizedTimelineItems = timelineItems
     .filter(
       (event) =>
@@ -1749,7 +1755,7 @@ const InfoTab = memo(function InfoTab({
     )
     .map((event) => ({
       ...event,
-      author: event.author ? "Я" : event.author,
+      author: event.author || card.recruiter_name || currentUser?.name || undefined,
     }));
   const filteredTimelineItems = useMemo(() => {
     if (!timelineActionFilter) return normalizedTimelineItems;
@@ -3573,6 +3579,10 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
   const [currentResumeIndex, setCurrentResumeIndex] = useState(0);
   const [pdfIndex, setPdfIndex] = useState(0);
+  // Какой источник резюме выбран в верхней вкладочной полосе. После
+  // объединения у выжившего профиля может быть И распарсенное резюме,
+  // И переназначенные PDF — каждый показываем отдельной вкладкой.
+  const [resumeSourceIndex, setResumeSourceIndex] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -3641,6 +3651,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   useEffect(() => {
     setCurrentResumeIndex(0);
     setPdfIndex(0);
+    setResumeSourceIndex(0);
   }, [card.id]);
 
   useEffect(() => {
@@ -3739,26 +3750,130 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       <div className="flex flex-col lg:flex-row gap-4">
         <div className="flex-1 min-w-0">{qMainContent}</div>
         <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] space-y-4 p-5">
-          {mergedFrom.map((m, i) => (
-            <div key={m.entity_id ?? i}>
-              <div className="mb-2 text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-                Объединено:{" "}
-                <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
-                  {m.name || "Кандидат"}
-                </span>
-                {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
-                {m.merged_at ? ` · ${new Date(m.merged_at).toLocaleString("ru")}` : ""}
+          {mergedFrom.map((m, i) => {
+            // Не рисуем пустую панель «Объединено: …», если у объединённого
+            // профиля нет ни строк анкеты, ни рекрутёра (например, его контент
+            // был PDF) — та же проверка, по которой ImportedQuestionnaire
+            // возвращает null.
+            const mq = getImportedQuestionnaire({ ...card, extra_data: m.extra_data } as KanbanCard);
+            const mRecruiter = resolveRecruiter(m.extra_data as Record<string, unknown> | undefined);
+            if (mq.rows.length === 0 && !mRecruiter) return null;
+            return (
+              <div key={m.entity_id ?? i}>
+                <div className="mb-2 text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+                  Объединено:{" "}
+                  <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                    {m.name || "Кандидат"}
+                  </span>
+                  {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
+                  {m.merged_at ? ` · ${new Date(m.merged_at).toLocaleString("ru")}` : ""}
+                </div>
+                <ImportedQuestionnaire
+                  card={{ ...card, name: m.name || card.name, extra_data: m.extra_data } as KanbanCard}
+                />
               </div>
-              <ImportedQuestionnaire
-                card={{ ...card, name: m.name || card.name, extra_data: m.extra_data } as KanbanCard}
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
   }
 
+  // ── Единый список источников резюме для верхней вкладочной полосы ──
+  // После объединения профилей у выжившего может быть распарсенное резюме
+  // (resumeDemos, его «новое»), плюс переназначенные PDF (pdfFiles, «старое»),
+  // плюс, реже, сканы-картинки. Раньше путь 3 возвращался первым и PDF'ы были
+  // не видны — теперь каждое резюме доступно своей вкладкой.
+  type ResumeSource =
+    | { kind: "parsed" }
+    | { kind: "pdf"; file: EntityFile }
+    | { kind: "images" };
+  const resumeSources: ResumeSource[] = [
+    ...(resumeDemos.length > 0 ? [{ kind: "parsed" as const }] : []),
+    ...pdfFiles.map((file) => ({ kind: "pdf" as const, file })),
+    ...(imageFiles.length > 0 && resumeDemos.length === 0
+      ? [{ kind: "images" as const }]
+      : []),
+  ];
+  const safeSourceIndex = Math.min(
+    resumeSourceIndex,
+    Math.max(0, resumeSources.length - 1),
+  );
+  const selectedSource = resumeSources[safeSourceIndex];
+
+  // Боковые панели «Объединено: …» рендерятся одинаково во всех путях —
+  // выносим в один helper, чтобы не дублировать JSX трижды. Сохраняем
+  // guard на пустоту (нет ни строк анкеты, ни рекрутёра → панель не рисуем).
+  const renderMergedPanels = () =>
+    mergedFrom.map((m, i) => {
+      const mq = getImportedQuestionnaire({ ...card, extra_data: m.extra_data } as KanbanCard);
+      const mRecruiter = resolveRecruiter(m.extra_data as Record<string, unknown> | undefined);
+      if (mq.rows.length === 0 && !mRecruiter) return null;
+      return (
+        <div key={m.entity_id ?? i}>
+          <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] mb-2">
+            Объединено:{" "}
+            <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+              {m.name || "Кандидат"}
+            </span>
+            {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
+            {m.merged_at ? ` · ${new Date(m.merged_at).toLocaleString("ru")}` : ""}
+          </div>
+          <ImportedQuestionnaire
+            card={{ ...card, name: m.name || card.name, extra_data: m.extra_data } as KanbanCard}
+          />
+        </div>
+      );
+    });
+
+  // Оборачиваем контент резюме в ту же раскладку «контент + боковые панели»,
+  // что использовали оба пути. Без объединения — возвращаем контент как есть.
+  const wrapWithMerged = (content: ReactNode) => {
+    if (mergedFrom.length === 0) return content;
+    return (
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 min-w-0">{content}</div>
+        <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] space-y-4">
+          {renderMergedPanels()}
+        </div>
+      </div>
+    );
+  };
+
+  // Вкладочная полоса источников (стиль — как у существующих underline-вкладок).
+  const resumeSourceTabs =
+    resumeSources.length > 1 ? (
+      <div className="flex items-end gap-[var(--hf-space-xxl)] flex-wrap border-b border-[var(--hf-main-300)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] mb-2">
+        {resumeSources.map((s, i) => {
+          const label =
+            s.kind === "parsed"
+              ? "Резюме · новое"
+              : s.kind === "images"
+                ? "Резюме (сканы)"
+                : s.file.created_at
+                  ? `Резюме · ${formatDateFull(s.file.created_at)}`
+                  : `Резюме ${i + 1}`;
+          return (
+            <button
+              key={s.kind === "pdf" ? `pdf-${s.file.id}` : s.kind}
+              type="button"
+              onClick={() => setResumeSourceIndex(i)}
+              title={s.kind === "pdf" ? s.file.file_name : label}
+              className={clsx(
+                "h-[24px] border-b-[2px] pb-[20px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+                i === safeSourceIndex
+                  ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
+                  : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
+              )}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    ) : null;
+
+  let parsedContent: ReactNode = null;
   if (resumeDemos.length > 0) {
     const currentDemo = resumeDemos[0];
     const currentResumePage = currentResumeIndex + 1;
@@ -3800,7 +3915,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       </section>
     );
 
-    const mainContent = (
+    parsedContent = (
       <div className="pt-[var(--hf-space-xxl)] max-w-[1180px]">
         <div className="overflow-hidden rounded-[16px] border border-[color:var(--hf-black-alpha-10)] bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-white-alpha-04)] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
           <div className="rounded-t-[16px] bg-[var(--hf-main-50)] px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[27px] hf-dark-disabled:bg-[var(--hf-white-alpha-03)]">
@@ -4018,40 +4133,12 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
         </div>
       </div>
     );
-    if (mergedFrom.length === 0) return mainContent;
-    return (
-      <div className="flex flex-col lg:flex-row gap-4">
-        <div className="flex-1 min-w-0">{mainContent}</div>
-        <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] space-y-4">
-          {mergedFrom.map((m, i) => (
-            <div key={m.entity_id ?? i}>
-              <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] mb-2">
-                Объединено:{" "}
-                <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
-                  {m.name || "Кандидат"}
-                </span>
-                {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
-                {m.merged_at
-                  ? ` · ${new Date(m.merged_at).toLocaleString("ru")}`
-                  : ""}
-              </div>
-              <ImportedQuestionnaire
-                card={
-                  {
-                    ...card,
-                    name: m.name || card.name,
-                    extra_data: m.extra_data,
-                  } as KanbanCard
-                }
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
   }
 
-  const fileMainContent = (
+  // Контент файлового резюме (PDF / сканы / fallback). Принимает конкретный
+  // PDF к показу, чтобы вкладка-источник «pdf» открывала ИМЕННО свой файл.
+  // Внутренняя pdf-полоса убрана — её заменила верхняя вкладочная полоса.
+  const buildFileContent = (pdf: EntityFile | undefined) => (
     <div className="py-hf-l max-w-[1180px]">
       <p className="text-hf-3xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)] mb-hf-m">
         Сохранено{" "}
@@ -4072,9 +4159,9 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
         >
           <Printer className="w-3.5 h-3.5" /> Распечатать
         </button>
-        {pdfFile && (
+        {pdf && (
           <button
-            onClick={() => handleDownload(pdfFile)}
+            onClick={() => handleDownload(pdf)}
             className="inline-flex items-center gap-1.5 h-[30px] px-hf-m border border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)] rounded-hf-s text-hf-3xs text-[var(--hf-main-700)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
           >
             <Download className="w-3.5 h-3.5" /> Скачать PDF
@@ -4082,7 +4169,7 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
         )}
       </div>
       {/* Resume preview — show JPEG pages */}
-      {imageFiles.length > 0 ? (
+      {imageFiles.length > 0 && !pdf ? (
         <div className="space-y-3">
           {imageFiles.map((f) => (
             <div
@@ -4103,43 +4190,22 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
             </div>
           ))}
         </div>
-      ) : currentPdf ? (
+      ) : pdf ? (
         <div className="space-y-2">
-          {/* Несколько резюме (после объединения PDF'ы накапливаются) — переключатель,
-              новое сверху, чтобы видно было, где новое, а где старое. */}
-          {pdfFiles.length > 1 && (
-            <div className="flex items-center gap-1.5 flex-wrap mb-1">
-              {pdfFiles.map((f, i) => (
-                <button
-                  key={f.id}
-                  onClick={() => setPdfIndex(i)}
-                  title={f.file_name}
-                  className={clsx(
-                    "px-2.5 py-1 rounded-md text-xs border transition-colors",
-                    i === safePdfIndex
-                      ? "border-[color:var(--hf-accent)] text-[var(--hf-accent)] bg-[var(--hf-accent-bg-10)]"
-                      : "border-[color:var(--hf-main-200)] text-[var(--hf-main-600)] hover:bg-[var(--hf-white-alpha-04)]",
-                  )}
-                >
-                  Резюме {i + 1}{i === 0 ? " · новое" : ""}
-                </button>
-              ))}
-            </div>
-          )}
           {/* #toolbar=0&navpanes=0 — прячем редакторскую панель Chrome PDF-вьюера: чистый просмотр. */}
           <iframe
-            key={currentPdf.id}
-            src={`/api/entities/${card.id}/files/${currentPdf.id}/download#toolbar=0&navpanes=0`}
-            title={currentPdf.file_name}
+            key={pdf.id}
+            src={`/api/entities/${card.id}/files/${pdf.id}/download#toolbar=0&navpanes=0`}
+            title={pdf.file_name}
             className="w-full min-h-[760px] rounded-lg border border-[color:var(--hf-white-alpha-06)] bg-white"
           />
           <div className="flex items-center justify-between gap-2 px-1 text-xs text-[var(--hf-dark-500)]">
             <span className="truncate">
-              {currentPdf.file_name} · {(currentPdf.file_size / 1024).toFixed(0)} КБ
-              {currentPdf.created_at ? ` · загружено ${formatDateFull(currentPdf.created_at)}` : ""}
+              {pdf.file_name} · {(pdf.file_size / 1024).toFixed(0)} КБ
+              {pdf.created_at ? ` · загружено ${formatDateFull(pdf.created_at)}` : ""}
             </span>
             <button
-              onClick={() => handleDownload(currentPdf)}
+              onClick={() => handleDownload(pdf)}
               className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] rounded-lg hover:bg-[var(--hf-accent-bg-30)] transition-colors"
             >
               <Download className="w-3.5 h-3.5" /> Скачать
@@ -4155,36 +4221,26 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
       )}
     </div>
   );
-  if (mergedFrom.length === 0) return fileMainContent;
-  return (
-    <div className="flex flex-col lg:flex-row gap-4">
-      <div className="flex-1 min-w-0">{fileMainContent}</div>
-      <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] space-y-4">
-        {mergedFrom.map((m, i) => (
-          <div key={m.entity_id ?? i}>
-            <div className="text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] mb-2">
-              Объединено:{" "}
-              <span className="font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
-                {m.name || "Кандидат"}
-              </span>
-              {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
-              {m.merged_at
-                ? ` · ${new Date(m.merged_at).toLocaleString("ru")}`
-                : ""}
-            </div>
-            <ImportedQuestionnaire
-              card={
-                {
-                  ...card,
-                  name: m.name || card.name,
-                  extra_data: m.extra_data,
-                } as KanbanCard
-              }
-            />
-          </div>
-        ))}
-      </div>
-    </div>
+
+  // Контент выбранного источника. Когда источников нет (например, в resume
+  // только .docx без pdf/картинок) — buildFileContent(undefined) даёт прежний
+  // fallback со списком имён файлов.
+  let selectedContent: ReactNode;
+  if (selectedSource?.kind === "parsed") {
+    selectedContent = parsedContent;
+  } else if (selectedSource?.kind === "pdf") {
+    selectedContent = buildFileContent(selectedSource.file);
+  } else if (selectedSource?.kind === "images") {
+    selectedContent = buildFileContent(undefined);
+  } else {
+    selectedContent = buildFileContent(currentPdf);
+  }
+
+  return wrapWithMerged(
+    <>
+      {resumeSourceTabs}
+      {selectedContent}
+    </>,
   );
 });
 
