@@ -1662,6 +1662,13 @@ const InfoTab = memo(function InfoTab({
   const [anketaOpen, setAnketaOpen] = useState(false);
   const anketaCount = useFormBadgeStore((s) => s.counts[card.id] ?? 0);
   const setAnketaCount = useFormBadgeStore((s) => s.setCount);
+  // Источники резюме: каждое резюме — отдельная вкладка верхнего уровня рядом
+  // с «Личные заметки». resumeIndex — какая из них активна.
+  const { sources: resumeSources } = useResumeSources(card);
+  const [resumeIndex, setResumeIndex] = useState(0);
+  useEffect(() => {
+    setResumeIndex(0);
+  }, [card.id]);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
@@ -2978,18 +2985,27 @@ const InfoTab = memo(function InfoTab({
           >
             Личные заметки
           </button>
-          <button
-            type="button"
-            onClick={() => onDetailSectionChange("resume")}
-            className={clsx(
-              "h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
-              detailSection === "resume"
-                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
-                : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
-            )}
-          >
-            Резюме
-          </button>
+          {/* По одной вкладке «Резюме» на каждый источник резюме. Если у
+              кандидата резюме нет вовсе — одна вкладка-заглушка ([null]),
+              чтобы показать пустое состояние. */}
+          {(resumeSources.length > 0 ? resumeSources : [null]).map((_s, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => {
+                onDetailSectionChange("resume");
+                setResumeIndex(i);
+              }}
+              className={clsx(
+                "h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+                detailSection === "resume" && resumeIndex === i
+                  ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
+                  : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
+              )}
+            >
+              Резюме
+            </button>
+          ))}
           <button
             type="button"
             onClick={() => onDetailSectionChange("anketa")}
@@ -3015,7 +3031,15 @@ const InfoTab = memo(function InfoTab({
             uploading={uploading}
           />
         )}
-        {detailSection === "resume" && <ResumeTab card={card} />}
+        {detailSection === "resume" && (
+          <ResumeTab
+            card={card}
+            activeIndex={Math.min(
+              resumeIndex,
+              Math.max(0, resumeSources.length - 1),
+            )}
+          />
+        )}
         {detailSection === "anketa" && <AnketaTab card={card} />}
       </div>
     </div>
@@ -3573,16 +3597,37 @@ const ImportedQuestionnaire = memo(function ImportedQuestionnaire({
   );
 });
 
-const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
+// ── Единый список источников резюме для верхних вкладок ──
+// После объединения профилей у выжившего может быть распарсенное резюме
+// (resumeDemos, его «новое»), плюс переназначенные PDF (pdfFiles, «старое»),
+// плюс, реже, сканы-картинки. Каждое резюме доступно своей вкладкой верхнего
+// уровня (рядом с «Личные заметки»).
+type ResumeSource =
+  | { kind: "parsed" }
+  | { kind: "pdf"; file: EntityFile }
+  | { kind: "images" };
+
+type ResumeDemoData = {
+  title?: string;
+  subtitle?: string;
+  salary?: string;
+  saved_at?: string;
+  vacancy_title?: string;
+  sections?: Array<{ title: string; lines: string[] }>;
+};
+
+// Загружает файлы кандидата и вычисляет список источников резюме. Один и тот
+// же расчёт нужен и панели вкладок (сколько вкладок «Резюме» рисовать), и
+// самой вкладке (что показывать) — поэтому вынесен в общий хук.
+function useResumeSources(card: KanbanCard): {
+  files: EntityFile[];
+  sources: ResumeSource[];
+  loading: boolean;
+  previewUrls: Record<number, string>;
+} {
   const [files, setFiles] = useState<EntityFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewUrls, setPreviewUrls] = useState<Record<number, string>>({});
-  const [currentResumeIndex, setCurrentResumeIndex] = useState(0);
-  const [pdfIndex, setPdfIndex] = useState(0);
-  // Какой источник резюме выбран в верхней вкладочной полосе. После
-  // объединения у выжившего профиля может быть И распарсенное резюме,
-  // И переназначенные PDF — каждый показываем отдельной вкладкой.
-  const [resumeSourceIndex, setResumeSourceIndex] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -3609,25 +3654,58 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
   }, [card.id]);
 
   const resumeFiles = files.filter((f) => f.file_type === "resume");
-  const pdfFile = resumeFiles.find((f) => f.mime_type === "application/pdf");
   // Все PDF-резюме, новое сверху: после объединения кандидатов PDF'ы
   // накапливаются, и нужно понимать, где новое, а где старое.
   const pdfFiles = resumeFiles
     .filter((f) => f.mime_type === "application/pdf")
     .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
-  const safePdfIndex = Math.min(pdfIndex, Math.max(0, pdfFiles.length - 1));
-  const currentPdf = pdfFiles[safePdfIndex] || pdfFile;
   const imageFiles = resumeFiles.filter((f) =>
     f.mime_type?.startsWith("image/"),
   );
-  type ResumeDemoData = {
-    title?: string;
-    subtitle?: string;
-    salary?: string;
-    saved_at?: string;
-    vacancy_title?: string;
-    sections?: Array<{ title: string; lines: string[] }>;
-  };
+  const resumeDemo = card.extra_data?.resume_demo as ResumeDemoData | undefined;
+  const resumeDemos = (
+    Array.isArray(card.extra_data?.resume_demos)
+      ? (card.extra_data.resume_demos as ResumeDemoData[])
+      : resumeDemo
+        ? [resumeDemo]
+        : []
+  ).filter(Boolean);
+
+  const sources: ResumeSource[] = [
+    ...(resumeDemos.length > 0 ? [{ kind: "parsed" as const }] : []),
+    ...pdfFiles.map((file) => ({ kind: "pdf" as const, file })),
+    // Сканы-картинки показываем ОТДЕЛЬНОЙ вкладкой только если другого резюме
+    // нет (ни распарсенного, ни PDF) — иначе это дубль и лишняя вкладка.
+    ...(imageFiles.length > 0 &&
+    resumeDemos.length === 0 &&
+    pdfFiles.length === 0
+      ? [{ kind: "images" as const }]
+      : []),
+  ];
+
+  return { files, sources, loading, previewUrls };
+}
+
+const ResumeTab = memo(function ResumeTab({
+  card,
+  activeIndex,
+}: {
+  card: KanbanCard;
+  activeIndex: number;
+}) {
+  const { files, sources, loading, previewUrls } = useResumeSources(card);
+  const [currentResumeIndex, setCurrentResumeIndex] = useState(0);
+
+  const resumeFiles = files.filter((f) => f.file_type === "resume");
+  const pdfFile = resumeFiles.find((f) => f.mime_type === "application/pdf");
+  // PDF'ы — новое сверху (для fallback-выбора, когда источник не задан явно).
+  const pdfFiles = resumeFiles
+    .filter((f) => f.mime_type === "application/pdf")
+    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  const currentPdf = pdfFiles[0] || pdfFile;
+  const imageFiles = resumeFiles.filter((f) =>
+    f.mime_type?.startsWith("image/"),
+  );
   const resumeDemo = card.extra_data?.resume_demo as ResumeDemoData | undefined;
   const resumeDemos = (
     Array.isArray(card.extra_data?.resume_demos)
@@ -3650,8 +3728,6 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
 
   useEffect(() => {
     setCurrentResumeIndex(0);
-    setPdfIndex(0);
-    setResumeSourceIndex(0);
   }, [card.id]);
 
   useEffect(() => {
@@ -3779,66 +3855,18 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
     );
   }
 
-  // ── Единый список источников резюме для верхней вкладочной полосы ──
-  // После объединения профилей у выжившего может быть распарсенное резюме
-  // (resumeDemos, его «новое»), плюс переназначенные PDF (pdfFiles, «старое»),
-  // плюс, реже, сканы-картинки. Раньше путь 3 возвращался первым и PDF'ы были
-  // не видны — теперь каждое резюме доступно своей вкладкой.
-  type ResumeSource =
-    | { kind: "parsed" }
-    | { kind: "pdf"; file: EntityFile }
-    | { kind: "images" };
-  const resumeSources: ResumeSource[] = [
-    ...(resumeDemos.length > 0 ? [{ kind: "parsed" as const }] : []),
-    ...pdfFiles.map((file) => ({ kind: "pdf" as const, file })),
-    // Сканы-картинки показываем ОТДЕЛЬНОЙ вкладкой только если другого резюме
-    // нет (ни распарсенного, ни PDF) — иначе это дубль и лишний таб.
-    ...(imageFiles.length > 0 && resumeDemos.length === 0 && pdfFiles.length === 0
-      ? [{ kind: "images" as const }]
-      : []),
-  ];
+  // Источник резюме выбирается верхними вкладками (по одной на каждое резюме).
+  // Внутренней вкладочной полосы здесь больше нет — её роль выполняют вкладки
+  // верхнего уровня рядом с «Личные заметки». Резюме — на всю ширину.
   const safeSourceIndex = Math.min(
-    resumeSourceIndex,
-    Math.max(0, resumeSources.length - 1),
+    activeIndex,
+    Math.max(0, sources.length - 1),
   );
-  const selectedSource = resumeSources[safeSourceIndex];
+  const selectedSource = sources[safeSourceIndex];
 
   // Панель «Объединено: … (анкета)» убрана из вкладки «Резюме» по просьбе:
   // резюме должно быть на всю ширину. Данные объединённого профиля остаются
   // в extra_data.merged_from (при необходимости вынесем во вкладку «Анкеты»).
-
-  // Вкладочная полоса источников (стиль — как у существующих underline-вкладок).
-  const resumeSourceTabs =
-    resumeSources.length > 1 ? (
-      <div className="flex items-end gap-[var(--hf-space-xxl)] flex-wrap border-b border-[var(--hf-main-300)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] mb-2">
-        {resumeSources.map((s, i) => {
-          const label =
-            s.kind === "parsed"
-              ? "Резюме · новое"
-              : s.kind === "images"
-                ? "Резюме (сканы)"
-                : s.file.created_at
-                  ? `Резюме · ${formatDateFull(s.file.created_at)}`
-                  : `Резюме ${i + 1}`;
-          return (
-            <button
-              key={s.kind === "pdf" ? `pdf-${s.file.id}` : s.kind}
-              type="button"
-              onClick={() => setResumeSourceIndex(i)}
-              title={s.kind === "pdf" ? s.file.file_name : label}
-              className={clsx(
-                "h-[24px] border-b-[2px] pb-[20px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
-                i === safeSourceIndex
-                  ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
-                  : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
-              )}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-    ) : null;
 
   let parsedContent: ReactNode = null;
   if (resumeDemos.length > 0) {
@@ -4203,13 +4231,8 @@ const ResumeTab = memo(function ResumeTab({ card }: { card: KanbanCard }) {
     selectedContent = buildFileContent(currentPdf);
   }
 
-  // Резюме — на всю ширину, без боковой панели «Объединено».
-  return (
-    <>
-      {resumeSourceTabs}
-      {selectedContent}
-    </>
-  );
+  // Резюме — на всю ширину, без внутренней полосы вкладок и боковой панели.
+  return selectedContent;
 });
 
 // ================================================================
