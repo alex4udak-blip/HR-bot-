@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { CSSProperties } from 'react';
 import { useHorizontalScroll } from '../hooks/useHorizontalScroll';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -17,12 +16,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   FileText,
-  Mail,
-  Calendar,
-  MessageSquare,
-  ThumbsUp,
   Paperclip,
-  XCircle,
   Copy,
   Check,
   Printer,
@@ -31,14 +25,12 @@ import {
   Archive,
   Trash2,
   Inbox,
-  MoreHorizontal,
-  RotateCcw,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, deleteApplication, getApplicationHistory, deleteApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
@@ -50,14 +42,12 @@ import { getVacancies } from '@/services/api/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
-import VacancyActivityBlock from '@/components/entities/VacancyActivityBlock';
+import VacancyStageCard from '@/components/entities/VacancyStageCard';
 import ResumeTabs from '@/components/entities/ResumeTabs';
 import { getEntityActivity, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
 import { HuntflowComposer } from '@/components/hr/HuntflowComposer';
 import {
-  HuntflowActionChip,
-  HuntflowEditorIcon,
   HuntflowInfoRow,
   HuntflowOptionsIcon,
 } from '@/components/hr/HuntflowControls';
@@ -427,16 +417,12 @@ export default function RecruiterFunnelsPage() {
   // Master-detail state
   const [selectedTab, setSelectedTab] = useState<string>('all');
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
-  const [candidateHistory, setCandidateHistory] = useState<any[]>([]);
   const [entityActivity, setEntityActivity] = useState<ActivityBlockData[]>([]);
   const [dupCard, setDupCard] = useState<KanbanCard | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
   const [editingCandidateCard, setEditingCandidateCard] = useState<KanbanCard | null>(null);
   const [personalNoteComposerOpen, setPersonalNoteComposerOpen] = useState(false);
   const [personalNoteText, setPersonalNoteText] = useState('');
-  const [stageCommentComposerOpen, setStageCommentComposerOpen] = useState(false);
-  const [stageCommentText, setStageCommentText] = useState('');
   const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [currentResumePage, setCurrentResumePage] = useState(0);
@@ -641,7 +627,6 @@ export default function RecruiterFunnelsPage() {
     loadCandidates(selectedVacancyId);
     setSelectedCandidateId(null);
     setSelectedTab('applied');
-    setCandidateHistory([]);
     setDetailTab('info');
     setCurrentResumePage(0);
     setSelectedIds(new Set());
@@ -815,12 +800,6 @@ export default function RecruiterFunnelsPage() {
     [candidates, selectedCandidateId],
   );
 
-  // Карточка этапа — 2 цвета: активный этап зелёный, отказ/отозван — серый.
-  const stageCardStyle: CSSProperties | undefined =
-    selectedCandidate && !['rejected', 'withdrawn'].includes(selectedCandidate.stage as string)
-      ? ({ '--hf-stage-accent': '#22c55e', '--hf-stage-card-bg': 'rgba(34, 197, 94, 0.1)' } as CSSProperties)
-      : undefined;
-
   const tabFilteredCandidates = useMemo(() => {
     if (selectedTab === 'all') return filteredCandidates;
     return filteredCandidates.filter(c => {
@@ -856,18 +835,6 @@ export default function RecruiterFunnelsPage() {
     }
   }, [selectedCandidateId, tabFilteredCandidates]);
 
-  // Load history when candidate selected
-  useEffect(() => {
-    if (!selectedCandidateId) {
-      setCandidateHistory([]);
-      return;
-    }
-    setHistoryLoading(true);
-    getApplicationHistory(selectedCandidateId)
-      .then(data => setCandidateHistory(Array.isArray(data) ? data : []))
-      .catch(() => setCandidateHistory([]))
-      .finally(() => setHistoryLoading(false));
-  }, [selectedCandidateId]);
 
   // Load cross-vacancy activity feed when entity changes
   useEffect(() => {
@@ -877,6 +844,35 @@ export default function RecruiterFunnelsPage() {
       .then((blocks) => setEntityActivity(Array.isArray(blocks) ? blocks : []))
       .catch(() => setEntityActivity([]));
   }, [selectedCandidate?.entity_id]);
+
+  // Цвета стадии для VacancyStageCard — оборачиваем STAGE_COLORS/colorToStageColor/
+  // stagesConfig/fallbackColor, чтобы карточка не зависела от внутренностей страницы.
+  const getStageColors = useCallback(
+    (stage: string) => {
+      const key = colorToStageColor(
+        stagesConfig.colorKeys[stage],
+        stagesConfig.keyToEnum[stage] || stage,
+      );
+      const colors = STAGE_COLORS[key] || fallbackColor;
+      return { badge: colors.badge, dot: colors.dot };
+    },
+    [stagesConfig.colorKeys, stagesConfig.keyToEnum],
+  );
+
+  // Перезагрузка ленты активности после мутации в карточке вакансии +
+  // обновление счётчиков досок.
+  const refreshActivity = useCallback(async () => {
+    const eid = selectedCandidate?.entity_id;
+    if (eid) {
+      try {
+        const blocks = await getEntityActivity(eid);
+        setEntityActivity(Array.isArray(blocks) ? blocks : []);
+      } catch {
+        /* ignore — оставляем прежнюю ленту */
+      }
+    }
+    fetchVacancies();
+  }, [selectedCandidate?.entity_id, fetchVacancies]);
 
   // Load entity files (resumes) when candidate selected
   useEffect(() => {
@@ -928,8 +924,6 @@ export default function RecruiterFunnelsPage() {
   useEffect(() => {
     setPersonalNoteText('');
     setPersonalNoteComposerOpen(false);
-    setStageCommentText('');
-    setStageCommentComposerOpen(false);
   }, [selectedCandidate?.entity_id]);
 
   // Resume: original document (PDF or DOC/DOCX) + page images (JPEG renders from backend)
@@ -1067,11 +1061,6 @@ export default function RecruiterFunnelsPage() {
     () => vacancyEntityNotes.filter((note) => !note.stage),
     [vacancyEntityNotes],
   );
-  const vacancyWorkflowComments = useMemo(
-    () => vacancyEntityNotes.filter((note) => Boolean(note.stage)),
-    [vacancyEntityNotes],
-  );
-
   // Load org tags once
   useEffect(() => {
     getTags().then(setOrgTags).catch(() => setOrgTags([]));
@@ -1299,28 +1288,12 @@ export default function RecruiterFunnelsPage() {
   const commentRef = useRef<HTMLTextAreaElement | null>(null);
   const [commentSaving, setCommentSaving] = useState(false);
 
-  // ─── Богатый пикер смены этапа (как на «Все кандидаты»): список этапов +
-  // редактор «Записать комментарий». Заменяет узкий StageDropdown. ───
-  const [stagePickerOpen, setStagePickerOpen] = useState(false);
-  const [stagePickerPending, setStagePickerPending] = useState<ApplicationStage | null>(null);
-  const [stagePickerComment, setStagePickerComment] = useState('');
-  const stagePickerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!stagePickerOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (stagePickerRef.current && !stagePickerRef.current.contains(e.target as Node)) {
-        setStagePickerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [stagePickerOpen]);
-
   // ─── Меню действий со статусом («⋯»): убрать из вакансии / откатить этап ───
   const [candidateMenuOpen, setCandidateMenuOpen] = useState(false);
   const candidateMenuRef = useRef<HTMLDivElement>(null);
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+  // Какую заявку убираем (для карточек разных вакансий — не всегда selectedCandidate).
+  const [removeTargetAppId, setRemoveTargetAppId] = useState<number | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
 
   useEffect(() => {
@@ -1336,39 +1309,27 @@ export default function RecruiterFunnelsPage() {
 
   // Прошлый этап для отката — from_stage самой свежей записи истории
   // (to_stage у неё = текущий этап).
-  const prevStage = useMemo<ApplicationStage | null>(() => {
-    if (!Array.isArray(candidateHistory) || candidateHistory.length === 0) return null;
-    const latest = [...candidateHistory].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    )[0];
-    return (latest?.from_stage as ApplicationStage | null) || null;
-  }, [candidateHistory]);
-
-  const handleRevertStage = useCallback(async () => {
-    if (!selectedCandidate || !prevStage) return;
-    setCandidateMenuOpen(false);
-    await handleStageChange(selectedCandidate.id, prevStage);
-  }, [selectedCandidate, prevStage, handleStageChange]);
-
   const handleRemoveFromVacancy = useCallback(async () => {
-    if (!selectedCandidate) return;
+    const targetId = removeTargetAppId ?? selectedCandidate?.id;
+    if (!targetId) return;
     setRemoveBusy(true);
     try {
-      await deleteApplication(selectedCandidate.id);
+      await deleteApplication(targetId);
       // Локально убираем отклик — кандидат исчезает из текущего списка; выбором
       // дальше управляет эффект (как при смене этапа): останемся на вкладке,
       // последний → заглушка «На этом этапе пока нет кандидатов».
-      setCandidates((prev) => prev.filter((c) => c.id !== selectedCandidate.id));
+      setCandidates((prev) => prev.filter((c) => c.id !== targetId));
       toast.success('Кандидат убран из вакансии');
       setRemoveConfirmOpen(false);
+      setRemoveTargetAppId(null);
       setCandidateMenuOpen(false);
-      fetchVacancies();
+      await refreshActivity();
     } catch {
       toast.error('Не удалось убрать из вакансии');
     } finally {
       setRemoveBusy(false);
     }
-  }, [selectedCandidate, fetchVacancies]);
+  }, [removeTargetAppId, selectedCandidate, refreshActivity]);
 
   const saveEntityNote = useCallback(async (
     text: string,
@@ -1401,14 +1362,6 @@ export default function RecruiterFunnelsPage() {
     }
   }, [selectedCandidate?.entity_id]);
 
-  const handleSaveComment = useCallback(async (text: string) => {
-    await saveEntityNote(
-      text,
-      selectedCandidate?.stage as string | undefined,
-      selectedCandidate?.stage ? getVacancyStageLabel(selectedCandidate.stage as string) : null,
-    );
-  }, [getVacancyStageLabel, saveEntityNote, selectedCandidate?.stage]);
-
   const handleSavePersonalNote = useCallback(async () => {
     const text = personalNoteText.trim();
     if (!text) return;
@@ -1416,14 +1369,6 @@ export default function RecruiterFunnelsPage() {
     setPersonalNoteText('');
     setPersonalNoteComposerOpen(false);
   }, [personalNoteText, saveEntityNote]);
-
-  const handleSaveStageComment = useCallback(async () => {
-    const text = stageCommentText.trim();
-    if (!text) return;
-    await handleSaveComment(text);
-    setStageCommentText('');
-    setStageCommentComposerOpen(false);
-  }, [handleSaveComment, stageCommentText]);
 
   // Этапы для пикера — тот же список и лейблы, что были в StageDropdown.
   const stagePickerOptions = useMemo(
@@ -1434,32 +1379,6 @@ export default function RecruiterFunnelsPage() {
       })),
     [vacancyStageDropdownLabels],
   );
-
-  // Сохранение из пикера: коммент привязывается к ВЫБРАННОМУ этапу (дату ставит
-  // сервер), затем кандидат переносится. Коммент необязателен — можно просто
-  // сменить этап.
-  const handleStagePickerSave = useCallback(async () => {
-    if (!selectedCandidate) return;
-    const target = (stagePickerPending ?? (selectedCandidate.stage as ApplicationStage)) as ApplicationStage;
-    const text = stagePickerComment.trim();
-    const isMove = target !== selectedCandidate.stage;
-    if (isMove) {
-      // Коммент уходит В САМ переход → в истории «X → Y: текст», отдельную заметку не создаём.
-      await handleStageChange(selectedCandidate.id, target, text || undefined);
-    } else if (text) {
-      // Без смены этапа — обычный коммент к текущему этапу.
-      await saveEntityNote(text, target as string, getVacancyStageLabel(target as string));
-    }
-    setStagePickerComment('');
-    setStagePickerOpen(false);
-  }, [
-    selectedCandidate,
-    stagePickerPending,
-    stagePickerComment,
-    saveEntityNote,
-    getVacancyStageLabel,
-    handleStageChange,
-  ]);
 
   const handleDeleteNote = useCallback(async (note: Record<string, unknown>) => {
     if (!selectedCandidate?.entity_id) return;
@@ -1483,17 +1402,6 @@ export default function RecruiterFunnelsPage() {
       toast.error('Не удалось удалить комментарий');
     }
   }, [selectedCandidate?.entity_id]);
-
-  const handleDeleteHistory = useCallback(async (historyId: number) => {
-    if (!selectedCandidate || !historyId) return;
-    try {
-      await deleteApplicationHistory(selectedCandidate.id, historyId);
-      setCandidateHistory((prev) => prev.filter((h: any) => h.id !== historyId));
-      toast.success('Запись истории удалена');
-    } catch {
-      toast.error('Не удалось удалить запись');
-    }
-  }, [selectedCandidate]);
 
   const renderVacancyNoteCard = useCallback((note: Record<string, unknown>, i: number) => {
     const stage = note.stage as string | undefined;
@@ -1567,6 +1475,79 @@ export default function RecruiterFunnelsPage() {
       if (e.target) e.target.value = '';
     }
   }, [selectedCandidate]);
+
+  // ─── Тонкие обёртки для VacancyStageCard: переиспользуем существующие
+  // обработчики (по applicationId) и докидываем refreshActivity после мутации,
+  // чтобы лента карточек и счётчики досок обновились. ───
+  const cardChangeStage = useCallback(
+    async (appId: number, stage: string, comment?: string) => {
+      await handleStageChange(appId, stage as ApplicationStage, comment);
+      await refreshActivity();
+    },
+    [handleStageChange, refreshActivity],
+  );
+
+  const cardComment = useCallback(
+    async (_appId: number, stage: string, stageLabel: string, text: string) => {
+      // saveEntityNote привязан к selectedCandidate.entity_id — это ТОТ ЖЕ
+      // кандидат во всех его заявках, поэтому подходит для любой карточки.
+      await saveEntityNote(text, stage, stageLabel);
+      await refreshActivity();
+    },
+    [saveEntityNote, refreshActivity],
+  );
+
+  const cardDeleteHistory = useCallback(
+    async (appId: number, historyId: number) => {
+      await deleteApplicationHistory(appId, historyId);
+      await refreshActivity();
+    },
+    [refreshActivity],
+  );
+
+  const cardUploadFile = useCallback(
+    async (entityId: number, file: File) => {
+      try {
+        await uploadEntityFile(entityId, file, 'other');
+        toast.success(`Файл "${file.name}" загружен`);
+        const fresh = await getEntityFiles(entityId);
+        setEntityFiles(fresh);
+      } catch (err) {
+        const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+        toast.error(detail || 'Ошибка загрузки файла');
+      }
+      await refreshActivity();
+    },
+    [refreshActivity],
+  );
+
+  const cardScheduleInterview = useCallback(
+    (appId: number) => {
+      // Открываем модалку назначения интервью для КОНКРЕТНОЙ заявки (модалка
+      // сохраняет по interviewForCandidate.id, так что это корректно per-app).
+      const app = candidates.find((c) => c.id === appId)
+        || (selectedCandidate ? { ...selectedCandidate, id: appId, next_interview_at: undefined } : null);
+      if (!app) return;
+      setInterviewForCandidate(app);
+      const cur = app.next_interview_at;
+      if (cur) {
+        const d = new Date(cur);
+        const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        setInterviewDateTime(local);
+      } else {
+        setInterviewDateTime('');
+      }
+    },
+    [candidates, selectedCandidate],
+  );
+
+  const cardRemoveFromVacancy = useCallback(
+    (appId: number) => {
+      setRemoveTargetAppId(appId);
+      setRemoveConfirmOpen(true);
+    },
+    [],
+  );
 
   // Toggle checkbox selection for a candidate
   const toggleCandidateSelection = useCallback((candidateId: number) => {
@@ -2744,430 +2725,33 @@ export default function RecruiterFunnelsPage() {
                                 )}
                               </div>
 
-                              {/* Cross-vacancy activity feed */}
-                              <div className="px-5 pt-4">
-                                <div className="text-sm font-medium text-[var(--hf-dark-400)] mb-2">Вакансии и история</div>
+                              {/* Вакансии и история — по полной интерактивной серой карточке на вакансию */}
+                              <div className="px-5 pt-4 flex flex-col gap-3">
+                                <div className="text-sm font-medium text-[var(--hf-dark-400)] mb-1">Вакансии и история</div>
                                 {entityActivity.length === 0 ? (
-                                  <div className="text-sm text-[var(--hf-dark-600)] mb-3">Нет участий в вакансиях</div>
+                                  <div className="text-sm text-[var(--hf-dark-600)]">Нет участий в вакансиях</div>
                                 ) : (
                                   entityActivity.map((b) => (
-                                    <VacancyActivityBlock
+                                    <VacancyStageCard
                                       key={b.application_id}
-                                      block={b}
-                                      stageLabel={getVacancyStageLabel}
+                                      applicationId={b.application_id}
+                                      vacancyTitle={b.vacancy_title}
+                                      currentStage={b.current_stage}
+                                      entityId={selectedCandidate.entity_id}
+                                      entityEmail={selectedCandidate.entity_email}
+                                      events={b.events}
+                                      stageOptions={stagePickerOptions}
+                                      getStageLabel={getVacancyStageLabel}
+                                      getStageColors={getStageColors}
+                                      onChangeStage={cardChangeStage}
+                                      onComment={cardComment}
+                                      onDeleteHistory={cardDeleteHistory}
+                                      onUploadFile={cardUploadFile}
+                                      onScheduleInterview={cardScheduleInterview}
+                                      onRemoveFromVacancy={cardRemoveFromVacancy}
                                     />
                                   ))
                                 )}
-                              </div>
-
-                              {/* Current stage — Huntflow style block */}
-                              <div className="hf-stage-card" style={stageCardStyle}>
-                                <div className="hf-stage-card-head">
-                                  <div className="hf-stage-card-head-row">
-                                    <div>
-                                      <div className="hf-stage-card-title">
-                                        {getVacancyStageLabel(selectedCandidate.stage as string)}
-                                      </div>
-                                      <div className="hf-stage-card-subtitle">
-                                        {selectedVacancy?.title || 'Вакансия'}
-                                        {selectedVacancy?.department_name ? ` (${selectedVacancy.department_name})` : ''}
-                                      </div>
-                                    </div>
-                                  <div className="flex items-center gap-2">
-                                  <div className="relative" ref={stagePickerRef}>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setStagePickerPending(selectedCandidate.stage as ApplicationStage);
-                                        setStagePickerComment('');
-                                        setStagePickerOpen((v) => !v);
-                                      }}
-                                      className="hf-stage-change-btn"
-                                    >
-                                      Сменить этап подбора
-                                    </button>
-                                    {stagePickerOpen && (
-                                      <div className="hf-stage-picker">
-                                        <div className="hf-stage-picker-list huntflow-scrollbar">
-                                          {stagePickerOptions.map((option) => {
-                                            const isSelected =
-                                              (stagePickerPending ?? selectedCandidate.stage) === option.status;
-                                            return (
-                                              <button
-                                                type="button"
-                                                key={option.status}
-                                                onClick={() => setStagePickerPending(option.status)}
-                                                className={clsx(
-                                                  'hf-stage-picker-option',
-                                                  isSelected
-                                                    ? 'hf-stage-picker-option-active'
-                                                    : 'hf-stage-picker-option-idle',
-                                                )}
-                                              >
-                                                <span className="truncate">{option.label}</span>
-                                              </button>
-                                            );
-                                          })}
-                                        </div>
-                                        <div className="hf-stage-picker-editor-wrap">
-                                          <div className="hf-stage-picker-editor">
-                                            <div className="hf-stage-picker-toolbar">
-                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="bold" /></button>
-                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="italic" /></button>
-                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="bullet-list" /></button>
-                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="numbered-list" /></button>
-                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="link" /></button>
-                                              <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="at" /></button>
-                                            </div>
-                                            <textarea
-                                              value={stagePickerComment}
-                                              onChange={(event) => setStagePickerComment(event.target.value)}
-                                              placeholder="Записать комментарий"
-                                              className="hf-stage-picker-textarea"
-                                            />
-                                            <div className="hf-stage-picker-actions">
-                                              <HuntflowActionChip
-                                                icon={Mail}
-                                                label="Письмо"
-                                                onClick={() => {
-                                                  if (selectedCandidate.entity_email) {
-                                                    window.open(`mailto:${selectedCandidate.entity_email}`);
-                                                  } else {
-                                                    toast.error('Email кандидата не указан');
-                                                  }
-                                                }}
-                                              />
-                                              <HuntflowActionChip
-                                                icon={Calendar}
-                                                label="Интервью"
-                                                onClick={() => {
-                                                  setInterviewForCandidate(selectedCandidate);
-                                                  const cur = selectedCandidate.next_interview_at;
-                                                  if (cur) {
-                                                    const d = new Date(cur);
-                                                    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-                                                      .toISOString()
-                                                      .slice(0, 16);
-                                                    setInterviewDateTime(local);
-                                                  } else {
-                                                    setInterviewDateTime('');
-                                                  }
-                                                }}
-                                              />
-                                              <HuntflowActionChip
-                                                icon={ThumbsUp}
-                                                label="Оффер"
-                                                onClick={() => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage)}
-                                              />
-                                              <HuntflowActionChip
-                                                icon={Paperclip}
-                                                label="Файл"
-                                                onClick={() => candidateFileInputRef.current?.click()}
-                                              />
-                                            </div>
-                                          </div>
-                                          <div className="hf-stage-picker-footer">
-                                            <button
-                                              type="button"
-                                              onClick={handleStagePickerSave}
-                                              className="inline-flex h-[33px] min-w-[74px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)]"
-                                            >
-                                              Сохранить
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setStagePickerComment('');
-                                                setStagePickerOpen(false);
-                                              }}
-                                              className="inline-flex h-[33px] min-w-[65px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)]"
-                                            >
-                                              Отмена
-                                            </button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="relative" ref={candidateMenuRef}>
-                                    <button
-                                      type="button"
-                                      onClick={() => setCandidateMenuOpen((v) => !v)}
-                                      title="Действия со статусом"
-                                      className="inline-flex h-[33px] w-[33px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] text-[var(--hf-main-700)] transition-colors hover:bg-[var(--hf-ui-hover)]"
-                                    >
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </button>
-                                    {candidateMenuOpen && (
-                                      <div className="absolute right-0 top-full z-[260] mt-1 w-[240px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-[var(--hf-white)] py-1 shadow-[0_2px_16px_var(--hf-alpha-300)]">
-                                        {prevStage && prevStage !== selectedCandidate.stage && (
-                                          <button
-                                            type="button"
-                                            onClick={handleRevertStage}
-                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:var(--hf-fs-xs)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-bg-panel)]"
-                                          >
-                                            <RotateCcw className="h-4 w-4 flex-shrink-0" />
-                                            <span className="truncate">Вернуть на «{getVacancyStageLabel(prevStage)}»</span>
-                                          </button>
-                                        )}
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setCandidateMenuOpen(false);
-                                            setRemoveConfirmOpen(true);
-                                          }}
-                                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-[length:var(--hf-fs-xs)] text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-bg-panel)]"
-                                        >
-                                          <Trash2 className="h-4 w-4 flex-shrink-0" />
-                                          <span>Убрать из вакансии</span>
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                  </div>
-                                  </div>
-                                </div>
-
-                              {/* Compatibility score */}
-                              {selectedCandidate.compatibility_score != null && (
-                                <div className="mx-[var(--hf-space-xxl)] mt-[var(--hf-space-l)] rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-08)] bg-[var(--hf-white-alpha-55)] p-[var(--hf-space-l)]">
-                                  <div className="text-xs text-[var(--hf-dark-500)] mb-1">Совместимость</div>
-                                  <div className="text-lg font-semibold text-[var(--hf-accent)]">{selectedCandidate.compatibility_score.overall_score}%</div>
-                                </div>
-                              )}
-
-                              {/* Comment input — Huntflow style */}
-                              <HuntflowComposer
-                                wrapperClassName="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[6px]"
-                                value={stageCommentText}
-                                onChange={setStageCommentText}
-                                open={stageCommentComposerOpen}
-                                onOpenChange={setStageCommentComposerOpen}
-                                placeholder="Написать комментарий"
-                                onSubmit={handleSaveStageComment}
-                                onCancel={() => {
-                                  setStageCommentText('');
-                                  setStageCommentComposerOpen(false);
-                                }}
-                                saving={commentSaving}
-                                disabled={commentSaving}
-                                showMention
-                                collapsedRows={2}
-                                textareaRef={commentRef}
-                                collapsedClassName="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none disabled:opacity-50"
-                                actions={[
-                                  {
-                                    icon: Mail,
-                                    label: 'Письмо',
-                                    onClick: () => {
-                                      if (selectedCandidate.entity_email) {
-                                        window.open(`mailto:${selectedCandidate.entity_email}`);
-                                      } else {
-                                        toast.error('Email кандидата не указан');
-                                      }
-                                    },
-                                  },
-                                  {
-                                    icon: Calendar,
-                                    label: 'Интервью',
-                                    onClick: () => {
-                                      setInterviewForCandidate(selectedCandidate);
-                                      const cur = selectedCandidate.next_interview_at;
-                                      if (cur) {
-                                        const d = new Date(cur);
-                                        const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-                                          .toISOString().slice(0, 16);
-                                        setInterviewDateTime(local);
-                                      } else {
-                                        setInterviewDateTime('');
-                                      }
-                                    },
-                                  },
-                                  {
-                                    icon: ThumbsUp,
-                                    label: 'Оффер',
-                                    onClick: () => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage),
-                                  },
-                                  {
-                                    icon: Paperclip,
-                                    label: 'Файл',
-                                    onClick: () => candidateFileInputRef.current?.click(),
-                                    loading: candidateFileUploading,
-                                    loadingLabel: 'Загрузка…',
-                                  },
-                                ]}
-                              />
-
-                              <input
-                                type="file"
-                                ref={candidateFileInputRef}
-                                onChange={handleCandidateFileUpload}
-                                className="hidden"
-                              />
-
-                              {/* Action chips — Huntflow outlined style */}
-                              {!stageCommentComposerOpen && !stageCommentText.trim() && (
-                                <div className="hf-vacancy-stage-action-row">
-                                  <HuntflowActionChip
-                                    icon={Mail}
-                                    label="Письмо"
-                                    onClick={() => {
-                                      if (selectedCandidate.entity_email) {
-                                        window.open(`mailto:${selectedCandidate.entity_email}`);
-                                      } else {
-                                        toast.error('Email кандидата не указан');
-                                      }
-                                    }}
-                                  />
-                                  <HuntflowActionChip
-                                    icon={Calendar}
-                                    label="Интервью"
-                                    onClick={() => {
-                                      setInterviewForCandidate(selectedCandidate);
-                                      const cur = selectedCandidate.next_interview_at;
-                                      if (cur) {
-                                        const d = new Date(cur);
-                                        const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-                                          .toISOString().slice(0, 16);
-                                        setInterviewDateTime(local);
-                                      } else {
-                                        setInterviewDateTime('');
-                                      }
-                                    }}
-                                  />
-                                  <HuntflowActionChip
-                                    icon={MessageSquare}
-                                    label="Комментарий"
-                                    onClick={() => {
-                                      setStageCommentComposerOpen(true);
-                                      requestAnimationFrame(() => commentRef.current?.focus());
-                                    }}
-                                  />
-                                  <HuntflowActionChip
-                                    icon={ThumbsUp}
-                                    label="Оффер"
-                                    onClick={() => handleStageChange(selectedCandidate.id, 'offer' as ApplicationStage)}
-                                  />
-                                  <HuntflowActionChip
-                                    icon={Paperclip}
-                                    label="Файл"
-                                    onClick={() => candidateFileInputRef.current?.click()}
-                                    disabled={candidateFileUploading}
-                                    loading={candidateFileUploading}
-                                    displayLabel={candidateFileUploading ? 'Загрузка…' : 'Файл'}
-                                  />
-                                  <HuntflowActionChip
-                                    icon={XCircle}
-                                    label="Отказ"
-                                    danger
-                                    onClick={() => handleStageChange(selectedCandidate.id, 'rejected' as ApplicationStage)}
-                                  />
-                                </div>
-                              )}
-
-                              {vacancyWorkflowComments.length > 0 && (
-                                <div className="hf-vacancy-stage-comments">
-                                  <div className="hf-vacancy-stage-comments-heading">
-                                    Комментарии
-                                  </div>
-                                  <div className="hf-vacancy-stage-comments-list">
-                                    {vacancyWorkflowComments.map(renderVacancyNoteCard)}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* History timeline — Huntflow style */}
-                              <div className="hf-vacancy-stage-history">
-                                {historyLoading ? (
-                                  <div className="flex items-center gap-2 text-[var(--hf-dark-500)] text-sm">
-                                    <Loader2 className="w-4 h-4 animate-spin" /> Загрузка...
-                                  </div>
-                                ) : candidateHistory.length === 0 ? (
-                                  <div className="text-sm text-[var(--hf-dark-600)]">Нет записей</div>
-                                ) : (
-                                  <div className="relative pl-6 border-l border-[color:var(--hf-white-alpha-08)]">
-                                    {candidateHistory.map((entry: any, i: number) => {
-                                      const toColorKey = colorToStageColor(
-                                        stagesConfig.colorKeys[entry.to_stage],
-                                        stagesConfig.keyToEnum[entry.to_stage] || entry.to_stage,
-                                      );
-                                      const toColors = STAGE_COLORS[toColorKey] || fallbackColor;
-                                      const fromColorKey = entry.from_stage
-                                        ? colorToStageColor(
-                                            stagesConfig.colorKeys[entry.from_stage],
-                                            stagesConfig.keyToEnum[entry.from_stage] || entry.from_stage,
-                                          )
-                                        : null;
-                                      const fromColors = fromColorKey ? (STAGE_COLORS[fromColorKey] || fallbackColor) : null;
-                                      const changedById = Number(entry.changed_by);
-                                      const changedByName =
-                                        entry.changed_by_name ||
-                                        (Number.isFinite(changedById) ? usersMap[changedById] : null) ||
-                                        (changedById === user?.id ? user?.name : null) ||
-                                        (!Number.isFinite(changedById) ? entry.changed_by : null);
-
-                                      return (
-                                        <div key={entry.id ?? i} className="relative pb-5 last:pb-0">
-                                          {entry.id ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => handleDeleteHistory(entry.id)}
-                                              title="Удалить запись"
-                                              className="absolute right-0 top-0 rounded p-1 text-[var(--hf-dark-500)] transition-colors hover:text-[var(--hf-status-red)]"
-                                            >
-                                              <Trash2 className="h-[14px] w-[14px]" />
-                                            </button>
-                                          ) : null}
-                                          {/* Timeline dot */}
-                                          <div className={clsx(
-                                            'absolute -left-[25px] w-3 h-3 rounded-full border-2 border-[color:var(--hf-dark-800)]',
-                                            toColors.dot,
-                                          )} />
-
-                                          {/* Date */}
-                                          <div className="text-xs text-[var(--hf-dark-600)] mb-1">
-                                            {entry.created_at && new Date(entry.created_at).toLocaleString('ru', {
-                                              day: 'numeric', month: 'short', year: 'numeric',
-                                              hour: '2-digit', minute: '2-digit',
-                                            })}
-                                          </div>
-
-                                          {/* Stage change badges */}
-                                          {entry.from_stage ? (
-                                            <div className="flex items-center gap-1.5 flex-wrap text-xs mb-1">
-                                              <span className={clsx('px-2 py-0.5 rounded-full', fromColors?.badge)}>
-                                                {getVacancyStageLabel(entry.from_stage)}
-                                              </span>
-                                              <span className="text-[var(--hf-dark-600)]">&rarr;</span>
-                                              <span className={clsx('px-2 py-0.5 rounded-full', toColors.badge)}>
-                                                {getVacancyStageLabel(entry.to_stage)}
-                                              </span>
-                                            </div>
-                                          ) : (
-                                            <div className="text-sm text-[var(--hf-dark-300)] mb-1">
-                                              <span className={clsx('inline-block px-2 py-0.5 rounded-full text-xs', toColors.badge)}>
-                                                {getVacancyStageLabel(entry.to_stage)}
-                                              </span>
-                                            </div>
-                                          )}
-
-                                          {/* Comment */}
-                                          {entry.comment && (
-                                            <div className="text-sm text-[var(--hf-dark-400)] mt-1 whitespace-pre-wrap pl-0.5">
-                                              {entry.comment}
-                                            </div>
-                                          )}
-
-                                          {/* Changed by */}
-                                          {changedByName && (
-                                            <div className="text-xs text-[var(--hf-dark-600)] mt-1">{changedByName}</div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
                               </div>
 
                               <div className="hf-vacancy-detail-tabs">
@@ -3221,6 +2805,13 @@ export default function RecruiterFunnelsPage() {
                                       loadingLabel: 'Загрузка…',
                                     },
                                   ]}
+                                />
+
+                                <input
+                                  type="file"
+                                  ref={candidateFileInputRef}
+                                  onChange={handleCandidateFileUpload}
+                                  className="hidden"
                                 />
 
                                 <div className="hf-vacancy-notes-heading">Заметки</div>
