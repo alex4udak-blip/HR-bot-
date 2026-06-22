@@ -206,7 +206,7 @@ export default function DuplicateWarning({
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] text-xs rounded-lg hover:bg-[var(--hf-status-cyan-badge)] transition-colors"
                       >
                         <GitMerge size={12} />
-                        Объединить
+                        Завершить объединение
                       </button>
                     )}
                   </div>
@@ -362,7 +362,7 @@ export default function DuplicateWarning({
                   ) : (
                     <>
                       <GitMerge size={16} />
-                      Объединить
+                      Завершить объединение
                     </>
                   )}
                 </button>

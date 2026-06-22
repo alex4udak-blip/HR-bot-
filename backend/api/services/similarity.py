@@ -925,6 +925,19 @@ class SimilarityService:
         source_skills = extract_skills(source_extra)
         merged_extra['skills'] = list(target_skills | source_skills)
 
+        # Заметки — объединяем массивы, не теряем заметки источника (дедуп по id).
+        def _notes(extra):
+            n = extra.get("notes")
+            return n if isinstance(n, list) else []
+        _t_notes = _notes(target_extra)
+        _seen_ids = {n.get("id") for n in _t_notes if isinstance(n, dict) and n.get("id")}
+        merged_notes = _t_notes + [
+            n for n in _notes(source_extra)
+            if not (isinstance(n, dict) and n.get("id") in _seen_ids) and n not in _t_notes
+        ]
+        if merged_notes:
+            merged_extra["notes"] = merged_notes
+
         target_entity.extra_data = merged_extra
 
         # Обновляем зарплатные ожидания (берем более широкий диапазон)
@@ -975,25 +988,51 @@ class SimilarityService:
             .values(entity_id=target_entity.id)
         )
 
-        # Заявки уникальны по (vacancy_id, entity_id): сперва удаляем заявки source
-        # на вакансии, где у target уже есть заявка (иначе UNIQUE-конфликт),
-        # затем переносим оставшиеся.
-        await db.execute(
-            VacancyApplication.__table__.delete().where(
-                VacancyApplication.entity_id == source_entity.id,
-                VacancyApplication.vacancy_id.in_(
-                    select(VacancyApplication.vacancy_id).where(
-                        VacancyApplication.entity_id == target_entity.id
-                    )
-                ),
-            )
-        )
+        # --- Заявки на вакансии: сливаем БЕЗ потери истории ---
+        # UNIQUE(vacancy_id, entity_id): две заявки на одну вакансию нельзя.
+        # Карта vacancy_id -> ORM-объект выжившего (target).
+        target_app_objs = (await db.execute(
+            select(VacancyApplication)
+            .where(VacancyApplication.entity_id == target_entity.id)
+        )).scalars().all()
+        target_app_by_vacancy = {a.vacancy_id: a for a in target_app_objs}
 
-        # Переносим остальную историю кандидата на target (единый таймлайн):
-        # заявки, переходы этапов, AI-анализы и беседы, файлы, трансферы,
-        # отправки анкет, бонусы рекрутёра.
+        source_apps = (await db.execute(
+            select(VacancyApplication)
+            .where(VacancyApplication.entity_id == source_entity.id)
+        )).scalars().all()
+
+        for s_app in source_apps:
+            t_app = target_app_by_vacancy.get(s_app.vacancy_id)
+            if t_app is None:
+                # Нет коллизии — переносим заявку на target отдельным блоком.
+                s_app.entity_id = target_entity.id
+                # Явно перепривязываем переходы этой заявки на target.
+                await db.execute(
+                    StageTransition.__table__.update()
+                    .where(StageTransition.application_id == s_app.id)
+                    .values(entity_id=target_entity.id)
+                )
+                continue
+            # Коллизия по вакансии: историю источника перепривязываем к заявке
+            # target ДО удаления заявки (иначе FK CASCADE снесёт StageTransition).
+            await db.execute(
+                StageTransition.__table__.update()
+                .where(StageTransition.application_id == s_app.id)
+                .values(application_id=t_app.id, entity_id=target_entity.id)
+            )
+            # Скалярные поля переносим только если у target пусто (не затираем).
+            for _field in ("notes", "rating", "interview_summary", "rejection_reason", "source"):
+                if getattr(t_app, _field, None) is None and getattr(s_app, _field, None) is not None:
+                    setattr(t_app, _field, getattr(s_app, _field))
+            await db.delete(s_app)
+
+        # Остальную историю переносим на target. VacancyApplication уже обработан
+        # выше — здесь его НЕ трогаем. StageTransition тоже обработан явно в цикле
+        # source_apps (каждый переход принадлежит конкретной заявке, application_id
+        # NOT NULL), поэтому здесь его НЕ включаем.
         for _hist_model in (
-            VacancyApplication, StageTransition, EntityAnalysis,
+            EntityAnalysis,
             EntityAIConversation, EntityFile, EntityTransfer,
             FormSubmission, RecruiterBonus,
         ):

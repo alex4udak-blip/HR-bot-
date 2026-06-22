@@ -50,6 +50,9 @@ import { getVacancies } from '@/services/api/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
+import VacancyActivityBlock from '@/components/entities/VacancyActivityBlock';
+import ResumeTabs from '@/components/entities/ResumeTabs';
+import { getEntityActivity, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
 import { HuntflowComposer } from '@/components/hr/HuntflowComposer';
 import {
@@ -425,6 +428,7 @@ export default function RecruiterFunnelsPage() {
   const [selectedTab, setSelectedTab] = useState<string>('all');
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
   const [candidateHistory, setCandidateHistory] = useState<any[]>([]);
+  const [entityActivity, setEntityActivity] = useState<ActivityBlockData[]>([]);
   const [dupCard, setDupCard] = useState<KanbanCard | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
@@ -864,6 +868,15 @@ export default function RecruiterFunnelsPage() {
       .catch(() => setCandidateHistory([]))
       .finally(() => setHistoryLoading(false));
   }, [selectedCandidateId]);
+
+  // Load cross-vacancy activity feed when entity changes
+  useEffect(() => {
+    const eid = selectedCandidate?.entity_id;
+    if (!eid) { setEntityActivity([]); return; }
+    getEntityActivity(eid)
+      .then((blocks) => setEntityActivity(Array.isArray(blocks) ? blocks : []))
+      .catch(() => setEntityActivity([]));
+  }, [selectedCandidate?.entity_id]);
 
   // Load entity files (resumes) when candidate selected
   useEffect(() => {
@@ -2731,6 +2744,22 @@ export default function RecruiterFunnelsPage() {
                                 )}
                               </div>
 
+                              {/* Cross-vacancy activity feed */}
+                              <div className="px-5 pt-4">
+                                <div className="text-sm font-medium text-[var(--hf-dark-400)] mb-2">Вакансии и история</div>
+                                {entityActivity.length === 0 ? (
+                                  <div className="text-sm text-[var(--hf-dark-600)] mb-3">Нет участий в вакансиях</div>
+                                ) : (
+                                  entityActivity.map((b) => (
+                                    <VacancyActivityBlock
+                                      key={b.application_id}
+                                      block={b}
+                                      stageLabel={getVacancyStageLabel}
+                                    />
+                                  ))
+                                )}
+                              </div>
+
                               {/* Current stage — Huntflow style block */}
                               <div className="hf-stage-card" style={stageCardStyle}>
                                 <div className="hf-stage-card-head">
@@ -3241,6 +3270,13 @@ export default function RecruiterFunnelsPage() {
                                 </div>
                               ) : (
                                 <div className="flex-1 flex flex-col">
+                                  {/* Per-resume tabs (one per saved resume / date) */}
+                                  <ResumeTabs
+                                    key={selectedCandidate?.entity_id}
+                                    entityFiles={entityFiles}
+                                    extraData={entityExtraData}
+                                    resumeText={resumeTextContent}
+                                  />
                                   {/* Action bar */}
                                   <div className="flex items-center justify-between px-5 py-2.5 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
                                     <div className="flex items-center gap-3">

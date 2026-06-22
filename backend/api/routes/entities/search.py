@@ -18,6 +18,7 @@ from .common import (
     get_current_user, get_user_org, get_user_org_role, check_entity_access,
     red_flags_service
 )
+from ...models.database import StageTransition
 
 router = APIRouter()
 
@@ -288,6 +289,33 @@ async def get_entity_risk_score(
 
 # === Vacancy Integration ===
 
+class ActivityEventResponse(BaseModel):
+    """Одно событие истории этапов в ленте активности."""
+    id: int
+    from_stage: Optional[str] = None
+    to_stage: str
+    comment: Optional[str] = None
+    changed_by_name: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VacancyActivityBlockResponse(BaseModel):
+    """Блок «вакансия + хронология этапов» в единой ленте кандидата."""
+    application_id: int
+    vacancy_id: int
+    vacancy_title: str
+    current_stage: str
+    applied_at: datetime
+    last_stage_change_at: datetime
+    events: List[ActivityEventResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
 class EntityVacancyApplicationResponse(BaseModel):
     """Response schema for vacancy application from entity perspective."""
     id: int
@@ -390,6 +418,85 @@ async def get_entity_vacancies(
             ))
 
     return response
+
+
+@router.get("/{entity_id}/activity", response_model=List[VacancyActivityBlockResponse])
+async def get_entity_activity(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Единая лента активности кандидата: по блоку на каждую заявку (вакансию)
+    с полной историей этапов. Survivor после слияния показывает ВСЕ участия."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
+    if not has_access:
+        raise HTTPException(404, "Entity not found")
+
+    apps = (await db.execute(
+        select(VacancyApplication)
+        .where(VacancyApplication.entity_id == entity_id)
+        .order_by(VacancyApplication.last_stage_change_at.desc())
+    )).scalars().all()
+    if not apps:
+        return []
+
+    app_ids = [a.id for a in apps]
+    vacancy_ids = [a.vacancy_id for a in apps]
+    vacancies_map = {
+        v.id: v for v in (await db.execute(
+            select(Vacancy).where(Vacancy.id.in_(vacancy_ids))
+        )).scalars().all()
+    }
+
+    transitions = (await db.execute(
+        select(StageTransition)
+        .where(StageTransition.application_id.in_(app_ids))
+        .order_by(StageTransition.created_at.desc())
+    )).scalars().all()
+
+    user_ids = list({t.changed_by for t in transitions if t.changed_by})
+    user_names = {}
+    if user_ids:
+        user_names = {
+            row[0]: row[1] for row in (await db.execute(
+                select(User.id, User.name).where(User.id.in_(user_ids))
+            )).all()
+        }
+
+    events_by_app: dict = {}
+    for t in transitions:
+        events_by_app.setdefault(t.application_id, []).append(
+            ActivityEventResponse(
+                id=t.id, from_stage=t.from_stage, to_stage=t.to_stage,
+                comment=t.comment, changed_by_name=user_names.get(t.changed_by),
+                created_at=t.created_at,
+            )
+        )
+
+    blocks = []
+    for a in apps:
+        vac = vacancies_map.get(a.vacancy_id)
+        blocks.append(VacancyActivityBlockResponse(
+            application_id=a.id,
+            vacancy_id=a.vacancy_id,
+            vacancy_title=(vac.title if vac else f"Вакансия #{a.vacancy_id}"),
+            current_stage=a.stage.value if a.stage else "applied",
+            applied_at=a.applied_at,
+            last_stage_change_at=a.last_stage_change_at,
+            events=events_by_app.get(a.id, []),
+        ))
+    return blocks
 
 
 @router.post("/{entity_id}/apply-to-vacancy")

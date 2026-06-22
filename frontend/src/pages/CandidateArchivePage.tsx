@@ -112,6 +112,7 @@ export default function CandidateArchivePage() {
       toast.success("Дубликаты объединены");
       await load(q);
       setDupGroups(await findArchiveDuplicates());
+      navigate(`/all-candidates?entity=${survivorId}`);
     } catch {
       toast.error("Не удалось объединить");
     } finally {
@@ -245,7 +246,7 @@ export default function CandidateArchivePage() {
                   ) : (
                     <GitMerge className="w-4 h-4" />
                   )}
-                  Объединить в «{survivorName}»
+                  Завершить объединение в «{survivorName}»
                 </button>
               </div>
             );

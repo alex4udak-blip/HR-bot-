@@ -441,6 +441,38 @@ export const dismissDuplicate = async (
   return data;
 };
 
+// ============================================================
+// ENTITY ACTIVITY FEED
+// ============================================================
+
+export interface ActivityEvent {
+  id: number;
+  from_stage: string | null;
+  to_stage: string;
+  comment: string | null;
+  changed_by_name: string | null;
+  created_at: string;
+}
+
+export interface VacancyActivityBlock {
+  application_id: number;
+  vacancy_id: number;
+  vacancy_title: string;
+  current_stage: string;
+  applied_at: string;
+  last_stage_change_at: string;
+  events: ActivityEvent[];
+}
+
+export const getEntityActivity = async (
+  entityId: number
+): Promise<VacancyActivityBlock[]> => {
+  const { data } = await deduplicatedGet<VacancyActivityBlock[]>(
+    `/entities/${entityId}/activity`
+  );
+  return data;
+};
+
 /**
  * Живой поиск дубля при ОТКРЫТИИ карточки. Ловит уже существующих дублей,
  * созданных до появления детекта (импорт/другой источник), без ручного
