@@ -38,7 +38,6 @@ import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
-  getCandidateStageHistory,
 } from "@/services/api/candidates";
 import type {
   KanbanBoardResponse,
@@ -62,6 +61,7 @@ import {
 } from "@/services/api/entities";
 import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
 import type { ApplicationStage } from "@/types";
+import { STATUS_LABELS } from "@/types";
 import { updateApplication, deleteApplicationHistory } from "@/services/api/vacancies";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import type { EntityFile } from "@/services/api/entities";
@@ -1323,10 +1323,6 @@ export default function AllCandidatesPage() {
                 <InfoTab
                   card={selectedCard}
                   status={selectedStatus}
-                  statusLabel={
-                    board?.columns.find((c) => c.status === selectedStatus)
-                      ?.label || selectedStatus
-                  }
                   columns={board?.columns || []}
                   detailSection={detailTab}
                   onDetailSectionChange={setDetailTab}
@@ -1639,6 +1635,62 @@ const CANDIDATE_VACANCY_STAGE_LABELS: Record<string, string> = {
   reserve: "Резерв",
 };
 
+// Комментарий (лог) одного контейнера. Совпадает по форме с NoteShape, но
+// объявлен здесь, до CandidateVacancyCard, чтобы карточка могла его принять.
+type ContainerNote = {
+  id?: string;
+  text?: string;
+  date?: string;
+  stage?: string;
+  stage_label?: string;
+  author_id?: number;
+  author_name?: string;
+  edited_at?: string;
+};
+
+// Резюме-демо одного контейнера (минимально нужные поля).
+type ContainerResumeDemo = {
+  title?: string;
+  subtitle?: string;
+  saved_at?: string;
+  vacancy_title?: string;
+};
+
+// «Контейнер» = исторический блок-статус с собственным логом. Стек кандидата =
+// [ собственный живой контейнер ] + card.extra_data.merged_from[]. Это НЕ
+// вакансии: каждый контейнер изолирован своим status (цвет/лейбл) и notes (лог).
+type StageContainer = {
+  origin: "live" | "merged";
+  // Для живого контейнера — applicationId первичной заявки (для смены этапа/
+  // удаления истории). Для merged — фиктивный ключ (read-only, действий нет).
+  applicationId: number;
+  status: string;
+  name: string | null;
+  notes: ContainerNote[];
+  resumeDemos: ContainerResumeDemo[];
+  vacancyTitle: string | null;
+  addedAt?: string;
+  // Только живой контейнер: реальные StageTransition (история переходов) для
+  // таймлайна. У merged-контейнеров таймлайн строится только из notes.
+  events?: ActivityEvent[];
+};
+
+// Лейбл статуса контейнера (EntityStatus → русский). Сначала org-override из
+// колонок доски (если есть), затем канон STATUS_LABELS, затем локальный
+// CANDIDATE_VACANCY_STAGE_LABELS, затем сам ключ.
+function resolveContainerStatusLabel(
+  status: string,
+  columns: KanbanColumn[],
+): string {
+  const col = columns.find((c) => c.status === status);
+  return (
+    col?.label ||
+    (STATUS_LABELS as Record<string, string>)[status] ||
+    CANDIDATE_VACANCY_STAGE_LABELS[status] ||
+    status
+  );
+}
+
 // ================================================================
 // CANDIDATE VACANCY CARD — одна интерактивная карточка этапа на ОДНУ вакансию.
 // Извлечена из singleton-карточки InfoTab; вся state — ПЕР-ИНСТАНС, поэтому
@@ -1651,8 +1703,10 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   applicationId,
   vacancyTitle,
   currentStage,
+  notes,
   events,
-  grayed,
+  addedAt,
+  readonly,
   stageOptions,
   getStageLabel,
   onChangeStage,
@@ -1662,10 +1716,17 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
 }: {
   card: KanbanCard;
   applicationId: number;
-  vacancyTitle: string;
+  // vacancy_id может отсутствовать у контейнера → vacancyTitle nullable.
+  vacancyTitle: string | null;
   currentStage: string;
-  events: ActivityEvent[];
-  grayed: boolean;
+  // Лог контейнера: его собственные комментарии (notes) → строки таймлайна.
+  notes: ContainerNote[];
+  // Только для живого контейнера: история переходов (StageTransition).
+  events?: ActivityEvent[];
+  // Дата добавления контейнера (live: card.created_at; merged: m.added_at).
+  addedAt?: string;
+  // READ-ONLY (merged-контейнеры): без композера/чипов/смены этапа/удаления.
+  readonly: boolean;
   stageOptions: Array<{ status: string; label: string }>;
   getStageLabel: (stage: string) => string;
   onChangeStage: (
@@ -1712,13 +1773,17 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   const statusLabel = getStageLabel(currentStage);
   const stageTitle = statusLabel;
 
-  // Цвет карточки: серая если grayed (отказ ИЛИ смёрдженный кандидат), иначе зелёная.
+  // Цвет карточки СТРОГО по СВОЕМУ статусу контейнера: серая если этап
+  // отклонён (rejected/fired/archived), иначе зелёная. Слияние НЕ
+  // перекрашивает живую карточку — каждый контейнер изолирован.
+  const grayed = isRejectedStage(currentStage);
   const stageCardStyle: CSSProperties = grayed
     ? GRAY_STAGE_CARD_STYLE
     : GREEN_STAGE_CARD_STYLE;
 
-  // Таймлайн строим из СОБСТВЕННЫХ events этой заявки, в той же форме
-  // {date,title,body,author}, что рендерит исходная карточка.
+  // Таймлайн контейнера = его СОБСТВЕННЫЕ notes (комментарии) как строки лога,
+  // плюс — только для живого контейнера — реальная история переходов (events).
+  // Merged-контейнеры показывают строго свои notes (read-only).
   const timelineItems = useMemo<
     Array<{
       date?: string;
@@ -1728,21 +1793,19 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       historyId?: number;
     }>
   >(() => {
-    if (!Array.isArray(events) || events.length === 0) {
-      return [
-        {
-          date: card.created_at,
-          title: "Кандидат добавлен",
-          author: card.recruiter_name || undefined,
-        },
-      ];
-    }
-    return [...events]
-      .sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      )
-      .map((ev) => {
+    const noteRows = (Array.isArray(notes) ? notes : [])
+      .filter((note) => note && (note.text || note.stage_label))
+      .map((note) => ({
+        date: note.date || undefined,
+        title: note.stage_label
+          ? `Этап: ${note.stage_label}`
+          : note.text || "Комментарий",
+        body: note.stage_label ? note.text || undefined : undefined,
+        author: note.author_name || undefined,
+      }));
+
+    const eventRows = (!readonly && Array.isArray(events) ? events : []).map(
+      (ev) => {
         const to = getStageLabel(ev.to_stage);
         const from = ev.from_stage ? getStageLabel(ev.from_stage) : null;
         return {
@@ -1750,10 +1813,27 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           title: from ? `${from} → ${to}` : `Этап: ${to}`,
           body: ev.comment || undefined,
           author: ev.changed_by_name || undefined,
-          historyId: ev.id,
+          historyId: ev.id as number | undefined,
         };
-      });
-  }, [events, getStageLabel, card.created_at, card.recruiter_name]);
+      },
+    );
+
+    const merged = [...eventRows, ...noteRows];
+    if (merged.length === 0) {
+      return [
+        {
+          date: addedAt || card.created_at,
+          title: "Кандидат добавлен",
+          author: card.recruiter_name || undefined,
+        },
+      ];
+    }
+    return merged.sort((a, b) => {
+      const ta = a.date ? new Date(a.date).getTime() : 0;
+      const tb = b.date ? new Date(b.date).getTime() : 0;
+      return tb - ta;
+    });
+  }, [notes, events, readonly, getStageLabel, addedAt, card.created_at, card.recruiter_name]);
 
   const filteredTimelineItems = useMemo(() => {
     if (!timelineActionFilter) return timelineItems;
@@ -1913,27 +1993,31 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
 
   return (
     <div className="hf-stage-card" style={stageCardStyle}>
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        className="hidden"
-        onChange={handleFileUpload}
-        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-      />
+      {/* Hidden file input (только живой контейнер — у merged нет действий) */}
+      {!readonly && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleFileUpload}
+          accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+        />
+      )}
 
       {/* Send Email Modal */}
-      <AnimatePresence>
-        {showEmailModal && (
-          <SendEmailModal
-            entityId={card.id}
-            entityName={card.name}
-            entityEmail={card.email}
-            anchorRect={emailAnchorRect}
-            onClose={() => setShowEmailModal(false)}
-          />
-        )}
-      </AnimatePresence>
+      {!readonly && (
+        <AnimatePresence>
+          {showEmailModal && (
+            <SendEmailModal
+              entityId={card.id}
+              entityName={card.name}
+              entityEmail={card.email}
+              anchorRect={emailAnchorRect}
+              onClose={() => setShowEmailModal(false)}
+            />
+          )}
+        </AnimatePresence>
+      )}
 
       {/* ---- Stage block (Huntflow: colored bg + vacancy name + change button) ---- */}
       <div className="hf-stage-card-head">
@@ -1944,6 +2028,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
               <div className="hf-stage-card-subtitle">{vacancyTitle}</div>
             )}
           </div>
+          {/* «Сменить этап подбора» + пикер — только живой контейнер. */}
+          {!readonly && (
           <div className="relative" ref={stageRef}>
             <button
               onClick={() => setShowStageDD(!showStageDD)}
@@ -2063,10 +2149,12 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
 
-      {/* ---- Comment textarea (Huntflow: "Написать комментарий") ---- */}
+      {/* ---- Comment textarea (Huntflow: "Написать комментарий") — только живой контейнер ---- */}
+      {!readonly && (
       <HuntflowComposer
         wrapperClassName="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[6px] relative"
         value={comment}
@@ -2093,8 +2181,10 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           },
         ]}
       />
+      )}
 
-      {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл) ---- */}
+      {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл) — только живой контейнер ---- */}
+      {!readonly && (
       <div className="px-[var(--hf-space-xxl)] pb-hf-l flex items-center gap-[var(--hf-space-s)] border-b border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] flex-wrap">
         {!isCommentComposerOpen && (
           <>
@@ -2114,9 +2204,12 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           </>
         )}
       </div>
+      )}
 
-      {/* ---- История: смена стадий этой вакансии ---- */}
+      {/* ---- История: лог контейнера (notes + переходы для живого) ---- */}
       <div className="px-[var(--hf-space-xxl)] pt-[7px]">
+        {/* Фильтр «Действия» — интерактивный, только живой контейнер. */}
+        {!readonly && (
         <div className="relative mb-hf-l inline-block" ref={actionMenuRef}>
           <button
             type="button"
@@ -2230,6 +2323,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
             </div>
           ) : null}
         </div>
+        )}
         <div className="relative ml-[17px] w-[calc(100%-11px)] border-l border-[var(--hf-main-300)] pl-[38.667px] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
           {visibleTimelineItems.length > 0 ? (
             visibleTimelineItems.map((event, i) => (
@@ -2259,7 +2353,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                   >
                     <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
                   </button>
-                  {event.historyId ? (
+                  {!readonly && event.historyId ? (
                     <button
                       type="button"
                       onClick={() =>
@@ -2326,7 +2420,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
 const InfoTab = memo(function InfoTab({
   card,
   status,
-  statusLabel,
   columns,
   detailSection,
   onDetailSectionChange,
@@ -2337,7 +2430,6 @@ const InfoTab = memo(function InfoTab({
 }: {
   card: KanbanCard;
   status: string;
-  statusLabel: string;
   columns: KanbanColumn[];
   detailSection: DetailSection;
   onDetailSectionChange: (section: DetailSection) => void;
@@ -2365,19 +2457,8 @@ const InfoTab = memo(function InfoTab({
       setArchiving(false);
     }
   };
-  const [showStageDD, setShowStageDD] = useState(false);
-  const [pendingStage, setPendingStage] = useState(status);
-  const [stageChangeComment, setStageChangeComment] = useState("");
-  const [showActionMenu, setShowActionMenu] = useState(false);
-  const [actionMenuPlacement, setActionMenuPlacement] = useState<
-    "above" | "below"
-  >("above");
-  const [actionSearch, setActionSearch] = useState("");
-  const [timelineActionFilter, setTimelineActionFilter] = useState<
-    string | null
-  >(null);
-  const [comment, setComment] = useState("");
-  const [commentComposerOpen, setCommentComposerOpen] = useState(false);
+  // Сохранён только сеттер: action-бар сбрасывает (закрывает) меню действий.
+  const [, setShowActionMenu] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [anketaOpen, setAnketaOpen] = useState(false);
   const anketaCount = useFormBadgeStore((s) => s.counts[card.id] ?? 0);
@@ -2392,127 +2473,15 @@ const InfoTab = memo(function InfoTab({
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
-  const [showAllTimeline, setShowAllTimeline] = useState(false);
-  const [timelineExpanding, setTimelineExpanding] = useState(false);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const actionMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
-  const actionSearchRef = useRef<HTMLInputElement>(null);
-  const timelineExpandTimerRef = useRef<number | null>(null);
-  const timelineEvents = Array.isArray(card.extra_data?.timeline_events)
-    ? (card.extra_data.timeline_events as Array<{
-        date?: string;
-        title?: string;
-        body?: string;
-        author?: string;
-      }>)
-    : [];
-  // Сквозная история смены этапов (реальные StageTransition по всем откликам
-  // кандидата) — чтобы глобальная карточка показывала тот же лог, что и воронка.
-  const [stageHistory, setStageHistory] = useState<any[]>([]);
-  useEffect(() => {
-    if (!card.id) {
-      setStageHistory([]);
-      return;
-    }
-    let cancelled = false;
-    getCandidateStageHistory(card.id)
-      .then((rows) => {
-        if (!cancelled) setStageHistory(Array.isArray(rows) ? rows : []);
-      })
-      .catch(() => {
-        if (!cancelled) setStageHistory([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [card.id]);
+  // Бейдж непрочитанных анкет (entity-уровень).
   useEffect(() => {
     if (!card.id) return;
     getEntityFormsUnreadCount(card.id)
       .then((r) => setAnketaCount(card.id, r.count))
       .catch(() => {});
   }, [card.id, setAnketaCount]);
-  const stageHistoryTimelineItems = useMemo<
-    Array<{ date?: string; title?: string; body?: string; author?: string }>
-  >(() => {
-    const LABELS: Record<string, string> = {
-      applied: "Новый",
-      screening: "Выполняет ТЗ",
-      phone_screen: "Интервью с HR",
-      interview: "Интервью с заказчиком",
-      assessment: "Принятие решения",
-      offer: "Выставлен оффер",
-      hired: "Оффер принят",
-      rejected: "Отказ",
-      withdrawn: "Отозван",
-    };
-    return (stageHistory as any[]).map((t) => {
-      const to = LABELS[t.to_stage] || t.to_stage;
-      const from = t.from_stage ? LABELS[t.from_stage] || t.from_stage : null;
-      return {
-        date: t.created_at || undefined,
-        title: from ? `${from} → ${to}` : `Этап: ${to}`,
-        body: [t.vacancy_title, t.comment].filter(Boolean).join(" · ") || undefined,
-        author: t.changed_by_name || undefined,
-      };
-    });
-  }, [stageHistory]);
-  const timelineItems =
-    stageHistoryTimelineItems.length > 0 || timelineEvents.length > 0
-      ? [...stageHistoryTimelineItems, ...timelineEvents].sort((a, b) => {
-          const ta = a.date ? new Date(a.date).getTime() : 0;
-          const tb = b.date ? new Date(b.date).getTime() : 0;
-          return tb - ta;
-        })
-      : [
-          {
-            date: card.created_at,
-            title: "Кандидат добавлен",
-            author: card.recruiter_name || currentUser?.name || undefined,
-          },
-        ];
-  const normalizedTimelineItems = timelineItems
-    .filter(
-      (event) =>
-        !String(event.title || "")
-          .trim()
-          .startsWith("Рекрутер:"),
-    )
-    .map((event) => ({
-      ...event,
-      author: event.author || card.recruiter_name || currentUser?.name || undefined,
-    }));
-  const filteredTimelineItems = useMemo(() => {
-    if (!timelineActionFilter) return normalizedTimelineItems;
-    const aliases = getTimelineFilterAliases(timelineActionFilter);
-    return normalizedTimelineItems.filter((event) => {
-      const haystack = `${event.title || ""} ${event.body || ""}`.toLowerCase();
-      return aliases.some((alias) => haystack.includes(alias));
-    });
-  }, [normalizedTimelineItems, timelineActionFilter]);
-  const visibleTimelineItems = showAllTimeline
-    ? filteredTimelineItems
-    : filteredTimelineItems.slice(0, 5);
-  const hasHiddenTimelineItems = filteredTimelineItems.length > 5;
-  const visibleActionFilters = TIMELINE_ACTION_FILTERS.filter((item) =>
-    item.toLowerCase().includes(actionSearch.trim().toLowerCase()),
-  );
-  const isCommentComposerOpen =
-    commentComposerOpen || comment.trim().length > 0;
-  const stageTitle =
-    status === "rejected" && card.rejection_reason
-      ? `Отказ. ${card.rejection_reason}`
-      : statusLabel;
-  // Карточка этапа — всего 2 цвета (по фидбэку): активный этап зелёный,
-  // отказ/уволен/архив — серый.
-  const stageCardStyle: CSSProperties | undefined = NEUTRAL_STAGE_STATUSES.has(status)
-    ? undefined
-    : ({
-        "--hf-stage-accent": "#22c55e",
-        "--hf-stage-card-bg": "rgba(34, 197, 94, 0.1)",
-      } as CSSProperties);
   const stagePickerOptions = useMemo(() => {
     return columns.map((column) => ({
       label: column.label,
@@ -2558,52 +2527,110 @@ const InfoTab = memo(function InfoTab({
     };
   }, [card.id]);
 
-  // Лейбл стадии для карточки вакансии: сперва колонки доски (org-override),
-  // затем канон-лейблы, затем сам ключ.
+  // Лейбл статуса контейнера: сперва колонки доски (org-override), затем канон
+  // STATUS_LABELS (EntityStatus), затем локальный CANDIDATE_VACANCY_STAGE_LABELS,
+  // затем сам ключ. Resolve'ит и column-override'ы, и сырые EntityStatus.
   const getStackStageLabel = useCallback(
-    (stage: string) => {
-      const col = columns.find((c) => c.status === stage);
-      return (
-        col?.label || CANDIDATE_VACANCY_STAGE_LABELS[stage] || stage
-      );
-    },
+    (stage: string) => resolveContainerStatusLabel(stage, columns),
     [columns],
   );
 
-  // Сортировка: ПЕРВИЧНАЯ вакансия (та, что в одиночной карточке — совпадает
-  // по названию card.vacancy_name) идёт первой; остальные — в порядке
-  // эндпоинта (last_stage_change_at desc).
-  const sortedActivityBlocks = useMemo(() => {
+  // Первичная заявка (та, что соответствует текущей вакансии кандидата) —
+  // источник events (история переходов) и applicationId для ЖИВОГО контейнера.
+  const primaryBlock = useMemo(() => {
     const primaryTitle = (card.vacancy_name || "").trim().toLowerCase();
-    const isPrimary = (b: VacancyActivityBlock) =>
-      !!primaryTitle &&
-      (b.vacancy_title || "").trim().toLowerCase() === primaryTitle;
-    return [...activityBlocks].sort((a, b) => {
-      const ap = isPrimary(a) ? 0 : 1;
-      const bp = isPrimary(b) ? 0 : 1;
-      return ap - bp;
-    });
+    if (primaryTitle) {
+      const match = activityBlocks.find(
+        (b) => (b.vacancy_title || "").trim().toLowerCase() === primaryTitle,
+      );
+      if (match) return match;
+    }
+    return activityBlocks[0];
   }, [activityBlocks, card.vacancy_name]);
 
-  // Серая карточка, если: смёрдженный кандидат (≥2 заявок) ИЛИ этап отклонён.
-  const multipleVacancies = sortedActivityBlocks.length >= 2;
+  // ── НОВАЯ МОДЕЛЬ СТЕКА: контейнеры = [ собственный живой ] + merged_from[].
+  // Это НЕ вакансии. Живой контейнер — из самого кандидата (card); merged —
+  // плоский массив смёрдженных дублей (транзитивные слияния уже подняты в корень
+  // бэкендом, поэтому просто .map()). Порядок: живой первым, затем merged.
+  const containers = useMemo<StageContainer[]>(() => {
+    const mergedRaw = Array.isArray(
+      (card.extra_data as Record<string, unknown> | undefined)?.merged_from,
+    )
+      ? ((card.extra_data as Record<string, unknown>)
+          .merged_from as Array<Record<string, unknown>>)
+      : [];
 
-  // ── Тонкие обёртки для CandidateVacancyCard: действуют по applicationId
-  // конкретной карточки и рефрешат ленту после мутации. ──
+    const mergedContainers: StageContainer[] = mergedRaw.map((m, i) => {
+      const ed = (m.extra_data as Record<string, unknown> | undefined) || {};
+      return {
+        origin: "merged" as const,
+        // Фиктивный (отрицательный) ключ — merged-контейнеры read-only,
+        // действий по applicationId нет, нужен только стабильный React key.
+        applicationId: -(i + 1),
+        status: typeof m.status === "string" ? m.status : "new",
+        name: typeof m.name === "string" ? m.name : null,
+        notes: Array.isArray(ed.notes) ? (ed.notes as ContainerNote[]) : [],
+        resumeDemos: Array.isArray(ed.resume_demos)
+          ? (ed.resume_demos as ContainerResumeDemo[])
+          : [],
+        vacancyTitle:
+          typeof m.vacancy_title === "string" ? m.vacancy_title : null,
+        addedAt: typeof m.added_at === "string" ? m.added_at : undefined,
+      };
+    });
+
+    // Заметки источника живут в его влитом контейнере. flat-merge на бэкенде ТАКЖЕ
+    // копирует их в entity.notes выжившего → без вычитания они задвоятся на ЖИВОЙ
+    // карточке (отказная заметка повисла бы на «Новом»). Вычитаем из живого все
+    // заметки, уже показанные во влитых контейнерах (ключ — id, иначе text+date).
+    const _noteSig = (n?: ContainerNote) =>
+      (n && n.id) || `${n?.text ?? ""}|${n?.date ?? ""}`;
+    const _mergedNoteSigs = new Set(
+      mergedContainers.flatMap((c) => c.notes.map(_noteSig)),
+    );
+    const _liveNotes = (
+      Array.isArray(card.extra_data?.notes)
+        ? (card.extra_data.notes as ContainerNote[])
+        : []
+    ).filter((n) => !_mergedNoteSigs.has(_noteSig(n)));
+
+    const liveContainer: StageContainer = {
+      origin: "live",
+      applicationId: primaryBlock?.application_id ?? 0,
+      status,
+      name: card.name,
+      notes: _liveNotes,
+      resumeDemos: Array.isArray(card.extra_data?.resume_demos)
+        ? (card.extra_data.resume_demos as ContainerResumeDemo[])
+        : [],
+      vacancyTitle: getVacancyStageLabel(card) ?? null,
+      addedAt: card.created_at,
+      events: primaryBlock?.events,
+    };
+
+    return [liveContainer, ...mergedContainers];
+  }, [primaryBlock, status, card]);
+
+  // ── Тонкие обёртки для CandidateVacancyCard. Смену этапа делает ТОЛЬКО живой
+  // (интерактивный) контейнер — его status это статус самого кандидата (entity),
+  // поэтому меняем entity-статус через onStatusChange. Если у кандидата есть
+  // реальная первичная заявка (appId>0) — синхронизируем и её стадию (воронка).
   const cardChangeStage = useCallback(
     async (appId: number, stage: string, comment?: string) => {
-      try {
-        await updateApplication(appId, {
-          stage: stage as ApplicationStage,
-          ...(comment ? { comment } : {}),
-        });
-        toast.success(`Статус изменён → ${getStackStageLabel(stage)}`);
-      } catch {
-        toast.error("Ошибка смены статуса");
+      onStatusChange(stage);
+      if (appId > 0) {
+        try {
+          await updateApplication(appId, {
+            stage: stage as ApplicationStage,
+            ...(comment ? { comment } : {}),
+          });
+        } catch {
+          /* стадия заявки не критична — entity-статус уже обновлён */
+        }
       }
       await loadActivity();
     },
-    [getStackStageLabel, loadActivity],
+    [onStatusChange, loadActivity],
   );
 
   const cardComment = useCallback(
@@ -2662,70 +2689,10 @@ const InfoTab = memo(function InfoTab({
   );
 
   useEffect(() => {
-    setTimelineExpanding(false);
-    if (timelineExpandTimerRef.current) {
-      window.clearTimeout(timelineExpandTimerRef.current);
-      timelineExpandTimerRef.current = null;
-    }
-    return () => {
-      if (timelineExpandTimerRef.current) {
-        window.clearTimeout(timelineExpandTimerRef.current);
-        timelineExpandTimerRef.current = null;
-      }
-    };
-  }, [card.id, timelineActionFilter]);
-
-  useEffect(() => {
     setLocalTags(card.tags || []);
     setShowTagInput(false);
     setTagInput("");
   }, [card.id, card.tags]);
-
-  const handleTimelineMoreToggle = useCallback(() => {
-    if (timelineExpanding) return;
-    if (!hasHiddenTimelineItems) return;
-    if (showAllTimeline) {
-      setShowAllTimeline(false);
-      return;
-    }
-
-    setTimelineExpanding(true);
-    if (timelineExpandTimerRef.current) {
-      window.clearTimeout(timelineExpandTimerRef.current);
-    }
-    timelineExpandTimerRef.current = window.setTimeout(() => {
-      setShowAllTimeline(true);
-      setTimelineExpanding(false);
-      timelineExpandTimerRef.current = null;
-    }, TIMELINE_EXPAND_DELAY_MS);
-  }, [hasHiddenTimelineItems, showAllTimeline, timelineExpanding]);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (stageRef.current && !stageRef.current.contains(e.target as Node))
-        setShowStageDD(false);
-      if (
-        actionMenuRef.current &&
-        !actionMenuRef.current.contains(e.target as Node)
-      )
-        setShowActionMenu(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  useEffect(() => {
-    if (showStageDD) {
-      setPendingStage(status);
-      setStageChangeComment("");
-    }
-  }, [showStageDD, status]);
-
-  useEffect(() => {
-    if (showActionMenu) {
-      requestAnimationFrame(() => actionSearchRef.current?.focus());
-    }
-  }, [showActionMenu]);
 
   // --- Action handlers ---
 
@@ -2748,37 +2715,6 @@ const InfoTab = memo(function InfoTab({
     setShowInterviewModal(false);
     setShowActionMenu(false);
     setShowEmailModal(true);
-  };
-
-  const handleInterview = () => {
-    setShowEmailModal(false);
-    setShowActionMenu(false);
-    const cur = (card.extra_data as Record<string, unknown> | undefined)
-      ?.next_interview_at;
-    if (typeof cur === "string" && cur) {
-      const d = new Date(cur);
-      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 16);
-      setInterviewDateTime(local);
-      setInterviewDate(local.slice(0, 10));
-      setInterviewStartTime(local.slice(11, 16));
-      const end = new Date(d.getTime() + 60 * 60 * 1000);
-      const localEnd = new Date(end.getTime() - end.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(11, 16);
-      setInterviewEndTime(localEnd);
-    } else {
-      const base = new Date();
-      const local = new Date(base.getTime() - base.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 10);
-      setInterviewDate(local);
-      setInterviewStartTime("18:00");
-      setInterviewEndTime("19:00");
-      setInterviewDateTime(`${local}T18:00`);
-    }
-    setShowInterviewModal(true);
   };
 
   const handleSaveInterview = async () => {
@@ -2816,74 +2752,6 @@ const InfoTab = memo(function InfoTab({
     } finally {
       setInterviewSaving(false);
     }
-  };
-
-  const handleComment = async () => {
-    if (!comment.trim()) {
-      toast.error("Введите комментарий");
-      return;
-    }
-    try {
-      // Используем dedicated endpoint /entities/{id}/notes — он требует только
-      // view-доступ (рекрутёр через вакансию имеет его), в отличие от PUT /entities,
-      // который требует full edit-прав.
-      const resp = await addEntityNote(card.id, {
-        text: comment.trim(),
-        stage: status,
-        stage_label: statusLabel,
-      });
-      // Update card in-place so block обновляется immediately
-      if (!card.extra_data) card.extra_data = {};
-      const existingNotes: Array<Record<string, unknown>> = Array.isArray(
-        card.extra_data.notes,
-      )
-        ? card.extra_data.notes
-        : [];
-      card.extra_data.notes = [...existingNotes, resp.note];
-      toast.success("Комментарий сохранён");
-      setComment("");
-    } catch (err) {
-      console.error("Failed to save comment:", err);
-      toast.error("Ошибка сохранения комментария");
-    }
-  };
-
-  // Комментарий из дропдауна смены этапа («Записать комментарий»). Раньше текст
-  // из этого поля никуда не отправлялся — кнопка «Сохранить» меняла только этап.
-  // Теперь шлём note так же, как обычный комментарий, независимо от смены этапа.
-  const saveStageChangeComment = async () => {
-    const text = stageChangeComment.trim();
-    if (!text) return;
-    try {
-      // Привязываем комментарий к ВЫБРАННОМУ этапу (pendingStage) — тому, на
-      // который переносим кандидата, а не к текущему. Дату ставит сервер,
-      // поэтому в ленте «Действия» виден этап + период, когда коммент оставлен.
-      const targetOption = stagePickerOptions.find(
-        (option) => option.status === pendingStage,
-      );
-      const resp = await addEntityNote(card.id, {
-        text,
-        stage: pendingStage,
-        stage_label: targetOption?.label || statusLabel,
-      });
-      if (!card.extra_data) card.extra_data = {};
-      const existingNotes: Array<Record<string, unknown>> = Array.isArray(
-        card.extra_data.notes,
-      )
-        ? card.extra_data.notes
-        : [];
-      card.extra_data.notes = [...existingNotes, resp.note];
-      toast.success("Комментарий сохранён");
-      setStageChangeComment("");
-    } catch (err) {
-      console.error("Failed to save stage-change comment:", err);
-      toast.error("Ошибка сохранения комментария");
-    }
-  };
-
-  const handleOffer = () => {
-    onStatusChange("offer");
-    toast.success(`${card.name} → Оффер`);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3383,18 +3251,43 @@ const InfoTab = memo(function InfoTab({
         </div>
       </div>
 
-      {/* ── Стек карточек этапов по вакансиям (по одной на каждую заявку
-          смёрдженного кандидата). Если заявок нет — рендерим одиночную
-          карточку ниже как раньше. ── */}
-      {sortedActivityBlocks.map((block) => (
+      {/* ── Анкеты кандидата (entity-уровень, над стеком контейнеров). ── */}
+      <div className="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] flex items-center gap-[var(--hf-space-s)] flex-wrap">
+        <ActionChip
+          icon={ClipboardList}
+          label="Анкета"
+          notificationCount={anketaCount}
+          onClick={() => setAnketaOpen(true)}
+        />
+      </div>
+      {anketaOpen && (
+        <Suspense fallback={null}>
+          <AnketaDrawer
+            open={anketaOpen}
+            onOpenChange={setAnketaOpen}
+            entityId={card.id}
+            entityName={card.name}
+          />
+        </Suspense>
+      )}
+
+      {/* ── СТЕК ИСТОРИЧЕСКИХ КОНТЕЙНЕРОВ (новая модель): не вакансии, а
+          [ собственный живой контейнер ] + extra_data.merged_from[]. Живой —
+          первым, интерактивный (композер/чипы/смена этапа/«...»); merged —
+          READ-ONLY (только статус + сабтайтл вакансии + лог из notes). Цвет
+          каждого контейнера — СТРОГО по его собственному status (без правила
+          «≥2 ⇒ серый»). vacancy_id nullable → сабтайтл только если есть. ── */}
+      {containers.map((c) => (
         <CandidateVacancyCard
-          key={block.application_id}
+          key={`${c.origin}-${c.applicationId}`}
           card={card}
-          applicationId={block.application_id}
-          vacancyTitle={block.vacancy_title}
-          currentStage={block.current_stage}
-          events={block.events}
-          grayed={multipleVacancies || isRejectedStage(block.current_stage)}
+          applicationId={c.applicationId}
+          vacancyTitle={c.vacancyTitle}
+          currentStage={c.status}
+          notes={c.notes}
+          events={c.events}
+          addedAt={c.addedAt}
+          readonly={c.origin === "merged"}
           stageOptions={stagePickerOptions}
           getStageLabel={getStackStageLabel}
           onChangeStage={cardChangeStage}
@@ -3404,234 +3297,8 @@ const InfoTab = memo(function InfoTab({
         />
       ))}
 
-      {sortedActivityBlocks.length === 0 && (
-      <div className="hf-stage-card" style={stageCardStyle}>
-        {/* ---- Stage block (Huntflow: colored bg + vacancy name + change button) ---- */}
-        <div className="hf-stage-card-head">
-          <div className="hf-stage-card-head-row">
-            <div>
-              <div className="hf-stage-card-title">
-                {stageTitle}
-              </div>
-              {getVacancyStageLabel(card) && (
-                <div className="hf-stage-card-subtitle">
-                  {getVacancyStageLabel(card)}
-                </div>
-              )}
-            </div>
-            <div className="relative" ref={stageRef}>
-              <button
-                onClick={() => setShowStageDD(!showStageDD)}
-                className="hf-stage-change-btn"
-              >
-                Сменить этап подбора
-              </button>
-              {showStageDD && (
-                <div className="hf-stage-picker">
-                  <div className="hf-stage-picker-list huntflow-scrollbar">
-                    {stagePickerOptions.map((option) => {
-                      const isSelected =
-                        pendingStage === option.status ||
-                        normalizeStageLabel(statusLabel) ===
-                          normalizeStageLabel(option.label);
-                      return (
-                        <button
-                          type="button"
-                          key={`${option.status}-${option.label}`}
-                          onClick={() => setPendingStage(option.status)}
-                          className={clsx(
-                            "hf-stage-picker-option",
-                            isSelected
-                              ? "hf-stage-picker-option-active"
-                              : "hf-stage-picker-option-idle",
-                          )}
-                        >
-                          <span className="truncate">{option.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="hf-stage-picker-editor-wrap">
-                    <div className="hf-stage-picker-editor">
-                      <div className="hf-stage-picker-toolbar">
-                        <button
-                          type="button"
-                          className="hf-editor-icon-btn"
-                        >
-                          <HuntflowEditorIcon name="bold" />
-                        </button>
-                        <button
-                          type="button"
-                          className="hf-editor-icon-btn"
-                        >
-                          <HuntflowEditorIcon name="italic" />
-                        </button>
-                        <button
-                          type="button"
-                          className="hf-editor-icon-btn"
-                        >
-                          <HuntflowEditorIcon name="bullet-list" />
-                        </button>
-                        <button
-                          type="button"
-                          className="hf-editor-icon-btn"
-                        >
-                          <HuntflowEditorIcon name="numbered-list" />
-                        </button>
-                        <button
-                          type="button"
-                          className="hf-editor-icon-btn"
-                        >
-                          <HuntflowEditorIcon name="link" />
-                        </button>
-                        <button
-                          type="button"
-                          className="hf-editor-icon-btn"
-                        >
-                          <HuntflowEditorIcon name="at" />
-                        </button>
-                      </div>
-                      <textarea
-                        value={stageChangeComment}
-                        onChange={(event) =>
-                          setStageChangeComment(event.target.value)
-                        }
-                        placeholder="Записать комментарий"
-                        className="hf-stage-picker-textarea"
-                      />
-                      <div className="hf-stage-picker-actions">
-                        <ActionChip
-                          icon={Mail}
-                          label="Письмо"
-                          onClick={handleEmail}
-                        />
-                        <ActionChip
-                          icon={Calendar}
-                          label="Интервью"
-                          onClick={handleInterview}
-                        />
-                        <ActionChip
-                          icon={ThumbsUp}
-                          label="Оффер"
-                          onClick={handleOffer}
-                        />
-                        <ActionChip
-                          icon={Paperclip}
-                          label="Файл"
-                          onClick={() => fileInputRef.current?.click()}
-                          loading={uploading}
-                        />
-                      </div>
-                    </div>
-                    <div className="hf-stage-picker-footer">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const selectedOption = stagePickerOptions.find(
-                            (option) => option.status === pendingStage,
-                          );
-                          // Сначала сохраняем комментарий (если написан) —
-                          // даже когда этап не меняется.
-                          if (stageChangeComment.trim()) {
-                            await saveStageChangeComment();
-                          }
-                          if (
-                            pendingStage !== status &&
-                            selectedOption?.isRealStage
-                          )
-                            onStatusChange(pendingStage);
-                          setShowStageDD(false);
-                        }}
-                        className="inline-flex h-[33px] min-w-[74px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)]"
-                      >
-                        Сохранить
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowStageDD(false)}
-                        className="inline-flex h-[33px] min-w-[65px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-white-alpha-05)] hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
-                      >
-                        Отмена
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ---- Comment textarea (Huntflow: "Написать комментарий") ---- */}
-        <HuntflowComposer
-          wrapperClassName="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] pb-[6px] relative"
-          value={comment}
-          onChange={setComment}
-          open={commentComposerOpen}
-          onOpenChange={setCommentComposerOpen}
-          placeholder="Написать комментарий"
-          onSubmit={handleComment}
-          onCancel={() => {
-            setComment("");
-            setCommentComposerOpen(false);
-          }}
-          showMention
-          collapsedClassName="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] pr-20 text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:placeholder:text-[var(--hf-dark-500)] hf-dark-disabled:focus:border-[color:var(--hf-status-blue-badge)]"
-          actions={[
-            { icon: Mail, label: "Письмо", onClick: handleEmail },
-            { icon: Calendar, label: "Интервью", onClick: handleInterview },
-            { icon: ThumbsUp, label: "Оффер", onClick: handleOffer },
-            {
-              icon: Paperclip,
-              label: "Файл",
-              onClick: () => fileInputRef.current?.click(),
-              loading: uploading,
-            },
-          ]}
-        />
-
-        {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл | Отказ) ---- */}
-        <div className="px-[var(--hf-space-xxl)] pb-hf-l flex items-center gap-[var(--hf-space-s)] border-b border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] flex-wrap">
-          {!isCommentComposerOpen && (
-            <>
-              <ActionChip
-                icon={Mail}
-                label="Письмо"
-                onClick={handleEmail}
-              />
-              <ActionChip
-                icon={Calendar}
-                label="Интервью"
-                onClick={handleInterview}
-              />
-              <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
-              <ActionChip
-                icon={ClipboardList}
-                label="Анкета"
-                notificationCount={anketaCount}
-                onClick={() => setAnketaOpen(true)}
-              />
-              <ActionChip
-                icon={Paperclip}
-                label="Файл"
-                onClick={() => fileInputRef.current?.click()}
-                loading={uploading}
-              />
-            </>
-          )}
-        </div>
-        {anketaOpen && (
-          <Suspense fallback={null}>
-            <AnketaDrawer
-              open={anketaOpen}
-              onOpenChange={setAnketaOpen}
-              entityId={card.id}
-              entityName={card.name}
-            />
-          </Suspense>
-        )}
-
-        {/* ---- Комментарии: отдельный блок, фон по стадии в момент комментария ---- */}
-        {Array.isArray(card.extra_data?.notes) &&
+      {/* ---- Комментарии: редактируемый блок (entity-уровень), фон по стадии ---- */}
+      {Array.isArray(card.extra_data?.notes) &&
           (card.extra_data.notes as NoteShape[]).some((note) => Boolean(note.stage)) && (
             <div className="hf-stage-comments-section">
               <div className="hf-stage-comments-heading">
@@ -3658,201 +3325,6 @@ const InfoTab = memo(function InfoTab({
               </div>
             </div>
           )}
-
-        {/* ---- История: только смена стадий, без комментариев ---- */}
-        <div className="px-[var(--hf-space-xxl)] pt-[7px]">
-          <div className="relative mb-hf-l inline-block" ref={actionMenuRef}>
-            <button
-              type="button"
-              onClick={() => {
-                setActionMenuPlacement("above");
-                setShowActionMenu((value) => !value);
-              }}
-              className="inline-flex h-[32px] items-center rounded-hf-s border border-transparent bg-[var(--hf-black-alpha-10)] pl-hf-m pr-[6px] text-hf-xxs font-medium leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-black-alpha-10)] focus:outline-none focus-visible:outline-none active:bg-[var(--hf-black-alpha-14)] hf-dark-disabled:bg-[var(--hf-white-alpha-05)] hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]"
-              aria-expanded={showActionMenu}
-            >
-              Действия: {timelineActionFilter || "Все"}{" "}
-              <ChevronDown
-                className={clsx(
-                  "ml-[4px] h-[20px] w-[20px] transition-transform",
-                  showActionMenu && "rotate-180",
-                )}
-              />
-            </button>
-            {showActionMenu ? (
-              <div
-                className={clsx(
-                  "absolute left-0 z-[220] w-[400px] overflow-hidden rounded-[var(--hf-radius-s)] bg-[var(--hf-white)] leading-[var(--hf-lh-field)] shadow-[0_0_40px_var(--hf-alpha-300)] hf-dark-disabled:bg-[var(--hf-bg-dark)]",
-                  actionMenuPlacement === "below"
-                    ? "top-full mt-[10px]"
-                    : "bottom-full mb-[10px]",
-                )}
-              >
-                <div className="p-[16px] pb-[8px]">
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-[10px] top-1/2 h-[16px] w-[16px] -translate-y-1/2 text-[var(--hf-main-500)]" />
-                    <input
-                      ref={actionSearchRef}
-                      value={actionSearch}
-                      onChange={(event) => setActionSearch(event.target.value)}
-                      placeholder="Поиск..."
-                      className="h-[40px] w-full rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-[var(--hf-white)] pl-[32px] pr-[16px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)]"
-                    />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTimelineActionFilter(null);
-                    setActionSearch("");
-                    setShowActionMenu(false);
-                  }}
-                  className="block h-[34px] w-full px-[var(--hf-space-xxl)] text-left text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-bg-panel)] hover:text-[var(--hf-main-700)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-05)]"
-                >
-                  Сбросить выбор
-                </button>
-                <div className="h-[322px] overflow-y-auto border-t border-[var(--hf-main-200)] py-[6px] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
-                  {visibleActionFilters.length > 0 ? (
-                    visibleActionFilters.map((item, index) => {
-                      const isSelected = item === timelineActionFilter;
-                      const isDefaultHighlighted =
-                        !timelineActionFilter &&
-                        actionSearch.trim().length === 0 &&
-                        index === 0;
-                      const iconClass = "h-[18px] w-[18px] shrink-0";
-                      return (
-                        <button
-                          type="button"
-                          key={item}
-                          onClick={() => {
-                            setTimelineActionFilter(item);
-                            setActionSearch("");
-                            setShowActionMenu(false);
-                          }}
-                          className="group flex h-[42px] w-full items-center px-[var(--hf-space-s)] text-left text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]"
-                        >
-                          <span
-                            className={clsx(
-                              "flex h-[41.333px] w-full items-center transition-colors group-hover:bg-[var(--hf-black-alpha-07)] hf-dark-disabled:group-hover:bg-[var(--hf-white-alpha-10)]",
-                              (isSelected || isDefaultHighlighted) &&
-                                "bg-[var(--hf-black-alpha-07)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)]",
-                            )}
-                          >
-                            <span className="flex h-full w-[32px] shrink-0 items-center justify-center">
-                              {isSelected ? (
-                                <Check className="h-[16px] w-[16px]" />
-                              ) : null}
-                            </span>
-                            <span className="flex h-full min-w-0 flex-1 items-center gap-[4px] py-[var(--hf-space-s)] pr-[8px]">
-                              {item === "Письмо кандидату" ? (
-                                <Mail className={iconClass} />
-                              ) : null}
-                              {item === "Интервью" ? (
-                                <Calendar className={iconClass} />
-                              ) : null}
-                              {item === "Телефонный звонок" ? (
-                                <Phone className={iconClass} />
-                              ) : null}
-                              {item === "Оффер" ? (
-                                <ThumbsUp className={iconClass} />
-                              ) : null}
-                              {item === "Файл" ? (
-                                <Paperclip className={iconClass} />
-                              ) : null}
-                              <span>{item}</span>
-                            </span>
-                          </span>
-                        </button>
-                      );
-                    })
-                  ) : (
-                    <div className="px-[var(--hf-space-xxl)] py-[10px] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-600)]">
-                      Ничего не найдено
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </div>
-          <div className="relative ml-[17px] w-[calc(100%-11px)] border-l border-[var(--hf-main-300)] pl-[38.667px] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
-            {visibleTimelineItems.length > 0 ? (
-              visibleTimelineItems.map((event, i) => (
-                <div
-                  key={`${event.date || card.created_at}-${i}`}
-                  className="relative first:mt-0 mt-[20px]"
-                >
-                  {i === 0 ? <TimelineUserGlyph /> : <TimelineDot />}
-                  <div className="flex items-center gap-0 text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-                    {event.author && (
-                      <span className="mr-[8px] min-w-[10px] font-medium text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-                        {event.author}
-                      </span>
-                    )}
-                    <span>
-                      {formatTimelineDate(event.date || card.created_at)}
-                    </span>
-                    <button
-                      type="button"
-                      className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
-                    >
-                      <TimelineMetaIcon />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
-                    >
-                      <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
-                    </button>
-                  </div>
-                  <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)] whitespace-pre-wrap">
-                    {event.title || "Событие"}
-                    {event.body && (
-                      <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
-                        {event.body}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="relative text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-                <TimelineDot />
-                Нет действий по выбранным фильтрам
-              </div>
-            )}
-          </div>
-        </div>
-        {hasHiddenTimelineItems ? (
-          <button
-            type="button"
-            onClick={handleTimelineMoreToggle}
-            disabled={timelineExpanding}
-            aria-busy={timelineExpanding}
-            className="mt-[25px] flex h-[49.333px] w-full items-center justify-center border-t border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
-          >
-            {timelineExpanding ? (
-              <HfLoadingSpinner
-                className="hf-timeline-more-spinner"
-                size="var(--hf-loading-spinner-size-sm)"
-                stroke="var(--hf-loading-spinner-border)"
-              />
-            ) : (
-              <>
-                {showAllTimeline ? "Свернуть" : "Показать еще"}{" "}
-                <ChevronDown
-                  className={clsx(
-                    "ml-hf-xs h-3.5 w-3.5 transition-transform",
-                    showAllTimeline && "rotate-180",
-                  )}
-                />
-              </>
-            )}
-          </button>
-        ) : (
-          <div className="mt-[25px] h-[49.333px] border-t border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]" />
-        )}
-      </div>
-      )}
 
       <div className="mt-[30px]">
         <div className="flex h-[49.333px] items-start gap-[var(--hf-space-xxl)] border-b border-[var(--hf-main-300)] pb-[20px] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">

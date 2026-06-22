@@ -961,7 +961,7 @@ class SimilarityService:
         # Чаты
         from ..models.database import (
             Chat, CallRecording, AnalysisHistory,
-            VacancyApplication, StageTransition, EntityAnalysis,
+            VacancyApplication, Vacancy, StageTransition, EntityAnalysis,
             EntityAIConversation, EntityFile, EntityTransfer,
             FormSubmission, RecruiterBonus,
             EntityCriteria, PrometheusReviewCache,
@@ -1002,6 +1002,18 @@ class SimilarityService:
             .where(VacancyApplication.entity_id == source_entity.id)
         )).scalars().all()
 
+        # Honest vacancy-маппинг контейнера источника: берём самую свежую заявку
+        # источника (если есть). Нет заявок → vacancy остаётся null.
+        _src_vacancy_id = None
+        _src_vacancy_title = None
+        if source_apps:
+            _primary_app = sorted(source_apps, key=lambda a: a.id, reverse=True)[0]
+            _src_vacancy_id = _primary_app.vacancy_id
+            _vac_row = (await db.execute(
+                select(Vacancy.title).where(Vacancy.id == _src_vacancy_id)
+            )).first()
+            _src_vacancy_title = _vac_row[0] if _vac_row else None
+
         for s_app in source_apps:
             t_app = target_app_by_vacancy.get(s_app.vacancy_id)
             if t_app is None:
@@ -1026,6 +1038,15 @@ class SimilarityService:
                 if getattr(t_app, _field, None) is None and getattr(s_app, _field, None) is not None:
                     setattr(t_app, _field, getattr(s_app, _field))
             await db.delete(s_app)
+
+        # Файлы источника фиксируем ДО перепривязки — чтобы исторический контейнер
+        # (merged_from) знал СВОИ файлы/резюме: после merge все EntityFile висят на
+        # target, и без этого списка не отличить, чьё это резюме/файл.
+        _src_file_ids = [
+            r[0] for r in (await db.execute(
+                select(EntityFile.id).where(EntityFile.entity_id == source_entity.id)
+            )).all()
+        ]
 
         # Остальную историю переносим на target. VacancyApplication уже обработан
         # выше — здесь его НЕ трогаем. StageTransition тоже обработан явно в цикле
@@ -1085,14 +1106,28 @@ class SimilarityService:
         # Сохраняем резюме/анкету источника отдельным блоком (merged_from), чтобы
         # показать его «вторым резюме» рядом с основным — особенно импортированную
         # анкету (cf:*), которую плоское объединение extra_data затирает.
+        # Исторический контейнер источника (плашка): статус-снапшот (read-only),
+        # дата добавления, лог+резюме (extra_data БЕЗ своего merged_from), файлы,
+        # honest vacancy. FLATTEN: если источник сам был результатом слияния — его
+        # контейнеры поднимаем в КОРЕНЬ массива (без матрёшки), чтобы фронт ходил
+        # .map() по одномерному списку.
         from datetime import datetime as _dt
-        _te["merged_from"] = list(_te.get("merged_from") or []) + [{
+        _src_mf = _se.get("merged_from") if isinstance(_se.get("merged_from"), list) else []
+        _se_clean = {k: v for k, v in _se.items() if k != "merged_from"}
+        _b_container = {
             "entity_id": source_entity.id,
             "name": source_entity.name,
+            "status": source_entity.status.value if source_entity.status else None,
+            "added_at": source_entity.created_at.isoformat() if source_entity.created_at else None,
+            "vacancy_id": _src_vacancy_id,
+            "vacancy_title": _src_vacancy_title,
             "merged_at": _dt.utcnow().isoformat(),
             "merged_by_name": merged_by_name,
-            "extra_data": _se,
-        }]
+            "extra_data": _se_clean,
+            "file_ids": _src_file_ids,
+        }
+        _target_mf = target_extra.get("merged_from") if isinstance(target_extra.get("merged_from"), list) else []
+        _te["merged_from"] = list(_target_mf) + [_b_container] + list(_src_mf)
 
         _te.pop("hidden_duplicate_id", None)
         target_entity.extra_data = _te
