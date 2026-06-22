@@ -45,6 +45,7 @@ class MagicButtonData(BaseModel):
     languages: Optional[list] = None
     company: Optional[str] = None
     education: Optional[list] = None
+    summary: Optional[str] = None  # «Обо мне» — самоописание кандидата
 
     # Recruiter's choice
     vacancy_id: Optional[int] = None  # which funnel to add to
@@ -347,6 +348,8 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         extra["languages"] = data.languages
     if data.education:
         extra["education"] = data.education
+    if data.summary:
+        extra["summary"] = data.summary
 
     # Parse salary into min/max if possible
     salary_min = None
@@ -503,6 +506,8 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         "experience_descriptions": data.experience_descriptions,
         "skills": data.skills,
         "languages": data.languages,
+        "education": data.education,
+        "summary": data.summary,
         "photo_url": data.photo_url,
     }
     background_tasks.add_task(

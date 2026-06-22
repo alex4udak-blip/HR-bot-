@@ -91,7 +91,8 @@
       source: 'career.habr.com', source_url: window.location.href,
       full_name: '', email: '', phone: '', telegram: '', position: '',
       city: '', company: '', salary: '', age: '', gender: '',
-      experience_summary: '', total_experience: '', skills: [], languages: [], education: [],
+      summary: '',
+      experience_summary: '', experience_descriptions: [], total_experience: '', skills: [], languages: [], education: [],
     };
 
     // 1) JSON-остров (если есть) — чистые структурированные данные.
@@ -107,29 +108,86 @@
     if (!data.salary) data.salary = txt('.basic-section__salary');
     if (!data.age) data.age = txt('.basic-section__age');
 
-    if (!data.experience_summary) {
-      const exp = [];
+    // --- Секции резюме Habr Career (актуальная вёрстка .content-section) ---
+    const clean = (el) => el ? el.textContent.replace(/ /g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim() : '';
+    const sectionEl = (re) => {
+      for (const s of document.querySelectorAll('.content-section')) {
+        const t = s.querySelector('.content-section__title');
+        if (t && re.test(t.textContent || '')) return s;
+      }
+      return null;
+    };
+
+    // «Обо мне» → summary (самоописание кандидата).
+    if (!data.summary) {
+      const ab = sectionEl(/Обо мне|О себе/i);
+      if (ab) data.summary = clean(ab.querySelector('.style-ugc')) || '';
+    }
+
+    // Опыт работы: заголовки (должность | компания | период) + ПОЛНЫЕ описания
+    // (.job-position__message). Старые .experience-section__item больше не работают —
+    // Habr перешёл на .job-experience-item / .job-position.
+    const expHeaders = [];
+    document.querySelectorAll('.job-experience-item').forEach((job, i) => {
+      if (i >= 8) return;
+      const company = (clean(job.querySelector('.job-experience-item__header')) || '').split('\n')[0];
+      if (i === 0 && company && !data.company) data.company = company;
+      job.querySelectorAll('.job-position').forEach((p) => {
+        const title = clean(p.querySelector('.job-position__title'));
+        const dur = clean(p.querySelector('.job-position__duration'));
+        const msg = clean(p.querySelector('.job-position__message'));
+        const head = [title, company, dur].filter(Boolean).join(' | ');
+        if (head) expHeaders.push(head);
+        if (msg) data.experience_descriptions.push((head ? head + '\n' : '') + msg);
+      });
+    });
+    // старая вёрстка как fallback
+    if (!expHeaders.length) {
       document.querySelectorAll('.experience-section__item, .resume-experience__item').forEach((b, i) => {
         if (i >= 6) return;
         const pos = b.querySelector('.experience-section__title, .resume-experience__title, h3');
-        const comp = b.querySelector('.experience-section__company, .company-name, a[href*="/companies/"]');
+        const comp = b.querySelector('.experience-section__company, a[href*="/companies/"]');
         const per = b.querySelector('.experience-section__period, .resume-experience__period');
-        const parts = [pos, comp, per].map(x => (x ? x.textContent.replace(/\s+/g, ' ').trim() : '')).filter(Boolean);
-        if (parts.length) {
-          exp.push(parts.join(' | '));
-          if (i === 0 && comp && !data.company) data.company = comp.textContent.trim();
-        }
+        const parts = [pos, comp, per].map((x) => clean(x)).filter(Boolean);
+        if (parts.length) { expHeaders.push(parts.join(' | ')); if (i === 0 && comp && !data.company) data.company = clean(comp); }
       });
-      if (exp.length) data.experience_summary = exp.join('\n');
+    }
+    if (expHeaders.length && expHeaders.join('\n').length > data.experience_summary.length) {
+      data.experience_summary = expHeaders.join('\n');
     }
 
+    // Образование (Высшее + Дополнительное).
+    if (!data.education.length) {
+      const edus = [];
+      ['Высшее образование', 'Дополнительное образование', 'Образование'].forEach((t) => {
+        const s = sectionEl(new RegExp(t, 'i'));
+        const b = s && s.querySelector('.resume-educations');
+        if (b) { const x = clean(b); if (x) edus.push(x); }
+      });
+      if (edus.length) data.education = [...new Set(edus)];
+    }
+
+    // Языки.
+    if (!data.languages.length) {
+      const s = sectionEl(/язык/i);
+      if (s) {
+        const body = [...s.children].find((c) => !c.classList.contains('content-section__header'));
+        const t = clean(body);
+        if (t) data.languages = [t];
+      }
+    }
+
+    // Навыки: актуальная секция .skills-list-show + старые селекторы.
     if (!data.skills.length) {
       const sk = new Set();
-      document.querySelectorAll('a[href*="/resumes?skills"], .user-skills__item').forEach(el => {
-        const t = el.textContent.replace(/\s+/g, ' ').trim();
-        if (t && t.length >= 2 && t.length <= 60) sk.add(t);
+      const skSec = sectionEl(/Навыки/i);
+      if (skSec) skSec.querySelectorAll('.skills-list-show a, .skills-list-show span, a[href*="/resumes?skills"]').forEach((el) => {
+        const t = clean(el); if (t && t.length >= 2 && t.length <= 60 && !/^\d+$/.test(t)) sk.add(t);
       });
-      data.skills = [...sk].slice(0, 30);
+      document.querySelectorAll('a[href*="/resumes?skills"], .user-skills__item').forEach((el) => {
+        const t = clean(el); if (t && t.length >= 2 && t.length <= 60) sk.add(t);
+      });
+      data.skills = [...sk].slice(0, 40);
     }
 
     // Контакты — только из ссылок mailto/tel/t.me (никаких текстовых эвристик).

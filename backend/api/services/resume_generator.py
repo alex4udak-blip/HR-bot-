@@ -89,12 +89,14 @@ async def generate_ai_summary(candidate_data: dict) -> str:
         parts.append(f"Зарплатные ожидания: {candidate_data['salary']}")
     if candidate_data.get("total_experience"):
         parts.append(f"Общий опыт: {candidate_data['total_experience']}")
+    if candidate_data.get("summary"):
+        parts.append(f"О себе:\n{candidate_data['summary']}")
     if candidate_data.get("experience_summary"):
         parts.append(f"Последние места работы:\n{candidate_data['experience_summary']}")
     if candidate_data.get("experience_descriptions"):
         descs = candidate_data["experience_descriptions"]
         if isinstance(descs, list):
-            for i, d in enumerate(descs[:3], 1):
+            for i, d in enumerate(descs[:6], 1):
                 parts.append(f"Описание опыта #{i}:\n{d}")
     if candidate_data.get("skills"):
         skills = candidate_data["skills"]
@@ -104,6 +106,10 @@ async def generate_ai_summary(candidate_data: dict) -> str:
         langs = candidate_data["languages"]
         if isinstance(langs, list):
             parts.append(f"Языки: {', '.join(langs)}")
+    if candidate_data.get("education"):
+        edu = candidate_data["education"]
+        if isinstance(edu, list):
+            parts.append(f"Образование: {'; '.join(str(e) for e in edu)}")
 
     raw_data = "\n\n".join(parts)
 
@@ -129,6 +135,9 @@ async def generate_ai_summary(candidate_data: dict) -> str:
 
 ## Языки
 Список языков с уровнями
+
+## Образование
+Учебные заведения, специальности, годы
 
 ## Итоговая оценка
 Краткая оценка сильных сторон и зон роста кандидата
