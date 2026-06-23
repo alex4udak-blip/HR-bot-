@@ -217,6 +217,20 @@ const getTimelineFilterAliases = (filter: string) => {
   );
 };
 
+// Матч записи таймлайна под фильтр «Действия». Комментарий и смена этапа — по
+// ТИПУ записи (kind); остальное (отказ и т.п.) — по тексту. Фильтры без записей
+// в таймлайне (письмо/интервью/звонок/файл/оффер/…) не матчатся → не показываются.
+const matchesTimelineFilter = (
+  item: { title?: string; body?: string; kind?: string },
+  filter: string,
+): boolean => {
+  if (filter === "Комментарий") return item.kind === "comment";
+  if (filter === "Смена этапа подбора") return item.kind === "stage";
+  const aliases = getTimelineFilterAliases(filter);
+  const hay = `${item.title || ""} ${item.body || ""}`.toLowerCase();
+  return aliases.some((a) => hay.includes(a));
+};
+
 function TimelineUserGlyph({
   surface = "stage",
   align = "stage",
@@ -1884,6 +1898,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       author?: string;
       historyId?: number;
       reactionKey: string;
+      // Тип записи для фильтра «Действия»: смена этапа vs свободный комментарий.
+      kind: "stage" | "comment";
     }>
   >(() => {
     const noteRows = (Array.isArray(notes) ? notes : [])
@@ -1896,6 +1912,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
         body: note.stage_label ? note.text || undefined : undefined,
         author: note.author_name || undefined,
         reactionKey: note.id ? `n:${note.id}` : `nd:${note.date || ""}`,
+        // Заметки (extra_data.notes) — это КОММЕНТАРИИ (даже если несут stage_label
+        // текущего этапа). Смена этапа — отдельные события (eventRows, kind=stage).
+        kind: "comment" as const,
       }));
 
     const eventRows = (!readonly && Array.isArray(events) ? events : []).map(
@@ -1909,6 +1928,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           author: ev.changed_by_name || undefined,
           historyId: ev.id as number | undefined,
           reactionKey: `e:${ev.id}`,
+          kind: "stage" as const,
         };
       },
     );
@@ -1921,6 +1941,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           title: "Кандидат добавлен",
           author: card.recruiter_name || undefined,
           reactionKey: "created",
+          kind: "stage" as const,
         },
       ];
     }
@@ -1933,18 +1954,20 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
 
   const filteredTimelineItems = useMemo(() => {
     if (!timelineActionFilter) return timelineItems;
-    const aliases = getTimelineFilterAliases(timelineActionFilter);
-    return timelineItems.filter((event) => {
-      const haystack = `${event.title || ""} ${event.body || ""}`.toLowerCase();
-      return aliases.some((alias) => haystack.includes(alias));
-    });
+    return timelineItems.filter((event) =>
+      matchesTimelineFilter(event, timelineActionFilter),
+    );
   }, [timelineItems, timelineActionFilter]);
   const visibleTimelineItems = showAllTimeline
     ? filteredTimelineItems
     : filteredTimelineItems.slice(0, 5);
   const hasHiddenTimelineItems = filteredTimelineItems.length > 5;
-  const visibleActionFilters = TIMELINE_ACTION_FILTERS.filter((item) =>
-    item.toLowerCase().includes(actionSearch.trim().toLowerCase()),
+  // Показываем только фильтры, по которым в таймлайне реально ЕСТЬ записи (+ поиск).
+  // Пустые (письмо/интервью/звонок/файл/оффер и пр.) скрыты.
+  const visibleActionFilters = TIMELINE_ACTION_FILTERS.filter(
+    (item) =>
+      item.toLowerCase().includes(actionSearch.trim().toLowerCase()) &&
+      timelineItems.some((it) => matchesTimelineFilter(it, item)),
   );
   const isCommentComposerOpen =
     commentComposerOpen || comment.trim().length > 0;
