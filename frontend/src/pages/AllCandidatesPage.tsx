@@ -47,6 +47,7 @@ import {
   updateEntity,
   createEntity,
   uploadEntityFile,
+  deleteEntityFile,
   getEntityFiles,
   downloadEntityFile,
   deleteEntity,
@@ -1794,6 +1795,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   anketaCount,
   onReact,
   files,
+  onDeleteFile,
 }: {
   card: KanbanCard;
   applicationId: number;
@@ -1833,6 +1835,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onReact?: (entryKey: string, emoji: string) => Promise<EntryReaction[] | null>;
   // Файлы, прикреплённые к этому контейнеру (показываются под логом, скачиваемы).
   files?: EntityFile[];
+  // Удалить файл (с подтверждением) — обновляет список после удаления.
+  onDeleteFile?: (fileId: number) => void;
 }) {
   // --- per-instance UI state (раньше было singleton в InfoTab) ---
   const [showStageDD, setShowStageDD] = useState(false);
@@ -2534,16 +2538,30 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           </div>
           <div className="flex flex-col gap-[4px]">
             {files.map((f) => (
-              <button
+              <div
                 key={f.id}
-                type="button"
-                onClick={() => handleDownloadFile(f.id, f.file_name)}
-                title="Скачать"
-                className="group flex w-full items-center gap-[6px] rounded-[var(--hf-radius-s)] px-[6px] py-[4px] text-left text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)] text-[var(--hf-main-700)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:hover:text-[var(--hf-white)]"
+                className="group flex items-center gap-[2px] rounded-[var(--hf-radius-s)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
               >
-                <Paperclip className="h-[13px] w-[13px] shrink-0 text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
-                <span className="truncate">{f.file_name}</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadFile(f.id, f.file_name)}
+                  title="Скачать"
+                  className="flex min-w-0 flex-1 items-center gap-[6px] px-[6px] py-[4px] text-left text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)] text-[var(--hf-main-700)] transition-colors hover:text-[var(--hf-main-900)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hf-dark-disabled:hover:text-[var(--hf-white)]"
+                >
+                  <Paperclip className="h-[13px] w-[13px] shrink-0 text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
+                  <span className="truncate">{f.file_name}</span>
+                </button>
+                {onDeleteFile ? (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteFile(f.id)}
+                    title="Удалить файл"
+                    className="mr-[4px] inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[var(--hf-main-500)] opacity-0 transition-opacity hover:text-[var(--hf-status-red)] group-hover:opacity-100 focus:outline-none focus-visible:outline-none"
+                  >
+                    <Trash2 className="h-[13px] w-[13px]" />
+                  </button>
+                ) : null}
+              </div>
             ))}
           </div>
         </div>
@@ -2783,8 +2801,16 @@ const InfoTab = memo(function InfoTab({
     // «Резюме стр. N» и авто-извлечённое фото «Фото_…») — они нигде не нужны.
     // merged-контейнер показывает СВОИ file_ids; живой — остальные (минус
     // смёрдженные), т.е. свои собственные документы.
-    const _isAutoFile = (f: EntityFile) =>
-      /^Резюме стр\.|^Фото_/i.test(f.file_name || "");
+    const _isAutoFile = (f: EntityFile) => {
+      const _n = f.file_name || "";
+      const _img = (f.mime_type || "").startsWith("image/");
+      // Авто-страницы PDF (картинки с «стрN» / cv_page / _page — напр.
+      // «Профиль_Титов_Семён_стр1.jpg», «Резюме стр. 1.jpg») и авто-фото аватара
+      // («Фото_…») — это рендеры/аватар, а не вложения, в список «Файлы» не идут.
+      return (
+        (_img && /стр\.?\s*\d|cv_page|_page\b/i.test(_n)) || /^Фото_/i.test(_n)
+      );
+    };
     const _docFiles = (allEntityFiles || []).filter((f) => !_isAutoFile(f));
     const _mergedFileIds = new Set(
       mergedContainers.flatMap((c) => c.fileIds || []),
@@ -2900,6 +2926,20 @@ const InfoTab = memo(function InfoTab({
       await loadActivity();
     },
     [loadActivity],
+  );
+
+  const cardDeleteFile = useCallback(
+    async (fileId: number) => {
+      if (!window.confirm("Удалить этот файл?")) return;
+      try {
+        await deleteEntityFile(card.id, fileId);
+        toast.success("Файл удалён");
+        setFilesNonce((n) => n + 1);
+      } catch {
+        toast.error("Не удалось удалить файл");
+      }
+    },
+    [card.id],
   );
 
   useEffect(() => {
@@ -3505,6 +3545,7 @@ const InfoTab = memo(function InfoTab({
           anketaCount={anketaCount}
           onReact={c.origin === "live" ? cardReact : undefined}
           files={c.files}
+          onDeleteFile={cardDeleteFile}
         />
       ))}
 
