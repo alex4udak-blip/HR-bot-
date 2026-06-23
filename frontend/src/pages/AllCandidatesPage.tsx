@@ -15,7 +15,6 @@ import {
   Eye,
   Printer,
   Download,
-  Pencil,
   PenSquare,
   Archive,
   Phone,
@@ -55,8 +54,6 @@ import {
   getEntity,
   detectDuplicate,
   addEntityNote,
-  updateEntityNote,
-  deleteEntityNote,
   getEntityActivity,
 } from "@/services/api/entities";
 import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
@@ -1336,6 +1333,30 @@ export default function AllCandidatesPage() {
                     setSelectedCard(null);
                     fetchBoard();
                   }}
+                  onMerged={async () => {
+                    // Слияние завершено в баннере: перечитываем доску (исчезает
+                    // влитый источник) и выжившего (появляется merged_from) —
+                    // без ручного обновления страницы.
+                    const id = selectedCard?.id;
+                    fetchBoard();
+                    if (!id) return;
+                    try {
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const e: any = await getEntity(id);
+                      setSelectedCard((prev) =>
+                        prev && prev.id === id
+                          ? ({
+                              ...prev,
+                              extra_data: { ...(e.extra_data || {}) },
+                              tags: e.tags || prev.tags,
+                            } as KanbanCard)
+                          : prev,
+                      );
+                      if (e.status) setSelectedStatus(e.status as string);
+                    } catch {
+                      /* профиль перечитаем при следующем открытии */
+                    }
+                  }}
                 />
               </div>
             ) : (
@@ -1713,6 +1734,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onComment,
   onDeleteHistory,
   onUploadFile,
+  onAnketa,
+  anketaCount,
 }: {
   card: KanbanCard;
   applicationId: number;
@@ -1745,6 +1768,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     historyId: number,
   ) => Promise<void> | void;
   onUploadFile: (entityId: number, file: File) => Promise<void> | void;
+  // Только живой контейнер: открыть анкеты (чип в ряду действий) + бейдж кол-ва.
+  onAnketa?: () => void;
+  anketaCount?: number;
 }) {
   // --- per-instance UI state (раньше было singleton в InfoTab) ---
   const [showStageDD, setShowStageDD] = useState(false);
@@ -2201,6 +2227,14 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
               onClick={() => fileInputRef.current?.click()}
               loading={uploading}
             />
+            {onAnketa && (
+              <ActionChip
+                icon={ClipboardList}
+                label="Анкета"
+                notificationCount={anketaCount}
+                onClick={onAnketa}
+              />
+            )}
           </>
         )}
       </div>
@@ -2427,6 +2461,7 @@ const InfoTab = memo(function InfoTab({
   onAddToVacancy,
   onEdit,
   onArchived,
+  onMerged,
 }: {
   card: KanbanCard;
   status: string;
@@ -2437,12 +2472,11 @@ const InfoTab = memo(function InfoTab({
   onAddToVacancy: (rect?: { left: number; bottom: number }) => void;
   onEdit: () => void;
   onArchived: () => void;
+  // Слияние дубля разрешено в баннере → родитель перечитывает выжившего и доску
+  // (иначе объединённый профиль виден только после ручного обновления).
+  onMerged?: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
-  const isAdmin =
-    currentUser?.role === "superadmin" ||
-    currentUser?.org_role === "owner" ||
-    currentUser?.org_role === "admin";
   const [archiving, setArchiving] = useState(false);
   const handleArchive = async () => {
     if (!window.confirm("Убрать кандидата в архив? Он скроется из активных списков.")) return;
@@ -3013,7 +3047,7 @@ const InfoTab = memo(function InfoTab({
       )}
 
       {/* Теневой дубль: баннер «Похожий кандидат есть в базе» над action-баром */}
-      <ShadowDuplicateBanner card={card} status={status} />
+      <ShadowDuplicateBanner card={card} status={status} onResolved={onMerged} />
 
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
       <div className="hf-profile-action-bar">
@@ -3251,15 +3285,8 @@ const InfoTab = memo(function InfoTab({
         </div>
       </div>
 
-      {/* ── Анкеты кандидата (entity-уровень, над стеком контейнеров). ── */}
-      <div className="px-[var(--hf-space-xxl)] pt-[var(--hf-space-xxl)] flex items-center gap-[var(--hf-space-s)] flex-wrap">
-        <ActionChip
-          icon={ClipboardList}
-          label="Анкета"
-          notificationCount={anketaCount}
-          onClick={() => setAnketaOpen(true)}
-        />
-      </div>
+      {/* Анкета теперь — чип в ряду действий живого контейнера (ниже), отдельной
+          кнопки над стеком больше нет. Дровер остаётся здесь. */}
       {anketaOpen && (
         <Suspense fallback={null}>
           <AnketaDrawer
@@ -3294,37 +3321,15 @@ const InfoTab = memo(function InfoTab({
           onComment={cardComment}
           onDeleteHistory={cardDeleteHistory}
           onUploadFile={cardUploadFile}
+          onAnketa={c.origin === "live" ? () => setAnketaOpen(true) : undefined}
+          anketaCount={anketaCount}
         />
       ))}
 
-      {/* ---- Комментарии: редактируемый блок (entity-уровень), фон по стадии ---- */}
-      {Array.isArray(card.extra_data?.notes) &&
-          (card.extra_data.notes as NoteShape[]).some((note) => Boolean(note.stage)) && (
-            <div className="hf-stage-comments-section">
-              <div className="hf-stage-comments-heading">
-                Комментарии
-              </div>
-              <div className="space-y-2">
-                {(card.extra_data.notes as NoteShape[])
-                  .filter((note) => Boolean(note.stage))
-                  .slice()
-                  .sort((a, b) => {
-                    const ta = a?.date ? new Date(a.date).getTime() : 0;
-                    const tb = b?.date ? new Date(b.date).getTime() : 0;
-                    return tb - ta;
-                  })
-                  .map((note, i) => (
-                    <CommentCard
-                      key={note.id || `note-${note.date || i}`}
-                      card={card}
-                      note={note}
-                      currentUserId={currentUser?.id}
-                      isAdmin={isAdmin}
-                    />
-                  ))}
-              </div>
-            </div>
-          )}
+      {/* Блок «Комментарии» (entity-уровень) убран: каждый контейнер показывает
+          свой лог сам, а влитые заметки задваивались здесь (на «Новом» висела
+          отказная заметка источника). Если нужен entity-уровень комментариев —
+          они во вкладке «Личные заметки». */}
 
       <div className="mt-[30px]">
         <div className="flex h-[49.333px] items-start gap-[var(--hf-space-xxl)] border-b border-[var(--hf-main-300)] pb-[20px] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
@@ -3568,181 +3573,6 @@ interface NoteShape {
   edited_at?: string;
 }
 
-const CommentCard = memo(function CommentCard({
-  card,
-  note,
-  currentUserId,
-  isAdmin,
-}: {
-  card: KanbanCard;
-  note: NoteShape;
-  currentUserId?: number;
-  isAdmin: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [editText, setEditText] = useState(note.text);
-  const [busy, setBusy] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const noteStage = note.stage;
-  const initials = (note.author_name || "?")[0].toUpperCase();
-  // Можно править/удалить если: я автор, либо админ. Legacy-комменты без
-  // author_id трогать может только админ.
-  const canModify =
-    isAdmin ||
-    (note.author_id !== undefined &&
-      currentUserId !== undefined &&
-      Number(note.author_id) === Number(currentUserId));
-  // ID для API: новые имеют uuid, у legacy используем "date:<iso>" фолбэк
-  // (бэкенд понимает оба).
-  const noteId = note.id || (note.date ? `date:${note.date}` : null);
-
-  const save = async () => {
-    if (!noteId) {
-      toast.error("Не удалось определить коммент");
-      return;
-    }
-    const t = editText.trim();
-    if (!t) {
-      toast.error("Текст не может быть пустым");
-      return;
-    }
-    setBusy(true);
-    try {
-      const resp = await updateEntityNote(card.id, noteId, t);
-      // Обновляем in-place — заметка та же по reference, поправим её поля
-      Object.assign(note, resp.note);
-      setEditing(false);
-      toast.success("Коммент обновлён");
-    } catch (err) {
-      console.error("Update note failed:", err);
-      toast.error("Не удалось обновить коммент");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async () => {
-    if (!noteId) {
-      toast.error("Не удалось определить коммент");
-      return;
-    }
-    setBusy(true);
-    try {
-      await deleteEntityNote(card.id, noteId);
-      // Убираем из массива по ссылке
-      if (Array.isArray(card.extra_data?.notes)) {
-        const idx = card.extra_data.notes.findIndex(
-          (n: NoteShape) => n === note,
-        );
-        if (idx >= 0) card.extra_data.notes.splice(idx, 1);
-      }
-      toast.success("Коммент удалён");
-    } catch (err) {
-      console.error("Delete note failed:", err);
-      toast.error("Не удалось удалить коммент");
-    } finally {
-      setBusy(false);
-      setConfirmDelete(false);
-    }
-  };
-
-  return (
-    <div className="hf-vacancy-note-card group">
-      <div className="hf-vacancy-note-avatar">{initials}</div>
-      <div className="hf-vacancy-note-body">
-        <div className="hf-vacancy-note-meta">
-          <span className="hf-vacancy-note-author">
-            {note.author_name || "Аноним"}
-          </span>
-          {noteStage && (
-            <span className="hf-vacancy-note-stage">
-              {note.stage_label || noteStage}
-            </span>
-          )}
-          <span className="hf-vacancy-note-date">
-            {note.date ? formatDateFull(note.date) : ""}
-            {note.edited_at && " · изм."}
-          </span>
-          {canModify && !editing && !confirmDelete && (
-            <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <button
-                onClick={() => {
-                  setEditText(note.text);
-                  setEditing(true);
-                }}
-                className="rounded p-1 text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-ui-text-strong)]"
-                title="Редактировать"
-              >
-                <Pencil className="h-3 w-3" />
-              </button>
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="rounded p-1 text-[var(--hf-main-600)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-red-500)]"
-                title="Удалить"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {editing ? (
-          <div className="space-y-2">
-            <textarea
-              value={editText}
-              onChange={(e) => setEditText(e.target.value)}
-              disabled={busy}
-              rows={3}
-              className="w-full resize-y rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-border)] bg-transparent px-2 py-1.5 text-[length:var(--hf-fs-s)] text-[var(--hf-ui-text-strong)] focus:border-[var(--hf-ui-border-hover)] focus:outline-none disabled:opacity-50 hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:text-[var(--hf-white)]"
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setEditing(false)}
-                disabled={busy}
-                className="px-2 py-1 text-[length:var(--hf-fs-2xs)] text-[var(--hf-ui-text-soft)] transition-colors hover:text-[var(--hf-main-900)] disabled:opacity-50 hf-dark-disabled:hover:text-[var(--hf-white)]"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={save}
-                disabled={busy}
-                className="inline-flex h-[28px] items-center rounded-[var(--hf-radius-s)] bg-[var(--hf-main-900)] px-[12px] text-[length:var(--hf-fs-3xs)] font-medium text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] disabled:cursor-not-allowed disabled:opacity-50 hf-dark-disabled:bg-[var(--hf-white)] hf-dark-disabled:text-[var(--hf-main-900)]"
-              >
-                {busy ? "Сохраняем…" : "Сохранить"}
-              </button>
-            </div>
-          </div>
-        ) : confirmDelete ? (
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[length:var(--hf-fs-2xs)] text-[var(--hf-ui-text-soft)]">
-              Удалить этот коммент?
-            </span>
-            <div className="flex flex-shrink-0 items-center gap-2">
-              <button
-                onClick={() => setConfirmDelete(false)}
-                disabled={busy}
-                className="px-2 py-1 text-[length:var(--hf-fs-2xs)] text-[var(--hf-ui-text-soft)] transition-colors hover:text-[var(--hf-main-900)] disabled:opacity-50 hf-dark-disabled:hover:text-[var(--hf-white)]"
-              >
-                Нет
-              </button>
-              <button
-                onClick={remove}
-                disabled={busy}
-                className="rounded-[var(--hf-radius-s)] bg-[var(--hf-red-500)] px-2.5 py-1 text-[length:var(--hf-fs-2xs)] font-medium text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-red-600)] disabled:opacity-50"
-              >
-                {busy ? "Удаляем…" : "Удалить"}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="hf-vacancy-note-text">{note.text}</div>
-        )}
-      </div>
-    </div>
-  );
-});
 
 // ================================================================
 // RESUME TAB
