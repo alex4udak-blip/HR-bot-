@@ -1988,34 +1988,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   }, [showActionMenu]);
 
   // --- per-instance action handlers ---
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [emailAnchorRect, setEmailAnchorRect] = useState<DOMRect | null>(null);
-
-  const handleEmail: React.MouseEventHandler<HTMLButtonElement> = (event) => {
-    setEmailAnchorRect(event.currentTarget.getBoundingClientRect());
-    setShowActionMenu(false);
-    setShowEmailModal(true);
-  };
-
-  // Интервью назначается на кандидата (entity) — переиспользуем существующий
-  // entity-уровневый модал из InfoTab нельзя (он singleton), поэтому здесь
-  // ставим интервью прямо на заявку через updateApplication.
-  const handleInterview = () => {
-    const when = window.prompt(
-      "Дата и время интервью (YYYY-MM-DD HH:MM)",
-      "",
-    );
-    if (!when) return;
-    const parsed = new Date(when.replace(" ", "T"));
-    if (Number.isNaN(parsed.getTime())) {
-      toast.error("Не удалось распознать дату");
-      return;
-    }
-    updateApplication(applicationId, { next_interview_at: parsed.toISOString() })
-      .then(() => toast.success("Интервью назначено"))
-      .catch(() => toast.error("Не удалось назначить интервью"));
-  };
-
   const handleComment = async () => {
     if (!comment.trim()) {
       toast.error("Введите комментарий");
@@ -2038,10 +2010,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       text,
     );
     setStageChangeComment("");
-  };
-
-  const handleOffer = () => {
-    onChangeStage(applicationId, "offer");
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2067,21 +2035,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           onChange={handleFileUpload}
           accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
         />
-      )}
-
-      {/* Send Email Modal */}
-      {!readonly && (
-        <AnimatePresence>
-          {showEmailModal && (
-            <SendEmailModal
-              entityId={card.id}
-              entityName={card.name}
-              entityEmail={card.email}
-              anchorRect={emailAnchorRect}
-              onClose={() => setShowEmailModal(false)}
-            />
-          )}
-        </AnimatePresence>
       )}
 
       {/* ---- Stage block (Huntflow: colored bg + vacancy name + change button) ---- */}
@@ -2159,21 +2112,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                     />
                     <div className="hf-stage-picker-actions">
                       <ActionChip
-                        icon={Mail}
-                        label="Письмо"
-                        onClick={handleEmail}
-                      />
-                      <ActionChip
-                        icon={Calendar}
-                        label="Интервью"
-                        onClick={handleInterview}
-                      />
-                      <ActionChip
-                        icon={ThumbsUp}
-                        label="Оффер"
-                        onClick={handleOffer}
-                      />
-                      <ActionChip
                         icon={Paperclip}
                         label="Файл"
                         onClick={() => fileInputRef.current?.click()}
@@ -2235,9 +2173,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
         showMention
         collapsedClassName="h-[58px] w-full resize-none rounded-[var(--hf-radius-s)] border border-[color:var(--hf-black-alpha-16)] bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] pr-20 text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-600)] focus:border-[var(--hf-cyan-500)] focus:outline-none hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:placeholder:text-[var(--hf-dark-500)] hf-dark-disabled:focus:border-[color:var(--hf-status-blue-badge)]"
         actions={[
-          { icon: Mail, label: "Письмо", onClick: handleEmail },
-          { icon: Calendar, label: "Интервью", onClick: handleInterview },
-          { icon: ThumbsUp, label: "Оффер", onClick: handleOffer },
           {
             icon: Paperclip,
             label: "Файл",
@@ -2253,13 +2188,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       <div className="px-[var(--hf-space-xxl)] pb-hf-l flex items-center gap-[var(--hf-space-s)] border-b border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] flex-wrap">
         {!isCommentComposerOpen && (
           <>
-            <ActionChip icon={Mail} label="Письмо" onClick={handleEmail} />
-            <ActionChip
-              icon={Calendar}
-              label="Интервью"
-              onClick={handleInterview}
-            />
-            <ActionChip icon={ThumbsUp} label="Оффер" onClick={handleOffer} />
             <ActionChip
               icon={Paperclip}
               label="Файл"
