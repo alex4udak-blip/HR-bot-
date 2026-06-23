@@ -5003,6 +5003,7 @@ export function NewCandidateModal({
             />
             <CandidateField
               label="Дата рождения"
+              type="date"
               value={birthDate}
               onChange={setBirthDate}
             />
@@ -5482,9 +5483,9 @@ export function EditCandidateModal({
             />
             <EditField
               label="Дата рождения"
+              type="date"
               value={birthDate}
               onChange={setBirthDate}
-              placeholder="17.12.1995"
               clearable
             />
           </div>

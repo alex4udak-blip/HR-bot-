@@ -74,8 +74,8 @@ export function AnketaDrawer({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40 z-40" />
-        <Dialog.Content className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-3xl bg-white shadow-xl flex flex-col">
+        <Dialog.Overlay className="fixed inset-0 bg-black/40 z-[1000]" />
+        <Dialog.Content className="fixed right-0 top-0 bottom-0 z-[1001] w-full max-w-3xl bg-white shadow-xl flex flex-col">
           <div className="flex items-center justify-between border-b px-5 py-3">
             <Dialog.Title className="text-base font-semibold text-gray-900">Анкета · {entityName}</Dialog.Title>
             <div className="flex items-center gap-3">
