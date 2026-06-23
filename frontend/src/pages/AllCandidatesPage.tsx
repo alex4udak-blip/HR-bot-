@@ -1745,6 +1745,11 @@ type StageContainer = {
   // Только живой контейнер: реальные StageTransition (история переходов) для
   // таймлайна. У merged-контейнеров таймлайн строится только из notes.
   events?: ActivityEvent[];
+  // id файлов, прикреплённых к ЭТОМУ контейнеру: live — собственные файлы
+  // (минус смёрдженные), merged — из снапшота extra_data.merged_from[].file_ids.
+  fileIds?: number[];
+  // Реальные EntityFile для этого контейнера (резолв по fileIds, см. useMemo).
+  files?: EntityFile[];
 };
 
 // Лейбл статуса контейнера (EntityStatus → русский). Сначала org-override из
@@ -1788,6 +1793,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onAnketa,
   anketaCount,
   onReact,
+  files,
 }: {
   card: KanbanCard;
   applicationId: number;
@@ -1825,6 +1831,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   anketaCount?: number;
   // Тоггл эмодзи-реакции записи таймлайна (entry_key, emoji) → новый список.
   onReact?: (entryKey: string, emoji: string) => Promise<EntryReaction[] | null>;
+  // Файлы, прикреплённые к этому контейнеру (показываются под логом, скачиваемы).
+  files?: EntityFile[];
 }) {
   // --- per-instance UI state (раньше было singleton в InfoTab) ---
   const [showStageDD, setShowStageDD] = useState(false);
@@ -2067,6 +2075,23 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  // Скачать прикреплённый к контейнеру файл (работает и на read-only merged).
+  const handleDownloadFile = async (fileId: number, fileName: string) => {
+    try {
+      const blob = await downloadEntityFile(card.id, fileId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Ошибка при скачивании");
     }
   };
 
@@ -2500,6 +2525,29 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           )}
         </div>
       </div>
+      {/* ── Файлы контейнера: под логом, скачиваемы. live — собственные файлы;
+          merged — снапшот его file_ids. Скачивание работает и read-only. ── */}
+      {files && files.length > 0 ? (
+        <div className="px-[var(--hf-space-xxl)] pt-[14px]">
+          <div className="mb-[8px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-field)] text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+            Файлы
+          </div>
+          <div className="flex flex-col gap-[4px]">
+            {files.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => handleDownloadFile(f.id, f.file_name)}
+                title="Скачать"
+                className="group flex w-full items-center gap-[6px] rounded-[var(--hf-radius-s)] px-[6px] py-[4px] text-left text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)] text-[var(--hf-main-700)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:hover:text-[var(--hf-white)]"
+              >
+                <Paperclip className="h-[13px] w-[13px] shrink-0 text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
+                <span className="truncate">{f.file_name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {hasHiddenTimelineItems ? (
         <button
           type="button"
@@ -2581,7 +2629,13 @@ const InfoTab = memo(function InfoTab({
   const setAnketaCount = useFormBadgeStore((s) => s.setCount);
   // Источники резюме: каждое резюме — отдельная вкладка верхнего уровня рядом
   // с «Личные заметки». resumeIndex — какая из них активна.
-  const { sources: resumeSources } = useResumeSources(card);
+  // Бамп после загрузки файла → useResumeSources перечитывает файлы (вкладка
+  // «Резюме» кэширует по card.id, который не меняется → иначе файл не виден).
+  const [filesNonce, setFilesNonce] = useState(0);
+  const { sources: resumeSources, files: allEntityFiles } = useResumeSources(
+    card,
+    filesNonce,
+  );
   const [resumeIndex, setResumeIndex] = useState(0);
   useEffect(() => {
     setResumeIndex(0);
@@ -2692,6 +2746,7 @@ const InfoTab = memo(function InfoTab({
         vacancyTitle:
           typeof m.vacancy_title === "string" ? m.vacancy_title : null,
         addedAt: typeof m.added_at === "string" ? m.added_at : undefined,
+        fileIds: Array.isArray(m.file_ids) ? (m.file_ids as number[]) : [],
       };
     });
 
@@ -2724,8 +2779,24 @@ const InfoTab = memo(function InfoTab({
       events: primaryBlock?.events,
     };
 
+    // Файлы по контейнерам: исключаем авто-файлы (постраничные сканы резюме
+    // «Резюме стр. N» и авто-извлечённое фото «Фото_…») — они нигде не нужны.
+    // merged-контейнер показывает СВОИ file_ids; живой — остальные (минус
+    // смёрдженные), т.е. свои собственные документы.
+    const _isAutoFile = (f: EntityFile) =>
+      /^Резюме стр\.|^Фото_/i.test(f.file_name || "");
+    const _docFiles = (allEntityFiles || []).filter((f) => !_isAutoFile(f));
+    const _mergedFileIds = new Set(
+      mergedContainers.flatMap((c) => c.fileIds || []),
+    );
+    mergedContainers.forEach((c) => {
+      const ids = new Set(c.fileIds || []);
+      c.files = _docFiles.filter((f) => ids.has(f.id));
+    });
+    liveContainer.files = _docFiles.filter((f) => !_mergedFileIds.has(f.id));
+
     return [liveContainer, ...mergedContainers];
-  }, [primaryBlock, status, card]);
+  }, [primaryBlock, status, card, allEntityFiles]);
 
   // ── Тонкие обёртки для CandidateVacancyCard. Смену этапа делает ТОЛЬКО живой
   // (интерактивный) контейнер — его status это статус самого кандидата (entity),
@@ -2819,6 +2890,8 @@ const InfoTab = memo(function InfoTab({
       try {
         await uploadEntityFile(entityId, file, "resume");
         toast.success(`Файл "${file.name}" загружен`);
+        // Перечитать файлы → обновится блок «Файлы» в плашке и вкладка «Резюме».
+        setFilesNonce((n) => n + 1);
       } catch (err) {
         const detail = (err as { response?: { data?: { detail?: string } } })
           ?.response?.data?.detail;
@@ -3431,6 +3504,7 @@ const InfoTab = memo(function InfoTab({
           onAnketa={c.origin === "live" ? () => setAnketaOpen(true) : undefined}
           anketaCount={anketaCount}
           onReact={c.origin === "live" ? cardReact : undefined}
+          files={c.files}
         />
       ))}
 
@@ -3443,19 +3517,25 @@ const InfoTab = memo(function InfoTab({
         <div className="flex h-[49.333px] items-start gap-[var(--hf-space-xxl)] border-b border-[var(--hf-main-300)] pb-[20px] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
           <button
             type="button"
-            onClick={() => onDetailSectionChange("info")}
+            onClick={() => onDetailSectionChange("anketa")}
             className={clsx(
-              "h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
-              detailSection === "info"
+              "relative h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+              detailSection === "anketa"
                 ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
                 : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
             )}
           >
-            Личные заметки
+            Анкеты
+            {anketaCount > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
+                {anketaCount > 9 ? "9+" : anketaCount}
+              </span>
+            )}
           </button>
           {/* По одной вкладке «Резюме» на каждый источник резюме. Если у
               кандидата резюме нет вовсе — одна вкладка-заглушка ([null]),
-              чтобы показать пустое состояние. */}
+              чтобы показать пустое состояние. Вкладка «Личные заметки» убрана —
+              заметки больше не используются. */}
           {(resumeSources.length > 0 ? resumeSources : [null]).map((_s, i) => (
             <button
               key={i}
@@ -3474,23 +3554,6 @@ const InfoTab = memo(function InfoTab({
               Резюме
             </button>
           ))}
-          <button
-            type="button"
-            onClick={() => onDetailSectionChange("anketa")}
-            className={clsx(
-              "relative h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
-              detailSection === "anketa"
-                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
-                : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
-            )}
-          >
-            Анкеты
-            {anketaCount > 0 && (
-              <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
-                {anketaCount > 9 ? "9+" : anketaCount}
-              </span>
-            )}
-          </button>
         </div>
         {detailSection === "info" && (
           <PersonalNotesTab
@@ -3501,6 +3564,7 @@ const InfoTab = memo(function InfoTab({
         )}
         {detailSection === "resume" && (
           <ResumeTab
+            key={`resume-${filesNonce}`}
             card={card}
             activeIndex={Math.min(
               resumeIndex,
@@ -3912,7 +3976,7 @@ type ResumeDemoData = {
 // Загружает файлы кандидата и вычисляет список источников резюме. Один и тот
 // же расчёт нужен и панели вкладок (сколько вкладок «Резюме» рисовать), и
 // самой вкладке (что показывать) — поэтому вынесен в общий хук.
-function useResumeSources(card: KanbanCard): {
+function useResumeSources(card: KanbanCard, refreshKey?: number): {
   files: EntityFile[];
   sources: ResumeSource[];
   loading: boolean;
@@ -3944,7 +4008,7 @@ function useResumeSources(card: KanbanCard): {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [card.id]);
+  }, [card.id, refreshKey]);
 
   const resumeFiles = files.filter((f) => f.file_type === "resume");
   // Все PDF-резюме, новое сверху: после объединения кандидатов PDF'ы
