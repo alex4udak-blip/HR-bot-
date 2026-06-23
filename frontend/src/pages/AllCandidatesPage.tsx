@@ -509,6 +509,10 @@ export default function AllCandidatesPage() {
 
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [selectedStatus, setSelectedStatus] = useState("");
+  // Бамп → форс-ремоунт детали (InfoTab) после слияния: useResumeSources и
+  // loadActivity кэшируют по card.id, который у выжившего НЕ меняется, поэтому
+  // сами не перечитают файлы/резюме/активность. Ремоунт заставляет перечитать.
+  const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [detailTab, setDetailTab] = useState<DetailSection>("resume");
   const [showListSettings, setShowListSettings] = useState(false);
   // F7-fix: настройки списка (scope + видимые поля) — persist + применяются к карточкам.
@@ -1318,6 +1322,7 @@ export default function AllCandidatesPage() {
             {selectedCard ? (
               <div className="flex-1 overflow-y-auto">
                 <InfoTab
+                  key={`detail-${selectedCard.id}-${detailReloadKey}`}
                   card={selectedCard}
                   status={selectedStatus}
                   columns={board?.columns || []}
@@ -1335,27 +1340,32 @@ export default function AllCandidatesPage() {
                   }}
                   onMerged={async () => {
                     // Слияние завершено в баннере: перечитываем доску (исчезает
-                    // влитый источник) и выжившего (появляется merged_from) —
-                    // без ручного обновления страницы.
+                    // влитый источник), выжившего (merged_from + статус) и
+                    // форс-ремоунтим деталь, чтобы перечитались файлы/резюме/
+                    // активность — всё без ручного F5.
                     const id = selectedCard?.id;
                     fetchBoard();
-                    if (!id) return;
-                    try {
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const e: any = await getEntity(id);
-                      setSelectedCard((prev) =>
-                        prev && prev.id === id
-                          ? ({
-                              ...prev,
-                              extra_data: { ...(e.extra_data || {}) },
-                              tags: e.tags || prev.tags,
-                            } as KanbanCard)
-                          : prev,
-                      );
-                      if (e.status) setSelectedStatus(e.status as string);
-                    } catch {
-                      /* профиль перечитаем при следующем открытии */
+                    if (id) {
+                      try {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const e: any = await getEntity(id);
+                        setSelectedCard((prev) =>
+                          prev && prev.id === id
+                            ? ({
+                                ...prev,
+                                extra_data: { ...(e.extra_data || {}) },
+                                tags: e.tags || prev.tags,
+                              } as KanbanCard)
+                            : prev,
+                        );
+                        if (e.status) setSelectedStatus(e.status as string);
+                      } catch {
+                        /* профиль всё равно перечитается ремоунтом ниже */
+                      }
                     }
+                    // Ремоунт InfoTab → useResumeSources/loadActivity перечитают
+                    // файлы/резюме/активность выжившего (включая влитые).
+                    setDetailReloadKey((k) => k + 1);
                   }}
                 />
               </div>
