@@ -858,6 +858,15 @@ async def update_entity(
     # Remove version from update_data to prevent it from being set directly
     update_data.pop('version', None)
 
+    # extra_data: MERGE, не заменять — иначе частичный апдейт (напр. форма правки
+    # шлёт только salary/city/...) затрёт notes, merged_from, timeline_reactions,
+    # resume_demos и пр. Присланные ключи перекрывают существующие, остальное
+    # сохраняется.
+    if 'extra_data' in update_data:
+        _merged_extra = dict(entity.extra_data or {})
+        _merged_extra.update(update_data.pop('extra_data') or {})
+        entity.extra_data = _merged_extra
+
     for key, value in update_data.items():
         setattr(entity, key, value)
 

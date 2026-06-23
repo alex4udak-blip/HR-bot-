@@ -4626,6 +4626,8 @@ export function NewCandidateModal({
   const [position, setPosition] = useState("");
   const [company, setCompany] = useState("");
   const [salary, setSalary] = useState("");
+  const [city, setCity] = useState("");
+  const [skills, setSkills] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [source, setSource] = useState("Другой источник");
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
@@ -4689,6 +4691,9 @@ export function NewCandidateModal({
           birth_date: birthDate.trim() || undefined,
           resume_text: resumeText.trim() || undefined,
           source: source.trim() || undefined,
+          salary: salary.trim() || undefined,
+          city: city.trim() || undefined,
+          skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
         },
       });
       toast.success("Кандидат добавлен");
@@ -4856,6 +4861,17 @@ export function NewCandidateModal({
               label="Зарплатные ожидания"
               value={salary}
               onChange={setSalary}
+            />
+            <CandidateField
+              label="Город"
+              value={city}
+              onChange={setCity}
+            />
+            <CandidateField
+              label="Навыки"
+              value={skills}
+              onChange={setSkills}
+              placeholder="через запятую"
             />
             <CandidateField
               label="Дата рождения"
@@ -5056,6 +5072,17 @@ export function EditCandidateModal({
   const [position, setPosition] = useState(card.position || "");
   const [company, setCompany] = useState(card.company || "");
   const [salary, setSalary] = useState(card.salary || "");
+  const [city, setCity] = useState((card.extra_data?.city as string) || "");
+  const [skills, setSkills] = useState(
+    Array.isArray(card.extra_data?.skills)
+      ? (card.extra_data?.skills as string[]).join(", ")
+      : "",
+  );
+  const [source, setSource] = useState(
+    card.source || (card.extra_data?.source as string) || "",
+  );
+  const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
+  const [sourceSearch, setSourceSearch] = useState("");
   const [birthDate, setBirthDate] = useState(
     (card.extra_data?.birth_date as string | undefined) || "",
   );
@@ -5086,6 +5113,14 @@ export function EditCandidateModal({
   const markTouched = (field: string) =>
     setTouched((t) => ({ ...t, [field]: true }));
 
+  const filteredSources = useMemo(() => {
+    const needle = sourceSearch.trim().toLowerCase();
+    if (!needle) return CANDIDATE_SOURCE_OPTIONS;
+    return CANDIDATE_SOURCE_OPTIONS.filter((option) =>
+      option.toLowerCase().includes(needle),
+    );
+  }, [sourceSearch]);
+
   const handleSave = async () => {
     setTouched({
       name: true,
@@ -5103,6 +5138,14 @@ export function EditCandidateModal({
     try {
       const normalizedPhone = phone.trim() ? normalizePhone(phone) : undefined;
       const cleanTelegram = telegram.trim().replace(/^@/, "");
+      const extraData = {
+        salary: salary.trim() || undefined,
+        birth_date: birthDate.trim() || undefined,
+        resume_text: resumeText.trim() || undefined,
+        source: source.trim() || undefined,
+        city: city.trim() || undefined,
+        skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
+      };
       await updateEntity(card.id, {
         name: fullName,
         phone: normalizedPhone,
@@ -5110,6 +5153,7 @@ export function EditCandidateModal({
         telegram_usernames: cleanTelegram ? [cleanTelegram] : undefined,
         position: position.trim() || undefined,
         company: company.trim() || undefined,
+        extra_data: extraData,
       });
       toast.success("Кандидат обновлён");
       onSaved({
@@ -5119,6 +5163,7 @@ export function EditCandidateModal({
         telegram_username: cleanTelegram || undefined,
         position: position.trim() || undefined,
         company: company.trim() || undefined,
+        extra_data: extraData,
       });
     } catch {
       toast.error("Ошибка сохранения");
@@ -5147,6 +5192,34 @@ export function EditCandidateModal({
   const resumeFileName =
     (card.extra_data?.resume_file_name as string | undefined) ||
     `${card.name}.pdf`;
+
+  const [downloadingResume, setDownloadingResume] = useState(false);
+  const handleDownloadResume = async () => {
+    if (downloadingResume) return;
+    setDownloadingResume(true);
+    try {
+      const files = await getEntityFiles(card.id);
+      const resumeFile =
+        files.find((f) => f.file_type === "resume") || files[0];
+      if (!resumeFile) {
+        toast.error("Файл резюме не найден");
+        return;
+      }
+      const blob = await downloadEntityFile(card.id, resumeFile.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = resumeFile.file_name || resumeFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Ошибка при скачивании резюме");
+    } finally {
+      setDownloadingResume(false);
+    }
+  };
 
   return (
     <motion.div
@@ -5268,6 +5341,18 @@ export function EditCandidateModal({
               placeholder=""
             />
             <EditField
+              label="Город"
+              value={city}
+              onChange={setCity}
+              placeholder="Москва"
+            />
+            <EditField
+              label="Навыки"
+              value={skills}
+              onChange={setSkills}
+              placeholder="через запятую"
+            />
+            <EditField
               label="Дата рождения"
               value={birthDate}
               onChange={setBirthDate}
@@ -5277,19 +5362,60 @@ export function EditCandidateModal({
           </div>
 
           <div className="min-w-0 flex-1 overflow-y-auto border-l border-[var(--hf-ui-divider)] py-[var(--hf-edit-column-py)] pl-[var(--hf-space-xxl)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]">
-            <div className="mb-[var(--hf-space-l)]">
+            <div className="hf-candidate-source-block mb-[var(--hf-space-l)]">
               <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-semibold leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
                 Источник
               </label>
               <button
                 type="button"
-                className="flex h-[var(--hf-edit-field-h)] w-full items-center justify-between rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-[var(--hf-white)] px-[var(--hf-edit-field-px)] pr-[var(--hf-space-s)] text-left text-[length:var(--hf-edit-field-fs)] font-normal leading-[var(--hf-edit-field-lh)] text-[var(--hf-main-900)] transition-colors hover:border-[var(--hf-ui-border-strong)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)]"
+                className="hf-candidate-select-btn"
+                onClick={() => setSourceMenuOpen((value) => !value)}
+                aria-expanded={sourceMenuOpen}
               >
-                <span className="truncate">
-                  {card.source || "Другой источник"}
+                <span
+                  className={clsx(
+                    "truncate",
+                    !source && "hf-candidate-select-placeholder",
+                  )}
+                >
+                  {source || "Источник"}
                 </span>
-                <HuntflowChevronDown24Icon className="h-[var(--hf-edit-source-icon)] w-[var(--hf-edit-source-icon)] flex-shrink-0 text-[var(--hf-main-900)]" />
+                <HuntflowChevronDown24Icon className="hf-candidate-select-chevron" />
               </button>
+              {sourceMenuOpen && (
+                <div className="hf-candidate-source-menu">
+                  <div className="hf-candidate-source-search">
+                    <Search className="hf-candidate-source-search-icon" />
+                    <input
+                      value={sourceSearch}
+                      onChange={(e) => setSourceSearch(e.target.value)}
+                      className="hf-candidate-source-search-input"
+                      placeholder="Поиск..."
+                      autoFocus
+                    />
+                  </div>
+                  <div className="hf-candidate-source-list">
+                    {filteredSources.length > 0 ? (
+                      filteredSources.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className="hf-candidate-source-option"
+                          onClick={() => {
+                            setSource(option);
+                            setSourceSearch("");
+                            setSourceMenuOpen(false);
+                          }}
+                        >
+                          {option}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="hf-candidate-source-empty">Ничего не найдено</div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <div>
               <label className="mb-[var(--hf-edit-label-mb)] block text-[length:var(--hf-edit-label-fs)] font-semibold leading-[var(--hf-edit-label-lh)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
@@ -5304,7 +5430,10 @@ export function EditCandidateModal({
               <div className="mt-[var(--hf-edit-file-mt)] flex">
                 <button
                   type="button"
-                  className="inline-flex h-[var(--hf-edit-file-h)] max-w-full items-center gap-[var(--hf-space-s)] rounded-full border border-[color:var(--hf-black-alpha-08)] bg-[var(--hf-white)] px-[var(--hf-space-s)] py-[var(--hf-space-xxs)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] shadow-[0_1px_1px_var(--hf-alpha-100)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)]"
+                  onClick={handleDownloadResume}
+                  disabled={downloadingResume}
+                  title="Скачать резюме"
+                  className="inline-flex h-[var(--hf-edit-file-h)] max-w-full items-center gap-[var(--hf-space-s)] rounded-full border border-[color:var(--hf-black-alpha-08)] bg-[var(--hf-white)] px-[var(--hf-space-s)] py-[var(--hf-space-xxs)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-900)] shadow-[0_1px_1px_var(--hf-alpha-100)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60 hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)]"
                 >
                   <HuntflowClip18Icon className="h-[var(--hf-edit-file-icon)] w-[var(--hf-edit-file-icon)] flex-shrink-0" />
                   <span className="min-w-[var(--hf-edit-file-name-min-w)] truncate font-medium">
