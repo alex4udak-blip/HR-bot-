@@ -564,6 +564,23 @@ export default function AllCandidatesPage() {
     return () => clearInterval(id);
   }, [fetchBoard]);
 
+  // Мгновенный рефреш при возврате на вкладку/в окно: кандидат, добавленный
+  // через расширение (с другой вкладки, напр. HH.ru) или ботом, появляется
+  // сразу, как только смотришь на HR-bot — не дожидаясь следующего тика поллинга
+  // (который к тому же на СКРЫТОЙ вкладке стоит на паузе). Это и есть причина
+  // «добавил через расширение → появился только после F5».
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchBoard(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [fetchBoard]);
+
   useEffect(() => {
     if (showTopSearch) {
       requestAnimationFrame(() => topSearchRef.current?.focus());
