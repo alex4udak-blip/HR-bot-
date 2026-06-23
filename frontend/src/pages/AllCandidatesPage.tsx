@@ -534,8 +534,8 @@ export default function AllCandidatesPage() {
     user?.org_role === "admin";
   const anySelected = selectedIds.size > 0;
 
-  const fetchBoard = useCallback(async () => {
-    setLoading(true);
+  const fetchBoard = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await getCandidatesKanban({
         q: debouncedSearch || undefined,
@@ -544,12 +544,24 @@ export default function AllCandidatesPage() {
     } catch {
       /* ignore */
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [debouncedSearch]);
 
   useEffect(() => {
     fetchBoard();
+  }, [fetchBoard]);
+
+  // Лёгкий поллинг доски: WebSocket на проде НЕ доставляет события надёжно
+  // (см. WebSocketProvider — там по той же причине поллятся уведомления). Поэтому
+  // новые кандидаты (парсинг резюме / бот / импорт) и внешние смены статуса
+  // появляются сами в течение ~15с, без ручного F5. silent=true → без спиннера,
+  // выделение и скролл сохраняются. Пауза, когда вкладка скрыта.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") fetchBoard(true);
+    }, 15000);
+    return () => clearInterval(id);
   }, [fetchBoard]);
 
   useEffect(() => {

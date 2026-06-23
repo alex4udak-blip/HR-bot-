@@ -826,12 +826,16 @@ async def get_candidates_kanban(
     photo_file_map: dict = {}
     if entity_ids:
         try:
-            from ..models.database import EntityFile
+            from ..models.database import EntityFile, EntityFileType
             f_result = await db.execute(
                 select(EntityFile.entity_id, EntityFile.id, EntityFile.file_name)
                 .where(
                     EntityFile.entity_id.in_(entity_ids),
                     EntityFile.mime_type.startswith("image/"),
+                    # Резюме-страницы (PDF→JPEG) хранятся как file_type=resume —
+                    # это НЕ аватар, иначе скан резюме становится «фото» кандидата.
+                    # Берём только настоящие фото (HH-фото = file_type other и пр.).
+                    EntityFile.file_type != EntityFileType.resume,
                 )
                 .order_by(EntityFile.id.desc())
             )
