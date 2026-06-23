@@ -4142,7 +4142,11 @@
 .hf-candidate-left-col {
   width: var(--hf-candidate-left-col-w);
   flex: 0 0 var(--hf-candidate-left-col-w);
-  overflow: visible;
+  /* Левая колонка тоже должна скроллиться (как правая) — иначе на невысоком
+     экране нижние поля (зарплата/город/навыки/дата рождения) обрезаются без
+     прокрутки. */
+  overflow-y: auto;
+  min-height: 0;
   padding-block: var(--hf-candidate-modal-body-y);
   padding-right: var(--hf-candidate-modal-x);
 }
