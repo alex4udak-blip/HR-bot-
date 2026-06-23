@@ -168,6 +168,62 @@ async def convert_pdf_to_images(
 
     return created_files
 
+
+def extract_photo_from_pdf(pdf_bytes: bytes):
+    """Best-effort: вытащить фото кандидата, встроенное в PDF-резюме.
+
+    Возвращает (image_bytes, ext) или None. Эвристика: портретное/квадратное
+    встроенное растровое изображение на первых страницах, не иконка и не фон на
+    всю страницу/скан. Нужно, чтобы аватаром было ФОТО человека (если в PDF оно
+    есть), а не рендер страницы резюме (страницы сохраняются как
+    file_type=resume и в аватар не идут — см. candidate_search.photo_file_map).
+    """
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception:
+        return None
+    best_score = -1.0
+    best = None
+    try:
+        for pno in range(min(2, doc.page_count)):
+            page = doc[pno]
+            page_area = max(1.0, page.rect.width * page.rect.height)
+            for img in page.get_images(full=True):
+                xref = img[0]
+                try:
+                    base = doc.extract_image(xref)
+                except Exception:
+                    continue
+                w = base.get("width") or 0
+                h = base.get("height") or 0
+                if w < 80 or h < 80:
+                    continue  # иконка / декор
+                ar = h / w
+                if ar < 0.85 or ar > 2.4:
+                    continue  # широкий логотип / баннер — берём портрет/квадрат
+                try:
+                    rects = page.get_image_rects(xref)
+                    coverage = (max((r.width * r.height for r in rects), default=0.0)
+                                / page_area)
+                except Exception:
+                    coverage = 0.0
+                if coverage > 0.55:
+                    continue  # фон на всю страницу / скан страницы
+                # фото обычно — самое крупное портретное изображение; приоритет 1-й стр.
+                score = coverage + (0.5 if pno == 0 else 0.0)
+                if score > best_score:
+                    best_score = score
+                    best = (base["image"], (base.get("ext") or "png").lower())
+    except Exception:
+        return None
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+    return best
+
+
 # Allowed file extensions whitelist (security: prevent executable uploads)
 ALLOWED_EXTENSIONS = {
     # Documents
@@ -674,6 +730,37 @@ async def upload_entity_file(
                 )
 
         if pdf_for_conversion:
+            # Вытаскиваем фото человека из PDF (если есть) и сохраняем ОТДЕЛЬНЫМ
+            # файлом file_type=other → оно становится аватаром. Скан страниц
+            # резюме (file_type=resume) в аватар не идёт. Делаем ДО очистки
+            # промежуточного PDF (DOC-кейс) в finally ниже.
+            try:
+                _photo = extract_photo_from_pdf(pdf_for_conversion.read_bytes())
+                if _photo:
+                    _pbytes, _pext = _photo
+                    _pmime = "image/jpeg" if _pext in ("jpg", "jpeg") else f"image/{_pext}"
+                    db.add(EntityFile(
+                        entity_id=entity_id,
+                        org_id=org.id,
+                        file_type=EntityFileType.other,
+                        file_name=f"Фото_из_резюме.{_pext}",
+                        file_path="",
+                        file_size=len(_pbytes),
+                        mime_type=_pmime,
+                        description="Фото из резюме (PDF)",
+                        uploaded_by=current_user.id,
+                        file_data=_pbytes,
+                    ))
+                    await db.commit()
+                    file_logger.info(
+                        f"RESUME_PHOTO: extracted for entity {entity_id} "
+                        f"({len(_pbytes)} bytes, {_pmime})"
+                    )
+            except Exception as e:
+                file_logger.warning(
+                    f"resume photo extract failed for entity {entity_id}: {e}"
+                )
+
             file_logger.info(
                 f"Converting PDF resume to images for entity {entity_id}..."
             )
