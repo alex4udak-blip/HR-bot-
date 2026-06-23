@@ -54,6 +54,7 @@ import {
   getEntity,
   detectDuplicate,
   addEntityNote,
+  toggleTimelineReaction,
   getEntityActivity,
 } from "@/services/api/entities";
 import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
@@ -1708,6 +1709,17 @@ type ContainerNote = {
   edited_at?: string;
 };
 
+// Эмодзи-реакция на запись таймлайна (лог карточки).
+type EntryReaction = {
+  emoji: string;
+  user_id: number;
+  user_name?: string;
+  date?: string;
+};
+
+// Набор эмодзи для пикера реакций.
+const REACTION_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👀", "✅", "😂", "🙏"];
+
 // Резюме-демо одного контейнера (минимально нужные поля).
 type ContainerResumeDemo = {
   title?: string;
@@ -1775,6 +1787,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onUploadFile,
   onAnketa,
   anketaCount,
+  onReact,
 }: {
   card: KanbanCard;
   applicationId: number;
@@ -1810,6 +1823,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   // Только живой контейнер: открыть анкеты (чип в ряду действий) + бейдж кол-ва.
   onAnketa?: () => void;
   anketaCount?: number;
+  // Тоггл эмодзи-реакции записи таймлайна (entry_key, emoji) → новый список.
+  onReact?: (entryKey: string, emoji: string) => Promise<EntryReaction[] | null>;
 }) {
   // --- per-instance UI state (раньше было singleton в InfoTab) ---
   const [showStageDD, setShowStageDD] = useState(false);
@@ -1856,6 +1871,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       body?: string;
       author?: string;
       historyId?: number;
+      reactionKey: string;
     }>
   >(() => {
     const noteRows = (Array.isArray(notes) ? notes : [])
@@ -1867,6 +1883,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           : note.text || "Комментарий",
         body: note.stage_label ? note.text || undefined : undefined,
         author: note.author_name || undefined,
+        reactionKey: note.id ? `n:${note.id}` : `nd:${note.date || ""}`,
       }));
 
     const eventRows = (!readonly && Array.isArray(events) ? events : []).map(
@@ -1879,6 +1896,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           body: ev.comment || undefined,
           author: ev.changed_by_name || undefined,
           historyId: ev.id as number | undefined,
+          reactionKey: `e:${ev.id}`,
         };
       },
     );
@@ -1890,6 +1908,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           date: addedAt || card.created_at,
           title: "Кандидат добавлен",
           author: card.recruiter_name || undefined,
+          reactionKey: "created",
         },
       ];
     }
@@ -1917,6 +1936,33 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   );
   const isCommentComposerOpen =
     commentComposerOpen || comment.trim().length > 0;
+
+  // --- Эмодзи-реакции на записи таймлайна ---
+  const { user: reactionUser } = useAuthStore();
+  const [reactionPickerKey, setReactionPickerKey] = useState<string | null>(null);
+  const [localReactions, setLocalReactions] = useState<
+    Record<string, EntryReaction[]>
+  >(
+    () =>
+      (card.extra_data?.timeline_reactions as
+        | Record<string, EntryReaction[]>
+        | undefined) || {},
+  );
+  const handleReact = useCallback(
+    async (entryKey: string, emoji: string) => {
+      setReactionPickerKey(null);
+      if (!onReact) return;
+      const updated = await onReact(entryKey, emoji);
+      if (updated === null) return;
+      setLocalReactions((prev) => {
+        const next = { ...prev };
+        if (updated.length) next[entryKey] = updated;
+        else delete next[entryKey];
+        return next;
+      });
+    },
+    [onReact],
+  );
 
   const stagePickerOptions = useMemo(
     () =>
@@ -2344,10 +2390,41 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                   </span>
                   <button
                     type="button"
+                    onClick={
+                      !readonly && onReact
+                        ? () =>
+                            setReactionPickerKey((k) =>
+                              k === event.reactionKey ? null : event.reactionKey,
+                            )
+                        : undefined
+                    }
+                    title={
+                      !readonly && onReact ? "Поставить реакцию" : undefined
+                    }
                     className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
                   >
                     <TimelineMetaIcon />
                   </button>
+                  {reactionPickerKey === event.reactionKey && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setReactionPickerKey(null)}
+                      />
+                      <div className="absolute left-[38px] top-[16px] z-20 flex items-center gap-[2px] rounded-[var(--hf-radius-s)] border border-[var(--hf-main-200)] bg-[var(--hf-white)] px-[6px] py-[3px] shadow-md hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
+                        {REACTION_EMOJIS.map((em) => (
+                          <button
+                            key={em}
+                            type="button"
+                            onClick={() => handleReact(event.reactionKey, em)}
+                            className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-full text-[16px] leading-none transition-transform hover:scale-125"
+                          >
+                            {em}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   <button
                     type="button"
                     className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
@@ -2375,6 +2452,44 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                     </div>
                   )}
                 </div>
+                {(() => {
+                  const rs = localReactions[event.reactionKey] || [];
+                  if (rs.length === 0) return null;
+                  const byEmoji: Record<string, string[]> = {};
+                  for (const r of rs)
+                    (byEmoji[r.emoji] ||= []).push(r.user_name || "—");
+                  return (
+                    <div className="mt-[5px] flex flex-wrap gap-[4px]">
+                      {Object.entries(byEmoji).map(([em, names]) => {
+                        const mine = rs.some(
+                          (r) =>
+                            r.emoji === em && r.user_id === reactionUser?.id,
+                        );
+                        return (
+                          <button
+                            key={em}
+                            type="button"
+                            onClick={
+                              !readonly && onReact
+                                ? () => handleReact(event.reactionKey, em)
+                                : undefined
+                            }
+                            title={names.join(", ")}
+                            className={clsx(
+                              "inline-flex items-center gap-[3px] rounded-full border px-[7px] py-[1px] text-[12px] leading-[18px] transition-colors",
+                              mine
+                                ? "border-[var(--hf-cyan-500)] bg-[var(--hf-black-alpha-04)] text-[var(--hf-main-900)]"
+                                : "border-[var(--hf-main-200)] text-[var(--hf-main-700)] hover:bg-[var(--hf-black-alpha-04)]",
+                            )}
+                          >
+                            <span>{em}</span>
+                            <span>{names.length}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             ))
           ) : (
@@ -2659,6 +2774,31 @@ const InfoTab = memo(function InfoTab({
       await loadActivity();
     },
     [card, loadActivity],
+  );
+
+  const cardReact = useCallback(
+    async (
+      entryKey: string,
+      emoji: string,
+    ): Promise<EntryReaction[] | null> => {
+      try {
+        const resp = await toggleTimelineReaction(card.id, entryKey, emoji);
+        if (!card.extra_data) card.extra_data = {};
+        const tr = {
+          ...((card.extra_data.timeline_reactions as
+            | Record<string, unknown>
+            | undefined) || {}),
+        };
+        if (resp.reactions?.length) tr[entryKey] = resp.reactions;
+        else delete tr[entryKey];
+        card.extra_data.timeline_reactions = tr;
+        return (resp.reactions as EntryReaction[]) || [];
+      } catch {
+        toast.error("Не удалось поставить реакцию");
+        return null;
+      }
+    },
+    [card],
   );
 
   const cardDeleteHistory = useCallback(
@@ -3290,6 +3430,7 @@ const InfoTab = memo(function InfoTab({
           onUploadFile={cardUploadFile}
           onAnketa={c.origin === "live" ? () => setAnketaOpen(true) : undefined}
           anketaCount={anketaCount}
+          onReact={c.origin === "live" ? cardReact : undefined}
         />
       ))}
 

@@ -1029,6 +1029,76 @@ async def add_entity_note(
     return {"success": True, "note": note, "total_notes": len(notes)}
 
 
+class TimelineReactionRequest(BaseModel):
+    entry_key: str
+    emoji: str
+
+
+@router.post("/{entity_id}/timeline-reaction")
+async def toggle_timeline_reaction(
+    entity_id: int,
+    data: TimelineReactionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Тоггл эмодзи-реакции на запись таймлайна (лог карточки).
+
+    entry_key — стабильный ключ записи (id заметки / history-id события / 'created').
+    Реакции хранятся в extra_data.timeline_reactions[entry_key] = [{emoji, user_id,
+    user_name, date}]. Повторный клик тем же эмодзи снимает реакцию (toggle).
+    Доступно любому в той же организации (как и заметки).
+    """
+    from datetime import timezone as _tz
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org and current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "No organization access")
+
+    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+    _note_org_check(entity, current_user, org)
+
+    key = (data.entry_key or "").strip()
+    emoji = (data.emoji or "").strip()
+    if not key or not emoji:
+        raise HTTPException(400, "entry_key and emoji are required")
+    if len(emoji) > 16:
+        raise HTTPException(400, "emoji too long")
+
+    extra = dict(entity.extra_data or {})
+    reactions = dict(extra.get("timeline_reactions") or {})
+    entry = list(reactions.get(key) or [])
+    # toggle: снять, если я уже ставил ЭТОТ эмодзи; иначе добавить
+    idx = next(
+        (
+            i for i, r in enumerate(entry)
+            if isinstance(r, dict)
+            and r.get("user_id") == current_user.id
+            and r.get("emoji") == emoji
+        ),
+        -1,
+    )
+    if idx >= 0:
+        entry.pop(idx)
+    else:
+        entry.append({
+            "emoji": emoji,
+            "user_id": current_user.id,
+            "user_name": current_user.name,
+            "date": datetime.now(_tz.utc).isoformat(),
+        })
+    if entry:
+        reactions[key] = entry
+    else:
+        reactions.pop(key, None)
+    extra["timeline_reactions"] = reactions
+    entity.extra_data = extra
+    await db.commit()
+    return {"success": True, "entry_key": key, "reactions": entry}
+
+
 def _find_note_index(notes: list, note_id: str) -> int:
     """Ищем по id; для legacy-комментов без id допускаем поиск по date."""
     for i, n in enumerate(notes):

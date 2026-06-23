@@ -766,6 +766,27 @@ export const deleteEntityNote = async (
   return data;
 };
 
+export interface TimelineReaction {
+  emoji: string;
+  user_id: number;
+  user_name: string;
+  date?: string;
+}
+
+// Тоггл эмодзи-реакции на запись таймлайна. entry_key — стабильный ключ записи
+// (заметка/событие/«created»). Возвращает обновлённый список реакций записи.
+export const toggleTimelineReaction = async (
+  entityId: number,
+  entryKey: string,
+  emoji: string
+): Promise<{ success: boolean; entry_key: string; reactions: TimelineReaction[] }> => {
+  const { data } = await api.post(`/entities/${entityId}/timeline-reaction`, {
+    entry_key: entryKey,
+    emoji,
+  });
+  return data;
+};
+
 export const reconvertResume = async (entityId: number): Promise<{ success: boolean; pages_created: number }> => {
   const { data } = await api.post(`/entities/${entityId}/files/reconvert-resume`);
   return data;
