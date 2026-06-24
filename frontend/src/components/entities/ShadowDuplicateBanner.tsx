@@ -1,10 +1,16 @@
-import { useState, useEffect } from "react";
-import { AlertTriangle, X, Loader2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { AlertTriangle, X, Loader2, ChevronLeft, ChevronRight, Copy } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
 import type { EntityWithRelations } from "@/types";
 import { STATUS_LABELS } from "@/types";
-import { getEntity, mergeShadowDuplicate, dismissDuplicate } from "@/services/api/entities";
+import {
+  getEntity,
+  mergeShadowDuplicate,
+  dismissDuplicate,
+  getDuplicateCandidates,
+  type DuplicateCandidateResult,
+} from "@/services/api/entities";
 
 /**
  * Баннер «Похожий кандидат есть в базе» + БЕЛЫЙ экран сравнения двух анкет
@@ -221,6 +227,118 @@ function initialsOf(name: string) {
   return name.split(" ").filter(Boolean).slice(0, 2).map((s) => s[0]).join("").toUpperCase();
 }
 
+// Лейблы совпавших полей в карточке-миниатюре карусели дубликатов.
+const DUP_FIELD_LABEL: Record<string, string> = {
+  name: "Имя",
+  email: "Эл. почта",
+  phone: "Телефон",
+  telegram: "Telegram",
+  company: "Компания",
+};
+function dupFieldLabel(field: string): string {
+  return DUP_FIELD_LABEL[field] || field;
+}
+
+function confidenceClasses(confidence: number): string {
+  if (confidence >= 80) return "bg-red-100 text-red-700";
+  if (confidence >= 60) return "bg-orange-100 text-orange-700";
+  return "bg-amber-100 text-amber-700";
+}
+
+/**
+ * Горизонтальная карусель миниатюр всех похожих кандидатов (scroll-snap).
+ * Клик по карточке выбирает дубликат для подробного сравнения справа.
+ */
+function DuplicateCarousel({
+  duplicates,
+  selectedId,
+  onSelect,
+}: {
+  duplicates: DuplicateCandidateResult[];
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}) {
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const scrollByCard = (dir: number) => {
+    carouselRef.current?.scrollBy({ left: dir * 248, behavior: "smooth" });
+  };
+  return (
+    <div className="mb-3">
+      <div className="flex items-center gap-1 mb-1.5">
+        <span className="mr-auto text-[11px] uppercase tracking-wide text-slate-400">
+          {duplicates.length > 1 ? `Похожие кандидаты (${duplicates.length})` : "Похожий кандидат"}
+        </span>
+        {duplicates.length > 1 && (
+          <>
+            <button
+              onClick={() => scrollByCard(-1)}
+              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 transition-colors"
+              aria-label="Предыдущий"
+            >
+              <ChevronLeft size={14} className="text-slate-500" />
+            </button>
+            <button
+              onClick={() => scrollByCard(1)}
+              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 transition-colors"
+              aria-label="Следующий"
+            >
+              <ChevronRight size={14} className="text-slate-500" />
+            </button>
+          </>
+        )}
+      </div>
+      <div
+        ref={carouselRef}
+        className="flex gap-2 overflow-x-auto snap-x snap-mandatory scrollbar-thin pb-1 px-0.5 -mx-0.5"
+      >
+        {duplicates.map((dup) => {
+          const selected = dup.entity_id === selectedId;
+          return (
+            <button
+              key={dup.entity_id}
+              onClick={() => onSelect(dup.entity_id)}
+              className={`snap-start shrink-0 w-[220px] p-3 rounded-lg flex flex-col gap-2 text-left transition-colors border ${
+                selected
+                  ? "border-emerald-400 bg-emerald-50 ring-1 ring-emerald-300"
+                  : "border-slate-200 bg-white hover:bg-slate-50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${confidenceClasses(
+                    dup.confidence
+                  )}`}
+                >
+                  <Copy size={11} />
+                  {dup.confidence}%
+                </span>
+                {selected && (
+                  <span className="text-[10px] font-medium text-emerald-600">выбрано</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <Avatar photo="" name={dup.entity_name} />
+                <span className="font-medium text-slate-800 truncate">{dup.entity_name || "—"}</span>
+              </div>
+              <div className="flex items-center gap-1 flex-wrap min-h-[18px]">
+                {Object.keys(dup.matched_fields).map((field) => (
+                  <span
+                    key={field}
+                    className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px] text-slate-500"
+                    title={`Совпадение: ${dupFieldLabel(field)}`}
+                  >
+                    {dupFieldLabel(field)}
+                  </span>
+                ))}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function StatusBlock({ side }: { side: Side }) {
   if (!side.statusLabel && side.history.length === 0) return null;
   return (
@@ -402,38 +520,88 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   const hiddenId = (card.extra_data?.hidden_duplicate_id as number | undefined) ?? null;
   const [resolved, setResolved] = useState(false);
   const [open, setOpen] = useState(false);
+  // triggerEntity — профиль hiddenId, по которому решается ПОКАЗ баннера (стабилен,
+  // не зависит от выбора в карусели). archived — профиль ВЫБРАННОГО в модалке дубликата
+  // (правая колонка сравнения), он меняется при клике по миниатюре.
+  const [triggerEntity, setTriggerEntity] = useState<EntityWithRelations | null>(null);
   const [archived, setArchived] = useState<EntityWithRelations | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Полный список похожих кандидатов (карусель) + выбранный для сравнения справа.
+  const [duplicates, setDuplicates] = useState<DuplicateCandidateResult[]>([]);
+  const [selectedDupId, setSelectedDupId] = useState<number | null>(hiddenId);
+  const [rightLoading, setRightLoading] = useState(false);
 
   // Подгружаем профиль дубля сразу (не только по клику «Проверить»), чтобы заранее
-  // понять — это реальное совпадение или мусорный/устаревший флаг.
+  // понять — это реальное совпадение или мусорный/устаревший флаг. Баннер по-прежнему
+  // триггерится по hiddenId, поэтому грузим именно его для предпросмотра.
   useEffect(() => {
-    if (hiddenId && !archived) {
-      getEntity(hiddenId).then(setArchived).catch(() => {});
+    if (hiddenId && !triggerEntity) {
+      getEntity(hiddenId)
+        .then((e) => {
+          setTriggerEntity(e);
+          // Изначально правая колонка = hiddenId (до открытия модалки/карусели).
+          setArchived((prev) => prev ?? e);
+        })
+        .catch(() => {});
     }
-  }, [hiddenId, archived]);
+  }, [hiddenId, triggerEntity]);
 
   if (!hiddenId || resolved) return null;
 
+  // Загружает полный профиль выбранного дубликата в правую колонку сравнения.
+  const loadSelected = async (id: number) => {
+    setSelectedDupId(id);
+    // Уже загруженный hiddenId переиспользуем без повторного запроса.
+    if (archived && archived.id === id) return;
+    setRightLoading(true);
+    try {
+      setArchived(await getEntity(id));
+    } catch {
+      toast.error("Не удалось загрузить профиль дубликата");
+    } finally {
+      setRightLoading(false);
+    }
+  };
+
   const openModal = async () => {
     setOpen(true);
-    if (!archived) {
-      setLoading(true);
-      try {
-        setArchived(await getEntity(hiddenId));
-      } catch {
-        toast.error("Не удалось загрузить профиль дубликата");
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    try {
+      // Тянем ВСЕХ похожих кандидатов (включая архив) для карусели.
+      const list = await getDuplicateCandidates(card.id, true);
+      setDuplicates(list);
+      // Предвыбор: существующий hiddenId, если он в списке; иначе — самый
+      // вероятный (список отсортирован по убыванию confidence на бэке).
+      const preset =
+        list.find((d) => d.entity_id === hiddenId)?.entity_id ?? list[0]?.entity_id ?? hiddenId;
+      if (preset != null) {
+        await loadSelected(preset);
+      } else if (!archived) {
+        // Список пуст — fallback на одиночное поведение по hiddenId.
+        setArchived(triggerEntity ?? (await getEntity(hiddenId)));
       }
+    } catch {
+      // Если список не получили — не регрессируем: показываем одиночный hiddenId.
+      if (!archived) {
+        try {
+          setArchived(triggerEntity ?? (await getEntity(hiddenId)));
+        } catch {
+          toast.error("Не удалось загрузить профиль дубликата");
+        }
+      }
+      setSelectedDupId(hiddenId);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleMerge = async () => {
+    const targetId = selectedDupId ?? hiddenId;
+    if (targetId == null) return;
     setBusy(true);
     try {
-      await mergeShadowDuplicate(card.id, hiddenId);
+      await mergeShadowDuplicate(card.id, targetId);
       toast.success("Профили объединены");
       setOpen(false);
       setResolved(true);
@@ -446,9 +614,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   };
 
   const handleDismiss = async () => {
+    const targetId = selectedDupId ?? hiddenId;
+    if (targetId == null) return;
     setBusy(true);
     try {
-      await dismissDuplicate(card.id, hiddenId);
+      await dismissDuplicate(card.id, targetId);
       toast.success("Отмечено: это разные люди");
       setOpen(false);
       setResolved(true);
@@ -481,10 +651,25 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   const matchedKeys = right ? IDENTITY_KEYS.filter((k) => matched(k)) : [];
   const LBL: Record<string, string> = { name: "Имя", ...Object.fromEntries(FIELDS.map((f) => [f.key, f.label])) };
 
+  // Триггер баннера — отдельный матчинг ИМЕННО против hiddenId (triggerEntity),
+  // не против выбранного в карусели дубликата. Иначе выбор «непохожего» кандидата
+  // в открытой модалке обнулил бы matchedKeys и схлопнул бы весь баннер+модалку.
+  const triggerSide = triggerEntity ? fromEntity(triggerEntity) : null;
+  const triggerMatch = (key: FieldKey | "name"): boolean => {
+    if (!triggerSide) return false;
+    const a = (left as unknown as Record<string, string>)[key];
+    const b = (triggerSide as unknown as Record<string, string>)[key];
+    if (!a || !b) return false;
+    if (key === "phone") return normPhone(a).length > 0 && normPhone(a) === normPhone(b);
+    if (key === "telegram") return normTg(a) === normTg(b);
+    return norm(a) === norm(b);
+  };
+  const triggerMatchedKeys = triggerSide ? IDENTITY_KEYS.filter((k) => triggerMatch(k)) : [];
+
   // Баннер показываем ТОЛЬКО при реальном совпадении по контактам
-  // (имя/телефон/почта/telegram). Дубль не загрузился или совпадений нет —
+  // (имя/телефон/почта/telegram) С hiddenId. Дубль не загрузился или совпадений нет —
   // это ложный/устаревший флаг, баннер не мозолит глаза.
-  if (!archived || matchedKeys.length === 0) return null;
+  if (!triggerEntity || triggerMatchedKeys.length === 0) return null;
 
   return (
     <>
@@ -526,6 +711,15 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                 </div>
               ) : (
                 <>
+                  {/* Карусель всех похожих кандидатов — выбор дубликата для сравнения */}
+                  {duplicates.length > 0 && (
+                    <DuplicateCarousel
+                      duplicates={duplicates}
+                      selectedId={selectedDupId}
+                      onSelect={loadSelected}
+                    />
+                  )}
+
                   {matchedKeys.length > 0 ? (
                     <div className="mb-4 text-sm text-amber-700">
                       Совпадение по:{" "}
@@ -540,7 +734,13 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                   )}
                   <div className="grid grid-cols-2 gap-4">
                     <Column title={cardArchived ? "Эта анкета (в архиве)" : "Новый кандидат"} side={left} matched={matched} />
-                    <Column title="Старая анкета (дубликат)" side={right} matched={matched} />
+                    {rightLoading ? (
+                      <div className="rounded-xl border border-slate-200 p-4 flex items-center justify-center text-slate-400">
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                      </div>
+                    ) : (
+                      <Column title="Старая анкета (дубликат)" side={right} matched={matched} />
+                    )}
                   </div>
                 </>
               )}

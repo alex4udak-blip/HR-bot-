@@ -716,7 +716,8 @@ class SimilarityService:
         db: AsyncSession,
         entity: Entity,
         org_id: Optional[int] = None,
-        user: Optional[User] = None
+        user: Optional[User] = None,
+        include_archived: bool = False
     ) -> List[DuplicateCandidate]:
         """
         Детекция возможных дубликатов.
@@ -732,6 +733,8 @@ class SimilarityService:
             entity: Исходный кандидат
             org_id: ID организации
             user: Текущий пользователь (для фильтрации по правам доступа)
+            include_archived: Включать ли архивных кандидатов в детекцию
+                (по умолчанию False — архив исключается)
 
         Returns:
             Список возможных дубликатов с вероятностью
@@ -767,13 +770,14 @@ class SimilarityService:
         all_emails.discard("")
 
         # Загружаем всех кандидатов организации
-        query = select(Entity).where(
-            and_(
-                Entity.org_id == org_id,
-                Entity.id != entity.id,
-                Entity.is_archived.is_not(True),  # архив исключаем из детекции дубликатов
-            )
-        )
+        conditions = [
+            Entity.org_id == org_id,
+            Entity.id != entity.id,
+        ]
+        if not include_archived:
+            # архив исключаем из детекции дубликатов (по умолчанию)
+            conditions.append(Entity.is_archived.is_not(True))
+        query = select(Entity).where(and_(*conditions))
         result = await db.execute(query)
         all_candidates = result.scalars().all()
 

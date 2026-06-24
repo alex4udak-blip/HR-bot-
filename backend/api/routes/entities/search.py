@@ -886,6 +886,7 @@ async def get_similar_candidates(
 @router.get("/{entity_id}/duplicates", response_model=List[DuplicateCandidateResponse])
 async def get_duplicate_candidates(
     entity_id: int,
+    include_archived: bool = Query(False, description="Include archived entities in duplicate detection"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -918,7 +919,8 @@ async def get_duplicate_candidates(
         db=db,
         entity=entity,
         org_id=org.id,
-        user=current_user
+        user=current_user,
+        include_archived=include_archived
     )
 
     return [

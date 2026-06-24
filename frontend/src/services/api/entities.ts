@@ -377,14 +377,17 @@ export const getSimilarCandidates = async (
  * - Skills + company combination
  *
  * @param entityId ID of the entity to check
+ * @param includeArchived If true, also detect archived entities as duplicates
  * @returns List of possible duplicates with confidence scores
  */
 export const getDuplicateCandidates = async (
-  entityId: number
+  entityId: number,
+  includeArchived = false
 ): Promise<DuplicateCandidateResult[]> => {
-  const { data } = await deduplicatedGet<DuplicateCandidateResult[]>(
-    `/entities/${entityId}/duplicates`
-  );
+  const url = includeArchived
+    ? `/entities/${entityId}/duplicates?include_archived=true`
+    : `/entities/${entityId}/duplicates`;
+  const { data } = await deduplicatedGet<DuplicateCandidateResult[]>(url);
   return data;
 };
 
