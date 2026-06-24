@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { AlertTriangle, X, Loader2, ChevronLeft, ChevronRight, Copy } from "lucide-react";
+import { useState, useEffect } from "react";
+import { AlertTriangle, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
 import type { EntityWithRelations } from "@/types";
@@ -225,118 +225,6 @@ function fromEntity(e: EntityWithRelations): Side {
 
 function initialsOf(name: string) {
   return name.split(" ").filter(Boolean).slice(0, 2).map((s) => s[0]).join("").toUpperCase();
-}
-
-// Лейблы совпавших полей в карточке-миниатюре карусели дубликатов.
-const DUP_FIELD_LABEL: Record<string, string> = {
-  name: "Имя",
-  email: "Эл. почта",
-  phone: "Телефон",
-  telegram: "Telegram",
-  company: "Компания",
-};
-function dupFieldLabel(field: string): string {
-  return DUP_FIELD_LABEL[field] || field;
-}
-
-function confidenceClasses(confidence: number): string {
-  if (confidence >= 80) return "bg-red-100 text-red-700";
-  if (confidence >= 60) return "bg-orange-100 text-orange-700";
-  return "bg-amber-100 text-amber-700";
-}
-
-/**
- * Горизонтальная карусель миниатюр всех похожих кандидатов (scroll-snap).
- * Клик по карточке выбирает дубликат для подробного сравнения справа.
- */
-function DuplicateCarousel({
-  duplicates,
-  selectedId,
-  onSelect,
-}: {
-  duplicates: DuplicateCandidateResult[];
-  selectedId: number | null;
-  onSelect: (id: number) => void;
-}) {
-  const carouselRef = useRef<HTMLDivElement>(null);
-  const scrollByCard = (dir: number) => {
-    carouselRef.current?.scrollBy({ left: dir * 248, behavior: "smooth" });
-  };
-  return (
-    <div className="mb-3">
-      <div className="flex items-center gap-1 mb-1.5">
-        <span className="mr-auto text-[11px] uppercase tracking-wide text-slate-400">
-          {duplicates.length > 1 ? `Похожие кандидаты (${duplicates.length})` : "Похожий кандидат"}
-        </span>
-        {duplicates.length > 1 && (
-          <>
-            <button
-              onClick={() => scrollByCard(-1)}
-              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 transition-colors"
-              aria-label="Предыдущий"
-            >
-              <ChevronLeft size={14} className="text-slate-500" />
-            </button>
-            <button
-              onClick={() => scrollByCard(1)}
-              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 transition-colors"
-              aria-label="Следующий"
-            >
-              <ChevronRight size={14} className="text-slate-500" />
-            </button>
-          </>
-        )}
-      </div>
-      <div
-        ref={carouselRef}
-        className="flex gap-2 overflow-x-auto snap-x snap-mandatory scrollbar-thin pb-1 px-0.5 -mx-0.5"
-      >
-        {duplicates.map((dup) => {
-          const selected = dup.entity_id === selectedId;
-          return (
-            <button
-              key={dup.entity_id}
-              onClick={() => onSelect(dup.entity_id)}
-              className={`snap-start shrink-0 w-[220px] p-3 rounded-lg flex flex-col gap-2 text-left transition-colors border ${
-                selected
-                  ? "border-emerald-400 bg-emerald-50 ring-1 ring-emerald-300"
-                  : "border-slate-200 bg-white hover:bg-slate-50"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${confidenceClasses(
-                    dup.confidence
-                  )}`}
-                >
-                  <Copy size={11} />
-                  {dup.confidence}%
-                </span>
-                {selected && (
-                  <span className="text-[10px] font-medium text-emerald-600">выбрано</span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 min-w-0">
-                <Avatar photo="" name={dup.entity_name} />
-                <span className="font-medium text-slate-800 truncate">{dup.entity_name || "—"}</span>
-              </div>
-              <div className="flex items-center gap-1 flex-wrap min-h-[18px]">
-                {Object.keys(dup.matched_fields).map((field) => (
-                  <span
-                    key={field}
-                    className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px] text-slate-500"
-                    title={`Совпадение: ${dupFieldLabel(field)}`}
-                  >
-                    {dupFieldLabel(field)}
-                  </span>
-                ))}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 function StatusBlock({ side }: { side: Side }) {
@@ -671,6 +559,9 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   // это ложный/устаревший флаг, баннер не мозолит глаза.
   if (!triggerEntity || triggerMatchedKeys.length === 0) return null;
 
+  // Индекс показанного справа дубликата — для нав-стрелок «перебираем карточки».
+  const idx = duplicates.findIndex((d) => d.entity_id === selectedDupId);
+
   return (
     <>
       {/* Баннер над action-баром карточки */}
@@ -711,15 +602,6 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                 </div>
               ) : (
                 <>
-                  {/* Карусель всех похожих кандидатов — выбор дубликата для сравнения */}
-                  {duplicates.length > 0 && (
-                    <DuplicateCarousel
-                      duplicates={duplicates}
-                      selectedId={selectedDupId}
-                      onSelect={loadSelected}
-                    />
-                  )}
-
                   {matchedKeys.length > 0 ? (
                     <div className="mb-4 text-sm text-amber-700">
                       Совпадение по:{" "}
@@ -734,13 +616,42 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                   )}
                   <div className="grid grid-cols-2 gap-4">
                     <Column title={cardArchived ? "Эта анкета (в архиве)" : "Новый кандидат"} side={left} matched={matched} />
-                    {rightLoading ? (
-                      <div className="rounded-xl border border-slate-200 p-4 flex items-center justify-center text-slate-400">
-                        <Loader2 className="w-6 h-6 animate-spin" />
-                      </div>
-                    ) : (
-                      <Column title="Старая анкета (дубликат)" side={right} matched={matched} />
-                    )}
+                    <div className="min-w-0">
+                      {/* Нав по похожим анкетам — перебираем дубликаты в правой колонке */}
+                      {duplicates.length > 1 && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-[11px] uppercase tracking-wide text-slate-400">Похожие анкеты</span>
+                          <div className="ml-auto flex items-center gap-2">
+                            <button
+                              onClick={() => idx > 0 && loadSelected(duplicates[idx - 1].entity_id)}
+                              disabled={idx <= 0}
+                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              aria-label="Предыдущая анкета"
+                            >
+                              <ChevronLeft size={14} className="text-slate-500" />
+                            </button>
+                            <span className="text-xs font-medium text-slate-500 tabular-nums">
+                              {idx + 1} / {duplicates.length}
+                            </span>
+                            <button
+                              onClick={() => idx < duplicates.length - 1 && loadSelected(duplicates[idx + 1].entity_id)}
+                              disabled={idx >= duplicates.length - 1}
+                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              aria-label="Следующая анкета"
+                            >
+                              <ChevronRight size={14} className="text-slate-500" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {rightLoading ? (
+                        <div className="rounded-xl border border-slate-200 p-4 flex items-center justify-center text-slate-400">
+                          <Loader2 className="w-6 h-6 animate-spin" />
+                        </div>
+                      ) : (
+                        <Column title="Старая анкета (дубликат)" side={right} matched={matched} />
+                      )}
+                    </div>
                   </div>
                 </>
               )}
