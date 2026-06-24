@@ -394,14 +394,6 @@ const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
     adminOnly: true,
   },
   {
-    title: "Организация",
-    description: "Название, оргструктура, безопасность и уведомления",
-    icon: Building2,
-    color: "text-[var(--hf-status-indigo)]",
-    path: "/departments",
-    adminOnly: true,
-  },
-  {
     title: "Воронка",
     description: "Этапы подбора, воронки, отказы и контроль сроков",
     icon: Filter,
@@ -746,7 +738,7 @@ function getBlockForPath(path: string): string | null {
     return "hr";
   }
   if (
-    ["/users", "/departments", "/settings", "/admin", "/trash"].some((p) =>
+    ["/users", "/settings", "/admin", "/trash"].some((p) =>
       path.startsWith(p),
     )
   ) {
@@ -1167,7 +1159,6 @@ export default function Layout() {
     // ADMIN block — только superadmin/owner, скрыт у HR-only
     if (isPlatformAdmin) {
       const adminItems: { path: string; icon: LucideIcon; label: string }[] = [
-        { path: "/departments", icon: Building2, label: "Департаменты" },
         { path: "/settings", icon: Settings, label: "Настройки" },
       ];
       if (user?.role === "superadmin") {
