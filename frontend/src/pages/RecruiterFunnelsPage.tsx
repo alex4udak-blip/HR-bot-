@@ -1430,6 +1430,19 @@ export default function RecruiterFunnelsPage() {
       console.error('Failed to save comment:', err);
       toast.error('Не удалось сохранить комментарий');
     } finally {
+      // ВСЕГДА синхронизируем авторитетное состояние с сервера — даже если
+      // запрос отвалился (таймаут/сеть), но бэкенд успел закоммитить коммент
+      // (с @-тэгом бэкенд делает доп. работу — уведомления — и ответ мог не
+      // дойти), он появится СРАЗУ, а не после F5. getEntity не кэшируется.
+      const eid = selectedCandidate?.entity_id;
+      if (eid) {
+        try {
+          const fresh = await getEntity(eid);
+          setEntityExtraData(fresh.extra_data || null);
+        } catch {
+          /* ignore — оптимистичного мерджа достаточно */
+        }
+      }
       setCommentSaving(false);
     }
   }, [selectedCandidate?.entity_id]);

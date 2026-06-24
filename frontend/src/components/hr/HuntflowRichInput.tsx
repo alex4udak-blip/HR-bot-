@@ -83,6 +83,7 @@ export function HuntflowRichInput({
   const mItemsRef = useRef<MentionMember[]>([]);
   const mIndexRef = useRef(0);
   const mInfoRef = useRef<{ node: Node; start: number } | null>(null);
+  const ddRef = useRef<HTMLDivElement>(null);
   const [mOpen, setMOpen] = useState(false);
   const [mItems, setMItems] = useState<MentionMember[]>([]);
   const [mIndex, setMIndex] = useState(0);
@@ -138,15 +139,30 @@ export function HuntflowRichInput({
     };
   }, [showMention]);
 
-  // Фиксированная выпадашка протухает при скролле/ресайзе — закрываем.
+  // Закрываем выпадашку ТОЛЬКО при действиях снаружи неё: клик мимо, либо скролл
+  // НЕ внутри списка. Раньше capture-scroll ловил и собственную прокрутку списка
+  // (и onBlur — любой увод фокуса), из-за чего она схлопывалась «от прикосновения».
   useEffect(() => {
     if (!mOpen) return;
-    const close = () => closeMention();
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
+    const insideDropdown = (t: EventTarget | null) =>
+      t instanceof Node && !!ddRef.current && ddRef.current.contains(t);
+    const insideEditor = (t: EventTarget | null) =>
+      t instanceof Node && !!ref.current && ref.current.contains(t);
+    const onDocDown = (e: MouseEvent) => {
+      if (!insideDropdown(e.target) && !insideEditor(e.target)) closeMention();
+    };
+    const onScroll = (e: Event) => {
+      // скролл ВНУТРИ выпадашки её не закрывает
+      if (insideDropdown(e.target)) return;
+      closeMention();
+    };
+    document.addEventListener('mousedown', onDocDown, true);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', closeMention);
     return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
+      document.removeEventListener('mousedown', onDocDown, true);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', closeMention);
     };
   }, [mOpen, closeMention]);
 
@@ -411,10 +427,6 @@ export function HuntflowRichInput({
           refreshActive();
           detectMention();
         }}
-        onBlur={() => {
-          // даём успеть click по пункту выпадашки (там mousedown→preventDefault)
-          window.setTimeout(() => closeMention(), 120);
-        }}
         onCompositionStart={() => {
           composingRef.current = true;
         }}
@@ -474,6 +486,7 @@ export function HuntflowRichInput({
         mRect &&
         createPortal(
           <div
+            ref={ddRef}
             className="hf-mention-dropdown"
             style={{ top: mRect.top, left: mRect.left }}
             onMouseDown={(e) => e.preventDefault()}

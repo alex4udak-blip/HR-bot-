@@ -6945,8 +6945,9 @@ body.performance-mode .glass-card:hover {
   position: fixed;
   z-index: 1000;
   width: 244px;
-  max-height: 248px;
+  max-height: 320px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px;
   background: var(--hf-white);
   border: 1px solid var(--hf-ui-border);

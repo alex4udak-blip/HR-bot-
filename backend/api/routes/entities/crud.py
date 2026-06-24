@@ -1047,16 +1047,23 @@ async def add_entity_note(
     notes.append(note)
     extra["notes"] = notes
     entity.extra_data = extra
-
-    # @-упоминания: вытащить из HTML комментария data-uid и уведомить упомянутых
-    # (как у анкет). Тем же коммитом, что и сам комментарий.
-    from ...services.hr_notifications import notify_comment_mentions
-    await notify_comment_mentions(
-        db, text=text_clean, author=current_user, entity=entity
-    )
-
+    # Сначала ГАРАНТИРОВАННО коммитим сам комментарий — его сохранность не должна
+    # зависеть от уведомлений об @-упоминаниях (иначе при сбое/медленном notify
+    # коммент «появлялся только после F5»).
     await db.commit()
     await db.refresh(entity)
+
+    # @-упоминания — ОТДЕЛЬНОЙ транзакцией: достаём data-uid из HTML и шлём
+    # упомянутым уведомление «как у анкет». Падение здесь уже не трогает коммент.
+    try:
+        from ...services.hr_notifications import notify_comment_mentions
+        await notify_comment_mentions(
+            db, text=text_clean, author=current_user, entity=entity
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+
     return {"success": True, "note": note, "total_notes": len(notes)}
 
 

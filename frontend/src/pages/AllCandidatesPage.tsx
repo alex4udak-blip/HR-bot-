@@ -1874,6 +1874,14 @@ const InfoTab = memo(function InfoTab({
         console.error("Failed to save comment:", err);
         toast.error("Ошибка сохранения комментария");
       }
+      // ВСЕГДА синхронизируем с сервера — даже если запрос отвалился, но бэкенд
+      // закоммитил коммент (с @-тэгом), он появится сразу. getEntity не кэшируется.
+      try {
+        const fresh = await getEntity(card.id);
+        if (fresh.extra_data) card.extra_data = fresh.extra_data;
+      } catch {
+        /* ignore */
+      }
       await loadActivity();
     },
     [card, loadActivity],
