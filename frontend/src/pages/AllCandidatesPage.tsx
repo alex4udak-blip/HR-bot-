@@ -35,7 +35,7 @@ import clsx from "clsx";
 import toast from "react-hot-toast";
 import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
-import { buildStageContainers, buildResumeSources } from "@/components/entities/candidateDetail/model";
+import { buildStageContainers, buildResumeSources, matchesTimelineFilter, TIMELINE_ACTION_FILTERS, type EntryReaction } from "@/components/entities/candidateDetail/model";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
@@ -195,44 +195,8 @@ function HuntflowChevronDown24Icon({ className }: { className?: string }) {
 const normalizeStageLabel = (value: string) =>
   value.toLowerCase().replace(/\s+/g, " ").trim();
 
-const TIMELINE_ACTION_FILTERS = [
-  "Сопроводительное письмо",
-  "Смена этапа подбора",
-  "Комментарий",
-  "Письмо кандидату",
-  "Интервью",
-  "Телефонный звонок",
-  "Файл",
-  "Оффер",
-  "Отказ",
-  "Оценка рекрутмента",
-];
-
-const getTimelineFilterAliases = (filter: string) => {
-  const aliases: Record<string, string[]> = {
-    "Смена этапа подбора": ["смен", "этап", "перенес", "новый", "отказ"],
-    "Письмо кандидату": ["письм", "email", "почт"],
-    "Телефонный звонок": ["телефон", "звон"],
-    "Сопроводительное письмо": ["сопровод"],
-  };
-  return [filter, ...(aliases[filter] || [])].map((value) =>
-    value.toLowerCase(),
-  );
-};
-
-// Матч записи таймлайна под фильтр «Действия». Комментарий и смена этапа — по
-// ТИПУ записи (kind); остальное (отказ и т.п.) — по тексту. Фильтры без записей
-// в таймлайне (письмо/интервью/звонок/файл/оффер/…) не матчатся → не показываются.
-const matchesTimelineFilter = (
-  item: { title?: string; body?: string; kind?: string },
-  filter: string,
-): boolean => {
-  if (filter === "Комментарий") return item.kind === "comment";
-  if (filter === "Смена этапа подбора") return item.kind === "stage";
-  const aliases = getTimelineFilterAliases(filter);
-  const hay = `${item.title || ""} ${item.body || ""}`.toLowerCase();
-  return aliases.some((a) => hay.includes(a));
-};
+// TIMELINE_ACTION_FILTERS + matchesTimelineFilter вынесены в
+// candidateDetail/model (с unit-тестами) — импортируются выше.
 
 function TimelineUserGlyph({
   surface = "stage",
@@ -1783,13 +1747,7 @@ type ContainerNote = {
   edited_at?: string;
 };
 
-// Эмодзи-реакция на запись таймлайна (лог карточки).
-type EntryReaction = {
-  emoji: string;
-  user_id: number;
-  user_name?: string;
-  date?: string;
-};
+// EntryReaction вынесён в candidateDetail/model (импортируется выше).
 
 // Набор эмодзи для пикера реакций.
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👀", "✅", "😂", "🙏"];

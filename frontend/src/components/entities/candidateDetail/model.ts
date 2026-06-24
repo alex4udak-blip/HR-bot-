@@ -268,3 +268,54 @@ export function buildStageContainers(params: {
 
   return [liveContainer, ...mergedContainers];
 }
+
+// ── Timeline reactions + «Действия» filter (pure) ──
+
+/** Эмодзи-реакция на запись таймлайна (лог карточки). */
+export type EntryReaction = {
+  emoji: string;
+  user_id: number;
+  user_name?: string;
+  date?: string;
+};
+
+/** Полный список фильтров «Действия» (показываются только непустые). */
+export const TIMELINE_ACTION_FILTERS = [
+  "Сопроводительное письмо",
+  "Смена этапа подбора",
+  "Комментарий",
+  "Письмо кандидату",
+  "Интервью",
+  "Телефонный звонок",
+  "Файл",
+  "Оффер",
+  "Отказ",
+  "Оценка рекрутмента",
+];
+
+const getTimelineFilterAliases = (filter: string): string[] => {
+  const aliases: Record<string, string[]> = {
+    "Смена этапа подбора": ["смен", "этап", "перенес", "новый", "отказ"],
+    "Письмо кандидату": ["письм", "email", "почт"],
+    "Телефонный звонок": ["телефон", "звон"],
+    "Сопроводительное письмо": ["сопровод"],
+  };
+  return [filter, ...(aliases[filter] || [])].map((value) =>
+    value.toLowerCase(),
+  );
+};
+
+/**
+ * Матч записи таймлайна под фильтр «Действия». Комментарий и смена этапа — по
+ * ТИПУ записи (kind); остальное (отказ и т.п.) — по тексту (title/body).
+ */
+export function matchesTimelineFilter(
+  item: { title?: string; body?: string; kind?: string },
+  filter: string,
+): boolean {
+  if (filter === "Комментарий") return item.kind === "comment";
+  if (filter === "Смена этапа подбора") return item.kind === "stage";
+  const aliases = getTimelineFilterAliases(filter);
+  const hay = `${item.title || ""} ${item.body || ""}`.toLowerCase();
+  return aliases.some((a) => hay.includes(a));
+}
