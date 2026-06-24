@@ -64,7 +64,7 @@ async def list_projects(
             )
         )
 
-    query = query.order_by(Project.priority.desc(), Project.updated_at.desc())
+    query = query.order_by(Project.priority.desc(), Project.created_at.desc())
 
     result = await db.execute(query)
     projects = list(result.scalars().unique().all())
