@@ -257,23 +257,37 @@ async def list_organization_members(
     if is_superadmin or is_owner:
         # Superadmin/Owner sees everyone
         filtered_members = all_members
-    elif is_admin or is_dept_lead:
-        # Admin sees:
-        # 1. All department leads/sub_admins from any department
-        # 2. All members from their own department
+    elif is_admin:
+        # HR admin видит: всех лидов/sub_admin любого отдела + членов своего отдела
         filtered_members = []
         for m in all_members:
             user_dept_info = user_dept_map.get(m.user_id)
             if user_dept_info:
                 member_dept_id, _, member_dept_role = user_dept_info
-                # Include if: department lead/sub_admin OR same department
                 if member_dept_role in [DeptRole.lead, DeptRole.sub_admin]:
                     filtered_members.append(m)
                 elif current_user_dept_id and member_dept_id == current_user_dept_id:
                     filtered_members.append(m)
-            else:
-                # User not in any department - only show to owner/superadmin
-                pass
+    elif is_dept_lead:
+        # Лид/sub_admin видит ТОЛЬКО членов своих отделов (любых, где он lead/sub_admin).
+        # Не показываем лидов чужих отделов — раньше показывали, но это противоречит
+        # ожиданию «команда лида = его люди».
+        lead_dept_ids_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == current_user.id,
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin]),
+            )
+        )
+        lead_dept_ids = {r for r in lead_dept_ids_result.scalars().all()}
+        # Все user_id-ы из этих отделов
+        dept_users_result = await db.execute(
+            select(DepartmentMember.user_id).where(
+                DepartmentMember.department_id.in_(lead_dept_ids)
+            )
+        )
+        allowed_user_ids = {uid for uid in dept_users_result.scalars().all()}
+        allowed_user_ids.add(current_user.id)
+        filtered_members = [m for m in all_members if m.user_id in allowed_user_ids]
     else:
         # Regular member sees only own department members
         filtered_members = []
