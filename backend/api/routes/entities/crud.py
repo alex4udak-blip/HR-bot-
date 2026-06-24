@@ -1047,6 +1047,14 @@ async def add_entity_note(
     notes.append(note)
     extra["notes"] = notes
     entity.extra_data = extra
+
+    # @-упоминания: вытащить из HTML комментария data-uid и уведомить упомянутых
+    # (как у анкет). Тем же коммитом, что и сам комментарий.
+    from ...services.hr_notifications import notify_comment_mentions
+    await notify_comment_mentions(
+        db, text=text_clean, author=current_user, entity=entity
+    )
+
     await db.commit()
     await db.refresh(entity)
     return {"success": True, "note": note, "total_notes": len(notes)}

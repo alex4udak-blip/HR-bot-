@@ -36,7 +36,11 @@ export function sanitizeHtml(html: string | null | undefined): string {
       Array.from(el.attributes).forEach((attr) => {
         const keepHref =
           tag === "A" && attr.name === "href" && /^https?:\/\//i.test(attr.value);
-        if (!keepHref) el.removeAttribute(attr.name);
+        // Сохраняем class="hf-mention" — чип @-упоминания (стилизуется в CSS).
+        // Остальные классы/атрибуты (data-uid и т.п.) срезаем: для показа не нужны.
+        const keepMention =
+          attr.name === "class" && attr.value.trim() === "hf-mention";
+        if (!keepHref && !keepMention) el.removeAttribute(attr.name);
       });
       if (tag === "A") {
         el.setAttribute("target", "_blank");

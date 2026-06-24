@@ -8,6 +8,7 @@ All functions are fire-and-forget safe: they catch exceptions internally
 so that a notification failure never breaks the main operation.
 """
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -75,6 +76,75 @@ async def _create_notification(
         link=link,
     )
     db.add(notif)
+
+
+# @-упоминания приходят внутри HTML комментария как
+# <span class="hf-mention" data-uid="123">@Имя</span>. Достаём uid'ы отсюда.
+_MENTION_UID_RE = re.compile(r'data-uid=["\']?(\d+)', re.IGNORECASE)
+
+
+async def notify_comment_mentions(
+    db: AsyncSession,
+    *,
+    text: str,
+    author: User,
+    entity: Entity,
+) -> None:
+    """Уведомить @-упомянутых пользователей о комментарии к кандидату.
+
+    Mention'ы едут внутри HTML комментария (data-uid у span.hf-mention).
+    Оставляем только реальных членов ТОЙ ЖЕ организации (anti-spam), себя не
+    уведомляем. Шлём in-app уведомление «как у анкет» (его подхватит 25-сек
+    поллинг во фронте, клик → /all-candidates?entity=ID).
+
+    Только добавляет строки в сессию — коммит на стороне вызывающего, поэтому
+    уведомления и сам комментарий сохраняются одной транзакцией.
+    """
+    try:
+        if not text:
+            return
+        author_id = int(getattr(author, "id", 0) or 0)
+        ids: list[int] = []
+        seen: set[int] = set()
+        for raw in _MENTION_UID_RE.findall(text):
+            try:
+                uid = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if uid in seen or uid == author_id:  # себя не пингуем
+                continue
+            seen.add(uid)
+            ids.append(uid)
+        if not ids:
+            return
+        # Валидируем org-принадлежность: уведомляем только своих.
+        org_id = getattr(entity, "org_id", None)
+        if org_id is not None:
+            res = await db.execute(
+                select(OrgMember.user_id).where(
+                    OrgMember.org_id == org_id,
+                    OrgMember.user_id.in_(ids),
+                )
+            )
+            valid = {int(row[0]) for row in res.all()}
+            ids = [u for u in ids if u in valid]
+        if not ids:
+            return
+        cand = getattr(entity, "name", None)
+        suffix = f" к кандидату {cand}" if cand else ""
+        author_name = getattr(author, "name", None) or "Коллега"
+        link = f"/all-candidates?entity={entity.id}"
+        for uid in ids:
+            await _create_notification(
+                db,
+                uid,
+                "comment_mentioned",
+                "Вас упомянули в комментарии",
+                f"{author_name} упомянул(а) вас в комментарии{suffix}",
+                link,
+            )
+    except Exception:
+        logger.exception("notify_comment_mentions failed")
 
 
 # ---------------------------------------------------------------------------

@@ -564,13 +564,18 @@ async def upload_entity_file(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
-    # Check if user has edit access to this entity
-    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
-    if not has_access:
-        file_logger.warning(
-            f"Upload denied: user {current_user.id} lacks edit permission for entity {entity_id}"
-        )
-        raise HTTPException(403, "No edit permission for this entity")
+    # Загрузка файла — additive workflow-действие, как комментарий: доступно
+    # ЛЮБОМУ пользователю той же организации (зеркалит общий /all-candidates
+    # kanban, где рекрутёр видит и дополняет ВСЕХ кандидатов оргa, см.
+    # add_entity_note). Раньше тут требовался edit-доступ, из-за чего HR не мог
+    # прикрепить файл «чужому» кандидату («No edit permission for this entity»).
+    # Сам entity уже отфильтрован по org_id выше (cross-org → 404), поэтому
+    # отдельная edit-проверка только мешала. Удаление файла остаётся под
+    # edit-доступом (см. delete_entity_file): добавлять можно свободно,
+    # удалять — осторожно.
+    file_logger.info(
+        f"Upload allowed (org-scope): user {current_user.id} → entity {entity_id}"
+    )
 
     # Check file count limit per entity
     current_file_count = await get_entity_file_count(db, entity_id)
