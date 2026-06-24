@@ -245,34 +245,22 @@ export function useResumeUpload(): UseResumeUploadReturn {
     if (!fileEntry) return null;
 
     try {
-      // Set uploading status
-      updateFile(id, { status: 'uploading', progress: 10 });
+      // Фаза 1 — реальная загрузка файла (0–100% по байтам через onUploadProgress).
+      updateFile(id, { status: 'uploading', progress: 0 });
 
-      // Simulate upload progress (actual upload is handled by API)
-      const progressInterval = setInterval(() => {
-        setFiles(prev => {
-          const file = prev.find(f => f.id === id);
-          if (file && file.progress < 50 && file.status === 'uploading') {
-            return prev.map(f => f.id === id ? { ...f, progress: f.progress + 10 } : f);
-          }
-          return prev;
-        });
-      }, 200);
-
-      // Update to parsing status
-      updateFile(id, { status: 'parsing', progress: 60 });
-
-      // Parse resume via API
-      const parsedData = await parseResumeFromFile(fileEntry.file);
-
-      clearInterval(progressInterval);
+      const parsedData = await parseResumeFromFile(fileEntry.file, (pct) => {
+        // Пока байты летят — настоящий процент отправки. Как только файл ушёл
+        // целиком, сервер начинает AI-разбор — переключаемся в индетерминантную
+        // фазу «parsing» (честного % из одного блокирующего вызова Claude нет).
+        if (pct >= 100) {
+          updateFile(id, { status: 'parsing', progress: 100 });
+        } else {
+          updateFile(id, { status: 'uploading', progress: pct });
+        }
+      });
 
       // Update with parsed data
-      updateFile(id, {
-        status: 'done',
-        progress: 100,
-        parsedData
-      });
+      updateFile(id, { status: 'done', progress: 100, parsedData });
 
       return parsedData;
     } catch (error) {

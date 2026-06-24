@@ -97,7 +97,7 @@ const getStatusText = (status: UploadingFile['status']): string => {
     case 'uploading':
       return 'Загрузка...';
     case 'parsing':
-      return 'Парсинг резюме...';
+      return 'AI анализирует резюме…';
     case 'done':
       return 'Готово';
     case 'error':
@@ -235,15 +235,23 @@ function FileItem({
             <p className="text-sm text-red-400 mt-1">{file.error}</p>
           )}
 
-          {/* Progress bar */}
+          {/* Progress bar — определённый % на загрузку, «бегущая» полоса на AI-анализ */}
           {(file.status === 'uploading' || file.status === 'parsing') && (
             <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <motion.div
-                className="h-full bg-blue-500 rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${file.progress}%` }}
-                transition={{ duration: 0.3 }}
-              />
+              {file.status === 'uploading' ? (
+                <motion.div
+                  className="h-full bg-blue-500 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${file.progress}%` }}
+                  transition={{ duration: 0.3 }}
+                />
+              ) : (
+                <motion.div
+                  className="h-full w-1/3 bg-blue-500 rounded-full"
+                  animate={{ x: ['-100%', '300%'] }}
+                  transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+                />
+              )}
             </div>
           )}
 
@@ -465,6 +473,7 @@ export default function ResumeUploader({
   }, [disabled]);
 
   const maxSizeMB = Math.round(MAX_FILE_SIZE / (1024 * 1024));
+  const anyParsing = files.some(f => f.status === 'parsing');
 
   return (
     <div className={clsx('space-y-4', className)}>
@@ -561,19 +570,29 @@ export default function ResumeUploader({
         </AnimatePresence>
       </div>
 
-      {/* Overall progress */}
+      {/* Overall progress — фаза загрузки (определённый %) → фаза AI-анализа (бегущая полоса) */}
       {isUploading && (
         <div className="p-3 glass-light rounded-lg" role="status" aria-live="polite">
           <div className="flex items-center justify-between text-sm mb-2">
-            <span className="text-white/60">Загрузка файлов...</span>
-            <span className="text-white/40" aria-label={`${overallProgress} процентов`}>{overallProgress}%</span>
+            <span className="text-white/60">{anyParsing ? 'AI анализирует резюме…' : 'Загрузка файлов…'}</span>
+            {!anyParsing && (
+              <span className="text-white/40" aria-label={`${overallProgress} процентов`}>{overallProgress}%</span>
+            )}
           </div>
           <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-blue-500 rounded-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${overallProgress}%` }}
-            />
+            {anyParsing ? (
+              <motion.div
+                className="h-full w-1/3 bg-blue-500 rounded-full"
+                animate={{ x: ['-100%', '300%'] }}
+                transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            ) : (
+              <motion.div
+                className="h-full bg-blue-500 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${overallProgress}%` }}
+              />
+            )}
           </div>
         </div>
       )}

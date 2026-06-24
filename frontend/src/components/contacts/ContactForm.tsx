@@ -101,6 +101,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [parsing, setParsing] = useState(false);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -111,8 +112,10 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (!file) return;
     setParsing(true);
+    setUploadPct(0);
     try {
-      const r = await parseResumeFromFile(file);
+      // Реальный % отправки файла; на 100% сервер начинает AI-разбор → null = индетерминантная фаза.
+      const r = await parseResumeFromFile(file, (pct) => setUploadPct(pct >= 100 ? null : pct));
       setResumeFile(file);
       setFormData((prev) => ({
         ...prev,
@@ -133,6 +136,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
       toast.error(detail || (err instanceof Error ? err.message : 'Не удалось распознать резюме'));
     } finally {
       setParsing(false);
+      setUploadPct(null);
     }
   };
 
@@ -275,8 +279,17 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                 ) : (
                   <Upload size={18} />
                 )}
-                {parsing ? 'Распознаю резюме…' : 'Загрузить резюме (PDF) — заполнить автоматически'}
+                {!parsing
+                  ? 'Загрузить резюме (PDF) — заполнить автоматически'
+                  : uploadPct !== null
+                    ? `Загрузка файла… ${uploadPct}%`
+                    : 'AI анализирует резюме…'}
               </button>
+              {parsing && uploadPct !== null && (
+                <div className="mt-2 h-1 bg-cyan-500/15 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-400 rounded-full transition-all duration-200" style={{ width: `${uploadPct}%` }} />
+                </div>
+              )}
               <p className="text-xs text-white/40 mt-1 text-center">
                 PDF, DOC, DOCX, TXT — поля заполнятся из файла, проверьте и создайте
               </p>

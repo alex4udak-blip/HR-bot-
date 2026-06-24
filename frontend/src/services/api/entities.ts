@@ -866,12 +866,18 @@ export const parseResumeFromUrl = async (url: string): Promise<ParsedResume> => 
   return response.data;
 };
 
-export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => {
+export const parseResumeFromFile = async (
+  file: File,
+  onUploadProgress?: (pct: number) => void,
+): Promise<ParsedResume> => {
   const formData = new FormData();
   formData.append('file', file);
   const { data: response } = await api.post<ParseResponse<ParsedResume>>('/parser/resume/file', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 120000 // 2 minutes for AI parsing
+    timeout: 120000, // 2 minutes for AI parsing
+    onUploadProgress: onUploadProgress
+      ? (e) => { if (e.total) onUploadProgress(Math.round((e.loaded / e.total) * 100)); }
+      : undefined,
   });
   if (!response.success || !response.data) {
     throw new Error(response.error || 'Error parsing file');
@@ -1001,13 +1007,19 @@ export interface CreateEntityFromResumeResponse {
  * @param file - Resume file (PDF, DOC, DOCX)
  * @returns Created entity ID and parsed data
  */
-export const createEntityFromResume = async (file: File): Promise<CreateEntityFromResumeResponse> => {
+export const createEntityFromResume = async (
+  file: File,
+  onUploadProgress?: (pct: number) => void,
+): Promise<CreateEntityFromResumeResponse> => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('auto_attach_file', 'true');
   const { data } = await api.post('/entities/from-resume', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 180000 // 3 мин — парсинг PDF + создание + AI-профиль
+    timeout: 180000, // 3 мин — парсинг PDF + создание + AI-профиль
+    onUploadProgress: onUploadProgress
+      ? (e) => { if (e.total) onUploadProgress(Math.round((e.loaded / e.total) * 100)); }
+      : undefined,
   });
   return data;
 };
