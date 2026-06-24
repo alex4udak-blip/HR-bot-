@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense, startTransition } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -669,25 +669,32 @@ export default function AllCandidatesPage() {
   const editParam = searchParams.get("edit");
   const archivedParam = searchParams.get("archived");
   const tabParam = searchParams.get("tab");
+  // Функциональная форма setSearchParams → колбэк СТАБИЛЕН (зависит только от
+  // setSearchParams). Иначе он пересоздаётся на каждой смене URL, а эффект авто-селекта
+  // (где он в deps) из-за этого перезапускается — лишний «churn» при каждом клике.
   const clearCandidateDeepLink = useCallback(() => {
-    if (!searchParams.has("entity") && !searchParams.has("edit") && !searchParams.has("archived") && !searchParams.has("tab")) return;
-    const next = new URLSearchParams(searchParams);
-    next.delete("entity");
-    next.delete("edit");
-    next.delete("archived");
-    next.delete("tab");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+    setSearchParams((prev) => {
+      if (!prev.has("entity") && !prev.has("edit") && !prev.has("archived") && !prev.has("tab")) return prev;
+      const next = new URLSearchParams(prev);
+      next.delete("entity");
+      next.delete("edit");
+      next.delete("archived");
+      next.delete("tab");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
   // Как clearCandidateDeepLink, но СОХРАНЯЕТ entity (ссылка на профиль остаётся в
   // адресной строке) — гасим только разовые триггеры edit/tab/archived.
   const consumeOneShotParams = useCallback(() => {
-    if (!searchParams.has("edit") && !searchParams.has("tab") && !searchParams.has("archived")) return;
-    const next = new URLSearchParams(searchParams);
-    next.delete("edit");
-    next.delete("tab");
-    next.delete("archived");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+    setSearchParams((prev) => {
+      if (!prev.has("edit") && !prev.has("tab") && !prev.has("archived")) return prev;
+      const next = new URLSearchParams(prev);
+      next.delete("edit");
+      next.delete("tab");
+      next.delete("archived");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
   // Чтобы не тянуть entity повторно после неудачной попытки селекта.
   const entityFetchTriedRef = useRef<number | null>(null);
   const detectTriedRef = useRef<number | null>(null);
@@ -714,7 +721,8 @@ export default function AllCandidatesPage() {
       if (selectedCard?.id === entityId) {
         if (editParam === "1") setShowEditModal(true);
         if (tabParam === "anketa") setDetailTab("anketa");
-        consumeOneShotParams();
+        // Чистим только если есть что чистить — иначе лишняя навигация на каждый клик.
+        if (editParam === "1" || tabParam === "anketa" || archivedParam === "1") consumeOneShotParams();
         return;
       }
       // Guard Clause: не «бодаемся» с кликом — на свежем клике URL временно отстаёт.
@@ -778,7 +786,9 @@ export default function AllCandidatesPage() {
     const curId = selectedCard?.id ?? null;
     const next = computeEntityParamUpdate(searchParams, curId, prevSelectedIdRef.current);
     prevSelectedIdRef.current = curId;
-    if (next) setSearchParams(next, { replace: true });
+    // URL-запись — НЕ срочная: startTransition, чтобы ререндер от смены searchParams не
+    // блокировал мгновенный отклик на клик (selectedCard уже обновлён синхронно).
+    if (next) startTransition(() => setSearchParams(next, { replace: true }));
   }, [selectedCard, searchParams, setSearchParams]);
 
   // Архивный кандидат (?archived=1): на доске его нет (отфильтрован is_archived),
@@ -1266,7 +1276,8 @@ export default function AllCandidatesPage() {
                             setSelectedCard(card);
                             setSelectedStatus(status);
                             setDetailTab("resume");
-                            clearCandidateDeepLink();
+                            // URL дописывает зеркало (в startTransition) — клик мгновенный,
+                            // без лишнего clear→re-add ?entity= на каждый выбор.
                           }}
                           className={clsx(
                             "hf-candidate-row",
