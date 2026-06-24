@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
 import { useHorizontalScroll } from '../hooks/useHorizontalScroll';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -16,7 +16,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   FileText,
-  Paperclip,
   Copy,
   Check,
   Printer,
@@ -32,7 +31,7 @@ import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
-import { addEntityNote, deleteEntityNote } from '@/services/api/entities';
+import { addEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
@@ -47,7 +46,6 @@ import { buildStageContainers, type StageContainer, type EntryReaction } from '@
 import ResumeTabs from '@/components/entities/ResumeTabs';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
-import { HuntflowComposer } from '@/components/hr/HuntflowComposer';
 import {
   HuntflowInfoRow,
   HuntflowOptionsIcon,
@@ -56,6 +54,12 @@ import {
   HUNTFLOW_VACANCY_STATUS_FILTERS,
   getHuntflowVacancyStatusFilterLabel,
 } from '@/components/hr/huntflowVacancyStatus';
+import { useFormBadgeStore } from '@/stores/formBadgeStore';
+import { getEntityFormsUnreadCount, getEntityDispatches, markEntityDispatchesSeen, type FormDispatchInfo } from '@/services/api/forms';
+import { AnketaResponses } from '@/features/forms/AnketaResponses';
+const AnketaDrawer = lazy(() =>
+  import('@/features/forms/AnketaDrawer').then((m) => ({ default: m.AnketaDrawer })),
+);
 
 // ==================== Constants ====================
 
@@ -420,10 +424,9 @@ export default function RecruiterFunnelsPage() {
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
   const [entityActivity, setEntityActivity] = useState<ActivityBlockData[]>([]);
   const [dupCard, setDupCard] = useState<KanbanCard | null>(null);
-  const [detailTab, setDetailTab] = useState<'info' | 'resume'>('info');
+  const [detailTab, setDetailTab] = useState<'info' | 'resume' | 'anketa'>('info');
   const [editingCandidateCard, setEditingCandidateCard] = useState<KanbanCard | null>(null);
-  const [personalNoteComposerOpen, setPersonalNoteComposerOpen] = useState(false);
-  const [personalNoteText, setPersonalNoteText] = useState('');
+  const [anketaOpen, setAnketaOpen] = useState(false);
   const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [currentResumePage, setCurrentResumePage] = useState(0);
@@ -801,6 +804,17 @@ export default function RecruiterFunnelsPage() {
     [candidates, selectedCandidateId],
   );
 
+  // Бейдж непрочитанных анкет (entity-уровень) — как в «Все кандидаты».
+  const anketaCount = useFormBadgeStore((s) => s.counts[selectedCandidate?.entity_id ?? 0] ?? 0);
+  const setAnketaCount = useFormBadgeStore((s) => s.setCount);
+  useEffect(() => {
+    const eid = selectedCandidate?.entity_id;
+    if (!eid) return;
+    getEntityFormsUnreadCount(eid)
+      .then((r) => setAnketaCount(eid, r.count))
+      .catch(() => {});
+  }, [selectedCandidate?.entity_id, setAnketaCount]);
+
   const tabFilteredCandidates = useMemo(() => {
     if (selectedTab === 'all') return filteredCandidates;
     return filteredCandidates.filter(c => {
@@ -906,11 +920,6 @@ export default function RecruiterFunnelsPage() {
         });
       })
       .catch(() => { setEntityExtraData(null); setDupCard(null); });
-  }, [selectedCandidate?.entity_id]);
-
-  useEffect(() => {
-    setPersonalNoteText('');
-    setPersonalNoteComposerOpen(false);
   }, [selectedCandidate?.entity_id]);
 
   // Resume: original document (PDF or DOC/DOCX) + page images (JPEG renders from backend)
@@ -1034,20 +1043,6 @@ export default function RecruiterFunnelsPage() {
     return parts.length > 0 ? parts.join('\n') : null;
   }, [entityExtraData]);
 
-  const vacancyEntityNotes = useMemo(() => {
-    if (!Array.isArray(entityExtraData?.notes)) return [];
-    return (entityExtraData.notes as Array<Record<string, unknown>>)
-      .slice()
-      .sort((a, b) => {
-        const ta = a?.date ? new Date(a.date as string).getTime() : 0;
-        const tb = b?.date ? new Date(b.date as string).getTime() : 0;
-        return tb - ta;
-      });
-  }, [entityExtraData]);
-  const vacancyPersonalNotes = useMemo(
-    () => vacancyEntityNotes.filter((note) => !note.stage),
-    [vacancyEntityNotes],
-  );
   // Load org tags once
   useEffect(() => {
     getTags().then(setOrgTags).catch(() => setOrgTags([]));
@@ -1273,7 +1268,9 @@ export default function RecruiterFunnelsPage() {
 
   // ─── Comment textarea state ───
   const commentRef = useRef<HTMLTextAreaElement | null>(null);
-  const [commentSaving, setCommentSaving] = useState(false);
+  // Значение больше не читается (личных-заметок панели нет — карточка ведёт
+  // своё состояние сохранения сама), но сеттер всё ещё гейтит saveEntityNote.
+  const [, setCommentSaving] = useState(false);
 
   // ─── Меню действий со статусом («⋯»): убрать из вакансии / откатить этап ───
   const [candidateMenuOpen, setCandidateMenuOpen] = useState(false);
@@ -1349,14 +1346,6 @@ export default function RecruiterFunnelsPage() {
     }
   }, [selectedCandidate?.entity_id]);
 
-  const handleSavePersonalNote = useCallback(async () => {
-    const text = personalNoteText.trim();
-    if (!text) return;
-    await saveEntityNote(text, null, 'Личная заметка');
-    setPersonalNoteText('');
-    setPersonalNoteComposerOpen(false);
-  }, [personalNoteText, saveEntityNote]);
-
   // Этапы для пикера — тот же список и лейблы, что были в StageDropdown.
   const stagePickerOptions = useMemo(
     () =>
@@ -1366,102 +1355,6 @@ export default function RecruiterFunnelsPage() {
       })),
     [vacancyStageDropdownLabels],
   );
-
-  const handleDeleteNote = useCallback(async (note: Record<string, unknown>) => {
-    if (!selectedCandidate?.entity_id) return;
-    // Новые заметки удаляются по id; у старых (до коммита 9bac610) id нет —
-    // бэкенд поддерживает фолбэк по дате через ключ "date:<iso>".
-    const key = (note.id as string) || (note.date ? `date:${note.date as string}` : '');
-    if (!key) {
-      toast.error('Не удалось определить комментарий');
-      return;
-    }
-    try {
-      await deleteEntityNote(selectedCandidate.entity_id, key);
-      setEntityExtraData((prev) => {
-        const existing = Array.isArray(prev?.notes)
-          ? (prev!.notes as Array<Record<string, unknown>>)
-          : [];
-        return { ...(prev || {}), notes: existing.filter((n) => n !== note) };
-      });
-      toast.success('Комментарий удалён');
-    } catch {
-      toast.error('Не удалось удалить комментарий');
-    }
-  }, [selectedCandidate?.entity_id]);
-
-  const renderVacancyNoteCard = useCallback((note: Record<string, unknown>, i: number) => {
-    const stage = note.stage as string | undefined;
-    const stageLabel = (note.stage_label as string | undefined)
-      || (stage ? getVacancyStageLabel(stage) : null);
-    const authorName = (note.author_name as string) || 'Аноним';
-    const dateStr = note.date ? new Date(note.date as string).toLocaleString('ru-RU', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }) : '';
-    return (
-      <div
-        key={(note.id as string) || `note-${i}`}
-        className={clsx(
-          'hf-vacancy-note-card',
-          stage && 'hf-vacancy-note-card-workflow',
-        )}
-      >
-        <div className="hf-vacancy-note-avatar">
-          {(authorName || '?')[0].toUpperCase()}
-        </div>
-        <div className="hf-vacancy-note-body">
-          <div className="hf-vacancy-note-meta">
-            <span className="hf-vacancy-note-author">{authorName}</span>
-            {stageLabel && (
-              <span className="hf-vacancy-note-stage">{stageLabel}</span>
-            )}
-            <span className="hf-vacancy-note-date">{dateStr}</span>
-            {(note.id || note.date) ? (
-              <button
-                type="button"
-                onClick={() => handleDeleteNote(note)}
-                title="Удалить комментарий"
-                className="ml-auto flex-shrink-0 rounded p-0.5 text-[var(--hf-main-400)] transition-colors hover:text-[var(--hf-status-red)]"
-              >
-                <Trash2 className="h-[14px] w-[14px]" />
-              </button>
-            ) : null}
-          </div>
-          <div className="hf-vacancy-note-text">
-            {String(note.text)}
-          </div>
-        </div>
-      </div>
-    );
-  }, [getVacancyStageLabel, handleDeleteNote]);
-
-  // ─── File attach (Файл button) ───
-  const candidateFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [candidateFileUploading, setCandidateFileUploading] = useState(false);
-
-  const handleCandidateFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedCandidate?.entity_id) return;
-    setCandidateFileUploading(true);
-    try {
-      await uploadEntityFile(selectedCandidate.entity_id, file, 'other');
-      toast.success(`Файл "${file.name}" загружен`);
-      // Re-fetch entity files so они показались в правой панели
-      const fresh = await getEntityFiles(selectedCandidate.entity_id);
-      setEntityFiles(fresh);
-    } catch (err) {
-      // B7-fix: показываем реальную причину с бэка (размер/тип/нет места и т.п.)
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(detail || 'Ошибка загрузки файла');
-    } finally {
-      setCandidateFileUploading(false);
-      if (e.target) e.target.value = '';
-    }
-  }, [selectedCandidate]);
 
   // ─── Тонкие обёртки для CandidateVacancyCard: переиспользуем существующие
   // обработчики (по applicationId) и докидываем refreshActivity после мутации,
@@ -2505,21 +2398,25 @@ export default function RecruiterFunnelsPage() {
                   <div className="hf-candidates-detail-panel hf-vacancy-detail flex-1 bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)] rounded-hf-l flex flex-col overflow-hidden">
                     {selectedCandidate ? (
                       <>
-                        {/* Detail tabs: Личные заметки / Резюме */}
+                        {/* Detail tabs: Анкеты / Резюме (видны только на странице
+                            резюме — в режиме обзора у карточки свой ряд вкладок ниже). */}
                         <div className={clsx(
                           'flex items-center border-b border-[color:var(--hf-white-alpha-06)] px-5 flex-shrink-0',
-                          detailTab === 'info' && 'hidden',
+                          detailTab !== 'resume' && 'hidden',
                         )}>
                           <button
-                            onClick={() => setDetailTab('info')}
+                            onClick={() => setDetailTab('anketa')}
                             className={clsx(
-                              'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-                              detailTab === 'info'
-                                ? 'border-[var(--hf-accent)] text-[var(--hf-dark-100)]'
-                                : 'border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]'
+                              'px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5',
+                              'border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]'
                             )}
                           >
-                            Личные заметки
+                            Анкеты
+                            {anketaCount > 0 && (
+                              <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
+                                {anketaCount > 9 ? '9+' : anketaCount}
+                              </span>
+                            )}
                           </button>
                           <button
                             onClick={() => setDetailTab('resume')}
@@ -2542,7 +2439,7 @@ export default function RecruiterFunnelsPage() {
 
                         {/* Tab content */}
                         <div className="flex-1 overflow-y-auto">
-                          {detailTab === 'info' ? (
+                          {detailTab !== 'resume' ? (
                             <div className="p-[var(--hf-space-xxl)] max-w-[1220px]">
                               {dupCard && (
                                 <ShadowDuplicateBanner
@@ -2789,8 +2686,8 @@ export default function RecruiterFunnelsPage() {
                                       onComment={cardComment}
                                       onDeleteHistory={cardDeleteHistory}
                                       onUploadFile={cardUploadFile}
-                                      onAnketa={undefined}
-                                      anketaCount={0}
+                                      onAnketa={c.origin === 'live' ? () => setAnketaOpen(true) : undefined}
+                                      anketaCount={anketaCount}
                                       onReact={c.origin === 'live' ? cardReact : undefined}
                                       files={c.files}
                                       onDeleteFile={c.origin === 'live' ? cardDeleteFile : undefined}
@@ -2799,16 +2696,26 @@ export default function RecruiterFunnelsPage() {
                                 )}
                               </div>
 
+                              {/* Ряд вкладок под карточкой — паритет с «Все
+                                  кандидаты»: «Анкеты» (с бейджем непрочитанных) +
+                                  «Резюме». Вкладки «Личные заметки» больше нет —
+                                  заметки пишутся в композере карточки (cardComment)
+                                  и показываются в её ленте. */}
                               <div className="hf-vacancy-detail-tabs">
                                 <button
                                   type="button"
-                                  onClick={() => setDetailTab('info')}
+                                  onClick={() => setDetailTab('anketa')}
                                   className={clsx(
                                     'hf-vacancy-detail-tab',
-                                    detailTab === 'info' && 'hf-vacancy-detail-tab-active',
+                                    detailTab === 'anketa' && 'hf-vacancy-detail-tab-active',
                                   )}
                                 >
-                                  Личные заметки
+                                  Анкеты
+                                  {anketaCount > 0 && (
+                                    <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
+                                      {anketaCount > 9 ? '9+' : anketaCount}
+                                    </span>
+                                  )}
                                 </button>
                                 <button
                                   type="button"
@@ -2825,60 +2732,11 @@ export default function RecruiterFunnelsPage() {
                                 </button>
                               </div>
 
-                              <div className="hf-vacancy-notes-panel">
-                                <HuntflowComposer
-                                  wrapperClassName="hf-vacancy-personal-composer"
-                                  value={personalNoteText}
-                                  onChange={setPersonalNoteText}
-                                  open={personalNoteComposerOpen}
-                                  onOpenChange={setPersonalNoteComposerOpen}
-                                  placeholder="Написать заметку"
-                                  onSubmit={handleSavePersonalNote}
-                                  onCancel={() => {
-                                    setPersonalNoteText('');
-                                    setPersonalNoteComposerOpen(false);
-                                  }}
-                                  saving={commentSaving}
-                                  actions={[
-                                    // Убрали «Письмо» из личных заметок — заметки личные,
-                                    // письмо кандидату отсюда не нужно (как в AllCandidatesPage).
-                                    {
-                                      icon: Paperclip,
-                                      label: 'Файл',
-                                      onClick: () => candidateFileInputRef.current?.click(),
-                                      loading: candidateFileUploading,
-                                      loadingLabel: 'Загрузка…',
-                                    },
-                                  ]}
-                                />
-
-                                <input
-                                  type="file"
-                                  ref={candidateFileInputRef}
-                                  onChange={handleCandidateFileUpload}
-                                  className="hidden"
-                                />
-
-                                <div className="hf-vacancy-notes-heading">Заметки</div>
-                                {vacancyPersonalNotes.length > 0 ? (
-                                  <div className="hf-vacancy-notes-list">
-                                    {vacancyPersonalNotes.map(renderVacancyNoteCard)}
-                                  </div>
-                                ) : (
-                                  <div className="hf-vacancy-notes-empty">
-                                    Нет заметок
-                                  </div>
-                                )}
-
-                                {selectedCandidate.notes && (
-                                  <div className="hf-vacancy-legacy-note">
-                                    <div className="hf-vacancy-notes-heading">Заметки вакансии</div>
-                                    <div className="hf-vacancy-legacy-note-text">
-                                      {selectedCandidate.notes}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
+                              {detailTab === 'anketa' && selectedCandidate.entity_id && (
+                                <div className="hf-vacancy-notes-panel">
+                                  <FunnelAnketaTab entityId={selectedCandidate.entity_id} />
+                                </div>
+                              )}
                             </div>
                           ) : (
                             /* Resume tab — Huntflow-style page viewer */
@@ -3041,6 +2899,19 @@ export default function RecruiterFunnelsPage() {
                             </div>
                           )}
                         </div>
+
+                        {/* Дровер «Анкета» — отправка/привязка анкеты живому
+                            контейнеру (открывается чипом на карточке). */}
+                        {anketaOpen && selectedCandidate.entity_id && (
+                          <Suspense fallback={null}>
+                            <AnketaDrawer
+                              open={anketaOpen}
+                              onOpenChange={setAnketaOpen}
+                              entityId={selectedCandidate.entity_id}
+                              entityName={selectedCandidate.entity_name || ''}
+                            />
+                          </Suspense>
+                        )}
                       </>
                     ) : (
                       <div className="hf-vacancy-no-selection flex-1 flex items-center justify-center h-full text-[var(--hf-dark-500)]">
@@ -3229,3 +3100,29 @@ export default function RecruiterFunnelsPage() {
 
 /* StageDropdown удалён — на воронке смена этапа теперь через богатый пикер
    (список этапов + «Записать комментарий») прямо в карточке кандидата. */
+
+// Вкладка «Анкеты» (копия AnketaTab из AllCandidatesPage, параметризованная
+// entityId): тянет диспатчи анкет по кандидату, разово помечает прочитанными +
+// гасит бейдж, поллит раз в 15с (на проде realtime по WS может не доходить).
+function FunnelAnketaTab({ entityId }: { entityId: number }) {
+  const [dispatches, setDispatches] = useState<FormDispatchInfo[]>([]);
+  const clearBadge = useFormBadgeStore((s) => s.clear);
+  useEffect(() => {
+    let alive = true;
+    const fetchRows = async () => {
+      try {
+        const rows = await getEntityDispatches(entityId);
+        if (alive) setDispatches(rows);
+      } catch {
+        /* пустой/ошибка — покажем пустое состояние */
+      }
+    };
+    (async () => {
+      await fetchRows();
+      try { await markEntityDispatchesSeen(entityId); clearBadge(entityId); } catch { /* ignore */ }
+    })();
+    const t = setInterval(fetchRows, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, [entityId, clearBadge]);
+  return <AnketaResponses dispatches={dispatches} />;
+}
