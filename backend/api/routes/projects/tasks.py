@@ -581,7 +581,7 @@ async def get_all_tasks(
 
     # Only non-cancelled tasks by default
     query = query.where(ProjectTask.status != TaskStatus.cancelled)
-    query = query.order_by(Project.name, ProjectTask.sort_order, ProjectTask.created_at)
+    query = query.order_by(Project.name, ProjectTask.sort_order, ProjectTask.created_at.desc())
 
     result = await db.execute(query)
     tasks = list(result.scalars().unique().all())
