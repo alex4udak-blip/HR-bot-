@@ -40,11 +40,56 @@
     return null;
   }
 
+  // LinkedIn кладёт в HTML <script type="application/ld+json"> с узлом Person
+  // (для SEO) — он доступен СРАЗУ, без ленивой подгрузки секций. Берём оттуда
+  // имя/должность/компанию/город/образование/языки/фото: это надёжнее, чем
+  // скрести обфусцированный ленивый DOM (из-за которого парсилось только имя).
+  function firstStr(v) {
+    if (typeof v === 'string') return v.trim();
+    if (Array.isArray(v)) { for (const x of v) { const s = firstStr(x); if (s) return s; } return ''; }
+    if (v && typeof v === 'object') return firstStr(v.name || v.contentUrl || v.url || '');
+    return '';
+  }
+  function allStr(v) {
+    const out = [];
+    const push = (x) => { const s = firstStr(x); if (s) out.push(s); };
+    if (Array.isArray(v)) v.forEach(push); else if (v != null) push(v);
+    return out;
+  }
+  function findPersonLd() {
+    for (const sc of document.querySelectorAll('script[type="application/ld+json"]')) {
+      const t = (sc.textContent || '').trim();
+      if (!t) continue;
+      let obj; try { obj = JSON.parse(t); } catch (_) { continue; }
+      const graph = Array.isArray(obj['@graph']) ? obj['@graph'] : [obj];
+      for (const node of graph) {
+        const ty = node && node['@type'];
+        if (ty === 'Person' || (Array.isArray(ty) && ty.includes('Person'))) return node;
+      }
+    }
+    return null;
+  }
+  function applyJsonLd(data) {
+    const p = findPersonLd();
+    if (!p) return false;
+    const nm = firstStr(p.name);
+    if (nm) data.full_name = nm;                       // имя из JSON чище, чем из title
+    if (!data.position) { const j = firstStr(p.jobTitle); if (j) data.position = j; }
+    if (!data.company) { const c = firstStr(p.worksFor); if (c) data.company = c; }
+    if (!data.city && p.address) {
+      data.city = firstStr(p.address.addressLocality) || firstStr(p.address.addressRegion) || '';
+    }
+    if (!data.education.length) data.education = allStr(p.alumniOf).slice(0, 5);
+    if (!data.languages.length) data.languages = allStr(p.knowsLanguage).slice(0, 15);
+    if (!data.photo_url) { const img = firstStr(p.image); if (/^https?:/i.test(img)) data.photo_url = img; }
+    return true;
+  }
+
   function parseLinkedIn() {
     const data = {
       source: 'linkedin.com', source_url: window.location.href,
       full_name: '', email: '', phone: '', telegram: '', position: '',
-      city: '', company: '', experience_summary: '', total_experience: '',
+      city: '', company: '', photo_url: '', experience_summary: '', total_experience: '',
       skills: [], languages: [], education: [],
     };
 
@@ -85,6 +130,16 @@
     else {
       const og = metaContent('og:description');
       if (og) data.position = og.split(/[·|]| — | - /)[0].trim().slice(0, 120);
+    }
+
+    // Надёжный источник — встроенный ld+json (Person): заполняет имя/должность/
+    // компанию/город/образование/языки/фото там, где ленивый DOM-скрап промолчал
+    // (раньше так и приезжало «только имя»).
+    applyJsonLd(data);
+    // Если DOM не дал ни одного места работы — соберём хотя бы строку из
+    // должности+компании (из JSON), чтобы блок «Опыт» не был совсем пустым.
+    if (!data.experience_summary && (data.position || data.company)) {
+      data.experience_summary = [data.position, data.company].filter(Boolean).join(' | ');
     }
 
     // Контакты: только из ссылок (на LinkedIn почти всегда отсутствуют —

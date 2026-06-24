@@ -14,6 +14,7 @@ import {
   isSameDay,
   isBefore,
   isAfter,
+  isValid,
   startOfDay,
   addMonths,
   subMonths,
@@ -41,6 +42,25 @@ const MONTH_LABELS = [
 ];
 
 /**
+ * Безопасный разбор значения даты. Ждём 'yyyy-MM-dd', но старые кандидаты могут
+ * нести что угодно: ISO-datetime ("1995-03-15T00:00:00"), число из extra_data
+ * (PDF-автозаполнение пишет поля числами) или мусор. ВСЕГДА возвращаем валидный
+ * Date либо null — никогда Invalid Date, иначе format() кидает «RangeError:
+ * Invalid time value» и форма редактирования падает целиком.
+ */
+function safeParseDate(value: unknown): Date | null {
+  if (value == null || value === '') return null;
+  const v = String(value);
+  // Пробуем ожидаемый формат и распространённый русский dd.MM.yyyy.
+  for (const fmt of ['yyyy-MM-dd', 'dd.MM.yyyy']) {
+    const d = parse(v, fmt, new Date());
+    if (isValid(d)) return d;
+  }
+  const native = new Date(v); // ловит ISO-datetime и прочие распознаваемые форматы
+  return isValid(native) ? native : null;
+}
+
+/**
  * Custom date picker matching Factorial's design:
  * - Button shows 📅 icon + "DD MMM YYYY"
  * - Click → popup calendar with «месяц 2026 г.» header
@@ -65,8 +85,8 @@ export default function DatePickerFactorial({
   // чтобы overflow/z-index родителя (модалка кандидата, скролл-контейнер) его не резал
   // и он не «уходил за текстурки».
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
-  const [currentMonth, setCurrentMonth] = useState<Date>(() =>
-    value ? parse(value, 'yyyy-MM-dd', new Date()) : new Date()
+  const [currentMonth, setCurrentMonth] = useState<Date>(
+    () => safeParseDate(value) || new Date()
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -113,7 +133,7 @@ export default function DatePickerFactorial({
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const selectedDate = value ? parse(value, 'yyyy-MM-dd', new Date()) : null;
+  const selectedDate = safeParseDate(value);
   const displayLabel = selectedDate ? format(selectedDate, 'd MMM yyyy', { locale: ru }) : '';
 
   const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
