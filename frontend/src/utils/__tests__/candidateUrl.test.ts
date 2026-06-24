@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeEntityParamUpdate } from '../candidateUrl';
+import { computeEntityParamUpdate, shouldAdoptUrlEntity } from '../candidateUrl';
 
 describe('computeEntityParamUpdate', () => {
   it('sets entity when a profile opens', () => {
@@ -40,5 +40,31 @@ describe('computeEntityParamUpdate', () => {
   it('returns null on close when there was nothing to clear', () => {
     const next = computeEntityParamUpdate(new URLSearchParams('q=ivan'), null, 9);
     expect(next).toBeNull();
+  });
+});
+
+describe('shouldAdoptUrlEntity', () => {
+  it('does NOT adopt when the selection just changed (fresh click, URL lagging)', () => {
+    expect(shouldAdoptUrlEntity(2, 1, true)).toBe(false);
+  });
+
+  it('adopts a genuine URL change while a different card is shown (toast-navigate / back)', () => {
+    expect(shouldAdoptUrlEntity(1, 5, false)).toBe(true);
+  });
+
+  it('adopts a deep-link when nothing is selected yet', () => {
+    expect(shouldAdoptUrlEntity(null, 5, false)).toBe(true);
+  });
+
+  it('does not adopt when already showing the URL entity', () => {
+    expect(shouldAdoptUrlEntity(5, 5, false)).toBe(false);
+  });
+
+  it('treats an already-synced URL as nothing-to-adopt even mid-click', () => {
+    expect(shouldAdoptUrlEntity(5, 5, true)).toBe(false);
+  });
+
+  it('trusts the click when selection changed to a third value', () => {
+    expect(shouldAdoptUrlEntity(3, 5, true)).toBe(false);
   });
 });

@@ -36,3 +36,26 @@ export function computeEntityParamUpdate(
 
   return null;
 }
+
+/**
+ * Should the URL->selection effect adopt the URL's ?entity= as the selected card?
+ *
+ * The click handler sets selectedCard directly (instant UI); the URL mirror writes
+ * ?entity= one render later. Without this guard the effect would see selectedCard
+ * already on the clicked card while ?entity= still holds the PREVIOUS id, and would
+ * yank selection back — the "fight" with the URL.
+ *
+ * selectionChangedThisRender = the selected id changed since the previous render (a
+ * click). When true the URL is merely lagging our own selection → DON'T adopt it.
+ * When false, an ?entity= that differs from the selection is a genuine URL change
+ * (deep-link, browser back/forward, toast-navigate) or a deep-link target that just
+ * became visible → adopt it.
+ */
+export function shouldAdoptUrlEntity(
+  selectedId: number | null,
+  urlEntityId: number,
+  selectionChangedThisRender: boolean,
+): boolean {
+  if (selectedId === urlEntityId) return false; // already in sync
+  return !selectionChangedThisRender;
+}

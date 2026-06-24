@@ -34,7 +34,7 @@ import {
 import clsx from "clsx";
 import toast from "react-hot-toast";
 import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
-import { computeEntityParamUpdate } from "@/utils/candidateUrl";
+import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
@@ -694,11 +694,31 @@ export default function AllCandidatesPage() {
   // Предыдущий выбранный id — чтобы зеркало URL отличало настоящее закрытие
   // (selected->null) от ещё не завершённого диплинка (null->null) и не стирало ?entity=.
   const prevSelectedIdRef = useRef<number | null>(null);
+  // Предыдущий выбранный id ДЛЯ эффекта авто-селекта (отдельно от зеркала) — чтобы
+  // отличать смену выбора (клик) от смены URL и не «бодаться» за фокус.
+  const prevAutoSelIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (!board) return;
+    // Гонка «клик vs URL»: клик ставит selectedCard напрямую (мгновенный UI), зеркало
+    // дописывает ?entity= на тик позже. selChanged=true → менялся ВЫБОР (клик), а URL ещё
+    // старый → НЕ возвращаем фокус на прошлую карточку; адоптим entity из URL только при
+    // реальной смене URL (диплинк / назад-вперёд / переход из тоста).
+    const selId = selectedCard?.id ?? null;
+    const selChanged = selId !== prevAutoSelIdRef.current;
+    prevAutoSelIdRef.current = selId;
     if (entityParam) {
       if (archivedParam === "1") return;  // архивного открывает отдельный эффект ниже
       const entityId = parseInt(entityParam);
+      if (Number.isNaN(entityId)) return;
+      // Уже показываем этого кандидата — URL синхронен: доводим разовые edit/tab и выходим.
+      if (selectedCard?.id === entityId) {
+        if (editParam === "1") setShowEditModal(true);
+        if (tabParam === "anketa") setDetailTab("anketa");
+        consumeOneShotParams();
+        return;
+      }
+      // Guard Clause: не «бодаемся» с кликом — на свежем клике URL временно отстаёт.
+      if (!shouldAdoptUrlEntity(selId, entityId, selChanged)) return;
       const match = filteredCards.find((fc) => fc.card.id === entityId);
       if (match) {
         setSelectedCard(match.card);
