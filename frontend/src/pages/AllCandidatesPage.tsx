@@ -24,6 +24,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Maximize2,
+  Lock,
   Type,
   Upload,
 } from "lucide-react";
@@ -32,7 +33,7 @@ import toast from "react-hot-toast";
 import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
-import { buildStageContainers, buildResumeSources, type EntryReaction } from "@/components/entities/candidateDetail/model";
+import { buildStageContainers, buildResumeSources, readSystemHrTags, type EntryReaction } from "@/components/entities/candidateDetail/model";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
@@ -2433,6 +2434,19 @@ const InfoTab = memo(function InfoTab({
           {/* Tags row */}
           <InfoRow label="Метки">
             <div className="flex flex-wrap items-center gap-1.5">
+              {/* Авто-метки HR (read-only): кто забрал кандидата в воронку.
+                  Проставляются бэкендом (extra_data.system_hr_tags), без крестика
+                  — ручные метки ниже остаются полностью редактируемыми. */}
+              {readSystemHrTags(card.extra_data).map((hr) => (
+                <span
+                  key={`hr-${hr.hr_id}`}
+                  title="Закреплённый HR — проставляется автоматически по воронке"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--hf-bg-panel)] text-[var(--hf-main-900)] border border-[color:var(--hf-main-200)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]"
+                >
+                  <Lock className="w-3 h-3 opacity-50" />
+                  HR: {hr.name}
+                </span>
+              ))}
               {localTags.map((t) => (
                 <span
                   key={t}
@@ -4096,10 +4110,12 @@ function CandidateField({
         </label>
       )}
       {type === "date" ? (
+        // В формах кандидата единственное date-поле — дата рождения → будущее запрещаем.
         <DatePickerFactorial
           value={value}
           onChange={onChange}
           placeholder={placeholder || "дд.мм.гггг"}
+          disableFuture
         />
       ) : (
         <input
@@ -4620,10 +4636,12 @@ function EditField({
       )}
       <div className="relative">
         {type === "date" ? (
+          // В формах кандидата единственное date-поле — дата рождения → будущее запрещаем.
           <DatePickerFactorial
             value={value}
             onChange={onChange}
             placeholder={placeholder || "дд.мм.гггг"}
+            disableFuture
           />
         ) : (
           <>
