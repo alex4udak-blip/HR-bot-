@@ -10,6 +10,7 @@ from .common import (
     logger,
     Project, ProjectStatus, ProjectMember, ProjectRole,
     ProjectTask, TaskStatus, User,
+    DepartmentMember, DeptRole,
     has_full_access,
     get_db, get_current_user, get_user_org,
 )
@@ -77,7 +78,33 @@ async def get_resource_allocation(
     if not org:
         raise HTTPException(status_code=400, detail="User not in an organization")
 
-    result = await db.execute(
+    # Scope: платформ-админ видит всю org; лид видит участников своих отделов.
+    # Обычный member на эту страницу попадать не должен (sidebar её прячет),
+    # но на всякий случай — вернём пусто, чтобы не светить чужую команду.
+    full_access = await has_full_access(current_user, org, db)
+    allowed_user_ids: list[int] | None = None
+    if not full_access:
+        admin_dept_ids_result = await db.execute(
+            select(DepartmentMember.department_id).where(
+                DepartmentMember.user_id == current_user.id,
+                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin]),
+            )
+        )
+        admin_dept_ids = [r for r in admin_dept_ids_result.scalars().all()]
+        if not admin_dept_ids:
+            return []
+        member_ids_result = await db.execute(
+            select(DepartmentMember.user_id).where(
+                DepartmentMember.department_id.in_(admin_dept_ids)
+            )
+        )
+        allowed_user_ids = list({uid for uid in member_ids_result.scalars().all()})
+        # Лид сам тоже в выдаче
+        allowed_user_ids.append(current_user.id)
+        if not allowed_user_ids:
+            return []
+
+    query = (
         select(
             ProjectMember.user_id,
             User.name.label("user_name"),
@@ -95,6 +122,9 @@ async def get_resource_allocation(
         )
         .order_by(User.name, Project.name)
     )
+    if allowed_user_ids is not None:
+        query = query.where(ProjectMember.user_id.in_(allowed_user_ids))
+    result = await db.execute(query)
     rows = result.all()
 
     # Group by user — calculate fair allocation if all are default 100%
