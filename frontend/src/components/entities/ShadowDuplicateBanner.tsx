@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { AlertTriangle, X, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
@@ -45,34 +45,23 @@ const IDENTITY_LABEL: Record<string, string> = {
   telegram: "Telegram",
 };
 
-// Варианты Framer-слайда правой карточки. direction (custom): +1 = «вперёд» (►),
-// -1 = «назад» (◄). Карточка въезжает с той стороны, куда листаем, и уезжает в
-// противоположную — короткий 32px-сдвиг + fade, без горизонтального скролла.
-const slideVariants = {
-  enter: (dir: number) => ({ x: dir > 0 ? 32 : -32, opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  exit: (dir: number) => ({ x: dir > 0 ? -32 : 32, opacity: 0 }),
-};
-
 export default function ShadowDuplicateBanner({ card, status, onResolved }: ShadowDuplicateBannerProps) {
   const hiddenId = (card.extra_data?.hidden_duplicate_id as number | undefined) ?? null;
   const [resolved, setResolved] = useState(false);
   const [open, setOpen] = useState(false);
   // triggerEntity — профиль hiddenId, по которому решается ПОКАЗ баннера (стабилен,
-  // не зависит от выбора в карусели). archived — профиль ВЫБРАННОГО в модалке дубликата
-  // (правая колонка сравнения), он меняется при клике по миниатюре.
+  // не зависит от выбора в карусели).
   const [triggerEntity, setTriggerEntity] = useState<EntityWithRelations | null>(null);
-  const [archived, setArchived] = useState<EntityWithRelations | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Полный список похожих кандидатов (карусель) + выбранный для сравнения справа.
+  // Полный список похожих кандидатов (трек-карусель) + выбранный для сравнения справа.
   const [duplicates, setDuplicates] = useState<DuplicateCandidateResult[]>([]);
   const [selectedDupId, setSelectedDupId] = useState<number | null>(hiddenId);
-  const [rightLoading, setRightLoading] = useState(false);
-  // Направление текущего слайда (для variants): задаётся нав-кнопкой ПЕРЕД loadSelected.
-  const [slideDir, setSlideDir] = useState(0);
-  // Кэш полных профилей всех дубликатов — заполняется префетчем в openModal,
-  // чтобы листание ◄/► было мгновенным (без спиннера и повторного запроса).
+  // Полные профили ВСЕХ дубликатов в STATE — именно они рендерят трек (карточки
+  // въезжают, как только соответствующий профиль подгрузился префетчем).
+  const [entities, setEntities] = useState<Record<number, EntityWithRelations>>({});
+  // Кэш тех же профилей в ref — для СИНХРОННого сидинга (предвыбор/triggerEntity),
+  // чтобы трек не моргал спиннером там, где профиль уже под рукой.
   const entityCache = useRef<Map<number, EntityWithRelations>>(new Map());
 
   // Подгружаем профиль дубля сразу (не только по клику «Проверить»), чтобы заранее
@@ -83,10 +72,10 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
       getEntity(hiddenId)
         .then((e) => {
           setTriggerEntity(e);
-          // Предзаполняем кэш загруженным hiddenId, чтобы не перезапрашивать предвыбор.
+          // Предзаполняем кэш + STATE загруженным hiddenId, чтобы трек сразу имел
+          // профиль предвыбранного дубликата и не перезапрашивал его.
           entityCache.current.set(e.id, e);
-          // Изначально правая колонка = hiddenId (до открытия модалки/карусели).
-          setArchived((prev) => prev ?? e);
+          setEntities((prev) => (prev[e.id] ? prev : { ...prev, [e.id]: e }));
         })
         .catch(() => {});
     }
@@ -94,27 +83,24 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
 
   if (!hiddenId || resolved) return null;
 
-  // Загружает полный профиль выбранного дубликата в правую колонку сравнения.
-  // Cache-first: если профиль уже в entityCache (префетч) — ставим синхронно БЕЗ
-  // спиннера, и Framer-слайд проигрывается сразу с готовой карточкой. Иначе —
-  // спиннер + запрос + кэширование.
+  // Профиль ВЫБРАННОГО в треке дубликата (центрированная правая карточка). Дерайвится
+  // из entities-state по selectedDupId; до подгрузки — fallback на triggerEntity
+  // (hiddenId), чтобы «Совпадение по»/right/matched работали с первого кадра.
+  const archived: EntityWithRelations | null =
+    (selectedDupId != null ? entities[selectedDupId] : undefined) ?? triggerEntity ?? null;
+
+  // Выбирает дубликат для центрирования + добирает его профиль в STATE/кэш, если
+  // префетч ещё не доставил. Трек сам подменит плейсхолдер на карточку, как только
+  // entities обновится — отдельный right-спиннер больше не нужен.
   const loadSelected = async (id: number) => {
     setSelectedDupId(id);
-    const cached = entityCache.current.get(id);
-    if (cached) {
-      setArchived(cached);
-      setRightLoading(false);
-      return;
-    }
-    setRightLoading(true);
+    if (entityCache.current.has(id)) return;
     try {
       const e = await getEntity(id);
       entityCache.current.set(id, e);
-      setArchived(e);
+      setEntities((prev) => (prev[id] ? prev : { ...prev, [id]: e }));
     } catch {
       toast.error("Не удалось загрузить профиль дубликата");
-    } finally {
-      setRightLoading(false);
     }
   };
 
@@ -126,7 +112,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
       const list = await getDuplicateCandidates(card.id, true);
       setDuplicates(list);
       // Префетч полных профилей ВСЕХ дубликатов в фоне (не ждём перед показом
-      // модалки) — после короткой паузы каждый ◄/► флип мгновенный из кэша.
+      // модалки) — каждый въезжает в трек, как только entities-state обновится.
       try {
         void Promise.allSettled(
           list.map((d) =>
@@ -135,6 +121,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
               : getEntity(d.entity_id)
                   .then((e) => {
                     entityCache.current.set(d.entity_id, e);
+                    setEntities((prev) => (prev[d.entity_id] ? prev : { ...prev, [d.entity_id]: e }));
                   })
                   .catch(() => {}),
           ),
@@ -148,20 +135,20 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
         list.find((d) => d.entity_id === hiddenId)?.entity_id ?? list[0]?.entity_id ?? hiddenId;
       if (preset != null) {
         await loadSelected(preset);
-      } else if (!archived) {
-        // Список пуст — fallback на одиночное поведение по hiddenId.
-        setArchived(triggerEntity ?? (await getEntity(hiddenId)));
       }
     } catch {
-      // Если список не получили — не регрессируем: показываем одиночный hiddenId.
-      if (!archived) {
+      // Если список не получили — не регрессируем: центрируем одиночный hiddenId
+      // (archived дерайвится из triggerEntity/entities, поэтому достаточно выбрать id).
+      setSelectedDupId(hiddenId);
+      if (!entityCache.current.has(hiddenId)) {
         try {
-          setArchived(triggerEntity ?? (await getEntity(hiddenId)));
+          const e = triggerEntity ?? (await getEntity(hiddenId));
+          entityCache.current.set(hiddenId, e);
+          setEntities((prev) => (prev[hiddenId] ? prev : { ...prev, [hiddenId]: e }));
         } catch {
           toast.error("Не удалось загрузить профиль дубликата");
         }
       }
-      setSelectedDupId(hiddenId);
     } finally {
       setLoading(false);
     }
@@ -224,17 +211,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
 
   // Индекс показанного справа дубликата — для нав-стрелок «перебираем карточки».
   const idx = duplicates.findIndex((d) => d.entity_id === selectedDupId);
-  // Уверенность + совпавшие поля ВЫБРАННОГО дубликата — для бейджа/чипов правой карточки.
-  const selectedDup = idx >= 0 ? duplicates[idx] : null;
-  const rightConfidence = selectedDup ? selectedDup.confidence : undefined;
-  const rightMatchedFields = selectedDup
-    ? Object.keys(selectedDup.matched_fields)
-    : undefined;
   // Перелистывание дублей (свайп карточки / клик по точке) — на delta шагов.
+  // Трек спружинит к idx*100%, новая карточка въедет справа без пустоты.
   const goToDup = (delta: number) => {
     const target = idx + delta;
     if (target < 0 || target >= duplicates.length || target === idx) return;
-    setSlideDir(delta > 0 ? 1 : -1);
     loadSelected(duplicates[target].entity_id);
   };
 
@@ -302,42 +283,58 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                           </span>
                         )}
                       </div>
-                      {/* Перебираем анкеты СВАЙПОМ, как колоду карт: тянешь карточку
-                          в сторону → перелистывается на след./пред. дубль (+ точки снизу). */}
-                      <div className="relative overflow-hidden p-3">
-                        <AnimatePresence mode="wait" custom={slideDir} initial={false}>
-                          <motion.div
-                            key={selectedDupId ?? "single"}
-                            custom={slideDir}
-                            variants={slideVariants}
-                            initial="enter"
-                            animate="center"
-                            exit="exit"
-                            transition={{ duration: 0.24, ease: "easeInOut" }}
-                            drag={duplicates.length > 1 ? "x" : false}
-                            dragConstraints={{ left: 0, right: 0 }}
-                            dragElastic={0.18}
-                            onDragEnd={(_e, info) => {
-                              if (info.offset.x < -64) goToDup(1);
-                              else if (info.offset.x > 64) goToDup(-1);
-                            }}
-                            className={`min-w-0 ${duplicates.length > 1 ? "cursor-grab active:cursor-grabbing" : ""}`}
-                          >
-                            {rightLoading ? (
-                              <div className="rounded-xl border border-slate-200 bg-white p-4 flex items-center justify-center text-slate-400">
-                                <Loader2 className="w-6 h-6 animate-spin" />
-                              </div>
-                            ) : (
-                              <CandidateCompareCard
-                                title="Старая анкета (дубликат)"
-                                side={right}
-                                matched={matched}
-                                confidence={rightConfidence}
-                                matchedFields={rightMatchedFields}
-                              />
-                            )}
-                          </motion.div>
-                        </AnimatePresence>
+                      {/* Перебираем анкеты СВАЙПОМ, как колоду карт: ВСЕ дубли лежат в
+                          ряд (трек шириной N×100%), трек смещается на -idx*100%, тянешь
+                          карточку → след./пред. дубль въезжает справа без пустоты. */}
+                      <div className="p-3">
+                        {duplicates.length === 0 ? (
+                          // Список не загрузился — не регрессируем в пустоту: одиночная
+                          // карточка по derived right (triggerEntity/hiddenId), без трека.
+                          right ? (
+                            <CandidateCompareCard title="Старая анкета (дубликат)" side={right} matched={matched} />
+                          ) : (
+                            <div className="rounded-xl border border-slate-200 bg-white p-6 flex items-center justify-center text-slate-400 min-h-[220px]">
+                              <Loader2 className="w-6 h-6 animate-spin" />
+                            </div>
+                          )
+                        ) : (
+                          <div className="overflow-hidden">
+                            <motion.div
+                              className="flex cursor-grab active:cursor-grabbing"
+                              animate={{ x: `-${Math.max(idx, 0) * 100}%` }}
+                              transition={{ type: "spring", stiffness: 320, damping: 34 }}
+                              drag={duplicates.length > 1 ? "x" : false}
+                              dragConstraints={{ left: 0, right: 0 }}
+                              dragElastic={0.12}
+                              onDragEnd={(_e, info) => {
+                                if (info.offset.x < -64) goToDup(1);
+                                else if (info.offset.x > 64) goToDup(-1);
+                              }}
+                            >
+                              {duplicates.map((d) => {
+                                const ent = entities[d.entity_id];
+                                const dupSide = ent ? sideFromEntity(ent) : null;
+                                return (
+                                  <div key={d.entity_id} className="w-full shrink-0">
+                                    {dupSide ? (
+                                      <CandidateCompareCard
+                                        title="Старая анкета (дубликат)"
+                                        side={dupSide}
+                                        matched={(k) => matchSide(left, dupSide, k)}
+                                        confidence={d.confidence}
+                                        matchedFields={Object.keys(d.matched_fields)}
+                                      />
+                                    ) : (
+                                      <div className="rounded-xl border border-slate-200 bg-white p-6 flex items-center justify-center text-slate-400 min-h-[220px]">
+                                        <Loader2 className="w-6 h-6 animate-spin" />
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </motion.div>
+                          </div>
+                        )}
                         {duplicates.length > 1 && (
                           <div className="pt-3 flex items-center justify-center gap-1.5">
                             {duplicates.map((d, i) => (
