@@ -546,6 +546,51 @@ async def ensure_shadow_columns():
         ))
         print(f\"Backfilled {res.rowcount} stage_transitions: Initial application -> Первичная заявка\")
 
+    # Backfill: авто-метки HR (system_hr_tags) — кандидат ↔ забравшие его в
+    # воронку рекрутеры. Та же логика, что api/services/hr_tags.py: уникальные
+    # created_by активных заявок (кроме rejected/withdrawn), [{hr_id, name}].
+    # Идемпотентно (distinct-guard) — доска корректна сразу после деплоя.
+    async with engine.begin() as hr_conn:
+        res = await hr_conn.execute(text(\"\"\"
+            UPDATE entities e
+            SET extra_data = (
+                CASE WHEN jsonb_typeof(e.extra_data::jsonb) = 'object'
+                     THEN e.extra_data::jsonb
+                     ELSE '{}'::jsonb END
+                || jsonb_build_object('system_hr_tags', sub.tags)
+            )::json
+            FROM (
+                SELECT va.entity_id,
+                       jsonb_agg(jsonb_build_object('hr_id', va.created_by, 'name', u.name)
+                                 ORDER BY va.created_by) AS tags
+                FROM (
+                    SELECT DISTINCT entity_id, created_by
+                    FROM vacancy_applications
+                    WHERE created_by IS NOT NULL
+                      AND stage NOT IN ('rejected', 'withdrawn')
+                ) va
+                JOIN users u ON u.id = va.created_by
+                GROUP BY va.entity_id
+            ) sub
+            WHERE e.id = sub.entity_id
+              AND COALESCE(e.extra_data::jsonb -> 'system_hr_tags', 'null'::jsonb)
+                  IS DISTINCT FROM sub.tags
+        \"\"\"))
+        print(f\"Backfilled system_hr_tags on {res.rowcount} candidates\")
+
+        res = await hr_conn.execute(text(\"\"\"
+            UPDATE entities e
+            SET extra_data = (e.extra_data::jsonb - 'system_hr_tags')::json
+            WHERE jsonb_exists(e.extra_data::jsonb, 'system_hr_tags')
+              AND NOT EXISTS (
+                  SELECT 1 FROM vacancy_applications va
+                  WHERE va.entity_id = e.id
+                    AND va.created_by IS NOT NULL
+                    AND va.stage NOT IN ('rejected', 'withdrawn')
+              )
+        \"\"\"))
+        print(f\"Cleared stale system_hr_tags on {res.rowcount} candidates\")
+
     await engine.dispose()
 
 asyncio.run(ensure_shadow_columns())

@@ -9,6 +9,7 @@ import {
   buildStageContainers,
   matchesTimelineFilter,
   CANDIDATE_VACANCY_STAGE_LABELS,
+  readSystemHrTags,
 } from "../model";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
@@ -251,5 +252,50 @@ describe("matchesTimelineFilter", () => {
   });
   it("returns false when nothing matches", () => {
     expect(matchesTimelineFilter({ kind: "comment", title: "обычный текст" }, "Оффер")).toBe(false);
+  });
+});
+
+// ── readSystemHrTags ───────────────────────────────────────────────────────
+describe("readSystemHrTags", () => {
+  it("returns [] for missing / non-array / nullish extra_data", () => {
+    expect(readSystemHrTags(undefined)).toEqual([]);
+    expect(readSystemHrTags(null)).toEqual([]);
+    expect(readSystemHrTags({})).toEqual([]);
+    expect(readSystemHrTags({ system_hr_tags: "nope" })).toEqual([]);
+    expect(readSystemHrTags({ system_hr_tags: {} })).toEqual([]);
+  });
+  it("reads well-formed HR tags preserving backend order", () => {
+    expect(
+      readSystemHrTags({
+        system_hr_tags: [
+          { hr_id: 7, name: "Мария" },
+          { hr_id: 3, name: "Настя" },
+        ],
+      }),
+    ).toEqual([
+      { hr_id: 7, name: "Мария" },
+      { hr_id: 3, name: "Настя" },
+    ]);
+  });
+  it("drops malformed entries (missing/blank name, non-numeric id, null)", () => {
+    expect(
+      readSystemHrTags({
+        system_hr_tags: [
+          { hr_id: 1, name: "Оля" },
+          { hr_id: "2", name: "Bad id" },
+          { hr_id: 3, name: "   " },
+          { hr_id: 4 },
+          null,
+          { name: "no id" },
+        ],
+      }),
+    ).toEqual([{ hr_id: 1, name: "Оля" }]);
+  });
+  it("does not leak extra keys — returns only {hr_id, name}", () => {
+    expect(
+      readSystemHrTags({
+        system_hr_tags: [{ hr_id: 5, name: "Лена", extra: "x" }],
+      }),
+    ).toEqual([{ hr_id: 5, name: "Лена" }]);
   });
 });

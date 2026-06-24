@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 import asyncio
+import logging
 
 from .common import (
     logger, get_db, Entity, EntityType, EntityStatus, EntityTransfer,
@@ -526,6 +527,19 @@ async def get_entity(
     has_access = await check_entity_access(entity, current_user, org.id, db, required_level=None)
     if not has_access:
         raise HTTPException(404, "Entity not found")
+
+    # Ленивый self-heal авто-меток HR: при открытии карточки пересчитываем
+    # закреплённых рекрутеров. Ловит заявки, созданные путями без явного вызова
+    # синка (формы, CSV-импорт, рекоммендер, magic-button). Diff-guard внутри:
+    # пишет (и коммитит) ТОЛЬКО при реальном изменении — обычный GET остаётся
+    # read-only. После коммита entity перечитается с уже свежим extra_data.
+    try:
+        from ...services.hr_tags import sync_for_entity
+        await sync_for_entity(db, entity_id)
+    except Exception:
+        logging.getLogger("hr-analyzer.entities").warning(
+            "HR-tags self-heal failed for entity %s", entity_id, exc_info=True
+        )
 
     # Load related data WITH ACCESS CONTROL
     # Full access users (superadmin, owner, or member with has_full_access) see all

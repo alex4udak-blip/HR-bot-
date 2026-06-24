@@ -319,3 +319,38 @@ export function matchesTimelineFilter(
   const hay = `${item.title || ""} ${item.body || ""}`.toLowerCase();
   return aliases.some((a) => hay.includes(a));
 }
+
+// ── System HR tags (авто-метки «HR») ───────────────────────────────────────
+
+/**
+ * Авто-метка «HR» — рекрутер, забравший кандидата в активную воронку. Read-only:
+ * проставляется бэкендом по created_by активных заявок и хранится в
+ * extra_data.system_hr_tags ОТДЕЛЬНО от ручных строковых card.tags, поэтому
+ * никогда с ними не конфликтует и не удаляется вручную.
+ */
+export type SystemHrTag = {
+  hr_id: number;
+  name: string;
+};
+
+/**
+ * Достаёт авто-метки HR из extra_data кандидата, отбрасывая мусор (на случай
+ * частично заполненного/легаси extra_data). Порядок сохраняется как пришёл с
+ * бэкенда (там он стабилен — по hr_id).
+ */
+export function readSystemHrTags(
+  extraData: Record<string, unknown> | undefined | null,
+): SystemHrTag[] {
+  const raw = extraData?.system_hr_tags;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (t): t is SystemHrTag =>
+        !!t &&
+        typeof t === "object" &&
+        typeof (t as SystemHrTag).hr_id === "number" &&
+        typeof (t as SystemHrTag).name === "string" &&
+        (t as SystemHrTag).name.trim().length > 0,
+    )
+    .map((t) => ({ hr_id: t.hr_id, name: t.name }));
+}

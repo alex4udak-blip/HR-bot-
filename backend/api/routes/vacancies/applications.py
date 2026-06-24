@@ -255,6 +255,15 @@ async def create_application(
     )
     await db.commit()
 
+    # Авто-метка HR: кандидат попал в воронку → пересчитываем закреплённых
+    # рекрутеров (по created_by активных заявок). Некритично: ошибка синка не
+    # должна валить добавление кандидата.
+    try:
+        from ...services.hr_tags import sync_for_entity
+        await sync_for_entity(db, data.entity_id)
+    except Exception:
+        logger.exception("HR-tags sync failed after add (non-critical)")
+
     # --- Notification: new candidate added ---
     try:
         from ...services.hr_notifications import notify_new_candidate
@@ -502,5 +511,14 @@ async def delete_application(
         logger.info(f"DELETE /applications/{application_id}: Reset entity {entity_id} status to 'new'")
 
     await db.commit()
+
+    # Авто-метка HR: кандидата сняли с воронки → пересчитываем закреплённых
+    # рекрутеров. Если это была последняя активная заявка данного HR — его
+    # метка уходит. Некритично для удаления.
+    try:
+        from ...services.hr_tags import sync_for_entity
+        await sync_for_entity(db, entity_id)
+    except Exception:
+        logger.exception("HR-tags sync failed after delete (non-critical)")
 
     logger.info(f"Deleted application {application_id}")
