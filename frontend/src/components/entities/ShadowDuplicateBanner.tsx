@@ -242,7 +242,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
           onClick={() => !busy && setOpen(false)}
         >
           <div
-            className="w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden"
+            className="w-full max-w-6xl max-h-[92vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
@@ -301,7 +301,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                           <div className="overflow-hidden">
                             <motion.div
                               className="flex cursor-grab active:cursor-grabbing"
-                              animate={{ x: `-${Math.max(idx, 0) * 100}%` }}
+                              animate={{ x: `-${Math.max(idx, 0) * 85}%` }}
                               transition={{ type: "spring", stiffness: 320, damping: 34 }}
                               drag={duplicates.length > 1 ? "x" : false}
                               dragConstraints={{ left: 0, right: 0 }}
@@ -315,7 +315,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                                 const ent = entities[d.entity_id];
                                 const dupSide = ent ? sideFromEntity(ent) : null;
                                 return (
-                                  <div key={d.entity_id} className="w-full shrink-0">
+                                  <div key={d.entity_id} className="w-[85%] shrink-0 pr-3">
                                     {dupSide ? (
                                       <CandidateCompareCard
                                         title="Старая анкета (дубликат)"
