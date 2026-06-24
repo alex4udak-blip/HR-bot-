@@ -42,9 +42,10 @@ import { getVacancies } from '@/services/api/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
-import VacancyStageCard from '@/components/entities/VacancyStageCard';
+import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
+import { buildStageContainers, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
 import ResumeTabs from '@/components/entities/ResumeTabs';
-import { getEntityActivity, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
+import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
 import { HuntflowComposer } from '@/components/hr/HuntflowComposer';
 import {
@@ -845,20 +846,6 @@ export default function RecruiterFunnelsPage() {
       .catch(() => setEntityActivity([]));
   }, [selectedCandidate?.entity_id]);
 
-  // Цвета стадии для VacancyStageCard — оборачиваем STAGE_COLORS/colorToStageColor/
-  // stagesConfig/fallbackColor, чтобы карточка не зависела от внутренностей страницы.
-  const getStageColors = useCallback(
-    (stage: string) => {
-      const key = colorToStageColor(
-        stagesConfig.colorKeys[stage],
-        stagesConfig.keyToEnum[stage] || stage,
-      );
-      const colors = STAGE_COLORS[key] || fallbackColor;
-      return { badge: colors.badge, dot: colors.dot };
-    },
-    [stagesConfig.colorKeys, stagesConfig.keyToEnum],
-  );
-
   // Перезагрузка ленты активности после мутации в карточке вакансии +
   // обновление счётчиков досок.
   const refreshActivity = useCallback(async () => {
@@ -1476,7 +1463,7 @@ export default function RecruiterFunnelsPage() {
     }
   }, [selectedCandidate]);
 
-  // ─── Тонкие обёртки для VacancyStageCard: переиспользуем существующие
+  // ─── Тонкие обёртки для CandidateVacancyCard: переиспользуем существующие
   // обработчики (по applicationId) и докидываем refreshActivity после мутации,
   // чтобы лента карточек и счётчики досок обновились. ───
   const cardChangeStage = useCallback(
@@ -1521,32 +1508,84 @@ export default function RecruiterFunnelsPage() {
     [refreshActivity],
   );
 
-  const cardScheduleInterview = useCallback(
-    (appId: number) => {
-      // Открываем модалку назначения интервью для КОНКРЕТНОЙ заявки (модалка
-      // сохраняет по interviewForCandidate.id, так что это корректно per-app).
-      const app = candidates.find((c) => c.id === appId)
-        || (selectedCandidate ? { ...selectedCandidate, id: appId, next_interview_at: undefined } : null);
-      if (!app) return;
-      setInterviewForCandidate(app);
-      const cur = app.next_interview_at;
-      if (cur) {
-        const d = new Date(cur);
-        const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-        setInterviewDateTime(local);
-      } else {
-        setInterviewDateTime('');
+  // ─── Общая богатая карточка «Все кандидаты» (CandidateVacancyCard) в детали
+  // воронки. Строим KanbanCard-форму из selectedCandidate + entityExtraData и
+  // стек контейнеров через ту же чистую модель buildStageContainers, что и
+  // AllCandidatesPage — без форка поведения. ───
+  const funnelCard = useMemo<KanbanCard | null>(() => {
+    if (!selectedCandidate) return null;
+    return {
+      id: selectedCandidate.entity_id,
+      name: selectedCandidate.entity_name || '',
+      created_at: selectedCandidate.applied_at,
+      tags: [],
+      extra_data: entityExtraData || {},
+    };
+  }, [selectedCandidate, entityExtraData]);
+
+  // «Первичный» блок = заявка на текущую вакансию воронки (если определима),
+  // иначе первый блок активности. Его applicationId/events/vacancyTitle уходят в
+  // живой контейнер; статус живого = статус самого кандидата (его текущий этап).
+  const primaryBlock = useMemo(() => {
+    if (entityActivity.length === 0) return undefined;
+    return (
+      entityActivity.find((b) => b.vacancy_id === selectedVacancyId)
+      || entityActivity[0]
+    );
+  }, [entityActivity, selectedVacancyId]);
+
+  const containers = useMemo<StageContainer[]>(() => {
+    if (!funnelCard) return [];
+    return buildStageContainers({
+      card: funnelCard,
+      status: selectedCandidate?.stage || primaryBlock?.current_stage || 'applied',
+      liveApplicationId: primaryBlock?.application_id ?? 0,
+      liveEvents: primaryBlock?.events,
+      liveVacancyTitle: primaryBlock?.vacancy_title ?? null,
+      allEntityFiles: entityFiles,
+    });
+  }, [funnelCard, selectedCandidate?.stage, primaryBlock, entityFiles]);
+
+  const cardReact = useCallback(
+    async (entryKey: string, emoji: string): Promise<EntryReaction[] | null> => {
+      const eid = selectedCandidate?.entity_id;
+      if (!eid) return null;
+      try {
+        const resp = await toggleTimelineReaction(eid, entryKey, emoji);
+        // Зеркалим реакцию в локальный extra_data, чтобы карточка обновилась
+        // мгновенно (без ожидания reload entity), как делает AllCandidatesPage.
+        setEntityExtraData((prev) => {
+          const tr = {
+            ...((prev?.timeline_reactions as Record<string, unknown> | undefined) || {}),
+          };
+          if (resp.reactions?.length) tr[entryKey] = resp.reactions;
+          else delete tr[entryKey];
+          return { ...(prev || {}), timeline_reactions: tr };
+        });
+        return (resp.reactions as EntryReaction[]) || [];
+      } catch {
+        toast.error('Не удалось поставить реакцию');
+        return null;
       }
     },
-    [candidates, selectedCandidate],
+    [selectedCandidate?.entity_id],
   );
 
-  const cardRemoveFromVacancy = useCallback(
-    (appId: number) => {
-      setRemoveTargetAppId(appId);
-      setRemoveConfirmOpen(true);
+  const cardDeleteFile = useCallback(
+    async (fileId: number) => {
+      const eid = selectedCandidate?.entity_id;
+      if (!eid) return;
+      if (!window.confirm('Удалить этот файл?')) return;
+      try {
+        await deleteEntityFile(eid, fileId);
+        toast.success('Файл удалён');
+        const fresh = await getEntityFiles(eid);
+        setEntityFiles(fresh);
+      } catch {
+        toast.error('Не удалось удалить файл');
+      }
     },
-    [],
+    [selectedCandidate?.entity_id],
   );
 
   // Toggle checkbox selection for a candidate
@@ -2725,30 +2764,36 @@ export default function RecruiterFunnelsPage() {
                                 )}
                               </div>
 
-                              {/* Вакансии и история — по полной интерактивной серой карточке на вакансию */}
+                              {/* Вакансии и история — та же богатая карточка, что и в
+                                  «Все кандидаты» (CandidateVacancyCard), по контейнеру
+                                  стека (живой + merged_from) через buildStageContainers. */}
                               <div className="px-5 pt-4 flex flex-col gap-3">
                                 <div className="text-sm font-medium text-[var(--hf-dark-400)] mb-1">Вакансии и история</div>
-                                {entityActivity.length === 0 ? (
+                                {entityActivity.length === 0 || !funnelCard ? (
                                   <div className="text-sm text-[var(--hf-dark-600)]">Нет участий в вакансиях</div>
                                 ) : (
-                                  entityActivity.map((b) => (
-                                    <VacancyStageCard
-                                      key={b.application_id}
-                                      applicationId={b.application_id}
-                                      vacancyTitle={b.vacancy_title}
-                                      currentStage={b.current_stage}
-                                      entityId={selectedCandidate.entity_id}
-                                      entityEmail={selectedCandidate.entity_email}
-                                      events={b.events}
+                                  containers.map((c) => (
+                                    <CandidateVacancyCard
+                                      key={`${c.origin}-${c.applicationId}`}
+                                      card={funnelCard}
+                                      applicationId={c.applicationId}
+                                      vacancyTitle={c.vacancyTitle}
+                                      currentStage={c.status}
+                                      notes={c.notes}
+                                      events={c.events}
+                                      addedAt={c.addedAt}
+                                      readonly={c.origin === 'merged'}
                                       stageOptions={stagePickerOptions}
                                       getStageLabel={getVacancyStageLabel}
-                                      getStageColors={getStageColors}
                                       onChangeStage={cardChangeStage}
                                       onComment={cardComment}
                                       onDeleteHistory={cardDeleteHistory}
                                       onUploadFile={cardUploadFile}
-                                      onScheduleInterview={cardScheduleInterview}
-                                      onRemoveFromVacancy={cardRemoveFromVacancy}
+                                      onAnketa={undefined}
+                                      anketaCount={0}
+                                      onReact={c.origin === 'live' ? cardReact : undefined}
+                                      files={c.files}
+                                      onDeleteFile={c.origin === 'live' ? cardDeleteFile : undefined}
                                     />
                                   ))
                                 )}
