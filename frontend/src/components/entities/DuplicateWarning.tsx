@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -6,6 +6,7 @@ import {
   Copy,
   GitMerge,
   ChevronRight,
+  ChevronLeft,
   X,
   Mail,
   Phone,
@@ -43,6 +44,10 @@ export default function DuplicateWarning({
   onMergeComplete
 }: DuplicateWarningProps) {
   const navigate = useNavigate();
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const scrollByCard = (dir: number) => {
+    carouselRef.current?.scrollBy({ left: dir * 248, behavior: 'smooth' });
+  };
   const [duplicates, setDuplicates] = useState<DuplicateCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [showMergeModal, setShowMergeModal] = useState(false);
@@ -158,43 +163,76 @@ export default function DuplicateWarning({
               похожих на "{entityName}". Проверьте, не являются ли они одним человеком.
             </p>
 
-            {/* Duplicates list */}
-            <div className="mt-3 space-y-2">
-              {duplicates.map((duplicate) => (
-                <div
-                  key={duplicate.entity_id}
-                  className="flex items-center justify-between p-3 bg-[var(--hf-black-alpha-20)] rounded-lg"
-                >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className={clsx(
-                      'flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium',
-                      getConfidenceBgColor(duplicate.confidence),
-                      getConfidenceColor(duplicate.confidence)
-                    )}>
-                      <Copy size={12} />
-                      {duplicate.confidence}%
+            {/* Duplicates — горизонтальная карусель (любое число карточек, scroll-snap) */}
+            <div className="mt-3">
+              {duplicates.length > 1 && (
+                <div className="flex items-center gap-1 mb-1.5">
+                  <span className="mr-auto text-xs text-[color:var(--hf-status-yellow)]/80">
+                    Листайте, чтобы посмотреть все →
+                  </span>
+                  <button
+                    onClick={() => scrollByCard(-1)}
+                    className="p-1 rounded-md bg-[var(--hf-white-alpha-10)] hover:bg-[var(--hf-white-alpha-20)] transition-colors"
+                    aria-label="Предыдущий дубликат"
+                  >
+                    <ChevronLeft size={14} className="text-[color:var(--hf-white-alpha-60)]" />
+                  </button>
+                  <button
+                    onClick={() => scrollByCard(1)}
+                    className="p-1 rounded-md bg-[var(--hf-white-alpha-10)] hover:bg-[var(--hf-white-alpha-20)] transition-colors"
+                    aria-label="Следующий дубликат"
+                  >
+                    <ChevronRight size={14} className="text-[color:var(--hf-white-alpha-60)]" />
+                  </button>
+                </div>
+              )}
+              <div
+                ref={carouselRef}
+                className="flex gap-2 overflow-x-auto snap-x snap-mandatory scrollbar-thin pb-1 px-0.5 -mx-0.5"
+              >
+                {duplicates.map((duplicate) => (
+                  <div
+                    key={duplicate.entity_id}
+                    className="snap-start shrink-0 w-[240px] p-3 bg-[var(--hf-black-alpha-20)] rounded-lg flex flex-col gap-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className={clsx(
+                        'flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium',
+                        getConfidenceBgColor(duplicate.confidence),
+                        getConfidenceColor(duplicate.confidence)
+                      )}>
+                        <Copy size={12} />
+                        {duplicate.confidence}%
+                      </div>
+                      <button
+                        onClick={() => handleNavigateToEntity(duplicate.entity_id)}
+                        className="p-1 rounded text-[color:var(--hf-white-alpha-40)] hover:text-[var(--hf-status-blue)] transition-colors"
+                        title="Открыть профиль"
+                        aria-label="Открыть профиль"
+                      >
+                        <ExternalLink size={14} />
+                      </button>
                     </div>
+
                     <button
                       onClick={() => handleNavigateToEntity(duplicate.entity_id)}
-                      className="text-[var(--hf-white)] hover:text-[var(--hf-status-blue)] transition-colors truncate flex items-center gap-1"
+                      className="text-left font-medium text-[var(--hf-white)] hover:text-[var(--hf-status-blue)] transition-colors truncate"
+                      title={duplicate.entity_name}
                     >
                       {duplicate.entity_name}
-                      <ExternalLink size={12} className="flex-shrink-0" />
                     </button>
-                  </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {/* Match reasons badges */}
-                    <div className="hidden sm:flex items-center gap-1">
-                      {Object.keys(duplicate.matched_fields).slice(0, 2).map((field) => {
+                    <div className="flex items-center gap-1 flex-wrap min-h-[20px]">
+                      {Object.keys(duplicate.matched_fields).map((field) => {
                         const Icon = getFieldIcon(field);
                         return (
                           <span
                             key={field}
-                            className="p-1 bg-[var(--hf-white-alpha-10)] rounded text-[color:var(--hf-white-alpha-60)]"
+                            className="flex items-center gap-1 px-1.5 py-0.5 bg-[var(--hf-white-alpha-10)] rounded text-[10px] text-[color:var(--hf-white-alpha-60)]"
                             title={`Совпадение: ${getFieldLabel(field)}`}
                           >
-                            <Icon size={12} />
+                            <Icon size={10} />
+                            {getFieldLabel(field)}
                           </span>
                         );
                       })}
@@ -203,15 +241,15 @@ export default function DuplicateWarning({
                     {isAdmin && !isTransferred && (
                       <button
                         onClick={() => handleOpenMergeModal(duplicate)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] text-xs rounded-lg hover:bg-[var(--hf-status-cyan-badge)] transition-colors"
+                        className="mt-auto flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] text-xs rounded-lg hover:bg-[var(--hf-status-cyan-badge)] transition-colors"
                       >
                         <GitMerge size={12} />
-                        Завершить объединение
+                        Объединить
                       </button>
                     )}
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
 
