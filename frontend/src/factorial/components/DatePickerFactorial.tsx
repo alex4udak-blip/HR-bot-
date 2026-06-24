@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   format,
@@ -44,33 +45,46 @@ export default function DatePickerFactorial({
   disablePast = false,
 }: DatePickerFactorialProps) {
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<'below' | 'above'>('below');
+  // Координаты поповера во вьюпорте — он рендерится ПОРТАЛОМ в body (position: fixed),
+  // чтобы overflow/z-index родителя (модалка кандидата, скролл-контейнер) его не резал
+  // и он не «уходил за текстурки».
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [currentMonth, setCurrentMonth] = useState<Date>(() =>
     value ? parse(value, 'yyyy-MM-dd', new Date()) : new Date()
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
 
-  // Smart positioning when opening
+  // Позиционирование при открытии + слежение за скроллом/ресайзом, пока открыт.
   useEffect(() => {
-    if (!open || !buttonRef.current) return;
-    const rect = buttonRef.current.getBoundingClientRect();
-    const popupHeight = 320; // approx height of the calendar popup
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    // Prefer below; if not enough room and above has more room — flip up
-    if (spaceBelow < popupHeight && spaceAbove > spaceBelow) {
-      setPosition('above');
-    } else {
-      setPosition('below');
-    }
+    if (!open) { setCoords(null); return; }
+    const place = () => {
+      if (!buttonRef.current) return;
+      const rect = buttonRef.current.getBoundingClientRect();
+      const popupHeight = 344;
+      const popupWidth = 280;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openAbove = spaceBelow < popupHeight && rect.top > spaceBelow;
+      const top = openAbove ? rect.top - popupHeight - 4 : rect.bottom + 4;
+      const left = Math.min(rect.left, window.innerWidth - popupWidth - 8);
+      setCoords({ top: Math.max(8, top), left: Math.max(8, left) });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
   }, [open]);
 
-  // Close on outside click
+  // Close on outside click (учитываем и кнопку, и портал-поповер).
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const t = e.target as Node;
+      if (!containerRef.current?.contains(t) && !popupRef.current?.contains(t)) {
         setOpen(false);
       }
     };
@@ -111,12 +125,12 @@ export default function DatePickerFactorial({
         <span className={cn(!displayLabel && 'text-text-muted')}>{displayLabel || placeholder}</span>
       </button>
 
-      {open && (
+      {open && coords && createPortal(
         <div
-          className={cn(
-            'absolute z-30 bg-white rounded-card shadow-card-hover border border-card-border-soft p-3 w-[280px]',
-            position === 'below' ? 'top-full mt-1' : 'bottom-full mb-1'
-          )}
+          ref={popupRef}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{ position: 'fixed', top: coords.top, left: coords.left, zIndex: 9999 }}
+          className="bg-white rounded-card shadow-card-hover border border-card-border-soft p-3 w-[280px]"
         >
           {/* Header */}
           <div className="flex items-center justify-between mb-2">
@@ -182,7 +196,8 @@ export default function DatePickerFactorial({
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

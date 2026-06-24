@@ -73,6 +73,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
   const [activeTab, setActiveTab] = useState<TabType>('url');
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedResume | ParsedVacancy | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -218,14 +219,15 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     }
 
     setLoading(true);
+    setUploadPct(0);
     setError(null);
     setParsedData(null);
     setUploadedFile(file);
     setMatchedCandidates([]);
 
     try {
-      // Parse resume inline - shows results in preview
-      const data = await parseResumeFromFile(file);
+      // Реальный % отправки файла; на 100% сервер начинает AI-разбор → null = индетерминантная фаза.
+      const data = await parseResumeFromFile(file, (pct) => setUploadPct(pct >= 100 ? null : pct));
       setParsedData(data);
       toast.success('Резюме распознано');
     } catch (err) {
@@ -234,6 +236,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
       toast.error(message);
     } finally {
       setLoading(false);
+      setUploadPct(null);
     }
   };
 
@@ -604,11 +607,24 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                 </button>
               )}
 
-              {/* Loading indicator for file */}
+              {/* Loading indicator for file — реальный % загрузки, затем индетерминантный AI-анализ */}
               {activeTab === 'file' && loading && (
-                <div className="flex items-center justify-center gap-2 py-4 text-[var(--hf-cyan-400)]" role="status" aria-live="polite">
-                  <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
-                  <span>Обработка файла...</span>
+                <div className="py-4 space-y-2" role="status" aria-live="polite">
+                  <div className="flex items-center justify-center gap-2 text-[var(--hf-cyan-400)]">
+                    <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
+                    <span>{uploadPct !== null ? `Загрузка файла… ${uploadPct}%` : 'AI анализирует резюме…'}</span>
+                  </div>
+                  <div className="h-1.5 bg-[var(--hf-white-alpha-10)] rounded-full overflow-hidden">
+                    {uploadPct !== null ? (
+                      <div className="h-full bg-[var(--hf-cyan-400)] rounded-full transition-all duration-200" style={{ width: `${uploadPct}%` }} />
+                    ) : (
+                      <motion.div
+                        className="h-full w-1/3 bg-[var(--hf-cyan-400)] rounded-full"
+                        animate={{ x: ['-100%', '300%'] }}
+                        transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+                      />
+                    )}
+                  </div>
                 </div>
               )}
             </div>
