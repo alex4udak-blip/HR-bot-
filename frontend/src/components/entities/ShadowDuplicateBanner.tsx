@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { AlertTriangle, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
-import type { EntityWithRelations } from "@/types";
+import { STATUS_LABELS, type EntityWithRelations } from "@/types";
 import {
   getEntity,
   mergeShadowDuplicate,
@@ -18,6 +18,8 @@ import {
   matchSide,
   type FieldKey,
 } from "./CandidateCompareCard";
+import CandidateVacancyCard from "@/components/entities/CandidateVacancyCard";
+import type { ContainerNote } from "@/components/entities/candidateDetail/model";
 
 /**
  * Баннер «Похожий кандидат есть в базе» + БЕЛЫЙ экран сравнения двух анкет
@@ -225,9 +227,30 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   // Индекс показанного справа дубликата — для нав-стрелок «перебираем карточки».
   const idx = duplicates.findIndex((d) => d.entity_id === selectedDupId);
   // Уверенность + совпавшие поля ВЫБРАННОГО дубликата — для бейджа/чипов правой карточки.
-  const selectedDup = idx >= 0 ? duplicates[idx] : null;
-  const rightConfidence = selectedDup ? selectedDup.confidence : undefined;
-  const rightMatchedFields = selectedDup ? Object.keys(selectedDup.matched_fields) : undefined;
+  // Данные ВЫБРАННОГО дубля → KanbanCard для готового CandidateVacancyCard (read-only).
+  // Карточку не переписываем — просто кормим её props'ами и оборачиваем в слайдер.
+  const noop = () => {};
+  const dupStageLabel = (s: string) =>
+    (STATUS_LABELS as Record<string, string>)[s] || s;
+  const dupVacancyCard: KanbanCard | null = archived
+    ? {
+        id: archived.id,
+        name: archived.name || "",
+        created_at: archived.created_at,
+        tags: [],
+        email: archived.email ?? undefined,
+        phone: archived.phone ?? undefined,
+        telegram_username: archived.telegram_usernames?.[0],
+        position: archived.position ?? undefined,
+        company: archived.company ?? undefined,
+        extra_data: (archived.extra_data as Record<string, unknown>) || {},
+      }
+    : null;
+  const dupStage =
+    ((archived as unknown as Record<string, unknown>)?.status as string) ||
+    "new";
+  const dupNotes =
+    (archived?.extra_data?.notes as ContainerNote[] | undefined) || [];
 
   return (
     <>
@@ -281,7 +304,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                       Нет совпадений по контактам (имя / телефон / почта / telegram) — вероятно, это разные люди.
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4 items-start">
                     <CandidateCompareCard title={cardArchived ? "Эта анкета (в архиве)" : "Новый кандидат"} side={left} matched={matched} />
                     <div className="min-w-0">
                       {/* Нав по похожим анкетам — перебираем дубликаты в правой колонке */}
@@ -339,15 +362,22 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                               <div className="rounded-xl border border-slate-200 p-4 flex items-center justify-center text-slate-400">
                                 <Loader2 className="w-6 h-6 animate-spin" />
                               </div>
-                            ) : (
-                              <CandidateCompareCard
-                                title="Старая анкета (дубликат)"
-                                side={right}
-                                matched={matched}
-                                confidence={rightConfidence}
-                                matchedFields={rightMatchedFields}
+                            ) : dupVacancyCard ? (
+                              <CandidateVacancyCard
+                                card={dupVacancyCard}
+                                applicationId={-1}
+                                vacancyTitle={null}
+                                currentStage={dupStage}
+                                notes={dupNotes}
+                                readonly
+                                stageOptions={[]}
+                                getStageLabel={dupStageLabel}
+                                onChangeStage={noop}
+                                onComment={noop}
+                                onDeleteHistory={noop}
+                                onUploadFile={noop}
                               />
-                            )}
+                            ) : null}
                           </motion.div>
                         </AnimatePresence>
                       </div>
