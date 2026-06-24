@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy, startTransition } from 'react';
 import { useHorizontalScroll } from '../hooks/useHorizontalScroll';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -54,6 +54,7 @@ import {
   HUNTFLOW_VACANCY_STATUS_FILTERS,
   getHuntflowVacancyStatusFilterLabel,
 } from '@/components/hr/huntflowVacancyStatus';
+import { computeEntityParamUpdate, shouldAdoptUrlEntity } from '@/utils/candidateUrl';
 import { useFormBadgeStore } from '@/stores/formBadgeStore';
 import { getEntityFormsUnreadCount, getEntityDispatches, markEntityDispatchesSeen, type FormDispatchInfo } from '@/services/api/forms';
 import { AnketaResponses } from '@/features/forms/AnketaResponses';
@@ -804,6 +805,87 @@ export default function RecruiterFunnelsPage() {
     [candidates, selectedCandidateId],
   );
 
+  // Durable per-candidate deep-link (?entity=ID), как в «Все кандидаты».
+  // ВАЖНО: в воронке state хранит id ЗАЯВКИ (selectedCandidateId === VacancyApplication.id),
+  // а в URL пишем entity_id (id человека) — для кросс-страничной совместимости. Поэтому
+  // через помощники candidateUrl мы прогоняем именно entity_id выбранного кандидата.
+  const urlEntity = searchParams.get('entity');
+  // Предыдущий entity_id для ЗЕРКАЛА (selection -> URL): отличает настоящее закрытие
+  // (entity был -> стал null) от ещё не доехавшего диплинка (null -> null) → не стираем ?entity=.
+  const prevMirrorEntityIdRef = useRef<number | null>(null);
+  // Предыдущий entity_id для АДОПТА (URL -> selection): отличает смену выбора (клик) от
+  // смены URL, чтобы не «бодаться» за фокус на свежем клике (см. shouldAdoptUrlEntity).
+  const prevAdoptEntityIdRef = useRef<number | null>(null);
+  // Чтобы не дёргать адопт повторно, когда entity из URL не найден в текущем списке
+  // (кандидат ещё не загружен / другая вакансия) — пробуем один раз на каждый id.
+  const adoptTriedEntityRef = useRef<number | null>(null);
+
+  // Диплинк из URL «в процессе»: ?entity= указывает на загруженного кандидата, который
+  // ещё НЕ выбран. Пока это так — эффекты авто-первого должны уступить, чтобы диплинк
+  // победил на загрузке. Если entity из URL не найден (устаревшая ссылка) — null, и
+  // авто-первый работает как обычно (фолбэк).
+  const pendingDeepLinkEntity = useMemo(() => {
+    if (!urlEntity) return null;
+    const entityId = Number(urlEntity);
+    if (Number.isNaN(entityId)) return null;
+    if (selectedCandidate?.entity_id === entityId) return null; // уже выбран — не ждём
+    return candidates.some((c) => c.entity_id === entityId) ? entityId : null;
+  }, [urlEntity, candidates, selectedCandidate?.entity_id]);
+
+  // Адопт из URL: на маунте и при РЕАЛЬНОЙ смене ?entity= (не при смене выбора) находим
+  // заявку по entity_id и выбираем её. Диплинк ПОБЕЖДАЕТ авто-селект первого (см. ниже —
+  // эффекты авто-первого ждут, пока есть подходящий незанятый entity из URL).
+  useEffect(() => {
+    if (!urlEntity) { adoptTriedEntityRef.current = null; return; }
+    const entityId = Number(urlEntity);
+    if (Number.isNaN(entityId)) return;
+
+    // Гонка «клик vs URL»: клик ставит selectedCandidateId мгновенно, зеркало пишет
+    // ?entity= на тик позже. selChanged=true → менялся ВЫБОР (клик), а URL отстал → НЕ
+    // адоптим (иначе вернём фокус назад). Сравниваем по entity_id выбранного кандидата.
+    const curEntityId = selectedCandidate?.entity_id ?? null;
+    const selChanged = curEntityId !== prevAdoptEntityIdRef.current;
+    prevAdoptEntityIdRef.current = curEntityId;
+
+    if (curEntityId === entityId) { adoptTriedEntityRef.current = null; return; } // уже синхронно
+    if (!shouldAdoptUrlEntity(curEntityId, entityId, selChanged)) return;
+
+    const match = candidates.find((c) => c.entity_id === entityId);
+    if (match) {
+      adoptTriedEntityRef.current = null;
+      // Делаем кандидата гарантированно видимым: вкладка «Все» показывает всех, поэтому
+      // эффект авто-первого (фильтрует по вкладке) не перебьёт наш выбор.
+      setSelectedTab('all');
+      setSelectedCandidateId(match.id);
+      setDetailTab('info');
+      return;
+    }
+    // entity из URL ещё не загружен в этом списке (другая вакансия / не подгрузился) —
+    // отмечаем попытку, чтобы не крутиться; адоптим, когда candidates приедут (deps).
+    adoptTriedEntityRef.current = entityId;
+  }, [urlEntity, candidates, selectedCandidate?.entity_id]);
+
+  // Зеркалим выбранного кандидата в URL (?entity=<entity_id>) — ссылка шарящаяся.
+  // Функциональная форма setSearchParams(prev => …) ПРЕСЕРВИТ v/status; чистая функция
+  // вернёт null, когда менять нечего — это защита от бесконечного цикла. startTransition,
+  // чтобы ререндер от смены URL не блокировал мгновенный отклик на клик.
+  useEffect(() => {
+    const curEntityId = selectedCandidate?.entity_id ?? null;
+    // Пока есть неразрешённый диплинк из URL — НЕ стираем entity (адопт ещё не доехал).
+    if (curEntityId == null && urlEntity && adoptTriedEntityRef.current != null) {
+      prevMirrorEntityIdRef.current = curEntityId;
+      return;
+    }
+    const prevId = prevMirrorEntityIdRef.current;
+    prevMirrorEntityIdRef.current = curEntityId;
+    // Считаем по СВЕЖИМ searchParams в функциональной форме (колбэк стабилен → эффект
+    // авто-селекта не пересоздаётся на каждой смене URL); null от помощника = менять
+    // нечего → возвращаем prev БЕЗ изменений, чтобы не плодить лишнюю запись в историю.
+    startTransition(() => {
+      setSearchParams((prev) => computeEntityParamUpdate(prev, curEntityId, prevId) ?? prev, { replace: true });
+    });
+  }, [selectedCandidate?.entity_id, urlEntity, setSearchParams]);
+
   // Бейдж непрочитанных анкет (entity-уровень) — как в «Все кандидаты».
   const anketaCount = useFormBadgeStore((s) => s.counts[selectedCandidate?.entity_id ?? 0] ?? 0);
   const setAnketaCount = useFormBadgeStore((s) => s.setCount);
@@ -844,11 +926,14 @@ export default function RecruiterFunnelsPage() {
       if (selectedCandidateId !== null) setSelectedCandidateId(null);
       return;
     }
+    // Диплинк из URL побеждает авто-первого: пока ?entity= указывает на загруженного,
+    // но ещё не выбранного кандидата, не перехватываем выбор (адопт-эффект его поставит).
+    if (pendingDeepLinkEntity != null) return;
     if (!selectedCandidateId || !tabFilteredCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
       setSelectedCandidateId(tabFilteredCandidates[0].id);
       setDetailTab('info');
     }
-  }, [selectedCandidateId, tabFilteredCandidates]);
+  }, [selectedCandidateId, tabFilteredCandidates, pendingDeepLinkEntity]);
 
 
   // Load cross-vacancy activity feed when entity changes
@@ -1111,10 +1196,12 @@ export default function RecruiterFunnelsPage() {
 
   // Auto-select first candidate when tab changes
   useEffect(() => {
+    // Диплинк из URL побеждает авто-первого (см. выше) — пока он не разрешён, ждём.
+    if (pendingDeepLinkEntity != null) return;
     if (tabFilteredCandidates.length > 0 && !selectedCandidateId) {
       setSelectedCandidateId(tabFilteredCandidates[0].id);
     }
-  }, [tabFilteredCandidates]);
+  }, [tabFilteredCandidates, pendingDeepLinkEntity]);
 
   // Handlers
   const toggleGroup = (userId: number) => {
