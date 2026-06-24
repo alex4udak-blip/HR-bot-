@@ -238,7 +238,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
       {/* Плавающий экран сравнения — без белой коробки: карточки парят на затемнённом фоне */}
       {open && (
         <div
-          className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/55 backdrop-blur-sm p-6"
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-6"
           onClick={() => !busy && setOpen(false)}
         >
           {/* X в правом верхнем углу экрана */}
@@ -321,9 +321,10 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                     </span>
                   )}
                 </div>
-                {/* Перебираем анкеты СВАЙПОМ, как колоду карт: ВСЕ дубли лежат в
-                    ряд (трек шириной N×85%), трек смещается на -idx*85%, тянешь
-                    карточку → след./пред. дубль въезжает справа без пустоты. */}
+                {/* Перебираем анкеты как КОЛОДУ карт: текущая — спереди (pos 0),
+                    остальные едва видны позади (pos 1/2 — выглядывают вверх, мельче
+                    и бледнее). Свайп фронта / клик по точке → goToDup переставляет
+                    pos, карточки плавно перетекают (тween 0.4s). */}
                 {duplicates.length === 0 ? (
                   // Список не загрузился — не регрессируем в пустоту: одиночная
                   // карточка по derived right (triggerEntity/hiddenId), без трека.
@@ -335,41 +336,49 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                     </div>
                   )
                 ) : (
-                  <div className="overflow-hidden">
-                    <motion.div
-                      className="flex cursor-grab active:cursor-grabbing"
-                      animate={{ x: `-${Math.max(idx, 0) * 85}%` }}
-                      transition={{ type: "tween", duration: 0.45, ease: [0.32, 0.72, 0, 1] }}
-                      drag={duplicates.length > 1 ? "x" : false}
-                      dragConstraints={{ left: 0, right: 0 }}
-                      dragElastic={0.12}
-                      onDragEnd={(_e, info) => {
-                        if (info.offset.x < -64) goToDup(1);
-                        else if (info.offset.x > 64) goToDup(-1);
-                      }}
-                    >
-                      {duplicates.map((d) => {
-                        const ent = entities[d.entity_id];
-                        const dupSide = ent ? sideFromEntity(ent) : null;
-                        return (
-                          <div key={d.entity_id} className="w-[85%] shrink-0 pr-3">
+                  <div className="relative">
+                    {/* invisible sizer = current card → gives the stack container its height (cards below are absolute) */}
+                    <div className="invisible" aria-hidden="true">
+                      {(() => {
+                        const d0 = duplicates[Math.max(idx, 0)];
+                        const e0 = d0 ? entities[d0.entity_id] : undefined;
+                        return e0 ? (
+                          <CandidateCompareCard title="Старая анкета (дубликат)" side={sideFromEntity(e0)} matched={matched} confidence={d0.confidence} matchedFields={Object.keys(d0.matched_fields)} />
+                        ) : (<div className="min-h-[280px]" />);
+                      })()}
+                    </div>
+                    {/* stacked cards: pos 0 = front (full), pos 1/2 = behind, faint, peeking up & smaller */}
+                    {duplicates.map((d, i) => {
+                      const pos = i - Math.max(idx, 0);
+                      if (pos < 0 || pos > 2) return null;
+                      const ent = entities[d.entity_id];
+                      const dupSide = ent ? sideFromEntity(ent) : null;
+                      return (
+                        <motion.div
+                          key={d.entity_id}
+                          className="absolute inset-x-0 top-0"
+                          initial={false}
+                          animate={{ y: pos * -14, scale: 1 - pos * 0.05, opacity: pos === 0 ? 1 : pos === 1 ? 0.5 : 0.25 }}
+                          transition={{ type: "tween", duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+                          style={{ zIndex: 30 - pos }}
+                          drag={pos === 0 && duplicates.length > 1 ? "x" : false}
+                          dragConstraints={{ left: 0, right: 0 }}
+                          dragElastic={0.14}
+                          onDragEnd={(_e, info) => {
+                            if (info.offset.x < -64) goToDup(1);
+                            else if (info.offset.x > 64) goToDup(-1);
+                          }}
+                        >
+                          <div className={pos === 0 ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"}>
                             {dupSide ? (
-                              <CandidateCompareCard
-                                title="Старая анкета (дубликат)"
-                                side={dupSide}
-                                matched={(k) => matchSide(left, dupSide, k)}
-                                confidence={d.confidence}
-                                matchedFields={Object.keys(d.matched_fields)}
-                              />
+                              <CandidateCompareCard title="Старая анкета (дубликат)" side={dupSide} matched={(k) => matchSide(left, dupSide, k)} confidence={d.confidence} matchedFields={Object.keys(d.matched_fields)} />
                             ) : (
-                              <div className="rounded-xl border border-slate-200 bg-white p-6 flex items-center justify-center text-slate-400 min-h-[220px]">
-                                <Loader2 className="w-6 h-6 animate-spin" />
-                              </div>
+                              <div className="rounded-xl border border-slate-200 bg-white p-6 flex items-center justify-center text-slate-400 min-h-[280px]"><Loader2 className="w-6 h-6 animate-spin" /></div>
                             )}
                           </div>
-                        );
-                      })}
-                    </motion.div>
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 )}
                 {duplicates.length > 1 && (
