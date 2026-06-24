@@ -14,7 +14,9 @@ import {
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { HuntflowComposer } from '@/components/hr/HuntflowComposer';
-import { HuntflowActionChip, HuntflowEditorIcon } from '@/components/hr/HuntflowControls';
+import { HuntflowActionChip } from '@/components/hr/HuntflowControls';
+import { HuntflowRichInput } from '@/components/hr/HuntflowRichInput';
+import { sanitizeHtml } from '@/utils/sanitizeHtml';
 
 // ── Per-vacancy "Huntflow card": full interactive stage card, one instance per
 // application. Self-contained local state so N cards work independently.
@@ -226,19 +228,13 @@ export default function VacancyStageCard({
                   </div>
                   <div className="hf-stage-picker-editor-wrap">
                     <div className="hf-stage-picker-editor">
-                      <div className="hf-stage-picker-toolbar">
-                        <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="bold" /></button>
-                        <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="italic" /></button>
-                        <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="bullet-list" /></button>
-                        <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="numbered-list" /></button>
-                        <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="link" /></button>
-                        <button type="button" className="hf-editor-icon-btn"><HuntflowEditorIcon name="at" /></button>
-                      </div>
-                      <textarea
+                      <HuntflowRichInput
                         value={pickerComment}
-                        onChange={(event) => setPickerComment(event.target.value)}
+                        onChange={setPickerComment}
                         placeholder="Записать комментарий"
-                        className="hf-stage-picker-textarea"
+                        showMention
+                        toolbarClassName="hf-stage-picker-toolbar"
+                        editableClassName="hf-stage-picker-textarea overflow-y-auto"
                       />
                       <div className="hf-stage-picker-actions">
                         <HuntflowActionChip icon={Mail} label="Письмо" onClick={sendEmail} />
@@ -251,11 +247,6 @@ export default function VacancyStageCard({
                           icon={ThumbsUp}
                           label="Оффер"
                           onClick={() => onChangeStage(applicationId, 'offer')}
-                        />
-                        <HuntflowActionChip
-                          icon={Paperclip}
-                          label="Файл"
-                          onClick={() => fileInputRef.current?.click()}
                         />
                       </div>
                     </div>
@@ -458,9 +449,10 @@ export default function VacancyStageCard({
 
                   {/* Comment */}
                   {entry.comment && (
-                    <div className="text-sm text-[var(--hf-dark-400)] mt-1 whitespace-pre-wrap pl-0.5">
-                      {entry.comment}
-                    </div>
+                    <div
+                      className="text-sm text-[var(--hf-dark-400)] mt-1 whitespace-pre-wrap pl-0.5 hf-rich-content"
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(entry.comment) }}
+                    />
                   )}
 
                   {/* Changed by */}

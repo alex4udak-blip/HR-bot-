@@ -6875,6 +6875,61 @@ body.performance-mode .glass-card:hover {
   box-shadow: none !important;
 }
 
+/* === Rich-text комментарии (contentEditable) — общий редактор Huntflow ===
+   Поле ввода (.hf-rich-surface) + рендер сохранённого HTML в таймлайне/
+   заметках (.hf-rich-content): одинаковые стили списков/ссылок/жирного. */
+.hf-rich-surface {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.hf-rich-surface:focus,
+.hf-rich-surface:focus-visible {
+  outline: none;
+}
+.hf-rich-surface:empty::before {
+  content: attr(data-placeholder);
+  color: var(--hf-main-500);
+  pointer-events: none;
+}
+.hf-rich-surface ul,
+.hf-rich-content ul {
+  margin: 2px 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+.hf-rich-surface ol,
+.hf-rich-content ol {
+  margin: 2px 0;
+  padding-left: 20px;
+  list-style: decimal;
+}
+.hf-rich-surface a,
+.hf-rich-content a {
+  color: var(--hf-cyan-700);
+  text-decoration: underline;
+}
+.hf-rich-surface b,
+.hf-rich-surface strong,
+.hf-rich-content b,
+.hf-rich-content strong {
+  font-weight: 600;
+}
+
+/* Активный режим форматирования — «чернее» (заливка), показывает выбор. */
+.hf-editor-icon-btn-active,
+.hf-editor-icon-btn-active:hover {
+  background: var(--hf-main-900);
+  color: var(--hf-white);
+}
+.hf-legacy-dark .hf-rich-surface:empty::before {
+  color: var(--hf-white-alpha-45);
+}
+.hf-legacy-dark .hf-editor-icon-btn-active,
+.hf-legacy-dark .hf-editor-icon-btn-active:hover {
+  background: var(--hf-white);
+  color: var(--hf-main-900);
+}
+
 .hf-legacy-dark .hf-candidate-row-name {
   color: var(--hf-white);
 }

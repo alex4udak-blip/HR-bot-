@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { KanbanCard } from "@/services/api/candidates";
 import type { EntityWithRelations } from "@/types";
 import { STATUS_LABELS } from "@/types";
+import { sanitizeHtml } from "@/utils/sanitizeHtml";
 
 /**
  * Презентационная «карточка сравнения кандидата» + её типы, билдеры данных и
@@ -343,7 +344,10 @@ function NotesBlock({ notes }: { notes: Array<{ text?: string; author?: string; 
       <div className="space-y-1.5">
         {notes.map((n, i) => (
           <div key={i} className="rounded-lg bg-slate-50 p-2 text-xs">
-            <div className="text-slate-800 whitespace-pre-wrap">{n.text}</div>
+            <div
+              className="text-slate-800 whitespace-pre-wrap hf-rich-content"
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(n.text) }}
+            />
             <div className="text-slate-400 mt-1">{[n.author, n.date].filter(Boolean).join(" · ")}</div>
           </div>
         ))}

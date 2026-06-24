@@ -22,10 +22,9 @@ import {
 import clsx from "clsx";
 import toast from "react-hot-toast";
 import { HuntflowComposer } from "@/components/hr/HuntflowComposer";
-import {
-  HuntflowActionChip as ActionChip,
-  HuntflowEditorIcon,
-} from "@/components/hr/HuntflowControls";
+import { HuntflowRichInput } from "@/components/hr/HuntflowRichInput";
+import { HuntflowActionChip as ActionChip } from "@/components/hr/HuntflowControls";
+import { sanitizeHtml } from "@/utils/sanitizeHtml";
 import { useAuthStore } from "@/stores/authStore";
 import { downloadEntityFile } from "@/services/api/entities";
 import type { ActivityEvent, EntityFile } from "@/services/api/entities";
@@ -535,42 +534,14 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                 </div>
                 <div className="hf-stage-picker-editor-wrap">
                   <div className="hf-stage-picker-editor">
-                    <div className="hf-stage-picker-toolbar">
-                      <button type="button" className="hf-editor-icon-btn">
-                        <HuntflowEditorIcon name="bold" />
-                      </button>
-                      <button type="button" className="hf-editor-icon-btn">
-                        <HuntflowEditorIcon name="italic" />
-                      </button>
-                      <button type="button" className="hf-editor-icon-btn">
-                        <HuntflowEditorIcon name="bullet-list" />
-                      </button>
-                      <button type="button" className="hf-editor-icon-btn">
-                        <HuntflowEditorIcon name="numbered-list" />
-                      </button>
-                      <button type="button" className="hf-editor-icon-btn">
-                        <HuntflowEditorIcon name="link" />
-                      </button>
-                      <button type="button" className="hf-editor-icon-btn">
-                        <HuntflowEditorIcon name="at" />
-                      </button>
-                    </div>
-                    <textarea
+                    <HuntflowRichInput
                       value={stageChangeComment}
-                      onChange={(event) =>
-                        setStageChangeComment(event.target.value)
-                      }
+                      onChange={setStageChangeComment}
                       placeholder="Записать комментарий"
-                      className="hf-stage-picker-textarea"
+                      showMention
+                      toolbarClassName="hf-stage-picker-toolbar"
+                      editableClassName="hf-stage-picker-textarea overflow-y-auto"
                     />
-                    <div className="hf-stage-picker-actions">
-                      <ActionChip
-                        icon={Paperclip}
-                        label="Файл"
-                        onClick={() => fileInputRef.current?.click()}
-                        loading={uploading}
-                      />
-                    </div>
                   </div>
                   <div className="hf-stage-picker-footer">
                     <button
@@ -851,12 +822,18 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                     </button>
                   ) : null}
                 </div>
-                <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)] whitespace-pre-wrap">
-                  {event.title || "Событие"}
+                <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)] whitespace-pre-wrap hf-rich-content">
+                  <div
+                    dangerouslySetInnerHTML={{
+                      __html: sanitizeHtml(event.title || "Событие"),
+                    }}
+                  />
                   {event.body && (
-                    <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
-                      {event.body}
-                    </div>
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeHtml(event.body),
+                      }}
+                    />
                   )}
                 </div>
                 {(() => {

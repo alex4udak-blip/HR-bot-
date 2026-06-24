@@ -1,4 +1,5 @@
 import type { VacancyActivityBlock as ActivityBlock } from '@/services/api/entities';
+import { sanitizeHtml } from '@/utils/sanitizeHtml';
 
 interface Props {
   block: ActivityBlock;
@@ -39,9 +40,10 @@ export default function VacancyActivityBlock({ block, stageLabel }: Props) {
                 </span>
               </div>
               {e.comment && (
-                <div className="text-sm text-[var(--hf-dark-400)] mt-1 whitespace-pre-wrap">
-                  {e.comment}
-                </div>
+                <div
+                  className="text-sm text-[var(--hf-dark-400)] mt-1 whitespace-pre-wrap hf-rich-content"
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(e.comment) }}
+                />
               )}
               {e.changed_by_name && (
                 <div className="text-xs text-[var(--hf-dark-600)] mt-1">{e.changed_by_name}</div>

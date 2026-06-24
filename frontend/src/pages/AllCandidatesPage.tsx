@@ -70,6 +70,7 @@ import ShadowDuplicateBanner from "@/components/entities/ShadowDuplicateBanner";
 import ParserModal from "@/components/parser/ParserModal";
 import { useAuthStore } from "@/stores/authStore";
 import { HuntflowComposer } from "@/components/hr/HuntflowComposer";
+import { sanitizeHtml } from "@/utils/sanitizeHtml";
 import {
   HuntflowInfoRow as InfoRow,
   HuntflowOptionsIcon,
@@ -2744,7 +2745,10 @@ const PersonalNotesTab = memo(function PersonalNotesTab({
               {item.date ? formatDateFull(item.date) : ""}
             </span>
           </div>
-          <div className="hf-vacancy-note-text">{item.text}</div>
+          <div
+            className="hf-vacancy-note-text hf-rich-content"
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.text) }}
+          />
         </div>
       </div>
     );

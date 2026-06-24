@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { MouseEventHandler, RefObject } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { HuntflowActionChip, HuntflowEditorIcon } from './HuntflowControls';
+import { HuntflowActionChip } from './HuntflowControls';
+import { HuntflowRichInput } from './HuntflowRichInput';
 
 export type HuntflowComposerAction = {
   label: string;
@@ -51,7 +52,6 @@ export function HuntflowComposer({
   actions = [],
   showMention = false,
   collapsedRows = 1,
-  expandedRows = 1,
   disabled = false,
   wrapperClassName,
   collapsedClassName = defaultCollapsedClassName,
@@ -117,67 +117,16 @@ export function HuntflowComposer({
   return (
     <div ref={rootRef} className={wrapperClassName}>
       <div className="w-full overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-transparent text-[var(--hf-main-900)]">
-        <div className="flex h-[45px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[10px]">
-          <button
-            type="button"
-            className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-            aria-label="Жирный"
-          >
-            <HuntflowEditorIcon name="bold" />
-          </button>
-          <button
-            type="button"
-            className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-            aria-label="Курсив"
-          >
-            <HuntflowEditorIcon name="italic" />
-          </button>
-          <button
-            type="button"
-            className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-            aria-label="Маркированный список"
-          >
-            <HuntflowEditorIcon name="bullet-list" />
-          </button>
-          <button
-            type="button"
-            className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-            aria-label="Нумерованный список"
-          >
-            <HuntflowEditorIcon name="numbered-list" />
-          </button>
-          <button
-            type="button"
-            className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-            aria-label="Ссылка"
-          >
-            <HuntflowEditorIcon name="link" />
-          </button>
-          {showMention && (
-            <button
-              type="button"
-              className="hf-editor-icon-btn hf-editor-icon-btn-plain"
-              aria-label="Упомянуть"
-            >
-              <HuntflowEditorIcon name="at" />
-            </button>
-          )}
-        </div>
-        <textarea
-          ref={setTextareaNode}
+        <HuntflowRichInput
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onFocus={() => onOpenChange(true)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              onSubmit();
-            }
-          }}
+          onChange={onChange}
           placeholder={placeholder}
-          rows={expandedRows}
+          showMention={showMention}
+          onEnterSubmit={onSubmit}
+          autoFocus
           disabled={disabled || saving}
-          className="hf-composer-textarea block h-[56px] w-full resize-none border-0 bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-600)] disabled:opacity-50"
+          toolbarClassName="flex h-[45px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[10px]"
+          editableClassName="block min-h-[56px] max-h-[200px] w-full overflow-y-auto border-0 bg-transparent px-[var(--hf-space-xxl)] py-[var(--hf-space-l)] text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] outline-none disabled:opacity-50"
         />
         {actions.length > 0 && (
           <div className="flex h-[53px] items-start gap-[var(--hf-space-s)] px-[var(--hf-space-xxl)] pb-[16px] pt-[8px]">

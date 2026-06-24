@@ -9,6 +9,7 @@ import { getApplicationHistory } from '@/services/api';
 import type { ApplicationHistoryEntry } from '@/services/api/vacancies';
 import type { VacancyApplication, ApplicationStage } from '@/types';
 import { APPLICATION_STAGE_LABELS } from '@/types';
+import { sanitizeHtml } from '@/utils/sanitizeHtml';
 
 interface ApplicationDetailModalProps {
   application: VacancyApplication;
@@ -345,7 +346,10 @@ export default function ApplicationDetailModal({ application, onClose }: Applica
 
                           {/* Comment */}
                           {entry.comment && (
-                            <p className="text-xs text-[color:var(--hf-white-alpha-50)] mt-0.5">{entry.comment}</p>
+                            <div
+                              className="text-xs text-[color:var(--hf-white-alpha-50)] mt-0.5 whitespace-pre-wrap hf-rich-content"
+                              dangerouslySetInnerHTML={{ __html: sanitizeHtml(entry.comment) }}
+                            />
                           )}
                         </div>
                       </div>
