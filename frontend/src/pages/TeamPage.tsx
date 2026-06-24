@@ -253,6 +253,7 @@ function AddMemberModal({
   const [deptId, setDeptId] = useState<number>(myDepts[0]?.department_id ?? 0);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [telegram, setTelegram] = useState('');
   const [position, setPosition] = useState<'member' | 'sub_admin' | 'lead'>('member');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<QuickAddMemberResult | null>(null);
@@ -263,10 +264,12 @@ function AddMemberModal({
     if (!canSubmit) return;
     setSubmitting(true);
     try {
+      const tg = telegram.trim().replace(/^@/, '').toLowerCase() || undefined;
       const r = await quickAddDepartmentMember(deptId, {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         role: position,
+        ...(tg ? { telegram_username: tg } : {}),
       });
       setResult(r);
       if (!r.password_generated) {
@@ -379,6 +382,18 @@ function AddMemberModal({
               />
               <p className="text-[10px] text-white/30 mt-1">
                 Если такой аккаунт уже есть — добавим его в отдел; нового пользователя создадим с паролем, который покажется один раз.
+              </p>
+            </Field>
+
+            <Field label="Telegram (необязательно)">
+              <input
+                value={telegram}
+                onChange={(e) => setTelegram(e.target.value)}
+                placeholder="@ivan_petrov"
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+              />
+              <p className="text-[10px] text-white/30 mt-1">
+                Чтобы наш бот сразу мог писать ему задачи и уведомления. Если аккаунт уже есть и Telegram у него уже привязан — не перетираем.
               </p>
             </Field>
 

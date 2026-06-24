@@ -403,7 +403,7 @@ export interface QuickAddMemberResult {
 
 export const quickAddDepartmentMember = async (
   departmentId: number,
-  memberData: { name: string; email: string; role: string }
+  memberData: { name: string; email: string; role: string; telegram_username?: string }
 ): Promise<QuickAddMemberResult> => {
   const { data } = await debouncedMutation<QuickAddMemberResult>(
     'post',

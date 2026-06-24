@@ -47,6 +47,7 @@ class QuickAddMemberRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     email: EmailStr
     role: DeptRole = DeptRole.member
+    telegram_username: Optional[str] = Field(None, max_length=64)
 
 
 class QuickAddMemberResponse(BaseModel):
@@ -915,6 +916,9 @@ async def quick_add_member(
     already_existed = user is not None
     password_generated = None
 
+    # Нормализуем Telegram-handle: без @, в нижнем регистре
+    tg_handle = (data.telegram_username or "").lstrip("@").strip().lower() or None
+
     if not user:
         # Create new user
         password_generated = secrets.token_urlsafe(8)
@@ -924,9 +928,13 @@ async def quick_add_member(
             password_hash=hash_password(password_generated),
             role=UserRole.member,
             is_active=True,
+            telegram_username=tg_handle,
         )
         db.add(user)
         await db.flush()  # get user.id
+    elif tg_handle and not user.telegram_username:
+        # Существующий аккаунт без TG — мягко проставим (не перетираем уже заполненный)
+        user.telegram_username = tg_handle
 
         # Add to organization
         org_member = OrgMember(
