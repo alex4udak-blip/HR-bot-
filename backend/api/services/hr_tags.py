@@ -4,7 +4,8 @@ An HR-tag marks a recruiter who pulled this candidate into a funnel. The set is
 derived from ``VacancyApplication.created_by`` across the candidate's ACTIVE
 applications (``rejected`` / ``withdrawn`` excluded — see design §4: a rejected /
 withdrawn candidate is no longer that HR's responsibility) and stored, read-only,
-in ``entity.extra_data["system_hr_tags"]`` as a list of ``{"hr_id", "name"}``.
+in ``entity.extra_data["system_hr_tags"]`` as a list of
+``{"hr_id", "name", "vacancy_id", "vacancy_title"}`` — one per (HR, funnel).
 
 Storage is deliberately separate from the manual string ``Entity.tags`` so the
 two never collide: sync never touches ``tags``, manual edits never touch this.
@@ -17,7 +18,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.database import Entity, User, VacancyApplication, ApplicationStage
+from ..models.database import Entity, User, VacancyApplication, ApplicationStage, Vacancy
 
 logger = logging.getLogger("hr-analyzer.hr_tags")
 
@@ -31,25 +32,31 @@ EXTRA_KEY = "system_hr_tags"
 
 
 async def compute_hr_tags(db: AsyncSession, entity_id: int) -> list[dict]:
-    """Множество HR, забравших кандидата в активную воронку.
+    """HR + воронка, в которую он забрал кандидата (активные заявки).
 
-    По одной записи на уникального ``created_by`` активных заявок кандидата.
-    Возвращает ``[{"hr_id": int, "name": str}]``, отсортированный по ``hr_id`` —
-    стабильный порядок нужен для дешёвого diff в :func:`sync_for_entity`.
+    По одной записи на (HR, вакансия) активной заявки кандидата. Возвращает
+    ``[{"hr_id": int, "name": str, "vacancy_id": int, "vacancy_title": str}]``,
+    отсортированный по ``(hr_id, vacancy_id)`` — стабильный порядок нужен для
+    дешёвого diff в :func:`sync_for_entity`. Один HR, добавивший кандидата в
+    несколько воронок, даёт несколько записей (по одной на воронку).
 
     NULL ``created_by`` (системные заявки) отсекаются самим INNER JOIN на users.
     """
     rows = await db.execute(
-        select(User.id, User.name)
+        select(User.id, User.name, Vacancy.id, Vacancy.title)
         .join(VacancyApplication, VacancyApplication.created_by == User.id)
+        .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
         .where(
             VacancyApplication.entity_id == entity_id,
             VacancyApplication.stage.not_in(INACTIVE_STAGES),
         )
         .distinct()
-        .order_by(User.id)
+        .order_by(User.id, Vacancy.id)
     )
-    return [{"hr_id": uid, "name": name} for uid, name in rows.all()]
+    return [
+        {"hr_id": uid, "name": name, "vacancy_id": vid, "vacancy_title": vtitle}
+        for uid, name, vid, vtitle in rows.all()
+    ]
 
 
 async def sync_for_entity(

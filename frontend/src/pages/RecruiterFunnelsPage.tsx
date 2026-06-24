@@ -2658,7 +2658,7 @@ export default function RecruiterFunnelsPage() {
                                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--hf-ui-hover)] text-[var(--hf-main-800)] border border-[color:var(--hf-ui-border)]"
                                     >
                                       <Lock className="w-3 h-3 opacity-50" />
-                                      HR: {hr.name}
+                                      HR: {hr.name}{hr.vacancy_title ? ` · ${hr.vacancy_title}` : ""}
                                     </span>
                                   ))}
                                   {entityTags.map(tag => (

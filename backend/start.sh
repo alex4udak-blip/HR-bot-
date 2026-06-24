@@ -561,15 +561,17 @@ async def ensure_shadow_columns():
             )::json
             FROM (
                 SELECT va.entity_id,
-                       jsonb_agg(jsonb_build_object('hr_id', va.created_by, 'name', u.name)
-                                 ORDER BY va.created_by) AS tags
+                       jsonb_agg(jsonb_build_object('hr_id', va.created_by, 'name', u.name,
+                                                    'vacancy_id', va.vacancy_id, 'vacancy_title', vac.title)
+                                 ORDER BY va.created_by, va.vacancy_id) AS tags
                 FROM (
-                    SELECT DISTINCT entity_id, created_by
+                    SELECT DISTINCT entity_id, created_by, vacancy_id
                     FROM vacancy_applications
                     WHERE created_by IS NOT NULL
                       AND stage NOT IN ('rejected', 'withdrawn')
                 ) va
                 JOIN users u ON u.id = va.created_by
+                JOIN vacancies vac ON vac.id = va.vacancy_id
                 GROUP BY va.entity_id
             ) sub
             WHERE e.id = sub.entity_id

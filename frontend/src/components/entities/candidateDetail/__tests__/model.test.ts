@@ -291,11 +291,33 @@ describe("readSystemHrTags", () => {
       }),
     ).toEqual([{ hr_id: 1, name: "Оля" }]);
   });
-  it("does not leak extra keys — returns only {hr_id, name}", () => {
+  it("does not leak unknown keys — keeps only hr_id/name/vacancy fields", () => {
     expect(
       readSystemHrTags({
         system_hr_tags: [{ hr_id: 5, name: "Лена", extra: "x" }],
       }),
     ).toEqual([{ hr_id: 5, name: "Лена" }]);
+  });
+  it("keeps vacancy_id/vacancy_title when present, trims title", () => {
+    expect(
+      readSystemHrTags({
+        system_hr_tags: [
+          { hr_id: 7, name: "Ильнар", vacancy_id: 3, vacancy_title: " tesy ", junk: 1 },
+        ],
+      }),
+    ).toEqual([{ hr_id: 7, name: "Ильнар", vacancy_id: 3, vacancy_title: "tesy" }]);
+  });
+  it("omits vacancy fields when absent, blank, or wrong type (legacy data)", () => {
+    expect(
+      readSystemHrTags({
+        system_hr_tags: [
+          { hr_id: 1, name: "Оля", vacancy_title: "   " },
+          { hr_id: 2, name: "Настя", vacancy_id: "3" },
+        ],
+      }),
+    ).toEqual([
+      { hr_id: 1, name: "Оля" },
+      { hr_id: 2, name: "Настя" },
+    ]);
   });
 });

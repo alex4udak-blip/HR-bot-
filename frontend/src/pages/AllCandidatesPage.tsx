@@ -2444,7 +2444,7 @@ const InfoTab = memo(function InfoTab({
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--hf-bg-panel)] text-[var(--hf-main-900)] border border-[color:var(--hf-main-200)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]"
                 >
                   <Lock className="w-3 h-3 opacity-50" />
-                  HR: {hr.name}
+                  HR: {hr.name}{hr.vacancy_title ? ` · ${hr.vacancy_title}` : ""}
                 </span>
               ))}
               {localTags.map((t) => (

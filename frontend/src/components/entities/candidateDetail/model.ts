@@ -331,12 +331,16 @@ export function matchesTimelineFilter(
 export type SystemHrTag = {
   hr_id: number;
   name: string;
+  /** Воронка (вакансия), в которую этот HR забрал кандидата. */
+  vacancy_id?: number;
+  vacancy_title?: string;
 };
 
 /**
  * Достаёт авто-метки HR из extra_data кандидата, отбрасывая мусор (на случай
- * частично заполненного/легаси extra_data). Порядок сохраняется как пришёл с
- * бэкенда (там он стабилен — по hr_id).
+ * частично заполненного/легаси extra_data). Поля воронки (vacancy_*)
+ * опциональны — у легаси-данных их нет, тогда метка показывается без воронки.
+ * Порядок сохраняется как пришёл с бэкенда (там он стабилен — по hr_id, vacancy).
  */
 export function readSystemHrTags(
   extraData: Record<string, unknown> | undefined | null,
@@ -352,5 +356,12 @@ export function readSystemHrTags(
         typeof (t as SystemHrTag).name === "string" &&
         (t as SystemHrTag).name.trim().length > 0,
     )
-    .map((t) => ({ hr_id: t.hr_id, name: t.name }));
+    .map((t) => {
+      const tag: SystemHrTag = { hr_id: t.hr_id, name: t.name };
+      if (typeof t.vacancy_id === "number") tag.vacancy_id = t.vacancy_id;
+      if (typeof t.vacancy_title === "string" && t.vacancy_title.trim()) {
+        tag.vacancy_title = t.vacancy_title.trim();
+      }
+      return tag;
+    });
 }

@@ -74,7 +74,9 @@ async def test_single_active_application_tags_creator(db_session: AsyncSession, 
     changed = await sync_for_entity(db_session, cand.id)
     assert changed is True
     await db_session.refresh(cand)
-    assert cand.extra_data[EXTRA_KEY] == [{"hr_id": admin_user.id, "name": admin_user.name}]
+    assert cand.extra_data[EXTRA_KEY] == [
+        {"hr_id": admin_user.id, "name": admin_user.name, "vacancy_id": vac.id, "vacancy_title": "Vac"}
+    ]
 
 
 async def test_multiple_distinct_hrs_sorted(db_session: AsyncSession, organization, department, admin_user):
@@ -91,15 +93,17 @@ async def test_multiple_distinct_hrs_sorted(db_session: AsyncSession, organizati
     assert {t["hr_id"] for t in tags} == {admin_user.id, hr2.id}
 
 
-async def test_same_hr_two_funnels_dedup(db_session: AsyncSession, organization, department, admin_user):
+async def test_same_hr_two_funnels_one_entry_per_funnel(db_session: AsyncSession, organization, department, admin_user):
     cand = await _candidate(db_session, organization, department, admin_user)
     v1 = await _vacancy(db_session, organization, department, admin_user, "V1")
     v2 = await _vacancy(db_session, organization, department, admin_user, "V2")
     await _application(db_session, v1, cand, admin_user)
     await _application(db_session, v2, cand, admin_user)
 
+    # один HR, две воронки → две метки (по одной на воронку), сортировка по vacancy_id
     assert await compute_hr_tags(db_session, cand.id) == [
-        {"hr_id": admin_user.id, "name": admin_user.name}
+        {"hr_id": admin_user.id, "name": admin_user.name, "vacancy_id": v1.id, "vacancy_title": "V1"},
+        {"hr_id": admin_user.id, "name": admin_user.name, "vacancy_id": v2.id, "vacancy_title": "V2"},
     ]
 
 
@@ -159,7 +163,9 @@ async def test_does_not_touch_manual_tags_or_other_extra(db_session: AsyncSessio
     await db_session.refresh(cand)
     assert cand.tags == ["python", "senior"]                       # ручные метки целы
     assert cand.extra_data["notes"] == [{"text": "keep me"}]       # прочий extra_data цел
-    assert cand.extra_data[EXTRA_KEY] == [{"hr_id": admin_user.id, "name": admin_user.name}]
+    assert cand.extra_data[EXTRA_KEY] == [
+        {"hr_id": admin_user.id, "name": admin_user.name, "vacancy_id": vac.id, "vacancy_title": "Vac"}
+    ]
 
 
 async def test_backfill_all_populates(db_session: AsyncSession, organization, department, admin_user):
@@ -170,4 +176,6 @@ async def test_backfill_all_populates(db_session: AsyncSession, organization, de
     changed = await backfill_all(db_session)
     assert changed == 1
     await db_session.refresh(cand)
-    assert cand.extra_data[EXTRA_KEY] == [{"hr_id": admin_user.id, "name": admin_user.name}]
+    assert cand.extra_data[EXTRA_KEY] == [
+        {"hr_id": admin_user.id, "name": admin_user.name, "vacancy_id": vac.id, "vacancy_title": "Vac"}
+    ]
