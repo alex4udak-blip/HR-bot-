@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { AlertTriangle, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
@@ -44,6 +45,15 @@ const IDENTITY_LABEL: Record<string, string> = {
   telegram: "Telegram",
 };
 
+// Варианты Framer-слайда правой карточки. direction (custom): +1 = «вперёд» (►),
+// -1 = «назад» (◄). Карточка въезжает с той стороны, куда листаем, и уезжает в
+// противоположную — короткий 32px-сдвиг + fade, без горизонтального скролла.
+const slideVariants = {
+  enter: (dir: number) => ({ x: dir > 0 ? 32 : -32, opacity: 0 }),
+  center: { x: 0, opacity: 1 },
+  exit: (dir: number) => ({ x: dir > 0 ? -32 : 32, opacity: 0 }),
+};
+
 export default function ShadowDuplicateBanner({ card, status, onResolved }: ShadowDuplicateBannerProps) {
   const hiddenId = (card.extra_data?.hidden_duplicate_id as number | undefined) ?? null;
   const [resolved, setResolved] = useState(false);
@@ -59,6 +69,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   const [duplicates, setDuplicates] = useState<DuplicateCandidateResult[]>([]);
   const [selectedDupId, setSelectedDupId] = useState<number | null>(hiddenId);
   const [rightLoading, setRightLoading] = useState(false);
+  // Направление текущего слайда (для variants): задаётся нав-кнопкой ПЕРЕД loadSelected.
+  const [slideDir, setSlideDir] = useState(0);
+  // Кэш полных профилей всех дубликатов — заполняется префетчем в openModal,
+  // чтобы листание ◄/► было мгновенным (без спиннера и повторного запроса).
+  const entityCache = useRef<Map<number, EntityWithRelations>>(new Map());
 
   // Подгружаем профиль дубля сразу (не только по клику «Проверить»), чтобы заранее
   // понять — это реальное совпадение или мусорный/устаревший флаг. Баннер по-прежнему
@@ -68,6 +83,8 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
       getEntity(hiddenId)
         .then((e) => {
           setTriggerEntity(e);
+          // Предзаполняем кэш загруженным hiddenId, чтобы не перезапрашивать предвыбор.
+          entityCache.current.set(e.id, e);
           // Изначально правая колонка = hiddenId (до открытия модалки/карусели).
           setArchived((prev) => prev ?? e);
         })
@@ -78,13 +95,22 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   if (!hiddenId || resolved) return null;
 
   // Загружает полный профиль выбранного дубликата в правую колонку сравнения.
+  // Cache-first: если профиль уже в entityCache (префетч) — ставим синхронно БЕЗ
+  // спиннера, и Framer-слайд проигрывается сразу с готовой карточкой. Иначе —
+  // спиннер + запрос + кэширование.
   const loadSelected = async (id: number) => {
     setSelectedDupId(id);
-    // Уже загруженный hiddenId переиспользуем без повторного запроса.
-    if (archived && archived.id === id) return;
+    const cached = entityCache.current.get(id);
+    if (cached) {
+      setArchived(cached);
+      setRightLoading(false);
+      return;
+    }
     setRightLoading(true);
     try {
-      setArchived(await getEntity(id));
+      const e = await getEntity(id);
+      entityCache.current.set(id, e);
+      setArchived(e);
     } catch {
       toast.error("Не удалось загрузить профиль дубликата");
     } finally {
@@ -99,6 +125,23 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
       // Тянем ВСЕХ похожих кандидатов (включая архив) для карусели.
       const list = await getDuplicateCandidates(card.id, true);
       setDuplicates(list);
+      // Префетч полных профилей ВСЕХ дубликатов в фоне (не ждём перед показом
+      // модалки) — после короткой паузы каждый ◄/► флип мгновенный из кэша.
+      try {
+        void Promise.allSettled(
+          list.map((d) =>
+            entityCache.current.has(d.entity_id)
+              ? Promise.resolve()
+              : getEntity(d.entity_id)
+                  .then((e) => {
+                    entityCache.current.set(d.entity_id, e);
+                  })
+                  .catch(() => {}),
+          ),
+        );
+      } catch {
+        /* префетч best-effort — не блокирует и не ломает открытие модалки */
+      }
       // Предвыбор: существующий hiddenId, если он в списке; иначе — самый
       // вероятный (список отсортирован по убыванию confidence на бэке).
       const preset =
@@ -247,7 +290,12 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                           <span className="text-[11px] uppercase tracking-wide text-slate-400">Похожие анкеты</span>
                           <div className="ml-auto flex items-center gap-2">
                             <button
-                              onClick={() => idx > 0 && loadSelected(duplicates[idx - 1].entity_id)}
+                              onClick={() => {
+                                if (idx > 0) {
+                                  setSlideDir(-1);
+                                  loadSelected(duplicates[idx - 1].entity_id);
+                                }
+                              }}
                               disabled={idx <= 0}
                               className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                               aria-label="Предыдущая анкета"
@@ -255,10 +303,15 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                               <ChevronLeft size={14} className="text-slate-500" />
                             </button>
                             <span className="text-xs font-medium text-slate-500 tabular-nums">
-                              {idx + 1} / {duplicates.length}
+                              {idx + 1} из {duplicates.length}
                             </span>
                             <button
-                              onClick={() => idx < duplicates.length - 1 && loadSelected(duplicates[idx + 1].entity_id)}
+                              onClick={() => {
+                                if (idx < duplicates.length - 1) {
+                                  setSlideDir(1);
+                                  loadSelected(duplicates[idx + 1].entity_id);
+                                }
+                              }}
                               disabled={idx >= duplicates.length - 1}
                               className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                               aria-label="Следующая анкета"
@@ -268,19 +321,36 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                           </div>
                         </div>
                       )}
-                      {rightLoading ? (
-                        <div className="rounded-xl border border-slate-200 p-4 flex items-center justify-center text-slate-400">
-                          <Loader2 className="w-6 h-6 animate-spin" />
-                        </div>
-                      ) : (
-                        <CandidateCompareCard
-                          title="Старая анкета (дубликат)"
-                          side={right}
-                          matched={matched}
-                          confidence={rightConfidence}
-                          matchedFields={rightMatchedFields}
-                        />
-                      )}
+                      {/* Слайдер правой карточки — Framer-слайд между дубликатами.
+                          overflow-hidden глушит 32px-сдвиг, чтобы не было гориз. скролла. */}
+                      <div className="overflow-hidden">
+                        <AnimatePresence mode="wait" custom={slideDir} initial={false}>
+                          <motion.div
+                            key={selectedDupId ?? "single"}
+                            custom={slideDir}
+                            variants={slideVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={{ duration: 0.22, ease: "easeInOut" }}
+                            className="min-w-0"
+                          >
+                            {rightLoading ? (
+                              <div className="rounded-xl border border-slate-200 p-4 flex items-center justify-center text-slate-400">
+                                <Loader2 className="w-6 h-6 animate-spin" />
+                              </div>
+                            ) : (
+                              <CandidateCompareCard
+                                title="Старая анкета (дубликат)"
+                                side={right}
+                                matched={matched}
+                                confidence={rightConfidence}
+                                matchedFields={rightMatchedFields}
+                              />
+                            )}
+                          </motion.div>
+                        </AnimatePresence>
+                      </div>
                     </div>
                   </div>
                 </>
