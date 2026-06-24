@@ -45,6 +45,18 @@ function lazyWithRetry<T extends ComponentType<any>>(
             error.message.includes('ChunkLoadError'));
 
         if (!isChunkError || i === retries - 1) {
+          // Свежий деплой сменил хэши чанков, а вкладка держит старый module-graph →
+          // повторные импорты 404-ят и страница «белеет». Один раз перезагружаем
+          // страницу целиком (sessionStorage-гард от циклов): свежий index подтянет
+          // новые чанки. Авто-починка «белого экрана после деплоя» для всех lazy-роутов.
+          if (isChunkError && typeof window !== 'undefined') {
+            const RELOAD_KEY = 'chunk-reload-once';
+            if (!sessionStorage.getItem(RELOAD_KEY)) {
+              sessionStorage.setItem(RELOAD_KEY, '1');
+              window.location.reload();
+              return await new Promise<never>(() => {}); // зависаем до перезагрузки
+            }
+          }
           throw error;
         }
 

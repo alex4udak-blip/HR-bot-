@@ -28,7 +28,7 @@ export default function AddTimeOffFormPage() {
     <FactorialFormPage
       icon={<TreePalm className="w-7 h-7 text-rose-500" strokeWidth={1.5} />}
       iconBg="bg-rose-50"
-      breadcrumb={[{ label: 'Календарь', href: '/calendar' }, { label: 'Добавить отпуск' }]}
+      breadcrumb={[{ label: 'Календарь', href: '/factorial/calendar' }, { label: 'Добавить отпуск' }]}
       title="Добавить отпуск"
       subtitle="Запросить временное отсутствие и выбрать тип отсутствия"
       submitLabel="Создать"
