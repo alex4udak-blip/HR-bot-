@@ -369,7 +369,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                             else if (info.offset.x > 64) goToDup(-1);
                           }}
                         >
-                          <div className={pos === 0 ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"}>
+                          <div className={`${pos === 0 ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"} bg-white rounded-xl`}>
                             {dupSide ? (
                               <CandidateCompareCard title="Старая анкета (дубликат)" side={dupSide} matched={(k) => matchSide(left, dupSide, k)} confidence={d.confidence} matchedFields={Object.keys(d.matched_fields)} />
                             ) : (
