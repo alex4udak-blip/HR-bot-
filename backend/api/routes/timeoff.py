@@ -6,9 +6,46 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
-from ..models.database import TimeOffRequest, User, OrgMember, OrgRole, Employee, LeaveRequest
+from ..models.database import TimeOffRequest, User, OrgMember, OrgRole, Employee, LeaveRequest, DepartmentMember, DeptRole, UserRole
 from ..database import get_db
 from ..services.auth import get_current_user, get_user_org
+
+
+async def _scoped_user_ids(user: User, org_id: int, db: AsyncSession) -> list[int] | None:
+    """Какие user_id видны в этом org для текущего юзера.
+
+    None  — без фильтра (платформ-админ / owner / org-admin).
+    list  — конкретные id (лид → коллеги отделов; остальные → только self).
+    """
+    if user.role == UserRole.superadmin:
+        return None
+    om = await db.execute(
+        select(OrgMember.role).where(
+            OrgMember.user_id == user.id, OrgMember.org_id == org_id
+        )
+    )
+    org_role = om.scalar_one_or_none()
+    if org_role in (OrgRole.owner, OrgRole.admin):
+        return None
+
+    dept_ids_res = await db.execute(
+        select(DepartmentMember.department_id).where(
+            DepartmentMember.user_id == user.id,
+            DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin]),
+        )
+    )
+    admin_dept_ids = [r for r in dept_ids_res.scalars().all()]
+    if not admin_dept_ids:
+        return [user.id]
+
+    members_res = await db.execute(
+        select(DepartmentMember.user_id).where(
+            DepartmentMember.department_id.in_(admin_dept_ids)
+        )
+    )
+    ids = {uid for uid in members_res.scalars().all()}
+    ids.add(user.id)
+    return list(ids)
 
 router = APIRouter()
 
@@ -104,6 +141,9 @@ async def list_timeoff(
     query = select(TimeOffRequest).where(TimeOffRequest.org_id == org_id).order_by(TimeOffRequest.created_at.desc())
     if status:
         query = query.where(TimeOffRequest.status == status)
+    allowed = await _scoped_user_ids(current_user, org_id, db)
+    if allowed is not None:
+        query = query.where(TimeOffRequest.user_id.in_(allowed))
 
     result = await db.execute(query)
     requests = result.scalars().all()
