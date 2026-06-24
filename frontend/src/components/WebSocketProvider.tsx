@@ -10,6 +10,7 @@ import { useNotificationStore } from '@/stores/notificationStore';
 import { logger } from '@/utils/logger';
 import { getNotifications } from '@/services/api/notifications';
 import type { FormSubmissionPayload } from '@/types/websocket';
+import { playAnketaChime, unlockAudio } from '@/utils/notificationSound';
 
 /**
  * WebSocket Provider Component
@@ -93,6 +94,10 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     logger.log(`[WebSocketProvider] Status: ${status}, Connected: ${isConnected}`);
   }, [status, isConnected]);
 
+  // Браузерная autoplay-политика блокирует звук до жеста пользователя — «разблокируем»
+  // AudioContext на первый pointerdown/keydown, чтобы чайм потом мог проиграться.
+  useEffect(() => { unlockAudio(); }, []);
+
   // Realtime по WebSocket на проде НЕ доставляет form.submission (уведомления в БД
   // создаются, но событие до клиента не доходит). Поэтому popup даём поллингом:
   // счётчик колокольчика обновляем всегда + ВСПЛЫВАЮЩИЙ тост на каждое НОВОЕ
@@ -110,9 +115,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         const prev = lastSeenNotifId.current;
         lastSeenNotifId.current = Math.max(prev, maxId);
         if (prev < 0) return; // первый прогон — не спамим существующими уведомлениями
+        let anketaArrived = false;
         for (const n of list.filter((n) => n.id > prev).sort((a, b) => a.id - b.id)) {
           const m = /entity=(\d+)/.exec(n.link || '');
           if (n.type === 'form_submitted' && m) bumpEntityBadge(parseInt(m[1], 10));
+          if (n.type === 'form_submitted') anketaArrived = true;
           toast((t) => (
             <span
               onClick={() => { if (n.link) navigate(n.link); toast.dismiss(t.id); }}
@@ -122,6 +129,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             </span>
           ), { duration: 8000 });
         }
+        // Звук ТОЛЬКО на новую анкету, максимум раз на батч поллинга (без двойного бипа).
+        // Идёт исключительно поллингом — надёжно на проде, где WS теряет form.submission.
+        if (anketaArrived) playAnketaChime();
       } catch { /* ignore */ }
     };
     poll();

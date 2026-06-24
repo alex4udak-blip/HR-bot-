@@ -34,6 +34,7 @@ import {
 import clsx from "clsx";
 import toast from "react-hot-toast";
 import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
+import { computeEntityParamUpdate } from "@/utils/candidateUrl";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
@@ -63,6 +64,7 @@ import type { ApplicationStage } from "@/types";
 import { STATUS_LABELS } from "@/types";
 import { updateApplication, deleteApplicationHistory } from "@/services/api/vacancies";
 import SendEmailModal from "@/components/entities/SendEmailModal";
+import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
 import type { EntityFile } from "@/services/api/entities";
 import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
 import ShadowDuplicateBanner from "@/components/entities/ShadowDuplicateBanner";
@@ -676,9 +678,22 @@ export default function AllCandidatesPage() {
     next.delete("tab");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
+  // Как clearCandidateDeepLink, но СОХРАНЯЕТ entity (ссылка на профиль остаётся в
+  // адресной строке) — гасим только разовые триггеры edit/tab/archived.
+  const consumeOneShotParams = useCallback(() => {
+    if (!searchParams.has("edit") && !searchParams.has("tab") && !searchParams.has("archived")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("edit");
+    next.delete("tab");
+    next.delete("archived");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   // Чтобы не тянуть entity повторно после неудачной попытки селекта.
   const entityFetchTriedRef = useRef<number | null>(null);
   const detectTriedRef = useRef<number | null>(null);
+  // Предыдущий выбранный id — чтобы зеркало URL отличало настоящее закрытие
+  // (selected->null) от ещё не завершённого диплинка (null->null) и не стирало ?entity=.
+  const prevSelectedIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (!board) return;
     if (entityParam) {
@@ -692,7 +707,8 @@ export default function AllCandidatesPage() {
           setShowEditModal(true);
         }
         if (tabParam === "anketa") setDetailTab("anketa");
-        clearCandidateDeepLink();
+        // entity СОХРАНЯЕМ (шарящаяся ссылка); гасим только разовые edit/tab/archived.
+        consumeOneShotParams();
         return;
       }
       // Кандидат пришёл из расширения / другой страницы и не виден на текущем фильтре —
@@ -732,7 +748,18 @@ export default function AllCandidatesPage() {
       setSelectedCard(initial.card);
       setSelectedStatus(initial.status);
     }
-  }, [filteredCards, entityParam, editParam, archivedParam, tabParam, board, selectedCard, clearCandidateDeepLink]);
+  }, [filteredCards, entityParam, editParam, archivedParam, tabParam, board, selectedCard, clearCandidateDeepLink, consumeOneShotParams]);
+
+  // Зеркалим открытый профиль в URL (?entity=ID) — ссылка на кандидата становится
+  // шарящейся. replace:true → без спама истории (рекрутер открывает десятки за сессию;
+  // профиль закрывается через UI, не кнопкой «Назад»). Чистая функция вернёт null,
+  // когда менять нечего — это и есть защита от бесконечного цикла.
+  useEffect(() => {
+    const curId = selectedCard?.id ?? null;
+    const next = computeEntityParamUpdate(searchParams, curId, prevSelectedIdRef.current);
+    prevSelectedIdRef.current = curId;
+    if (next) setSearchParams(next, { replace: true });
+  }, [selectedCard, searchParams, setSearchParams]);
 
   // Архивный кандидат (?archived=1): на доске его нет (отфильтрован is_archived),
   // поэтому грузим по id и открываем ту же стандартную карточку напрямую.
@@ -5132,16 +5159,24 @@ function CandidateField({
           {required && <span className="sr-only"> *</span>}
         </label>
       )}
-      <input
-        type={type || "text"}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={onBlur}
-        placeholder={placeholder}
-        autoFocus={autoFocus}
-        aria-invalid={!!error}
-        className={clsx("hf-candidate-input", error && "hf-candidate-input-error")}
-      />
+      {type === "date" ? (
+        <DatePickerFactorial
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder || "дд.мм.гггг"}
+        />
+      ) : (
+        <input
+          type={type || "text"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
+          placeholder={placeholder}
+          autoFocus={autoFocus}
+          aria-invalid={!!error}
+          className={clsx("hf-candidate-input", error && "hf-candidate-input-error")}
+        />
+      )}
       {error && <p className="hf-candidate-error">{error}</p>}
     </div>
   );
@@ -5648,6 +5683,14 @@ function EditField({
         </label>
       )}
       <div className="relative">
+        {type === "date" ? (
+          <DatePickerFactorial
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder || "дд.мм.гггг"}
+          />
+        ) : (
+          <>
         <input
           type={type || "text"}
           value={value}
@@ -5673,6 +5716,8 @@ function EditField({
           >
             <HuntflowRemoveIcon className="h-[var(--hf-edit-clear-icon)] w-[var(--hf-edit-clear-icon)] text-[var(--hf-ui-muted-7)]" />
           </button>
+        )}
+          </>
         )}
       </div>
       {error && (

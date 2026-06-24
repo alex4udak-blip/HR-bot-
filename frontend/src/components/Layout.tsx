@@ -39,6 +39,8 @@ import {
   Layers,
   FileText,
   Link2,
+  Volume2,
+  VolumeX,
   type LucideIcon,
 } from "lucide-react";
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
@@ -48,6 +50,7 @@ import { useVacancyStore } from "@/stores/vacancyStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import * as notificationsApi from "@/services/api/notifications";
 import type { Notification as AppNotification } from "@/services/api/notifications";
+import { isAnketaSoundMuted, setAnketaSoundMuted } from "@/utils/notificationSound";
 import BackgroundEffects from "./BackgroundEffects";
 import ThemeToggle from "./ThemeToggle";
 import { VacancyForm } from "@/components/vacancies";
@@ -957,6 +960,7 @@ export default function Layout() {
   const unreadCount = useNotificationStore((s) => s.unreadCount);
   const setUnreadCount = useNotificationStore((s) => s.setUnreadCount);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [soundMuted, setSoundMuted] = useState<boolean>(isAnketaSoundMuted());
   const [notificationsList, setNotificationsList] = useState<AppNotification[]>(
     [],
   );
@@ -1014,10 +1018,14 @@ export default function Layout() {
     }
   };
 
-  // Close notifications on outside click
+  // Close notifications on outside click. ВАЖНО: блока уведомлений два (меню юзера
+  // + футер сайдбара) и они делят один notifRef → ref указывает лишь на один, и
+  // клик по «Уведомления» в другом считался «снаружи» и сразу закрывал панель
+  // (выглядело как «некликабельно»). Проверяем по data-атрибуту ЛЮБОЙ блок.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.("[data-notif-root]")) {
         setShowNotifications(false);
       }
     };
@@ -1758,8 +1766,14 @@ export default function Layout() {
                       exit={{ height: 0, opacity: 0 }}
                       transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
                       className="hf-hr-user-menu"
+                      // overflow:hidden (CSS) нужен для анимации высоты, но он же
+                      // обрезал absolute-поповер уведомлений (bottom-full → вверх
+                      // за пределы меню) → панель открывалась, но была невидима.
+                      // Меню к моменту открытия уведомлений уже развёрнуто, поэтому
+                      // на это время отдаём overflow:visible.
+                      style={{ overflow: showNotifications ? "visible" : undefined }}
                     >
-                      <div className="relative hf-hr-bottom-row" ref={notifRef}>
+                      <div className="relative hf-hr-bottom-row" ref={notifRef} data-notif-root>
                         <button
                           type="button"
                           onClick={handleToggleNotifications}
@@ -1782,16 +1796,31 @@ export default function Layout() {
                               <span className="hf-hr-notifications-title text-sm font-medium">
                                 Уведомления
                               </span>
-                              {unreadCount > 0 && (
+                              <div className="flex items-center gap-3">
                                 <button
                                   type="button"
-                                  onClick={handleMarkAllRead}
-                                  className="flex items-center gap-1 text-xs text-[var(--hf-status-blue)] transition-colors hover:text-[var(--hf-cyan-400)]"
+                                  onClick={() => {
+                                    const next = !soundMuted;
+                                    setAnketaSoundMuted(next);
+                                    setSoundMuted(next);
+                                  }}
+                                  title={soundMuted ? "Включить звук новых анкет" : "Выключить звук новых анкет"}
+                                  aria-label={soundMuted ? "Включить звук" : "Выключить звук"}
+                                  className="flex items-center text-[var(--hf-dark-300)] transition-colors hover:text-[var(--hf-dark-100)]"
                                 >
-                                  <Check className="h-3 w-3" />
-                                  Прочитать все
+                                  {soundMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                                 </button>
-                              )}
+                                {unreadCount > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={handleMarkAllRead}
+                                    className="flex items-center gap-1 text-xs text-[var(--hf-status-blue)] transition-colors hover:text-[var(--hf-cyan-400)]"
+                                  >
+                                    <Check className="h-3 w-3" />
+                                    Прочитать все
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <div className="max-h-80 overflow-y-auto">
                               {notificationsLoading ? (
@@ -2188,9 +2217,14 @@ export default function Layout() {
                 ))}
             </nav>
 
-            <div className="app-sidebar-footer flex-shrink-0 border-t border-[color:var(--hf-workspace-divider)]">
+            <div
+              className="app-sidebar-footer flex-shrink-0 border-t border-[color:var(--hf-workspace-divider)]"
+              // overflow-y:auto (CSS) обрезал absolute-поповер уведомлений (тот же
+              // баг, что в hf-hr-user-menu) → на время показа отдаём overflow:visible
+              style={{ overflow: showNotifications ? "visible" : undefined }}
+            >
               {/* Notification bell */}
-              <div className="relative app-sidebar-footer-section" ref={notifRef}>
+              <div className="relative app-sidebar-footer-section" ref={notifRef} data-notif-root>
                 <button
                   onClick={handleToggleNotifications}
                   className="app-sidebar-footer-action w-full text-[var(--hf-dark-300)] hover:text-[var(--hf-status-blue)] hover:bg-[var(--hf-status-blue-bg)]"
