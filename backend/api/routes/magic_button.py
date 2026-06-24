@@ -450,6 +450,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             stage=ApplicationStage.applied,
             stage_order=new_order,
             source=data.source,
+            created_by=current_user.id,  # кто добавил → авто-метка HR
         )
         db.add(app)
 

@@ -33,7 +33,8 @@ async def _candidate(db, org, dept, creator) -> Entity:
 
 async def _vacancy(db, org, dept, creator, title="Vac") -> Vacancy:
     v = Vacancy(
-        org_id=org.id, department_id=dept.id, created_by=creator.id,
+        org_id=org.id, department_id=dept.id,
+        created_by=(creator.id if creator else None),
         title=title, status=VacancyStatus.open, salary_currency="RUB",
         priority=1, tags=[], created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
     )
@@ -118,11 +119,25 @@ async def test_rejected_and_withdrawn_excluded(db_session: AsyncSession, organiz
     assert await compute_hr_tags(db_session, cand.id) == []
 
 
-async def test_null_created_by_skipped(db_session: AsyncSession, organization, department, admin_user):
+async def test_null_created_by_falls_back_to_vacancy_owner(db_session: AsyncSession, organization, department, admin_user):
     cand = await _candidate(db_session, organization, department, admin_user)
-    vac = await _vacancy(db_session, organization, department, admin_user)
-    await _application(db_session, vac, cand, None)  # системная заявка без HR
+    # воронку создал «владелец» (отличный от админа) — доказываем fallback
+    owner = await _user(db_session, "Владелец", "owner_fb@example.com")
+    vac = await _vacancy(db_session, organization, department, owner, "Funnel")
+    await _application(db_session, vac, cand, None)  # bulk-add без «кто добавил»
 
+    # created_by заявки NULL → берём владельца воронки
+    assert await compute_hr_tags(db_session, cand.id) == [
+        {"hr_id": owner.id, "name": "Владелец", "vacancy_id": vac.id, "vacancy_title": "Funnel"}
+    ]
+
+
+async def test_no_hr_when_both_app_and_vacancy_creator_null(db_session: AsyncSession, organization, department, admin_user):
+    cand = await _candidate(db_session, organization, department, admin_user)
+    vac = await _vacancy(db_session, organization, department, None, "Ownerless")  # без создателя
+    await _application(db_session, vac, cand, None)  # без «кто добавил»
+
+    # оба NULL → метку вывести не из кого
     assert await compute_hr_tags(db_session, cand.id) == []
 
 

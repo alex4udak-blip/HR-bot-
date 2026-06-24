@@ -421,6 +421,7 @@ async def bulk_action(
                     entity_id=entity.id,
                     stage=ApplicationStage.applied,
                     source="bulk_crm",
+                    created_by=current_user.id,  # кто массово добавил → авто-метка HR
                 )
                 db.add(app)
                 created_apps.append((app, entity.id))

@@ -560,19 +560,22 @@ async def ensure_shadow_columns():
                 || jsonb_build_object('system_hr_tags', sub.tags)
             )::json
             FROM (
-                SELECT va.entity_id,
-                       jsonb_agg(jsonb_build_object('hr_id', va.created_by, 'name', u.name,
-                                                    'vacancy_id', va.vacancy_id, 'vacancy_title', vac.title)
-                                 ORDER BY va.created_by, va.vacancy_id) AS tags
+                SELECT t.entity_id,
+                       jsonb_agg(jsonb_build_object('hr_id', t.hr_id, 'name', u.name,
+                                                    'vacancy_id', t.vacancy_id, 'vacancy_title', t.vacancy_title)
+                                 ORDER BY t.hr_id, t.vacancy_id) AS tags
                 FROM (
-                    SELECT DISTINCT entity_id, created_by, vacancy_id
-                    FROM vacancy_applications
-                    WHERE created_by IS NOT NULL
-                      AND stage NOT IN ('rejected', 'withdrawn')
-                ) va
-                JOIN users u ON u.id = va.created_by
-                JOIN vacancies vac ON vac.id = va.vacancy_id
-                GROUP BY va.entity_id
+                    SELECT DISTINCT a.entity_id,
+                           COALESCE(a.created_by, vac.created_by) AS hr_id,
+                           a.vacancy_id,
+                           vac.title AS vacancy_title
+                    FROM vacancy_applications a
+                    JOIN vacancies vac ON vac.id = a.vacancy_id
+                    WHERE COALESCE(a.created_by, vac.created_by) IS NOT NULL
+                      AND a.stage NOT IN ('rejected', 'withdrawn')
+                ) t
+                JOIN users u ON u.id = t.hr_id
+                GROUP BY t.entity_id
             ) sub
             WHERE e.id = sub.entity_id
               AND COALESCE(e.extra_data::jsonb -> 'system_hr_tags', 'null'::jsonb)
@@ -586,8 +589,9 @@ async def ensure_shadow_columns():
             WHERE jsonb_exists(e.extra_data::jsonb, 'system_hr_tags')
               AND NOT EXISTS (
                   SELECT 1 FROM vacancy_applications va
+                  JOIN vacancies vac ON vac.id = va.vacancy_id
                   WHERE va.entity_id = e.id
-                    AND va.created_by IS NOT NULL
+                    AND COALESCE(va.created_by, vac.created_by) IS NOT NULL
                     AND va.stage NOT IN ('rejected', 'withdrawn')
               )
         \"\"\"))

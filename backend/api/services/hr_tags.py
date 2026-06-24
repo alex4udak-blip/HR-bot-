@@ -15,7 +15,7 @@ backfill in ``start.sh`` mirrors the exact same rule in SQL — keep them in syn
 """
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.database import Entity, User, VacancyApplication, ApplicationStage, Vacancy
@@ -32,7 +32,7 @@ EXTRA_KEY = "system_hr_tags"
 
 
 async def compute_hr_tags(db: AsyncSession, entity_id: int) -> list[dict]:
-    """HR + воронка, в которую он забрал кандидата (активные заявки).
+    """HR + воронка, в которую забрали кандидата (активные заявки).
 
     По одной записи на (HR, вакансия) активной заявки кандидата. Возвращает
     ``[{"hr_id": int, "name": str, "vacancy_id": int, "vacancy_title": str}]``,
@@ -40,22 +40,29 @@ async def compute_hr_tags(db: AsyncSession, entity_id: int) -> list[dict]:
     дешёвого diff в :func:`sync_for_entity`. Один HR, добавивший кандидата в
     несколько воронок, даёт несколько записей (по одной на воронку).
 
-    NULL ``created_by`` (системные заявки) отсекаются самим INNER JOIN на users.
+    HR = тот, кто добавил заявку (``VacancyApplication.created_by``); а если он не
+    записан (NULL — массовое добавление «bulk_crm», magic-button, старые данные) —
+    ВЛАДЕЛЕЦ воронки (``Vacancy.created_by``). Так метка появляется у каждого
+    кандидата в воронке, даже если «кто добавил» не сохранилось. Если оба NULL
+    (создатель вакансии удалён) — заявка молча отсекается INNER JOIN на users.
     """
+    # Эффективный HR: кто добавил → иначе владелец воронки.
+    effective_hr = func.coalesce(VacancyApplication.created_by, Vacancy.created_by)
     rows = await db.execute(
-        select(User.id, User.name, Vacancy.id, Vacancy.title)
-        .join(VacancyApplication, VacancyApplication.created_by == User.id)
+        select(effective_hr, User.name, Vacancy.id, Vacancy.title)
+        .select_from(VacancyApplication)
         .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
+        .join(User, User.id == effective_hr)
         .where(
             VacancyApplication.entity_id == entity_id,
             VacancyApplication.stage.not_in(INACTIVE_STAGES),
         )
         .distinct()
-        .order_by(User.id, Vacancy.id)
+        .order_by(effective_hr, Vacancy.id)
     )
     return [
-        {"hr_id": uid, "name": name, "vacancy_id": vid, "vacancy_title": vtitle}
-        for uid, name, vid, vtitle in rows.all()
+        {"hr_id": hr_id, "name": name, "vacancy_id": vid, "vacancy_title": vtitle}
+        for hr_id, name, vid, vtitle in rows.all()
     ]
 
 
