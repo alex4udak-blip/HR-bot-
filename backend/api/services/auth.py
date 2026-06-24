@@ -411,13 +411,25 @@ async def create_superadmin_if_not_exists(db: AsyncSession):
 
 
 async def get_user_org(user: User, db: AsyncSession) -> Optional[Organization]:
-    """Get user's current organization (first one for now)."""
+    """Get user's current organization (first one for now).
+
+    Superadmin может оказаться без OrgMember-записи (init не отработал,
+    запись удалена руками и т.д.) — в этом случае возвращаем самую старую
+    организацию, иначе org-scoped endpoint-ы (например /projects) падают 400.
+    """
     result = await db.execute(
         select(Organization)
         .join(OrgMember, OrgMember.org_id == Organization.id)
         .where(OrgMember.user_id == user.id)
         .order_by(OrgMember.created_at)
         .limit(1)
+    )
+    org = result.scalar_one_or_none()
+    if org or user.role != UserRole.superadmin:
+        return org
+
+    result = await db.execute(
+        select(Organization).order_by(Organization.created_at).limit(1)
     )
     return result.scalar_one_or_none()
 
