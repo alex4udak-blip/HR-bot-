@@ -9,7 +9,6 @@ import {
   Menu,
   X,
   Phone,
-  Building2,
   Shield,
   UserCog,
   Briefcase,
