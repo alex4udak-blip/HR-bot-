@@ -74,6 +74,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
+  // Фейковый прогресс во время AI-анализа (не быстрее, чем реальный parse, медленно идёт к 100%)
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedResume | ParsedVacancy | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -226,7 +227,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     setMatchedCandidates([]);
 
     try {
-      // Реальный % отправки файла; на 100% сервер начинает AI-разбор → null = индетерминантная фаза.
+      // Реальный % отправки файла; на 100% сервер начинает AI-разбор → переключаемся на
+      // индетерминантную (бегущую) полоса, которую юзер видит в UI.
       const data = await parseResumeFromFile(file, (pct) => setUploadPct(pct >= 100 ? null : pct));
       setParsedData(data);
       toast.success('Резюме распознано');
@@ -394,7 +396,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-white text-slate-900 shadow-xl border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-white text-slate-900 shadow-xl border border-slate-200 rounded-xl w-full max-w-lg max-h-[95vh] overflow-hidden flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200 flex-shrink-0">
