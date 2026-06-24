@@ -73,6 +73,7 @@ const ChatsPage = lazyWithRetry(() => import('@/pages/ChatsPage'));
 const CallsPage = lazyWithRetry(() => import('@/pages/CallsPage'));
 const TrashPage = lazyWithRetry(() => import('@/pages/TrashPage'));
 const UsersPage = lazyWithRetry(() => import('@/pages/UsersPage'));
+const DepartmentsPage = lazyWithRetry(() => import('@/pages/DepartmentsPage'));
 const SettingsPage = lazyWithRetry(() => import('@/pages/SettingsPage'));
 const AdminSimulatorPage = lazyWithRetry(() => import('@/pages/AdminSimulatorPage'));
 const VacanciesPage = lazyWithRetry(() => import('@/pages/VacanciesPage'));
@@ -237,6 +238,7 @@ export default function App() {
           <Route path="trash" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><TrashPage /></RoleRoute></Suspense>} />
 
           {/* Management routes — superadmin and owner only */}
+          <Route path="departments" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['management']}><DepartmentsPage /></RoleRoute></Suspense>} />
           <Route path="settings" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['management']}><SettingsPage /></RoleRoute></Suspense>} />
 
           {/* Superadmin only */}

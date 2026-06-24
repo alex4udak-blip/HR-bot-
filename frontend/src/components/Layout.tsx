@@ -737,7 +737,7 @@ function getBlockForPath(path: string): string | null {
     return "hr";
   }
   if (
-    ["/users", "/settings", "/admin", "/trash"].some((p) =>
+    ["/users", "/departments", "/settings", "/admin", "/trash"].some((p) =>
       path.startsWith(p),
     )
   ) {
@@ -1162,6 +1162,7 @@ export default function Layout() {
     // ADMIN block — только superadmin/owner, скрыт у HR-only
     if (isPlatformAdmin) {
       const adminItems: { path: string; icon: LucideIcon; label: string }[] = [
+        { path: "/departments", icon: Building2, label: "Департаменты" },
         { path: "/settings", icon: Settings, label: "Настройки" },
       ];
       if (user?.role === "superadmin") {
