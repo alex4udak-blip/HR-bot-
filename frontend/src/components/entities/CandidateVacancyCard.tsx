@@ -37,7 +37,7 @@ import {
   type ContainerNote,
   type EntryReaction,
 } from "@/components/entities/candidateDetail/model";
-import { HfLoadingSpinner } from "@/pages/AllCandidatesPage";
+import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 
 // ── Module-scope helpers/constants moved verbatim from AllCandidatesPage
 //    (used only by CandidateVacancyCard). ──

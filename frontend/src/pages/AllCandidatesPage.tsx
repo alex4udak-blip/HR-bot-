@@ -31,6 +31,7 @@ import clsx from "clsx";
 import toast from "react-hot-toast";
 import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
+import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import { buildStageContainers, buildResumeSources, type EntryReaction } from "@/components/entities/candidateDetail/model";
 import {
   getCandidatesKanban,
@@ -297,31 +298,8 @@ function getInterviewVacancyLabel(card: KanbanCard): string {
   return department ? `${vacancyName} / ${department}` : vacancyName;
 }
 
-export function HfLoadingSpinner({
-  size,
-  stroke,
-  className,
-}: {
-  size?: number | string;
-  stroke?: number | string;
-  className?: string;
-}) {
-  return (
-    <span
-      className={clsx("hf-loading-spinner", className)}
-      style={
-        size || stroke
-          ? {
-              width: size,
-              height: size,
-              borderWidth: stroke,
-            }
-          : undefined
-      }
-      aria-hidden="true"
-    />
-  );
-}
+// HfLoadingSpinner вынесён в components/ui/HfLoadingSpinner (общий — и страница,
+// и CandidateVacancyCard импортируют его оттуда, без цикла page↔card).
 
 function HfSkeletonBlock({
   className,
