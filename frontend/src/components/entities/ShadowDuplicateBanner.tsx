@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, X, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
-import { STATUS_LABELS, type EntityWithRelations } from "@/types";
+import type { EntityWithRelations } from "@/types";
 import {
   getEntity,
   mergeShadowDuplicate,
@@ -18,8 +18,6 @@ import {
   matchSide,
   type FieldKey,
 } from "./CandidateCompareCard";
-import CandidateVacancyCard from "@/components/entities/CandidateVacancyCard";
-import type { ContainerNote } from "@/components/entities/candidateDetail/model";
 
 /**
  * Баннер «Похожий кандидат есть в базе» + БЕЛЫЙ экран сравнения двух анкет
@@ -227,30 +225,18 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   // Индекс показанного справа дубликата — для нав-стрелок «перебираем карточки».
   const idx = duplicates.findIndex((d) => d.entity_id === selectedDupId);
   // Уверенность + совпавшие поля ВЫБРАННОГО дубликата — для бейджа/чипов правой карточки.
-  // Данные ВЫБРАННОГО дубля → KanbanCard для готового CandidateVacancyCard (read-only).
-  // Карточку не переписываем — просто кормим её props'ами и оборачиваем в слайдер.
-  const noop = () => {};
-  const dupStageLabel = (s: string) =>
-    (STATUS_LABELS as Record<string, string>)[s] || s;
-  const dupVacancyCard: KanbanCard | null = archived
-    ? {
-        id: archived.id,
-        name: archived.name || "",
-        created_at: archived.created_at,
-        tags: [],
-        email: archived.email ?? undefined,
-        phone: archived.phone ?? undefined,
-        telegram_username: archived.telegram_usernames?.[0],
-        position: archived.position ?? undefined,
-        company: archived.company ?? undefined,
-        extra_data: (archived.extra_data as Record<string, unknown>) || {},
-      }
-    : null;
-  const dupStage =
-    ((archived as unknown as Record<string, unknown>)?.status as string) ||
-    "new";
-  const dupNotes =
-    (archived?.extra_data?.notes as ContainerNote[] | undefined) || [];
+  const selectedDup = idx >= 0 ? duplicates[idx] : null;
+  const rightConfidence = selectedDup ? selectedDup.confidence : undefined;
+  const rightMatchedFields = selectedDup
+    ? Object.keys(selectedDup.matched_fields)
+    : undefined;
+  // Перелистывание дублей (свайп карточки / клик по точке) — на delta шагов.
+  const goToDup = (delta: number) => {
+    const target = idx + delta;
+    if (target < 0 || target >= duplicates.length || target === idx) return;
+    setSlideDir(delta > 0 ? 1 : -1);
+    loadSelected(duplicates[target].entity_id);
+  };
 
   return (
     <>
@@ -306,47 +292,19 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                   )}
                   <div className="grid grid-cols-2 gap-4 items-start">
                     <CandidateCompareCard title={cardArchived ? "Эта анкета (в архиве)" : "Новый кандидат"} side={left} matched={matched} />
-                    <div className="min-w-0">
-                      {/* Нав по похожим анкетам — перебираем дубликаты в правой колонке */}
-                      {duplicates.length > 1 && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-[11px] uppercase tracking-wide text-slate-400">Похожие анкеты</span>
-                          <div className="ml-auto flex items-center gap-2">
-                            <button
-                              onClick={() => {
-                                if (idx > 0) {
-                                  setSlideDir(-1);
-                                  loadSelected(duplicates[idx - 1].entity_id);
-                                }
-                              }}
-                              disabled={idx <= 0}
-                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                              aria-label="Предыдущая анкета"
-                            >
-                              <ChevronLeft size={14} className="text-slate-500" />
-                            </button>
-                            <span className="text-xs font-medium text-slate-500 tabular-nums">
-                              {idx + 1} из {duplicates.length}
-                            </span>
-                            <button
-                              onClick={() => {
-                                if (idx < duplicates.length - 1) {
-                                  setSlideDir(1);
-                                  loadSelected(duplicates[idx + 1].entity_id);
-                                }
-                              }}
-                              disabled={idx >= duplicates.length - 1}
-                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                              aria-label="Следующая анкета"
-                            >
-                              <ChevronRight size={14} className="text-slate-500" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {/* Слайдер правой карточки — Framer-слайд между дубликатами.
-                          overflow-hidden глушит 32px-сдвиг, чтобы не было гориз. скролла. */}
-                      <div className="overflow-hidden">
+                    <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 shadow-sm overflow-hidden">
+                      {/* Шапка панели: заголовок + позиция «N из M» (интегрировано) */}
+                      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-200/70">
+                        <span className="text-[11px] uppercase tracking-wide font-medium text-slate-500">Похожие анкеты</span>
+                        {duplicates.length > 1 && (
+                          <span className="text-xs font-medium text-slate-400 tabular-nums">
+                            {idx + 1} из {duplicates.length}
+                          </span>
+                        )}
+                      </div>
+                      {/* Перебираем анкеты СВАЙПОМ, как колоду карт: тянешь карточку
+                          в сторону → перелистывается на след./пред. дубль (+ точки снизу). */}
+                      <div className="relative overflow-hidden p-3">
                         <AnimatePresence mode="wait" custom={slideDir} initial={false}>
                           <motion.div
                             key={selectedDupId ?? "single"}
@@ -355,31 +313,43 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                             initial="enter"
                             animate="center"
                             exit="exit"
-                            transition={{ duration: 0.22, ease: "easeInOut" }}
-                            className="min-w-0"
+                            transition={{ duration: 0.24, ease: "easeInOut" }}
+                            drag={duplicates.length > 1 ? "x" : false}
+                            dragConstraints={{ left: 0, right: 0 }}
+                            dragElastic={0.18}
+                            onDragEnd={(_e, info) => {
+                              if (info.offset.x < -64) goToDup(1);
+                              else if (info.offset.x > 64) goToDup(-1);
+                            }}
+                            className={`min-w-0 ${duplicates.length > 1 ? "cursor-grab active:cursor-grabbing" : ""}`}
                           >
                             {rightLoading ? (
-                              <div className="rounded-xl border border-slate-200 p-4 flex items-center justify-center text-slate-400">
+                              <div className="rounded-xl border border-slate-200 bg-white p-4 flex items-center justify-center text-slate-400">
                                 <Loader2 className="w-6 h-6 animate-spin" />
                               </div>
-                            ) : dupVacancyCard ? (
-                              <CandidateVacancyCard
-                                card={dupVacancyCard}
-                                applicationId={-1}
-                                vacancyTitle={null}
-                                currentStage={dupStage}
-                                notes={dupNotes}
-                                readonly
-                                stageOptions={[]}
-                                getStageLabel={dupStageLabel}
-                                onChangeStage={noop}
-                                onComment={noop}
-                                onDeleteHistory={noop}
-                                onUploadFile={noop}
+                            ) : (
+                              <CandidateCompareCard
+                                title="Старая анкета (дубликат)"
+                                side={right}
+                                matched={matched}
+                                confidence={rightConfidence}
+                                matchedFields={rightMatchedFields}
                               />
-                            ) : null}
+                            )}
                           </motion.div>
                         </AnimatePresence>
+                        {duplicates.length > 1 && (
+                          <div className="pt-3 flex items-center justify-center gap-1.5">
+                            {duplicates.map((d, i) => (
+                              <button
+                                key={d.entity_id}
+                                onClick={() => goToDup(i - idx)}
+                                aria-label={`Анкета ${i + 1} из ${duplicates.length}`}
+                                className={`h-1.5 rounded-full transition-all ${i === idx ? "w-5 bg-emerald-500" : "w-1.5 bg-slate-300 hover:bg-slate-400"}`}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
