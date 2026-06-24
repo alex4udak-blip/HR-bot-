@@ -3615,7 +3615,7 @@ const InfoTab = memo(function InfoTab({
           anketaCount={anketaCount}
           onReact={c.origin === "live" ? cardReact : undefined}
           files={c.files}
-          onDeleteFile={cardDeleteFile}
+          onDeleteFile={c.origin === "live" ? cardDeleteFile : undefined}
         />
       ))}
 
@@ -4295,13 +4295,13 @@ const ResumeTab = memo(function ResumeTab({
         <div className="flex-1 min-w-0">{qMainContent}</div>
         <div className="flex-1 min-w-0 lg:border-l lg:pl-4 border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] space-y-4 p-5">
           {mergedFrom.map((m, i) => {
-            // Не рисуем пустую панель «Объединено: …», если у объединённого
-            // профиля нет ни строк анкеты, ни рекрутёра (например, его контент
-            // был PDF) — та же проверка, по которой ImportedQuestionnaire
-            // возвращает null.
+            // Показываем заголовок «Объединено: …» для КАЖДОГО влитого профиля,
+            // чтобы при слиянии 3+ не «терялись» голые PDF/CSV-импорты (без строк
+            // анкеты и рекрутёра). Если тела нет — заменяем его короткой подписью,
+            // но сам контейнер НЕ прячем.
             const mq = getImportedQuestionnaire({ ...card, extra_data: m.extra_data } as KanbanCard);
             const mRecruiter = resolveRecruiter(m.extra_data as Record<string, unknown> | undefined);
-            if (mq.rows.length === 0 && !mRecruiter) return null;
+            const hasBody = mq.rows.length > 0 || !!mRecruiter;
             return (
               <div key={m.entity_id ?? i}>
                 <div className="mb-2 text-xs text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
@@ -4312,9 +4312,15 @@ const ResumeTab = memo(function ResumeTab({
                   {m.merged_by_name ? ` · ${m.merged_by_name}` : ""}
                   {m.merged_at ? ` · ${new Date(m.merged_at).toLocaleString("ru")}` : ""}
                 </div>
-                <ImportedQuestionnaire
-                  card={{ ...card, name: m.name || card.name, extra_data: m.extra_data } as KanbanCard}
-                />
+                {hasBody ? (
+                  <ImportedQuestionnaire
+                    card={{ ...card, name: m.name || card.name, extra_data: m.extra_data } as KanbanCard}
+                  />
+                ) : (
+                  <div className="text-xs italic text-[var(--hf-main-500)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+                    Анкета не заполнена (импорт из PDF/файла).
+                  </div>
+                )}
               </div>
             );
           })}

@@ -965,6 +965,7 @@ class SimilarityService:
             EntityAIConversation, EntityFile, EntityTransfer,
             FormSubmission, RecruiterBonus,
             EntityCriteria, PrometheusReviewCache,
+            Employee, ParseJob, SharedAccess,
         )
         from sqlalchemy import text as _sql_text
 
@@ -1056,6 +1057,8 @@ class SimilarityService:
             EntityAnalysis,
             EntityAIConversation, EntityFile, EntityTransfer,
             FormSubmission, RecruiterBonus,
+            # SET NULL FK на entities.id — без перепривязки осиротеют после удаления source.
+            Employee, ParseJob,
         ):
             await db.execute(
                 _hist_model.__table__.update()
@@ -1076,6 +1079,29 @@ class SimilarityService:
             _sql_text("DELETE FROM entity_tags WHERE entity_id = :sid"),
             {"sid": source_entity.id},
         )
+
+        # SharedAccess (доступ коллег к кандидату) на source: FK ondelete=CASCADE —
+        # при удалении source эти строки ПРОПАДУТ, и кандидат «исчезнет» из воронок
+        # тех, кому он был расшарен. Перевешиваем доступы на target (entity_id+resource_id),
+        # но уникальный ключ (resource_type, resource_id, shared_with, shared_by) столкнётся,
+        # если у target уже есть доступ той же пары — такой дубль удаляем, не перевешиваем.
+        _src_shares = (await db.execute(
+            select(SharedAccess).where(SharedAccess.entity_id == source_entity.id)
+        )).scalars().all()
+        if _src_shares:
+            _tgt_share_pairs = {
+                (sa.shared_with_id, sa.shared_by_id)
+                for sa in (await db.execute(
+                    select(SharedAccess).where(SharedAccess.entity_id == target_entity.id)
+                )).scalars().all()
+            }
+            for _sa in _src_shares:
+                if (_sa.shared_with_id, _sa.shared_by_id) in _tgt_share_pairs:
+                    await db.delete(_sa)  # у target уже есть такой доступ — дубль убираем
+                else:
+                    _sa.entity_id = target_entity.id
+                    _sa.resource_id = target_entity.id
+                    _tgt_share_pairs.add((_sa.shared_with_id, _sa.shared_by_id))
 
         # Survivor: сохраняем ОБА резюме (своё + источника) — после объединения
         # рядом со старым резюме появляется новое. Плюс снимаем флаг теневого дубля.
