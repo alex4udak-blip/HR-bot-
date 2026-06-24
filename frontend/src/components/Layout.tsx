@@ -40,6 +40,7 @@ import {
   Link2,
   Volume2,
   VolumeX,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
