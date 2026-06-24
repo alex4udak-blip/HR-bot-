@@ -1,14 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
   FolderKanban,
   ChevronDown,
   ChevronRight,
+  UserPlus,
+  X,
+  Check,
+  Copy,
 } from 'lucide-react';
 import clsx from 'clsx';
+import toast from 'react-hot-toast';
 import * as api from '@/services/api';
+import { getMyDeptRoles, quickAddDepartmentMember, type MyDeptRole, type QuickAddMemberResult } from '@/services/api/auth';
 
 // Use the type from the backend response (array of user objects)
 interface ResourceUser {
@@ -33,16 +39,29 @@ export default function TeamPage() {
   const [resources, setResources] = useState<ResourceUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
+  const [addOpen, setAddOpen] = useState(false);
+  const [myDepts, setMyDepts] = useState<MyDeptRole[]>([]);
 
-  useEffect(() => {
+  const loadResources = useCallback(() => {
+    setIsLoading(true);
     api.getResourceAllocation()
       .then((data: any) => {
-        // Backend returns array directly or { users: [...] }
         const users = Array.isArray(data) ? data : (data?.users || []);
         setResources(users);
       })
       .catch(() => setResources([]))
       .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadResources();
+  }, [loadResources]);
+
+  useEffect(() => {
+    // Отделы, в которых текущий юзер lead/sub_admin — куда мы реально можем добавлять
+    getMyDeptRoles()
+      .then((roles) => setMyDepts(roles.filter((r) => r.role === 'lead' || r.role === 'sub_admin')))
+      .catch(() => setMyDepts([]));
   }, []);
 
   const toggle = (uid: number) => {
@@ -71,10 +90,19 @@ export default function TeamPage() {
         <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
           <Users className="w-5 h-5 text-emerald-400" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-lg font-bold text-white">Команда</h1>
           <p className="text-[11px] text-white/30">Распределение ресурсов по проектам</p>
         </div>
+        {myDepts.length > 0 && (
+          <button
+            onClick={() => setAddOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-medium transition-colors"
+          >
+            <UserPlus className="w-4 h-4" />
+            Добавить участника
+          </button>
+        )}
       </div>
 
       {/* Loading */}
@@ -173,6 +201,230 @@ export default function TeamPage() {
           })}
         </div>
       )}
+
+      <AnimatePresence>
+        {addOpen && (
+          <AddMemberModal
+            myDepts={myDepts}
+            onClose={() => setAddOpen(false)}
+            onAdded={() => {
+              setAddOpen(false);
+              loadResources();
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================================
+// ADD MEMBER MODAL
+// ============================================================
+
+const POSITION_OPTIONS: { value: 'member' | 'sub_admin' | 'lead'; label: string; hint: string }[] = [
+  { value: 'member', label: 'Участник', hint: 'обычный сотрудник отдела' },
+  { value: 'sub_admin', label: 'Зам. руководителя', hint: 'видит всё, ограниченное управление' },
+  { value: 'lead', label: 'Руководитель', hint: 'полный доступ к данным отдела' },
+];
+
+function AddMemberModal({
+  myDepts,
+  onClose,
+  onAdded,
+}: {
+  myDepts: MyDeptRole[];
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [deptId, setDeptId] = useState<number>(myDepts[0]?.department_id ?? 0);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [position, setPosition] = useState<'member' | 'sub_admin' | 'lead'>('member');
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<QuickAddMemberResult | null>(null);
+
+  const canSubmit = deptId > 0 && name.trim().length > 0 && email.trim().includes('@') && !submitting;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      const r = await quickAddDepartmentMember(deptId, {
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        role: position,
+      });
+      setResult(r);
+      if (!r.password_generated) {
+        // existing user — без пароля, можно сразу закрыть
+        toast.success('Участник добавлен в отдел');
+        onAdded();
+      }
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || 'Не удалось добавить участника';
+      toast.error(typeof msg === 'string' ? msg : 'Ошибка');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, y: 10 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.95, y: 10 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md bg-[#0c0c10] border border-white/[0.08] rounded-2xl p-5"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <UserPlus className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-semibold text-white">
+              {result?.password_generated ? 'Сохрани пароль' : 'Добавить участника'}
+            </h3>
+          </div>
+          <button onClick={onClose} className="text-white/30 hover:text-white/60">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {result?.password_generated ? (
+          <div className="space-y-3">
+            <p className="text-xs text-white/50">
+              Новый аккаунт для <span className="text-white">{result.email}</span> создан.
+              Пароль показывается один раз — передай его сотруднику.
+            </p>
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg">
+              <code className="flex-1 text-sm text-emerald-300 font-mono">{result.password_generated}</code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(result.password_generated!);
+                  toast.success('Пароль скопирован');
+                }}
+                className="text-white/40 hover:text-white"
+                title="Скопировать"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+            </div>
+            <button
+              onClick={onAdded}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-sm font-medium"
+            >
+              <Check className="w-4 h-4" />
+              Готово
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {myDepts.length > 1 && (
+              <Field label="Отдел">
+                <select
+                  value={deptId}
+                  onChange={(e) => setDeptId(Number(e.target.value))}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+                >
+                  {myDepts.map((d) => (
+                    <option key={d.department_id} value={d.department_id} className="bg-[#0c0c10]">
+                      {d.department_name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            {myDepts.length === 1 && (
+              <p className="text-[11px] text-white/40">
+                В отдел: <span className="text-white/70">{myDepts[0].department_name}</span>
+              </p>
+            )}
+
+            <Field label="Имя">
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Иван Петров"
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+              />
+            </Field>
+
+            <Field label="Email">
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                placeholder="ivan@example.com"
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+              />
+              <p className="text-[10px] text-white/30 mt-1">
+                Если такой аккаунт уже есть — добавим его в отдел; нового пользователя создадим с паролем, который покажется один раз.
+              </p>
+            </Field>
+
+            <Field label="Позиция">
+              <div className="space-y-1">
+                {POSITION_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={clsx(
+                      'flex items-start gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors',
+                      position === opt.value
+                        ? 'bg-emerald-500/10 border-emerald-500/40'
+                        : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="position"
+                      value={opt.value}
+                      checked={position === opt.value}
+                      onChange={() => setPosition(opt.value)}
+                      className="mt-0.5 accent-emerald-500"
+                    />
+                    <div className="flex-1">
+                      <div className="text-sm text-white">{opt.label}</div>
+                      <div className="text-[10px] text-white/30">{opt.hint}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </Field>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={onClose}
+                className="flex-1 px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.06] border border-white/[0.06] text-white/60 text-sm"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={submit}
+                disabled={!canSubmit}
+                className="flex-1 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-500/40 text-emerald-300 text-sm font-medium"
+              >
+                {submitting ? 'Добавляю…' : 'Добавить'}
+              </button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wider text-white/30 mb-1.5">{label}</div>
+      {children}
     </div>
   );
 }
