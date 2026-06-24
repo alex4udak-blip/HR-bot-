@@ -35,6 +35,7 @@ import clsx from "clsx";
 import toast from "react-hot-toast";
 import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
+import { buildStageContainers, buildResumeSources } from "@/components/entities/candidateDetail/model";
 import {
   getCandidatesKanban,
   changeCandidateStatus,
@@ -2821,89 +2822,21 @@ const InfoTab = memo(function InfoTab({
   // Это НЕ вакансии. Живой контейнер — из самого кандидата (card); merged —
   // плоский массив смёрдженных дублей (транзитивные слияния уже подняты в корень
   // бэкендом, поэтому просто .map()). Порядок: живой первым, затем merged.
-  const containers = useMemo<StageContainer[]>(() => {
-    const mergedRaw = Array.isArray(
-      (card.extra_data as Record<string, unknown> | undefined)?.merged_from,
-    )
-      ? ((card.extra_data as Record<string, unknown>)
-          .merged_from as Array<Record<string, unknown>>)
-      : [];
-
-    const mergedContainers: StageContainer[] = mergedRaw.map((m, i) => {
-      const ed = (m.extra_data as Record<string, unknown> | undefined) || {};
-      return {
-        origin: "merged" as const,
-        // Фиктивный (отрицательный) ключ — merged-контейнеры read-only,
-        // действий по applicationId нет, нужен только стабильный React key.
-        applicationId: -(i + 1),
-        status: typeof m.status === "string" ? m.status : "new",
-        name: typeof m.name === "string" ? m.name : null,
-        notes: Array.isArray(ed.notes) ? (ed.notes as ContainerNote[]) : [],
-        resumeDemos: Array.isArray(ed.resume_demos)
-          ? (ed.resume_demos as ContainerResumeDemo[])
-          : [],
-        vacancyTitle:
-          typeof m.vacancy_title === "string" ? m.vacancy_title : null,
-        addedAt: typeof m.added_at === "string" ? m.added_at : undefined,
-        fileIds: Array.isArray(m.file_ids) ? (m.file_ids as number[]) : [],
-      };
-    });
-
-    // Заметки источника живут в его влитом контейнере. flat-merge на бэкенде ТАКЖЕ
-    // копирует их в entity.notes выжившего → без вычитания они задвоятся на ЖИВОЙ
-    // карточке (отказная заметка повисла бы на «Новом»). Вычитаем из живого все
-    // заметки, уже показанные во влитых контейнерах (ключ — id, иначе text+date).
-    const _noteSig = (n?: ContainerNote) =>
-      (n && n.id) || `${n?.text ?? ""}|${n?.date ?? ""}`;
-    const _mergedNoteSigs = new Set(
-      mergedContainers.flatMap((c) => c.notes.map(_noteSig)),
-    );
-    const _liveNotes = (
-      Array.isArray(card.extra_data?.notes)
-        ? (card.extra_data.notes as ContainerNote[])
-        : []
-    ).filter((n) => !_mergedNoteSigs.has(_noteSig(n)));
-
-    const liveContainer: StageContainer = {
-      origin: "live",
-      applicationId: primaryBlock?.application_id ?? 0,
-      status,
-      name: card.name,
-      notes: _liveNotes,
-      resumeDemos: Array.isArray(card.extra_data?.resume_demos)
-        ? (card.extra_data.resume_demos as ContainerResumeDemo[])
-        : [],
-      vacancyTitle: getVacancyStageLabel(card) ?? null,
-      addedAt: card.created_at,
-      events: primaryBlock?.events,
-    };
-
-    // Файлы по контейнерам: исключаем авто-файлы (постраничные сканы резюме
-    // «Резюме стр. N» и авто-извлечённое фото «Фото_…») — они нигде не нужны.
-    // merged-контейнер показывает СВОИ file_ids; живой — остальные (минус
-    // смёрдженные), т.е. свои собственные документы.
-    const _isAutoFile = (f: EntityFile) => {
-      const _n = f.file_name || "";
-      const _img = (f.mime_type || "").startsWith("image/");
-      // Авто-страницы PDF (картинки с «стрN» / cv_page / _page — напр.
-      // «Профиль_Титов_Семён_стр1.jpg», «Резюме стр. 1.jpg») и авто-фото аватара
-      // («Фото_…») — это рендеры/аватар, а не вложения, в список «Файлы» не идут.
-      return (
-        (_img && /стр\.?\s*\d|cv_page|_page\b/i.test(_n)) || /^Фото_/i.test(_n)
-      );
-    };
-    const _docFiles = (allEntityFiles || []).filter((f) => !_isAutoFile(f));
-    const _mergedFileIds = new Set(
-      mergedContainers.flatMap((c) => c.fileIds || []),
-    );
-    mergedContainers.forEach((c) => {
-      const ids = new Set(c.fileIds || []);
-      c.files = _docFiles.filter((f) => ids.has(f.id));
-    });
-    liveContainer.files = _docFiles.filter((f) => !_mergedFileIds.has(f.id));
-
-    return [liveContainer, ...mergedContainers];
-  }, [primaryBlock, status, card, allEntityFiles]);
+  // Стек контейнеров (живой + merged_from) — чистая логика вынесена в
+  // candidateDetail/model.buildStageContainers (21 unit-тест). Здесь только
+  // прокидываем вычисляемые поля живого контейнера (primaryBlock, лейбл вакансии).
+  const containers = useMemo<StageContainer[]>(
+    () =>
+      buildStageContainers({
+        card,
+        status,
+        liveApplicationId: primaryBlock?.application_id ?? 0,
+        liveEvents: primaryBlock?.events,
+        liveVacancyTitle: getVacancyStageLabel(card) ?? null,
+        allEntityFiles: allEntityFiles || [],
+      }),
+    [primaryBlock, status, card, allEntityFiles],
+  );
 
   // ── Тонкие обёртки для CandidateVacancyCard. Смену этапа делает ТОЛЬКО живой
   // (интерактивный) контейнер — его status это статус самого кандидата (entity),
@@ -4132,35 +4065,11 @@ function useResumeSources(card: KanbanCard, refreshKey?: number): {
       .finally(() => setLoading(false));
   }, [card.id, refreshKey]);
 
-  const resumeFiles = files.filter((f) => f.file_type === "resume");
-  // Все PDF-резюме, новое сверху: после объединения кандидатов PDF'ы
-  // накапливаются, и нужно понимать, где новое, а где старое.
-  const pdfFiles = resumeFiles
-    .filter((f) => f.mime_type === "application/pdf")
-    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
-  const imageFiles = resumeFiles.filter((f) =>
-    f.mime_type?.startsWith("image/"),
+  // Список вкладок «Резюме» — чистая логика в candidateDetail/model.buildResumeSources.
+  const sources: ResumeSource[] = buildResumeSources(
+    files,
+    card.extra_data as Record<string, unknown> | undefined,
   );
-  const resumeDemo = card.extra_data?.resume_demo as ResumeDemoData | undefined;
-  const resumeDemos = (
-    Array.isArray(card.extra_data?.resume_demos)
-      ? (card.extra_data.resume_demos as ResumeDemoData[])
-      : resumeDemo
-        ? [resumeDemo]
-        : []
-  ).filter(Boolean);
-
-  const sources: ResumeSource[] = [
-    ...(resumeDemos.length > 0 ? [{ kind: "parsed" as const }] : []),
-    ...pdfFiles.map((file) => ({ kind: "pdf" as const, file })),
-    // Сканы-картинки показываем ОТДЕЛЬНОЙ вкладкой только если другого резюме
-    // нет (ни распарсенного, ни PDF) — иначе это дубль и лишняя вкладка.
-    ...(imageFiles.length > 0 &&
-    resumeDemos.length === 0 &&
-    pdfFiles.length === 0
-      ? [{ kind: "images" as const }]
-      : []),
-  ];
 
   return { files, sources, loading, previewUrls };
 }
