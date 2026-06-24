@@ -1078,6 +1078,9 @@ export default function Layout() {
       (n) => n.trim().toLowerCase() === "практика",
     );
     const isPracticeOnly = isPracticeMember && !isPlatformAdmin;
+    // Лид отдела видит проекты/задачи целиком (по своему отделу), как платформ-админ
+    const isLead = user?.department_role === "lead";
+    const seesAllProjects = isPlatformAdmin || isLead;
 
     // PROJECTS block — скрыт у HR-only и Practice-only
     if (!isHrOnly && !isPracticeOnly) {
@@ -1086,22 +1089,23 @@ export default function Layout() {
           {
             path: "/projects",
             icon: FolderKanban,
-            label: isPlatformAdmin ? "Все проекты" : "Мои проекты",
+            label: seesAllProjects ? "Все проекты" : "Мои проекты",
           },
           {
             path: "/all-tasks",
             icon: ListTodo,
-            label: isPlatformAdmin ? "Все задачи" : "Мои задачи",
+            label: seesAllProjects ? "Все задачи" : "Мои задачи",
           },
         ];
-      if (isPlatformAdmin) {
+      if (seesAllProjects) {
         projectItems.push(
           { path: "/team", icon: Users, label: "Команда" },
           { path: "/timeoff", icon: Calendar, label: "Отпуска" },
           { path: "/blockers", icon: AlertTriangle, label: "Блокеры" },
-          { path: "/dept-manager", icon: Building2, label: "Отделы" },
-          { path: "/saturn", icon: Cloud, label: "Saturn" },
         );
+        if (isPlatformAdmin) {
+          projectItems.push({ path: "/saturn", icon: Cloud, label: "Saturn" });
+        }
       }
       sections.push({
         id: "projects",
