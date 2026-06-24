@@ -14,7 +14,8 @@ import {
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import * as api from '@/services/api';
-import { getMyDeptRoles, quickAddDepartmentMember, type MyDeptRole, type QuickAddMemberResult } from '@/services/api/auth';
+import { getMyDeptRoles, quickAddDepartmentMember, getDepartments, type MyDeptRole, type QuickAddMemberResult } from '@/services/api/auth';
+import { useAuthStore } from '@/stores/authStore';
 
 // Use the type from the backend response (array of user objects)
 interface ResourceUser {
@@ -36,6 +37,8 @@ interface ResourceUser {
 
 export default function TeamPage() {
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  const isPlatformAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
   const [resources, setResources] = useState<ResourceUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
@@ -58,11 +61,21 @@ export default function TeamPage() {
   }, [loadResources]);
 
   useEffect(() => {
-    // Отделы, в которых текущий юзер lead/sub_admin — куда мы реально можем добавлять
-    getMyDeptRoles()
-      .then((roles) => setMyDepts(roles.filter((r) => r.role === 'lead' || r.role === 'sub_admin')))
-      .catch(() => setMyDepts([]));
-  }, []);
+    // Куда можно добавлять:
+    //   - superadmin / owner / org-admin — любые отделы организации
+    //   - dept lead / sub_admin           — только свои отделы
+    if (isPlatformAdmin) {
+      getDepartments(-1)
+        .then((depts) =>
+          setMyDepts(depts.map((d) => ({ department_id: d.id, department_name: d.name, role: 'lead' as const })))
+        )
+        .catch(() => setMyDepts([]));
+    } else {
+      getMyDeptRoles()
+        .then((roles) => setMyDepts(roles.filter((r) => r.role === 'lead' || r.role === 'sub_admin')))
+        .catch(() => setMyDepts([]));
+    }
+  }, [isPlatformAdmin]);
 
   const toggle = (uid: number) => {
     setCollapsed((prev) => ({ ...prev, [uid]: !prev[uid] }));
