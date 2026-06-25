@@ -14,7 +14,6 @@ import {
   Printer,
   Download,
   PenSquare,
-  Archive,
   Phone,
   Send,
   Check,
@@ -51,7 +50,6 @@ import {
   getEntityFiles,
   downloadEntityFile,
   deleteEntity,
-  archiveEntity,
   getEntity,
   detectDuplicate,
   addEntityNote,
@@ -1297,10 +1295,6 @@ export default function AllCandidatesPage() {
                   setShowAddToVacancy(true);
                 }}
                   onEdit={() => setShowEditModal(true)}
-                  onArchived={() => {
-                    setSelectedCard(null);
-                    fetchBoard();
-                  }}
                   onMerged={async () => {
                     // Слияние завершено в баннере: перечитываем доску (исчезает
                     // влитый источник), выжившего (merged_from + статус) и
@@ -1688,7 +1682,6 @@ const InfoTab = memo(function InfoTab({
   onStatusChange,
   onAddToVacancy,
   onEdit,
-  onArchived,
   onMerged,
   onRemovedFromVacancy,
 }: {
@@ -1700,7 +1693,6 @@ const InfoTab = memo(function InfoTab({
   onStatusChange: (s: string) => void;
   onAddToVacancy: (rect?: { left: number; bottom: number }) => void;
   onEdit: () => void;
-  onArchived: () => void;
   // Слияние дубля разрешено в баннере → родитель перечитывает выжившего и доску
   // (иначе объединённый профиль виден только после ручного обновления).
   onMerged?: () => void;
@@ -1708,20 +1700,6 @@ const InfoTab = memo(function InfoTab({
   onRemovedFromVacancy?: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
-  const [archiving, setArchiving] = useState(false);
-  const handleArchive = async () => {
-    if (!window.confirm("Убрать кандидата в архив? Он скроется из активных списков.")) return;
-    setArchiving(true);
-    try {
-      await archiveEntity(card.id);
-      toast.success("Кандидат убран в архив");
-      onArchived();
-    } catch {
-      toast.error("Не удалось архивировать");
-    } finally {
-      setArchiving(false);
-    }
-  };
   // Сохранён только сеттер: action-бар сбрасывает (закрывает) меню действий.
   const [, setShowActionMenu] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -2332,13 +2310,6 @@ const InfoTab = memo(function InfoTab({
           className="hf-profile-action-btn"
         >
           <PenSquare className="hf-profile-action-icon" /> Редактировать
-        </button>
-        <button
-          onClick={handleArchive}
-          disabled={archiving}
-          className="hf-profile-action-btn"
-        >
-          <Archive className="hf-profile-action-icon" /> В архив
         </button>
       </div>
 
