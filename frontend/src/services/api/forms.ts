@@ -182,3 +182,30 @@ export const submitPublicFormByToken = async (token: string, formData: Record<st
   const { data } = await api.post(`/forms/public/d/${token}/submit`, { data: formData });
   return data;
 };
+
+export interface AIChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AIChatResponse {
+  message: string;
+  fields: Omit<FormField, 'id'>[] | null;
+  has_resume: boolean;
+}
+
+export const aiFormChat = async (
+  entityId: number,
+  messages: AIChatMessage[],
+): Promise<AIChatResponse> => {
+  const { data } = await api.post('/forms/ai-chat', { entity_id: entityId, messages });
+  return data;
+};
+
+export const generateFormFieldsAI = async (
+  prompt: string,
+  vacancyTitle?: string,
+): Promise<Omit<FormField, 'id'>[]> => {
+  const { data } = await api.post('/forms/ai-generate', { prompt, vacancy_title: vacancyTitle });
+  return data.fields;
+};

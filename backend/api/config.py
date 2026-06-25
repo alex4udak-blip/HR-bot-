@@ -34,6 +34,11 @@ class Settings(BaseSettings):
         default="",
         alias="ANTHROPIC_API_KEY"
     )
+    # Separate key for AI form generation (falls back to anthropic_api_key if not set)
+    anthropic_api_key_forms: str = Field(
+        default="",
+        alias="ANTHROPIC_API_KEY_FORMS"
+    )
     openai_api_key: str = Field(
         default="",
         alias="OPENAI_API_KEY"
@@ -138,7 +143,7 @@ class Settings(BaseSettings):
         return origins
 
     class Config:
-        env_file = ".env"
+        env_file = (".env", ".env.local")  # .env.local overrides .env for local dev
         extra = "ignore"
         populate_by_name = True  # Allow both alias and field name
 

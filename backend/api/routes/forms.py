@@ -1,6 +1,7 @@
 """
 API routes for form constructor — create custom forms, public submission by candidates.
 """
+import os
 import re
 import uuid
 import json
@@ -10,11 +11,13 @@ from typing import Optional, List
 from datetime import datetime
 from pathlib import Path
 
+from anthropic import AsyncAnthropic
 from fastapi import APIRouter, Depends, HTTPException, Query, File, Form, UploadFile
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
+from ..config import get_settings
 from ..database import get_db
 from ..models.database import (
     FormTemplate, FormSubmission, FormVacancy, FormDispatch,
@@ -43,11 +46,13 @@ router = APIRouter()
 
 class FormFieldSchema(BaseModel):
     id: str
-    type: str  # text, email, phone, textarea, select, multiselect, radio, file, url
+    type: str  # text, email, phone, textarea, select, multiselect, radio, file, url, scale
     label: str
     required: bool = False
     placeholder: Optional[str] = None
     options: Optional[List[str]] = None
+    min: Optional[int] = None   # for scale type
+    max: Optional[int] = None   # for scale type
 
 
 class FormCreateSchema(BaseModel):
@@ -74,6 +79,21 @@ class PublicSubmitSchema(BaseModel):
 
 class DispatchCreateSchema(BaseModel):
     entity_id: int
+
+
+class AIGenerateSchema(BaseModel):
+    prompt: str  # role name or job description
+    vacancy_title: Optional[str] = None  # optional extra context
+
+
+class AIChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class AIChatSchema(BaseModel):
+    entity_id: int
+    messages: List[AIChatMessage]
 
 
 # ============================================================
@@ -229,6 +249,265 @@ async def create_form(
         "updated_at": form.updated_at.isoformat() if form.updated_at else None,
         "created_by": form.created_by,
     }
+
+
+@router.post("/ai-generate")
+async def ai_generate_form_fields(
+    body: AIGenerateSchema,
+    current_user: User = Depends(get_current_user),
+):
+    """Generate form fields using Claude AI based on a role or job description."""
+    cfg = get_settings()
+    api_key = (
+        os.environ.get("ANTHROPIC_API_KEY_FORMS")
+        or cfg.anthropic_api_key_forms
+        or os.environ.get("ANTHROPIC_API_KEY")
+        or cfg.anthropic_api_key
+    )
+    if not api_key:
+        raise HTTPException(status_code=503, detail="AI service not configured: ANTHROPIC_API_KEY_FORMS not set")
+
+    context = body.prompt.strip()
+    if body.vacancy_title:
+        context = f"{body.vacancy_title}\n\n{context}"
+
+    system_prompt = """Ты — ассистент HR-рекрутера. Создаёшь анкеты для кандидатов.
+Отвечай ТОЛЬКО валидным JSON-массивом, без markdown-блоков, без пояснений.
+
+Схема каждого поля:
+{
+  "type": "text"|"email"|"phone"|"textarea"|"select"|"multiselect"|"radio"|"file"|"url"|"scale",
+  "label": string (на русском),
+  "required": boolean,
+  "placeholder": string (опционально, на русском),
+  "options": [string] (только для select/multiselect/radio — минимум 2 варианта),
+  "min": number (только для scale, обычно 1),
+  "max": number (только для scale, обычно 10)
+}
+
+Правила:
+- Первое поле всегда: {"type":"text","label":"ФИО","required":true}
+- Генерируй 4–8 релевантных вопросов
+- Используй разные типы: шкалы, checkbox, radio, textarea, url
+- Все тексты — на русском языке
+- Для технических ролей включай вопросы о стеке (multiselect) и опыте (scale)
+- Для sales/менеджерских ролей — мотивация (textarea), KPI (scale), каналы продаж (multiselect)"""
+
+    user_message = f"Создай анкету для кандидата на роль: {context}"
+
+    client = AsyncAnthropic(api_key=api_key)
+    response = await client.messages.create(
+        model=cfg.claude_model,
+        max_tokens=1024,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_message}],
+    )
+
+    raw = response.content[0].text.strip()
+    # Strip markdown code blocks if Claude added them despite the instruction
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+
+    try:
+        fields = json.loads(raw)
+        if not isinstance(fields, list):
+            raise ValueError("Expected JSON array")
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error("AI form generation: failed to parse Claude response: %s | raw: %s", e, raw[:300])
+        raise HTTPException(status_code=502, detail="AI returned invalid JSON — try again")
+
+    return {"fields": fields}
+
+
+@router.post("/ai-chat")
+async def ai_form_chat(
+    body: AIChatSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Multi-turn AI dialogue for building a form questionnaire.
+    Supports PDF (text extraction) and image resumes (Claude vision API).
+    """
+    import base64 as _b64
+    import io as _io
+
+    cfg = get_settings()
+    api_key = (
+        os.environ.get("ANTHROPIC_API_KEY_FORMS")
+        or cfg.anthropic_api_key_forms
+        or os.environ.get("ANTHROPIC_API_KEY")
+        or cfg.anthropic_api_key
+    )
+    if not api_key:
+        raise HTTPException(status_code=503, detail="AI service not configured: ANTHROPIC_API_KEY_FORMS not set")
+
+    # --- Fetch ALL resume files for this entity ---
+    res = await db.execute(
+        select(EntityFile)
+        .where(EntityFile.entity_id == body.entity_id)
+        .where(EntityFile.file_type == EntityFileType.resume)
+        .order_by(EntityFile.created_at.asc())
+    )
+    resume_files = res.scalars().all()
+
+    if not resume_files:
+        res = await db.execute(
+            select(EntityFile)
+            .where(EntityFile.entity_id == body.entity_id)
+            .order_by(EntityFile.created_at.desc())
+            .limit(5)
+        )
+        resume_files = res.scalars().all()
+
+    has_resume = bool(resume_files)
+
+    # --- Process each file: extract text (PDF) or prepare vision block (image) ---
+    pdf_texts: list[str] = []
+    image_blocks: list[dict] = []
+
+    for rf in resume_files:
+        if not rf.file_data:
+            continue
+        fname = (rf.file_name or "").lower()
+        mime = (rf.mime_type or "").lower()
+        magic = rf.file_data[:4]
+
+        is_pdf = "pdf" in mime or fname.endswith(".pdf") or magic == b"%PDF"
+        is_img = any(t in mime for t in ("jpeg", "jpg", "png", "webp", "gif")) or \
+                 any(fname.endswith(e) for e in (".jpg", ".jpeg", ".png", ".webp"))
+
+        if is_pdf:
+            text = ""
+            # Try pdfplumber first
+            try:
+                import pdfplumber
+                with pdfplumber.open(_io.BytesIO(rf.file_data)) as doc:
+                    text = "\n\n".join(p.extract_text() or "" for p in doc.pages).strip()
+            except Exception as e:
+                logger.warning("pdfplumber failed for %s: %s", rf.file_name, e)
+
+            # Fallback to PyMuPDF
+            if not text:
+                try:
+                    import fitz
+                    doc = fitz.open(stream=_io.BytesIO(rf.file_data), filetype="pdf")
+                    text = "\n\n".join(doc[i].get_text() for i in range(doc.page_count)).strip()
+                except Exception as e:
+                    logger.warning("fitz text extraction failed for %s: %s", rf.file_name, e)
+
+            if text:
+                pdf_texts.append(text[:4000])
+            else:
+                # Scanned PDF — render pages as images for vision
+                try:
+                    import fitz
+                    doc = fitz.open(stream=_io.BytesIO(rf.file_data), filetype="pdf")
+                    for i in range(min(doc.page_count, 3)):
+                        pix = doc[i].get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                        img_bytes = pix.tobytes("png")
+                        image_blocks.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": _b64.b64encode(img_bytes).decode(),
+                            },
+                        })
+                except Exception as e:
+                    logger.warning("PDF page render failed for %s: %s", rf.file_name, e)
+
+        elif is_img:
+            if len(rf.file_data) > 4 * 1024 * 1024:
+                logger.warning("Image too large, skipping vision for %s", rf.file_name)
+                continue
+            img_mime = (
+                "image/png" if ("png" in mime or fname.endswith(".png")) else
+                "image/webp" if "webp" in mime else
+                "image/gif" if "gif" in mime else
+                "image/jpeg"
+            )
+            image_blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img_mime,
+                    "data": _b64.b64encode(rf.file_data).decode(),
+                },
+            })
+
+    # --- System prompt ---
+    resume_text_ctx = "\n\n---\n\n".join(pdf_texts)
+    system_prompt = "Ты — ассистент HR-рекрутера. Ведёшь диалог, помогая создать персональную анкету для кандидата."
+
+    if resume_text_ctx:
+        system_prompt += f"\n\n=== РЕЗЮМЕ КАНДИДАТА (текст) ===\n{resume_text_ctx[:6000]}\n=== КОНЕЦ РЕЗЮМЕ ==="
+    elif not image_blocks:
+        system_prompt += "\n\nРезюме кандидата не загружено — ориентируйся на информацию от рекрутера."
+
+    system_prompt += """
+
+В каждом сообщении:
+- Кратко объясняй свои предложения (1–3 предложения)
+- Если готовая анкета есть — выводи её В КОНЦЕ ответа в блоке:
+---ANKETA---
+[{"type":"text","label":"ФИО","required":true}, ...]
+---END---
+
+Правила анкеты:
+- Первое поле всегда: {"type":"text","label":"ФИО","required":true}
+- 4–8 вопросов, релевантных опыту кандидата
+- Типы: text, email, phone, textarea, select, multiselect, radio, scale, file, url
+- select/multiselect/radio → обязательно поле options (массив строк ≥ 2)
+- scale → поля min и max (обычно 1 и 10)
+- Все тексты на русском
+
+Если анкета ещё не готова — просто общайся, уточняй."""
+
+    # --- Build message list for Claude ---
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+
+    if not messages:
+        # First turn: inject images (if any) + text prompt
+        content: list[dict] = list(image_blocks)
+        if image_blocks and not resume_text_ctx:
+            prompt = "Это страницы резюме кандидата. Проанализируй их и предложи анкету для собеседования."
+        else:
+            prompt = "Проанализируй резюме кандидата и предложи подходящую анкету."
+        content.append({"type": "text", "text": prompt})
+        messages = [{"role": "user", "content": content}]
+    else:
+        # Subsequent turns: Claude API requires first message to be from user
+        if messages[0]["role"] == "assistant":
+            messages = [{"role": "user", "content": "Продолжи работу над анкетой."}] + messages
+
+    client = AsyncAnthropic(api_key=api_key)
+    response = await client.messages.create(
+        model=cfg.claude_model,
+        max_tokens=2048,
+        system=system_prompt,
+        messages=messages,
+    )
+
+    raw = response.content[0].text.strip()
+
+    # Parse ---ANKETA--- block
+    fields = None
+    message_text = raw
+    if "---ANKETA---" in raw and "---END---" in raw:
+        parts = raw.split("---ANKETA---", 1)
+        message_text = parts[0].strip()
+        json_part = parts[1].split("---END---", 1)[0].strip()
+        try:
+            parsed = json.loads(json_part)
+            if isinstance(parsed, list) and parsed:
+                fields = parsed
+        except Exception as e:
+            logger.warning("ai-chat: failed to parse fields: %s | %.200s", e, json_part)
+
+    return {"message": message_text, "fields": fields, "has_resume": has_resume}
 
 
 @router.get("/{form_id}")

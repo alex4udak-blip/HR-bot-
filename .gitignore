@@ -39,9 +39,10 @@ yarn-error.log*
 *.swo
 *~
 
-# Environment variables
+# Environment variables (CRITICAL: never commit local keys/secrets)
 .env
 .env.local
+backend/.env.local  # Local AI key for testing only — DELETE after testing
 .env.*.local
 !.env.example
 !backend/.env.example

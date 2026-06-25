@@ -905,12 +905,11 @@ async def debug_routes():
                 "methods": list(route.methods) if route.methods else [],
                 "name": route.name
             })
-    # Filter to show only vacancy routes
-    vacancy_routes = [r for r in routes if '/vacancies' in r['path'] or '/api/vacancy' in r['path']]
+    forms_routes = [r for r in routes if '/forms' in r['path']]
     return {
         "total_routes": len(routes),
-        "vacancy_routes": vacancy_routes,
-        "vacancy_count": len(vacancy_routes)
+        "forms_routes": forms_routes,
+        "forms_count": len(forms_routes),
     }
 
 

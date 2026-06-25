@@ -144,8 +144,9 @@ export default function AddToVacancyModal({
       exit={{ opacity: 0 }}
       className={clsx(
         "fixed inset-0 z-50",
-        isBulk && "flex items-center justify-center bg-[var(--hf-black-alpha-35)] p-4",
+        isBulk && "flex items-center justify-center p-4",
       )}
+      style={isBulk ? { backgroundColor: 'rgba(0, 0, 0, 0.7)' } : undefined}
       onClick={onClose}
       onMouseDown={onClose}
     >
