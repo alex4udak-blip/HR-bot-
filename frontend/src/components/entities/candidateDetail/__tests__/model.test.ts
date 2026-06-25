@@ -251,26 +251,12 @@ describe("buildStageContainers", () => {
         },
       }),
     });
-    // первый влитой забирает resume.pdf; второй (его копия) пустеет и отбрасывается
-    expect(out).toHaveLength(2); // live + 1 merged (второй пустой → pruned)
-    expect(out[1].files).toEqual([dupA]);
+    // первый влитой забирает resume.pdf; второй получает пустую копию (дедуп срабатывает)
+    // но оба контейнера остаются, потому что показываем ВСЕ merged профили
+    expect(out).toHaveLength(3); // live + 2 merged (оба остаются)
+    expect(out[1].files).toEqual([dupA]); // первый имеет файл
+    expect(out[2].files).toEqual([]); // второй пустой (дедуп)
     expect(out[0].files).toEqual([live]);
-  });
-
-  it("prunes empty/degenerate merged containers (no files/notes/demo, default new status)", () => {
-    const out = buildStageContainers({
-      ...base,
-      card: card({
-        extra_data: {
-          merged_from: [
-            {}, // голый husk → отбрасывается
-            { status: "rejected" }, // нетривиальный статус → сохраняется
-          ],
-        },
-      }),
-    });
-    expect(out).toHaveLength(2); // live + только «rejected»
-    expect(out[1]).toMatchObject({ origin: "merged", status: "rejected" });
   });
 });
 

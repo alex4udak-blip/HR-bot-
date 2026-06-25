@@ -282,22 +282,7 @@ export function buildStageContainers(params: {
     _docFiles.filter((f) => !_mergedFileIds.has(f.id)),
   );
 
-  // После дедупа файлов отбрасываем «пустые» влитые контейнеры — те, чей единственный
-  // контент (например, копия того же резюме) уже показан в более раннем контейнере и
-  // у которых нет своих заметок/демо. Иначе они рендерятся как голые блоки со статусом
-  // «new» — это и есть «лишние плашки new» после объединения дублей. Контейнеры,
-  // нёсшие реальную историю (другую вакансию или нетривиальный статус, напр. «отказ»),
-  // сохраняем — даже без файлов/заметок.
-  const _meaningfulMerged = mergedContainers.filter(
-    (c) =>
-      (c.files && c.files.length > 0) ||
-      (c.notes && c.notes.length > 0) ||
-      (c.resumeDemos && c.resumeDemos.length > 0) ||
-      !!c.vacancyTitle ||
-      (!!c.status && c.status !== "new"),
-  );
-
-  return [liveContainer, ..._meaningfulMerged];
+  return [liveContainer, ...mergedContainers];
 }
 
 // ── Timeline reactions + «Действия» filter (pure) ──
