@@ -226,8 +226,8 @@ export const applyEntityToVacancy = async (
   vacancyId: number,
   source?: string
 ): Promise<VacancyApplication> => {
-  const { data } = await debouncedMutation<VacancyApplication>('post', `/entities/${entityId}/apply-to-vacancy`, {
-    vacancy_id: vacancyId,
+  const { data } = await debouncedMutation<VacancyApplication>('post', `/entities/${Number(entityId)}/apply-to-vacancy`, {
+    vacancy_id: Number(vacancyId),
     source
   });
   return data;

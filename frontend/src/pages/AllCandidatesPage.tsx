@@ -61,7 +61,7 @@ import {
 import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
 import type { ApplicationStage } from "@/types";
 import { STATUS_LABELS } from "@/types";
-import { getVacancies, createApplication, updateApplication, deleteApplicationHistory } from "@/services/api/vacancies";
+import { getVacancies, createApplication, updateApplication, deleteApplication, deleteApplicationHistory } from "@/services/api/vacancies";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
 import type { EntityFile } from "@/services/api/entities";
@@ -1330,6 +1330,11 @@ export default function AllCandidatesPage() {
                     // файлы/резюме/активность выжившего (включая влитые).
                     setDetailReloadKey((k) => k + 1);
                   }}
+                  onRemovedFromVacancy={() => {
+                    // Кандидата сняли с воронки → сбрасываем карточку + доску.
+                    setSelectedCard(null);
+                    fetchBoard();
+                  }}
                 />
               </div>
             ) : (
@@ -1685,6 +1690,7 @@ const InfoTab = memo(function InfoTab({
   onEdit,
   onArchived,
   onMerged,
+  onRemovedFromVacancy,
 }: {
   card: KanbanCard;
   status: string;
@@ -1698,6 +1704,8 @@ const InfoTab = memo(function InfoTab({
   // Слияние дубля разрешено в баннере → родитель перечитывает выжившего и доску
   // (иначе объединённый профиль виден только после ручного обновления).
   onMerged?: () => void;
+  // Снятие кандидата с воронки → родитель обновляет доску и сбрасывает выбор.
+  onRemovedFromVacancy?: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
   const [archiving, setArchiving] = useState(false);
@@ -1924,6 +1932,21 @@ const InfoTab = memo(function InfoTab({
       await loadActivity();
     },
     [loadActivity],
+  );
+
+  const cardRemoveFromVacancy = useCallback(
+    async (appId: number) => {
+      try {
+        await deleteApplication(appId);
+        toast.success("Кандидат снят с воронки");
+        // Перечитываем историю + уведомляем родителя обновить доску.
+        await loadActivity();
+        onRemovedFromVacancy?.();
+      } catch {
+        toast.error("Не удалось снять кандидата с воронки");
+      }
+    },
+    [loadActivity, onRemovedFromVacancy],
   );
 
   const cardUploadFile = useCallback(
@@ -2574,6 +2597,7 @@ const InfoTab = memo(function InfoTab({
           onReact={c.origin === "live" ? cardReact : undefined}
           files={c.files}
           onDeleteFile={c.origin === "live" ? cardDeleteFile : undefined}
+          onRemoveFromVacancy={c.origin === "live" ? cardRemoveFromVacancy : undefined}
         />
       ))}
 

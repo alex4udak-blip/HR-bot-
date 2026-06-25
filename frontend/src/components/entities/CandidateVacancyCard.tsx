@@ -18,6 +18,7 @@ import {
   Trash2,
   ChevronDown,
   ClipboardList,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -164,6 +165,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onReact,
   files,
   onDeleteFile,
+  onRemoveFromVacancy,
 }: {
   card: KanbanCard;
   applicationId: number;
@@ -205,6 +207,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   files?: EntityFile[];
   // Удалить файл (с подтверждением) — обновляет список после удаления.
   onDeleteFile?: (fileId: number) => void;
+  // Убрать кандидата из воронки (снять заявку). Только живой контейнер.
+  onRemoveFromVacancy?: (applicationId: number) => void;
 }) {
   // --- per-instance UI state (раньше было singleton в InfoTab) ---
   const [showStageDD, setShowStageDD] = useState(false);
@@ -630,6 +634,13 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                 label="Анкета"
                 notificationCount={anketaCount}
                 onClick={onAnketa}
+              />
+            )}
+            {onRemoveFromVacancy && (
+              <ActionChip
+                icon={X}
+                label="Снять с воронки"
+                onClick={() => onRemoveFromVacancy(applicationId)}
               />
             )}
           </>
