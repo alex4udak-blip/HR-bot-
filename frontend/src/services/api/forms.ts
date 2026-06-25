@@ -26,6 +26,7 @@ export interface FormTemplate {
   vacancy_id: number | null;
   vacancy_ids: number[];
   is_active: boolean;
+  is_template: boolean;
   fields: FormField[];
   submissions_count: number;
   created_at: string | null;
@@ -64,6 +65,7 @@ export interface FormCreateData {
   vacancy_ids?: number[];
   fields: FormField[];
   is_active?: boolean;
+  is_template?: boolean;
 }
 
 export interface FormUpdateData {
@@ -73,6 +75,7 @@ export interface FormUpdateData {
   vacancy_ids?: number[];
   fields?: FormField[];
   is_active?: boolean;
+  is_template?: boolean;
 }
 
 // ============================================================
@@ -81,6 +84,11 @@ export interface FormUpdateData {
 
 export const getMyForms = async (): Promise<FormTemplate[]> => {
   const { data } = await api.get('/forms');
+  return data;
+};
+
+export const getFormTemplates = async (): Promise<FormTemplate[]> => {
+  const { data } = await api.get('/forms/templates');
   return data;
 };
 

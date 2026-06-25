@@ -58,19 +58,21 @@ class FormFieldSchema(BaseModel):
 class FormCreateSchema(BaseModel):
     title: str
     description: Optional[str] = None
-    vacancy_id: Optional[int] = None  # legacy single vacancy
-    vacancy_ids: Optional[List[int]] = None  # multiple vacancies
+    vacancy_id: Optional[int] = None
+    vacancy_ids: Optional[List[int]] = None
     fields: List[FormFieldSchema] = []
     is_active: bool = True
+    is_template: bool = False
 
 
 class FormUpdateSchema(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    vacancy_id: Optional[int] = None  # legacy single vacancy
-    vacancy_ids: Optional[List[int]] = None  # multiple vacancies
+    vacancy_id: Optional[int] = None
+    vacancy_ids: Optional[List[int]] = None
     fields: Optional[List[FormFieldSchema]] = None
     is_active: Optional[bool] = None
+    is_template: Optional[bool] = None
 
 
 class PublicSubmitSchema(BaseModel):
@@ -223,6 +225,7 @@ async def create_form(
         description=body.description,
         slug=slug,
         is_active=body.is_active,
+        is_template=body.is_template,
         fields=[f.model_dump() for f in body.fields],
     )
     db.add(form)
@@ -243,12 +246,42 @@ async def create_form(
         "vacancy_id": form.vacancy_id,
         "vacancy_ids": vacancy_ids,
         "is_active": form.is_active,
+        "is_template": form.is_template,
         "fields": form.fields or [],
         "submissions_count": 0,
         "created_at": form.created_at.isoformat() if form.created_at else None,
         "updated_at": form.updated_at.isoformat() if form.updated_at else None,
         "created_by": form.created_by,
     }
+
+
+@router.get("/templates")
+async def get_form_templates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all org-scoped form templates (is_template=True)."""
+    org = await get_user_org(current_user, db)
+    if not org:
+        return []
+    result = await db.execute(
+        select(FormTemplate)
+        .where(FormTemplate.org_id == org.id)
+        .where(FormTemplate.is_template == True)  # noqa: E712
+        .order_by(FormTemplate.created_at.desc())
+    )
+    forms = result.scalars().all()
+    return [
+        {
+            "id": f.id,
+            "title": f.title,
+            "description": f.description,
+            "fields": f.fields or [],
+            "is_template": True,
+            "created_at": f.created_at.isoformat() if f.created_at else None,
+        }
+        for f in forms
+    ]
 
 
 @router.post("/ai-generate")
@@ -550,6 +583,7 @@ async def get_form(
         "vacancy_id": form.vacancy_id,
         "vacancy_ids": vacancy_ids,
         "is_active": form.is_active,
+        "is_template": form.is_template,
         "fields": form.fields or [],
         "submissions_count": submissions_count,
         "created_at": form.created_at.isoformat() if form.created_at else None,
@@ -585,6 +619,8 @@ async def update_form(
         form.fields = [f.model_dump() for f in body.fields]
     if body.is_active is not None:
         form.is_active = body.is_active
+    if body.is_template is not None:
+        form.is_template = body.is_template
 
     # Handle multi-vacancy update
     vacancy_ids = None

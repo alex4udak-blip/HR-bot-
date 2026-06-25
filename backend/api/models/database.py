@@ -1510,6 +1510,7 @@ class FormTemplate(Base):
     description = Column(Text, nullable=True)
     slug = Column(String(100), unique=True, nullable=False)  # for public URL
     is_active = Column(Boolean, default=True)
+    is_template = Column(Boolean, default=False, nullable=False)
     fields = Column(JSON, default=list)  # Array of field definitions
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
