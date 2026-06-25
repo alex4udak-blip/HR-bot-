@@ -24,6 +24,7 @@ import {
   Trash2,
   Inbox,
   Lock,
+  Eye,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -2783,14 +2784,13 @@ export default function RecruiterFunnelsPage() {
                                   )}
                                 </div>
                               ) : funnelCard ? (
-                                /* Для полного просмотра резюме откройте профиль в "Все кандидаты" */
                                 <div className="flex-1 flex items-center justify-center p-8">
                                   <div className="text-center">
                                     <FileText className="w-12 h-12 text-[var(--hf-dark-400)] mx-auto mb-4 opacity-50" />
                                     <p className="text-[var(--hf-dark-500)] mb-4">Для просмотра резюме откройте профиль в «Все кандидаты»</p>
                                     <button
                                       onClick={() => navigate(`/all-candidates?entity=${funnelCard.id}`)}
-                                      className="px-4 py-2 bg-[var(--hf-accent)] text-white rounded-lg hover:bg-[var(--hf-accent-dark)] transition-colors text-sm"
+                                      className="px-4 py-2 bg-[var(--hf-accent)] text-white rounded-lg hover:opacity-90 transition-opacity text-sm"
                                     >
                                       Открыть профиль
                                     </button>
