@@ -2501,6 +2501,12 @@ export default function RecruiterFunnelsPage() {
                                 >
                                   <Pencil className="hf-profile-action-icon" /> Редактировать
                                 </button>
+                                <button
+                                  onClick={handleRemoveFromVacancy}
+                                  className="hf-profile-action-btn"
+                                >
+                                  <X className="hf-profile-action-icon" /> Снять с воронки
+                                </button>
                               </div>
 
                               {/* Name + large photo (Huntflow / AllCandidatesPage style) */}
