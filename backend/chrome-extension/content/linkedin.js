@@ -184,52 +184,128 @@
     }
 
     if (!data.photo_url) {
+      // ВАЖНО: раньше брали ПЕРВЫЙ licdn-image → это БАННЕР (обложка профиля),
+      // а не лицо. У LinkedIn URL фото и баннера различаются:
+      //   фото:   …/profile-displayphoto-…  /  …/profile-framedphoto-…
+      //   баннер: …/profile-displaybackgroundimage-…
+      //   лого компаний в опыте: …/company-logo-…
+      // Берём именно фото; баннер/лого отбрасываем. alt профильного фото = имя.
+      const nameTxt = data.full_name || '';
+      const isBg = (s) => /displaybackground|backgroundimage|company-logo|company-background/i.test(s);
+      const isPhoto = (s) => /profile-displayphoto|profile-framedphoto/i.test(s);
+      let best = '';
       for (const img of document.querySelectorAll('img')) {
-        if (/licdn\.com\/dms\/image/.test(img.src || '')) { data.photo_url = img.src; break; }
+        const src = img.src || '';
+        if (!/licdn\.com\/dms\/image/.test(src)) continue;
+        if (isBg(src)) continue;                                  // баннер/лого — мимо
+        const alt = (img.getAttribute('alt') || '').trim();
+        if (isPhoto(src) && nameTxt && alt === nameTxt) { best = src; break; } // идеал
+        if (isPhoto(src) && !best) best = src;                    // фото по URL
+        if (!best && nameTxt && alt === nameTxt) best = src;      // совпал alt
       }
+      if (best) data.photo_url = best;
     }
     return headline;
   }
 
   // ── Детальная страница в скрытом iframe ───────────────────────────────────
-  // Грузим /in/<slug>/details/<section>/, ждём SDUI-рендер, читаем записи по
-  // [componentkey^="entity-collection-item"]. Возвращает массив строк-листьев на
+  // Грузим /in/<slug>/details/<section>/, ПОЛЛИМ контент пока не отрендерится
+  // (раньше ждали фикс. 4.5с — для медленного SDUI этого не хватало, и опыт
+  // приезжал пустым), затем читаем записи. Возвращает массив строк-листьев на
   // запись. На ошибке/таймауте — []. iframe всегда удаляем.
-  function loadDetailItems(slug, section) {
+  // selectors: список CSS-якорей записей (первый давший записи — выигрывает).
+  // budgetMs: бюджет поллинга. Важно держать суммарный parseFull < ~30с —
+  // дольше живёт риск, что MV3 service worker уснёт и потеряет ответ.
+  function loadDetailItems(slug, section, selectors, budgetMs) {
+    const SELS = (selectors && selectors.length)
+      ? selectors
+      : ['[componentkey^="entity-collection-item"]'];
+    const BUDGET = budgetMs || 8000;
+    const MAX_POLLS = Math.max(2, Math.round(BUDGET / 500));
     return new Promise((resolve) => {
       let done = false;
       const frame = document.createElement('iframe');
       frame.setAttribute('aria-hidden', 'true');
       frame.style.cssText =
         'position:fixed;left:-99999px;top:0;width:1024px;height:3000px;border:0;opacity:0;pointer-events:none;';
-      const finish = () => {
-        if (done) return;
-        done = true;
-        let items = [];
+
+      const extract = () => {
         try {
           const doc = frame.contentDocument;
-          if (doc) {
-            const main = doc.querySelector('main') || doc.body;
-            const nodes = main ? main.querySelectorAll('[componentkey^="entity-collection-item"]') : [];
+          if (!doc) return [];
+          const main = doc.querySelector('main') || doc.body;
+          if (!main) return [];
+          for (const sel of SELS) {
+            const nodes = main.querySelectorAll(sel);
+            if (!nodes || !nodes.length) continue;
+            const items = [];
             nodes.forEach((n) => { const ln = leafLines(n); if (ln.length) items.push(ln); });
+            if (items.length) return items;
           }
-        } catch (_) { /* cross-origin/гонка — отдаём пусто */ }
-        try { frame.remove(); } catch (_) {}
-        resolve(items);
+        } catch (_) { /* cross-origin/гонка */ }
+        return [];
       };
-      frame.addEventListener('load', () => setTimeout(finish, 4500)); // SDUI рендерит ПОСЛЕ load
+      const finish = (items) => {
+        if (done) return;
+        done = true;
+        try { frame.remove(); } catch (_) {}
+        resolve(items || []);
+      };
+
+      // Поллим контент: SDUI рендерит ПОСЛЕ load, момент непредсказуем. Снимаем
+      // каждые 500мс, отдаём как только появились записи; максимум ~9с.
+      const onLoad = () => {
+        let polls = 0;
+        const tick = () => {
+          if (done) return;
+          const items = extract();
+          polls += 1;
+          if (items.length || polls >= MAX_POLLS) { finish(items); return; }
+          setTimeout(tick, 500);
+        };
+        setTimeout(tick, 1200); // первый замер через 1.2с после load
+      };
+      frame.addEventListener('load', onLoad);
       frame.src = 'https://www.linkedin.com/in/' + slug + '/details/' + section + '/';
       document.body.appendChild(frame);
-      setTimeout(finish, 13000); // жёсткий таймаут
+      setTimeout(() => finish(extract()), BUDGET + 4000); // жёсткий таймаут
     });
   }
+
+  // Якоря записей детальных страниц (проверено по живому HTML, Lena Vasko 2026):
+  //  • ОПЫТ грузится как componentkey="entity-collection-item--<uuid>";
+  //  • НАВЫКИ — как componentkey="com.linkedin.sdui.profile.skill(…)" (дубли ×2).
+  // Раньше опыт приезжал пустым НЕ из-за якоря, а из-за короткого фикс-ожидания
+  // (теперь поллинг). Первый селектор, давший записи, выигрывает.
+  // Родовой фолбэк: любой профильный SDUI-элемент, КРОМЕ карточки-контейнера.
+  const SDUI_ITEM_FALLBACK =
+    '[componentkey^="com.linkedin.sdui.profile."]:not([componentkey^="com.linkedin.sdui.profile.card"])';
+  // ОПЫТ: подтверждено по живому HTML — entity-collection-item--<uuid> (6/6 мест).
+  const EXPERIENCE_SELECTORS = [
+    '[componentkey^="entity-collection-item"]',
+    SDUI_ITEM_FALLBACK,
+    '[data-view-name="profile-component-entity"]',
+  ];
+  const SKILL_SELECTORS = [
+    '[componentkey^="com.linkedin.sdui.profile.skill("]',
+    '[componentkey^="entity-collection-item"]',
+    '[data-view-name="profile-component-entity"]',
+  ];
+  // ЛИЦЕНЗИИ: файл не присылали — детальные страницы используют тот же
+  // entity-collection-item (как опыт); SDUI-имя certification как доп. фолбэк.
+  const CERT_SELECTORS = [
+    '[componentkey^="entity-collection-item"]',
+    '[componentkey^="com.linkedin.sdui.profile.certification("]',
+    SDUI_ITEM_FALLBACK,
+    '[data-view-name="profile-component-entity"]',
+  ];
 
   function makeData() {
     return {
       source: 'linkedin.com', source_url: window.location.href,
       full_name: '', email: '', phone: '', telegram: '', position: '',
       city: '', company: '', photo_url: '', experience_summary: '', total_experience: '',
-      skills: [], languages: [], education: [],
+      skills: [], languages: [], education: [], certifications: [],
     };
   }
 
@@ -278,36 +354,77 @@
     return finalize(data, headline);
   }
 
+  // Опыт: запись = ["Должность", "Компания · тип", "даты", …описание].
+  function applyExperience(data, expItems) {
+    const experiences = expItems
+      .map((ln) => {
+        const title = ln[0] || '';
+        const company = (ln[1] || '').split('·')[0].trim();
+        const dates = ln.find((l) => /(19|20)\d{2}/.test(l)) || '';
+        return { title, company, dates };
+      })
+      .filter((e) => e.title || e.company);
+    if (experiences.length) {
+      data.experience_summary = experiences
+        .map((e) => [e.title, e.company, e.dates].filter(Boolean).join(' | '))
+        .slice(0, 12)
+        .join('\n');
+      if (experiences[0].title) data.position = experiences[0].title;   // реальная текущая роль
+      if (experiences[0].company) data.company = experiences[0].company;
+    }
+  }
+
+  // Навык = обычно первая строка записи (часто дублируется в подстроках —
+  // берём уникальные короткие строки). Фильтруем служебный UI.
+  function applySkills(data, skillItems) {
+    const out = [];
+    const seen = new Set();
+    const isJunk = (s) => /endorse|подтверд|см\.|see |навык|skill|ещё|показать|show all/i.test(s);
+    for (const ln of skillItems) {
+      const name = (ln[0] || '').trim();
+      if (!name || name.length < 2 || name.length > 60) continue;
+      if (isJunk(name)) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(name);
+    }
+    if (out.length) data.skills = out.slice(0, 40);
+  }
+
+  // Лицензия/сертификат: запись = ["Название", "Организация", "выдан …", …].
+  function applyCertifications(data, certItems) {
+    const out = [];
+    for (const ln of certItems) {
+      const name = (ln[0] || '').trim();
+      const org = (ln[1] || '').trim();
+      if (!name || name.length < 2) continue;
+      out.push([name, org].filter(Boolean).join(' — '));
+    }
+    if (out.length) data.certifications = out.slice(0, 20);
+  }
+
   // Полный парс: интро-карточка + детальные страницы через iframe.
+  // По выбору пользователя грузим ТРИ вкладки (опыт+навыки+лицензии), но
+  // ПОСЛЕДОВАТЕЛЬНО и С ПАУЗАМИ — быстрые подгрузки триггерят anti-bot LinkedIn
+  // (CAPTCHA/«Ограничение» на аккаунте). Пауза между вкладками снижает риск.
   async function parseFull() {
     const data = makeData();
     const headline = parseBase(data);
     const slug = currentSlug();
     if (slug) {
-      // ТОЛЬКО опыт. Грузим ОДНУ детальную страницу, а не три: LinkedIn агрессивно
-      // ловит ботов (быстрые подгрузки → CAPTCHA/«Ограничение» на аккаунте). Опыт —
-      // самое ценное; образование берём из интро-карточки, навыки на детальной
-      // странице всё равно отдавались пусто (другой componentkey) — не рискуем
-      // аккаунтом рекрутёра ради них.
-      const expItems = await loadDetailItems(slug, 'experience');
+      // Бюджеты подобраны так, чтобы суммарный worst-case (~7+5+5 + паузы ≈ 20с)
+      // не превышал лимит жизни MV3 service worker (~30с).
+      // 1) Опыт — самое ценное, даём больше времени.
+      applyExperience(data, await loadDetailItems(slug, 'experience', EXPERIENCE_SELECTORS, 7000));
 
-      // Опыт: запись = ["Должность", "Компания · тип", "даты", …описание].
-      const experiences = expItems
-        .map((ln) => {
-          const title = ln[0] || '';
-          const company = (ln[1] || '').split('·')[0].trim();
-          const dates = ln.find((l) => /(19|20)\d{2}/.test(l)) || '';
-          return { title, company, dates };
-        })
-        .filter((e) => e.title || e.company);
-      if (experiences.length) {
-        data.experience_summary = experiences
-          .map((e) => [e.title, e.company, e.dates].filter(Boolean).join(' | '))
-          .slice(0, 8)
-          .join('\n');
-        if (experiences[0].title) data.position = experiences[0].title;     // реальная текущая роль
-        if (experiences[0].company) data.company = experiences[0].company;
-      }
+      // 2) Навыки (через паузу).
+      await sleep(1500);
+      applySkills(data, await loadDetailItems(slug, 'skills', SKILL_SELECTORS, 5000));
+
+      // 3) Лицензии и сертификаты (через паузу).
+      await sleep(1500);
+      applyCertifications(data, await loadDetailItems(slug, 'certifications', CERT_SELECTORS, 5000));
     }
     return finalize(data, headline);
   }

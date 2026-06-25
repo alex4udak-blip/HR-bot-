@@ -110,6 +110,10 @@ async def generate_ai_summary(candidate_data: dict) -> str:
         edu = candidate_data["education"]
         if isinstance(edu, list):
             parts.append(f"Образование: {'; '.join(str(e) for e in edu)}")
+    if candidate_data.get("certifications"):
+        certs = candidate_data["certifications"]
+        if isinstance(certs, list):
+            parts.append(f"Лицензии и сертификаты: {'; '.join(str(c) for c in certs)}")
 
     raw_data = "\n\n".join(parts)
 
@@ -122,7 +126,7 @@ async def generate_ai_summary(candidate_data: dict) -> str:
 # [ФИО кандидата]
 
 ## Общая информация
-Таблица: возраст, город, контакты, зарплатные ожидания
+Маркированный список «**Поле:** значение» (возраст, город, контакты, зарплатные ожидания)
 
 ## Профессиональный профиль
 Краткое описание кандидата в 2-3 предложения на основе всей информации
@@ -139,10 +143,16 @@ async def generate_ai_summary(candidate_data: dict) -> str:
 ## Образование
 Учебные заведения, специальности, годы
 
+## Лицензии и сертификаты
+Список сертификатов с организацией (пропусти раздел, если данных нет)
+
 ## Итоговая оценка
 Краткая оценка сильных сторон и зон роста кандидата
 
-Пиши на русском, кратко и по делу. Не выдумывай информацию которой нет в данных."""
+Пиши на русском, кратко и по делу. Не выдумывай информацию которой нет в данных.
+
+ФОРМАТ (строго): только заголовки (##), маркированные списки (• или -) и абзацы.
+НЕ используй markdown-таблицы (строки вида «| ... | ... |») — они ломают PDF."""
 
     try:
         client = anthropic.AsyncAnthropic(api_key=api_key)
@@ -210,6 +220,14 @@ def _fallback_summary(data: dict) -> str:
             lines.append("## Языки")
             for lang in langs:
                 lines.append(f"- {lang}")
+
+    if data.get("certifications"):
+        certs = data["certifications"]
+        if isinstance(certs, list):
+            lines.append("")
+            lines.append("## Лицензии и сертификаты")
+            for c in certs:
+                lines.append(f"- {c}")
 
     return "\n".join(lines)
 
@@ -348,6 +366,29 @@ def generate_candidate_pdf(
                 color=colors.HexColor('#ddddee'),
                 spaceAfter=6, spaceBefore=6,
             ))
+        elif stripped.startswith('|') and stripped.endswith('|'):
+            # Markdown-таблица. Раньше такие строки проваливались в else и
+            # печатались буквально («| Город | София |», «|----|----|») — мусор
+            # в PDF. Теперь: строку-разделитель |---|---| выкидываем целиком,
+            # строку данных | ключ | значение | рисуем как буллет «ключ: значение».
+            cells = [c.strip() for c in stripped.strip('|').split('|')]
+            # Разделитель (только дефисы/двоеточия/пробелы) — пропускаем.
+            if all(re.fullmatch(r'[:\-\s]*', c) for c in cells):
+                continue
+            cells = [c for c in cells if c]
+            if not cells:
+                continue
+            # Шапка таблицы «Параметр | Значение» — не данные, пропускаем.
+            if (len(cells) >= 2 and cells[0].lower() in ('параметр', 'ключ', 'поле')
+                    and cells[1].lower() in ('значение', 'value')):
+                continue
+            if len(cells) >= 2:
+                key = _escape(cells[0])
+                val = _escape(' — '.join(cells[1:]))
+                val = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', val)
+                story.append(Paragraph(f"<b>{key}:</b> {val}", styles['CandBullet']))
+            else:
+                story.append(Paragraph(_escape(cells[0]), styles['CandBody']))
         else:
             text = _escape(stripped)
             text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)

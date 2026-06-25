@@ -359,6 +359,10 @@ function showParsedData() {
   if (parsedData.education && parsedData.education.length > 0) {
     details.push('Образование: ' + parsedData.education.slice(0, 2).join('; '));
   }
+  if (parsedData.certifications && parsedData.certifications.length > 0) {
+    details.push('Лицензии: ' + parsedData.certifications.slice(0, 3).join('; ') +
+      (parsedData.certifications.length > 3 ? ` (+${parsedData.certifications.length - 3})` : ''));
+  }
   document.getElementById('parsedDetails').innerHTML = details.join('<br>');
   document.getElementById('parsedSource').textContent = parsedData.source;
 
@@ -734,6 +738,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
       languages: parsedData.languages || null,
       company: parsedData.company || null,
       education: parsedData.education || null,
+      certifications: parsedData.certifications || null,
     });
 
     if (resp.success) {

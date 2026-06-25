@@ -45,6 +45,7 @@ class MagicButtonData(BaseModel):
     languages: Optional[list] = None
     company: Optional[str] = None
     education: Optional[list] = None
+    certifications: Optional[list] = None  # лицензии/сертификаты (LinkedIn)
     summary: Optional[str] = None  # «Обо мне» — самоописание кандидата
 
     # Recruiter's choice
@@ -348,6 +349,8 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         extra["languages"] = data.languages
     if data.education:
         extra["education"] = data.education
+    if data.certifications:
+        extra["certifications"] = data.certifications
     if data.summary:
         extra["summary"] = data.summary
 
@@ -508,6 +511,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         "skills": data.skills,
         "languages": data.languages,
         "education": data.education,
+        "certifications": data.certifications,
         "summary": data.summary,
         "photo_url": data.photo_url,
     }
