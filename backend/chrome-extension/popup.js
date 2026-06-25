@@ -156,33 +156,82 @@ async function loadFromActiveTab() {
     return;
   }
 
-  // На резюме-странице: чистим кэш и заставляем content-скрипт перепарсить.
-  await new Promise((r) => chrome.runtime.sendMessage({ type: 'CLEAR_PARSED_DATA' }, r));
-  const reparseResp = await new Promise((r) =>
-    chrome.runtime.sendMessage({ type: 'RE_PARSE_ACTIVE_TAB' }, r)
-  );
+  // На резюме-странице. ВАЖНО про тайминг: hh/habr парсят DOM синхронно (быстро),
+  // а LinkedIn догружает ОПЫТ работы в скрытый iframe — это 4.5–13 секунд. Раньше
+  // popup опрашивал storage всего 200/400/800мс и сдавался → опыт LinkedIn не
+  // успевал доехать, кандидат приезжал «только имя». Новая схема:
+  //   1) мгновенно показываем кэш быстрого прохода (если он от ЭТОЙ же вкладки);
+  //   2) дожидаемся ПОЛНОГО парса через прямой ответ RE_PARSE (он резолвится
+  //      только когда content-скрипт закончил parseFull, включая iframe опыта);
+  //   3) перерисовываем карточку финальными данными.
 
-  // Пробуем получить свежие данные с ретраями — content-скрипт мог только
-  // что зарегистрироваться и ещё не успеть положить данные в storage.
   const tryFetch = (delay) => new Promise((res) => {
     setTimeout(() => {
       chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (data) => res(data || null));
     }, delay);
   });
 
-  let data = null;
-  for (const delay of [200, 400, 800]) {
-    data = await tryFetch(delay);
-    if (data && data.full_name) break;
+  // 1) Мгновенный показ кэша быстрого прохода — чтобы рекрут сразу видел имя,
+  //    пока тянется полный парс. Показываем ТОЛЬКО если кэш с этой же страницы
+  //    (сверяем path), иначе рискуем показать чужого кандидата.
+  const cached = await tryFetch(0);
+  const cacheMatches = cached && cached.full_name &&
+    sameResumePath(cached._captured_url || cached.source_url, tabUrl);
+  let shownFromCache = false;
+  if (cacheMatches) {
+    parsedData = cached;
+    showParsedData();
+    loadVacancies();
+    showView('parse');
+    setParsingIndicator(true);
+    shownFromCache = true;
   }
+
+  // Если кэша от этой вкладки не было — показываем лёгкое состояние загрузки,
+  // чтобы попап не висел пустым до 13с пока LinkedIn тянет опыт в iframe.
+  if (!shownFromCache) {
+    const nameEl = document.getElementById('parsedName');
+    if (nameEl) nameEl.textContent = 'Читаем профиль…';
+    const detailsEl = document.getElementById('parsedDetails');
+    if (detailsEl) detailsEl.innerHTML = '';
+    showView('parse');
+    setParsingIndicator(true);
+  }
+
+  // 2) Полный перепарс. Ответ RE_PARSE содержит ФИНАЛЬНЫЕ данные (с опытом) —
+  //    ждём его честно (content-скрипт держит порт открытым до конца parseFull).
+  const reparseResp = await new Promise((r) =>
+    chrome.runtime.sendMessage({ type: 'RE_PARSE_ACTIVE_TAB' }, r)
+  );
+
+  let data = null;
+  // reparseResp.data = ответ content-скрипта на RE_PARSE = { success, data: <parsed> }.
+  if (reparseResp && reparseResp.success && reparseResp.data &&
+      reparseResp.data.data && reparseResp.data.data.full_name) {
+    data = reparseResp.data.data;
+  }
+  // Фолбэк: программный инжект отдаёт результат через storage (PARSE_RESULT),
+  // а не в ответе. Даём ему больше времени, чем раньше (LinkedIn медленный).
+  if (!data) {
+    for (const delay of [200, 500, 1000, 2000, 4000]) {
+      const d = await tryFetch(delay);
+      if (d && d.full_name) { data = d; break; }
+    }
+  }
+
+  setParsingIndicator(false);
 
   if (data && data.full_name) {
     parsedData = data;
     showParsedData();
-    loadVacancies();
+    if (!shownFromCache) loadVacancies();
     showView('parse');
     return;
   }
+
+  // Полный парс ничего не дал. Если успели показать кэш — оставляем его
+  // (лучше частичные данные, чем nodata).
+  if (shownFromCache) return;
 
   // На правильной странице, но парсер ничего не нашёл (DOM не такой,
   // контакты под подпиской, и т.п.) — третий вариант nodata.
@@ -190,6 +239,28 @@ async function loadFromActiveTab() {
     console.warn('[HR-Bot] RE_PARSE failed:', reparseResp.error);
   }
   showNodata('no-parse', tabUrl);
+}
+
+// Сверяем, что закэшированный парс относится к ТЕКУЩЕЙ вкладке: совпадает путь
+// (query игнорируем — на hh он волатильный: ?t=…&vacancyId=…). Поддомен hh
+// (saratov.hh.ru) сравниваем по базовому домену.
+function sameResumePath(cachedUrl, tabUrl) {
+  if (!cachedUrl || !tabUrl) return false;
+  try {
+    const a = new URL(cachedUrl), b = new URL(tabUrl);
+    const base = (h) => h.replace(/^www\./, '').split('.').slice(-2).join('.');
+    if (base(a.hostname) !== base(b.hostname)) return false;
+    return a.pathname === b.pathname;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Индикатор «догружаем данные…» в карточке парса (виден пока тянется полный
+// парс LinkedIn после мгновенного показа кэша).
+function setParsingIndicator(on) {
+  const el = document.getElementById('parsingIndicator');
+  if (el) el.style.display = on ? 'block' : 'none';
 }
 
 

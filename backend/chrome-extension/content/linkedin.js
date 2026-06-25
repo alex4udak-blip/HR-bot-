@@ -96,17 +96,47 @@
     return true;
   }
 
+  // Похоже ли на строку локации («Ереван, Армения», «Москва», «London, UK»).
+  // Нужно для извлечения города из интро-карточки: на залогиненном LinkedIn города
+  // нет в ld+json, а отдельного стабильного селектора нет — опознаём по виду.
+  function looksLikeLocation(s) {
+    if (!s || s.length > 60) return false;
+    if (s.includes('@') || s.includes('·') || /https?:/i.test(s)) return false;
+    // Служебные строки интро-карточки — не локация.
+    if (/контакт|contact info|connection|подписчик|follower|связ|profile|профил|сообщени|message|подписат|follow/i.test(s)) return false;
+    if (/\d{3,}/.test(s)) return false; // «500+ связей», «1 234 подписчика»
+    // Локация: 1–3 части через запятую, каждая 1–3 слова с заглавной.
+    const parts = s.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 1 || parts.length > 3) return false;
+    return parts.every((p) => /^[A-ZА-ЯЁ][\wа-яё .'’-]{1,34}$/u.test(p));
+  }
+
   // ── Интро-карточка (главная страница) ─────────────────────────────────────
-  // Находим лист с именем → поднимаемся к контейнеру карточки → строки-листья:
-  // [Имя, Хедлайн, "Компания · Вуз", Город, …]. Возвращаем хедлайн (для fallback
-  // должности). Классы обфусцированы, поэтому якоримся на текст имени и структуру.
+  // Находим контейнер с именем → строки-листья: [Имя, Хедлайн, Город,
+  // "Компания · Вуз", …]. Возвращаем хедлайн (для fallback должности). Классы
+  // обфусцированы, поэтому якоримся на текст имени и структуру.
   function parseIntroCard(data) {
     const nameTxt = data.full_name;
     let headline = '';
     let card = null;
+
+    // Имя на LinkedIn — это <h1> в интро-секции. Берём его и поднимаемся вверх,
+    // пока контейнер не начнёт содержать полезные строки (локация/«компания·вуз»).
     if (nameTxt) {
-      const leaves = document.querySelectorAll('h1, h2, span, div, a');
-      for (const el of leaves) {
+      for (const h of document.querySelectorAll('h1')) {
+        if ((h.textContent || '').replace(/\s+/g, ' ').trim() !== nameTxt) continue;
+        card = h.closest('section') || h.parentElement;
+        for (let i = 0; i < 8 && card && card.parentElement; i++) {
+          const ll = leafLines(card);
+          if (ll.some((x) => x.includes('·')) || ll.some(looksLikeLocation)) break;
+          card = card.parentElement;
+        }
+        break;
+      }
+    }
+    // Фолбэк: любой лист с текстом имени → 6 родителей вверх (старая схема).
+    if (!card && nameTxt) {
+      for (const el of document.querySelectorAll('h1, h2, span, div, a')) {
         if (el.children.length) continue;
         if ((el.textContent || '').replace(/\s+/g, ' ').trim() === nameTxt) {
           card = el;
@@ -115,20 +145,44 @@
         }
       }
     }
+
     if (card) {
       const lines = leafLines(card);
       const idx = lines.indexOf(nameTxt);
       if (idx >= 0 && lines[idx + 1]) headline = lines[idx + 1];
+
+      // Строки с middle-dot: либо «Город, Страна · Контактная информация»,
+      // либо «Компания · Вуз». Различаем по наличию слова «контакт/contact».
       for (const l of lines) {
-        // "Компания · Вуз" — берём части, разделённые middle dot.
-        if (l.includes('·') && !data.company) {
-          const parts = l.split('·').map((s) => s.trim()).filter(Boolean);
+        if (!l.includes('·')) continue;
+        const parts = l.split('·').map((s) => s.trim()).filter(Boolean);
+        const isContactLine = parts.some((p) => /контакт|contact info/i.test(p));
+        if (isContactLine) {
+          if (!data.city) {
+            const loc = parts.find((p) => !/контакт|contact info/i.test(p));
+            if (loc && looksLikeLocation(loc)) data.city = loc;
+          }
+          continue;
+        }
+        if (!data.company) {
           if (parts[0]) data.company = parts[0];
           if (parts[1] && !data.education.length) data.education = [parts[1]];
-          break;
+        }
+      }
+
+      // Отдельная строка локации (без middle-dot), между хедлайном и блоком
+      // «контакты/связи». Берём первую, что похожа на «Город, Страна».
+      if (!data.city) {
+        const start = idx >= 0 ? idx + 1 : 0;
+        for (let i = start; i < lines.length; i++) {
+          const l = lines[i];
+          if (l === headline || l === nameTxt || l.includes('·')) continue;
+          if (/контакт|connection|связ|follower|подписчик/i.test(l)) break;
+          if (looksLikeLocation(l)) { data.city = l; break; }
         }
       }
     }
+
     if (!data.photo_url) {
       for (const img of document.querySelectorAll('img')) {
         if (/licdn\.com\/dms\/image/.test(img.src || '')) { data.photo_url = img.src; break; }
