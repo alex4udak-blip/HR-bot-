@@ -1,13 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Search, Link, FileText, Upload, Loader2, AlertCircle, UserCheck, Plus, Briefcase } from 'lucide-react';
+import { X, Search, Upload, Loader2, AlertCircle, UserCheck, Plus, Briefcase } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { ParsedResume, ParsedVacancy } from '@/services/api';
 import {
-  parseResumeFromUrl,
   parseResumeFromFile,
-  parseVacancyFromUrl,
   getEntities,
   createEntity,
   uploadEntityFile,
@@ -27,51 +25,9 @@ interface ParserModalProps {
   onAttachedToEntity?: (entityId: number) => void;
 }
 
-type TabType = 'url' | 'file';
 
-// Source detection
-interface SourceInfo {
-  domain: string;
-  name: string;
-  color: string;
-}
-
-const SOURCE_PATTERNS: Record<string, SourceInfo> = {
-  'hh.ru': { domain: 'hh.ru', name: 'HeadHunter', color: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-red-300)]' },
-  'linkedin.com': { domain: 'linkedin.com', name: 'LinkedIn', color: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]' },
-  'superjob.ru': { domain: 'superjob.ru', name: 'SuperJob', color: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' },
-  'career.habr.com': { domain: 'career.habr.com', name: 'Хабр Карьера', color: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]' },
-  'zarplata.ru': { domain: 'zarplata.ru', name: 'Zarplata.ru', color: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
-  'rabota.ru': { domain: 'rabota.ru', name: 'Rabota.ru', color: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]' },
-  'indeed.com': { domain: 'indeed.com', name: 'Indeed', color: 'bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)]' },
-};
-
-const detectSource = (url: string): SourceInfo | null => {
-  try {
-    const urlLower = url.toLowerCase();
-    for (const [pattern, info] of Object.entries(SOURCE_PATTERNS)) {
-      if (urlLower.includes(pattern)) {
-        return info;
-      }
-    }
-  } catch {
-    // Invalid URL
-  }
-  return null;
-};
-
-const isValidUrl = (url: string): boolean => {
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 export default function ParserModal({ type, onClose, onParsed, onJobStarted: _onJobStarted, onAttachedToEntity }: ParserModalProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('url');
-  const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   // Фейковый прогресс во время AI-анализа (не быстрее, чем реальный parse, медленно идёт к 100%)
@@ -110,8 +66,6 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     return () => { cancelled = true; };
   }, [type]);
 
-  const detectedSource = url ? detectSource(url) : null;
-  const isUrlValid = url && isValidUrl(url);
   const isResume = type === 'resume';
 
   // Search for matching candidates when resume is parsed
@@ -123,25 +77,21 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     const searchMatches = async () => {
       setIsSearchingCandidates(true);
       try {
-        const candidates: Entity[] = [];
+        const candidatesMap = new Map<number, Entity>();
 
         // Search by name
         if (resumeData.name) {
           const byName = await getEntities({ search: resumeData.name, type: 'candidate', limit: 10 });
-          candidates.push(...byName);
+          byName.forEach(c => candidatesMap.set(c.id, c));
         }
 
         // Search by email
         if (resumeData.email) {
           const byEmail = await getEntities({ search: resumeData.email, type: 'candidate', limit: 10 });
-          for (const c of byEmail) {
-            if (!candidates.find(existing => existing.id === c.id)) {
-              candidates.push(c);
-            }
-          }
+          byEmail.forEach(c => candidatesMap.set(c.id, c));
         }
 
-        setMatchedCandidates(candidates);
+        setMatchedCandidates(Array.from(candidatesMap.values()));
       } catch (err) {
         console.error('Error searching candidates:', err);
       } finally {
@@ -169,29 +119,6 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     }
   };
 
-  const handleParse = async () => {
-    if (!isUrlValid) {
-      setError('Введите корректный URL');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setParsedData(null);
-
-    try {
-      const data = isResume
-        ? await parseResumeFromUrl(url)
-        : await parseVacancyFromUrl(url);
-      setParsedData(data);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Ошибка парсинга';
-      setError(message);
-      toast.error(message, { duration: 6000 });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleFileSelect = async (file: File) => {
     if (!isResume) {
@@ -374,18 +301,14 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !loading && isUrlValid && !parsedData) {
-      handleParse();
-    }
-  };
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -417,200 +340,64 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
           </button>
         </div>
 
-        {/* Tabs - only show file tab for resume */}
-        <div className="flex border-b border-slate-200 flex-shrink-0" role="tablist" aria-label="Способ загрузки">
-          <button
-            onClick={() => {
-              setActiveTab('url');
-              setError(null);
-              setParsedData(null);
-            }}
-            className={clsx(
-              'flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors',
-              activeTab === 'url'
-                ? 'bg-slate-50 text-slate-900 border-b-2 border-[color:var(--hf-cyan-500)]'
-                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-            )}
-            role="tab"
-            aria-selected={activeTab === 'url'}
-            aria-controls="parser-url-panel"
-            id="parser-url-tab"
-          >
-            <Link className="w-4 h-4" aria-hidden="true" />
-            По ссылке
-          </button>
-          {isResume && (
-            <button
-              onClick={() => {
-                setActiveTab('file');
-                setError(null);
-                setParsedData(null);
-              }}
-              className={clsx(
-                'flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm transition-colors',
-                activeTab === 'file'
-                  ? 'bg-slate-50 text-slate-900 border-b-2 border-[color:var(--hf-cyan-500)]'
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-              )}
-              role="tab"
-              aria-selected={activeTab === 'file'}
-              aria-controls="parser-file-panel"
-              id="parser-file-tab"
-            >
-              <FileText className="w-4 h-4" aria-hidden="true" />
-              Загрузить файл
-            </button>
-          )}
-        </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4 no-scrollbar">
           {!parsedData ? (
-            // Input section
+            // File upload section
             <div className="space-y-4">
-              {activeTab === 'url' ? (
-                // URL input
-                <div
-                  role="tabpanel"
-                  id="parser-url-panel"
-                  aria-labelledby="parser-url-tab"
-                >
-                  <label htmlFor="parser-url-input" className="block text-sm text-slate-500 mb-2">
-                    Ссылка на {isResume ? 'резюме' : 'вакансию'}
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="parser-url-input"
-                      type="url"
-                      value={url}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setUrl(next);
-                        // Подсказываем сразу: ввели что-то, но не URL — красная подпись.
-                        if (next.trim() && !isValidUrl(next.trim())) {
-                          setError('Введите корректный URL (например, https://hh.ru/resume/...)');
-                        } else {
-                          setError(null);
-                        }
-                      }}
-                      onKeyDown={handleKeyDown}
-                      placeholder={isResume
-                        ? 'https://hh.ru/resume/123456'
-                        : 'https://hh.ru/vacancy/123456'
-                      }
-                      className={clsx(
-                        'w-full px-4 py-3 bg-slate-50 border rounded-lg focus:outline-none text-sm pr-24',
-                        error ? 'border-[color:var(--hf-status-red-badge)]' : 'border-slate-200 focus:border-[color:var(--hf-cyan-500)]'
-                      )}
-                      disabled={loading}
-                      aria-invalid={error ? 'true' : 'false'}
-                      aria-describedby={error ? 'parser-url-error' : undefined}
-                    />
-                    {detectedSource && (
-                      <span className={clsx(
-                        'absolute right-3 top-1/2 -translate-y-1/2 text-xs px-2 py-1 rounded-full',
-                        detectedSource.color
-                      )}>
-                        {detectedSource.name}
-                      </span>
-                    )}
-                  </div>
-                  {error && (
-                    <p id="parser-url-error" className="text-xs text-[var(--hf-status-red)] mt-2 flex items-center gap-1" role="alert">
-                      <AlertCircle className="w-3 h-3" aria-hidden="true" />
-                      {error}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                // File upload
-                <div
-                  className="space-y-4"
-                  role="tabpanel"
-                  id="parser-file-panel"
-                  aria-labelledby="parser-file-tab"
-                >
-                  <div
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        fileInputRef.current?.click();
-                      }
-                    }}
-                    className={clsx(
-                      'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
-                      isDragging
-                        ? 'border-[color:var(--hf-cyan-500)] bg-[var(--hf-status-cyan-bg)]'
-                        : 'border-slate-300 hover:border-slate-400 hover:bg-slate-100'
-                    )}
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Область для загрузки файла. Перетащите файл или нажмите для выбора"
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".pdf,.doc,.docx,.txt"
-                      onChange={handleFileInputChange}
-                      className="hidden"
-                      aria-label="Выбрать файл резюме"
-                    />
-                    <Upload className={clsx(
-                      'w-10 h-10 mx-auto mb-4',
-                      isDragging ? 'text-[var(--hf-cyan-400)]' : 'text-slate-400'
-                    )} aria-hidden="true" />
-                    <p className="text-slate-500 mb-2">
-                      {isDragging
-                        ? 'Отпустите файл для загрузки'
-                        : 'Перетащите файл сюда или нажмите для выбора'
-                      }
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      PDF, DOC, DOCX или TXT (максимум 10 МБ)
-                    </p>
-                    {error && (
-                      <p className="text-xs text-[var(--hf-status-red)] mt-4 flex items-center justify-center gap-1" role="alert">
-                        <AlertCircle className="w-3 h-3" aria-hidden="true" />
-                        {error}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                className={clsx(
+                  'border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors',
+                  isDragging
+                    ? 'border-[color:var(--hf-cyan-500)] bg-[var(--hf-status-cyan-bg)]'
+                    : 'border-slate-300 hover:border-slate-400 hover:bg-slate-100'
+                )}
+                role="button"
+                tabIndex={0}
+                aria-label="Область для загрузки файла. Перетащите файл или нажмите для выбора"
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt"
+                  onChange={handleFileInputChange}
+                  className="hidden"
+                  aria-label="Выбрать файл резюме"
+                />
+                <Upload className={clsx(
+                  'w-10 h-10 mx-auto mb-4',
+                  isDragging ? 'text-[var(--hf-cyan-400)]' : 'text-slate-400'
+                )} aria-hidden="true" />
+                <p className="text-slate-500 mb-2">
+                  {isDragging
+                    ? 'Отпустите файл для загрузки'
+                    : 'Перетащите файл сюда или нажмите для выбора'
+                  }
+                </p>
+                <p className="text-xs text-slate-400">
+                  PDF, DOC, DOCX или TXT (максимум 10 МБ)
+                </p>
+                {error && (
+                  <p className="text-xs text-[var(--hf-status-red)] mt-4 flex items-center justify-center gap-1" role="alert">
+                    <AlertCircle className="w-3 h-3" aria-hidden="true" />
+                    {error}
+                  </p>
+                )}
+              </div>
 
-              {/* Parse button */}
-              {activeTab === 'url' && (
-                <button
-                  onClick={handleParse}
-                  disabled={loading || !isUrlValid}
-                  className={clsx(
-                    'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-colors',
-                    loading || !isUrlValid
-                      ? 'bg-slate-50 text-slate-400 cursor-not-allowed'
-                      : 'bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-500)] text-slate-900'
-                  )}
-                  aria-busy={loading}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
-                      Загрузка...
-                    </>
-                  ) : (
-                    <>
-                      <Search className="w-5 h-5" aria-hidden="true" />
-                      Парсить
-                    </>
-                  )}
-                </button>
-              )}
-
-              {/* Loading indicator for file — реальный % загрузки, затем индетерминантный AI-анализ */}
-              {activeTab === 'file' && loading && (
+              {/* Loading indicator — реальный % загрузки, затем индетерминантный AI-анализ */}
+              {loading && (
                 <div className="py-4 space-y-2" role="status" aria-live="polite">
                   <div className="flex items-center justify-center gap-2 text-[var(--hf-cyan-400)]">
                     <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />

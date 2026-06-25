@@ -44,16 +44,50 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           <span className="font-medium">Распознано:</span>
         </div>
 
-        {/* Name */}
-        <div>
-          <label className="block text-sm text-slate-600 mb-1">Имя</label>
-          <input
-            type="text"
-            value={resumeData.name || ''}
-            onChange={(e) => handleChange('name', e.target.value)}
-            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
-            placeholder="Имя кандидата"
-          />
+        {/* Name: Фамилия, Имя, Отчество */}
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-sm text-slate-600 mb-1">Фамилия</label>
+            <input
+              type="text"
+              value={(resumeData.name || '').split(' ')[0] || ''}
+              onChange={(e) => {
+                const parts = (resumeData.name || '').split(' ');
+                parts[0] = e.target.value;
+                handleChange('name', parts.filter(Boolean).join(' '));
+              }}
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
+              placeholder="Фамилия"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-600 mb-1">Имя</label>
+            <input
+              type="text"
+              value={(resumeData.name || '').split(' ')[1] || ''}
+              onChange={(e) => {
+                const parts = (resumeData.name || '').split(' ');
+                parts[1] = e.target.value;
+                handleChange('name', parts.filter(Boolean).join(' '));
+              }}
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
+              placeholder="Имя"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-600 mb-1">Отчество</label>
+            <input
+              type="text"
+              value={(resumeData.name || '').split(' ')[2] || ''}
+              onChange={(e) => {
+                const parts = (resumeData.name || '').split(' ');
+                parts[2] = e.target.value;
+                handleChange('name', parts.filter(Boolean).join(' '));
+              }}
+              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
+              placeholder="Отчество (опционально)"
+            />
+          </div>
         </div>
 
         {/* Email & Phone */}
