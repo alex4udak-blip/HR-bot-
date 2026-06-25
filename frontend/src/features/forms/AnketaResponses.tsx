@@ -2,7 +2,7 @@ import toast from 'react-hot-toast';
 import { Copy, ExternalLink } from 'lucide-react';
 import type { FormDispatchInfo } from '@/services/api/forms';
 
-export function AnketaResponses({ dispatches }: { dispatches: FormDispatchInfo[] }) {
+export function AnketaResponses({ dispatches }: { dispatches: (FormDispatchInfo & { source_entity_id?: number; source_name?: string | null })[] }) {
   if (dispatches.length === 0) {
     return <div className="p-8 text-center text-gray-400 text-sm">Анкеты ещё не присылались</div>;
   }
@@ -11,7 +11,10 @@ export function AnketaResponses({ dispatches }: { dispatches: FormDispatchInfo[]
       {dispatches.map(d => (
         <div key={d.id} className="border rounded-xl p-4">
           <div className="flex items-center justify-between">
-            <p className="font-medium text-sm text-gray-900">{d.form_title || 'Анкета'}</p>
+            <div>
+              <p className="font-medium text-sm text-gray-900">{d.form_title || 'Анкета'}</p>
+              {d.source_name && <p className="text-xs text-gray-500 mt-0.5">{d.source_name}</p>}
+            </div>
             <span className="text-xs text-gray-500">
               {d.status === 'submitted' ? 'Заполнена' : d.status === 'opened' ? 'Открыта' : 'Отправлена'}
             </span>
