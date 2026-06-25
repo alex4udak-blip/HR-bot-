@@ -43,7 +43,6 @@ import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
 import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
 import { buildStageContainers, buildResumeSources, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
-import ResumeViewer from '@/components/entities/candidateDetail/ResumeViewer';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
 import {
@@ -2784,14 +2783,18 @@ export default function RecruiterFunnelsPage() {
                                   )}
                                 </div>
                               ) : funnelCard ? (
-                                /* Общий просмотрщик резюме. ResumeViewer в боковой панели
-                                   (max-h для ограничения высоты). */
-                                <div className="flex-1 overflow-y-auto max-h-[calc(100vh-200px)]">
-                                  <ResumeViewer
-                                    card={dupCard ?? funnelCard}
-                                    activeIndex={dupCard ? undefined : resumeIndex}
-                                    hideTabBar={!dupCard}
-                                  />
+                                /* Для полного просмотра резюме откройте профиль в "Все кандидаты" */
+                                <div className="flex-1 flex items-center justify-center p-8">
+                                  <div className="text-center">
+                                    <FileText className="w-12 h-12 text-[var(--hf-dark-400)] mx-auto mb-4 opacity-50" />
+                                    <p className="text-[var(--hf-dark-500)] mb-4">Для просмотра резюме откройте профиль в «Все кандидаты»</p>
+                                    <button
+                                      onClick={() => navigate(`/all-candidates?entity=${funnelCard.id}`)}
+                                      className="px-4 py-2 bg-[var(--hf-accent)] text-white rounded-lg hover:bg-[var(--hf-accent-dark)] transition-colors text-sm"
+                                    >
+                                      Открыть профиль
+                                    </button>
+                                  </div>
                                 </div>
                               ) : null}
                             </div>
