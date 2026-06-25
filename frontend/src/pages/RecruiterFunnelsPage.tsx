@@ -18,7 +18,6 @@ import {
   FileText,
   Copy,
   Check,
-  Printer,
   Tag,
   Pencil,
   Archive,
@@ -30,7 +29,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, reconvertResume, downloadEntityFile, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
@@ -44,7 +43,7 @@ import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
 import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
 import { buildStageContainers, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
-import ResumeTabs from '@/components/entities/ResumeTabs';
+import ResumeViewer from '@/components/entities/candidateDetail/ResumeViewer';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
 import {
@@ -431,11 +430,6 @@ export default function RecruiterFunnelsPage() {
   const [anketaOpen, setAnketaOpen] = useState(false);
   const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
-  const [currentResumePage, setCurrentResumePage] = useState(0);
-  const [reconverting, setReconverting] = useState(false);
-  const [resumePageUrls, setResumePageUrls] = useState<Record<number, string>>({});
-  const [resumeImageError, setResumeImageError] = useState(false);
-  const [resumeTextMode, setResumeTextMode] = useState(false);
   const [entityExtraData, setEntityExtraData] = useState<Record<string, unknown> | null>(null);
 
   // Tags state
@@ -634,7 +628,6 @@ export default function RecruiterFunnelsPage() {
     setSelectedCandidateId(null);
     setSelectedTab('applied');
     setDetailTab('info');
-    setCurrentResumePage(0);
     setSelectedIds(new Set());
   }, [selectedVacancyId]);
 
@@ -976,7 +969,6 @@ export default function RecruiterFunnelsPage() {
 
   // Load entity extra_data for resume text view + дедуп-баннер в воронке
   useEffect(() => {
-    setResumeTextMode(false);
     setEntityExtraData(null);
     setDupCard(null);
     if (!selectedCandidate?.entity_id) return;
@@ -1013,10 +1005,6 @@ export default function RecruiterFunnelsPage() {
     () => entityFiles.find(f => f.file_type === 'resume' && f.mime_type !== 'image/jpeg') || null,
     [entityFiles],
   );
-  const resumePdf = useMemo(
-    () => entityFiles.find(f => f.file_type === 'resume' && f.mime_type === 'application/pdf') || null,
-    [entityFiles],
-  );
   const resumePages = useMemo(
     () => entityFiles
       .filter(f => f.file_type === 'resume' && f.mime_type === 'image/jpeg')
@@ -1029,105 +1017,6 @@ export default function RecruiterFunnelsPage() {
     [entityFiles],
   );
   const hasResume = resumeOriginal !== null || resumePages.length > 0;
-
-  // Load blob URLs for resume page images
-  useEffect(() => {
-    // Cleanup old URLs
-    Object.values(resumePageUrls).forEach(url => URL.revokeObjectURL(url));
-    setResumePageUrls({});
-    setResumeImageError(false);
-    setCurrentResumePage(0);
-
-    if (resumePages.length === 0) return;
-
-    resumePages.forEach((page, idx) => {
-      downloadEntityFile(page.entity_id, page.id)
-        .then(blob => {
-          const url = URL.createObjectURL(blob);
-          setResumePageUrls(prev => ({ ...prev, [idx]: url }));
-        })
-        .catch(() => {
-          setResumeImageError(true);
-        });
-    });
-
-    return () => {
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      Object.values(resumePageUrls).forEach(url => URL.revokeObjectURL(url));
-    };
-  }, [resumePages]);
-
-  // Reconvert handler
-  const handleReconvert = async () => {
-    if (!selectedCandidate?.entity_id) return;
-    setReconverting(true);
-    try {
-      const result = await reconvertResume(selectedCandidate.entity_id);
-      toast.success(`Пересоздано ${result.pages_created} стр.`);
-      // Reload files
-      const files = await getEntityFiles(selectedCandidate.entity_id);
-      setEntityFiles(files);
-    } catch {
-      toast.error('Не удалось пересоздать страницы');
-    } finally {
-      setReconverting(false);
-    }
-  };
-
-  // Print resume handler
-  const handlePrintResume = useCallback(() => {
-    const urls = Object.values(resumePageUrls).filter(Boolean);
-    if (urls.length === 0) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    const imagesHtml = urls.map(url =>
-      `<img src="${url}" style="max-width:100%;page-break-after:always;display:block;margin:0 auto;" />`
-    ).join('');
-    printWindow.document.write(`<!DOCTYPE html><html><head><title>\u0420\u0435\u0437\u044e\u043c\u0435</title><style>@media print{body{margin:0}img{page-break-after:always}}</style></head><body>${imagesHtml}</body></html>`);
-    printWindow.document.close();
-    printWindow.onload = () => { printWindow.print(); };
-  }, [resumePageUrls]);
-
-  // Build resume text from entity extra_data
-  const resumeTextContent = useMemo(() => {
-    if (!entityExtraData) return null;
-    const parts: string[] = [];
-    if (entityExtraData.summary) {
-      parts.push(String(entityExtraData.summary));
-    }
-    if (Array.isArray(entityExtraData.skills) && entityExtraData.skills.length > 0) {
-      parts.push('\n--- \u041d\u0430\u0432\u044b\u043a\u0438 ---');
-      parts.push((entityExtraData.skills as string[]).join(', '));
-    }
-    if (Array.isArray(entityExtraData.experience) && entityExtraData.experience.length > 0) {
-      parts.push('\n--- \u041e\u043f\u044b\u0442 \u0440\u0430\u0431\u043e\u0442\u044b ---');
-      for (const exp of entityExtraData.experience as Array<Record<string, string>>) {
-        const line = [exp.position, exp.company, exp.start_date && exp.end_date ? `${exp.start_date} \u2014 ${exp.end_date}` : exp.start_date || exp.end_date].filter(Boolean).join(' | ');
-        if (line) parts.push(line);
-        if (exp.description) parts.push(exp.description);
-        parts.push('');
-      }
-    }
-    if (Array.isArray(entityExtraData.education) && entityExtraData.education.length > 0) {
-      parts.push('\n--- \u041e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u043d\u0438\u0435 ---');
-      for (const edu of entityExtraData.education as Array<Record<string, string>>) {
-        const line = [edu.degree, edu.field, edu.institution, edu.year].filter(Boolean).join(' | ');
-        if (line) parts.push(line);
-      }
-    }
-    if (Array.isArray(entityExtraData.languages) && entityExtraData.languages.length > 0) {
-      parts.push('\n--- \u042f\u0437\u044b\u043a\u0438 ---');
-      parts.push((entityExtraData.languages as string[]).join(', '));
-    }
-    if (entityExtraData.location) {
-      parts.push('\n--- \u041c\u0435\u0441\u0442\u043e\u043f\u043e\u043b\u043e\u0436\u0435\u043d\u0438\u0435 ---');
-      parts.push(String(entityExtraData.location));
-    }
-    if (entityExtraData.experience_years) {
-      parts.push(`\n\u041e\u043f\u044b\u0442: ${entityExtraData.experience_years} \u043b\u0435\u0442`);
-    }
-    return parts.length > 0 ? parts.join('\n') : null;
-  }, [entityExtraData]);
 
   // Load org tags once
   useEffect(() => {
@@ -2876,140 +2765,12 @@ export default function RecruiterFunnelsPage() {
                                     </button>
                                   )}
                                 </div>
-                              ) : (
-                                <div className="flex-1 flex flex-col">
-                                  {/* Per-resume tabs (one per saved resume / date) */}
-                                  <ResumeTabs
-                                    key={selectedCandidate?.entity_id}
-                                    entityFiles={entityFiles}
-                                    extraData={entityExtraData}
-                                    resumeText={resumeTextContent}
-                                  />
-                                  {/* Action bar */}
-                                  <div className="flex items-center justify-between px-5 py-2.5 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
-                                    <div className="flex items-center gap-3">
-                                      {resumeOriginal && (
-                                        <a
-                                          href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download?download=1`}
-                                          download={resumeOriginal.file_name}
-                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-08)] text-xs text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
-                                        >
-                                          <FileText className="w-3.5 h-3.5" />
-                                          Скачать
-                                        </a>
-                                      )}
-                                      <button
-                                        onClick={() => setResumeTextMode(v => !v)}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors ${resumeTextMode ? 'border-[color:var(--hf-accent-border-30)] text-[var(--hf-accent)] bg-[var(--hf-accent-bg-10)]' : 'border-[color:var(--hf-white-alpha-08)] text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)]'}`}
-                                      >
-                                        <FileText className="w-3.5 h-3.5" />
-                                        Текст
-                                      </button>
-                                      {Object.keys(resumePageUrls).length > 0 && (
-                                        <button
-                                          onClick={handlePrintResume}
-                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[color:var(--hf-white-alpha-08)] text-xs text-[var(--hf-dark-300)] hover:bg-[var(--hf-white-alpha-04)] transition-colors"
-                                        >
-                                          <Printer className="w-3.5 h-3.5" />
-                                          Печать
-                                        </button>
-                                      )}
-                                    </div>
-                                    {/* Page indicator */}
-                                    {resumePages.length > 1 && (
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          onClick={() => setCurrentResumePage(p => Math.max(0, p - 1))}
-                                          disabled={currentResumePage === 0}
-                                          className="p-1 rounded hover:bg-[var(--hf-white-alpha-06)] disabled:opacity-30 transition-colors"
-                                        >
-                                          <ChevronRight className="w-4 h-4 text-[var(--hf-dark-400)] rotate-180" />
-                                        </button>
-                                        <span className="text-xs text-[var(--hf-dark-400)]">
-                                          Страница {currentResumePage + 1}/{resumePages.length}
-                                        </span>
-                                        <button
-                                          onClick={() => setCurrentResumePage(p => Math.min(resumePages.length - 1, p + 1))}
-                                          disabled={currentResumePage >= resumePages.length - 1}
-                                          className="p-1 rounded hover:bg-[var(--hf-white-alpha-06)] disabled:opacity-30 transition-colors"
-                                        >
-                                          <ChevronRight className="w-4 h-4 text-[var(--hf-dark-400)]" />
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Resume file name */}
-                                  {resumeOriginal && (
-                                    <div className="px-5 py-2 border-b border-[color:var(--hf-white-alpha-04)] flex-shrink-0">
-                                      <a
-                                        href={`/api/entities/${resumeOriginal.entity_id}/files/${resumeOriginal.id}/download`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1.5 text-xs text-[var(--hf-dark-400)] hover:text-[var(--hf-accent)] transition-colors"
-                                      >
-                                        <Briefcase className="w-3 h-3" />
-                                        {resumeOriginal.file_name}
-                                      </a>
-                                    </div>
-                                  )}
-
-                                  {/* Page image / text view / PDF fallback */}
-                                  <div className="flex-1 overflow-y-auto flex justify-center p-4 bg-[var(--hf-dark-panel-alpha-50)]">
-                                    {resumeTextMode ? (
-                                      <div className="w-full max-w-3xl">
-                                        {resumeTextContent ? (
-                                          <pre className="whitespace-pre-wrap font-mono text-sm text-[var(--hf-dark-200)] leading-relaxed p-6 bg-[var(--hf-dark-panel-alpha-80)] rounded-lg border border-[color:var(--hf-white-alpha-06)]">
-                                            {resumeTextContent}
-                                          </pre>
-                                        ) : (
-                                          <div className="flex flex-col items-center gap-3 py-16 text-center">
-                                            <FileText className="w-10 h-10 text-[var(--hf-dark-600)]" />
-                                            <p className="text-sm text-[var(--hf-dark-400)]">Текстовая версия недоступна</p>
-                                            <p className="text-xs text-[var(--hf-dark-500)]">Данные резюме не были распарсены</p>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ) : resumePages.length > 0 && !resumeImageError ? (
-                                      resumePageUrls[currentResumePage] ? (
-                                        <img
-                                          src={resumePageUrls[currentResumePage]}
-                                          alt={`Резюме стр. ${currentResumePage + 1}`}
-                                          className="max-w-full h-auto rounded-lg shadow-[var(--hf-shadow-2xl)] border border-[color:var(--hf-white-alpha-06)]"
-                                        />
-                                      ) : (
-                                        <div className="flex items-center justify-center py-20">
-                                          <Loader2 className="w-6 h-6 text-[var(--hf-dark-500)] animate-spin" />
-                                        </div>
-                                      )
-                                    ) : resumeImageError ? (
-                                      <div className="flex flex-col items-center gap-4 py-16 text-center">
-                                        <FileText className="w-12 h-12 text-[var(--hf-dark-600)]" />
-                                        <p className="text-sm text-[var(--hf-dark-400)]">Страницы резюме не загружены</p>
-                                        <p className="text-xs text-[var(--hf-dark-500)]">Файлы изображений отсутствуют в базе</p>
-                                        <button
-                                          onClick={handleReconvert}
-                                          disabled={reconverting}
-                                          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--hf-accent-bg-20)] text-[var(--hf-accent)] hover:bg-[var(--hf-accent-bg-30)] transition-colors text-sm font-medium disabled:opacity-50"
-                                        >
-                                          {reconverting ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                          ) : (
-                                            <FileText className="w-4 h-4" />
-                                          )}
-                                          {reconverting ? 'Пересоздание...' : 'Пересоздать из PDF'}
-                                        </button>
-                                      </div>
-                                    ) : resumePdf ? (
-                                      <iframe
-                                        src={`/api/entities/${resumePdf.entity_id}/files/${resumePdf.id}/download`}
-                                        className="w-full h-full rounded-lg border border-[color:var(--hf-white-alpha-06)] bg-[var(--hf-white)] min-h-[600px]"
-                                        title={resumePdf.file_name}
-                                      />
-                                    ) : null}
-                                  </div>
+                              ) : funnelCard ? (
+                                /* Общий просмотрщик резюме — 1-в-1 с «Все кандидаты» (ResumeViewer). */
+                                <div className="flex-1 overflow-y-auto">
+                                  <ResumeViewer card={dupCard ?? funnelCard} />
                                 </div>
-                              )}
+                              ) : null}
                             </div>
                           )}
                         </div>

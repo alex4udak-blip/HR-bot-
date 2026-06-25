@@ -171,7 +171,8 @@ describe("buildStageContainers", () => {
         extra_data: {
           merged_from: [
             { status: "rejected", name: "Ivan P", vacancy_title: "Backend", added_at: "2026-05-01", file_ids: [7], extra_data: { notes: [{ id: "m1", text: "rej" }] } },
-            {}, // missing fields → defaults
+            // missing fields → defaults; note keeps it from being pruned as «empty»
+            { extra_data: { notes: [{ id: "m2", text: "x" }] } },
           ],
         },
       }),
@@ -234,6 +235,42 @@ describe("buildStageContainers", () => {
     expect(out[0].files).toEqual([ownDoc]);
     // merged = its file_ids (auto-file id 9 not among them)
     expect(out[1].files).toEqual([mergedDoc]);
+  });
+
+  it("dedups the same physical file across containers (same name+type shown once)", () => {
+    // Один и тот же документ прилетел от двух дублей как разные строки (id 7 и 8).
+    const live = file({ id: 1, mime_type: "application/pdf", file_name: "cv.pdf" });
+    const dupA = file({ id: 7, mime_type: "application/pdf", file_name: "resume.pdf" });
+    const dupB = file({ id: 8, mime_type: "application/pdf", file_name: "resume.pdf" });
+    const out = buildStageContainers({
+      ...base,
+      allEntityFiles: [live, dupA, dupB],
+      card: card({
+        extra_data: {
+          merged_from: [{ file_ids: [7] }, { file_ids: [8] }],
+        },
+      }),
+    });
+    // первый влитой забирает resume.pdf; второй (его копия) пустеет и отбрасывается
+    expect(out).toHaveLength(2); // live + 1 merged (второй пустой → pruned)
+    expect(out[1].files).toEqual([dupA]);
+    expect(out[0].files).toEqual([live]);
+  });
+
+  it("prunes empty/degenerate merged containers (no files/notes/demo, default new status)", () => {
+    const out = buildStageContainers({
+      ...base,
+      card: card({
+        extra_data: {
+          merged_from: [
+            {}, // голый husk → отбрасывается
+            { status: "rejected" }, // нетривиальный статус → сохраняется
+          ],
+        },
+      }),
+    });
+    expect(out).toHaveLength(2); // live + только «rejected»
+    expect(out[1]).toMatchObject({ origin: "merged", status: "rejected" });
   });
 });
 

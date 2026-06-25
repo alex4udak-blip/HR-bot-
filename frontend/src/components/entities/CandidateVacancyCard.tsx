@@ -289,6 +289,12 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
 
     const merged = [...eventRows, ...noteRows];
     if (merged.length === 0) {
+      // Влитые (read-only) контейнеры без заметок/событий НЕ показывают
+      // синтетическое «Кандидат добавлен»: иначе каждый объединённый дубль
+      // плодит свой зелёный «new», и лента засоряется N одинаковыми записями
+      // (видно после объединения; на F5 они возвращались из merged_from).
+      // Заглушку оставляем только живому контейнеру.
+      if (readonly) return [];
       return [
         {
           date: addedAt || card.created_at,

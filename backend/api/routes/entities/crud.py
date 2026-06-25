@@ -1257,33 +1257,17 @@ async def update_entity_status(
     if entity.is_transferred:
         raise HTTPException(400, "Cannot edit a transferred entity")
 
-    # SECURITY: Check edit permissions before allowing status update
-    can_edit = False
-    if current_user.role == UserRole.superadmin:
-        can_edit = True
-    else:
-        # Full access users can edit
-        user_has_full_access = await has_full_database_access(current_user, org.id, db)
-        if user_has_full_access:
-            can_edit = True
-        elif entity.created_by == current_user.id:
-            can_edit = True  # Owner of record
-        else:
-            # Check if shared with edit/full access
-            shared_result = await db.execute(
-                select(SharedAccess).where(
-                    SharedAccess.resource_type == ResourceType.entity,
-                    SharedAccess.resource_id == entity_id,
-                    SharedAccess.shared_with_id == current_user.id,
-                    SharedAccess.access_level.in_([AccessLevel.edit, AccessLevel.full]),
-                    or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-                )
-            )
-            if shared_result.scalar_one_or_none():
-                can_edit = True
-
-    if not can_edit:
-        raise HTTPException(403, "No edit permission for this entity")
+    # Смена этапа/статуса — additive workflow-действие в общем kanban, как
+    # комментарий и загрузка файла (см. add_entity_note и upload_entity_file в
+    # files.py): доступно ЛЮБОМУ пользователю той же организации. Рекрутёр видит
+    # и ведёт ВСЕХ кандидатов оргa, поэтому отдельная edit-проверка тут только
+    # мешала — «чужой» кандидат давал «No edit permission for this entity» при
+    # «Сменить этап подбора». Entity уже отфильтрован по org_id выше (cross-org →
+    # 404). Жёсткие действия (удаление, перенос, полный edit профиля) остаются
+    # под edit-доступом — см. delete_entity / update_entity.
+    logger.info(
+        f"Status change allowed (org-scope): user {current_user.id} → entity {entity_id}"
+    )
 
     # Update status
     old_status = entity.status
