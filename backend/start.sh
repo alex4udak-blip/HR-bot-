@@ -319,6 +319,12 @@ async def ensure_shadow_columns():
             print('Adding dispatch_id column to form_submissions...')
             await conn.execute(text('ALTER TABLE form_submissions ADD COLUMN dispatch_id INTEGER REFERENCES form_dispatches(id) ON DELETE SET NULL'))
 
+        # form_templates.is_template: HR-created reusable templates flag.
+        # Идемпотентно — alembic-цепочка на проде сломана (multiple heads),
+        # поэтому колонку гарантирует этот safety-net, иначе любой запрос к
+        # form_templates падает 500 (модель ссылается на отсутствующую колонку).
+        await conn.execute(text('ALTER TABLE form_templates ADD COLUMN IF NOT EXISTS is_template BOOLEAN NOT NULL DEFAULT false'))
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection
