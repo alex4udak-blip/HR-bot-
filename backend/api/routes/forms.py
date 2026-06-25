@@ -565,18 +565,33 @@ async def list_entity_all_dispatches(entity_id: int, db: AsyncSession = Depends(
         for s in (await db.execute(select(FormSubmission).where(FormSubmission.id.in_(sub_ids)))).scalars().all():
             subs[s.id] = s.data
 
+    # Карта: id диспатча → имя профиля-источника. После merge ВСЕ диспатчи висят на
+    # target (FormDispatch перепривязан, иначе CASCADE-delete стирал бы анкеты влитого
+    # профиля), поэтому различаем по id (захвачен в merged_from[].form_dispatch_ids),
+    # а не по entity_id.
+    _mf_list = merged_from if isinstance(merged_from, list) else []
+    dispatch_source = {}
+    for m in _mf_list:
+        if not isinstance(m, dict):
+            continue
+        nm = m.get("name") or (f"Профиль #{m.get('entity_id')}" if m.get("entity_id") else "Объединённый профиль")
+        for did in (m.get("form_dispatch_ids") or []):
+            dispatch_source[did] = nm
+
     # Build response with source info (which profile filled it)
     result = []
     for d in all_rows:
-        source_name = None
-        if d.entity_id != entity_id:
-            # This dispatch belongs to a merged profile
-            for m in merged_from:
-                if isinstance(m, dict) and m.get("entity_id") == d.entity_id:
-                    source_name = m.get("name") or f"Профиль #{d.entity_id}"
-                    break
-        else:
-            source_name = "Текущий профиль"
+        source_name = dispatch_source.get(d.id)
+        if source_name is None:
+            # Легаси-путь: диспатч ещё висит на влитом профиле по entity_id
+            # (слияния до фикса form_dispatch_ids).
+            if d.entity_id != entity_id:
+                for m in _mf_list:
+                    if isinstance(m, dict) and m.get("entity_id") == d.entity_id:
+                        source_name = m.get("name") or f"Профиль #{d.entity_id}"
+                        break
+            if source_name is None:
+                source_name = "Текущий профиль"
 
         result.append({
             "id": d.id, "form_id": d.form_id, "form_title": titles.get(d.form_id),

@@ -967,7 +967,7 @@ class SimilarityService:
             Chat, CallRecording, AnalysisHistory,
             VacancyApplication, Vacancy, StageTransition, EntityAnalysis,
             EntityAIConversation, EntityFile, EntityTransfer,
-            FormSubmission, RecruiterBonus,
+            FormSubmission, FormDispatch, RecruiterBonus,
             EntityCriteria, PrometheusReviewCache,
             Employee, ParseJob, SharedAccess,
         )
@@ -1052,6 +1052,17 @@ class SimilarityService:
                 select(EntityFile.id).where(EntityFile.entity_id == source_entity.id)
             )).all()
         ]
+        # То же для анкет (FormDispatch): фиксируем id ДО перепривязки, чтобы
+        # исторический контейнер знал СВОИ диспатчи. Без этого: FormDispatch.entity_id
+        # имеет FK ondelete=CASCADE → при удалении source его анкеты УДАЛЯЛИСЬ из БД
+        # (после слияния показывалась только анкета survivor'а). Перепривязываем на
+        # target (переживают удаление), а различаем по id (а не entity_id, который
+        # у всех станет target).
+        _src_dispatch_ids = [
+            r[0] for r in (await db.execute(
+                select(FormDispatch.id).where(FormDispatch.entity_id == source_entity.id)
+            )).all()
+        ]
 
         # Остальную историю переносим на target. VacancyApplication уже обработан
         # выше — здесь его НЕ трогаем. StageTransition тоже обработан явно в цикле
@@ -1060,7 +1071,7 @@ class SimilarityService:
         for _hist_model in (
             EntityAnalysis,
             EntityAIConversation, EntityFile, EntityTransfer,
-            FormSubmission, RecruiterBonus,
+            FormSubmission, FormDispatch, RecruiterBonus,
             # SET NULL FK на entities.id — без перепривязки осиротеют после удаления source.
             Employee, ParseJob,
         ):
@@ -1155,6 +1166,7 @@ class SimilarityService:
             "merged_by_name": merged_by_name,
             "extra_data": _se_clean,
             "file_ids": _src_file_ids,
+            "form_dispatch_ids": _src_dispatch_ids,
         }
         _target_mf = target_extra.get("merged_from") if isinstance(target_extra.get("merged_from"), list) else []
         _te["merged_from"] = list(_target_mf) + [_b_container] + list(_src_mf)

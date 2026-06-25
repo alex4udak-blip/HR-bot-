@@ -2,6 +2,18 @@ import toast from 'react-hot-toast';
 import { Copy, ExternalLink } from 'lucide-react';
 import type { FormDispatchInfo } from '@/services/api/forms';
 
+// Бэкенд отдаёт наивный UTC ("2026-06-24T22:18:32" без зоны) — трактуем как UTC,
+// чтобы toLocaleString показал корректное локальное время.
+function formatWhen(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const norm = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : iso + 'Z';
+  const d = new Date(norm);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('ru-RU', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
 export function AnketaResponses({ dispatches }: { dispatches: (FormDispatchInfo & { source_entity_id?: number; source_name?: string | null })[] }) {
   if (dispatches.length === 0) {
     return <div className="p-8 text-center text-gray-400 text-sm">Анкеты ещё не присылались</div>;
@@ -15,9 +27,17 @@ export function AnketaResponses({ dispatches }: { dispatches: (FormDispatchInfo 
               <p className="font-medium text-sm text-gray-900">{d.form_title || 'Анкета'}</p>
               {d.source_name && <p className="text-xs text-gray-500 mt-0.5">{d.source_name}</p>}
             </div>
-            <span className="text-xs text-gray-500">
-              {d.status === 'submitted' ? 'Заполнена' : d.status === 'opened' ? 'Открыта' : 'Отправлена'}
-            </span>
+            <div className="text-right shrink-0">
+              <span className="text-xs text-gray-500">
+                {d.status === 'submitted' ? 'Заполнена' : d.status === 'opened' ? 'Открыта' : 'Отправлена'}
+              </span>
+              {/* Когда проходил анкету: дата заполнения (или отправки, если ещё не заполнена) */}
+              {(d.submitted_at || d.created_at) && (
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  {d.submitted_at ? formatWhen(d.submitted_at) : formatWhen(d.created_at)}
+                </p>
+              )}
+            </div>
           </div>
           <div className="mt-1 flex items-center gap-3">
             <a
