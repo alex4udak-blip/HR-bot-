@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
-import { AlertTriangle, X, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
 import type { EntityWithRelations } from "@/types";
@@ -33,17 +32,6 @@ interface ShadowDuplicateBannerProps {
   status?: string; // текущий этап открытой карточки (ключ EntityStatus)
   onResolved?: () => void;
 }
-
-// Только реальные идентификаторы — по ним и матчит дедуп. Источник (hh.ru), город,
-// возраст, зарплата, опыт, метки совпадают у РАЗНЫХ людей и не являются причиной
-// слияния — не показываем их как «совпадение», иначе «Совпадение по: Источник» врёт.
-const IDENTITY_KEYS: (FieldKey | "name")[] = ["name", "phone", "email", "telegram"];
-const IDENTITY_LABEL: Record<string, string> = {
-  name: "Имя",
-  phone: "Телефон",
-  email: "Эл. почта",
-  telegram: "Telegram",
-};
 
 export default function ShadowDuplicateBanner({ card, status, onResolved }: ShadowDuplicateBannerProps) {
   const hiddenId = (card.extra_data?.hidden_duplicate_id as number | undefined) ?? null;
@@ -161,9 +149,13 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     try {
       await mergeShadowDuplicate(card.id, targetId);
       toast.success("Профили объединены");
-      setOpen(false);
-      setResolved(true);
-      onResolved?.();
+      if (idx >= duplicates.length - 1) {
+        setOpen(false);
+        setResolved(true);
+        onResolved?.();
+      } else {
+        goToDup(1);
+      }
     } catch {
       toast.error("Не удалось объединить профили");
     } finally {
@@ -178,9 +170,13 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     try {
       await dismissDuplicate(card.id, targetId);
       toast.success("Отмечено: это разные люди");
-      setOpen(false);
-      setResolved(true);
-      onResolved?.();
+      if (idx >= duplicates.length - 1) {
+        setOpen(false);
+        setResolved(true);
+        onResolved?.();
+      } else {
+        goToDup(1);
+      }
     } catch {
       toast.error("Не удалось сохранить");
     } finally {
@@ -190,24 +186,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
 
   const left = sideFromCard(card, status);
   const right = archived ? sideFromEntity(archived) : null;
-  const cardArchived = !!(card.extra_data?.is_archived as boolean | undefined);
 
   const matched = (key: FieldKey | "name"): boolean => matchSide(left, right, key);
 
-  const matchedKeys = right ? IDENTITY_KEYS.filter((k) => matched(k)) : [];
-
-  // Триггер баннера — отдельный матчинг ИМЕННО против hiddenId (triggerEntity),
-  // не против выбранного в карусели дубликата. Иначе выбор «непохожего» кандидата
-  // в открытой модалке обнулил бы matchedKeys и схлопнул бы весь баннер+модалку.
-  const triggerSide = triggerEntity ? sideFromEntity(triggerEntity) : null;
-  const triggerMatchedKeys = triggerSide
-    ? IDENTITY_KEYS.filter((k) => matchSide(left, triggerSide, k))
-    : [];
-
-  // Баннер показываем ТОЛЬКО при реальном совпадении по контактам
-  // (имя/телефон/почта/telegram) С hiddenId. Дубль не загрузился или совпадений нет —
-  // это ложный/устаревший флаг, баннер не мозолит глаза.
-  if (!triggerEntity || triggerMatchedKeys.length === 0) return null;
+  // Баннер показываем только если есть triggerEntity (найден возможный дубликат)
+  if (!triggerEntity) return null;
 
   // Индекс показанного справа дубликата — для нав-стрелок «перебираем карточки».
   const idx = duplicates.findIndex((d) => d.entity_id === selectedDupId);
@@ -222,7 +205,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   return (
     <>
       {/* Баннер над action-баром карточки */}
-      <div className="flex items-center justify-between gap-3 rounded-xl bg-amber-500 px-5 py-3 mb-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3  bg-amber-500 px-5 py-3 mb-4 shadow-sm">
         <div className="flex items-center gap-3 text-white">
           <AlertTriangle className="w-5 h-5 shrink-0" />
           <span className="font-medium">Похожий кандидат есть в базе</span>
@@ -235,58 +218,129 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
         </button>
       </div>
 
-      {/* Плавающий экран сравнения — без белой коробки: карточки парят на затемнённом фоне */}
+      {/* Модальное окно сравнения */}
       {open && (
         <div
-          className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-6"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={() => !busy && setOpen(false)}
         >
-          {/* X в правом верхнем углу экрана */}
-          <button
-            onClick={() => setOpen(false)}
-            className="absolute top-5 right-5 text-white/60 hover:text-white"
-            aria-label="Закрыть"
-          >
-            <X className="w-6 h-6" />
-          </button>
-
           {loading ? (
-            <div className="flex items-center justify-center text-white/70" onClick={(e) => e.stopPropagation()}>
+            <div className="text-white flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
               <Loader2 className="w-8 h-8 animate-spin" />
             </div>
           ) : (
             <div
-              className="flex items-center gap-6 w-full max-w-7xl max-h-[90vh]"
+              className="bg-gray-50 rounded-2xl shadow-2xl flex flex-col w-full max-w-6xl max-h-[90vh] overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* ЛЕВО — карточка нового кандидата */}
-              <div className="flex-1 min-w-0 max-h-[88vh] overflow-auto">
-                <CandidateCompareCard
-                  title={cardArchived ? "Эта анкета (в архиве)" : "Новый кандидат"}
-                  side={left}
-                  matched={matched}
-                />
+              {/* BODY: Прозрачные колонки */}
+              <div className="flex-1 flex gap-6 p-6 overflow-hidden">
+
+                {/* ЛЕВАЯ КОЛОНКА - полностью прозрачная обертка */}
+                <div className="w-1/2 flex flex-col overflow-y-auto relative" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                  <style>{`
+                    div::-webkit-scrollbar { display: none; }
+                  `}</style>
+                  {/* Заголовок слева, симметрично справа */}
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3 px-1 shrink-0">Новый кандидат</h3>
+                  {/* Компонент имеет собственные: bg-white border border-gray-200 rounded-xl shadow-sm p-6 */}
+                  <CandidateCompareCard
+                    title=""
+                    side={left}
+                    matched={matched}
+                    entityId={card.id}
+                    vacancies={Array.isArray((card.extra_data as any)?.system_hr_tags) ? (card.extra_data as any).system_hr_tags : undefined}
+                  />
+                </div>
+
+                {/* ПРАВАЯ КОЛОНКА - полностью прозрачная обертка */}
+                <div className="w-1/2 flex flex-col overflow-hidden">
+
+                  {/* Шапка просто висит в воздухе над карточкой (без рамок и фонов) */}
+                  <div className="flex justify-between items-center mb-3 px-1 shrink-0">
+                    <h3 className="text-sm font-semibold text-gray-800">Похожие анкеты</h3>
+                    {duplicates.length > 1 && (
+                      <div className="text-sm text-gray-500 font-medium flex items-center gap-2">
+                        <button
+                          onClick={() => goToDup(-1)}
+                          disabled={idx <= 0}
+                          className="disabled:opacity-30 cursor-pointer"
+                          aria-label="Предыдущая"
+                        >
+                          &lt;
+                        </button>
+                        <span className="tabular-nums min-w-[50px] text-center">
+                          {idx + 1} из {duplicates.length}
+                        </span>
+                        <button
+                          onClick={() => goToDup(1)}
+                          disabled={idx >= duplicates.length - 1}
+                          className="disabled:opacity-30 cursor-pointer"
+                          aria-label="Следующая"
+                        >
+                          &gt;
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Трек карусели */}
+                  <div className="flex-1 overflow-hidden relative flex flex-col">
+                    <div
+                      className="flex h-full transition-transform duration-300 ease-in-out"
+                      style={{ transform: `translateX(-${idx * 100}%)` }}
+                    >
+                      {duplicates.length > 0 ? (
+                        duplicates.map((d) => {
+                          const ent = entities[d.entity_id];
+                          const dupSide = ent ? sideFromEntity(ent) : null;
+                          return (
+                            /* Слайд - прозрачный */
+                            <div
+                              key={d.entity_id}
+                              className="w-full h-full flex-shrink-0 flex flex-col overflow-y-auto pb-2 pr-2 relative"
+                              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                            >
+                              <style>{`
+                                div::-webkit-scrollbar { display: none; }
+                              `}</style>
+                              {/* Карточка дубля с собственными стилями: bg-white border border-gray-200 rounded-xl shadow-sm p-6 */}
+                              {dupSide ? (
+                                <CandidateCompareCard
+                                  title=""
+                                  side={dupSide}
+                                  matched={(k) => matchSide(left, dupSide, k)}
+                                  confidence={d.confidence}
+                                  matchedFields={Object.keys(d.matched_fields)}
+                                  entityId={d.entity_id}
+                                  vacancies={Array.isArray((ent?.extra_data as any)?.system_hr_tags) ? (ent?.extra_data as any).system_hr_tags : undefined}
+                                />
+                              ) : (
+                                <div className="flex items-center justify-center text-gray-400 h-full">
+                                  <Loader2 className="w-6 h-6 animate-spin" />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400">
+                          <Loader2 className="w-6 h-6 animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
               </div>
 
-              {/* ЦЕНТР — совпадение + действия */}
-              <div className="shrink-0 w-[220px] flex flex-col items-center gap-2.5 text-center">
-                {matchedKeys.length > 0 ? (
-                  <div className="text-sm text-amber-300">
-                    Совпадение по:{" "}
-                    <span className="font-semibold text-amber-200">
-                      {matchedKeys.map((k) => IDENTITY_LABEL[k]).join(", ")}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="text-sm text-rose-300">
-                    Нет совпадений по контактам (имя / телефон / почта / telegram) — вероятно, это разные люди.
-                  </div>
-                )}
-
+              {/* FOOTER - белый низ с кнопками */}
+              <div className="shrink-0 p-4 bg-white border-t border-gray-200 flex justify-center items-center gap-4">
                 <button
                   disabled={busy}
                   onClick={handleMerge}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 bg-lime-500 hover:bg-lime-600 text-white rounded-lg px-6 py-2.5 text-sm font-semibold disabled:opacity-50"
                 >
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                   Завершить объединение
@@ -294,105 +348,17 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                 <button
                   disabled={busy}
                   onClick={handleDismiss}
-                  className="w-full border border-red-300/70 bg-white/95 text-red-600 hover:bg-red-50 rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 border-2 border-red-500 bg-white text-red-600 hover:bg-red-50 rounded-lg px-6 py-2.5 text-sm font-semibold disabled:opacity-50"
                 >
                   Нет, это разные люди
                 </button>
                 <button
                   disabled={busy}
                   onClick={() => setOpen(false)}
-                  className="w-full text-white/70 hover:text-white hover:bg-white/10 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 bg-white text-black hover:bg-gray-100 rounded-lg px-6 py-2.5 text-sm font-semibold border-2 border-black disabled:opacity-50"
                 >
                   Закрыть
                 </button>
-
-                <p className="text-xs text-white/55 mt-1">
-                  После объединения у кандидата сохранятся оба резюме и история статусов.
-                </p>
-              </div>
-
-              {/* ПРАВО — карусель похожих анкет (карточки парят, без slate-панели) */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-[11px] uppercase tracking-wide font-medium text-white/60">Похожие анкеты</span>
-                  {duplicates.length > 1 && (
-                    <span className="text-xs font-medium text-white/50 tabular-nums">
-                      {idx + 1} из {duplicates.length}
-                    </span>
-                  )}
-                </div>
-                {/* Перебираем анкеты как КОЛОДУ карт: текущая — спереди (pos 0),
-                    остальные едва видны позади (pos 1/2 — выглядывают вверх, мельче
-                    и бледнее). Свайп фронта / клик по точке → goToDup переставляет
-                    pos, карточки плавно перетекают (тween 0.4s). */}
-                {duplicates.length === 0 ? (
-                  // Список не загрузился — не регрессируем в пустоту: одиночная
-                  // карточка по derived right (triggerEntity/hiddenId), без трека.
-                  right ? (
-                    <CandidateCompareCard title="Старая анкета (дубликат)" side={right} matched={matched} />
-                  ) : (
-                    <div className="rounded-xl border border-slate-200 bg-white p-6 flex items-center justify-center text-slate-400 min-h-[220px]">
-                      <Loader2 className="w-6 h-6 animate-spin" />
-                    </div>
-                  )
-                ) : (
-                  <div className="relative">
-                    {/* invisible sizer = current card → gives the stack container its height (cards below are absolute) */}
-                    <div className="invisible" aria-hidden="true">
-                      {(() => {
-                        const d0 = duplicates[Math.max(idx, 0)];
-                        const e0 = d0 ? entities[d0.entity_id] : undefined;
-                        return e0 ? (
-                          <CandidateCompareCard title="Старая анкета (дубликат)" side={sideFromEntity(e0)} matched={matched} confidence={d0.confidence} matchedFields={Object.keys(d0.matched_fields)} />
-                        ) : (<div className="min-h-[280px]" />);
-                      })()}
-                    </div>
-                    {/* stacked cards: pos 0 = front (full), pos 1/2 = behind, faint, peeking up & smaller */}
-                    {duplicates.map((d, i) => {
-                      const pos = i - Math.max(idx, 0);
-                      if (pos < 0 || pos > 2) return null;
-                      const ent = entities[d.entity_id];
-                      const dupSide = ent ? sideFromEntity(ent) : null;
-                      return (
-                        <motion.div
-                          key={d.entity_id}
-                          className="absolute inset-x-0 top-0"
-                          initial={false}
-                          animate={{ y: pos * -14, scale: 1 - pos * 0.05, opacity: pos === 0 ? 1 : pos === 1 ? 0.5 : 0.25 }}
-                          transition={{ type: "tween", duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
-                          style={{ zIndex: 30 - pos }}
-                          drag={pos === 0 && duplicates.length > 1 ? "x" : false}
-                          dragConstraints={{ left: 0, right: 0 }}
-                          dragElastic={0.14}
-                          onDragEnd={(_e, info) => {
-                            if (info.offset.x < -64) goToDup(1);
-                            else if (info.offset.x > 64) goToDup(-1);
-                          }}
-                        >
-                          <div className={`${pos === 0 ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"} bg-white rounded-xl`}>
-                            {dupSide ? (
-                              <CandidateCompareCard title="Старая анкета (дубликат)" side={dupSide} matched={(k) => matchSide(left, dupSide, k)} confidence={d.confidence} matchedFields={Object.keys(d.matched_fields)} />
-                            ) : (
-                              <div className="rounded-xl border border-slate-200 bg-white p-6 flex items-center justify-center text-slate-400 min-h-[280px]"><Loader2 className="w-6 h-6 animate-spin" /></div>
-                            )}
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                )}
-                {duplicates.length > 1 && (
-                  <div className="pt-3 flex items-center justify-center gap-1.5">
-                    {duplicates.map((d, i) => (
-                      <button
-                        key={d.entity_id}
-                        onClick={() => goToDup(i - idx)}
-                        aria-label={`Анкета ${i + 1} из ${duplicates.length}`}
-                        className={`h-1.5 rounded-full transition-all ${i === idx ? "w-5 bg-emerald-400" : "w-1.5 bg-white/30 hover:bg-white/50"}`}
-                      />
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           )}

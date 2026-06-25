@@ -69,12 +69,12 @@ const normTg = (v: unknown) => String(v ?? "").trim().replace(/^@/, "").toLowerC
 const HL = "bg-amber-100 text-amber-900 rounded px-1.5 py-0.5";
 
 const FIELDS: { key: FieldKey; label: string }[] = [
+  { key: "salary", label: "Зарплата" },
   { key: "phone", label: "Телефон" },
   { key: "email", label: "Эл. почта" },
   { key: "telegram", label: "Telegram" },
   { key: "age", label: "Возраст" },
   { key: "city", label: "Город" },
-  { key: "salary", label: "Зарплата" },
   { key: "experience", label: "Опыт" },
   { key: "source", label: "Источник" },
   { key: "tags", label: "Метки" },
@@ -156,7 +156,12 @@ function notesFrom(extra: Record<string, unknown> | undefined): Array<{ text?: s
   if (!Array.isArray(ns)) return [];
   return (ns as Array<Record<string, unknown>>)
     .filter((n) => n && n.text)
-    .map((n) => ({ text: n.text as string, author: n.author_name as string, date: n.date as string }));
+    .map((n) => {
+      let date = (n.date as string) || "";
+      // Убираем timezone offset: "2026-06-24T22:18:32.047491+00:00" → "2026-06-24T22:18:32"
+      date = date.replace(/\.\d+[+-]\d{2}:\d{2}$/, "");
+      return { text: n.text as string, author: n.author_name as string, date };
+    });
 }
 
 export function sideFromCard(card: KanbanCard, statusKey?: string): Side {
@@ -207,8 +212,8 @@ export function sideFromEntity(e: EntityWithRelations): Side {
     photo: (extra.photo_url as string) || "",
     position: e.position || "",
     company: e.company || "",
-    phone: e.phone || "",
-    email: e.email || "",
+    phone: e.phone || (e.phones && e.phones[0]) || "",
+    email: e.email || (e.emails && e.emails[0]) || "",
     telegram: (e.telegram_usernames && e.telegram_usernames[0]) || "",
     age: (extra.age as string) || computeAge(extra.birth_date as string | undefined),
     city: (ent.city as string) || ((extra.city as string) || ""),
@@ -244,8 +249,8 @@ function initialsOf(name: string) {
   return name.split(" ").filter(Boolean).slice(0, 2).map((s) => s[0]).join("").toUpperCase();
 }
 
-function StatusBlock({ side }: { side: Side }) {
-  if (!side.statusLabel && side.history.length === 0) return null;
+function StatusBlock({ side, vacancies }: { side: Side; vacancies?: SystemHrTag[] }) {
+  if (!side.statusLabel && side.history.length === 0 && (!vacancies || vacancies.length === 0)) return null;
   return (
     <div className={`rounded-lg p-2.5 mb-3 ${side.isRejected ? "bg-red-50" : "bg-slate-50"}`}>
       <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">Статус</div>
@@ -257,6 +262,11 @@ function StatusBlock({ side }: { side: Side }) {
         >
           {side.statusLabel || "—"}
         </span>
+        {vacancies && vacancies.length > 0 && (
+          <span className="text-xs text-slate-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+            {vacancies.map((v) => v.vacancy_title || "Без вакансии").join(", ")}
+          </span>
+        )}
         {side.isRejected && side.rejectedAt && (
           <span className="text-xs text-red-600">отклонён {side.rejectedAt}</span>
         )}
@@ -357,7 +367,7 @@ function NotesBlock({ notes }: { notes: Array<{ text?: string; author?: string; 
 }
 
 // Фото из hh — временные ссылки, протухают. На ошибку загрузки показываем
-// инициалы вместо «битой картинки».
+// инициалы вместо «битой картинки». Крупный портрет (как на эталоне сравнения).
 function Avatar({ photo, name }: { photo: string; name: string }) {
   const [failed, setFailed] = useState(false);
   if (photo && !failed) {
@@ -365,13 +375,13 @@ function Avatar({ photo, name }: { photo: string; name: string }) {
       <img
         src={photo}
         alt={name}
-        className="w-12 h-12 rounded-xl object-cover shrink-0"
+        className="w-28 h-32 rounded-xl object-cover shrink-0"
         onError={() => setFailed(true)}
       />
     );
   }
   return (
-    <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 text-sm font-semibold shrink-0">
+    <div className="w-28 h-32 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 text-3xl font-semibold shrink-0">
       {initialsOf(name) || "?"}
     </div>
   );
@@ -384,18 +394,29 @@ function confidenceBadgeClass(confidence: number): string {
   return "bg-amber-100 text-amber-700";
 }
 
+export type SystemHrTag = {
+  hr_id: number;
+  name: string;
+  vacancy_id?: number;
+  vacancy_title?: string;
+};
+
 export function CandidateCompareCard({
   title,
   side,
   matched,
   confidence,
   matchedFields,
+  entityId,
+  vacancies,
 }: {
   title: string;
   side: Side | null;
   matched: (key: FieldKey | "name") => boolean;
   confidence?: number;
   matchedFields?: string[];
+  entityId?: number;
+  vacancies?: SystemHrTag[];
 }) {
   if (!side) {
     return <div className="rounded-xl border border-slate-200 p-4 text-slate-400">—</div>;
@@ -403,23 +424,30 @@ export function CandidateCompareCard({
   const subtitle = [side.position, side.company].filter(Boolean).join(" · ");
   return (
     <div className="rounded-xl border border-slate-200 p-4 min-w-0">
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <span className="text-[11px] uppercase tracking-wide text-slate-400">{title}</span>
+        {entityId && (
+          <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+            ID: {entityId}
+          </span>
+        )}
         {confidence != null && (
           <span className={`text-[11px] font-semibold rounded px-1.5 py-0.5 ${confidenceBadgeClass(confidence)}`}>
             {confidence}%
           </span>
         )}
       </div>
-      <div className="flex items-start gap-3 mb-3">
+      {/* Шапка: крупное портретное фото сверху, под ним — большое имя и
+          должность·компания (как на эталоне сравнения). */}
+      <div className="mb-4">
         <Avatar photo={side.photo} name={side.name} />
-        <div className="min-w-0">
-          <span className={`text-[15px] font-semibold ${matched("name") ? HL : "text-slate-900"}`}>
+        <div className="min-w-0 mt-3">
+          <span className={`text-2xl font-bold leading-tight ${matched("name") ? HL : "text-slate-900"}`}>
             {side.name || "—"}
           </span>
-          {subtitle && <div className="text-xs text-slate-500 mt-1">{subtitle}</div>}
+          {subtitle && <div className="text-sm text-slate-500 mt-1.5">{subtitle}</div>}
           {matchedFields && matchedFields.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
+            <div className="flex flex-wrap gap-1 mt-2">
               {matchedFields.map((f) => (
                 <span
                   key={f}
@@ -433,20 +461,22 @@ export function CandidateCompareCard({
         </div>
       </div>
 
-      <StatusBlock side={side} />
+      <StatusBlock side={side} vacancies={vacancies} />
 
-      <table className="w-full text-[13px]">
-        <tbody>
-          {FIELDS.map(({ key, label }) => (
-            <tr key={key}>
-              <td className="text-slate-400 py-0.5 align-top w-[90px]">{label}</td>
-              <td className="py-0.5 text-right">
-                <span className={matched(key) ? HL : "text-slate-700"}>{side[key] || "—"}</span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Поля: лейбл над значением, слева — как на эталоне сравнения. Совпавшие
+          значения подсвечены янтарём (HL); незаполненные — серый прочерк. */}
+      <div className="space-y-3">
+        {FIELDS.map(({ key, label }) => (
+          <div key={key}>
+            <div className="text-[13px] text-slate-400 mb-0.5">{label}</div>
+            <div className="text-[15px] leading-snug">
+              <span className={matched(key) ? HL : side[key] ? "text-slate-800" : "text-slate-300"}>
+                {side[key] || "—"}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
 
       <ResumeBlock resumes={side.resumes} text={side.resumeText} extra={side.resumeExtra} />
       <NotesBlock notes={side.notes} />
