@@ -36,6 +36,34 @@
     // «Должность, Город, Возраст». Допустимы оба алфавита, но в пределах одного
     // слова не смешиваем регистры алфавитов — снижает ложные срабатывания.
     const FIO_RE = /^[A-ZА-ЯЁ][a-zа-яё]+(?:-[A-ZА-ЯЁ][a-zа-яё]+)?\s+[A-ZА-ЯЁ][a-zа-яё]+(?:\s+[A-ZА-ЯЁ][a-zа-яё]+)?$/;
+
+    // Читаем только ПРЯМЫЕ text-узлы элемента (не текст дочерних elements).
+    // Нужно потому что hh.ru magritte оборачивает имя в span, внутри которого
+    // могут быть дочерние элементы (кнопки редактирования, иконки, hidden-спаны) —
+    // тогда el.children.length > 0 и листовая проверка пропускает элемент,
+    // а el.textContent склеивает имя с текстом дочерних элементов. text-узлы дают
+    // только видимый текст самого элемента.
+    function ownText(el) {
+      let t = '';
+      for (const node of el.childNodes) {
+        if (node.nodeType === 3) t += node.textContent; // TEXT_NODE
+      }
+      return t.replace(/ /g, ' ').trim();
+    }
+
+    // Быстрый путь: hh.ru magritte (2024–2025+) — имя кандидата в шапке резюме
+    // [data-qa="resume-main-info__header"] h2 > span. Span может иметь дочерние
+    // элементы, поэтому читаем text-узлы вместо обычного leaf-scan.
+    const magritteH2 = document.querySelector('[data-qa="resume-main-info__header"] h2');
+    if (magritteH2) {
+      const h2txt = ownText(magritteH2);
+      if (h2txt.length >= 5 && h2txt.length <= 60 && FIO_RE.test(h2txt)) return h2txt;
+      for (const span of magritteH2.querySelectorAll('span')) {
+        const stxt = ownText(span);
+        if (stxt.length >= 5 && stxt.length <= 60 && FIO_RE.test(stxt)) return stxt;
+      }
+    }
+
     const boundary = document.querySelector(
       '[data-qa="resume-block-experience"], [data-qa*="experience"], [data-qa*="education"]'
     );
@@ -55,9 +83,16 @@
     const scopes = header ? [header, document] : [document];
     for (const scope of scopes) {
       for (const el of scope.querySelectorAll('h1,h2,h3,span,div,a,p,strong,b')) {
-        if (el.children.length) continue;          // только листовые узлы (собственный текст)
-        const txt = (el.textContent || '').trim();
-        if (txt.length < 5 || txt.length > 60 || !FIO_RE.test(txt)) continue;
+        // Листовые узлы (нет дочерних elements) — textContent чистый.
+        // Нелистовые — читаем только прямые text-узлы через ownText(), чтобы
+        // не склеивать имя с текстом вложенных кнопок/иконок.
+        let txt;
+        if (el.children.length === 0) {
+          txt = (el.textContent || '').trim();
+        } else {
+          txt = ownText(el);
+        }
+        if (!txt || txt.length < 5 || txt.length > 60 || !FIO_RE.test(txt)) continue;
         if (inSiteChrome(el) || !beforeBoundary(el)) continue;
         return txt;
       }
