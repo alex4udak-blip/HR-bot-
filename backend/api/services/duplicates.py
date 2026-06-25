@@ -173,11 +173,9 @@ class DuplicateDetectionService:
         if entity_phone:
             conditions.append(Entity.phone.ilike(f'%{entity_phone[-10:]}%'))
 
-        # Similar name (first word match)
+        # Full name (ФИО) match — exact or high similarity
         if entity_name:
-            first_name = entity_name.split()[0] if entity_name else None
-            if first_name and len(first_name) > 2:
-                conditions.append(func.lower(Entity.name).ilike(f'%{first_name}%'))
+            conditions.append(func.lower(Entity.name) == entity_name)
 
         if not conditions:
             return []
