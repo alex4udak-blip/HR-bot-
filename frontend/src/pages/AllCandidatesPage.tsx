@@ -1596,6 +1596,7 @@ type DetailSection = "info" | "resume" | "anketa";
 
 // Единые лейблы стадий для карточки вакансии (совпадают с воронкой/бэкендом).
 const CANDIDATE_VACANCY_STAGE_LABELS: Record<string, string> = {
+  new: "Новый",
   applied: "Новый",
   screening: "Выполняет ТЗ",
   phone_screen: "Интервью с HR",

@@ -94,6 +94,7 @@ const STAGE_ORDER = [
 // Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
 // (отображаются на /all-candidates). Не разводить разные наборы по страницам.
 const STAGE_LABELS: Record<string, string> = {
+  new: 'Новый',
   applied: 'Новый',
   screening: 'Выполняет ТЗ',
   phone_screen: 'Интервью с HR',
