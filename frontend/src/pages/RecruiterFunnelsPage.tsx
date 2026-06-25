@@ -2784,10 +2784,9 @@ export default function RecruiterFunnelsPage() {
                                   )}
                                 </div>
                               ) : funnelCard ? (
-                                /* Общий просмотрщик резюме — 1-в-1 с «Все кандидаты» (ResumeViewer).
-                                   Без dupCard вкладки рисуем сами выше (управляемый режим). С dupCard
-                                   карточка-источник другая → пусть ResumeViewer рисует свои вкладки. */
-                                <div className="flex-1 overflow-y-auto">
+                                /* Общий просмотрщик резюме. ResumeViewer в боковой панели
+                                   (max-h для ограничения высоты). */
+                                <div className="flex-1 overflow-y-auto max-h-[calc(100vh-200px)]">
                                   <ResumeViewer
                                     card={dupCard ?? funnelCard}
                                     activeIndex={dupCard ? undefined : resumeIndex}
