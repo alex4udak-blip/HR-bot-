@@ -115,9 +115,22 @@ function useResumeSources(card: KanbanCard, refreshKey?: number): {
  * Общий просмотрщик резюме. Сам рисует полосу вкладок (по одной на источник) и
  * контент выбранного источника. Контент-рендер — verbatim из AllCandidatesPage.ResumeTab.
  */
-const ResumeViewer = memo(function ResumeViewer({ card }: { card: KanbanCard }) {
+const ResumeViewer = memo(function ResumeViewer({
+  card,
+  activeIndex: controlledIndex,
+  hideTabBar = false,
+}: {
+  card: KanbanCard;
+  /** Управляемый режим: индекс активной вкладки задаёт родитель (воронка рисует
+   *  вкладки «Резюме» на верхнем уровне — по одной на источник, как «Все кандидаты»). */
+  activeIndex?: number;
+  /** Скрыть собственный ряд вкладок, когда он рисуется снаружи. */
+  hideTabBar?: boolean;
+}) {
   const { files, sources, loading, previewUrls } = useResumeSources(card);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [internalIndex, setActiveIndex] = useState(0);
+  // Управляемый индекс приоритетнее внутреннего (controlled vs uncontrolled).
+  const activeIndex = controlledIndex !== undefined ? controlledIndex : internalIndex;
   const [currentResumeIndex, setCurrentResumeIndex] = useState(0);
 
   const resumeFiles = files.filter((f) => f.file_type === "resume");
@@ -529,25 +542,28 @@ const ResumeViewer = memo(function ResumeViewer({ card }: { card: KanbanCard }) 
 
   return (
     <div className="flex flex-col">
-      {/* Полоса вкладок: по одной «Резюме» на источник (как эталон photo 4). */}
-      <div className="flex flex-wrap gap-1 border-b border-[color:var(--hf-white-alpha-06)] px-5">
-        {sources.map((s, i) => (
-          <button
-            key={`${s.kind}-${i}`}
-            type="button"
-            onClick={() => setActiveIndex(i)}
-            className={clsx(
-              "px-3 py-2.5 text-sm border-b-2 transition-colors flex items-center gap-1.5",
-              i === safeSourceIndex
-                ? "border-[var(--hf-accent)] text-[var(--hf-dark-100)]"
-                : "border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]",
-            )}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            Резюме
-          </button>
-        ))}
-      </div>
+      {/* Полоса вкладок: по одной «Резюме» на источник (как эталон photo 4).
+          В управляемом режиме (hideTabBar) их рисует родитель — здесь скрываем. */}
+      {!hideTabBar && (
+        <div className="flex flex-wrap gap-1 border-b border-[color:var(--hf-white-alpha-06)] px-5">
+          {sources.map((s, i) => (
+            <button
+              key={`${s.kind}-${i}`}
+              type="button"
+              onClick={() => setActiveIndex(i)}
+              className={clsx(
+                "px-3 py-2.5 text-sm border-b-2 transition-colors flex items-center gap-1.5",
+                i === safeSourceIndex
+                  ? "border-[var(--hf-accent)] text-[var(--hf-dark-100)]"
+                  : "border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]",
+              )}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Резюме
+            </button>
+          ))}
+        </div>
+      )}
       <div className="px-5">{selectedContent}</div>
     </div>
   );

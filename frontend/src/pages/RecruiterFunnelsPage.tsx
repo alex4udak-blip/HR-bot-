@@ -42,7 +42,7 @@ import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
 import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
-import { buildStageContainers, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
+import { buildStageContainers, buildResumeSources, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
 import ResumeViewer from '@/components/entities/candidateDetail/ResumeViewer';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
@@ -1018,6 +1018,17 @@ export default function RecruiterFunnelsPage() {
     [entityFiles],
   );
   const hasResume = resumeOriginal !== null || resumePages.length > 0;
+
+  // Источники резюме (по одному на влитый профиль/PDF) — та же чистая модель,
+  // что и «Все кандидаты». Вкладки «Резюме» рисуем на верхнем уровне (паритет),
+  // а ResumeViewer переключаем по resumeIndex в управляемом режиме.
+  const resumeSources = useMemo(
+    () => buildResumeSources(entityFiles, entityExtraData ?? undefined),
+    [entityFiles, entityExtraData],
+  );
+  const [resumeIndex, setResumeIndex] = useState(0);
+  // Сброс активной вкладки резюме при переключении кандидата.
+  useEffect(() => { setResumeIndex(0); }, [selectedCandidate?.entity_id]);
 
   // Load org tags once
   useEffect(() => {
@@ -2409,23 +2420,23 @@ export default function RecruiterFunnelsPage() {
                               </span>
                             )}
                           </button>
-                          <button
-                            onClick={() => setDetailTab('resume')}
-                            className={clsx(
-                              'px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5',
-                              detailTab === 'resume'
-                                ? 'border-[var(--hf-accent)] text-[var(--hf-dark-100)]'
-                                : 'border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]'
-                            )}
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            Резюме
-                            {hasResume && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--hf-accent-bg-15)] text-[var(--hf-accent)] ml-1">
-                                {resumePages.length || 1}
-                              </span>
-                            )}
-                          </button>
+                          {/* По одной вкладке «Резюме» на источник (паритет с «Все
+                              кандидаты»): каждый влитый профиль/PDF — своя вкладка. */}
+                          {(resumeSources.length > 0 ? resumeSources : [null]).map((_s, i) => (
+                            <button
+                              key={i}
+                              onClick={() => { setDetailTab('resume'); setResumeIndex(i); }}
+                              className={clsx(
+                                'px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5',
+                                detailTab === 'resume' && resumeIndex === i
+                                  ? 'border-[var(--hf-accent)] text-[var(--hf-dark-100)]'
+                                  : 'border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]'
+                              )}
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              Резюме
+                            </button>
+                          ))}
                         </div>
 
                         {/* Tab content */}
@@ -2721,19 +2732,19 @@ export default function RecruiterFunnelsPage() {
                                     </span>
                                   )}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDetailTab('resume')}
-                                  className="hf-vacancy-detail-tab"
-                                >
-                                  <FileText className="h-[14px] w-[14px]" />
-                                  Резюме
-                                  {hasResume && (
-                                    <span className="hf-vacancy-detail-tab-count">
-                                      {resumePages.length || 1}
-                                    </span>
-                                  )}
-                                </button>
+                                {/* По одной вкладке «Резюме» на источник (паритет с
+                                    «Все кандидаты»). */}
+                                {(resumeSources.length > 0 ? resumeSources : [null]).map((_s, i) => (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => { setDetailTab('resume'); setResumeIndex(i); }}
+                                    className="hf-vacancy-detail-tab"
+                                  >
+                                    <FileText className="h-[14px] w-[14px]" />
+                                    Резюме
+                                  </button>
+                                ))}
                               </div>
 
                               {detailTab === 'anketa' && selectedCandidate.entity_id && (
@@ -2767,9 +2778,15 @@ export default function RecruiterFunnelsPage() {
                                   )}
                                 </div>
                               ) : funnelCard ? (
-                                /* Общий просмотрщик резюме — 1-в-1 с «Все кандидаты» (ResumeViewer). */
+                                /* Общий просмотрщик резюме — 1-в-1 с «Все кандидаты» (ResumeViewer).
+                                   Без dupCard вкладки рисуем сами выше (управляемый режим). С dupCard
+                                   карточка-источник другая → пусть ResumeViewer рисует свои вкладки. */
                                 <div className="flex-1 overflow-y-auto">
-                                  <ResumeViewer card={dupCard ?? funnelCard} />
+                                  <ResumeViewer
+                                    card={dupCard ?? funnelCard}
+                                    activeIndex={dupCard ? undefined : resumeIndex}
+                                    hideTabBar={!dupCard}
+                                  />
                                 </div>
                               ) : null}
                             </div>
