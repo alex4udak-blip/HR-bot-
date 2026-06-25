@@ -48,15 +48,25 @@
     const n = findProfileNode(j);
     if (n) {
       if (!data.full_name && typeof n.title === 'string') data.full_name = n.title;
-      // Должность: специализация (+ грейд/квалификация). specialization — объект {title}.
+      // Должность: специализация ИЛИ роли из divisions[] (на многих профилях
+      // specialization=null, а реальная роль лежит в divisions — напр.
+      // «Менеджер проекта», «Менеджер по маркетингу»), затем грейд/квалификация.
       const spec = n.specialization && (typeof n.specialization === 'string' ? n.specialization : (n.specialization.title || ''));
       const qual = typeof n.qualification === 'string' ? n.qualification : (n.qualification && n.qualification.title || '');
-      const pos = [spec, qual].filter(Boolean).join(' · ');
+      let roles = [];
+      if (spec) roles = [spec];
+      else if (Array.isArray(n.divisions)) roles = n.divisions.map(d => d && (d.title || d.name)).filter(Boolean);
+      const pos = [roles.join(' / '), qual].filter(Boolean).join(' · ');
       if (pos && !data.position) data.position = pos;
       if (n.age != null) data.age = typeof n.age === 'string' ? n.age : String(n.age);
       if (n.location) data.city = typeof n.location === 'string' ? n.location : (n.location.title || '');
       if (n.experience != null) data.total_experience = typeof n.experience === 'string' ? n.experience : String(n.experience);
       if (Array.isArray(n.skills)) data.skills = n.skills.map(s => (s && (s.title || s.name)) || s).filter(v => typeof v === 'string');
+      // Языки: foreignLanguages[] = [{title:"Английский С1"}, …]. Без этого
+      // языки на Habr не приезжали (отдельной DOM-секции часто нет).
+      if (Array.isArray(n.foreignLanguages) && !data.languages.length) {
+        data.languages = n.foreignLanguages.map(l => (l && (l.title || l.name)) || l).filter(v => typeof v === 'string');
+      }
       if (n.salary) data.salary = typeof n.salary === 'string' ? n.salary : (n.salary.amount ? (n.salary.amount + ' ' + (n.salary.currency || '')) : '');
       const items = n.contacts && n.contacts.items;
       if (Array.isArray(items)) items.forEach(c => {
@@ -162,7 +172,11 @@
       ['Высшее образование', 'Дополнительное образование', 'Образование'].forEach((t) => {
         const s = sectionEl(new RegExp(t, 'i'));
         const b = s && s.querySelector('.resume-educations');
-        if (b) { const x = clean(b); if (x) edus.push(x); }
+        if (b) {
+          // Убираем служебный хвост «• 951 выпускник» из строки вуза.
+          const x = clean(b).replace(/\s*•\s*\d[\d\s]*выпускник\w*/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+          if (x) edus.push(x);
+        }
       });
       if (edus.length) data.education = [...new Set(edus)];
     }

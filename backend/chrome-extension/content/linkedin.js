@@ -184,26 +184,52 @@
     }
 
     if (!data.photo_url) {
-      // ВАЖНО: раньше брали ПЕРВЫЙ licdn-image → это БАННЕР (обложка профиля),
-      // а не лицо. У LinkedIn URL фото и баннера различаются:
-      //   фото:   …/profile-displayphoto-…  /  …/profile-framedphoto-…
-      //   баннер: …/profile-displaybackgroundimage-…
-      //   лого компаний в опыте: …/company-logo-…
-      // Берём именно фото; баннер/лого отбрасываем. alt профильного фото = имя.
+      // Фото профиля = ближайший к имени <img> внутри интро-карточки. Проверено
+      // по живому DOM (Lena Vasko): это единственная картинка-человек рядом с
+      // именем; у неё пустой alt и URL без «profile-displayphoto», поэтому
+      // прежний фильтр по URL/alt её ОТБРАСЫВАЛ → фото вообще не приезжало.
+      // Лого компаний и баннер идут дальше (в опыте/шапке) — их отсеиваем.
+      const isLogoOrBg = (im) => {
+        const a = (im.getAttribute('alt') || '').toLowerCase();
+        const s = (im.src || im.getAttribute('src') || '').toLowerCase();
+        return /logo|логотип|компани|company/.test(a) ||
+               /company-logo|displaybackground|backgroundimage/.test(s);
+      };
+      const isUsable = (s) =>
+        s && !/^data:/i.test(s) && !/\.svg(?:[?#]|$)/i.test(s) && !/ghost/i.test(s);
+      const norm = (s) => (s && s.startsWith('//')) ? 'https:' + s : s;
+
+      // 1) Идём от листа с именем вверх — берём ближайший подходящий <img>.
       const nameTxt = data.full_name || '';
-      const isBg = (s) => /displaybackground|backgroundimage|company-logo|company-background/i.test(s);
-      const isPhoto = (s) => /profile-displayphoto|profile-framedphoto/i.test(s);
-      let best = '';
-      for (const img of document.querySelectorAll('img')) {
-        const src = img.src || '';
-        if (!/licdn\.com\/dms\/image/.test(src)) continue;
-        if (isBg(src)) continue;                                  // баннер/лого — мимо
-        const alt = (img.getAttribute('alt') || '').trim();
-        if (isPhoto(src) && nameTxt && alt === nameTxt) { best = src; break; } // идеал
-        if (isPhoto(src) && !best) best = src;                    // фото по URL
-        if (!best && nameTxt && alt === nameTxt) best = src;      // совпал alt
+      let leaf = null;
+      if (nameTxt) {
+        for (const el of document.querySelectorAll('h1,h2,span,div,a,p')) {
+          if (el.children.length) continue;
+          if ((el.textContent || '').replace(/\s+/g, ' ').trim() === nameTxt) { leaf = el; break; }
+        }
       }
-      if (best) data.photo_url = best;
+      if (leaf) {
+        let node = leaf;
+        for (let i = 0; i < 7 && node && !data.photo_url; i++) {
+          node = node.parentElement;
+          if (!node) break;
+          for (const im of node.querySelectorAll('img')) {
+            if (isLogoOrBg(im)) continue;
+            const src = norm(im.src || im.getAttribute('src') || '');
+            if (isUsable(src)) { data.photo_url = src; break; }
+          }
+        }
+      }
+      // 2) Фолбэк: любой licdn-image, кроме баннера/лого.
+      if (!data.photo_url) {
+        for (const im of document.querySelectorAll('img')) {
+          const src = norm(im.src || '');
+          if (!/licdn\.com\/dms\/image/.test(src)) continue;
+          if (isLogoOrBg(im) || !isUsable(src)) continue;
+          data.photo_url = src;
+          break;
+        }
+      }
     }
     return headline;
   }
