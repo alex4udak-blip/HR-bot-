@@ -24,7 +24,6 @@ import {
   Trash2,
   Inbox,
   Lock,
-  Eye,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -43,6 +42,7 @@ import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
 import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
+import ResumeTab from '@/components/entities/candidateDetail/ResumeTab';
 import { buildStageContainers, buildResumeSources, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
@@ -2784,17 +2784,11 @@ export default function RecruiterFunnelsPage() {
                                   )}
                                 </div>
                               ) : funnelCard ? (
-                                <div className="flex-1 flex items-center justify-center p-8">
-                                  <div className="text-center">
-                                    <FileText className="w-12 h-12 text-[var(--hf-dark-400)] mx-auto mb-4 opacity-50" />
-                                    <p className="text-[var(--hf-dark-500)] mb-4">Для просмотра резюме откройте профиль в «Все кандидаты»</p>
-                                    <button
-                                      onClick={() => navigate(`/all-candidates?entity=${funnelCard.id}`)}
-                                      className="px-4 py-2 bg-[var(--hf-accent)] text-white rounded-lg hover:opacity-90 transition-opacity text-sm"
-                                    >
-                                      Открыть профиль
-                                    </button>
-                                  </div>
+                                /* Единый просмотрщик резюме — 1-в-1 с «Все кандидаты».
+                                   Полоса вкладок «Резюме» рисуется родителем выше
+                                   (по resumeIndex); ResumeTab показывает выбранный источник. */
+                                <div className="flex-1 overflow-y-auto">
+                                  <ResumeTab card={funnelCard} activeIndex={resumeIndex} />
                                 </div>
                               ) : null}
                             </div>
