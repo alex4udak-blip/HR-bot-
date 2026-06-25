@@ -519,6 +519,79 @@ async def list_entity_dispatches(entity_id: int, db: AsyncSession = Depends(get_
     } for d in rows]
 
 
+@router.get("/entity/{entity_id}/all-dispatches")
+async def list_entity_all_dispatches(entity_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Get dispatches for entity + all merged_from entities (historical profiles)."""
+    current_user = await db.merge(current_user)
+    await _assert_entity_access(entity_id, current_user, db)
+
+    # Get main entity with merged_from data
+    entity = (await db.execute(select(Entity).where(Entity.id == entity_id))).scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+
+    # Collect all entity IDs: current + all merged_from
+    entity_ids = [entity_id]
+    merged_from = entity.extra_data.get("merged_from") if isinstance(entity.extra_data, dict) else []
+    if isinstance(merged_from, list):
+        for m in merged_from:
+            if isinstance(m, dict) and "entity_id" in m:
+                entity_ids.append(m["entity_id"])
+
+    # Fetch dispatches for all entities
+    all_rows = (await db.execute(
+        select(FormDispatch).where(FormDispatch.entity_id.in_(entity_ids)).order_by(FormDispatch.created_at.desc())
+    )).scalars().all()
+
+    # Build form metadata (titles, field labels)
+    form_ids = {d.form_id for d in all_rows}
+    titles = {}
+    labels_by_form = {}
+    if form_ids:
+        for fid, title, fields in (await db.execute(
+            select(FormTemplate.id, FormTemplate.title, FormTemplate.fields).where(FormTemplate.id.in_(form_ids))
+        )).all():
+            titles[fid] = title
+            lbl = {}
+            for f in (fields or []):
+                if isinstance(f, dict) and f.get("id"):
+                    lbl[f["id"]] = f.get("label") or f["id"]
+            labels_by_form[fid] = lbl
+
+    # Load submissions
+    subs = {}
+    sub_ids = [d.submission_id for d in all_rows if d.submission_id]
+    if sub_ids:
+        for s in (await db.execute(select(FormSubmission).where(FormSubmission.id.in_(sub_ids)))).scalars().all():
+            subs[s.id] = s.data
+
+    # Build response with source info (which profile filled it)
+    result = []
+    for d in all_rows:
+        source_name = None
+        if d.entity_id != entity_id:
+            # This dispatch belongs to a merged profile
+            for m in merged_from:
+                if isinstance(m, dict) and m.get("entity_id") == d.entity_id:
+                    source_name = m.get("name") or f"Профиль #{d.entity_id}"
+                    break
+        else:
+            source_name = "Текущий профиль"
+
+        result.append({
+            "id": d.id, "form_id": d.form_id, "form_title": titles.get(d.form_id),
+            "token": d.token, "status": d.status, "seen_by_recruiter": d.seen_by_recruiter,
+            "submission_id": d.submission_id, "answers": subs.get(d.submission_id),
+            "field_labels": labels_by_form.get(d.form_id, {}),
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "submitted_at": d.submitted_at.isoformat() if d.submitted_at else None,
+            "source_entity_id": d.entity_id,
+            "source_name": source_name,  # Какой профиль заполнил
+        })
+
+    return result
+
+
 @router.get("/entity/{entity_id}/unread-count")
 async def entity_forms_unread_count(entity_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     current_user = await db.merge(current_user)

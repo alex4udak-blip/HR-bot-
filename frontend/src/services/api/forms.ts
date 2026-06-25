@@ -159,6 +159,11 @@ export const getEntityDispatches = async (entityId: number): Promise<FormDispatc
   return data;
 };
 
+export const getEntityAllDispatches = async (entityId: number): Promise<(FormDispatchInfo & { source_entity_id: number; source_name: string | null })[]> => {
+  const { data } = await api.get(`/forms/entity/${entityId}/all-dispatches`);
+  return data;
+};
+
 export const getEntityFormsUnreadCount = async (entityId: number): Promise<{ count: number }> => {
   const { data } = await api.get(`/forms/entity/${entityId}/unread-count`);
   return data;

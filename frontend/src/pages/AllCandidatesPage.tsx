@@ -61,7 +61,7 @@ import {
 import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
 import type { ApplicationStage } from "@/types";
 import { STATUS_LABELS } from "@/types";
-import { updateApplication, deleteApplicationHistory } from "@/services/api/vacancies";
+import { getVacancies, createApplication, updateApplication, deleteApplicationHistory } from "@/services/api/vacancies";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
 import type { EntityFile } from "@/services/api/entities";
@@ -76,7 +76,7 @@ import {
   HuntflowOptionsIcon,
 } from "@/components/hr/HuntflowControls";
 import { useFormBadgeStore } from "@/stores/formBadgeStore";
-import { getEntityFormsUnreadCount, getEntityDispatches, markEntityDispatchesSeen, type FormDispatchInfo } from "@/services/api/forms";
+import { getEntityFormsUnreadCount, getEntityAllDispatches, markEntityDispatchesSeen, type FormDispatchInfo } from "@/services/api/forms";
 import { AnketaResponses } from "@/features/forms/AnketaResponses";
 import CandidateVacancyCard from "@/components/entities/CandidateVacancyCard";
 const AnketaDrawer = lazy(() =>
@@ -2647,13 +2647,14 @@ const InfoTab = memo(function InfoTab({
 });
 
 function AnketaTab({ card }: { card: KanbanCard }) {
-  const [dispatches, setDispatches] = useState<FormDispatchInfo[]>([]);
+  const [dispatches, setDispatches] = useState<(FormDispatchInfo & { source_entity_id?: number; source_name?: string | null })[]>([]);
   const clearBadge = useFormBadgeStore((s) => s.clear);
   useEffect(() => {
     let alive = true;
     const fetchRows = async () => {
       try {
-        const rows = await getEntityDispatches(card.id);
+        // Получаем анкеты из текущего профиля + всех merged контейнеров
+        const rows = await getEntityAllDispatches(card.id);
         if (alive) setDispatches(rows);
       } catch {
         /* пустой/ошибка — покажем пустое состояние */
@@ -3753,6 +3754,25 @@ export function NewCandidateModal({
   const [saving, setSaving] = useState(false);
   const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [vacancyOptions, setVacancyOptions] = useState<Array<{ id: number; title: string }>>([]);
+  const [selectedVacancyId, setSelectedVacancyId] = useState<number | ''>('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await getVacancies({ status: 'open' });
+        if (cancelled) return;
+        const myOpen = all
+          .filter(v => v.status === 'open' || v.status === 'pending_review')
+          .map(v => ({ id: v.id, title: v.title }));
+        setVacancyOptions(myOpen);
+      } catch (e) {
+        console.warn('Failed to load vacancies:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const fullName = [lastName, firstName, middleName]
     .map((part) => part.trim())
     .filter(Boolean)
@@ -3795,7 +3815,7 @@ export function NewCandidateModal({
     try {
       const normalizedPhone = phone.trim() ? normalizePhone(phone) : undefined;
       const cleanTelegram = telegram.trim().replace(/^@/, "");
-      await createEntity({
+      const created = await createEntity({
         type: "candidate",
         name: fullName,
         status: "new",
@@ -3813,7 +3833,23 @@ export function NewCandidateModal({
           skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
         },
       });
-      toast.success("Кандидат добавлен");
+
+      if (selectedVacancyId) {
+        try {
+          await createApplication(Number(selectedVacancyId), {
+            vacancy_id: Number(selectedVacancyId),
+            entity_id: created.id,
+            source: 'manual_add',
+          });
+          const vacancyTitle = vacancyOptions.find(v => v.id === selectedVacancyId)?.title;
+          toast.success(`Кандидат добавлен на воронку «${vacancyTitle ?? '...'}»`);
+        } catch (e) {
+          console.error('Attach to vacancy failed:', e);
+          toast.error('Кандидат создан, но не удалось добавить на воронку');
+        }
+      } else {
+        toast.success("Кандидат добавлен");
+      }
       onSaved();
     } catch {
       toast.error("Ошибка создания кандидата");
@@ -3828,6 +3864,7 @@ export function NewCandidateModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="hf-candidate-modal-overlay font-hf-body"
+      style={{ background: 'rgba(0, 0, 0, 0.7)' }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -4062,6 +4099,30 @@ export function NewCandidateModal({
                 onChange={(e) => setResumeText(e.target.value)}
                 className="hf-candidate-resume-textarea"
               />
+            </div>
+            <div className="hf-candidate-source-block">
+              <label className="hf-candidate-label">Отправить в воронку (опционально)</label>
+              <select
+                value={selectedVacancyId}
+                onChange={(e) => setSelectedVacancyId(e.target.value ? Number(e.target.value) : '')}
+                className="hf-candidate-select-btn"
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  backgroundColor: '#f5f5f5',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="">— без воронки —</option>
+                {vacancyOptions.map(v => (
+                  <option key={v.id} value={v.id}>{v.title}</option>
+                ))}
+              </select>
+              {vacancyOptions.length === 0 && (
+                <p className="hf-candidate-error" style={{ marginTop: '6px' }}>У вас нет открытых воронок</p>
+              )}
             </div>
           </div>
         </div>
