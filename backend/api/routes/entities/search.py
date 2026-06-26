@@ -523,8 +523,16 @@ async def apply_entity_to_vacancy(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
-    # Check if user has edit access to this entity
-    has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    # Полный доступ к базе (суперадмин/владелец/org-admin) → может добавить
+    # любого кандидата на вакансию — единообразно с перемещением и снятием с
+    # воронки (там тоже full-access проходит). Иначе — строгая проверка
+    # edit-доступа к самому кандидату (создатель / dept-admin / шара).
+    # Ленивый импорт — как в check_entity_access (избегаем цикла routes↔services).
+    from ...services.auth import has_full_database_access
+    has_access = (
+        await has_full_database_access(current_user, org.id, db)
+        or await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+    )
     if not has_access:
         raise HTTPException(403, "No edit permission for this entity")
 
