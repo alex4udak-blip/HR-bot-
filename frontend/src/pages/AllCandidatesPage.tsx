@@ -1345,7 +1345,7 @@ export default function AllCandidatesPage() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 28, opacity: 0 }}
             transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 z-[85] min-h-[198px] w-[calc(100%-48px)] max-w-[680px] overflow-hidden rounded-t-[12px] rounded-b-[8px] border border-[var(--hf-ui-divider-soft)] border-t-[3px] border-t-[var(--hf-main-900)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[20px] shadow-[0_18px_60px_var(--hf-alpha-300)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:border-t-white hf-dark-disabled:bg-[var(--hf-bg-dark)]"
+            className="absolute bottom-0 inset-x-[16px] mx-auto z-[85] min-h-[198px] max-w-[680px] overflow-hidden rounded-t-[12px] rounded-b-[8px] border border-[var(--hf-ui-divider-soft)] border-t-[3px] border-t-[var(--hf-main-900)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[20px] shadow-[0_18px_60px_var(--hf-alpha-300)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:border-t-white hf-dark-disabled:bg-[var(--hf-bg-dark)]"
           >
             <button
               type="button"
