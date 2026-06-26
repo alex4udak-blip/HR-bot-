@@ -111,7 +111,11 @@ function previewValue(field: FormField): unknown {
 // FormBuilder component
 // ============================================================
 
-export function FormBuilder({ formId, onClose }: { formId: number; onClose: () => void }) {
+// saveAsTemplate по умолчанию TRUE: любое «Сохранить» (из «Конструктора форм»
+// или из карточки кандидата) кладёт форму в «Шаблоны» (is_template=true), чтобы
+// её можно было переиспользовать. Передай saveAsTemplate={false} для разовой
+// формы, которая НЕ должна попадать в библиотеку шаблонов.
+export function FormBuilder({ formId, onClose, saveAsTemplate = true }: { formId: number; onClose: () => void; saveAsTemplate?: boolean }) {
   const [form, setForm] = useState<import('@/services/api/forms').FormTemplate | null>(null);
   const [fields, setFields] = useState<FormField[]>([]);
   const [title, setTitle] = useState('');
@@ -169,9 +173,10 @@ export function FormBuilder({ formId, onClose }: { formId: number; onClose: () =
         fields,
         is_active: isActive,
         vacancy_ids: selectedVacancyIds,
+        ...(saveAsTemplate ? { is_template: true } : {}),
       });
       setForm(updated);
-      toast.success('Форма сохранена');
+      toast.success(saveAsTemplate ? 'Сохранено в шаблоны' : 'Форма сохранена');
     } catch {
       toast.error('Ошибка сохранения');
     } finally {
