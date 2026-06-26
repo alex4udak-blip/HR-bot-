@@ -157,11 +157,12 @@ describe("AddToVacancyModal", () => {
           }),
       );
 
-      const { container } = render(<AddToVacancyModal {...defaultProps} />);
+      render(<AddToVacancyModal {...defaultProps} />);
 
-      // Check for spinner (animate-spin class)
+      // Check for spinner (animate-spin class). Модалка теперь в портале на
+      // document.body, поэтому ищем там, а не в container рендера.
       await waitFor(() => {
-        const spinner = container.querySelector(".animate-spin");
+        const spinner = document.body.querySelector(".animate-spin");
         expect(spinner).toBeInTheDocument();
       });
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { X, Search, Briefcase, Plus, ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
@@ -137,7 +138,10 @@ export default function AddToVacancyModal({
     );
   };
 
-  return (
+  // Рендерим в портал на document.body: иначе position:fixed считается от
+  // трансформированного предка (страница в framer-motion layout-анимациях) и
+  // модалка съезжает по-разному у разных пользователей.
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -382,6 +386,7 @@ export default function AddToVacancyModal({
           )}
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
