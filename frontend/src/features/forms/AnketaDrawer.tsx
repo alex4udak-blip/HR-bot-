@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import toast from 'react-hot-toast';
-import { Plus, LayoutGrid, Sparkles, X, Send, Loader2, ChevronLeft, FileText, PenLine } from 'lucide-react';
+import { Plus, LayoutGrid, Sparkles, X, Send, Loader2, ChevronLeft, FileText, PenLine, Trash2 } from 'lucide-react';
 import { FormBuilder } from './FormBuilder';
 import {
-  createForm, createDispatch, getFormTemplates,
+  createForm, createDispatch, getFormTemplates, deleteForm,
   aiFormChat,
   type FormTemplate, type AIChatMessage, type FormField,
 } from '@/services/api/forms';
@@ -119,7 +119,7 @@ export function AnketaDrawer({
 
             {step === 'builder' && formId && (
               <>
-                <FormBuilder formId={formId} onClose={() => setStep(isTemplate ? 'template-select' : 'entry')} />
+                <FormBuilder formId={formId} saveAsTemplate onClose={() => setStep(isTemplate ? 'template-select' : 'entry')} />
                 {!isTemplate && (
                   <div className="sticky bottom-0 bg-white border-t px-5 py-3 flex justify-end gap-2">
                     <button
@@ -185,6 +185,7 @@ function TemplateSelectStep({ onBack, onUse, onEdit, onNew }: {
 }) {
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     getFormTemplates()
@@ -192,6 +193,20 @@ function TemplateSelectStep({ onBack, onUse, onEdit, onNew }: {
       .catch(() => toast.error('Не удалось загрузить шаблоны'))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Удалить шаблон? Это действие необратимо.')) return;
+    setDeletingId(id);
+    try {
+      await deleteForm(id);
+      setTemplates(prev => prev.filter(t => t.id !== id));
+      toast.success('Шаблон удалён');
+    } catch {
+      toast.error('Не удалось удалить шаблон');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -247,6 +262,14 @@ function TemplateSelectStep({ onBack, onUse, onEdit, onNew }: {
                     title="Редактировать шаблон"
                   >
                     <PenLine className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(tpl.id)}
+                    disabled={deletingId === tpl.id}
+                    className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+                    title="Удалить шаблон"
+                  >
+                    {deletingId === tpl.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   </button>
                   <button
                     onClick={() => onUse(tpl)}
