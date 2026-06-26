@@ -24,7 +24,7 @@ Actions: read, write, delete, share
 from datetime import datetime
 from typing import Optional, List, Set, Tuple, Union, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 import logging
 
 from ..models.database import (
@@ -138,6 +138,15 @@ class PermissionService:
         # 6. Department-based access (LEAD/SUB_ADMIN) for read
         if await self._check_department_access(user, resource):
             return True
+
+        # 6.5. Practice department members can read ALL chats in the org.
+        # Mirrors the chat-list rule in routes/chats.py — the whole practice
+        # team works on candidate chats together. Without this, practice
+        # members could open a chat (it shows up in the list) but got
+        # "Access denied" from AI-assistant / report endpoints. Read-only.
+        if action == "read" and resource_type == "chat":
+            if await self._is_practice_member(user, user_org.id):
+                return True
 
         # 7. SharedAccess for read
         if await self._has_shared_access(user, resource_type, self._get_resource_id(resource)):
@@ -427,6 +436,32 @@ class PermissionService:
         org = result.scalar_one_or_none()
         self._cache[cache_key] = org
         return org
+
+    async def _is_practice_member(self, user: User, org_id: int) -> bool:
+        """Check if user is a member of the 'Практика' department in the org.
+
+        Members of the practice department see and work with ALL chats in the
+        organization (the whole team works on candidate chats together). This
+        mirrors the list query in routes/chats.py so that AI-assistant and
+        report endpoints grant the same read access.
+        """
+        cache_key = f"practice_member_{user.id}_{org_id}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        result = await self.db.execute(
+            select(DepartmentMember.id)
+            .join(Department, Department.id == DepartmentMember.department_id)
+            .where(
+                DepartmentMember.user_id == user.id,
+                Department.org_id == org_id,
+                func.lower(func.trim(Department.name)) == 'практика',
+            )
+            .limit(1)
+        )
+        is_member = result.scalar_one_or_none() is not None
+        self._cache[cache_key] = is_member
+        return is_member
 
     def _check_org_boundary(self, resource: Any, org_id: int) -> bool:
         """Check if resource belongs to organization."""

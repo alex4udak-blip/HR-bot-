@@ -550,8 +550,10 @@ export default function ChatDetail({ chat }: ChatDetailProps) {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast.success('Отчёт скачан');
-    } catch {
-      toast.error('Ошибка скачивания');
+    } catch (e) {
+      console.error('downloadReport failed:', e);
+      const msg = e instanceof Error ? e.message : '';
+      toast.error(msg.includes('403') ? 'Нет доступа к отчёту' : 'Ошибка скачивания');
     } finally {
       setDownloadingReport(null);
     }
