@@ -298,35 +298,35 @@ function AddMemberModal({
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.95, y: 10 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md bg-[#0c0c10] border border-white/[0.08] rounded-2xl p-5"
+        className="w-full max-w-md bg-white dark:bg-[#0c0c10] border border-black/10 dark:border-white/[0.08] rounded-2xl p-5 shadow-xl"
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <UserPlus className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-sm font-semibold text-white">
+            <UserPlus className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
               {result?.password_generated ? 'Сохрани пароль' : 'Добавить участника'}
             </h3>
           </div>
-          <button onClick={onClose} className="text-white/30 hover:text-white/60">
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 dark:text-white/30 dark:hover:text-white/60">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {result?.password_generated ? (
           <div className="space-y-3">
-            <p className="text-xs text-white/50">
-              Новый аккаунт для <span className="text-white">{result.email}</span> создан.
+            <p className="text-xs text-gray-600 dark:text-white/50">
+              Новый аккаунт для <span className="text-gray-900 dark:text-white">{result.email}</span> создан.
               Пароль показывается один раз — передай его сотруднику.
             </p>
-            <div className="flex items-center gap-2 px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg">
-              <code className="flex-1 text-sm text-emerald-300 font-mono">{result.password_generated}</code>
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 dark:bg-white/[0.04] border border-black/10 dark:border-white/[0.08] rounded-lg">
+              <code className="flex-1 text-sm text-emerald-600 dark:text-emerald-300 font-mono">{result.password_generated}</code>
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(result.password_generated!);
                   toast.success('Пароль скопирован');
                 }}
-                className="text-white/40 hover:text-white"
+                className="text-gray-500 hover:text-gray-900 dark:text-white/40 dark:hover:text-white"
                 title="Скопировать"
               >
                 <Copy className="w-4 h-4" />
@@ -334,7 +334,7 @@ function AddMemberModal({
             </div>
             <button
               onClick={onAdded}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-sm font-medium"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-sm font-medium"
             >
               <Check className="w-4 h-4" />
               Готово
@@ -347,10 +347,10 @@ function AddMemberModal({
                 <select
                   value={deptId}
                   onChange={(e) => setDeptId(Number(e.target.value))}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+                  className="w-full bg-gray-50 dark:bg-white/[0.04] border border-black/10 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
                 >
                   {myDepts.map((d) => (
-                    <option key={d.department_id} value={d.department_id} className="bg-[#0c0c10]">
+                    <option key={d.department_id} value={d.department_id} className="bg-white dark:bg-[#0c0c10] text-gray-900 dark:text-white">
                       {d.department_name}
                     </option>
                   ))}
@@ -358,8 +358,8 @@ function AddMemberModal({
               </Field>
             )}
             {myDepts.length === 1 && (
-              <p className="text-[11px] text-white/40">
-                В отдел: <span className="text-white/70">{myDepts[0].department_name}</span>
+              <p className="text-[11px] text-gray-500 dark:text-white/40">
+                В отдел: <span className="text-gray-800 dark:text-white/70">{myDepts[0].department_name}</span>
               </p>
             )}
 
@@ -368,7 +368,7 @@ function AddMemberModal({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Иван Петров"
-                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+                className="w-full bg-gray-50 dark:bg-white/[0.04] border border-black/10 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
               />
             </Field>
 
@@ -378,9 +378,9 @@ function AddMemberModal({
                 onChange={(e) => setEmail(e.target.value)}
                 type="email"
                 placeholder="ivan@example.com"
-                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+                className="w-full bg-gray-50 dark:bg-white/[0.04] border border-black/10 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
               />
-              <p className="text-[10px] text-white/30 mt-1">
+              <p className="text-[10px] text-gray-500 dark:text-white/30 mt-1">
                 Если такой аккаунт уже есть — добавим его в отдел; нового пользователя создадим с паролем, который покажется один раз.
               </p>
             </Field>
@@ -390,9 +390,9 @@ function AddMemberModal({
                 value={telegram}
                 onChange={(e) => setTelegram(e.target.value)}
                 placeholder="@ivan_petrov"
-                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+                className="w-full bg-gray-50 dark:bg-white/[0.04] border border-black/10 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
               />
-              <p className="text-[10px] text-white/30 mt-1">
+              <p className="text-[10px] text-gray-500 dark:text-white/30 mt-1">
                 Чтобы наш бот сразу мог писать ему задачи и уведомления. Если аккаунт уже есть и Telegram у него уже привязан — не перетираем.
               </p>
             </Field>
@@ -406,7 +406,7 @@ function AddMemberModal({
                       'flex items-start gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors',
                       position === opt.value
                         ? 'bg-emerald-500/10 border-emerald-500/40'
-                        : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+                        : 'bg-gray-50 dark:bg-white/[0.02] border-black/10 dark:border-white/[0.06] hover:bg-gray-100 dark:hover:bg-white/[0.04]'
                     )}
                   >
                     <input
@@ -418,8 +418,8 @@ function AddMemberModal({
                       className="mt-0.5 accent-emerald-500"
                     />
                     <div className="flex-1">
-                      <div className="text-sm text-white">{opt.label}</div>
-                      <div className="text-[10px] text-white/30">{opt.hint}</div>
+                      <div className="text-sm text-gray-900 dark:text-white">{opt.label}</div>
+                      <div className="text-[10px] text-gray-500 dark:text-white/30">{opt.hint}</div>
                     </div>
                   </label>
                 ))}
@@ -429,14 +429,14 @@ function AddMemberModal({
             <div className="flex gap-2 pt-2">
               <button
                 onClick={onClose}
-                className="flex-1 px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.06] border border-white/[0.06] text-white/60 text-sm"
+                className="flex-1 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-white/[0.04] dark:hover:bg-white/[0.06] border border-black/10 dark:border-white/[0.06] text-gray-700 dark:text-white/60 text-sm"
               >
                 Отмена
               </button>
               <button
                 onClick={submit}
                 disabled={!canSubmit}
-                className="flex-1 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-500/40 text-emerald-300 text-sm font-medium"
+                className="flex-1 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-sm font-medium"
               >
                 {submitting ? 'Добавляю…' : 'Добавить'}
               </button>
@@ -451,7 +451,7 @@ function AddMemberModal({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wider text-white/30 mb-1.5">{label}</div>
+      <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-white/30 mb-1.5">{label}</div>
       {children}
     </div>
   );
