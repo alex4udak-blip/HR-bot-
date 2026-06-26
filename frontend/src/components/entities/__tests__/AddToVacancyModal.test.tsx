@@ -418,8 +418,10 @@ describe("AddToVacancyModal", () => {
       await userEvent.click(submitButton);
 
       await waitFor(() => {
+        // Конфликт «уже в вакансии» теперь показывается именным тостом, а батч
+        // не срывается (остальных это не блокирует).
         expect(toast.default.error).toHaveBeenCalledWith(
-          "Entity already applied to this vacancy",
+          "Кандидат John Doe уже есть в вакансии",
         );
       });
     });

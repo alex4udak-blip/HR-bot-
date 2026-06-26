@@ -17,6 +17,8 @@ interface AddToVacancyModalProps {
   onClose: () => void;
   onSuccess: () => void;
   bulkEntityIds?: number[];
+  // Имена выбранных кандидатов (для именных тостов «уже в вакансии»).
+  bulkEntities?: { id: number; name: string }[];
   anchorRect?: {
     left: number;
     bottom: number;
@@ -29,6 +31,7 @@ export default function AddToVacancyModal({
   onClose,
   onSuccess,
   bulkEntityIds,
+  bulkEntities,
   anchorRect,
 }: AddToVacancyModalProps) {
   const [loading, setLoading] = useState(false);
@@ -109,23 +112,51 @@ export default function AddToVacancyModal({
     }
 
     setLoading(true);
-    try {
-      const ids =
-        bulkEntityIds && bulkEntityIds.length > 0 ? bulkEntityIds : [entityId];
-      for (const id of ids) {
-        await applyEntityToVacancy(id, selectedVacancy.id);
+
+    // Кого добавляем (с именами для тостов): bulkEntities → bulkEntityIds →
+    // одиночный entity.
+    const entities =
+      bulkEntities && bulkEntities.length > 0
+        ? bulkEntities
+        : bulkEntityIds && bulkEntityIds.length > 0
+          ? bulkEntityIds.map((id) => ({ id, name: `#${id}` }))
+          : [{ id: entityId, name: entityName }];
+
+    // Добавляем КАЖДОГО независимо: один «уже в вакансии» не должен срывать
+    // весь батч — остальные должны переместиться.
+    let okCount = 0;
+    const alreadyIn: string[] = [];
+    const failed: string[] = [];
+    for (const ent of entities) {
+      try {
+        await applyEntityToVacancy(ent.id, selectedVacancy.id);
+        okCount += 1;
+      } catch (error) {
+        const detail = getErrorDetail(error, "");
+        if (/already applied|уже .*ваканс/i.test(detail)) {
+          alreadyIn.push(ent.name);
+        } else {
+          failed.push(ent.name);
+        }
       }
-      toast.success(
-        ids.length > 1
-          ? `${ids.length} кандидат(ов) добавлено в вакансию`
-          : "Кандидат добавлен в вакансию",
-      );
-      onSuccess();
-    } catch (error: any) {
-      toast.error(getErrorDetail(error, "Ошибка при добавлении"));
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
+
+    // Конфликты — отдельным красным тостом (с крестиком) на каждого по имени.
+    alreadyIn.forEach((name) =>
+      toast.error(`Кандидат ${name} уже есть в вакансии`),
+    );
+    failed.forEach((name) => toast.error(`Не удалось добавить: ${name}`));
+    // Успех — один зелёный тост (с галочкой) с реальным числом перемещённых.
+    if (okCount > 0) {
+      toast.success(
+        okCount === 1
+          ? "Кандидат добавлен в вакансию"
+          : `Перемещено кандидатов: ${okCount}`,
+      );
+    }
+
+    onSuccess();
   };
 
   // Format salary for display using utility function

@@ -1469,7 +1469,6 @@ export default function AllCandidatesPage() {
             onSuccess={() => {
               setShowAddToVacancy(false);
               fetchBoard();
-              toast.success("Кандидат добавлен на вакансию");
             }}
             anchorRect={addToVacancyAnchor}
           />
@@ -1481,13 +1480,14 @@ export default function AllCandidatesPage() {
             onClose={() => setShowBulkAddToVacancy(false)}
             onSuccess={async () => {
               setShowBulkAddToVacancy(false);
-              toast.success(
-                `${selectedIds.size} кандидат(ов) добавлено на вакансию`,
-              );
               setSelectedIds(new Set());
               fetchBoard();
             }}
             bulkEntityIds={Array.from(selectedIds)}
+            bulkEntities={selectedBulkCards.map((c) => ({
+              id: c.id,
+              name: c.name,
+            }))}
           />
         )}
       </AnimatePresence>

@@ -1587,9 +1587,19 @@ export default function RecruiterFunnelsPage() {
   // Get vacancies available for adding a candidate (exclude current vacancy, show only open ones)
   const availableVacanciesForCandidate = useMemo(() => {
     if (!selectedCandidate?.entity_id) return [];
+    // Заявка-оригинал после «Взять в работу» переходит в open и висит рядом со
+    // своим клоном (рабочей вакансией) → дубль («Трафик» ×2). Прячем оригиналы,
+    // у которых уже есть клон — как это делает сайдбар и AddToVacancyModal.
+    const clonedSourceIds = new Set<number>();
+    vacancies.forEach((v) => {
+      const src = (v.extra_data as Record<string, unknown> | undefined)
+        ?.cloned_from_request_id;
+      if (typeof src === 'number') clonedSourceIds.add(src);
+    });
     return vacancies.filter(v =>
       v.id !== selectedVacancyId &&
-      v.status === 'open'
+      v.status === 'open' &&
+      !clonedSourceIds.has(v.id)
     );
   }, [vacancies, selectedVacancyId, selectedCandidate?.entity_id]);
 

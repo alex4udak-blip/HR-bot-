@@ -665,7 +665,6 @@ export default function ContactDetail({ entity }: ContactDetailProps) {
           onSuccess={() => {
             setShowAddToVacancyModal(false);
             setVacanciesKey(k => k + 1);
-            toast.success('Кандидат добавлен в вакансию');
           }}
         />
       )}
