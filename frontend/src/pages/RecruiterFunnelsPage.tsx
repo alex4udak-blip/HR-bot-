@@ -628,13 +628,19 @@ export default function RecruiterFunnelsPage() {
     setSelectedIds(new Set());
   }, [selectedVacancyId]);
 
+  // Счётчик-версия загрузок. Тихий focus-refresh (alt-tab) или гонка запросов
+  // могли прилететь со СТАРЫМ списком и перезаписать свежее состояние — напр.
+  // вернуть только что снятого кандидата («удаляй дважды»). Применяем результат
+  // загрузки ТОЛЬКО если это последний запрос; любая мутация бампает счётчик.
+  const loadSeqRef = useRef(0);
   const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
+    const seq = ++loadSeqRef.current;
     if (!silent) setCandidatesLoading(true);
     try {
       const apps = await getApplications(vacancyId);
-      setCandidates(apps);
+      if (seq === loadSeqRef.current) setCandidates(apps);
     } catch {
-      if (!silent) setCandidates([]);
+      if (!silent && seq === loadSeqRef.current) setCandidates([]);
     } finally {
       if (!silent) setCandidatesLoading(false);
     }
@@ -1300,6 +1306,7 @@ export default function RecruiterFunnelsPage() {
       }
       const idsSet = new Set(appIds);
       setCandidates((prev) => prev.filter((c) => !idsSet.has(c.id)));
+      loadSeqRef.current++; // инвалидируем in-flight загрузки — иначе focus-refresh вернёт снятого
       toast.success('Кандидат убран из вакансии');
       setRemoveConfirmOpen(false);
       setRemoveTargetAppId(null);
@@ -1520,6 +1527,7 @@ export default function RecruiterFunnelsPage() {
       }
       const idsSet = new Set(ids);
       setCandidates((prev) => prev.filter((c) => !idsSet.has(c.id)));
+      loadSeqRef.current++; // инвалидируем in-flight загрузки
       setSelectedIds(new Set());
       toast.success(`${selectedEntityIds.size} кандидат(ов) снято с воронки`);
       fetchVacancies();
