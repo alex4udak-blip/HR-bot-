@@ -3622,7 +3622,7 @@ export function EditCandidateModal({
         </div>
 
         <div className="flex h-[var(--hf-edit-body-h)] flex-shrink-0 overflow-hidden bg-[var(--hf-white)] px-[var(--hf-space-xxl)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
-          <div className="w-[var(--hf-edit-left-w)] flex-shrink-0 overflow-visible py-[var(--hf-edit-column-py)] pr-[var(--hf-space-xxl)]">
+          <div className="w-[var(--hf-edit-left-w)] flex-shrink-0 overflow-y-auto py-[var(--hf-edit-column-py)] pr-[var(--hf-space-xxl)]">
             <EditField
               label="Фамилия"
               value={lastName}
