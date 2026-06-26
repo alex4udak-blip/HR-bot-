@@ -1341,7 +1341,7 @@ export default function AllCandidatesPage() {
       {/* ===== BULK ACTIONS DRAWER ===== */}
       {createPortal(
         <AnimatePresence>
-          {anySelected && (
+          {anySelected && !showBulkAddToVacancy && !showBulkDeleteConfirm && (
           <motion.div
             initial={{ y: 28, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
