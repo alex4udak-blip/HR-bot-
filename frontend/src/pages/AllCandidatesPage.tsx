@@ -1339,8 +1339,9 @@ export default function AllCandidatesPage() {
       )}
 
       {/* ===== BULK ACTIONS DRAWER ===== */}
-      <AnimatePresence>
-        {anySelected && createPortal(
+      {createPortal(
+        <AnimatePresence>
+          {anySelected && (
           <motion.div
             initial={{ y: 28, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -1446,10 +1447,11 @@ export default function AllCandidatesPage() {
                 Взять на вакансию
               </button>
             </div>
-          </motion.div>,
-          document.body,
-        )}
-      </AnimatePresence>
+          </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
 
       {/* ===== BULK DELETE CONFIRMATION ===== */}
       <AnimatePresence>
