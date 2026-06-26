@@ -1279,15 +1279,27 @@ export default function RecruiterFunnelsPage() {
   // Прошлый этап для отката — from_stage самой свежей записи истории
   // (to_stage у неё = текущий этап).
   const handleRemoveFromVacancy = useCallback(async () => {
-    const targetId = removeTargetAppId ?? selectedCandidate?.id;
-    if (!targetId) return;
+    const targetAppId = removeTargetAppId ?? selectedCandidate?.id;
+    if (!targetAppId) return;
+    // entity_id целевого кандидата (по отклику в списке или по выбранному).
+    const targetEntityId =
+      candidates.find((c) => c.id === targetAppId)?.entity_id
+      ?? selectedCandidate?.entity_id;
+    if (!targetEntityId) return;
+    // Снимаем ВСЕ отклики этого кандидата на текущую вакансию (а не один по id):
+    // дубли откликов (из мержа/импорта) показываются отдельными карточками, и
+    // удаление по одному id заставляло «снимать одного и того же дважды».
+    const appIds = candidates
+      .filter((c) => c.entity_id === targetEntityId)
+      .map((c) => c.id);
+    if (appIds.length === 0) return;
     setRemoveBusy(true);
     try {
-      await deleteApplication(targetId);
-      // Локально убираем отклик — кандидат исчезает из текущего списка; выбором
-      // дальше управляет эффект (как при смене этапа): останемся на вкладке,
-      // последний → заглушка «На этом этапе пока нет кандидатов».
-      setCandidates((prev) => prev.filter((c) => c.id !== targetId));
+      for (const id of appIds) {
+        await deleteApplication(id);
+      }
+      const idsSet = new Set(appIds);
+      setCandidates((prev) => prev.filter((c) => !idsSet.has(c.id)));
       toast.success('Кандидат убран из вакансии');
       setRemoveConfirmOpen(false);
       setRemoveTargetAppId(null);
@@ -1298,7 +1310,7 @@ export default function RecruiterFunnelsPage() {
     } finally {
       setRemoveBusy(false);
     }
-  }, [removeTargetAppId, selectedCandidate, refreshActivity]);
+  }, [removeTargetAppId, selectedCandidate, candidates, refreshActivity]);
 
   const saveEntityNote = useCallback(async (
     text: string,
@@ -1489,20 +1501,27 @@ export default function RecruiterFunnelsPage() {
     });
   }, []);
 
-  // Bulk «Снять с воронки» — удаляет выбранные отклики из текущей вакансии.
+  // Bulk «Снять с воронки» — удаляет выбранных кандидатов из текущей вакансии.
   const handleBulkRemoveFromVacancy = useCallback(async () => {
     if (selectedIds.size === 0) return;
-    if (!window.confirm(`Снять ${selectedIds.size} кандидат(ов) с воронки?`)) return;
+    // entity_id выбранных карточек → затем ВСЕ их отклики на этой вакансии (на
+    // случай дублей из мержа), иначе дубль остался бы после снятия.
+    const selectedEntityIds = new Set(
+      candidates.filter((c) => selectedIds.has(c.id)).map((c) => c.entity_id),
+    );
+    if (!window.confirm(`Снять ${selectedEntityIds.size} кандидат(ов) с воронки?`)) return;
     setBulkMoving(true);
     try {
-      const ids = Array.from(selectedIds);
+      const ids = candidates
+        .filter((c) => selectedEntityIds.has(c.entity_id))
+        .map((c) => c.id);
       for (const id of ids) {
         await deleteApplication(id);
       }
       const idsSet = new Set(ids);
       setCandidates((prev) => prev.filter((c) => !idsSet.has(c.id)));
       setSelectedIds(new Set());
-      toast.success(`${ids.length} кандидат(ов) снято с воронки`);
+      toast.success(`${selectedEntityIds.size} кандидат(ов) снято с воронки`);
       fetchVacancies();
     } catch (err) {
       // Показываем реальную причину с бэкенда (например, недостаточно прав).
@@ -1511,7 +1530,7 @@ export default function RecruiterFunnelsPage() {
     } finally {
       setBulkMoving(false);
     }
-  }, [selectedIds, fetchVacancies]);
+  }, [selectedIds, candidates, fetchVacancies]);
 
   const anySelected = selectedIds.size > 0;
 
