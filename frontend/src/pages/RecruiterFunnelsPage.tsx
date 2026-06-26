@@ -29,7 +29,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, bulkMoveApplications, getEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, createApplication } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
@@ -155,8 +155,6 @@ const colorToStageColor = (colorKey?: string, enumVal?: string): string => {
   if (enumVal && STAGE_COLORS[enumVal]) return enumVal;
   return 'screening'; // fallback cyan
 };
-
-const fallbackColor = { bg: 'bg-[var(--hf-white-alpha-10)]', text: 'text-[var(--hf-dark-300)]', dot: 'bg-[var(--hf-dark-400)]', badge: 'bg-[var(--hf-white-alpha-15)] text-[var(--hf-dark-300)]' };
 
 // ==================== Types ====================
 
@@ -417,8 +415,6 @@ export default function RecruiterFunnelsPage() {
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkMoving, setBulkMoving] = useState(false);
-  const [bulkStageDropdownOpen, setBulkStageDropdownOpen] = useState(false);
-  const bulkStageRef = useRef<HTMLDivElement>(null);
 
 
   // Master-detail state
@@ -1493,48 +1489,29 @@ export default function RecruiterFunnelsPage() {
     });
   }, []);
 
-  // Bulk move selected candidates to a stage
-  const handleBulkMove = useCallback(async (stage: ApplicationStage) => {
+  // Bulk «Снять с воронки» — удаляет выбранные отклики из текущей вакансии.
+  const handleBulkRemoveFromVacancy = useCallback(async () => {
     if (selectedIds.size === 0) return;
+    if (!window.confirm(`Снять ${selectedIds.size} кандидат(ов) с воронки?`)) return;
     setBulkMoving(true);
-    setBulkStageDropdownOpen(false);
     try {
       const ids = Array.from(selectedIds);
-      const updated = await bulkMoveApplications(ids, stage);
-      const updatedMap = new Map(updated.map(a => [a.id, a]));
-      setCandidates(prev =>
-        prev.map(c => updatedMap.has(c.id) ? { ...c, stage } : c)
-      );
+      for (const id of ids) {
+        await deleteApplication(id);
+      }
+      const idsSet = new Set(ids);
+      setCandidates((prev) => prev.filter((c) => !idsSet.has(c.id)));
       setSelectedIds(new Set());
-      toast.success(`${ids.length} кандидатов перемещено`);
+      toast.success(`${ids.length} кандидат(ов) снято с воронки`);
       fetchVacancies();
     } catch (err) {
-      // Показываем НАСТОЯЩУЮ причину с бэкенда (доступ / валидация / разные
-      // вакансии) — иначе «чужой» HR видит лишь обобщённое сообщение и не
-      // понимает, что не так.
+      // Показываем реальную причину с бэкенда (например, недостаточно прав).
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(detail || 'Ошибка массового перемещения');
+      toast.error(detail || 'Ошибка при снятии с воронки');
     } finally {
       setBulkMoving(false);
     }
   }, [selectedIds, fetchVacancies]);
-
-  // Bulk reject
-  const handleBulkReject = useCallback(() => {
-    handleBulkMove('rejected' as ApplicationStage);
-  }, [handleBulkMove]);
-
-  // Close bulk stage dropdown on outside click
-  useEffect(() => {
-    if (!bulkStageDropdownOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (bulkStageRef.current && !bulkStageRef.current.contains(e.target as Node)) {
-        setBulkStageDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [bulkStageDropdownOpen]);
 
   const anySelected = selectedIds.size > 0;
 
@@ -2348,54 +2325,15 @@ export default function RecruiterFunnelsPage() {
                         <span className="text-xs text-[var(--hf-main-600)] font-medium">
                           Выбрано: {selectedIds.size}
                         </span>
-                        <div className="flex items-center gap-2">
-                          {/* Move dropdown */}
-                          <div className="relative" ref={bulkStageRef}>
-                            <button
-                              onClick={() => setBulkStageDropdownOpen(!bulkStageDropdownOpen)}
-                              disabled={bulkMoving}
-                              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-[var(--hf-accent-bg-15)] text-[var(--hf-accent)] hover:bg-[var(--hf-accent-bg-25)] transition-colors disabled:opacity-50"
-                            >
-                              {bulkMoving ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
-                              Переместить
-                            </button>
-                            {bulkStageDropdownOpen && (
-                              <div className="absolute bottom-full left-0 mb-1 z-50 w-56 py-1 bg-[var(--hf-white)] border border-[var(--hf-ui-border)] rounded-xl shadow-[var(--hf-shadow-2xl)] overflow-hidden">
-                                <div className="px-3 py-1.5 text-[10px] text-[var(--hf-main-500)] uppercase tracking-wider font-semibold">
-                                  Перенести в
-                                </div>
-                                {STAGE_ORDER.map((stage) => {
-                                  const sc = STAGE_COLORS[stage] || fallbackColor;
-                                  return (
-                                    <button
-                                      key={stage}
-                                      onClick={() => handleBulkMove(stage as ApplicationStage)}
-                                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors text-sm hover:bg-[var(--hf-ui-hover)] text-[var(--hf-main-700)] hover:text-[var(--hf-main-900)]"
-                                    >
-                                      <span className={clsx('w-2.5 h-2.5 rounded-full flex-shrink-0', sc.dot)} />
-                                      <span className="flex-1">{getVacancyStageLabel(stage)}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                          {/* Reject */}
-                          <button
-                            onClick={handleBulkReject}
-                            disabled={bulkMoving}
-                            className="px-2.5 py-1 text-xs font-medium rounded-lg bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-badge)] transition-colors disabled:opacity-50"
-                          >
-                            Отказать
-                          </button>
-                          {/* Deselect */}
-                          <button
-                            onClick={() => setSelectedIds(new Set())}
-                            className="px-2.5 py-1 text-xs font-medium rounded-lg text-[var(--hf-main-600)] hover:bg-[var(--hf-ui-hover)] transition-colors"
-                          >
-                            Снять
-                          </button>
-                        </div>
+                        {/* Единственное действие: снять выбранных кандидатов с воронки */}
+                        <button
+                          onClick={handleBulkRemoveFromVacancy}
+                          disabled={bulkMoving}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-badge)] transition-colors disabled:opacity-50"
+                        >
+                          {bulkMoving ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                          Снять с воронки
+                        </button>
                       </div>
                     )}
                   </div>
