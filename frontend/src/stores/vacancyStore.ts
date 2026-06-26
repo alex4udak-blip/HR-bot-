@@ -84,7 +84,16 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
     if (!silent) set({ isLoading: true });
     set({ error: null });
     try {
-      const vacancies = await api.getVacancies(get().filters);
+      const raw = await api.getVacancies(get().filters);
+      // Бэк может вернуть клоны одной вакансии (JOIN с откликами: N откликов →
+      // N строк). Дедуплим по id, иначе списки/дропдауны («Переместить» и т.п.)
+      // показывают «Mob dev ×2, Трафик ×2» вместо двух реальных вакансий.
+      const seen = new Set<number>();
+      const vacancies = raw.filter((v) => {
+        if (seen.has(v.id)) return false;
+        seen.add(v.id);
+        return true;
+      });
       set(silent ? { vacancies } : { vacancies, isLoading: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch vacancies';
