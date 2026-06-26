@@ -1708,13 +1708,8 @@ export default function Layout() {
                 >
                   <Plus className="hf-hr-fab-icon" />
                 </button>
-                {/* Анимированный peek входящих уведомлений над кнопкой «+» */}
-                <NotifPeek
-                  onOpenPanel={() => {
-                    setShowHrUserMenu(true);
-                    setShowNotifications(true);
-                  }}
-                />
+                {/* Кнопка уведомлений + peek входящих рядом с «+» */}
+                <NotifPeek />
               </div>
               )}
 

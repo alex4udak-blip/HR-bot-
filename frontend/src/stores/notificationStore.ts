@@ -20,7 +20,8 @@ interface NotificationState {
   clearPeeks: () => void;
 }
 
-const MAX_PEEKS = 3;
+// Храним больше, чем показываем (NotifPeek рендерит 3 карточки + «+N»).
+const MAX_PEEKS = 12;
 
 export const useNotificationStore = create<NotificationState>((set) => ({
   unreadCount: 0,
