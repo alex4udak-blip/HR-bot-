@@ -52,6 +52,26 @@ async def is_org_owner(user: User, org: Organization, db: AsyncSession) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+async def is_org_admin_or_owner(user: User, org: Organization, db: AsyncSession) -> bool:
+    """Админ/владелец организации (или суперадмин).
+
+    OrgRole.admin = «HR Admin — всё кроме /users»: такие пользователи ведут
+    подбор и должны двигать кандидатов в ЛЮБОЙ воронке орга, даже если не
+    назначены на конкретную вакансию. Применяется к правам ПЕРЕМЕЩЕНИЯ откликов
+    (одиночное + массовое). В отличие от is_org_owner включает и OrgRole.admin.
+    """
+    if user.role == UserRole.superadmin:
+        return True
+    result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.org_id == org.id,
+            OrgMember.user_id == user.id,
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin])
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def has_full_database_access(user: User, org: Organization, db: AsyncSession) -> bool:
     """
     Check if user has full database access (can see all vacancies and candidates).

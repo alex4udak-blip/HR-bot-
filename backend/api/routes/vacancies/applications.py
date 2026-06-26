@@ -11,7 +11,8 @@ from .common import (
     logger, get_db, Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
     Entity, EntityType, User, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
-    check_vacancy_access, can_access_vacancy, can_manage_applications
+    check_vacancy_access, can_access_vacancy, can_manage_applications,
+    is_org_admin_or_owner
 )
 from ...services.auth import get_user_org
 
@@ -326,7 +327,14 @@ async def update_application(
         select(Vacancy).where(Vacancy.id == application.vacancy_id)
     )
     vacancy = vacancy_result.scalar()
-    if vacancy and not await can_manage_applications(vacancy, current_user, org, db):
+    # Перемещение по этапам: админ/владелец орга двигает в ЛЮБОЙ воронке,
+    # остальные — если видят вакансию (can_access_vacancy). Единая логика с
+    # массовым перемещением (bulk-move). Удаление из воронки (delete) остаётся
+    # строгим (can_manage_applications), т.к. деструктивно.
+    if vacancy and not (
+        await is_org_admin_or_owner(current_user, org, db)
+        or await can_access_vacancy(vacancy, current_user, org, db)
+    ):
         raise HTTPException(status_code=403, detail="Недостаточно прав для изменения этой вакансии")
 
     # Save old values for notifications

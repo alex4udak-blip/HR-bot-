@@ -11,7 +11,7 @@ from .common import (
     logger, get_db, Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
     Entity, User, STAGE_SYNC_MAP,
     ApplicationResponse, KanbanColumn, KanbanBoard, BulkStageUpdate,
-    check_vacancy_access, can_access_vacancy
+    check_vacancy_access, can_access_vacancy, is_org_admin_or_owner
 )
 from ...services.auth import get_user_org
 
@@ -396,8 +396,12 @@ async def bulk_move_applications(
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found in your organization")
 
-    # Check vacancy-level access rights
-    if not await can_access_vacancy(vacancy, current_user, org, db):
+    # Право перемещения: админ/владелец орга двигает кандидатов в ЛЮБОЙ воронке,
+    # остальные — только если видят конкретную вакансию (can_access_vacancy).
+    if not (
+        await is_org_admin_or_owner(current_user, org, db)
+        or await can_access_vacancy(vacancy, current_user, org, db)
+    ):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
     # Verify all applications belong to the same vacancy

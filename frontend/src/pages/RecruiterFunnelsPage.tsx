@@ -1508,8 +1508,12 @@ export default function RecruiterFunnelsPage() {
       setSelectedIds(new Set());
       toast.success(`${ids.length} кандидатов перемещено`);
       fetchVacancies();
-    } catch {
-      toast.error('Ошибка массового перемещения');
+    } catch (err) {
+      // Показываем НАСТОЯЩУЮ причину с бэкенда (доступ / валидация / разные
+      // вакансии) — иначе «чужой» HR видит лишь обобщённое сообщение и не
+      // понимает, что не так.
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail || 'Ошибка массового перемещения');
     } finally {
       setBulkMoving(false);
     }
