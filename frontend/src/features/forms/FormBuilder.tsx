@@ -136,7 +136,18 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true }: { formId
   useEffect(() => {
     // Load vacancies for multi-select
     import('@/services/api').then(api => {
-      api.getVacancies().then((vacs: { id: number; title: string }[]) => setVacancies(vacs));
+      api.getVacancies().then((vacs: { id: number; title: string; extra_data?: Record<string, unknown> }[]) => {
+        // Дедуп клонов: «Взять в работу» создаёт клон вакансии с тем же названием
+        // (extra_data.cloned_from_request_id), а заявка-оригинал остаётся видимой.
+        // Прячем заявку, если у неё есть клон — иначе «Привязанные воронки»
+        // показывают один и тот же фид дважды (как и чинили в «Взять на вакансию»).
+        const clonedSourceIds = new Set<number>();
+        vacs.forEach((v) => {
+          const src = v.extra_data?.cloned_from_request_id;
+          if (typeof src === 'number') clonedSourceIds.add(src);
+        });
+        setVacancies(vacs.filter((v) => !clonedSourceIds.has(v.id)));
+      });
     });
   }, []);
 
