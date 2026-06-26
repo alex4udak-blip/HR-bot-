@@ -1,6 +1,4 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useCallStore } from '@/stores/callStore';
 import { useEntityStore } from '@/stores/entityStore';
@@ -50,7 +48,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
   const bumpEntityBadge = useFormBadgeStore((s) => s.bump);
   const setUnreadCount = useNotificationStore((s) => s.setUnreadCount);
-  const navigate = useNavigate();
+  const pushPeek = useNotificationStore((s) => s.pushPeek);
 
   // Must be stable: an inline fn here makes useWebSocket's `connect` change every
   // render, which (when the WS can't connect) turns reconnects into a render-loop
@@ -120,14 +118,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
           const m = /entity=(\d+)/.exec(n.link || '');
           if (n.type === 'form_submitted' && m) bumpEntityBadge(parseInt(m[1], 10));
           if (n.type === 'form_submitted') anketaArrived = true;
-          toast((t) => (
-            <span
-              onClick={() => { if (n.link) navigate(n.link); toast.dismiss(t.id); }}
-              style={{ cursor: 'pointer' }}
-            >
-              {n.type === 'form_submitted' ? '📋 ' : '🔔 '}{n.message || n.title}
-            </span>
-          ), { duration: 8000 });
+          // Вместо верхнего тоста — анимированный peek над кнопкой «+» (NotifPeek).
+          pushPeek({
+            id: n.id,
+            type: n.type,
+            title: n.title,
+            message: n.message,
+            link: n.link,
+          });
         }
         // Звук ТОЛЬКО на новую анкету, максимум раз на батч поллинга (без двойного бипа).
         // Идёт исключительно поллингом — надёжно на проде, где WS теряет form.submission.
@@ -137,7 +135,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     poll();
     const id = setInterval(poll, 25000);
     return () => { alive = false; clearInterval(id); };
-  }, [setUnreadCount, bumpEntityBadge, navigate]);
+  }, [setUnreadCount, bumpEntityBadge, pushPeek]);
 
   // Cleanup polling on unmount to prevent memory leaks
   useEffect(() => {

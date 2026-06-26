@@ -56,6 +56,7 @@ import ThemeToggle from "./ThemeToggle";
 import { VacancyForm } from "@/components/vacancies";
 import ParserModal from "@/components/parser/ParserModal";
 import TelegramConnectBanner from "@/components/TelegramConnectBanner";
+import { NotifPeek } from "@/components/NotifPeek";
 import { getVacancy, takeVacancy } from "@/services/api/vacancies";
 import type { Vacancy } from "@/types";
 import { AnimatePresence, motion } from "framer-motion";
@@ -1707,6 +1708,13 @@ export default function Layout() {
                 >
                   <Plus className="hf-hr-fab-icon" />
                 </button>
+                {/* Анимированный peek входящих уведомлений над кнопкой «+» */}
+                <NotifPeek
+                  onOpenPanel={() => {
+                    setShowHrUserMenu(true);
+                    setShowNotifications(true);
+                  }}
+                />
               </div>
               )}
 

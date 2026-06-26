@@ -293,15 +293,9 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true }: { formId
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0">
-            <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              className="text-xl font-bold text-gray-900 bg-transparent border-none outline-none w-full placeholder-gray-400"
-              placeholder="Название формы"
-            />
             <button
               onClick={() => { navigator.clipboard.writeText(publicUrl); toast.success('Ссылка скопирована'); }}
-              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 transition-colors mt-0.5 max-w-full"
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 transition-colors max-w-full"
               title="Скопировать ссылку"
             >
               <Link2 className="w-3 h-3 shrink-0" />
@@ -348,6 +342,17 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true }: { formId
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-6">
+        {/* Name */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Название анкеты</label>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-900 placeholder-gray-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
+            placeholder="Название анкеты"
+          />
+        </div>
+
         {/* Description */}
         <div className="mb-4">
           <input

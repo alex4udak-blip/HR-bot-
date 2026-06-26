@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense, startTransition } from "react";
-import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -71,6 +70,7 @@ import { useFormBadgeStore } from "@/stores/formBadgeStore";
 import { getEntityFormsUnreadCount, getEntityAllDispatches, markEntityDispatchesSeen, type FormDispatchInfo } from "@/services/api/forms";
 import { AnketaResponses } from "@/features/forms/AnketaResponses";
 import CandidateVacancyCard from "@/components/entities/CandidateVacancyCard";
+import { BulkSelectionBar } from "@/components/entities/BulkSelectionBar";
 import ResumeTab, { useResumeSources } from "@/components/entities/candidateDetail/ResumeTab";
 const AnketaDrawer = lazy(() =>
   import("@/features/forms/AnketaDrawer").then((m) => ({ default: m.AnketaDrawer })),
@@ -1339,119 +1339,29 @@ export default function AllCandidatesPage() {
       )}
 
       {/* ===== BULK ACTIONS DRAWER ===== */}
-      {createPortal(
-        <AnimatePresence>
-          {anySelected && !showBulkAddToVacancy && !showBulkDeleteConfirm && (
-          <motion.div
-            initial={{ y: 28, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 28, opacity: 0 }}
-            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed bottom-[16px] inset-x-[16px] mx-auto z-[85] min-h-[198px] max-w-[680px] overflow-hidden rounded-t-[12px] rounded-b-[8px] border border-[var(--hf-ui-divider-soft)] border-t-[3px] border-t-[var(--hf-main-900)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[20px] shadow-[0_18px_60px_var(--hf-alpha-300)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:border-t-white hf-dark-disabled:bg-[var(--hf-bg-dark)]"
-          >
-            <button
-              type="button"
-              onClick={() => setSelectedIds(new Set())}
-              className="absolute right-[22px] top-[20px] inline-flex h-[28px] w-[28px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:bg-[var(--hf-black-alpha-04)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:hover:text-[var(--hf-white)]"
-              title="Закрыть"
-            >
-              <X className="h-[20px] w-[20px]" strokeWidth={1.75} />
-            </button>
-
-            <div className="flex items-center gap-[10px] pr-[54px]">
-              <span className="text-[length:var(--hf-fs-m)] leading-[26px] font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
-                Выбрано кандидатов: {selectedIds.size}
-                <span className="ml-[2px] text-[var(--hf-main-500)]">/1000</span>
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setSelectedIds(
-                    new Set(
-                      filteredCards.slice(0, 1000).map(({ card }) => card.id),
-                    ),
-                  )
-                }
-                className="inline-flex h-[28px] items-center rounded-full bg-[var(--hf-bg-panel)] px-[10px] text-[length:var(--hf-fs-2xs)] leading-[18px] font-medium text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-main-200)] active:bg-[var(--hf-ui-muted-8)]"
-              >
-                Выбрать всех
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedIds(new Set())}
-                className="inline-flex h-[28px] items-center rounded-full bg-[var(--hf-bg-panel)] px-[10px] text-[length:var(--hf-fs-2xs)] leading-[18px] font-medium text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-main-200)] active:bg-[var(--hf-ui-muted-8)]"
-              >
-                Сбросить
-              </button>
-            </div>
-
-            <div className="mt-[22px] flex h-[58px] items-center">
-              <div className="flex items-center">
-                <AnimatePresence initial={false}>
-                  {selectedBulkCards.slice(0, 12).map((card, index) => (
-                    <motion.div
-                      key={card.id}
-                      layout
-                      transition={{
-                        layout: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
-                      }}
-                      className={clsx(
-                        "relative h-[56px] w-[56px] rounded-full",
-                        index > 0 && "-ml-[15px]",
-                      )}
-                      style={{ zIndex: selectedBulkCards.length - index }}
-                      title={card.name}
-                    >
-                      <motion.div
-                        initial={{ opacity: 0, x: -22 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -16 }}
-                        transition={{
-                          duration: 0.26,
-                          ease: [0.22, 1, 0.36, 1],
-                        }}
-                        className="relative h-full w-full overflow-hidden rounded-full border-[2px] border-[color:var(--hf-white)] bg-[var(--hf-ui-hover)] hf-dark-disabled:border-[var(--hf-bg-dark)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)]"
-                      >
-                        {card.photo_url ? (
-                          <img
-                            src={card.photo_url}
-                            alt={card.name}
-                            referrerPolicy="no-referrer"
-                            className="h-full w-full object-cover"
-                            onError={(e) => {
-                              (
-                                e.currentTarget as HTMLImageElement
-                              ).style.display = "none";
-                            }}
-                          />
-                        ) : (
-                          <>
-                            <span className="absolute left-1/2 top-[13px] h-[14px] w-[14px] -translate-x-1/2 rounded-full bg-[var(--hf-ui-border)]" />
-                            <span className="absolute left-1/2 top-[32px] h-[9px] w-[26px] -translate-x-1/2 rounded-[50%] bg-[var(--hf-ui-border)]" />
-                          </>
-                        )}
-                      </motion.div>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
-            </div>
-
-            <div className="mt-[24px] flex items-center gap-[var(--hf-space-s)]">
-              <button
-                onClick={() => setShowBulkAddToVacancy(true)}
-                disabled={bulkProcessing}
-                className="inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium text-[var(--hf-main-900)] shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] disabled:opacity-50 hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:text-[var(--hf-white)]"
-              >
-                <PlusCircle className="h-[20px] w-[20px]" strokeWidth={1.8} />
-                Взять на вакансию
-              </button>
-            </div>
-          </motion.div>
-          )}
-        </AnimatePresence>,
-        document.body,
-      )}
+      <BulkSelectionBar
+        open={anySelected && !showBulkAddToVacancy && !showBulkDeleteConfirm}
+        count={selectedIds.size}
+        avatars={selectedBulkCards.map((card) => ({
+          id: card.id,
+          name: card.name,
+          photo_url: card.photo_url,
+        }))}
+        onSelectAll={() =>
+          setSelectedIds(
+            new Set(filteredCards.slice(0, 1000).map(({ card }) => card.id)),
+          )
+        }
+        onClear={() => setSelectedIds(new Set())}
+        onClose={() => setSelectedIds(new Set())}
+        action={{
+          label: "Взять на вакансию",
+          icon: PlusCircle,
+          variant: "neutral",
+          onClick: () => setShowBulkAddToVacancy(true),
+          disabled: bulkProcessing,
+        }}
+      />
 
       {/* ===== BULK DELETE CONFIRMATION ===== */}
       <AnimatePresence>

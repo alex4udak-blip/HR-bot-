@@ -83,7 +83,7 @@ export function AnketaDrawer({
         <Dialog.Content className="fixed right-0 top-0 bottom-0 z-[1001] w-full max-w-3xl bg-white shadow-xl flex flex-col">
           <div className="flex items-center justify-between border-b px-5 py-3 shrink-0">
             <Dialog.Title className="text-base font-semibold text-gray-900">
-              {isTemplate ? 'Шаблон анкеты' : `Анкета · ${entityName}`}
+              {isTemplate ? 'Шаблон анкеты' : 'Анкета'}
             </Dialog.Title>
             <Dialog.Close className="text-gray-400 hover:text-gray-700" aria-label="Закрыть">
               <X className="w-5 h-5" />

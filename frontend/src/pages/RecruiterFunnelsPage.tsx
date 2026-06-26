@@ -42,6 +42,7 @@ import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
 import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
+import { BulkSelectionBar } from '@/components/entities/BulkSelectionBar';
 import ResumeTab from '@/components/entities/candidateDetail/ResumeTab';
 import { buildStageContainers, buildResumeSources, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
@@ -1508,7 +1509,7 @@ export default function RecruiterFunnelsPage() {
     });
   }, []);
 
-  // Bulk «Снять с воронки» — удаляет выбранных кандидатов из текущей вакансии.
+  // Bulk «Удалить с воронки» — удаляет выбранных кандидатов из текущей вакансии.
   const handleBulkRemoveFromVacancy = useCallback(async () => {
     if (selectedIds.size === 0) return;
     // entity_id выбранных карточек → затем ВСЕ их отклики на этой вакансии (на
@@ -1516,7 +1517,7 @@ export default function RecruiterFunnelsPage() {
     const selectedEntityIds = new Set(
       candidates.filter((c) => selectedIds.has(c.id)).map((c) => c.entity_id),
     );
-    if (!window.confirm(`Снять ${selectedEntityIds.size} кандидат(ов) с воронки?`)) return;
+    if (!window.confirm(`Удалить ${selectedEntityIds.size} кандидат(ов) с воронки?`)) return;
     setBulkMoving(true);
     try {
       const ids = candidates
@@ -1529,12 +1530,12 @@ export default function RecruiterFunnelsPage() {
       setCandidates((prev) => prev.filter((c) => !idsSet.has(c.id)));
       loadSeqRef.current++; // инвалидируем in-flight загрузки
       setSelectedIds(new Set());
-      toast.success(`${selectedEntityIds.size} кандидат(ов) снято с воронки`);
+      toast.success(`${selectedEntityIds.size} кандидат(ов) удалено с воронки`);
       fetchVacancies();
     } catch (err) {
       // Показываем реальную причину с бэкенда (например, недостаточно прав).
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(detail || 'Ошибка при снятии с воронки');
+      toast.error(detail || 'Ошибка при удалении с воронки');
     } finally {
       setBulkMoving(false);
     }
@@ -2346,23 +2347,32 @@ export default function RecruiterFunnelsPage() {
                     )}
                     </div>
 
-                    {/* Bulk actions floating bar */}
-                    {anySelected && (
-                      <div className="absolute bottom-0 left-0 right-0 p-3 bg-[var(--hf-white)] border-t border-[var(--hf-ui-divider)] shadow-[0_-8px_24px_var(--hf-alpha-100)] flex items-center justify-between">
-                        <span className="text-xs text-[var(--hf-main-600)] font-medium">
-                          Выбрано: {selectedIds.size}
-                        </span>
-                        {/* Единственное действие: снять выбранных кандидатов с воронки */}
-                        <button
-                          onClick={handleBulkRemoveFromVacancy}
-                          disabled={bulkMoving}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] hover:bg-[var(--hf-status-red-badge)] transition-colors disabled:opacity-50"
-                        >
-                          {bulkMoving ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-                          Снять с воронки
-                        </button>
-                      </div>
-                    )}
+                    {/* Bulk actions floating bar — единая плашка (как «Все кандидаты») */}
+                    <BulkSelectionBar
+                      open={anySelected}
+                      count={selectedIds.size}
+                      avatars={candidates
+                        .filter((c) => selectedIds.has(c.id))
+                        .map((c) => ({
+                          id: c.id,
+                          name: c.entity_name || 'Без имени',
+                          photo_url: (c as { entity_photo?: string }).entity_photo,
+                        }))}
+                      onSelectAll={() =>
+                        setSelectedIds(
+                          new Set(tabFilteredCandidates.slice(0, 1000).map((c) => c.id)),
+                        )
+                      }
+                      onClear={() => setSelectedIds(new Set())}
+                      onClose={() => setSelectedIds(new Set())}
+                      action={{
+                        label: 'Удалить с воронки',
+                        icon: X,
+                        variant: 'danger',
+                        onClick: handleBulkRemoveFromVacancy,
+                        disabled: bulkMoving,
+                      }}
+                    />
                   </div>
 
                   {/* Right: detail panel */}
@@ -2474,7 +2484,7 @@ export default function RecruiterFunnelsPage() {
                                   onClick={handleRemoveFromVacancy}
                                   className="hf-profile-action-btn"
                                 >
-                                  <X className="hf-profile-action-icon" /> Снять с воронки
+                                  <X className="hf-profile-action-icon" /> Удалить с воронки
                                 </button>
                               </div>
 

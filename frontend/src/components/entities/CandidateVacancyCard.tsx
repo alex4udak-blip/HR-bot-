@@ -639,7 +639,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
             {onRemoveFromVacancy && (
               <ActionChip
                 icon={X}
-                label="Снять с воронки"
+                label="Удалить с воронки"
                 onClick={() => onRemoveFromVacancy(applicationId)}
               />
             )}
