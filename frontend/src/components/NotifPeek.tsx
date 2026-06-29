@@ -6,11 +6,13 @@ import clsx from "clsx";
 import { useNotificationStore } from "@/stores/notificationStore";
 import {
   getNotifications,
+  getUnreadCount,
   markNotificationRead,
   markAllNotificationsRead,
   type Notification,
 } from "@/services/api/notifications";
 import { isAnketaSoundMuted, setAnketaSoundMuted } from "@/utils/notificationSound";
+import { NotifSettings } from "@/components/NotifSettings";
 
 // ================================================================
 // NOTIF PEEK — кнопка уведомлений справа от «+» (FAB) + собственный поповер.
@@ -54,6 +56,14 @@ export function NotifPeek() {
       setLoading(false);
     }
   }, []);
+
+  // После смены настроек типов — перечитать список и счётчик (фильтр ретроактивный).
+  const refreshAfterPrefs = useCallback(() => {
+    void loadList();
+    getUnreadCount()
+      .then((r) => setUnreadCount(r.count))
+      .catch(() => {});
+  }, [loadList, setUnreadCount]);
 
   const openPanel = useCallback(() => {
     setPanelOpen(true);
@@ -192,6 +202,7 @@ export function NotifPeek() {
                     Уведомления
                   </span>
                   <div className="flex items-center gap-3">
+                    <NotifSettings onChanged={refreshAfterPrefs} />
                     <button
                       type="button"
                       onClick={() => {

@@ -1,4 +1,4 @@
-import { deduplicatedGet, debouncedMutation } from './client';
+import api, { deduplicatedGet, debouncedMutation } from './client';
 
 // ============================================================
 // TYPES
@@ -39,4 +39,19 @@ export const markNotificationRead = async (id: number): Promise<void> => {
 
 export const markAllNotificationsRead = async (): Promise<void> => {
   await debouncedMutation('put', '/notifications/read-all', {});
+};
+
+// Настройки типов уведомлений (тип → вкл/выкл), хранятся на аккаунте.
+export type NotificationPrefs = Record<string, boolean>;
+
+export const getNotificationPrefs = async (): Promise<NotificationPrefs> => {
+  const { data } = await api.get<{ prefs: NotificationPrefs }>('/notifications/prefs');
+  return data.prefs;
+};
+
+export const updateNotificationPrefs = async (
+  prefs: NotificationPrefs,
+): Promise<NotificationPrefs> => {
+  const { data } = await api.put<{ prefs: NotificationPrefs }>('/notifications/prefs', { prefs });
+  return data.prefs;
 };

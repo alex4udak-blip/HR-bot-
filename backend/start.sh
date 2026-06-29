@@ -58,6 +58,14 @@ async def ensure_shadow_columns():
             print('Adding shadow_owner_id column...')
             await conn.execute(text('ALTER TABLE users ADD COLUMN shadow_owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL'))
 
+        # Check and add notification_prefs column to users (per-account notif toggles)
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'notification_prefs')\"
+        ))
+        if not result.scalar():
+            print('Adding notification_prefs column to users...')
+            await conn.execute(text(\"ALTER TABLE users ADD COLUMN notification_prefs JSONB DEFAULT '{}'::jsonb\"))
+
         # Check and add file_data column to entity_files (bytea for DB file storage)
         result = await conn.execute(text(
             \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'entity_files' AND column_name = 'file_data')\"

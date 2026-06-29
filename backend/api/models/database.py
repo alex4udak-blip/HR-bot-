@@ -337,6 +337,7 @@ class User(Base):
     # Additional contact identifiers for speaker matching
     additional_emails = Column(JSON, default=list)  # List of additional email addresses
     additional_telegram_usernames = Column(JSON, default=list)  # List of additional telegram usernames
+    notification_prefs = Column(JSON, default=dict)  # {notif_type: bool} вкл/выкл типов уведомлений (дефолты — в routes/notifications.py)
     is_active = Column(Boolean, default=True)
     token_version = Column(Integer, default=0, nullable=False)  # Increment on password change
     # Brute force protection

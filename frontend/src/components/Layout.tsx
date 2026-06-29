@@ -57,6 +57,7 @@ import { VacancyForm } from "@/components/vacancies";
 import ParserModal from "@/components/parser/ParserModal";
 import TelegramConnectBanner from "@/components/TelegramConnectBanner";
 import { NotifPeek } from "@/components/NotifPeek";
+import { NotifSettings } from "@/components/NotifSettings";
 import { getVacancy, takeVacancy } from "@/services/api/vacancies";
 import type { Vacancy } from "@/types";
 import { AnimatePresence, motion } from "framer-motion";
@@ -1796,6 +1797,12 @@ export default function Layout() {
                                 Уведомления
                               </span>
                               <div className="flex items-center gap-3">
+                                <NotifSettings
+                                  onChanged={() => {
+                                    fetchNotifications();
+                                    fetchUnreadCount();
+                                  }}
+                                />
                                 <button
                                   type="button"
                                   onClick={() => {
