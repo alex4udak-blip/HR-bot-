@@ -129,7 +129,7 @@ export function NotifPeek() {
     <>
       {/* Стек peek'ов — растёт ВВЕРХ над нижним рядом (над «+» и кнопкой).
           До 3 карточек, новейшая снизу (у кнопки); сверх — чип «+N». */}
-      <div className="pointer-events-none absolute bottom-full left-0 z-[131] mb-2 -ml-3 flex w-[240px] flex-col items-stretch gap-1.5">
+      <div className="pointer-events-none absolute bottom-full left-0 z-[41] mb-2 -ml-3 flex w-[240px] flex-col items-stretch gap-1.5">
         {overflow > 0 && (
           <span className="pointer-events-none self-start rounded-full bg-[var(--hf-red-500)] px-2.5 py-1 text-[11px] font-bold leading-none text-white shadow-[0_6px_18px_rgba(225,29,72,0.45)]">
             +{overflow}
@@ -186,7 +186,7 @@ export function NotifPeek() {
 
       {/* Поповер списка уведомлений — НАД нижним рядом (над «+» и кнопкой),
           в той же привязке, что и peek. */}
-      <div className="absolute bottom-full left-0 z-[140] mb-2 -ml-3">
+      <div className="absolute bottom-full left-0 z-[45] mb-2 -ml-3">
         <AnimatePresence>
           {panelOpen && (
             <motion.div
@@ -289,8 +289,9 @@ export function NotifPeek() {
         </AnimatePresence>
       </div>
 
-      {/* Постоянная кнопка уведомлений — справа от «+». */}
-      <div className="absolute left-full top-1/2 z-[130] ml-2 -translate-y-1/2">
+      {/* Постоянная кнопка уведомлений — справа от «+». z ниже модалок (50),
+          чтобы не светиться поверх окна «Добавить на вакансию» и т.п. */}
+      <div className="absolute left-full top-1/2 z-[40] ml-2 -translate-y-1/2">
         <motion.button
           ref={btnRef}
           type="button"
@@ -304,11 +305,12 @@ export function NotifPeek() {
           className={
             unreadCount > 0
               ? "inline-flex items-center gap-1.5 rounded-full border-2 border-[var(--hf-red-500)] bg-[var(--hf-red-500)] px-3 py-1.5 text-[12px] font-bold text-white shadow-[0_0_18px_rgba(225,29,72,0.7)]"
-              : "inline-flex items-center gap-1.5 rounded-full border border-[var(--hf-ui-border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-[var(--hf-main-800)] shadow-[0_0_16px_rgba(255,255,255,0.55)]"
+              : "inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--hf-ui-border)] bg-white text-[var(--hf-main-800)] shadow-[0_0_16px_rgba(255,255,255,0.55)]"
           }
           title="Открыть уведомления"
         >
-          <Bell className="h-3.5 w-3.5" strokeWidth={2.2} />
+          {/* Без уведомлений — крупнее (была слишком маленькая иконка). */}
+          <Bell className={unreadCount > 0 ? "h-3.5 w-3.5" : "h-5 w-5"} strokeWidth={2.2} />
           {unreadCount > 0 && (
             <span>{unreadCount > 99 ? "99+" : unreadCount} новых</span>
           )}
