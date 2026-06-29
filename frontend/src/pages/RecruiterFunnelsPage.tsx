@@ -29,7 +29,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, createApplication } from '@/services/api';
+import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
@@ -43,6 +43,7 @@ import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
 import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
 import { BulkSelectionBar } from '@/components/entities/BulkSelectionBar';
+import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
 import ResumeTab from '@/components/entities/candidateDetail/ResumeTab';
 import { buildStageContainers, buildResumeSources, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
@@ -416,6 +417,8 @@ export default function RecruiterFunnelsPage() {
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkMoving, setBulkMoving] = useState(false);
+  // Модалка массового перемещения в другую воронку.
+  const [showBulkMove, setShowBulkMove] = useState(false);
 
 
   // Master-detail state
@@ -1643,22 +1646,22 @@ export default function RecruiterFunnelsPage() {
     if (!selectedCandidate?.entity_id) return;
     setAddingToVacancy(true);
     try {
-      await createApplication(targetVacancyId, {
-        vacancy_id: targetVacancyId,
-        entity_id: selectedCandidate.entity_id,
-        source: 'manual_add',
-      });
+      // MOVE: apply-to-vacancy переносит кандидата (снимает с текущей воронки),
+      // а не дублирует — один кандидат = одна воронка.
+      await applyEntityToVacancy(selectedCandidate.entity_id, targetVacancyId, 'manual_add');
       const targetVacancy = vacancies.find(v => v.id === targetVacancyId);
-      toast.success(`Кандидат добавлен в «${targetVacancy?.title || targetVacancyId}»`);
+      toast.success(`Кандидат перемещён в «${targetVacancy?.title || targetVacancyId}»`);
       setShowAddToVacancy(false);
+      setSelectedCandidateId(null); // ушёл из текущей воронки
+      if (selectedVacancyId) loadCandidates(selectedVacancyId);
       fetchVacancies();
     } catch (err: any) {
-      const detail = err?.response?.data?.detail || 'Ошибка добавления на вакансию';
+      const detail = err?.response?.data?.detail || 'Ошибка перемещения';
       toast.error(detail);
     } finally {
       setAddingToVacancy(false);
     }
-  }, [selectedCandidate?.entity_id, vacancies, fetchVacancies]);
+  }, [selectedCandidate?.entity_id, vacancies, fetchVacancies, selectedVacancyId, loadCandidates]);
 
   // ==================== Render ====================
 
@@ -2375,14 +2378,47 @@ export default function RecruiterFunnelsPage() {
                       }
                       onClear={() => setSelectedIds(new Set())}
                       onClose={() => setSelectedIds(new Set())}
-                      action={{
-                        label: 'Удалить с воронки',
-                        icon: X,
-                        variant: 'danger',
-                        onClick: handleBulkRemoveFromVacancy,
-                        disabled: bulkMoving,
-                      }}
+                      actions={[
+                        {
+                          label: 'Переместить в воронку',
+                          icon: Plus,
+                          variant: 'neutral',
+                          onClick: () => setShowBulkMove(true),
+                          disabled: bulkMoving,
+                        },
+                        {
+                          label: 'Удалить с воронки',
+                          icon: X,
+                          variant: 'danger',
+                          onClick: handleBulkRemoveFromVacancy,
+                          disabled: bulkMoving,
+                        },
+                      ]}
                     />
+                    {showBulkMove && (
+                      <AddToVacancyModal
+                        entityId={
+                          candidates.find((c) => selectedIds.has(c.id))?.entity_id ?? 0
+                        }
+                        entityName={`${selectedIds.size} кандидат(ов)`}
+                        bulkEntityIds={candidates
+                          .filter((c) => selectedIds.has(c.id))
+                          .map((c) => c.entity_id)}
+                        bulkEntities={candidates
+                          .filter((c) => selectedIds.has(c.id))
+                          .map((c) => ({
+                            id: c.entity_id,
+                            name: c.entity_name || 'Без имени',
+                          }))}
+                        onClose={() => setShowBulkMove(false)}
+                        onSuccess={() => {
+                          setShowBulkMove(false);
+                          setSelectedIds(new Set());
+                          if (selectedVacancyId) loadCandidates(selectedVacancyId);
+                          fetchVacancies();
+                        }}
+                      />
+                    )}
                   </div>
 
                   {/* Right: detail panel */}

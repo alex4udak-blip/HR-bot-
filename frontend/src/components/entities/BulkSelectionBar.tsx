@@ -35,7 +35,7 @@ export function BulkSelectionBar({
   onSelectAll,
   onClear,
   onClose,
-  action,
+  actions,
 }: {
   open: boolean;
   count: number;
@@ -44,9 +44,8 @@ export function BulkSelectionBar({
   onSelectAll: () => void;
   onClear: () => void;
   onClose: () => void;
-  action: BulkSelectionAction;
+  actions: BulkSelectionAction[];
 }) {
-  const ActionIcon = action.icon;
   return createPortal(
     <AnimatePresence>
       {open && (
@@ -139,20 +138,26 @@ export function BulkSelectionBar({
             </div>
           </div>
 
-          <div className="mt-[24px] flex items-center gap-[var(--hf-space-s)]">
-            <button
-              onClick={action.onClick}
-              disabled={action.disabled}
-              className={clsx(
-                "inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors disabled:opacity-50",
-                action.variant === "danger"
-                  ? "border-[var(--hf-status-red-badge)] bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] hover:brightness-95"
-                  : "border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] text-[var(--hf-main-900)] hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:text-[var(--hf-white)]",
-              )}
-            >
-              <ActionIcon className="h-[20px] w-[20px]" strokeWidth={1.8} />
-              {action.label}
-            </button>
+          <div className="mt-[24px] flex flex-wrap items-center gap-[var(--hf-space-s)]">
+            {actions.map((action) => {
+              const ActionIcon = action.icon;
+              return (
+                <button
+                  key={action.label}
+                  onClick={action.onClick}
+                  disabled={action.disabled}
+                  className={clsx(
+                    "inline-flex h-[40px] items-center gap-[var(--hf-space-s)] rounded-[var(--hf-radius-s)] border px-[15px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium shadow-[0_1px_4px_var(--hf-alpha-150)] transition-colors disabled:opacity-50",
+                    action.variant === "danger"
+                      ? "border-[var(--hf-status-red-badge)] bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] hover:brightness-95"
+                      : "border-[var(--hf-ui-card-border)] bg-[var(--hf-white)] text-[var(--hf-main-900)] hover:border-[var(--hf-ui-border)] hover:bg-[var(--hf-white)] active:bg-[var(--hf-bg-panel)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:text-[var(--hf-white)]",
+                  )}
+                >
+                  <ActionIcon className="h-[20px] w-[20px]" strokeWidth={1.8} />
+                  {action.label}
+                </button>
+              );
+            })}
           </div>
         </motion.div>
       )}

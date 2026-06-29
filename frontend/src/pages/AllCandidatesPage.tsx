@@ -1354,13 +1354,15 @@ export default function AllCandidatesPage() {
         }
         onClear={() => setSelectedIds(new Set())}
         onClose={() => setSelectedIds(new Set())}
-        action={{
-          label: "Взять на вакансию",
-          icon: PlusCircle,
-          variant: "neutral",
-          onClick: () => setShowBulkAddToVacancy(true),
-          disabled: bulkProcessing,
-        }}
+        actions={[
+          {
+            label: "Взять на вакансию",
+            icon: PlusCircle,
+            variant: "neutral",
+            onClick: () => setShowBulkAddToVacancy(true),
+            disabled: bulkProcessing,
+          },
+        ]}
       />
 
       {/* ===== BULK DELETE CONFIRMATION ===== */}

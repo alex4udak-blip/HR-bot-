@@ -545,18 +545,28 @@ async def apply_entity_to_vacancy(
     if not vacancy:
         raise HTTPException(404, "Vacancy not found")
 
-    # Check if candidate already has an application for THIS vacancy (prevent duplicates)
-    existing_same_vacancy = await db.execute(
-        select(VacancyApplication).where(
-            VacancyApplication.entity_id == entity_id,
-            VacancyApplication.vacancy_id == data.vacancy_id
-        )
+    # MOVE-семантика: один кандидат = одна воронка. Если кандидат уже на целевой
+    # вакансии — переносить некуда (возвращаем существующую заявку, без дублей).
+    # Иначе снимаем ВСЕ прежние заявки кандидата и ставим одну новую на целевой —
+    # «Переместить»/«Взять на вакансию» именно ПЕРЕМЕЩАЮТ, а не дублируют.
+    existing_apps = (await db.execute(
+        select(VacancyApplication).where(VacancyApplication.entity_id == entity_id)
+    )).scalars().all()
+    already_on_target = next(
+        (a for a in existing_apps if a.vacancy_id == data.vacancy_id), None
     )
-    if existing_same_vacancy.scalar():
-        raise HTTPException(
-            status_code=400,
-            detail="Candidate is already applied to this vacancy"
-        )
+    if already_on_target:
+        return {
+            "success": True,
+            "application_id": already_on_target.id,
+            "entity_id": entity_id,
+            "vacancy_id": data.vacancy_id,
+            "vacancy_title": vacancy.title,
+            "stage": already_on_target.stage.value,
+            "moved": False,
+        }
+    for old_app in existing_apps:
+        await db.delete(old_app)
 
     # Маша: новый кандидат должен быть сверху колонки, а не в хвосте.
     # Та же логика что в applications.create_application и magic_button:
@@ -609,7 +619,16 @@ async def apply_entity_to_vacancy(
     )
     await db.commit()
 
-    logger.info(f"Entity {entity_id} applied to vacancy {data.vacancy_id} by user {current_user.id}")
+    # Авто-метка HR: пересчитываем закреплённых рекрутеров СРАЗУ после move —
+    # старая воронка ушла, новая появилась. Раньше sync тут не звался, поэтому
+    # метки «HR: … · воронка» появлялись/уходили с задержкой (по self-heal).
+    try:
+        from ...services.hr_tags import sync_for_entity
+        await sync_for_entity(db, entity_id)
+    except Exception:
+        logger.exception("HR-tags sync failed after apply/move (non-critical)")
+
+    logger.info(f"Entity {entity_id} moved to vacancy {data.vacancy_id} by user {current_user.id}")
 
     return {
         "success": True,
@@ -617,7 +636,8 @@ async def apply_entity_to_vacancy(
         "entity_id": entity_id,
         "vacancy_id": data.vacancy_id,
         "vacancy_title": vacancy.title,
-        "stage": application.stage.value
+        "stage": application.stage.value,
+        "moved": True,
     }
 
 
