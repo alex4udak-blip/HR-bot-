@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { getPublicForm, submitPublicForm, submitPublicFormWithFiles, getPublicFormByToken, submitPublicFormByToken, submitPublicFormByTokenWithFiles } from '@/services/api/forms';
 import type { PublicFormData } from '@/services/api/forms';
 import { FieldRenderer } from '@/features/forms/FieldRenderer';
@@ -10,6 +10,9 @@ import { FieldRenderer } from '@/features/forms/FieldRenderer';
  */
 export default function PublicFormPage() {
   const { slug, token } = useParams<{ slug?: string; token?: string }>();
+  const [searchParams] = useSearchParams();
+  // Предпросмотр (из конструктора): форма как видит кандидат, но БЕЗ отправки.
+  const isPreview = searchParams.get('preview') === '1';
   const [form, setForm] = useState<PublicFormData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -69,6 +72,7 @@ export default function PublicFormPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isPreview) return; // предпросмотр — ничего не отправляем
     if ((!slug && !token) || !validate()) return;
 
     setSubmitting(true);
@@ -194,6 +198,12 @@ export default function PublicFormPage() {
           )}
         </div>
 
+        {isPreview && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-sm text-center">
+            Режим предпросмотра — так анкету видит кандидат. Ответы не сохраняются.
+          </div>
+        )}
+
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
             {error}
@@ -226,10 +236,10 @@ export default function PublicFormPage() {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || isPreview}
             className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {submitting ? 'Отправка...' : 'Отправить'}
+            {isPreview ? 'Предпросмотр — отправка отключена' : submitting ? 'Отправка...' : 'Отправить'}
           </button>
         </form>
 

@@ -23,7 +23,6 @@ import {
   Pencil,
   Copy,
   Link2,
-  Users,
   Loader2,
   Check,
 } from 'lucide-react';
@@ -32,9 +31,8 @@ import clsx from 'clsx';
 import {
   getForm,
   updateForm,
-  getFormSubmissions,
 } from '@/services/api/forms';
-import type { FormField, FormSubmission } from '@/services/api/forms';
+import type { FormField } from '@/services/api/forms';
 import { FieldRenderer } from './FieldRenderer';
 
 // ============================================================
@@ -127,8 +125,6 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
   // Состояние автосейва (только при autosave): индикатор вместо кнопки «Сохранить».
   const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [loading, setLoading] = useState(true);
-  const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
-  const [showSubmissions, setShowSubmissions] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [selectedVacancyIds, setSelectedVacancyIds] = useState<number[]>([]);
   const [vacancies, setVacancies] = useState<{ id: number; title: string }[]>([]);
@@ -297,16 +293,6 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
     setFields(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
   };
 
-  const loadSubmissions = async () => {
-    try {
-      const data = await getFormSubmissions(formId);
-      setSubmissions(data);
-      setShowSubmissions(true);
-    } catch {
-      toast.error('Не удалось загрузить ответы');
-    }
-  };
-
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-50">
@@ -355,14 +341,7 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
               {isActive ? 'Активна' : 'Неактивна'}
             </button>
             <button
-              onClick={loadSubmissions}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm transition-colors"
-            >
-              <Users className="w-4 h-4" />
-              Ответы ({form.submissions_count})
-            </button>
-            <button
-              onClick={() => window.open(publicUrl, '_blank')}
+              onClick={() => window.open(`${publicUrl}?preview=1`, '_blank')}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm transition-colors"
             >
               <Eye className="w-4 h-4" />
@@ -556,73 +535,6 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
         )}
       </AnimatePresence>
 
-      {/* Submissions modal */}
-      <AnimatePresence>
-        {showSubmissions && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-            onClick={() => setShowSubmissions(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={e => e.stopPropagation()}
-              className="bg-white border border-gray-200 rounded-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col shadow-xl"
-            >
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900">Ответы ({submissions.length})</h2>
-                <button
-                  onClick={() => setShowSubmissions(false)}
-                  className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-xl leading-none w-8 h-8 flex items-center justify-center"
-                >
-                  &times;
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-6">
-                {submissions.length === 0 ? (
-                  <p className="text-center text-gray-400 py-8">Пока нет ответов</p>
-                ) : (
-                  <div className="space-y-4">
-                    {submissions.map(sub => (
-                      <div key={sub.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="text-sm font-medium text-gray-900">
-                            {sub.entity?.name || 'Без имени'}
-                            {sub.entity?.email && (
-                              <span className="text-gray-500 ml-2">{sub.entity.email}</span>
-                            )}
-                          </div>
-                          <span className="text-xs text-gray-400">
-                            {sub.submitted_at && new Date(sub.submitted_at).toLocaleString('ru')}
-                          </span>
-                        </div>
-                        <div className="space-y-1 text-sm">
-                          {fields.map(field => {
-                            const val = sub.data[field.id];
-                            if (val === undefined || val === null || val === '') return null;
-                            return (
-                              <div key={field.id} className="flex gap-2">
-                                <span className="text-gray-500 min-w-[120px]">{field.label}:</span>
-                                <span className="text-gray-800">
-                                  {Array.isArray(val) ? val.join(', ') : String(val)}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
