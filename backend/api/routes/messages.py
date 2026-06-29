@@ -238,13 +238,7 @@ async def get_local_file(
         raise HTTPException(status_code=400, detail=f"Invalid path: {str(e)}")
 
     if not file_path.exists():
-        # Импортированные локальные медиа лежат на эфемерном диске — могли потеряться
-        # при редеплое. (Медиа из самого Telegram-чата долговечны: отдаются через
-        # /file/{file_id}, который пере-скачивает с серверов Telegram.)
-        raise HTTPException(
-            status_code=410,
-            detail="Импортированный файл недоступен (мог быть потерян при обновлении сервера)."
-        )
+        raise HTTPException(status_code=404, detail="File not found")
 
     # Determine content type
     content_type = "application/octet-stream"
