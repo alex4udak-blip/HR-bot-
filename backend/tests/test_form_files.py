@@ -88,6 +88,8 @@ async def test_token_submit_with_files_attaches_to_existing_candidate(client, db
     )).scalars().all()
     assert len(efiles) == 1
     assert efiles[0].org_id == organization.id
+    # Содержимое сохранено в БД (bytea) — переживает эфемерный диск прода.
+    assert efiles[0].file_data, "file_data должен храниться в БД"
 
     # Повторная отправка по той же ссылке — отклоняется (одна анкета = один ответ).
     r = await client.post(

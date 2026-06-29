@@ -1153,6 +1153,9 @@ async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files)
             file_type=file_type,
             file_name=original_name,
             file_path=str(file_path),
+            # Храним содержимое и в БД (bytea): диск на проде эфемерный, иначе при
+            # редеплое файл теряется → download отдаёт file_content_lost.
+            file_data=content,
             file_size=file_size,
             mime_type=content_type,
             description=f"Загружено через форму '{form.title}'",
@@ -1177,13 +1180,15 @@ async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files)
                     img_name = f"{uuid.uuid4().hex}.jpg"
                     img_path = entity_files_dir / img_name
                     pix.save(str(img_path))
+                    img_bytes = pix.tobytes("jpg")
                     img_file = EntityFile(
                         org_id=form.org_id,
                         entity_id=entity_id,
                         file_type=EntityFileType.resume,
                         file_name=f"{Path(orig_name).stem}_page_{page_num + 1}.jpg",
                         file_path=str(img_path),
-                        file_size=img_path.stat().st_size,
+                        file_data=img_bytes,  # bytea — переживает редеплой
+                        file_size=len(img_bytes),
                         mime_type="image/jpeg",
                         description=f"Страница {page_num + 1} из {orig_name}",
                         uploaded_by=form.created_by,
