@@ -533,8 +533,17 @@ async def change_candidate_status(
     except ValueError:
         raise HTTPException(400, f"Invalid status: {body.status}")
 
+    # Org-изоляция: смена статуса (+ синк этапов заявок) только для своего org —
+    # иначе любой HR мог менять этап чужого кандидата по id.
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id, Entity.type == EntityType.candidate)
+        select(Entity).where(
+            Entity.id == entity_id,
+            Entity.type == EntityType.candidate,
+            Entity.org_id == org.id,
+        )
     )
     entity = result.scalar_one_or_none()
     if not entity:

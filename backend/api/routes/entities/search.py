@@ -549,6 +549,14 @@ async def apply_entity_to_vacancy(
     # вакансии — переносить некуда (возвращаем существующую заявку, без дублей).
     # Иначе снимаем ВСЕ прежние заявки кандидата и ставим одну новую на целевой —
     # «Переместить»/«Взять на вакансию» именно ПЕРЕМЕЩАЮТ, а не дублируют.
+    # Лочим строку кандидата: одновременные перемещения ОДНОГО кандидата двумя HR
+    # сериализуются, иначе read-delete-create гонка оставляет его в двух воронках
+    # (ломая «один кандидат = одна воронка») или роняет 500 на unique-конфликте.
+    # На SQLite (тесты) FOR UPDATE — no-op; на проде PG — реальный row-lock.
+    await db.execute(
+        select(Entity.id).where(Entity.id == entity_id).with_for_update()
+    )
+
     existing_apps = (await db.execute(
         select(VacancyApplication).where(VacancyApplication.entity_id == entity_id)
     )).scalars().all()
@@ -601,12 +609,13 @@ async def apply_entity_to_vacancy(
         entity.updated_at = datetime.utcnow()
         logger.info(f"apply-to-vacancy: Synchronized entity {entity_id} status to {expected_entity_status}")
 
-    await db.commit()
-    await db.refresh(application)
+    # Атомарно: снятие старых заявок + создание новой + начальный транзишн +
+    # синк статуса — ОДНИМ коммитом. Раньше транзишн шёл во втором коммите →
+    # окно, где заявка есть, а истории нет (лента пустая при сбое между коммитами).
+    await db.flush()  # получаем application.id, ничего ещё не коммитя
 
     # Начальный транзишн в историю (как в create_application) — иначе у кандидатов,
-    # импортированных в воронку из общей базы, не было записи о появлении на этапе,
-    # а лента истории оставалась пустой.
+    # импортированных в воронку из общей базы, лента истории оставалась пустой.
     from ...services.stage_transitions import record_transition
     await record_transition(
         db=db,
@@ -618,6 +627,7 @@ async def apply_entity_to_vacancy(
         comment="Первичная заявка",
     )
     await db.commit()
+    await db.refresh(application)
 
     # Авто-метка HR: пересчитываем закреплённых рекрутеров СРАЗУ после move —
     # старая воронка ушла, новая появилась. Раньше sync тут не звался, поэтому

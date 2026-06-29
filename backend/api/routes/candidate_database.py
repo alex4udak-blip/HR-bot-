@@ -384,6 +384,10 @@ async def merge_candidates(
 
     if not source or not target:
         raise HTTPException(status_code=404, detail="One or both candidates not found")
+    # Org-изоляция: merge деструктивен (source удаляется) — обоих можно мёрджить
+    # только внутри своего org, иначе можно стереть кандидата чужой компании.
+    if source.org_id != org.id or target.org_id != org.id:
+        raise HTTPException(status_code=404, detail="One or both candidates not found")
 
     try:
         from ..services.similarity import similarity_service

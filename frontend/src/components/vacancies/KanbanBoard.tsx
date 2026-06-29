@@ -988,19 +988,26 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
           targetStage={pendingMove.targetStage}
           onConfirm={async (data: InterviewSummaryData) => {
             const { application, targetStage } = pendingMove;
-            // Save interview summary as notes, then move
-            await updateApplication(application.id, {
-              notes: [
-                application.notes,
-                `--- Итог собеседования ---\n${data.interview_summary}`,
-                data.rating ? `Оценка: ${data.rating}/5` : '',
-                data.recommendation ? `Рекомендация: ${data.recommendation}` : '',
-              ].filter(Boolean).join('\n'),
-              rating: data.rating || application.rating,
-            });
-            await moveApplication(application.id, targetStage);
-            toast.success(`Кандидат перемещён в "${stageLabels[targetStage]}"`);
-            setPendingMove(null);
+            try {
+              // Save interview summary as notes, then move
+              await updateApplication(application.id, {
+                notes: [
+                  application.notes,
+                  `--- Итог собеседования ---\n${data.interview_summary}`,
+                  data.rating ? `Оценка: ${data.rating}/5` : '',
+                  data.recommendation ? `Рекомендация: ${data.recommendation}` : '',
+                ].filter(Boolean).join('\n'),
+                rating: data.rating || application.rating,
+              });
+              await moveApplication(application.id, targetStage);
+              // Успех показываем ТОЛЬКО если обе записи прошли (moveApplication
+              // теперь бросает при ошибке) — иначе HR видел «успех», а кандидат
+              // оставался в старой колонке.
+              toast.success(`Кандидат перемещён в "${stageLabels[targetStage]}"`);
+              setPendingMove(null);
+            } catch {
+              toast.error('Ошибка при сохранении — кандидат не перемещён');
+            }
           }}
           onCancel={() => setPendingMove(null)}
         />

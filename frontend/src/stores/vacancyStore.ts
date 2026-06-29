@@ -263,6 +263,10 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
       get().fetchKanbanBoard(kanbanBoard.vacancy_id);
       const message = err instanceof Error ? err.message : 'Failed to move application';
       set({ error: message });
+      // ВАЖНО: пробрасываем ошибку, иначе вызывающий (например, модалка итогов
+      // интервью) показывал toast.success даже при неуспешном перемещении —
+      // HR думал, что кандидат продвинут, а он остался в старой колонке.
+      throw err;
     }
   },
 

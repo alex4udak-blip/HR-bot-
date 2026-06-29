@@ -243,6 +243,13 @@ async def process_parse_job(job_id: int):
             shutil.copy2(job.file_path, permanent_path)
             logger.info(f"Copied resume file to permanent storage: {permanent_path}")
 
+            # Содержимое также в БД (bytea): прод-диск эфемерный, иначе резюме
+            # теряется при редеплое (download → 410 file_content_lost).
+            try:
+                resume_bytes = permanent_path.read_bytes()
+            except Exception:
+                resume_bytes = None
+
             # Determine MIME type based on file extension
             mime_types = {
                 '.pdf': 'application/pdf',
@@ -260,6 +267,7 @@ async def process_parse_job(job_id: int):
                 file_type=EntityFileType.resume,
                 file_name=job.file_name,
                 file_path=str(permanent_path),
+                file_data=resume_bytes,
                 file_size=job.file_size,
                 mime_type=mime_type,
                 uploaded_by=job.user_id,
