@@ -134,11 +134,19 @@ export const submitPublicForm = async (
   return data;
 };
 
+export interface SkippedFile { name: string; reason: string }
+export interface SubmitWithFilesResult {
+  message: string;
+  entity_id?: number;
+  files_saved?: number;
+  skipped_files?: SkippedFile[];
+}
+
 export const submitPublicFormWithFiles = async (
   slug: string,
   formData: Record<string, unknown>,
   files: File[]
-): Promise<{ message: string; entity_id?: number; files_saved?: number }> => {
+): Promise<SubmitWithFilesResult> => {
   const body = new FormData();
   body.append('data', JSON.stringify(formData));
   for (const file of files) {
@@ -198,7 +206,7 @@ export const submitPublicFormByTokenWithFiles = async (
   token: string,
   formData: Record<string, unknown>,
   files: File[]
-): Promise<{ message: string; entity_id?: number; files_saved?: number }> => {
+): Promise<SubmitWithFilesResult> => {
   const body = new FormData();
   body.append('data', JSON.stringify(formData));
   for (const file of files) {

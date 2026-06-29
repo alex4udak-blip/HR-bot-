@@ -1118,14 +1118,23 @@ async def submit_public_form(
     return {"message": "Спасибо! Ваша анкета успешно отправлена.", "entity_id": entity.id}
 
 
-async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files) -> int:
+async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files) -> tuple[int, list[dict]]:
     """Сохранить файлы публичной формы к кандидату entity_id (org_id — из формы).
-    PDF-резюме конвертирует в картинки для превью. Возвращает число сохранённых
-    файлов. Используется и slug-, и токен-обработчиком сабмита."""
+    PDF-резюме конвертирует в картинки для превью.
+
+    Возвращает (число сохранённых, список пропущенных [{name, reason}]). Пропущенные
+    файлы (неподдерживаемый формат / слишком большой / сверх лимита) больше НЕ
+    теряются молча — кандидат видит предупреждение и может переотправить."""
+    skipped: list[dict] = []
     if not files:
-        return 0
+        return 0, skipped
     entity_files_dir = ENTITY_FILES_DIR / str(entity_id)
     entity_files_dir.mkdir(parents=True, exist_ok=True)
+
+    # Файлы сверх лимита тоже отмечаем как пропущенные, а не молча роняем срезом.
+    for extra in files[PUBLIC_MAX_FILES:]:
+        if getattr(extra, "filename", None):
+            skipped.append({"name": extra.filename, "reason": f"превышен лимит файлов (макс. {PUBLIC_MAX_FILES})"})
 
     saved_files = []
     for upload_file in files[:PUBLIC_MAX_FILES]:
@@ -1135,10 +1144,15 @@ async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files)
         ext = Path(original_name.lower()).suffix
         if ext not in ALLOWED_EXTENSIONS:
             logger.warning(f"Public form: skipped disallowed file type '{ext}' ({original_name})")
+            skipped.append({"name": original_name, "reason": "неподдерживаемый формат"})
             continue
         content = await upload_file.read()
         file_size = len(content)
-        if file_size > PUBLIC_MAX_FILE_SIZE or file_size == 0:
+        if file_size == 0:
+            skipped.append({"name": original_name, "reason": "пустой файл"})
+            continue
+        if file_size > PUBLIC_MAX_FILE_SIZE:
+            skipped.append({"name": original_name, "reason": "файл больше 10 МБ"})
             continue
         content_type = upload_file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
         unique_name = f"{uuid.uuid4().hex}{ext}"
@@ -1198,7 +1212,7 @@ async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files)
             except Exception:
                 logger.exception(f"PDF→image conversion failed for {fpath}")
 
-    return len(saved_files)
+    return len(saved_files), skipped
 
 
 @router.post("/public/{slug}/submit-with-files")
@@ -1297,7 +1311,7 @@ async def submit_public_form_with_files(
     db.add(submission)
 
     # Save uploaded files (общий хелпер; org_id из формы)
-    files_saved_count = await _save_public_form_files(db, form, entity.id, files)
+    files_saved_count, skipped_files = await _save_public_form_files(db, form, entity.id, files)
 
     # Привязка воронок больше НЕ создаёт заявку по сабмиту (логику авто-добавления
     # убрали): vacancy_ids теперь только скоупят показ шаблона в воронке.
@@ -1307,6 +1321,9 @@ async def submit_public_form_with_files(
         "message": "Спасибо! Ваша анкета успешно отправлена.",
         "entity_id": entity.id,
         "files_saved": files_saved_count,
+        # Пропущенные файлы (формат/размер/лимит) — фронт покажет предупреждение,
+        # чтобы кандидат не думал, что резюме доставлено, когда оно потерялось.
+        "skipped_files": skipped_files,
     }
 
 
@@ -1454,7 +1471,7 @@ async def submit_public_form_by_token_with_files(
     db.add(submission)
     await db.flush()
 
-    files_saved_count = await _save_public_form_files(db, form, dispatch.entity_id, files)
+    files_saved_count, skipped_files = await _save_public_form_files(db, form, dispatch.entity_id, files)
 
     dispatch.status = "submitted"
     dispatch.submitted_at = datetime.utcnow()
@@ -1479,4 +1496,5 @@ async def submit_public_form_by_token_with_files(
         "message": "Спасибо! Ваша анкета успешно отправлена.",
         "entity_id": dispatch.entity_id,
         "files_saved": files_saved_count,
+        "skipped_files": skipped_files,
     }

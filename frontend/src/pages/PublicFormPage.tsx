@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { getPublicForm, submitPublicForm, submitPublicFormWithFiles, getPublicFormByToken, submitPublicFormByToken, submitPublicFormByTokenWithFiles } from '@/services/api/forms';
+import { getPublicForm, submitPublicForm, submitPublicFormWithFiles, getPublicFormByToken, submitPublicFormByToken, submitPublicFormByTokenWithFiles, type SkippedFile, type SubmitWithFilesResult } from '@/services/api/forms';
 import type { PublicFormData } from '@/services/api/forms';
 import { FieldRenderer } from '@/features/forms/FieldRenderer';
 
@@ -19,6 +19,7 @@ export default function PublicFormPage() {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [skippedFiles, setSkippedFiles] = useState<SkippedFile[]>([]);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [fileUploads, setFileUploads] = useState<Record<string, File>>({});
 
@@ -78,18 +79,22 @@ export default function PublicFormPage() {
     setSubmitting(true);
     try {
       const files = Object.values(fileUploads);
+      let result: SubmitWithFilesResult | undefined;
       if (token) {
         // Личная ссылка: с файлами — multipart, иначе JSON.
         if (files.length > 0) {
-          await submitPublicFormByTokenWithFiles(token, values, files);
+          result = await submitPublicFormByTokenWithFiles(token, values, files);
         } else {
           await submitPublicFormByToken(token, values);
         }
       } else if (files.length > 0) {
-        await submitPublicFormWithFiles(slug!, values, files);
+        result = await submitPublicFormWithFiles(slug!, values, files);
       } else {
         await submitPublicForm(slug!, values);
       }
+      // Пропущенные файлы (формат/размер/лимит) — показываем кандидату, чтобы он
+      // знал, что часть вложений не доставлена, а не считал анкету полной.
+      if (result?.skipped_files?.length) setSkippedFiles(result.skipped_files);
       setSubmitted(true);
     } catch (err: unknown) {
       const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -179,6 +184,21 @@ export default function PublicFormPage() {
           </div>
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Спасибо!</h2>
           <p className="text-gray-500">Ваша анкета успешно отправлена. Мы свяжемся с вами в ближайшее время.</p>
+          {skippedFiles.length > 0 && (
+            <div className="mt-5 text-left bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <p className="text-sm font-semibold text-amber-800 mb-1">
+                Внимание: часть файлов не была загружена
+              </p>
+              <ul className="text-sm text-amber-700 list-disc list-inside space-y-0.5">
+                {skippedFiles.map((f, i) => (
+                  <li key={i}><span className="font-medium">{f.name}</span> — {f.reason}</li>
+                ))}
+              </ul>
+              <p className="text-xs text-amber-600 mt-2">
+                Допустимы PDF, DOC/DOCX, JPG, PNG, WEBP до 10 МБ. При необходимости свяжитесь с рекрутёром.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     );
