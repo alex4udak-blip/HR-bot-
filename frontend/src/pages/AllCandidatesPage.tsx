@@ -1844,6 +1844,12 @@ const InfoTab = memo(function InfoTab({
 
   const cardRemoveFromVacancy = useCallback(
     async (appId: number) => {
+      // Нет активной заявки (appId 0) → кандидат не в воронке: дружелюбная
+      // подсказка вместо ошибки «не удалось снять».
+      if (!appId || appId <= 0) {
+        toast("Кандидат не в активных воронках");
+        return;
+      }
       try {
         await deleteApplication(appId);
         toast.success("Кандидат снят с воронки");
@@ -2230,6 +2236,12 @@ const InfoTab = memo(function InfoTab({
           <PlusCircle className="hf-profile-action-icon" /> Взять на вакансию
         </button>
         <button
+          onClick={() => cardRemoveFromVacancy(primaryBlock?.application_id ?? 0)}
+          className="hf-profile-action-btn"
+        >
+          <X className="hf-profile-action-icon" /> Удалить с воронки
+        </button>
+        <button
           onClick={handleEmail}
           className="hf-profile-action-btn"
         >
@@ -2494,11 +2506,9 @@ const InfoTab = memo(function InfoTab({
           onDeleteHistory={cardDeleteHistory}
           onUploadFile={cardUploadFile}
           onAnketa={c.origin === "live" ? () => setAnketaOpen(true) : undefined}
-          anketaCount={anketaCount}
           onReact={c.origin === "live" ? cardReact : undefined}
           files={c.files}
           onDeleteFile={c.origin === "live" ? cardDeleteFile : undefined}
-          onRemoveFromVacancy={c.origin === "live" ? cardRemoveFromVacancy : undefined}
         />
       ))}
 
