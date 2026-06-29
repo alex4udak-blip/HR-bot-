@@ -401,9 +401,9 @@ async def create_entity_from_resume(
                 "generated_at": datetime.utcnow().isoformat(),
                 "auto_generated": True
             }
-            if not entity.extra_data:
-                entity.extra_data = {}
-            entity.extra_data['ai_profile'] = simple_profile
+            # Реассайн (не in-place) — иначе на уже закоммиченном entity мутация
+            # JSON не детектится и профиль не сохраняется.
+            entity.extra_data = {**(entity.extra_data or {}), 'ai_profile': simple_profile}
             await db.commit()
         except Exception as profile_err:
             logger.warning(f"Failed to auto-generate profile: {profile_err}")
@@ -511,10 +511,10 @@ async def generate_all_profiles(
                 files=candidate.files
             )
 
-            # Store profile
-            if not candidate.extra_data:
-                candidate.extra_data = {}
-            candidate.extra_data['ai_profile'] = profile
+            # Store profile. РЕАССАЙН словаря, а не in-place: extra_data — обычный
+            # Column(JSON), SQLAlchemy не детектит in-place мутацию → commit молча
+            # ничего не сохранял, хотя репортил generated=N.
+            candidate.extra_data = {**(candidate.extra_data or {}), 'ai_profile': profile}
             generated += 1
 
         except Exception as e:

@@ -265,79 +265,71 @@ async def websocket_endpoint(
     - call.completed (call processing finished successfully)
     - call.failed (call processing failed with error)
     """
-    # Get database session
+    # Аутентификация + org — на КОРОТКОЙ сессии, которую сразу закрываем. Раньше
+    # WS держал коннект пула всю свою жизнь (десятки вкладок × долгая сессия →
+    # исчерпание пула 50 → любой запрос виснет pool_timeout и 500, /health зелёный).
     db_gen = get_db()
     db = await anext(db_gen)
-
     try:
-        # Authenticate user (supports both query token and cookie)
         user = await authenticate_websocket(token, websocket, db)
-
         if not user:
-            # Close connection with 401/403 status code
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
             return
-
-        # Get user's organization
         org_id = await get_user_org_id(user, db)
-
         if not org_id:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="No organization")
             return
-
-        # Register connection
-        await manager.connect(websocket, user, org_id)
-
-        # Keep connection alive and handle token expiry
-        try:
-            while True:
-                # Wait for messages (ping/pong or client messages)
-                # This also helps detect disconnections
-                try:
-                    # Set a timeout to periodically check token validity
-                    data = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
-
-                    # Handle client messages if needed (optional)
-                    # Currently we just keep the connection alive
-
-                except asyncio.TimeoutError:
-                    # Periodic token validation
-                    # Re-validate token to handle expiry
-                    current_user = await authenticate_websocket(token, websocket, db)
-                    if not current_user or current_user.id != user.id:
-                        # Token expired or invalidated
-                        await websocket.close(
-                            code=status.WS_1008_POLICY_VIOLATION,
-                            reason="Token expired"
-                        )
-                        break
-
-                    # Send ping to keep connection alive
-                    try:
-                        await websocket.send_text(json.dumps({
-                            "type": "ping",
-                            "timestamp": datetime.utcnow().isoformat() + "Z"
-                        }))
-                    except Exception as e:
-                        # Connection lost
-                        logger.warning(f"WebSocket ping failed for user {user.id}: {e}")
-                        break
-
-        except WebSocketDisconnect:
-            # Normal disconnection
-            pass
-        except Exception as e:
-            logger.error(f"WebSocket error for user {user.id}: {e}")
-        finally:
-            # Clean up connection
-            await manager.disconnect(websocket, user.id)
-
     finally:
-        # Close database session
         try:
             await db_gen.aclose()
         except Exception as e:
-            logger.warning(f"Error closing database session: {e}")
+            logger.warning(f"Error closing WS auth session: {e}")
+
+    # Register connection (manager не нуждается в db)
+    await manager.connect(websocket, user, org_id)
+
+    # Keep connection alive and handle token expiry — БЕЗ удержания коннекта пула.
+    try:
+        while True:
+            try:
+                # Set a timeout to periodically check token validity
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+                # Currently we just keep the connection alive
+
+            except asyncio.TimeoutError:
+                # Periodic token re-validation на СВЕЖЕЙ короткой сессии.
+                reval_gen = get_db()
+                reval_db = await anext(reval_gen)
+                try:
+                    current_user = await authenticate_websocket(token, websocket, reval_db)
+                finally:
+                    try:
+                        await reval_gen.aclose()
+                    except Exception:
+                        pass
+                if not current_user or current_user.id != user.id:
+                    await websocket.close(
+                        code=status.WS_1008_POLICY_VIOLATION,
+                        reason="Token expired"
+                    )
+                    break
+
+                # Send ping to keep connection alive
+                try:
+                    await websocket.send_text(json.dumps({
+                        "type": "ping",
+                        "timestamp": datetime.utcnow().isoformat() + "Z"
+                    }))
+                except Exception as e:
+                    logger.warning(f"WebSocket ping failed for user {user.id}: {e}")
+                    break
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"WebSocket error for user {user.id}: {e}")
+    finally:
+        await manager.disconnect(websocket, user.id)
 
 
 # ============================================================================

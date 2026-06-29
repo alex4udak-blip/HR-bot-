@@ -1492,6 +1492,12 @@ class Notification(Base):
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
 
+    # Поллинг: WHERE user_id=? ORDER BY is_read, created_at DESC LIMIT 50 каждые 25с
+    # на пользователя. Композитный индекс убирает per-user сортировку под нагрузкой.
+    __table_args__ = (
+        Index("ix_notification_user_created", "user_id", "created_at"),
+    )
+
     user = relationship("User")
 
 

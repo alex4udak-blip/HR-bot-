@@ -66,6 +66,9 @@ async def ensure_shadow_columns():
             print('Adding notification_prefs column to users...')
             await conn.execute(text(\"ALTER TABLE users ADD COLUMN notification_prefs JSONB DEFAULT '{}'::jsonb\"))
 
+        # Composite index for the notification poll (user_id + created_at) — каждые 25с/юзер
+        await conn.execute(text(\"CREATE INDEX IF NOT EXISTS ix_notification_user_created ON notifications (user_id, created_at)\"))
+
         # Check and add file_data column to entity_files (bytea for DB file storage)
         result = await conn.execute(text(
             \"SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'entity_files' AND column_name = 'file_data')\"
