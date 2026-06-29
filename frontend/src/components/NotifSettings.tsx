@@ -98,6 +98,9 @@ export function NotifSettings({ onChanged }: { onChanged?: () => void }) {
           <div
             ref={ddRef}
             style={{ top: pos.top, left: pos.left }}
+            // Гасим mousedown, чтобы клик по чекбоксу не считался «вне» родительского
+            // поповера и не закрывал его — можно отметить сразу несколько типов.
+            onMouseDown={(e) => e.stopPropagation()}
             className="fixed z-[2000] w-[240px] overflow-hidden rounded-xl border border-[var(--hf-ui-border)] bg-[var(--hf-white)] py-1 shadow-[var(--hf-shadow-2xl)]"
           >
             <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--hf-main-500)]">
