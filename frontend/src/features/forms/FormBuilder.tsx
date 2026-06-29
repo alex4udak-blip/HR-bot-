@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -24,6 +24,8 @@ import {
   Copy,
   Link2,
   Users,
+  Loader2,
+  Check,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -115,13 +117,15 @@ function previewValue(field: FormField): unknown {
 // или из карточки кандидата) кладёт форму в «Шаблоны» (is_template=true), чтобы
 // её можно было переиспользовать. Передай saveAsTemplate={false} для разовой
 // формы, которая НЕ должна попадать в библиотеку шаблонов.
-export function FormBuilder({ formId, onClose, saveAsTemplate = true }: { formId: number; onClose: () => void; saveAsTemplate?: boolean }) {
+export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave = false }: { formId: number; onClose: () => void; saveAsTemplate?: boolean; autosave?: boolean }) {
   const [form, setForm] = useState<import('@/services/api/forms').FormTemplate | null>(null);
   const [fields, setFields] = useState<FormField[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Состояние автосейва (только при autosave): индикатор вместо кнопки «Сохранить».
+  const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [loading, setLoading] = useState(true);
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
   const [showSubmissions, setShowSubmissions] = useState(false);
@@ -194,6 +198,41 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true }: { formId
       setSaving(false);
     }
   };
+
+  // ── Автосейв (разовые анкеты «с нуля»): любое изменение полей/названия/etc.
+  //    сохраняется в этом окне с дебаунсом, БЕЗ is_template (не попадает в
+  //    библиотеку шаблонов). Кнопка «Сохранить» при autosave скрыта. ──
+  const autoSaveTimer = useRef<number | null>(null);
+  // Пропускаем самый первый прогон эффекта (популяция стейта при загрузке формы),
+  // чтобы не сохранять сразу после открытия.
+  const skipFirstAutoSave = useRef(true);
+  useEffect(() => {
+    if (!autosave || loading) return;
+    if (skipFirstAutoSave.current) {
+      skipFirstAutoSave.current = false;
+      return;
+    }
+    if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+    setAutoSaveState('saving');
+    autoSaveTimer.current = window.setTimeout(async () => {
+      try {
+        await updateForm(formId, {
+          title: title.trim() || 'Без названия',
+          description: description.trim() || undefined,
+          fields,
+          is_active: isActive,
+          vacancy_ids: selectedVacancyIds,
+          // is_template НЕ передаём — разовая анкета не попадает в шаблоны.
+        });
+        setAutoSaveState('saved');
+      } catch {
+        setAutoSaveState('error');
+      }
+    }, 700);
+    return () => {
+      if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+    };
+  }, [autosave, loading, formId, title, description, fields, isActive, selectedVacancyIds]);
 
   const openTypePicker = (index: number) => {
     setInsertIndex(index);
@@ -329,14 +368,32 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true }: { formId
               <Eye className="w-4 h-4" />
               Предпросмотр
             </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" />
-              {saving ? 'Сохранение...' : 'Сохранить'}
-            </button>
+            {autosave ? (
+              // Разовая анкета: автосейв — индикатор вместо кнопки «Сохранить».
+              <span
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-500"
+                aria-live="polite"
+              >
+                {autoSaveState === 'saving' ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Сохранение…</>
+                ) : autoSaveState === 'error' ? (
+                  <span className="text-red-500">Ошибка сохранения</span>
+                ) : autoSaveState === 'saved' ? (
+                  <><Check className="w-4 h-4 text-emerald-600" /> Сохранено</>
+                ) : (
+                  <><Check className="w-4 h-4 text-gray-400" /> Автосохранение</>
+                )}
+              </span>
+            ) : (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -363,7 +420,10 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true }: { formId
           />
         </div>
 
-        {/* Linked vacancies (multi-select) */}
+        {/* Linked vacancies (multi-select) — только для шаблонов/публичных форм.
+            В разовых анкетах «с нуля» (autosave) скрыто: кандидат уже в воронке,
+            а привязка плодит лишние заявки по сабмиту. */}
+        {!autosave && (
         <div className="mb-6">
           <label className="block text-sm text-gray-500 mb-1.5">Привязанные воронки</label>
           <div className="flex flex-wrap gap-2">
@@ -394,6 +454,7 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true }: { formId
             )}
           </div>
         </div>
+        )}
 
         {/* Canvas */}
         <div className="max-w-2xl mx-auto bg-white border border-gray-200 rounded-2xl shadow-sm p-6">

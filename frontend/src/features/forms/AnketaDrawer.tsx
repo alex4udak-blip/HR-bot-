@@ -119,7 +119,15 @@ export function AnketaDrawer({
 
             {step === 'builder' && formId && (
               <>
-                <FormBuilder formId={formId} saveAsTemplate onClose={() => setStep(isTemplate ? 'template-select' : 'entry')} />
+                {/* Разовая анкета (С нуля / из шаблона / AI): автосейв, без
+                    кнопки «Сохранить», НЕ попадает в шаблоны. Шаблон: как раньше —
+                    ручное «Сохранить» в библиотеку. */}
+                <FormBuilder
+                  formId={formId}
+                  saveAsTemplate={isTemplate}
+                  autosave={!isTemplate}
+                  onClose={() => setStep(isTemplate ? 'template-select' : 'entry')}
+                />
                 {!isTemplate && (
                   <div className="sticky bottom-0 bg-white border-t px-5 py-3 flex justify-end gap-2">
                     <button
