@@ -536,9 +536,10 @@ async def apply_entity_to_vacancy(
     if not has_access:
         raise HTTPException(403, "No edit permission for this entity")
 
-    # Get vacancy
+    # Get vacancy — строго в орг вызывающего, иначе можно закинуть кандидата в
+    # чужую воронку (vacancy_id из тела не был сверен с org).
     vacancy_result = await db.execute(
-        select(Vacancy).where(Vacancy.id == data.vacancy_id)
+        select(Vacancy).where(Vacancy.id == data.vacancy_id, Vacancy.org_id == org.id)
     )
     vacancy = vacancy_result.scalar_one_or_none()
 

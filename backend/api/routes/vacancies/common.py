@@ -180,6 +180,13 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     if await has_full_database_access(user, org, db):
         return True
 
+    # Org-граница (defense-in-depth): дальше доступ только в пределах СВОЕЙ орг.
+    # org — вызывающего; вакансия чужой орг → отказ даже при visible_to_all/
+    # assigned_to_all. Суперадмин/owner уже прошли выше. Закрывает cross-org IDOR
+    # на роутах, забывших фильтр по org_id.
+    if org is None or getattr(vacancy, 'org_id', None) != org.id:
+        return False
+
     # Vacancy marked as visible to all org members
     if getattr(vacancy, 'visible_to_all', False):
         return True
@@ -225,6 +232,10 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     if await is_org_owner(user, org, db):
         return True
 
+    # Org-граница (defense-in-depth): редактировать можно только в своей орг.
+    if org is None or getattr(vacancy, 'org_id', None) != org.id:
+        return False
+
     # Vacancy marked as visible to all org members
     if getattr(vacancy, 'visible_to_all', False):
         return True
@@ -255,6 +266,9 @@ async def can_manage_applications(vacancy: Vacancy, user: User, org: Organizatio
     """
     if await has_full_database_access(user, org, db):
         return True
+    # Org-граница (defense-in-depth): мутировать отклики можно только в своей орг.
+    if org is None or getattr(vacancy, 'org_id', None) != org.id:
+        return False
     if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
         return True
     if getattr(vacancy, 'assigned_to_all', False):

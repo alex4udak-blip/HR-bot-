@@ -1513,6 +1513,11 @@ async def archive_entity(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Org-граница: кандидат должен быть в орг вызывающего (или вызывающий —
+    # суперадмин). Раньше check_entity_access получал entity.org_id (org ЦЕЛИ),
+    # а не вызывающего → confused deputy: любой HR мог архивировать чужого.
+    if current_user.role != UserRole.superadmin and (not org or entity.org_id != org.id):
+        raise HTTPException(404, "Entity not found")
     has_access = await check_entity_access(entity, current_user, entity.org_id, db, required_level=None)
     if not has_access:
         raise HTTPException(403, "No access to this candidate")
@@ -1847,9 +1852,14 @@ async def detect_duplicate_now(
     ловит уже существующих дублей без ручного прогона. Помечает обе стороны
     (detect ставит обратную ссылку), возвращает id найденного дубля или null."""
     current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
     result = await db.execute(select(Entity).where(Entity.id == entity_id))
     entity = result.scalar_one_or_none()
     if not entity:
+        raise HTTPException(404, "Entity not found")
+    # Org-граница (раньше отсутствовала вовсе — любой HR мог запускать дедуп на
+    # чужом кандидате и ставить hidden_duplicate_id).
+    if current_user.role != UserRole.superadmin and (not org or entity.org_id != org.id):
         raise HTTPException(404, "Entity not found")
     has_access = await check_entity_access(entity, current_user, entity.org_id, db, required_level=None)
     if not has_access:
