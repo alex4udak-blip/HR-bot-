@@ -869,20 +869,25 @@ async def list_entity_all_dispatches(entity_id: int, db: AsyncSession = Depends(
         select(FormDispatch).where(FormDispatch.entity_id.in_(entity_ids)).order_by(FormDispatch.created_at.desc())
     )).scalars().all()
 
-    # Build form metadata (titles, field labels)
+    # Build form metadata (titles, field labels, file-поля)
     form_ids = {d.form_id for d in all_rows}
     titles = {}
     labels_by_form = {}
+    file_fields_by_form = {}  # form_id → [field_id] с type == 'file'
     if form_ids:
         for fid, title, fields in (await db.execute(
             select(FormTemplate.id, FormTemplate.title, FormTemplate.fields).where(FormTemplate.id.in_(form_ids))
         )).all():
             titles[fid] = title
             lbl = {}
+            file_ids = []
             for f in (fields or []):
                 if isinstance(f, dict) and f.get("id"):
                     lbl[f["id"]] = f.get("label") or f["id"]
+                    if f.get("type") == "file":
+                        file_ids.append(f["id"])
             labels_by_form[fid] = lbl
+            file_fields_by_form[fid] = file_ids
 
     # Load submissions
     subs = {}
@@ -890,6 +895,26 @@ async def list_entity_all_dispatches(entity_id: int, db: AsyncSession = Depends(
     if sub_ids:
         for s in (await db.execute(select(FormSubmission).where(FormSubmission.id.in_(sub_ids)))).scalars().all():
             subs[s.id] = s.data
+
+    # Резолв файлов анкеты: (entity_id, имя файла) → URL скачивания, чтобы поле
+    # типа «файл» в ответах было кликабельным (а не просто именем).
+    needed_files = []  # (entity_id, filename)
+    for d in all_rows:
+        data = subs.get(d.submission_id) or {}
+        for ffid in file_fields_by_form.get(d.form_id, []):
+            val = data.get(ffid)
+            if isinstance(val, str) and val.strip():
+                needed_files.append((d.entity_id, val.strip()))
+    file_url_map = {}  # (entity_id, filename) → url
+    if needed_files:
+        names = list({n for _, n in needed_files})
+        eids = list({e for e, _ in needed_files})
+        for eid, file_id, fname in (await db.execute(
+            select(EntityFile.entity_id, EntityFile.id, EntityFile.file_name)
+            .where(EntityFile.entity_id.in_(eids), EntityFile.file_name.in_(names))
+            .order_by(EntityFile.id.desc())
+        )).all():
+            file_url_map.setdefault((eid, fname), f"/api/entities/{eid}/files/{file_id}/download")
 
     # Карта: id диспатча → имя профиля-источника. После merge ВСЕ диспатчи висят на
     # target (FormDispatch перепривязан, иначе CASCADE-delete стирал бы анкеты влитого
@@ -919,11 +944,21 @@ async def list_entity_all_dispatches(entity_id: int, db: AsyncSession = Depends(
             if source_name is None:
                 source_name = "Текущий профиль"
 
+        d_data = subs.get(d.submission_id) or {}
+        d_file_links = {}
+        for ffid in file_fields_by_form.get(d.form_id, []):
+            val = d_data.get(ffid)
+            if isinstance(val, str) and val.strip():
+                url = file_url_map.get((d.entity_id, val.strip()))
+                if url:
+                    d_file_links[ffid] = url
+
         result.append({
             "id": d.id, "form_id": d.form_id, "form_title": titles.get(d.form_id),
             "token": d.token, "status": d.status, "seen_by_recruiter": d.seen_by_recruiter,
             "submission_id": d.submission_id, "answers": subs.get(d.submission_id),
             "field_labels": labels_by_form.get(d.form_id, {}),
+            "file_links": d_file_links,  # field_id → URL скачивания файла
             "created_at": d.created_at.isoformat() if d.created_at else None,
             "submitted_at": d.submitted_at.isoformat() if d.submitted_at else None,
             "source_entity_id": d.entity_id,

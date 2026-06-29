@@ -96,3 +96,37 @@ async def test_token_submit_with_files_attaches_to_existing_candidate(client, db
         files={"files": ("a.png", b"x", "image/png")},
     )
     assert r.status_code == 409, r.text
+
+
+@pytest.mark.asyncio
+async def test_anketa_file_link_in_dispatch_answers(client, db_session, organization: Organization, admin_user, org_owner):
+    """Ответы анкеты отдают file_links для поля-файла → файл можно посмотреть."""
+    cand = Entity(org_id=organization.id, type=EntityType.candidate, name="Файл Линк", status=EntityStatus.new)
+    db_session.add(cand)
+    await db_session.commit()
+    cand_id = cand.id
+    H = _h(admin_user)
+
+    r = await client.post("/api/forms", json={
+        "title": "С файлом",
+        "fields": [
+            {"id": "name", "type": "text", "label": "ФИО", "required": True},
+            {"id": "cv", "type": "file", "label": "Файл"},
+        ],
+    }, headers=H)
+    form_id = r.json()["id"]
+    r = await client.post(f"/api/forms/{form_id}/dispatch", json={"entity_id": cand_id}, headers=H)
+    token = r.json()["token"]
+    # Имя файла записывается и в data поля-файла (как делает фронт).
+    r = await client.post(
+        f"/api/forms/public/d/{token}/submit-with-files",
+        data={"data": json.dumps({"name": "Файл Линк", "cv": "portfolio.png"})},
+        files={"files": ("portfolio.png", b"\x89PNG fake", "image/png")},
+    )
+    assert r.status_code == 200, r.text
+
+    r = await client.get(f"/api/forms/entity/{cand_id}/all-dispatches", headers=H)
+    assert r.status_code == 200, r.text
+    d = next(x for x in r.json() if x["status"] == "submitted")
+    assert d["answers"]["cv"] == "portfolio.png"
+    assert d["file_links"].get("cv", "").endswith("/download")

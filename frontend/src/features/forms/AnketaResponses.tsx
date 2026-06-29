@@ -56,16 +56,23 @@ export function AnketaResponses({ dispatches }: { dispatches: (FormDispatchInfo 
           </div>
           {d.answers && (
             <div className="mt-3 border-t pt-2 space-y-1">
-              {Object.entries(d.answers).map(([k, v]) => (
-                <div key={k} className="flex gap-2 text-xs">
-                  <span className="text-gray-400">{d.field_labels?.[k] || k}:</span>
-                  {/^https?:\/\//i.test(String(v)) ? (
-                    <a href={String(v)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{String(v)}</a>
-                  ) : (
-                    <span className="text-gray-800 break-all">{String(v)}</span>
-                  )}
-                </div>
-              ))}
+              {Object.entries(d.answers).map(([k, v]) => {
+                const fileUrl = d.file_links?.[k];
+                return (
+                  <div key={k} className="flex gap-2 text-xs">
+                    <span className="text-gray-400">{d.field_labels?.[k] || k}:</span>
+                    {fileUrl ? (
+                      <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+                        {String(v) || 'Открыть файл'}
+                      </a>
+                    ) : /^https?:\/\//i.test(String(v)) ? (
+                      <a href={String(v)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{String(v)}</a>
+                    ) : (
+                      <span className="text-gray-800 break-all">{String(v)}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

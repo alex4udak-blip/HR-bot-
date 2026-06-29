@@ -154,6 +154,8 @@ export interface FormDispatchInfo {
   status: 'sent' | 'opened' | 'submitted'; seen_by_recruiter: boolean;
   submission_id: number | null; answers: Record<string, unknown> | null;
   field_labels?: Record<string, string>;
+  file_links?: Record<string, string>; // field_id → URL скачивания файла анкеты
+
   created_at: string | null; submitted_at: string | null;
 }
 

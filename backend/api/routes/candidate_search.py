@@ -837,6 +837,11 @@ async def get_candidates_kanban(
                     # это НЕ аватар, иначе скан резюме становится «фото» кандидата.
                     # Берём только настоящие фото (HH-фото = file_type other и пр.).
                     EntityFile.file_type != EntityFileType.resume,
+                    # Файлы, загруженные кандидатом через АНКЕТУ, — не аватар.
+                    or_(
+                        EntityFile.description.is_(None),
+                        ~EntityFile.description.like("Загружено через форму%"),
+                    ),
                 )
                 .order_by(EntityFile.id.desc())
             )

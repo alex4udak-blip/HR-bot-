@@ -2,7 +2,7 @@
 Application management endpoints for vacancies.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from datetime import datetime
@@ -35,6 +35,12 @@ async def _load_photo_file_map(db: AsyncSession, entity_ids: list[int]) -> dict:
             .where(
                 EntityFile.entity_id.in_(entity_ids),
                 EntityFile.mime_type.startswith("image/"),
+                # Файлы, загруженные кандидатом ЧЕРЕЗ АНКЕТУ, не должны становиться
+                # аватаром профиля (это просто вложение, а не фото).
+                or_(
+                    EntityFile.description.is_(None),
+                    ~EntityFile.description.like("Загружено через форму%"),
+                ),
             )
             .order_by(EntityFile.id.desc())
         )
