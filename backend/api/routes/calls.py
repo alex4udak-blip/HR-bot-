@@ -27,6 +27,10 @@ from datetime import datetime as dt
 router = APIRouter()
 logger = logging.getLogger("hr-analyzer.calls")
 
+# Лимит дублирования аудио в БД (bytea). Типовые HR-звонки помещаются; крупные
+# остаются только на диске, чтобы не раздувать БД и не ловить OOM при чтении блоба.
+AUDIO_DB_MAX_BYTES = 30 * 1024 * 1024
+
 # Get settings
 settings = get_settings()
 
@@ -302,14 +306,16 @@ async def upload_call(
         content = await file.read()
         await f.write(content)
 
-    # Create record
+    # Create record. Дублируем аудио в БД, если помещается в лимит — переживёт
+    # редеплой эфемерного диска; крупные остаются disk-only (download отдаст 410).
     call = CallRecording(
         org_id=org.id,
         entity_id=entity_id,
         owner_id=current_user.id,
         source_type=CallSource.upload,
         status=CallStatus.processing,
-        audio_file_path=file_path
+        audio_file_path=file_path,
+        audio_data=content if len(content) <= AUDIO_DB_MAX_BYTES else None,
     )
     db.add(call)
     await db.commit()
@@ -680,15 +686,8 @@ async def download_audio(
     if not await permissions.can_access_resource(current_user, call, "read"):
         raise HTTPException(403, "Access denied")
 
-    # Check if audio file exists
-    if not call.audio_file_path:
-        raise HTTPException(404, "Audio file not available")
-
-    if not os.path.exists(call.audio_file_path):
-        raise HTTPException(404, "Audio file not found on server")
-
-    # Determine content type based on file extension
-    ext = os.path.splitext(call.audio_file_path)[1].lower()
+    # Determine content type based on file extension (path хранит исходное расширение)
+    ext = os.path.splitext(call.audio_file_path or "")[1].lower()
     content_type_map = {
         '.mp3': 'audio/mpeg',
         '.mp4': 'video/mp4',
@@ -702,16 +701,24 @@ async def download_audio(
 
     # Generate filename
     title = call.title or f"Call_{call.id}"
-    # Sanitize filename
     safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
     filename = f"{safe_title}{ext}"
+    disposition = {"Content-Disposition": f'attachment; filename="{filename}"'}
 
-    return FileResponse(
-        call.audio_file_path,
-        media_type=content_type,
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
+    # 1) Байты из БД (переживают редеплой) — приоритетно.
+    if call.audio_data:
+        return Response(content=call.audio_data, media_type=content_type, headers=disposition)
+
+    # 2) Fallback на диск (legacy / крупные файлы).
+    if call.audio_file_path and os.path.exists(call.audio_file_path):
+        return FileResponse(call.audio_file_path, media_type=content_type, headers=disposition)
+
+    # 3) Аудио потеряно (эфемерный диск + не дублировалось в БД). Честный 410 —
+    # транскрипт и анализ звонка по-прежнему доступны; URL-звонок можно пере-загрузить.
+    raise HTTPException(
+        410,
+        "Аудиофайл недоступен (потерян при обновлении сервера). "
+        "Транскрипт и анализ звонка сохранены."
     )
 
 

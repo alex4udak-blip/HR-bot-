@@ -84,6 +84,8 @@ async def ensure_shadow_columns():
         # иначе теряются на эфемерном диске прода при редеплое.
         await conn.execute(text('ALTER TABLE employees ADD COLUMN IF NOT EXISTS passport_data BYTEA'))
         await conn.execute(text('ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS file_data BYTEA'))
+        # Аудио загруженных звонков (до лимита) в БД — переживает редеплой
+        await conn.execute(text('ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS audio_data BYTEA'))
 
         # Check and add file_data column to task_attachments (bytea for DB file storage)
         # Railway /tmp эфемерный — без этой колонки модель ломает любой запрос

@@ -651,6 +651,10 @@ class CallRecording(Base):
     progress_stage = Column(String(100), nullable=True)  # Current processing stage description
     duration_seconds = Column(Integer, nullable=True)
     audio_file_path = Column(String(500), nullable=True)
+    # Байты аудио в БД (bytea) для долговечности на эфемерном диске прода. Только
+    # для загруженных файлов до лимита (крупные/URL-звонки не дублируем: source_url
+    # позволяет пере-скачать, а транскрипт/анализ и так в БД). Диск — fallback.
+    audio_data = Column(LargeBinary, nullable=True)
     fireflies_transcript_id = Column(String(100), nullable=True, index=True)  # Fireflies transcript ID
     transcript = Column(Text, nullable=True)
     speakers = Column(JSON, nullable=True)  # [{speaker: "Speaker 1", start: 0.0, end: 5.2, text: "..."}, ...]
