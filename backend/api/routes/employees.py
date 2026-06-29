@@ -1243,7 +1243,10 @@ async def upload_my_passport(
         raise HTTPException(status_code=400, detail="Некорректные данные файла")
     if len(raw) > 8 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Файл слишком большой (макс 8 МБ)")
-    _passport_path(emp.id).write_bytes(_passport_fernet().encrypt(raw))
+    enc = _passport_fernet().encrypt(raw)
+    _passport_path(emp.id).write_bytes(enc)
+    # Дублируем в БД (bytea): диск на проде эфемерный, иначе паспорт теряется.
+    emp.passport_data = enc
     extra = dict(emp.extra_data or {})
     extra["passport"] = {
         "filename": payload.filename,
@@ -1267,10 +1270,14 @@ async def get_my_passport(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee profile not found")
     meta = (emp.extra_data or {}).get("passport")
-    path = _passport_path(emp.id)
-    if not meta or not path.exists():
+    # Сначала зашифрованные байты из БД (переживают редеплой), затем диск (legacy).
+    enc = emp.passport_data
+    if enc is None:
+        path = _passport_path(emp.id)
+        enc = path.read_bytes() if path.exists() else None
+    if not meta or enc is None:
         raise HTTPException(status_code=404, detail="Паспорт не загружен")
-    raw = _passport_fernet().decrypt(path.read_bytes())
+    raw = _passport_fernet().decrypt(enc)
     return {
         "filename": meta.get("filename"),
         "content_type": meta.get("content_type"),
@@ -1309,10 +1316,14 @@ async def get_employee_passport(
         raise HTTPException(status_code=403, detail="Нет доступа к паспорту этого сотрудника")
 
     meta = (emp.extra_data or {}).get("passport")
-    path = _passport_path(emp.id)
-    if not meta or not path.exists():
+    # Сначала зашифрованные байты из БД (переживают редеплой), затем диск (legacy).
+    enc = emp.passport_data
+    if enc is None:
+        path = _passport_path(emp.id)
+        enc = path.read_bytes() if path.exists() else None
+    if not meta or enc is None:
         raise HTTPException(status_code=404, detail="Паспорт не загружен")
-    raw = _passport_fernet().decrypt(path.read_bytes())
+    raw = _passport_fernet().decrypt(enc)
     return {
         "filename": meta.get("filename"),
         "content_type": meta.get("content_type"),
@@ -1353,9 +1364,11 @@ async def upload_employee_document(employee_id: int, request: Request, file: Upl
     if len(raw) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Файл больше 10 МБ")
     import uuid
+    enc = _passport_fernet().encrypt(raw)
     fpath = _employee_docs_dir() / f"{employee_id}_{uuid.uuid4().hex}.enc"
-    fpath.write_bytes(_passport_fernet().encrypt(raw))
-    doc = EmployeeDocument(employee_id=employee_id, filename=file.filename, content_type=file.content_type, size=len(raw), path=str(fpath), uploaded_by=current_user.id)
+    fpath.write_bytes(enc)
+    # file_data (bytea) переживает редеплой; диск остаётся legacy-fallback.
+    doc = EmployeeDocument(employee_id=employee_id, filename=file.filename, content_type=file.content_type, size=len(raw), path=str(fpath), file_data=enc, uploaded_by=current_user.id)
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
@@ -1372,12 +1385,16 @@ async def download_employee_document(employee_id: int, doc_id: int, db: AsyncSes
     doc = (await db.execute(select(EmployeeDocument).where(EmployeeDocument.id == doc_id, EmployeeDocument.employee_id == employee_id))).scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    from pathlib import Path
     import base64
-    p = Path(doc.path)
-    if not p.exists():
-        raise HTTPException(status_code=404, detail="Файл не найден на диске")
-    data = _passport_fernet().decrypt(p.read_bytes())
+    # file_data (bytea) первично — переживает редеплой; диск как legacy-fallback.
+    enc = doc.file_data
+    if enc is None:
+        from pathlib import Path
+        p = Path(doc.path)
+        enc = p.read_bytes() if p.exists() else None
+    if enc is None:
+        raise HTTPException(status_code=410, detail="Файл недоступен (потерян при обновлении сервера)")
+    data = _passport_fernet().decrypt(enc)
     return {"filename": doc.filename, "content_type": doc.content_type, "data_base64": base64.b64encode(data).decode()}
 
 

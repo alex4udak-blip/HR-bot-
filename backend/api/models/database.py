@@ -1641,6 +1641,9 @@ class Employee(Base):
 
     # Metadata
     extra_data = Column(JSON, default=dict)  # wallet, passport hash, etc
+    # Зашифрованный (Fernet) скан паспорта в БД — диск на проде эфемерный, иначе
+    # PII теряется при редеплое. Метаданные (имя/тип) лежат в extra_data["passport"].
+    passport_data = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -1680,7 +1683,10 @@ class EmployeeDocument(Base):
     filename = Column(String, nullable=False)
     content_type = Column(String, nullable=True)
     size = Column(Integer, nullable=True)
-    path = Column(String, nullable=False)  # путь к зашифрованному файлу на диске
+    path = Column(String, nullable=False)  # путь к зашифрованному файлу на диске (legacy)
+    # Зашифрованные байты файла в БД (Fernet, как на диске): диск на проде эфемерный,
+    # без этого документ сотрудника теряется при редеплое. Диск остаётся как fallback.
+    file_data = Column(LargeBinary, nullable=True)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 

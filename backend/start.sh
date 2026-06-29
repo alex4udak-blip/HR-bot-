@@ -80,6 +80,11 @@ async def ensure_shadow_columns():
         # Make file_path nullable (no longer required with DB storage)
         await conn.execute(text('ALTER TABLE entity_files ALTER COLUMN file_path DROP NOT NULL'))
 
+        # PII-долговечность: зашифрованные паспорта/документы сотрудников в БД (bytea),
+        # иначе теряются на эфемерном диске прода при редеплое.
+        await conn.execute(text('ALTER TABLE employees ADD COLUMN IF NOT EXISTS passport_data BYTEA'))
+        await conn.execute(text('ALTER TABLE employee_documents ADD COLUMN IF NOT EXISTS file_data BYTEA'))
+
         # Check and add file_data column to task_attachments (bytea for DB file storage)
         # Railway /tmp эфемерный — без этой колонки модель ломает любой запрос
         # к task_attachments (kanban 500).
