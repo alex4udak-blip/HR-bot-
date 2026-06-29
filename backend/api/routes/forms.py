@@ -271,6 +271,16 @@ async def get_form_templates(
         .order_by(FormTemplate.created_at.desc())
     )
     forms = result.scalars().all()
+    form_ids = [f.id for f in forms]
+    # Воронки шаблона (junction) — чтобы фронт показывал шаблон в нужной воронке.
+    fv_map: dict[int, list[int]] = {}
+    if form_ids:
+        fv_rows = await db.execute(
+            select(FormVacancy.form_id, FormVacancy.vacancy_id)
+            .where(FormVacancy.form_id.in_(form_ids))
+        )
+        for fid, vid in fv_rows.all():
+            fv_map.setdefault(fid, []).append(vid)
     return [
         {
             "id": f.id,
@@ -278,6 +288,7 @@ async def get_form_templates(
             "description": f.description,
             "fields": f.fields or [],
             "is_template": True,
+            "vacancy_ids": fv_map.get(f.id, [f.vacancy_id] if f.vacancy_id else []),
             "created_at": f.created_at.isoformat() if f.created_at else None,
         }
         for f in forms
@@ -1065,47 +1076,89 @@ async def submit_public_form(
     )
     db.add(submission)
 
-    # Get all linked vacancies (via junction table, fallback to legacy vacancy_id)
-    fv_result = await db.execute(
-        select(FormVacancy.vacancy_id).where(FormVacancy.form_id == form.id)
-    )
-    linked_vacancy_ids = [row[0] for row in fv_result.all()]
-    if not linked_vacancy_ids and form.vacancy_id:
-        linked_vacancy_ids = [form.vacancy_id]
-
-    # Create VacancyApplication for each linked vacancy
-    linked_vacancies = []
-    if linked_vacancy_ids:
-        vac_result = await db.execute(
-            select(Vacancy).where(Vacancy.id.in_(linked_vacancy_ids))
-        )
-        linked_vacancies = list(vac_result.scalars().all())
-        for vacancy in linked_vacancies:
-            application = VacancyApplication(
-                vacancy_id=vacancy.id,
-                entity_id=entity.id,
-                stage=ApplicationStage.applied,
-                source="form",
-                created_by=form.created_by,
-            )
-            db.add(application)
-
+    # Привязка воронок больше НЕ создаёт заявку по сабмиту (логику авто-добавления
+    # убрали): vacancy_ids теперь только скоупят показ шаблона в воронке.
     await db.commit()
 
-    # --- Notification: new candidate from public form ---
-    for vacancy in linked_vacancies:
-        try:
-            from ..services.hr_notifications import notify_new_candidate
-            creator_result = await db.execute(
-                select(User).where(User.id == form.created_by)
-            )
-            form_creator = creator_result.scalar_one_or_none()
-            if form_creator:
-                await notify_new_candidate(db, entity, vacancy, form_creator)
-        except Exception:
-            logger.exception("notify_new_candidate (form) failed (non-critical)")
-
     return {"message": "Спасибо! Ваша анкета успешно отправлена.", "entity_id": entity.id}
+
+
+async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files) -> int:
+    """Сохранить файлы публичной формы к кандидату entity_id (org_id — из формы).
+    PDF-резюме конвертирует в картинки для превью. Возвращает число сохранённых
+    файлов. Используется и slug-, и токен-обработчиком сабмита."""
+    if not files:
+        return 0
+    entity_files_dir = ENTITY_FILES_DIR / str(entity_id)
+    entity_files_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_files = []
+    for upload_file in files[:PUBLIC_MAX_FILES]:
+        if not upload_file.filename:
+            continue
+        original_name = upload_file.filename
+        ext = Path(original_name.lower()).suffix
+        if ext not in ALLOWED_EXTENSIONS:
+            logger.warning(f"Public form: skipped disallowed file type '{ext}' ({original_name})")
+            continue
+        content = await upload_file.read()
+        file_size = len(content)
+        if file_size > PUBLIC_MAX_FILE_SIZE or file_size == 0:
+            continue
+        content_type = upload_file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+        unique_name = f"{uuid.uuid4().hex}{ext}"
+        file_path = entity_files_dir / unique_name
+        with open(file_path, "wb") as f:
+            f.write(content)
+        is_resume = any(kw in original_name.lower() for kw in ["resume", "cv", "резюме"])
+        file_type = EntityFileType.resume if is_resume else EntityFileType.other
+        entity_file = EntityFile(
+            org_id=form.org_id,
+            entity_id=entity_id,
+            file_type=file_type,
+            file_name=original_name,
+            file_path=str(file_path),
+            file_size=file_size,
+            mime_type=content_type,
+            description=f"Загружено через форму '{form.title}'",
+            uploaded_by=form.created_by,
+        )
+        db.add(entity_file)
+        # original_name несём с собой, чтобы имя страниц PDF бралось от своего файла.
+        saved_files.append((entity_file, file_path, content_type, original_name))
+
+    await db.flush()
+
+    # Convert PDF resumes to images for inline preview
+    for entity_file, fpath, ctype, orig_name in saved_files:
+        if ctype == "application/pdf" and entity_file.file_type == EntityFileType.resume:
+            try:
+                import fitz
+                doc = fitz.open(str(fpath))
+                for page_num in range(len(doc)):
+                    page = doc[page_num]
+                    mat = fitz.Matrix(PDF_RENDER_DPI / 72, PDF_RENDER_DPI / 72)
+                    pix = page.get_pixmap(matrix=mat)
+                    img_name = f"{uuid.uuid4().hex}.jpg"
+                    img_path = entity_files_dir / img_name
+                    pix.save(str(img_path))
+                    img_file = EntityFile(
+                        org_id=form.org_id,
+                        entity_id=entity_id,
+                        file_type=EntityFileType.resume,
+                        file_name=f"{Path(orig_name).stem}_page_{page_num + 1}.jpg",
+                        file_path=str(img_path),
+                        file_size=img_path.stat().st_size,
+                        mime_type="image/jpeg",
+                        description=f"Страница {page_num + 1} из {orig_name}",
+                        uploaded_by=form.created_by,
+                    )
+                    db.add(img_file)
+                doc.close()
+            except Exception:
+                logger.exception(f"PDF→image conversion failed for {fpath}")
+
+    return len(saved_files)
 
 
 @router.post("/public/{slug}/submit-with-files")
@@ -1203,126 +1256,17 @@ async def submit_public_form_with_files(
     )
     db.add(submission)
 
-    # Save uploaded files
-    saved_files = []
-    if files:
-        entity_files_dir = ENTITY_FILES_DIR / str(entity.id)
-        entity_files_dir.mkdir(parents=True, exist_ok=True)
+    # Save uploaded files (общий хелпер; org_id из формы)
+    files_saved_count = await _save_public_form_files(db, form, entity.id, files)
 
-        for i, upload_file in enumerate(files[:PUBLIC_MAX_FILES]):
-            if not upload_file.filename:
-                continue
-
-            original_name = upload_file.filename
-            ext = Path(original_name.lower()).suffix
-            if ext not in ALLOWED_EXTENSIONS:
-                logger.warning(f"Public form: skipped disallowed file type '{ext}' ({original_name})")
-                continue
-
-            content = await upload_file.read()
-            file_size = len(content)
-            if file_size > PUBLIC_MAX_FILE_SIZE or file_size == 0:
-                continue
-
-            content_type = upload_file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
-            unique_name = f"{uuid.uuid4().hex}{ext}"
-            file_path = entity_files_dir / unique_name
-
-            with open(file_path, "wb") as f:
-                f.write(content)
-
-            # Determine file_type: if it looks like a resume/CV
-            is_resume = any(kw in original_name.lower() for kw in ["resume", "cv", "резюме"])
-            file_type = EntityFileType.resume if is_resume else EntityFileType.other
-
-            entity_file = EntityFile(
-                entity_id=entity.id,
-                file_type=file_type,
-                file_name=original_name,
-                file_path=str(file_path),
-                file_size=file_size,
-                mime_type=content_type,
-                description=f"Загружено через форму '{form.title}'",
-                uploaded_by=form.created_by,
-            )
-            db.add(entity_file)
-            saved_files.append((entity_file, file_path, content_type))
-
-        await db.flush()
-
-        # Convert PDF resumes to images for inline preview
-        for entity_file, fpath, ctype in saved_files:
-            if ctype == "application/pdf" and entity_file.file_type == EntityFileType.resume:
-                try:
-                    import fitz
-                    doc = fitz.open(str(fpath))
-                    for page_num in range(len(doc)):
-                        page = doc[page_num]
-                        mat = fitz.Matrix(PDF_RENDER_DPI / 72, PDF_RENDER_DPI / 72)
-                        pix = page.get_pixmap(matrix=mat)
-                        img_name = f"{uuid.uuid4().hex}.jpg"
-                        img_path = entity_files_dir / img_name
-                        pix.save(str(img_path))
-
-                        img_file = EntityFile(
-                            entity_id=entity.id,
-                            file_type=EntityFileType.resume,
-                            file_name=f"{Path(original_name).stem}_page_{page_num + 1}.jpg",
-                            file_path=str(img_path),
-                            file_size=img_path.stat().st_size,
-                            mime_type="image/jpeg",
-                            description=f"Страница {page_num + 1} из {original_name}",
-                            uploaded_by=form.created_by,
-                        )
-                        db.add(img_file)
-                    doc.close()
-                except Exception:
-                    logger.exception(f"PDF→image conversion failed for {fpath}")
-
-    # Get all linked vacancies (via junction table, fallback to legacy vacancy_id)
-    fv_result = await db.execute(
-        select(FormVacancy.vacancy_id).where(FormVacancy.form_id == form.id)
-    )
-    linked_vacancy_ids = [row[0] for row in fv_result.all()]
-    if not linked_vacancy_ids and form.vacancy_id:
-        linked_vacancy_ids = [form.vacancy_id]
-
-    # Create VacancyApplication for each linked vacancy
-    linked_vacancies = []
-    if linked_vacancy_ids:
-        vac_result = await db.execute(
-            select(Vacancy).where(Vacancy.id.in_(linked_vacancy_ids))
-        )
-        linked_vacancies = list(vac_result.scalars().all())
-        for vacancy in linked_vacancies:
-            application = VacancyApplication(
-                vacancy_id=vacancy.id,
-                entity_id=entity.id,
-                stage=ApplicationStage.applied,
-                source="form",
-                created_by=form.created_by,
-            )
-            db.add(application)
-
+    # Привязка воронок больше НЕ создаёт заявку по сабмиту (логику авто-добавления
+    # убрали): vacancy_ids теперь только скоупят показ шаблона в воронке.
     await db.commit()
-
-    # Notification
-    for vacancy in linked_vacancies:
-        try:
-            from ..services.hr_notifications import notify_new_candidate
-            creator_result = await db.execute(
-                select(User).where(User.id == form.created_by)
-            )
-            form_creator = creator_result.scalar_one_or_none()
-            if form_creator:
-                await notify_new_candidate(db, entity, vacancy, form_creator)
-        except Exception:
-            logger.exception("notify_new_candidate (form+files) failed (non-critical)")
 
     return {
         "message": "Спасибо! Ваша анкета успешно отправлена.",
         "entity_id": entity.id,
-        "files_saved": len(saved_files),
+        "files_saved": files_saved_count,
     }
 
 
@@ -1413,3 +1357,66 @@ async def submit_public_form_by_token(
         logger.error("form.submission notify/broadcast FAILED for dispatch %s", dispatch.id, exc_info=True)
 
     return {"message": "Спасибо! Ваша анкета успешно отправлена.", "entity_id": dispatch.entity_id}
+
+
+@router.post("/public/d/{token}/submit-with-files")
+async def submit_public_form_by_token_with_files(
+    token: str,
+    data: str = Form(..., description="JSON string with form data {field_id: value}"),
+    files: List[UploadFile] = File(default=[]),
+    db: AsyncSession = Depends(get_db),
+):
+    """Персональная анкета С ФАЙЛАМИ: ответы и файлы привязываются к
+    существующему кандидату (dispatch.entity_id), без создания нового entity."""
+    try:
+        form_data = json.loads(data)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Невалидный JSON в поле data")
+
+    dispatch = (await db.execute(select(FormDispatch).where(FormDispatch.token == token))).scalar_one_or_none()
+    if not dispatch:
+        raise HTTPException(status_code=404, detail="Анкета не найдена")
+    if dispatch.status == "submitted":
+        raise HTTPException(status_code=409, detail="Анкета уже заполнена")
+    form = (await db.execute(
+        select(FormTemplate).where(FormTemplate.id == dispatch.form_id, FormTemplate.is_active == True)
+    )).scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="Анкета недоступна")
+
+    for field in (form.fields or []):
+        if field.get("required") and field.get("type") != "file":
+            val = form_data.get(field["id"])
+            if val is None or (isinstance(val, str) and not val.strip()):
+                raise HTTPException(status_code=422, detail=f"Поле '{field['label']}' обязательно для заполнения")
+
+    submission = FormSubmission(form_id=form.id, entity_id=dispatch.entity_id, data=form_data, dispatch_id=dispatch.id)
+    db.add(submission)
+    await db.flush()
+
+    files_saved_count = await _save_public_form_files(db, form, dispatch.entity_id, files)
+
+    dispatch.status = "submitted"
+    dispatch.submitted_at = datetime.utcnow()
+    dispatch.submission_id = submission.id
+    dispatch.seen_by_recruiter = False
+    await db.commit()
+
+    try:
+        entity = (await db.execute(select(Entity).where(Entity.id == dispatch.entity_id))).scalar_one_or_none()
+        from ..services.hr_notifications import notify_form_submitted
+        await notify_form_submitted(db, dispatch, entity, form)
+        from .realtime import broadcast_form_submission
+        if dispatch.created_by:
+            await broadcast_form_submission(dispatch.created_by, {
+                "entity_id": dispatch.entity_id, "form_id": form.id, "dispatch_id": dispatch.id,
+                "form_title": form.title, "candidate_name": entity.name if entity else None,
+            })
+    except Exception:
+        logger.error("form.submission notify/broadcast FAILED for dispatch %s", dispatch.id, exc_info=True)
+
+    return {
+        "message": "Спасибо! Ваша анкета успешно отправлена.",
+        "entity_id": dispatch.entity_id,
+        "files_saved": files_saved_count,
+    }

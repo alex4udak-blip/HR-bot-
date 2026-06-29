@@ -420,12 +420,12 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
           />
         </div>
 
-        {/* Linked vacancies (multi-select) — только для шаблонов/публичных форм.
-            В разовых анкетах «с нуля» (autosave) скрыто: кандидат уже в воронке,
-            а привязка плодит лишние заявки по сабмиту. */}
+        {/* Воронки шаблона (multi-select) — в каких воронках показывать этот
+            шаблон в шаге выбора анкеты. Только для шаблонов; в разовых анкетах
+            «с нуля» (autosave) скрыто. Привязка НЕ создаёт заявок по сабмиту. */}
         {!autosave && (
         <div className="mb-6">
-          <label className="block text-sm text-gray-500 mb-1.5">Привязанные воронки</label>
+          <label className="block text-sm text-gray-500 mb-1.5">Показывать в воронках</label>
           <div className="flex flex-wrap gap-2">
             {vacancies.map(v => {
               const selected = selectedVacancyIds.includes(v.id);

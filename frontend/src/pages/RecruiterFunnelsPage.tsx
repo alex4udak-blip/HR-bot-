@@ -2793,6 +2793,8 @@ export default function RecruiterFunnelsPage() {
                               onOpenChange={setAnketaOpen}
                               entityId={selectedCandidate.entity_id}
                               entityName={selectedCandidate.entity_name || ''}
+                              vacancyId={selectedVacancyId ?? undefined}
+                              vacancyTitle={selectedVacancy?.title}
                             />
                           </Suspense>
                         )}

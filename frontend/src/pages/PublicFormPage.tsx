@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { getPublicForm, submitPublicForm, submitPublicFormWithFiles, getPublicFormByToken, submitPublicFormByToken } from '@/services/api/forms';
+import { getPublicForm, submitPublicForm, submitPublicFormWithFiles, getPublicFormByToken, submitPublicFormByToken, submitPublicFormByTokenWithFiles } from '@/services/api/forms';
 import type { PublicFormData } from '@/services/api/forms';
 import { FieldRenderer } from '@/features/forms/FieldRenderer';
 
@@ -75,7 +75,12 @@ export default function PublicFormPage() {
     try {
       const files = Object.values(fileUploads);
       if (token) {
-        await submitPublicFormByToken(token, values);
+        // Личная ссылка: с файлами — multipart, иначе JSON.
+        if (files.length > 0) {
+          await submitPublicFormByTokenWithFiles(token, values, files);
+        } else {
+          await submitPublicFormByToken(token, values);
+        }
       } else if (files.length > 0) {
         await submitPublicFormWithFiles(slug!, values, files);
       } else {

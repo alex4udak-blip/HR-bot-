@@ -191,6 +191,22 @@ export const submitPublicFormByToken = async (token: string, formData: Record<st
   return data;
 };
 
+export const submitPublicFormByTokenWithFiles = async (
+  token: string,
+  formData: Record<string, unknown>,
+  files: File[]
+): Promise<{ message: string; entity_id?: number; files_saved?: number }> => {
+  const body = new FormData();
+  body.append('data', JSON.stringify(formData));
+  for (const file of files) {
+    body.append('files', file);
+  }
+  const { data } = await api.post(`/forms/public/d/${token}/submit-with-files`, body, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+};
+
 export interface AIChatMessage {
   role: 'user' | 'assistant';
   content: string;

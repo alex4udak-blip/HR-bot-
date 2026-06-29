@@ -13,8 +13,12 @@ type Step = 'entry' | 'template-select' | 'builder' | 'ai-chat';
 type ChatMsg = { role: 'user' | 'assistant'; content: string };
 
 export function AnketaDrawer({
-  open, onOpenChange, entityId, entityName,
-}: { open: boolean; onOpenChange: (v: boolean) => void; entityId: number; entityName: string }) {
+  open, onOpenChange, entityId, entityName, vacancyId, vacancyTitle,
+}: {
+  open: boolean; onOpenChange: (v: boolean) => void; entityId: number; entityName: string;
+  // Контекст воронки (если открыто из воронки) — для показа её шаблонов первыми.
+  vacancyId?: number; vacancyTitle?: string;
+}) {
   const [step, setStep] = useState<Step>('entry');
   const [formId, setFormId] = useState<number | null>(null);
   const [isTemplate, setIsTemplate] = useState(false);
@@ -105,6 +109,8 @@ export function AnketaDrawer({
                 onUse={startFromTemplate}
                 onEdit={editTemplate}
                 onNew={createNewTemplate}
+                vacancyId={vacancyId}
+                vacancyTitle={vacancyTitle}
               />
             )}
 
@@ -185,11 +191,13 @@ function EntryStep({ onBlank, onTemplates, onAI }: {
 // Template select step
 // ─────────────────────────────────────────────
 
-function TemplateSelectStep({ onBack, onUse, onEdit, onNew }: {
+function TemplateSelectStep({ onBack, onUse, onEdit, onNew, vacancyId, vacancyTitle }: {
   onBack: () => void;
   onUse: (tpl: FormTemplate) => void;
   onEdit: (id: number) => void;
   onNew: () => void;
+  vacancyId?: number;
+  vacancyTitle?: string;
 }) {
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -252,44 +260,65 @@ function TemplateSelectStep({ onBack, onUse, onEdit, onNew }: {
           </div>
         )}
 
-        {!loading && templates.length > 0 && (
-          <div className="space-y-2">
-            {templates.map(tpl => (
-              <div key={tpl.id} className="border border-gray-200 rounded-xl p-4 flex items-start gap-3 hover:border-gray-300 transition-colors">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{tpl.title}</p>
-                  {tpl.description && (
-                    <p className="text-xs text-gray-500 mt-0.5 truncate">{tpl.description}</p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">{tpl.fields.length} вопросов</p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => onEdit(tpl.id)}
-                    className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
-                    title="Редактировать шаблон"
-                  >
-                    <PenLine className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(tpl.id)}
-                    disabled={deletingId === tpl.id}
-                    className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-                    title="Удалить шаблон"
-                  >
-                    {deletingId === tpl.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  </button>
-                  <button
-                    onClick={() => onUse(tpl)}
-                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
-                  >
-                    Использовать
-                  </button>
-                </div>
+        {!loading && templates.length > 0 && (() => {
+          const card = (tpl: FormTemplate) => (
+            <div key={tpl.id} className="border border-gray-200 rounded-xl p-4 flex items-start gap-3 hover:border-gray-300 transition-colors">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{tpl.title}</p>
+                {tpl.description && (
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">{tpl.description}</p>
+                )}
+                <p className="text-xs text-gray-400 mt-1">{tpl.fields.length} вопросов</p>
               </div>
-            ))}
-          </div>
-        )}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => onEdit(tpl.id)}
+                  className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                  title="Редактировать шаблон"
+                >
+                  <PenLine className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDelete(tpl.id)}
+                  disabled={deletingId === tpl.id}
+                  className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+                  title="Удалить шаблон"
+                >
+                  {deletingId === tpl.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={() => onUse(tpl)}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
+                >
+                  Использовать
+                </button>
+              </div>
+            </div>
+          );
+          // Скоуп по воронке: сперва шаблоны текущей воронки, затем остальные.
+          const scoped = vacancyId ? templates.filter(t => (t.vacancy_ids || []).includes(vacancyId)) : [];
+          const others = vacancyId ? templates.filter(t => !(t.vacancy_ids || []).includes(vacancyId)) : templates;
+          return (
+            <div className="space-y-4">
+              {vacancyId && scoped.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Шаблоны воронки{vacancyTitle ? ` «${vacancyTitle}»` : ''}
+                  </div>
+                  <div className="space-y-2">{scoped.map(card)}</div>
+                </div>
+              )}
+              {others.length > 0 && (
+                <div>
+                  {vacancyId && scoped.length > 0 && (
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Другие шаблоны</div>
+                  )}
+                  <div className="space-y-2">{others.map(card)}</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
