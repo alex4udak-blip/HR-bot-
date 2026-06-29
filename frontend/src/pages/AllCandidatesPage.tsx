@@ -411,6 +411,11 @@ export default function AllCandidatesPage() {
     try {
       const data = await getCandidatesKanban({
         q: debouncedSearch || undefined,
+        // Грузим до 500 на колонку, чтобы «Все кандидаты» показывали ВСЕХ, а не
+        // только первые 50 (бейдж 115, в списке было 75). Клиентское «Показать
+        // ещё» пагинирует отрисовку. Для истинных тысяч в одной колонке нужна
+        // серверная подгрузка — заложено на будущее.
+        per_column: 500,
       });
       setBoard(data);
     } catch {
