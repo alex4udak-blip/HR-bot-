@@ -2360,9 +2360,11 @@ export default function RecruiterFunnelsPage() {
                     )}
                     </div>
 
-                    {/* Bulk actions floating bar — единая плашка (как «Все кандидаты») */}
+                    {/* Bulk actions floating bar — единая плашка (как «Все кандидаты»).
+                        Прячем, пока открыта модалка перемещения, иначе плашка
+                        перекрывает её футер с кнопкой «Добавить». */}
                     <BulkSelectionBar
-                      open={anySelected}
+                      open={anySelected && !showBulkMove}
                       count={selectedIds.size}
                       avatars={candidates
                         .filter((c) => selectedIds.has(c.id))
