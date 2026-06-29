@@ -397,7 +397,12 @@ async def bulk_action(
         if not body.vacancy_id:
             raise HTTPException(400, "vacancy_id is required for add_to_vacancy")
 
-        vacancy_result = await db.execute(select(Vacancy).where(Vacancy.id == body.vacancy_id))
+        # Вакансия строго в орг вызывающего (org_id=None только у суперадмина) —
+        # иначе bulk-add закидывал кандидатов в чужую воронку по vacancy_id.
+        vq = select(Vacancy).where(Vacancy.id == body.vacancy_id)
+        if org_id:
+            vq = vq.where(Vacancy.org_id == org_id)
+        vacancy_result = await db.execute(vq)
         vacancy = vacancy_result.scalar_one_or_none()
         if not vacancy:
             raise HTTPException(404, "Vacancy not found")

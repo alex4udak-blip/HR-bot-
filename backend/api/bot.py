@@ -50,8 +50,16 @@ def get_bot() -> Bot:
     return bot
 
 
-# Database session
-engine = create_async_engine(get_database_url(), echo=False, pool_pre_ping=True)
+# Database session. Бот низкоконкурентный (последовательная обработка апдейтов) —
+# держим МАЛЕНЬКИЙ пул, чтобы не складываться с пулом API (50) и не упереться в
+# лимит коннектов PG. pool_recycle борется со stale-коннектами при долгом аптайме.
+_bot_db_url = get_database_url()
+_bot_engine_kwargs = {"echo": False, "pool_pre_ping": True}
+# pool_size/max_overflow/recycle только для пулящих движков (Postgres). SQLite
+# использует StaticPool и отвергает эти аргументы (тесты/локалка).
+if not _bot_db_url.startswith("sqlite"):
+    _bot_engine_kwargs.update(pool_size=3, max_overflow=2, pool_recycle=3600)
+engine = create_async_engine(_bot_db_url, **_bot_engine_kwargs)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 

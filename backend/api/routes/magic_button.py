@@ -433,6 +433,13 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         if my_clone_id:
             target_vacancy_id = my_clone_id
 
+        # Org-граница: целевая вакансия (или резолвнутый клон) должна быть в орг
+        # вызывающего — иначе vacancy_id из тела позволял создать заявку в чужой
+        # воронке. org здесь гарантированно не None (выше entity создаётся с org.id).
+        target_vac = await db.get(Vacancy, target_vacancy_id)
+        if not target_vac or target_vac.org_id != org.id:
+            raise HTTPException(404, "Vacancy not found")
+
         # Маша: новый кандидат должен оказываться вверху колонки, а не в
         # хвосте. Аналогично applications.create_application: stage_order =
         # min - 1000, чтобы при сортировке ORDER BY stage_order ASC новый
