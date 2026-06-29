@@ -4,6 +4,23 @@ import { getPublicForm, submitPublicForm, submitPublicFormWithFiles, getPublicFo
 import type { PublicFormData } from '@/services/api/forms';
 import { FieldRenderer } from '@/features/forms/FieldRenderer';
 
+// Должны совпадать с бэкендом (_save_public_form_files): иначе файл «принимается»
+// на фронте, но тихо отбрасывается на сервере. Стоп даём СРАЗУ при выборе.
+const ALLOWED_FILE_EXTS = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.webp'];
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+/** Проверка файла при выборе; null = ок, строка = причина отказа. */
+function validatePickedFile(file: File): string | null {
+  const dot = file.name.lastIndexOf('.');
+  const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
+  if (!ALLOWED_FILE_EXTS.includes(ext)) {
+    return 'Неподдерживаемый формат. Допустимы PDF, DOC/DOCX, JPG, PNG, WEBP.';
+  }
+  if (file.size > MAX_FILE_BYTES) return 'Файл больше 10 МБ.';
+  if (file.size === 0) return 'Файл пустой.';
+  return null;
+}
+
 /**
  * PublicFormPage - Light-themed page for candidates to fill out a form.
  * This page is accessible WITHOUT authentication.
@@ -242,6 +259,23 @@ export default function PublicFormPage() {
               value={values[field.id]}
               onChange={val => updateValue(field.id, val)}
               onFileChange={field.type === 'file' ? (file: File | null) => {
+                // Стоп-валидация СРАЗУ при выборе: плохой файл не принимаем,
+                // показываем причину под полем — кандидат исправляет до отправки.
+                const reason = file ? validatePickedFile(file) : null;
+                if (reason) {
+                  setValidationErrors(prev => ({ ...prev, [field.id]: reason }));
+                  setFileUploads(prev => {
+                    const next = { ...prev };
+                    delete next[field.id];
+                    return next;
+                  });
+                  return;
+                }
+                setValidationErrors(prev => {
+                  const next = { ...prev };
+                  delete next[field.id];
+                  return next;
+                });
                 setFileUploads(prev => {
                   const next = { ...prev };
                   if (file) {
