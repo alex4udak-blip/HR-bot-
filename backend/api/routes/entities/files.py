@@ -796,6 +796,15 @@ async def upload_entity_file(
         regenerate_entity_profile_background(entity_id, org.id)
     )
 
+    # Если PDF загрузили как ОБЫЧНЫЙ файл, а резюме у кандидата ещё нет — фоном
+    # проверяем (Claude), не резюме ли это, и если да — поднимаем во вкладку «Резюме».
+    if file_type_enum != EntityFileType.resume and file_extension == '.pdf':
+        from ...services.resume_autopromote import promote_pdf_to_resume_if_needed
+        background_tasks.add_task(
+            asyncio.create_task,
+            promote_pdf_to_resume_if_needed(entity_id, org.id)
+        )
+
     return EntityFileResponse(
         id=entity_file.id,
         entity_id=entity_file.entity_id,

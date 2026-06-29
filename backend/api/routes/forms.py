@@ -12,7 +12,8 @@ from datetime import datetime
 from pathlib import Path
 
 from anthropic import AsyncAnthropic
-from fastapi import APIRouter, Depends, HTTPException, Query, File, Form, UploadFile
+import asyncio
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, File, Form, UploadFile
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -1218,6 +1219,7 @@ async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files)
 @router.post("/public/{slug}/submit-with-files")
 async def submit_public_form_with_files(
     slug: str,
+    background_tasks: BackgroundTasks,
     data: str = Form(..., description="JSON string with form data {field_id: value}"),
     files: List[UploadFile] = File(default=[]),
     db: AsyncSession = Depends(get_db),
@@ -1316,6 +1318,14 @@ async def submit_public_form_with_files(
     # Привязка воронок больше НЕ создаёт заявку по сабмиту (логику авто-добавления
     # убрали): vacancy_ids теперь только скоупят показ шаблона в воронке.
     await db.commit()
+
+    # Если кандидат приложил PDF, а резюме у него нет — фоном проверим (Claude),
+    # резюме ли это, и при подтверждении поднимем во вкладку «Резюме».
+    from ..services.resume_autopromote import promote_pdf_to_resume_if_needed
+    background_tasks.add_task(
+        asyncio.create_task,
+        promote_pdf_to_resume_if_needed(entity.id, form.org_id)
+    )
 
     return {
         "message": "Спасибо! Ваша анкета успешно отправлена.",
@@ -1439,6 +1449,7 @@ async def submit_public_form_by_token(
 @router.post("/public/d/{token}/submit-with-files")
 async def submit_public_form_by_token_with_files(
     token: str,
+    background_tasks: BackgroundTasks,
     data: str = Form(..., description="JSON string with form data {field_id: value}"),
     files: List[UploadFile] = File(default=[]),
     db: AsyncSession = Depends(get_db),
@@ -1491,6 +1502,13 @@ async def submit_public_form_by_token_with_files(
             })
     except Exception:
         logger.error("form.submission notify/broadcast FAILED for dispatch %s", dispatch.id, exc_info=True)
+
+    # PDF без резюме → фоновый авто-промоут во вкладку «Резюме» (с проверкой Claude).
+    from ..services.resume_autopromote import promote_pdf_to_resume_if_needed
+    background_tasks.add_task(
+        asyncio.create_task,
+        promote_pdf_to_resume_if_needed(dispatch.entity_id, form.org_id)
+    )
 
     return {
         "message": "Спасибо! Ваша анкета успешно отправлена.",
