@@ -130,3 +130,8 @@ async def test_anketa_file_link_in_dispatch_answers(client, db_session, organiza
     d = next(x for x in r.json() if x["status"] == "submitted")
     assert d["answers"]["cv"] == "portfolio.png"
     assert d["file_links"].get("cv", "").endswith("/download")
+
+    # Публичный просмотр заполненной анкеты (по токену) тоже отдаёт file_links.
+    r = await client.get(f"/api/forms/public/d/{token}")
+    assert r.status_code == 200, r.text
+    assert r.json()["file_links"].get("cv", "").endswith("/download")

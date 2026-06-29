@@ -146,11 +146,14 @@ export default function PublicFormPage() {
             {form.fields.map(field => {
               const raw = form.answers?.[field.id];
               const text = Array.isArray(raw) ? raw.join(', ') : (raw == null || raw === '' ? '—' : String(raw));
+              const fileUrl = form.file_links?.[field.id];
               const isUrl = /^https?:\/\//i.test(text);
               return (
                 <div key={field.id}>
                   <div className="text-sm text-gray-500">{field.label}</div>
-                  {isUrl ? (
+                  {fileUrl ? (
+                    <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{text !== '—' ? text : 'Открыть файл'}</a>
+                  ) : isUrl ? (
                     <a href={text} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{text}</a>
                   ) : (
                     <div className="text-gray-900 break-words whitespace-pre-wrap">{text}</div>

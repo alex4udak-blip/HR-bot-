@@ -56,6 +56,7 @@ export interface PublicFormData {
   vacancy_title: string | null;
   already_submitted?: boolean;
   answers?: Record<string, unknown> | null;
+  file_links?: Record<string, string>; // field_id → URL скачивания файла
 }
 
 export interface FormCreateData {

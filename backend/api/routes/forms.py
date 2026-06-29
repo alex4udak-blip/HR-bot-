@@ -1327,11 +1327,30 @@ async def get_public_form_by_token(token: str, db: AsyncSession = Depends(get_db
     # Уже заполнено — отдаём ответы, чтобы по ссылке открывалась ЗАПОЛНЕННАЯ анкета
     # (рекрутёр может открыть/поделиться), а не пустая форма.
     answers = None
+    file_links: dict = {}
     if dispatch.status == "submitted" and dispatch.submission_id:
         sub = (await db.execute(
             select(FormSubmission).where(FormSubmission.id == dispatch.submission_id)
         )).scalar_one_or_none()
         answers = sub.data if sub else None
+        # Поля-файлы → ссылка на скачивание (резолв EntityFile по имени файла),
+        # чтобы файл в заполненной анкете можно было открыть, а не только имя.
+        if answers:
+            file_field_ids = [
+                f["id"] for f in (form.fields or [])
+                if isinstance(f, dict) and f.get("type") == "file" and f.get("id")
+            ]
+            for ffid in file_field_ids:
+                val = answers.get(ffid)
+                if isinstance(val, str) and val.strip():
+                    ef = (await db.execute(
+                        select(EntityFile.id).where(
+                            EntityFile.entity_id == dispatch.entity_id,
+                            EntityFile.file_name == val.strip(),
+                        ).order_by(EntityFile.id.desc())
+                    )).scalars().first()
+                    if ef:
+                        file_links[ffid] = f"/api/entities/{dispatch.entity_id}/files/{ef}/download"
 
     return {
         "id": form.id, "title": form.title, "description": form.description,
@@ -1339,6 +1358,7 @@ async def get_public_form_by_token(token: str, db: AsyncSession = Depends(get_db
         "candidate_name": entity.name if entity else None,
         "already_submitted": dispatch.status == "submitted",
         "answers": answers,
+        "file_links": file_links,
     }
 
 
