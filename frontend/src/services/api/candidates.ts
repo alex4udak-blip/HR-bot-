@@ -189,6 +189,26 @@ export const getCandidatesKanban = async (params?: {
 };
 
 /**
+ * Полный список id кандидатов по фильтру доски — для «Выбрать всех».
+ * Доска грузит лишь per_column карточек/колонку, поэтому select-all по
+ * загруженным карточкам брал не всех. Здесь берём все id того же набора.
+ */
+export const getCandidateIds = async (params?: {
+  q?: string;
+  recruiter_id?: number;
+  status?: string;
+}): Promise<number[]> => {
+  const searchParams: Record<string, string> = {};
+  if (params?.q) searchParams.q = params.q;
+  if (params?.recruiter_id) searchParams.recruiter_id = String(params.recruiter_id);
+  if (params?.status && params.status !== 'all') searchParams.status = params.status;
+  const { data } = await deduplicatedGet<{ ids: number[] }>('/candidates/ids', {
+    params: searchParams,
+  });
+  return data.ids;
+};
+
+/**
  * Quick status change for kanban drag-n-drop.
  */
 export const changeCandidateStatus = async (

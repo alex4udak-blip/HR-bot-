@@ -28,6 +28,7 @@ import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import { buildStageContainers, readSystemHrTags, type EntryReaction } from "@/components/entities/candidateDetail/model";
 import {
   getCandidatesKanban,
+  getCandidateIds,
   changeCandidateStatus,
 } from "@/services/api/candidates";
 import type {
@@ -1347,11 +1348,25 @@ export default function AllCandidatesPage() {
           name: card.name,
           photo_url: card.photo_url,
         }))}
-        onSelectAll={() =>
-          setSelectedIds(
-            new Set(filteredCards.slice(0, 1000).map(({ card }) => card.id)),
-          )
-        }
+        onSelectAll={async () => {
+          // «Выбрать всех» = ВСЕ кандидаты текущего фильтра, а не только
+          // загруженные per_column карточки (бейдж показывал 115, выбиралось 75).
+          const scopeMine =
+            listSettings.scope === "mine" && (user?.name || "").trim().length > 0;
+          try {
+            const ids = await getCandidateIds({
+              q: debouncedSearch || undefined,
+              status: activeTab !== "all" ? activeTab : undefined,
+              recruiter_id: scopeMine ? user?.id : undefined,
+            });
+            setSelectedIds(new Set(ids.slice(0, 1000)));
+          } catch {
+            // Фолбэк: хотя бы загруженные карточки
+            setSelectedIds(
+              new Set(filteredCards.slice(0, 1000).map(({ card }) => card.id)),
+            );
+          }
+        }}
         onClear={() => setSelectedIds(new Set())}
         onClose={() => setSelectedIds(new Set())}
         actions={[

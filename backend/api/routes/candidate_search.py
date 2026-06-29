@@ -981,3 +981,55 @@ async def get_candidates_kanban(
         ))
 
     return KanbanBoardResponse(columns=columns, total=total)
+
+
+@router.get("/ids")
+async def get_candidate_ids(
+    q: Optional[str] = None,
+    recruiter_id: Optional[int] = None,
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Полный список entity_id кандидатов по текущему фильтру доски — для «Выбрать всех».
+
+    Доска грузит только per_column карточек на колонку, поэтому select-all на фронте
+    видел лишь загруженных (бейдж «Все 115», а выбиралось 75). Этот лёгкий запрос
+    отдаёт ВСЕ id того же набора (org/статусы/поиск/рекрутёр), с разумным потолком.
+    """
+    current_user = await db.merge(current_user)
+    org_id = await _get_org_id(current_user, db)
+    isolated_ids = await get_isolated_creator_ids(current_user, db) if org_id else []
+
+    base_q = _base_candidate_query(org_id, current_user, isolated_ids)
+
+    if q and q.strip():
+        term = f"%{q.strip().lower()}%"
+        base_q = base_q.where(or_(
+            Entity.name.ilike(term),
+            Entity.email.ilike(term),
+            Entity.phone.ilike(term),
+            Entity.position.ilike(term),
+            Entity.company.ilike(term),
+        ))
+    if recruiter_id:
+        base_q = base_q.where(Entity.created_by == recruiter_id)
+
+    # Статус: конкретная вкладка (если валидна) либо все kanban-статусы.
+    status_enums = []
+    if status and status not in ("all", ""):
+        try:
+            status_enums = [EntityStatus(status)]
+        except ValueError:
+            status_enums = []
+    if not status_enums:
+        for s in KANBAN_STATUSES:
+            try:
+                status_enums.append(EntityStatus(s))
+            except ValueError:
+                pass
+    base_q = base_q.where(Entity.status.in_(status_enums))
+
+    id_q = base_q.with_only_columns(Entity.id).order_by(Entity.created_at.desc()).limit(5000)
+    result = await db.execute(id_q)
+    return {"ids": [row[0] for row in result.all()]}
