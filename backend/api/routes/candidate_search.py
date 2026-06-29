@@ -821,8 +821,24 @@ async def get_candidates_kanban(
     result = await db.execute(base_q)
     entities = result.scalars().all()
 
+    # Группируем по статусу и берём только per_column на колонку ДО дорогой работы
+    # (построение карточек + два IN-подзапроса фото/вакансий). Раньше всё это
+    # гонялось по ВСЕМ кандидатам, а хвост выкидывался — не держало «тысячи».
+    # counts считаем по полному набору, поэтому числа в колонках точные.
+    by_status: dict[str, list] = {s: [] for s in KANBAN_STATUSES}
+    counts: dict[str, int] = {s: 0 for s in KANBAN_STATUSES}
+    for e in entities:
+        status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
+        if status_val not in by_status:
+            continue
+        counts[status_val] += 1
+        if len(by_status[status_val]) < per_column:
+            by_status[status_val].append(e)
+    # Плоский список ТОЛЬКО отображаемых кандидатов (≤ per_column × колонок)
+    display_entities = [e for s in KANBAN_STATUSES for e in by_status[s]]
+
     # Get recruiter names
-    creator_ids = {e.created_by for e in entities if e.created_by}
+    creator_ids = {e.created_by for e in display_entities if e.created_by}
     recruiter_map = {}
     if creator_ids:
         r = await db.execute(
@@ -830,8 +846,8 @@ async def get_candidates_kanban(
         )
         recruiter_map = {row.id: row.name for row in r.all()}
 
-    # Get vacancy names and rejection reasons for entities
-    entity_ids = [e.id for e in entities]
+    # Get vacancy names and rejection reasons for entities (только отображаемые)
+    entity_ids = [e.id for e in display_entities]
     vacancy_map: dict = {}
     rejection_map: dict = {}
 
@@ -892,9 +908,9 @@ async def get_candidates_kanban(
         except Exception as exc:
             logger.warning(f"Vacancy map query failed (non-critical): {exc}")
 
-    # Group by status
+    # Group by status (display_entities уже обрезаны до per_column на колонку)
     grouped: dict[str, list] = {s: [] for s in KANBAN_STATUSES}
-    for e in entities:
+    for e in display_entities:
         try:
             status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
             if status_val not in grouped:
@@ -952,14 +968,16 @@ async def get_candidates_kanban(
     total = 0
     for s in KANBAN_STATUSES:
         all_cards = grouped.get(s, [])
-        total += len(all_cards)
+        # count — ПОЛНОЕ число в колонке (по всему набору), cards — обрезанные.
+        col_count = counts.get(s, len(all_cards))
+        total += col_count
         override = stage_overrides.get(s) or {}
         columns.append(KanbanColumn(
             status=s,
             label=override.get("label") or KANBAN_STATUS_LABELS.get(s, s),
             color=override.get("color"),
             cards=all_cards[:per_column],
-            count=len(all_cards),
+            count=col_count,
         ))
 
     return KanbanBoardResponse(columns=columns, total=total)
