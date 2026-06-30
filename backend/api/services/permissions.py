@@ -31,7 +31,7 @@ from ..models.database import (
     User, UserRole,
     Organization, OrgMember, OrgRole,
     Department, DepartmentMember, DeptRole,
-    Entity, Chat, CallRecording, Vacancy,
+    Entity, EntityType, Chat, CallRecording, Vacancy,
     SharedAccess, ResourceType, AccessLevel
 )
 
@@ -271,6 +271,19 @@ class PermissionService:
         # 1. Own resources
         own_ids = await self._get_owned_resource_ids(user, resource_type, org_id)
         accessible_ids.update(own_ids)
+
+        # 1.5 Модель A («общий пул HR»): член орга «видит» ВСЕХ кандидатов своей
+        # орг. Добавляем id всех кандидатов орга (только type==candidate; клиенты/
+        # партнёры — по строгим правилам ниже). Без этого дедуп/«похожие» искали
+        # только среди СВОИХ кандидатов рекрутёра и не находили старых (чужих).
+        if resource_type == "entity":
+            cand_result = await self.db.execute(
+                select(Entity.id).where(
+                    Entity.org_id == org_id,
+                    Entity.type == EntityType.candidate,
+                )
+            )
+            accessible_ids.update(cand_result.scalars().all())
 
         # 2. Department resources (if lead/sub_admin)
         dept_ids = await self._get_department_resource_ids(user, resource_type, org_id)
