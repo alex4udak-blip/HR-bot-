@@ -199,6 +199,27 @@ def generate_name_variants(name: str) -> Set[str]:
     return variants
 
 
+def name_token_set(name: str) -> Set[str]:
+    """Множество ЗНАЧИМЫХ токенов ФИО (каждый + его транслитерации).
+
+    Для матча по нескольким частям имени, а НЕ по одному общему токену: иначе
+    разные люди с общим именем («Дарья Мысник» и «Варламова Дарья Аллановна»)
+    слипались по единственному «Дарья». Сравнение пересечения token-set'ов
+    позволяет требовать ≥2 совпавших токена (имя+фамилия)."""
+    toks: Set[str] = set()
+    for part in (name or "").lower().split():
+        part = part.strip("-_.,")
+        if len(part) < 2:
+            continue
+        toks.add(part)
+        if re.search(r'[а-яё]', part):
+            toks.add(transliterate_ru_to_en(part))
+        if re.search(r'[a-z]', part):
+            toks.add(transliterate_en_to_ru(part))
+    toks.discard("")
+    return toks
+
+
 def normalize_phone(phone: str) -> str:
     """Нормализация телефонного номера."""
     if not phone:
@@ -752,8 +773,10 @@ class SimilarityService:
             permissions = PermissionService(db)
             accessible_ids = await permissions.get_accessible_ids(user, "entity", org_id)
 
-        # Генерируем варианты имени с транслитерацией
-        name_variants = generate_name_variants(entity.name)
+        # Токены ФИО (имя+фамилия) с транслитерацией — для матча по нескольким
+        # частям, а не по одному общему имени.
+        entity_name_tokens = name_token_set(entity.name)
+        entity_name_norm = (entity.name or "").strip().lower()
 
         # Нормализуем контактные данные
         normalized_phone = normalize_phone(entity.phone or "")
@@ -798,8 +821,14 @@ class SimilarityService:
             # 1. Проверка имени (40 баллов) — только если ОБА значения похожи на
             # ФИО, а не на должность/мусор («Flutter Developer, Минск, 25 лет»).
             # Иначе кандидаты с именем-должностью массово слипаются.
-            candidate_name_variants = generate_name_variants(candidate.name)
-            name_match = bool(name_variants & candidate_name_variants)
+            # Имя совпадает ТОЛЬКО при ≥2 общих токенах (имя+фамилия) ИЛИ полном
+            # совпадении строки — иначе разные люди с общим именем («Дарья Мысник»
+            # и «Варламова Дарья Аллановна») давали ложные +40 по одному «Дарья».
+            shared_name_tokens = entity_name_tokens & name_token_set(candidate.name)
+            name_match = (
+                len(shared_name_tokens) >= 2
+                or (entity_name_norm and entity_name_norm == (candidate.name or "").strip().lower())
+            )
             if name_match and looks_like_person_name(entity.name) and looks_like_person_name(candidate.name):
                 confidence += 40
                 match_reasons.append("Совпадение имени (с учетом транслитерации)")
