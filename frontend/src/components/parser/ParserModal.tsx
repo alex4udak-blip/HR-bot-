@@ -61,11 +61,27 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
       try {
         const all = await getVacancies({ status: 'open' });
         if (cancelled) return;
-        const myOpen = all
-          // Только СВОИ открытые воронки: заявки (pending_review) и чужие
-          // visible_to_all — НЕ цель добавления (рекрутёр их сначала берёт в работу).
-          .filter(v => v.status === 'open' && (isHrAdmin || (!!user && v.created_by === user.id)))
-          .map(v => ({ id: v.id, title: v.title }));
+        // Схлопываем «заявку + её клон»: если у воронки есть клон
+        // (extra_data.cloned_from_request_id == X), оригинал X прячем — иначе одна
+        // воронка двоится («Трафик ×2 / Рекрутер тест ×2»).
+        const clonedSourceIds = new Set<number>();
+        all.forEach((v) => {
+          const src = (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id;
+          if (typeof src === 'number') clonedSourceIds.add(src);
+        });
+        const seenTitles = new Set<string>();
+        const myOpen: { id: number; title: string }[] = [];
+        for (const v of all) {
+          // Только СВОИ открытые воронки; заявки (pending_review) и чужие
+          // visible_to_all — НЕ цель (рекрутёр их сначала берёт в работу).
+          if (v.status !== 'open') continue;
+          if (!isHrAdmin && !(user && v.created_by === user.id)) continue;
+          if (clonedSourceIds.has(v.id)) continue; // оригинал, у которого уже есть клон
+          const key = (v.title || '').trim().toLowerCase();
+          if (seenTitles.has(key)) continue; // дубль по названию
+          seenTitles.add(key);
+          myOpen.push({ id: v.id, title: v.title });
+        }
         setVacancyOptions(myOpen);
       } catch (e) {
         console.warn('Failed to load vacancies for attach picker:', e);
