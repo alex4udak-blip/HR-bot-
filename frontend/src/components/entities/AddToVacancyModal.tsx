@@ -5,7 +5,7 @@ import { X, Search, Briefcase, Plus, ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
 import { getErrorDetail } from "@/utils";
 import clsx from "clsx";
-import { getVacancies, applyEntityToVacancy } from "@/services/api";
+import { getVacancies, applyEntityToVacancy, getEntityVacancies } from "@/services/api";
 import type { Vacancy } from "@/types";
 import { VACANCY_STATUS_LABELS, VACANCY_STATUS_COLORS } from "@/types";
 import { formatSalary } from "@/utils";
@@ -44,6 +44,9 @@ export default function AddToVacancyModal({
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null);
   const [loadingVacancies, setLoadingVacancies] = useState(false);
+  // Воронки, в которых кандидат УЖЕ есть (для одиночного режима) — динамически
+  // прячем их из списка, как при массовом перемещении.
+  const [entityVacancyIds, setEntityVacancyIds] = useState<number[]>([]);
   const isBulk = !!bulkEntityIds?.length;
   const isHrAdmin =
     user?.role === "superadmin" ||
@@ -55,6 +58,19 @@ export default function AddToVacancyModal({
   const dropdownTop = anchorRect
     ? Math.min(Math.max(anchorRect.bottom + 10, 16), window.innerHeight - 516)
     : 138;
+
+  // Текущие воронки кандидата (одиночный режим) — чтобы исключить их из списка
+  // (один кандидат = одна воронка; показывать ту, где он уже есть, бессмысленно).
+  useEffect(() => {
+    if (isBulk || !entityId) return;
+    let cancelled = false;
+    getEntityVacancies(entityId)
+      .then((apps) => {
+        if (!cancelled) setEntityVacancyIds(apps.map((a) => a.vacancy_id));
+      })
+      .catch(() => { /* не критично — просто не исключим */ });
+    return () => { cancelled = true; };
+  }, [entityId, isBulk]);
 
   // Load open vacancies
   useEffect(() => {
@@ -78,10 +94,14 @@ export default function AddToVacancyModal({
           user && !isHrAdmin
             ? deduped.filter((v) => v.created_by === user.id)
             : deduped;
-        // Динамика: прячем исходную воронку (из которой перемещаем) — нельзя
-        // переместить кандидата в ту же воронку, где он уже сидит.
-        const myVacancies = excludeVacancyIds?.length
-          ? scoped.filter((v) => !excludeVacancyIds.includes(v.id))
+        // Динамика: прячем (а) исходную воронку, переданную родителем, и (б) те,
+        // где кандидат уже есть — нельзя переместить в ту же воронку.
+        const hideIds = new Set<number>([
+          ...(excludeVacancyIds ?? []),
+          ...entityVacancyIds,
+        ]);
+        const myVacancies = hideIds.size
+          ? scoped.filter((v) => !hideIds.has(v.id))
           : scoped;
         const query = searchQuery.trim().toLowerCase();
         const filtered = query
@@ -105,7 +125,7 @@ export default function AddToVacancyModal({
     // excludeKey (стабильная строка) вместо массива — иначе инлайн-массив от
     // родителя триггерил бы перезагрузку списка на каждый рендер.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHrAdmin, searchQuery, user, (excludeVacancyIds ?? []).join(",")]);
+  }, [isHrAdmin, searchQuery, user, (excludeVacancyIds ?? []).join(","), entityVacancyIds.join(",")]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
