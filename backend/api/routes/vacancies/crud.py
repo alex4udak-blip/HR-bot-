@@ -764,14 +764,11 @@ async def assign_vacancy(
         vacancy.assigned_to_all = False
         vacancy.assigned_to = list(dict.fromkeys(data.user_ids))  # unique, preserve order
 
-    # Если кто-то реально назначен — переводим заявку из pending_review в open.
-    # Иначе админ снова и снова видит кнопку 'Назначить' и думает что save
-    # не прошёл. Назначили = это уже открытая позиция в работе.
-    has_assignment = vacancy.assigned_to_all or (vacancy.assigned_to and len(vacancy.assigned_to) > 0)
-    if has_assignment and vacancy.status in (VacancyStatus.pending_review, VacancyStatus.draft):
-        vacancy.status = VacancyStatus.open
-        if not vacancy.published_at:
-            vacancy.published_at = datetime.utcnow()
+    # НЕ переводим заявку в open при назначении. Назначенная заявка остаётся
+    # ЗАЯВКОЙ для конкретного рекрутёра (pending_review + assigned_to) и висит у
+    # него в «Заявки». Рабочей воронкой (open) она становится ТОЛЬКО когда сам
+    # рекрутёр нажмёт «Взять в работу» (создаётся клон open под ним). Иначе
+    # заявка сразу падала в «выполнение» под создателем — «создал и сам же взял».
 
     await db.commit()
     await db.refresh(vacancy)

@@ -54,3 +54,24 @@ async def test_assign_notifies_recruiter(
         )
     )).scalars().all()
     assert len(notifs) >= 1
+
+
+@pytest.mark.asyncio
+async def test_assign_keeps_request_pending_not_open(
+    client, db_session, organization, admin_user, org_owner, second_user, org_member
+):
+    """Назначение рекрутёра НЕ переводит заявку в open — она остаётся ЗАЯВКОЙ
+    для конкретного рекрутёра (pending_review). В open её переводит только
+    «Взять в работу» самим рекрутёром."""
+    r = await client.post(
+        "/api/vacancies", headers=_h(admin_user),
+        json={"title": "Заявка остаётся заявкой", "status": "pending_review"},
+    )
+    vid = r.json()["id"]
+    r2 = await client.post(
+        f"/api/vacancies/{vid}/assign", headers=_h(admin_user),
+        json={"user_ids": [second_user.id], "all": False},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["status"] == "pending_review"
+    assert second_user.id in (r2.json().get("assigned_to") or [])
