@@ -527,6 +527,14 @@ export default function RecruiterFunnelsPage() {
     }
     if (statusFilter !== 'all') {
       result = result.filter((v) => v.status === statusFilter);
+    } else {
+      // Заявки (pending_review/draft) живут в разделе «Заявки», а НЕ в активных
+      // воронках «Мои вакансии». Иначе только что созданная заявка сразу висела
+      // как «в работе» под создателем, будто он её уже взял. Принятой (взятой в
+      // работу) она становится через «Взять в работу» → клон со статусом open.
+      result = result.filter(
+        (v) => v.status !== 'pending_review' && v.status !== 'draft',
+      );
     }
     return result;
   }, [vacancies, deletedVacancies, user, isHrAdmin, statusFilter]);
