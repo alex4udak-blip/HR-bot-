@@ -228,6 +228,11 @@ async def create_vacancy(
     """Create a new vacancy."""
     org = await get_user_org(current_user, db)
 
+    # Создавать заявки/вакансии может только HR-админ (owner/admin/superadmin).
+    # Рекрутёр (member) не создаёт — он берёт назначенные ему заявки в работу.
+    if not await has_full_database_access(current_user, org, db):
+        raise HTTPException(status_code=403, detail="Создавать заявки может только HR-администратор")
+
     # Build vacancy kwargs — custom_stages/kanban_card_fields are optional (migration may not be applied yet)
     vacancy_kwargs = dict(
         org_id=org.id if org else None,

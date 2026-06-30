@@ -1711,13 +1711,15 @@ export default function RecruiterFunnelsPage() {
             {isHrAdmin ? 'Рекрутеры' : 'Мои вакансии'}
           </span>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="hf-recruiter-sidebar-icon-btn"
-              title="Новая вакансия"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+            {isHrAdmin && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="hf-recruiter-sidebar-icon-btn"
+                title="Новая вакансия"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               onClick={() => setSidebarCollapsed(true)}
               className="hf-recruiter-sidebar-icon-btn hidden lg:block"
@@ -1963,16 +1965,18 @@ export default function RecruiterFunnelsPage() {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(true)}
-                  data-tour="create-vacancy"
-                  aria-label="Создать вакансию"
-                  title="Создать вакансию"
-                  className="hf-funnels-icon-action-btn hf-funnels-overview-create"
-                >
-                  <Plus className="hf-funnels-icon-action" strokeWidth={2.25} />
-                </button>
+                {isHrAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(true)}
+                    data-tour="create-vacancy"
+                    aria-label="Создать вакансию"
+                    title="Создать вакансию"
+                    className="hf-funnels-icon-action-btn hf-funnels-overview-create"
+                  >
+                    <Plus className="hf-funnels-icon-action" strokeWidth={2.25} />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1994,7 +1998,7 @@ export default function RecruiterFunnelsPage() {
                           {search ? 'Измените поиск или фильтр статуса' : 'Создайте первую вакансию для начала работы'}
                         </p>
                       </div>
-                      {!search && (
+                      {!search && isHrAdmin && (
                         <button
                           onClick={() => setShowCreateModal(true)}
                           className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-400)] text-[var(--hf-white)] text-sm font-medium rounded-lg transition-colors"

@@ -632,17 +632,19 @@ export default function VacanciesPage() {
             Заявки
           </h1>
 
-          <button
-            onClick={() => {
-              setShowCreateModal(true);
-            }}
-            data-tour="create-vacancy"
-            title="Создать заявку"
-            className="hf-funnels-primary-btn"
-          >
-            <Plus className="hf-funnels-primary-icon" strokeWidth={2.5} />
-            Новая заявка
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setShowCreateModal(true);
+              }}
+              data-tour="create-vacancy"
+              title="Создать заявку"
+              className="hf-funnels-primary-btn"
+            >
+              <Plus className="hf-funnels-primary-icon" strokeWidth={2.5} />
+              Новая заявка
+            </button>
+          )}
         </div>
 
         <div className="hf-vacancies-toolbar">
@@ -867,9 +869,7 @@ export default function VacanciesPage() {
             <EmptyVacancies
               variant={searchQuery ? 'search' : activeFilterCount > 0 ? 'filter' : 'primary'}
               query={searchQuery}
-              onCreate={() => {
-                setShowCreateModal(true);
-              }}
+              onCreate={isAdmin ? () => setShowCreateModal(true) : undefined}
             />
           </div>
         ) : (
