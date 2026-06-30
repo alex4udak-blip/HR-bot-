@@ -11,6 +11,8 @@ import {
 const GROUPS: { label: string; types: string[] }[] = [
   { label: "Упоминания", types: ["comment_mentioned", "comment_mention"] },
   { label: "Ответ на анкету", types: ["form_submitted"] },
+  { label: "Новая заявка", types: ["new_request"] },
+  { label: "Назначена заявка", types: ["request_assigned"] },
   { label: "Новый кандидат", types: ["new_candidate"] },
   { label: "Смена этапа", types: ["stage_change"] },
   { label: "Интервью", types: ["interview_scheduled"] },

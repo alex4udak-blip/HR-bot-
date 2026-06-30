@@ -202,6 +202,76 @@ async def notify_new_candidate(
 
 
 # ---------------------------------------------------------------------------
+# 1a. New request (vacancy) created — heads-up to HR admins/owners
+# ---------------------------------------------------------------------------
+
+async def notify_new_request(
+    db: AsyncSession,
+    vacancy: Vacancy,
+    created_by_user: User,
+) -> None:
+    """Уведомить HR-админов/owner'ов о новой заявке.
+
+    Заявки стекаются к админам (они распределяют между рекрутёрами), поэтому при
+    создании заявки шлём «Новая заявка» всем owner/admin орга, КРОМЕ создателя
+    (если её создал сам админ — себе не дублируем).
+    """
+    try:
+        if not vacancy.org_id:
+            return
+        recipient_ids = set(await _get_org_admins_and_owners(db, vacancy.org_id))
+        recipient_ids.discard(created_by_user.id)
+        if not recipient_ids:
+            return
+        title = "Новая заявка"
+        message = f"Создана заявка «{vacancy.title}» — назначьте рекрутёра"
+        link = f"/vacancies/{vacancy.id}"
+        for uid in recipient_ids:
+            await _create_notification(db, uid, "new_request", title, message, link)
+        await db.commit()
+        logger.info(
+            f"notify_new_request: vacancy={vacancy.id} notified {len(recipient_ids)} admins"
+        )
+    except Exception:
+        logger.exception("notify_new_request failed")
+        await db.rollback()
+
+
+# ---------------------------------------------------------------------------
+# 1c. Request assigned to recruiter(s) — distribution by admin
+# ---------------------------------------------------------------------------
+
+async def notify_request_assigned(
+    db: AsyncSession,
+    vacancy: Vacancy,
+    recruiter_ids,
+    assigned_by_user: User,
+) -> None:
+    """Уведомить ВНОВЬ назначенных рекрутёров, что им распределена заявка.
+
+    Вызывающий передаёт только новых назначенцев (не дёргаем уже назначенных).
+    Себя (того, кто назначил) не уведомляем.
+    """
+    try:
+        recipient_ids = {int(u) for u in recruiter_ids if u}
+        recipient_ids.discard(assigned_by_user.id)
+        if not recipient_ids:
+            return
+        title = "Вам назначена заявка"
+        message = f"Вам назначена заявка «{vacancy.title}»"
+        link = f"/vacancies/{vacancy.id}"
+        for uid in recipient_ids:
+            await _create_notification(db, uid, "request_assigned", title, message, link)
+        await db.commit()
+        logger.info(
+            f"notify_request_assigned: vacancy={vacancy.id} notified {len(recipient_ids)} recruiters"
+        )
+    except Exception:
+        logger.exception("notify_request_assigned failed")
+        await db.rollback()
+
+
+# ---------------------------------------------------------------------------
 # 1b. Form answer received (dispatch submitted by candidate)
 # ---------------------------------------------------------------------------
 

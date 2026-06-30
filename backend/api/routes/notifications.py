@@ -38,6 +38,8 @@ NOTIFICATION_TYPE_DEFAULTS: dict[str, bool] = {
     "comment_mentioned": True,    # упоминание в комментарии к кандидату
     "comment_mention": True,      # упоминание в комментарии к задаче
     "form_submitted": True,       # ответ на анкету
+    "new_request": True,          # новая заявка → HR-админам/owner'ам
+    "request_assigned": True,     # заявка распределена рекрутёру
     "new_candidate": False,
     "stage_change": False,
     "interview_scheduled": False,

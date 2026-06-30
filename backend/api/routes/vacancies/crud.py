@@ -17,6 +17,7 @@ from .common import (
 )
 from ...services.auth import get_current_user, get_user_org
 from ...services.cache import scoring_cache
+from ...services.hr_notifications import notify_new_request, notify_request_assigned
 
 
 class AssignRequest(BaseModel):
@@ -273,6 +274,10 @@ async def create_vacancy(
     await db.refresh(vacancy)
 
     logger.info(f"Created vacancy {vacancy.id}: {vacancy.title}")
+
+    # Новая заявка → уведомить HR-админов/owner'ов (кроме создателя). Они
+    # распределяют заявки между рекрутёрами. Fire-and-forget (свой commit/rollback).
+    await notify_new_request(db, vacancy, current_user)
 
     return VacancyResponse(
         id=vacancy.id,
@@ -737,6 +742,10 @@ async def assign_vacancy(
     if not await can_edit_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="No permission to edit this vacancy")
 
+    # Запоминаем, кто был назначен ДО — чтобы уведомить только вновь назначенных.
+    old_assigned = {int(u) for u in (vacancy.assigned_to or [])}
+    old_all = bool(getattr(vacancy, "assigned_to_all", False))
+
     if data.all:
         vacancy.assigned_to_all = True
         vacancy.assigned_to = []
@@ -767,6 +776,25 @@ async def assign_vacancy(
     await db.commit()
     await db.refresh(vacancy)
     logger.info(f"Vacancy {vacancy_id} assigned: all={vacancy.assigned_to_all}, ids={vacancy.assigned_to}")
+
+    # Уведомляем ТОЛЬКО вновь назначенных рекрутёров (не дёргаем уже назначенных).
+    try:
+        if data.all:
+            # «Всем рекрутёрам»: уведомляем всю команду орга, если раньше не было
+            # assigned_to_all (иначе никто реально не «прибавился»).
+            if not old_all:
+                res = await db.execute(
+                    select(OrgMember.user_id).where(OrgMember.org_id == org.id)
+                )
+                newly = {int(r[0]) for r in res.all()}
+            else:
+                newly = set()
+        else:
+            newly = {int(u) for u in (vacancy.assigned_to or [])} - old_assigned
+        if newly:
+            await notify_request_assigned(db, vacancy, newly, current_user)
+    except Exception:
+        logger.exception("assign notify failed for vacancy %s", vacancy_id)
 
     # Возвращаем сериализованную вакансию через тот же механизм, что get_vacancy
     return await get_vacancy(vacancy_id, db=db, current_user=current_user)
