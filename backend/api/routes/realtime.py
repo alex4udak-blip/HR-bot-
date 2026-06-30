@@ -439,6 +439,17 @@ async def get_users_with_resource_access(
             for uid in dept_leads_result.scalars().all():
                 user_ids.add(uid)
 
+    # Модель A («общий пул HR»): кандидаты видны всем членам орга, поэтому
+    # real-time события по ENTITY получают ВСЕ члены орга — иначе рекрутёр
+    # (OrgRole.member) не получал апдейтов по чужим кандидатам и обновлял
+    # страницу руками. Для chat/call (строже) не расширяем.
+    if resource_type == ResourceType.entity:
+        members_result = await db.execute(
+            select(OrgMember.user_id).where(OrgMember.org_id == org_id)
+        )
+        for uid in members_result.scalars().all():
+            user_ids.add(uid)
+
     return list(user_ids)
 
 

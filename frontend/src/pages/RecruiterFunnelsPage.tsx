@@ -671,6 +671,19 @@ export default function RecruiterFunnelsPage() {
     return () => window.removeEventListener('focus', onFocus);
   }, [selectedVacancyId, loadCandidates, fetchVacancies]);
 
+  // Поллинг воронки каждые 15с (только когда вкладка видима): на проде WS
+  // ненадёжен, поэтому тихо подтягиваем кандидатов и вакансии — иначе рекрутёр,
+  // сидя на странице воронки, не видел изменений без F5 (доска «Все кандидаты»
+  // уже так поллится). Тихий refresh, без скелетонов.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      if (selectedVacancyId) loadCandidates(selectedVacancyId, true);
+      fetchVacancies(true);
+    }, 15000);
+    return () => clearInterval(id);
+  }, [selectedVacancyId, loadCandidates, fetchVacancies]);
+
   // Filter candidates by search
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return candidates;
