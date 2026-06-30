@@ -17,7 +17,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import Select, case, cast, delete, func, literal, or_, select, String, text
+from sqlalchemy import Select, case, cast, func, literal, or_, select, String, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
@@ -36,12 +36,6 @@ from api.models.database import (
     ApplicationStage,
     StageTransition,
     AccessLevel,
-    EntityFile,
-    FormTemplate,
-    FormSubmission,
-    FormDispatch,
-    Notification,
-    OrgMember,
 )
 from api.services.auth import get_current_user, get_user_org, has_full_database_access
 from api.services.shadow_filter import get_isolated_creator_ids
@@ -1043,87 +1037,3 @@ async def get_candidate_ids(
     id_q = base_q.with_only_columns(Entity.id).order_by(Entity.created_at.desc()).limit(5000)
     result = await db.execute(id_q)
     return {"ids": [row[0] for row in result.all()]}
-
-
-@router.post("/wipe-hr-section")
-async def wipe_hr_section(
-    confirm: bool = Query(False, description="false = превью (только числа); true = удалить"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """⚠️ ОПАСНО. Очистка АКТИВНЫХ HR-данных СВОЕЙ организации одним вызовом.
-
-    УДАЛЯЕТ строго: активных кандидатов (type=candidate, is_archived=false) с их
-    файлами/заявками/историей/шарами, вакансии, анкеты (шаблоны+ответы+отправки),
-    HR-уведомления. СОХРАНЯЕТ: архив (is_archived=true — CSV-база), сотрудников/
-    Практику, чаты/Telegram, звонки, пользователей/орг/настройки. Только своя орг,
-    только HR-админ (owner/admin/superadmin).
-
-    confirm=false → превью (сколько удалит + что сохранит). confirm=true → удаляет.
-    """
-    current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-    if not org:
-        raise HTTPException(403, "No organization access")
-    if not await has_full_database_access(current_user, org.id, db):
-        raise HTTPException(403, "Очистку HR-раздела может выполнить только HR-администратор")
-
-    oid = org.id
-    # Подзапросы — СТРОГО в рамках своей орг. is_archived=true НИКОГДА не попадает.
-    active_cands = select(Entity.id).where(
-        Entity.org_id == oid,
-        Entity.type == EntityType.candidate,
-        Entity.is_archived.is_(False),
-    )
-    org_vacs = select(Vacancy.id).where(Vacancy.org_id == oid)
-    org_forms = select(FormTemplate.id).where(FormTemplate.org_id == oid)
-    org_users = select(OrgMember.user_id).where(OrgMember.org_id == oid)
-    org_vac_apps = select(VacancyApplication.id).where(VacancyApplication.vacancy_id.in_(org_vacs))
-
-    async def _count(stmt) -> int:
-        return (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
-
-    will_delete = {
-        "active_candidates": await _count(active_cands),
-        "vacancies": await _count(org_vacs),
-        "applications": await _count(select(VacancyApplication.id).where(or_(
-            VacancyApplication.entity_id.in_(active_cands),
-            VacancyApplication.vacancy_id.in_(org_vacs)))),
-        "candidate_files": await _count(select(EntityFile.id).where(EntityFile.entity_id.in_(active_cands))),
-        "stage_transitions": await _count(select(StageTransition.id).where(or_(
-            StageTransition.entity_id.in_(active_cands),
-            StageTransition.application_id.in_(org_vac_apps)))),
-        "anketa_templates": await _count(org_forms),
-        "anketa_submissions": await _count(select(FormSubmission.id).where(FormSubmission.form_id.in_(org_forms))),
-        "anketa_dispatches": await _count(select(FormDispatch.id).where(FormDispatch.form_id.in_(org_forms))),
-        "notifications": await _count(select(Notification.id).where(Notification.user_id.in_(org_users))),
-    }
-    preserved = {
-        "archived_candidates": await _count(select(Entity.id).where(
-            Entity.org_id == oid, Entity.type == EntityType.candidate, Entity.is_archived.is_(True))),
-    }
-
-    if not confirm:
-        return {"dry_run": True, "will_delete": will_delete, "preserved": preserved}
-
-    # Удаляем «дети → родители», ТОЛЬКО перечисленные таблицы своей орг.
-    await db.execute(delete(StageTransition).where(or_(
-        StageTransition.entity_id.in_(active_cands),
-        StageTransition.application_id.in_(org_vac_apps))))
-    await db.execute(delete(VacancyApplication).where(or_(
-        VacancyApplication.entity_id.in_(active_cands),
-        VacancyApplication.vacancy_id.in_(org_vacs))))
-    await db.execute(delete(EntityFile).where(EntityFile.entity_id.in_(active_cands)))
-    await db.execute(delete(SharedAccess).where(or_(
-        SharedAccess.entity_id.in_(active_cands),
-        SharedAccess.vacancy_id.in_(org_vacs))))
-    await db.execute(delete(FormSubmission).where(FormSubmission.form_id.in_(org_forms)))
-    await db.execute(delete(FormDispatch).where(FormDispatch.form_id.in_(org_forms)))
-    await db.execute(delete(FormTemplate).where(FormTemplate.org_id == oid))
-    await db.execute(delete(Notification).where(Notification.user_id.in_(org_users)))
-    await db.execute(delete(Vacancy).where(Vacancy.org_id == oid))
-    await db.execute(delete(Entity).where(Entity.id.in_(active_cands)))
-    await db.commit()
-
-    logger.warning("HR-section wiped by user %s in org %s: %s", current_user.id, oid, will_delete)
-    return {"dry_run": False, "deleted": will_delete, "preserved": preserved}

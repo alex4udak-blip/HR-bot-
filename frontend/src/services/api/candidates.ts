@@ -210,25 +210,6 @@ export const getCandidateIds = async (params?: {
   return data.ids;
 };
 
-export interface WipeHrResult {
-  dry_run: boolean;
-  will_delete?: Record<string, number>;
-  deleted?: Record<string, number>;
-  preserved: Record<string, number>;
-}
-
-/**
- * ОПАСНО. Очистка активных HR-данных своей орг (кандидаты/вакансии/анкеты/уведомл.).
- * Архив (is_archived) и другие модули НЕ трогаются. Только HR-админ.
- * confirm=false → превью (числа); confirm=true → удаление.
- */
-export const wipeHrSection = async (confirm: boolean): Promise<WipeHrResult> => {
-  const { data } = await api.post<WipeHrResult>(
-    `/candidates/wipe-hr-section?confirm=${confirm ? 'true' : 'false'}`,
-  );
-  return data;
-};
-
 /**
  * Quick status change for kanban drag-n-drop.
  */
