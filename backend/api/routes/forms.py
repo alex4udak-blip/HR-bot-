@@ -1043,6 +1043,14 @@ async def submit_public_form(
     if not form:
         raise HTTPException(status_code=404, detail="Форма не найдена")
 
+    # Анкета заполняется СУЩЕСТВУЮЩИМ кандидатом по персональной ссылке (токен) и
+    # НИКОГДА не создаёт нового кандидата. Анонимное заполнение по публичному slug
+    # отключено — раньше каждый такой сабмит плодил кандидата (нежелательно).
+    raise HTTPException(
+        status_code=403,
+        detail="Эта анкета заполняется по персональной ссылке, которую отправляет рекрутёр.",
+    )
+
     fields_by_id = {f["id"]: f for f in (form.fields or [])}
 
     # Validate required fields
@@ -1244,6 +1252,14 @@ async def submit_public_form_with_files(
     if not form:
         raise HTTPException(status_code=404, detail="Форма не найдена")
 
+    # Анкета заполняется СУЩЕСТВУЮЩИМ кандидатом по персональной ссылке (токен) и
+    # НИКОГДА не создаёт нового кандидата. Анонимное заполнение по публичному slug
+    # отключено — раньше каждый такой сабмит плодил кандидата (нежелательно).
+    raise HTTPException(
+        status_code=403,
+        detail="Эта анкета заполняется по персональной ссылке, которую отправляет рекрутёр.",
+    )
+
     fields_by_id = {f["id"]: f for f in (form.fields or [])}
 
     # Validate required fields (skip file fields — they come separately)
@@ -1322,10 +1338,9 @@ async def submit_public_form_with_files(
     # Если кандидат приложил PDF, а резюме у него нет — фоном проверим (Claude),
     # резюме ли это, и при подтверждении поднимем во вкладку «Резюме».
     from ..services.resume_autopromote import promote_pdf_to_resume_if_needed
-    background_tasks.add_task(
-        asyncio.create_task,
-        promote_pdf_to_resume_if_needed(entity.id, form.org_id)
-    )
+    # add_task(func, *args) — Starlette сам await'ит корутину после ответа.
+    # Раньше add_task(asyncio.create_task, coro) падал «no running event loop».
+    background_tasks.add_task(promote_pdf_to_resume_if_needed, entity.id, form.org_id)
 
     return {
         "message": "Спасибо! Ваша анкета успешно отправлена.",
@@ -1505,10 +1520,7 @@ async def submit_public_form_by_token_with_files(
 
     # PDF без резюме → фоновый авто-промоут во вкладку «Резюме» (с проверкой Claude).
     from ..services.resume_autopromote import promote_pdf_to_resume_if_needed
-    background_tasks.add_task(
-        asyncio.create_task,
-        promote_pdf_to_resume_if_needed(dispatch.entity_id, form.org_id)
-    )
+    background_tasks.add_task(promote_pdf_to_resume_if_needed, dispatch.entity_id, form.org_id)
 
     return {
         "message": "Спасибо! Ваша анкета успешно отправлена.",

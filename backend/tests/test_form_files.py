@@ -19,8 +19,9 @@ def _h(user):
 
 
 @pytest.mark.asyncio
-async def test_slug_submit_with_files_sets_org_id(client, db_session, organization: Organization, admin_user, org_owner):
-    """Сабмит публичной формы (slug) с файлом не падает 500 и проставляет org_id."""
+async def test_slug_submit_no_longer_creates_candidate(client, db_session, organization: Organization, admin_user, org_owner):
+    """Анонимный сабмит по публичному slug ОТКЛЮЧЁН: анкета заполняется только по
+    персональной ссылке существующим кандидатом и НЕ плодит новых кандидатов."""
     H = _h(admin_user)
     r = await client.post("/api/forms", json={
         "title": "Публичная с файлом",
@@ -34,19 +35,15 @@ async def test_slug_submit_with_files_sets_org_id(client, db_session, organizati
         select(FormTemplate.slug).where(FormTemplate.id == r.json()["id"])
     )).scalar_one()
 
+    before = len((await db_session.execute(select(Entity))).scalars().all())
     r = await client.post(
         f"/api/forms/public/{slug}/submit-with-files",
         data={"data": json.dumps({"name": "Иван", "cv": ""})},
         files={"files": ("portfolio.png", b"\x89PNG fake bytes", "image/png")},
     )
-    assert r.status_code == 200, r.text
-    assert r.json()["files_saved"] == 1
-    entity_id = r.json()["entity_id"]
-    efiles = (await db_session.execute(
-        select(EntityFile).where(EntityFile.entity_id == entity_id)
-    )).scalars().all()
-    assert len(efiles) == 1
-    assert efiles[0].org_id == organization.id
+    assert r.status_code == 403, r.text
+    after = len((await db_session.execute(select(Entity))).scalars().all())
+    assert after == before  # новый кандидат НЕ создан
 
 
 @pytest.mark.asyncio

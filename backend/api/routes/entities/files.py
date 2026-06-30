@@ -800,10 +800,9 @@ async def upload_entity_file(
     # проверяем (Claude), не резюме ли это, и если да — поднимаем во вкладку «Резюме».
     if file_type_enum != EntityFileType.resume and file_extension == '.pdf':
         from ...services.resume_autopromote import promote_pdf_to_resume_if_needed
-        background_tasks.add_task(
-            asyncio.create_task,
-            promote_pdf_to_resume_if_needed(entity_id, org.id)
-        )
+        # add_task(func, *args): Starlette await'ит корутину после ответа (без
+        # asyncio.create_task, который падал «no running event loop»).
+        background_tasks.add_task(promote_pdf_to_resume_if_needed, entity_id, org.id)
 
     return EntityFileResponse(
         id=entity_file.id,
