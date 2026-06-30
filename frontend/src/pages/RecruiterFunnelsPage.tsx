@@ -519,9 +519,11 @@ export default function RecruiterFunnelsPage() {
       if (typeof src === 'number') clonedSourceIds.add(src);
     });
     result = result.filter((v) => !clonedSourceIds.has(v.id));
-    if (!isHrAdmin && user) {
-      result = result.filter((v) => v.created_by === user.id);
-    }
+    // НЕ фильтруем дополнительно по created_by: бэкенд GET /vacancies уже вернул
+    // ДОСТУПНЫЙ набор (created_by / hiring_manager / lead-dept / shared /
+    // visible_to_all / assigned). Лишний клиентский фильтр прятал из списка
+    // visible_to_all-воронки, хотя в форме создания они предлагались — рассинхрон.
+    // Теперь список воронок = реально доступный рекрутёру набор (как и при создании).
     if (statusFilter !== 'all') {
       result = result.filter((v) => v.status === statusFilter);
     }
