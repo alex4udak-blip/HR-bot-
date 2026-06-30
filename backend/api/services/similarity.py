@@ -199,25 +199,39 @@ def generate_name_variants(name: str) -> Set[str]:
     return variants
 
 
-def name_token_set(name: str) -> Set[str]:
-    """Множество ЗНАЧИМЫХ токенов ФИО (каждый + его транслитерации).
+def _name_word_variants(word: str) -> Set[str]:
+    """Варианты ОДНОГО слова имени (само + транслитерации rus<->eng)."""
+    w = (word or "").strip("-_.,").lower()
+    out = {w}
+    if re.search(r'[а-яё]', w):
+        out.add(transliterate_ru_to_en(w))
+    if re.search(r'[a-z]', w):
+        out.add(transliterate_en_to_ru(w))
+    out.discard("")
+    return out
 
-    Для матча по нескольким частям имени, а НЕ по одному общему токену: иначе
-    разные люди с общим именем («Дарья Мысник» и «Варламова Дарья Аллановна»)
-    слипались по единственному «Дарья». Сравнение пересечения token-set'ов
-    позволяет требовать ≥2 совпавших токена (имя+фамилия)."""
-    toks: Set[str] = set()
-    for part in (name or "").lower().split():
-        part = part.strip("-_.,")
-        if len(part) < 2:
-            continue
-        toks.add(part)
-        if re.search(r'[а-яё]', part):
-            toks.add(transliterate_ru_to_en(part))
-        if re.search(r'[a-z]', part):
-            toks.add(transliterate_en_to_ru(part))
-    toks.discard("")
-    return toks
+
+def count_shared_name_words(name1: str, name2: str) -> int:
+    """Сколько РАЗНЫХ слов ФИО совпадают (каждое — по raw/транслит).
+
+    Считаем именно СЛОВА, а не варианты: общее одно имя «Семён» = 1 слово, а не 2
+    из-за пары «семён»+«semyon». Это режет ложные матчи разных людей с общим
+    именем («Титов Семён» vs «Кондратьев Семён») — у них совпадает 1 слово."""
+    words1 = [_name_word_variants(w) for w in (name1 or "").split()
+              if len(w.strip("-_.,")) >= 2]
+    words2 = [_name_word_variants(w) for w in (name2 or "").split()
+              if len(w.strip("-_.,")) >= 2]
+    used: Set[int] = set()
+    count = 0
+    for v1 in words1:
+        for j, v2 in enumerate(words2):
+            if j in used:
+                continue
+            if v1 & v2:
+                count += 1
+                used.add(j)
+                break
+    return count
 
 
 def normalize_phone(phone: str) -> str:
@@ -779,9 +793,6 @@ class SimilarityService:
             permissions = PermissionService(db)
             accessible_ids = await permissions.get_accessible_ids(user, "entity", org_id)
 
-        # Токены ФИО (имя+фамилия) с транслитерацией — для матча по нескольким
-        # частям, а не по одному общему имени.
-        entity_name_tokens = name_token_set(entity.name)
         entity_name_norm = (entity.name or "").strip().lower()
 
         # Нормализуем контактные данные
@@ -830,9 +841,9 @@ class SimilarityService:
             # Имя совпадает ТОЛЬКО при ≥2 общих токенах (имя+фамилия) ИЛИ полном
             # совпадении строки — иначе разные люди с общим именем («Дарья Мысник»
             # и «Варламова Дарья Аллановна») давали ложные +40 по одному «Дарья».
-            shared_name_tokens = entity_name_tokens & name_token_set(candidate.name)
+            shared_name_words = count_shared_name_words(entity.name, candidate.name)
             name_match = (
-                len(shared_name_tokens) >= 2
+                shared_name_words >= 2
                 or (entity_name_norm and entity_name_norm == (candidate.name or "").strip().lower())
             )
             if name_match and looks_like_person_name(entity.name) and looks_like_person_name(candidate.name):
