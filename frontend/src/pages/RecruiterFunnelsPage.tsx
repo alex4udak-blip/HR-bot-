@@ -2460,49 +2460,10 @@ export default function RecruiterFunnelsPage() {
                   <div className="hf-candidates-detail-panel hf-vacancy-detail flex-1 bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)] rounded-hf-l flex flex-col overflow-hidden">
                     {selectedCandidate ? (
                       <>
-                        {/* Detail tabs: Анкеты / Резюме (видны только на странице
-                            резюме — в режиме обзора у карточки свой ряд вкладок ниже). */}
-                        <div className={clsx(
-                          'flex items-center border-b border-[color:var(--hf-white-alpha-06)] px-5 flex-shrink-0',
-                          detailTab !== 'resume' && 'hidden',
-                        )}>
-                          <button
-                            onClick={() => setDetailTab('anketa')}
-                            className={clsx(
-                              'px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5',
-                              'border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]'
-                            )}
-                          >
-                            Анкеты
-                            {anketaCount > 0 && (
-                              <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
-                                {anketaCount > 9 ? '9+' : anketaCount}
-                              </span>
-                            )}
-                          </button>
-                          {/* По одной вкладке «Резюме» на источник (паритет с «Все
-                              кандидаты»): каждый влитый профиль/PDF — своя вкладка. */}
-                          {(resumeSources.length > 0 ? resumeSources : [null]).map((_s, i) => (
-                            <button
-                              key={i}
-                              onClick={() => { setDetailTab('resume'); setResumeIndex(i); }}
-                              className={clsx(
-                                'px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5',
-                                detailTab === 'resume' && resumeIndex === i
-                                  ? 'border-[var(--hf-accent)] text-[var(--hf-dark-100)]'
-                                  : 'border-transparent text-[var(--hf-dark-400)] hover:text-[var(--hf-dark-200)]'
-                              )}
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              Резюме
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Tab content */}
+                        {/* Tab content — единый профиль (как «Все кандидаты»):
+                            инфо + история + нижний ряд вкладок Анкеты/Резюме. */}
                         <div className="flex-1 overflow-y-auto">
-                          {detailTab !== 'resume' ? (
-                            <div className="p-[var(--hf-space-xxl)] max-w-[1220px]">
+                          <div className="p-[var(--hf-space-xxl)] max-w-[1220px]">
                               {dupCard && (
                                 <ShadowDuplicateBanner
                                   card={dupCard}
@@ -2818,41 +2779,29 @@ export default function RecruiterFunnelsPage() {
                                   <FunnelAnketaTab entityId={selectedCandidate.entity_id} />
                                 </div>
                               )}
+                              {/* Резюме — нижняя секция профиля (паритет с «Все
+                                  кандидаты»): инфо и история остаются выше, резюме
+                                  показывается под ними, а не отдельной страницей. */}
+                              {detailTab === 'resume' && (
+                                <div className="mt-4">
+                                  {filesLoading ? (
+                                    <div className="flex items-center justify-center py-16">
+                                      <Loader2 className="w-6 h-6 animate-spin text-[var(--hf-accent)]" />
+                                    </div>
+                                  ) : !hasResume ? (
+                                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                                      <FileText className="w-12 h-12 text-[var(--hf-dark-600)] mb-3" />
+                                      <p className="text-sm text-[var(--hf-dark-400)]">Нет загруженных резюме</p>
+                                      <p className="text-xs text-[var(--hf-dark-500)] mt-1">
+                                        Загрузите PDF-резюме в профиле кандидата
+                                      </p>
+                                    </div>
+                                  ) : funnelCard ? (
+                                    <ResumeTab card={funnelCard} activeIndex={resumeIndex} />
+                                  ) : null}
+                                </div>
+                              )}
                             </div>
-                          ) : (
-                            /* Resume tab — Huntflow-style page viewer */
-                            <div className="flex-1 flex flex-col h-full">
-                              {filesLoading ? (
-                                <div className="flex items-center justify-center py-16">
-                                  <Loader2 className="w-6 h-6 animate-spin text-[var(--hf-accent)]" />
-                                </div>
-                              ) : !hasResume ? (
-                                <div className="flex flex-col items-center justify-center py-16 text-center">
-                                  <FileText className="w-12 h-12 text-[var(--hf-dark-600)] mb-3" />
-                                  <p className="text-sm text-[var(--hf-dark-400)]">Нет загруженных резюме</p>
-                                  <p className="text-xs text-[var(--hf-dark-500)] mt-1">
-                                    Загрузите PDF-резюме в профиле кандидата
-                                  </p>
-                                  {selectedCandidate.entity_id && (
-                                    <button
-                                      onClick={() => navigate(`/all-candidates?entity=${selectedCandidate.entity_id}`)}
-                                      className="mt-3 flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--hf-accent)] hover:bg-[var(--hf-accent-bg-10)] rounded-lg transition-colors"
-                                    >
-                                      <Users className="w-3.5 h-3.5" />
-                                      Открыть профиль
-                                    </button>
-                                  )}
-                                </div>
-                              ) : funnelCard ? (
-                                /* Единый просмотрщик резюме — 1-в-1 с «Все кандидаты».
-                                   Полоса вкладок «Резюме» рисуется родителем выше
-                                   (по resumeIndex); ResumeTab показывает выбранный источник. */
-                                <div className="flex-1 overflow-y-auto">
-                                  <ResumeTab card={funnelCard} activeIndex={resumeIndex} />
-                                </div>
-                              ) : null}
-                            </div>
-                          )}
                         </div>
 
                         {/* Дровер «Анкета» — отправка/привязка анкеты живому
