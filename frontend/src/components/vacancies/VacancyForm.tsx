@@ -681,7 +681,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     </button>
                     <button
                       type="button"
-                      onClick={() => runStatusAction('cancelled', 'Вакансия отправлена в архив')}
+                      onClick={() => runStatusAction('closed', 'Вакансия отправлена в архив')}
                       disabled={statusAction}
                       className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
                     >
