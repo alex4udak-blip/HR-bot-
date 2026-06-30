@@ -720,11 +720,12 @@ async def get_my_vacancies_for_extension(
 ):
     """Get recruiter's vacancies for the extension popup dropdown.
 
-    Включаем активные статусы: open, pending_review, draft (legacy).
-    Исключаем paused/closed/cancelled — туда добавлять кандидатов нельзя.
-    pending_review нужен потому что после миграции a1727dd все новые
-    вакансии создаются в pending_review до апрува админом, и без
-    включения этого статуса дропдаун окажется пустым."""
+    Только РАБОЧИЕ воронки текущего юзера: status=open и created_by=я.
+    pending_review/draft — это ЗАЯВКИ (ещё не взяты в работу), класть в них
+    кандидата нельзя, поэтому их НЕ показываем (синхронно с вебом «Мои
+    вакансии»). Заявка становится рабочей воронкой (open) только когда её
+    «Взять в работу» → клон open под рекрутёром. paused/closed/cancelled тоже
+    исключены."""
     org = await get_user_org(current_user, db)
     result = await db.execute(
         select(Vacancy).where(
