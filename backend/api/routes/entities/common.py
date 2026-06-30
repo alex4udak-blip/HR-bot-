@@ -20,7 +20,7 @@ from ...database import get_db
 from ...models.database import (
     Entity, EntityType, EntityStatus, EntityTransfer,
     Chat, CallRecording, AnalysisHistory, User, Organization,
-    SharedAccess, ResourceType, UserRole, AccessLevel, OrgRole,
+    SharedAccess, ResourceType, UserRole, AccessLevel, OrgRole, OrgMember,
     Department, DepartmentMember, DeptRole, Vacancy, Message,
     VacancyApplication, STATUS_SYNC_MAP, STAGE_SYNC_MAP,
     EntityFile, EntityFileType, VacancyStatus, ApplicationStage
@@ -397,6 +397,26 @@ async def check_entity_access(
     # 3. Entity owner has full access to their own resources
     if entity.created_by == user.id:
         return True
+
+    # 3.5 Модель A («общий пул HR»): любой член организации ВИДИТ (read) всех
+    # КАНДИДАТОВ своей орг. Без этого доска показывала всех (запрос только по
+    # org_id), а детали/файлы/дедуп чужих кандидатов не открывались — рассинхрон.
+    # Скоуп: только кандидаты (клиенты/партнёры — по строгим правилам ниже) и
+    # строго в границах орга (entity в org_id И пользователь — член этого org_id;
+    # cross-org остаётся закрыт). Правки/удаление — по правилам ниже.
+    if (
+        required_level is None
+        and getattr(entity, "type", None) == EntityType.candidate
+        and getattr(entity, "org_id", None) == org_id
+    ):
+        om = await db.execute(
+            select(OrgMember.id).where(
+                OrgMember.org_id == org_id,
+                OrgMember.user_id == user.id,
+            ).limit(1)
+        )
+        if om.scalar() is not None:
+            return True
 
     # 4. Department-based access (ADMIN/SUB_ADMIN/MEMBER)
     if entity.department_id:
