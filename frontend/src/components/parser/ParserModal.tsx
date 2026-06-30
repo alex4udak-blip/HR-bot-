@@ -14,6 +14,7 @@ import {
 } from '@/services/api';
 import ParsedDataPreview from './ParsedDataPreview';
 import type { Entity, Vacancy } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
 
 interface ParserModalProps {
   type: 'resume' | 'vacancy';
@@ -41,6 +42,11 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
   const [isSearchingCandidates, setIsSearchingCandidates] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isAttaching, setIsAttaching] = useState(false);
+  const { user } = useAuthStore();
+  const isHrAdmin =
+    user?.role === 'superadmin' ||
+    user?.org_role === 'owner' ||
+    user?.org_role === 'admin';
 
   // Vacancy attachment state — кандидата можно сразу добавить на воронку
   const [vacancyOptions, setVacancyOptions] = useState<Pick<Vacancy, 'id' | 'title'>[]>([]);
@@ -56,7 +62,9 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         const all = await getVacancies({ status: 'open' });
         if (cancelled) return;
         const myOpen = all
-          .filter(v => v.status === 'open' || v.status === 'pending_review')
+          // Только СВОИ открытые воронки: заявки (pending_review) и чужие
+          // visible_to_all — НЕ цель добавления (рекрутёр их сначала берёт в работу).
+          .filter(v => v.status === 'open' && (isHrAdmin || (!!user && v.created_by === user.id)))
           .map(v => ({ id: v.id, title: v.title }));
         setVacancyOptions(myOpen);
       } catch (e) {
@@ -64,7 +72,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
       }
     })();
     return () => { cancelled = true; };
-  }, [type]);
+  }, [type, isHrAdmin, user]);
 
   const isResume = type === 'resume';
 

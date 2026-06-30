@@ -730,11 +730,10 @@ async def get_my_vacancies_for_extension(
         select(Vacancy).where(
             Vacancy.org_id == org.id,
             Vacancy.created_by == current_user.id,
-            Vacancy.status.in_([
-                VacancyStatus.open,
-                VacancyStatus.pending_review,
-                VacancyStatus.draft,
-            ]),
+            # Только АКТИВНЫЕ воронки (open). pending_review/draft — это заявки, а не
+            # рабочие воронки: класть в них кандидата нельзя. Раньше они попадали в
+            # дропдаун расширения и он рассинхронивался с вебом (там только open).
+            Vacancy.status == VacancyStatus.open,
         ).order_by(Vacancy.title)
     )
     vacancies = result.scalars().all()

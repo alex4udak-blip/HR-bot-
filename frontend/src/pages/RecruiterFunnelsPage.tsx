@@ -519,11 +519,12 @@ export default function RecruiterFunnelsPage() {
       if (typeof src === 'number') clonedSourceIds.add(src);
     });
     result = result.filter((v) => !clonedSourceIds.has(v.id));
-    // НЕ фильтруем дополнительно по created_by: бэкенд GET /vacancies уже вернул
-    // ДОСТУПНЫЙ набор (created_by / hiring_manager / lead-dept / shared /
-    // visible_to_all / assigned). Лишний клиентский фильтр прятал из списка
-    // visible_to_all-воронки, хотя в форме создания они предлагались — рассинхрон.
-    // Теперь список воронок = реально доступный рекрутёру набор (как и при создании).
+    // Модель «только свои»: рекрутёр в списке воронок видит лишь СВОИ (созданные/
+    // взятые им) — как и в «Переместить»/создании/расширении. Чужие visible_to_all
+    // он не ведёт (увидит их в «Заявки», если назначены, чтобы сначала взять).
+    if (!isHrAdmin && user) {
+      result = result.filter((v) => v.created_by === user.id);
+    }
     if (statusFilter !== 'all') {
       result = result.filter((v) => v.status === statusFilter);
     }
@@ -1617,9 +1618,12 @@ export default function RecruiterFunnelsPage() {
     return vacancies.filter(v =>
       v.id !== selectedVacancyId &&
       v.status === 'open' &&
-      !clonedSourceIds.has(v.id)
+      !clonedSourceIds.has(v.id) &&
+      // Только СВОИ воронки: рекрутёр перемещает кандидата лишь во взятые/созданные
+      // им (created_by). Чужие / visible_to_all / невзятые заявки — НЕ цель.
+      (isHrAdmin || (!!user && v.created_by === user.id))
     );
-  }, [vacancies, selectedVacancyId, selectedCandidate?.entity_id]);
+  }, [vacancies, selectedVacancyId, selectedCandidate?.entity_id, isHrAdmin, user]);
 
   const buildCandidateEditCard = useCallback((candidate: VacancyApplication): KanbanCard => ({
     id: candidate.entity_id,
