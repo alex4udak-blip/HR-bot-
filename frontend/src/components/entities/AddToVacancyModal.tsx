@@ -19,6 +19,9 @@ interface AddToVacancyModalProps {
   bulkEntityIds?: number[];
   // Имена выбранных кандидатов (для именных тостов «уже в вакансии»).
   bulkEntities?: { id: number; name: string }[];
+  // Воронки, которые НЕ показывать в списке назначений — обычно исходная воронка,
+  // из которой перемещаем (перемещать в ту же воронку бессмысленно).
+  excludeVacancyIds?: number[];
   anchorRect?: {
     left: number;
     bottom: number;
@@ -32,6 +35,7 @@ export default function AddToVacancyModal({
   onSuccess,
   bulkEntityIds,
   bulkEntities,
+  excludeVacancyIds,
   anchorRect,
 }: AddToVacancyModalProps) {
   const [loading, setLoading] = useState(false);
@@ -70,10 +74,15 @@ export default function AddToVacancyModal({
           if (typeof src === "number") clonedSourceIds.add(src);
         });
         const deduped = data.filter((v) => !clonedSourceIds.has(v.id));
-        const myVacancies =
+        const scoped =
           user && !isHrAdmin
             ? deduped.filter((v) => v.created_by === user.id)
             : deduped;
+        // Динамика: прячем исходную воронку (из которой перемещаем) — нельзя
+        // переместить кандидата в ту же воронку, где он уже сидит.
+        const myVacancies = excludeVacancyIds?.length
+          ? scoped.filter((v) => !excludeVacancyIds.includes(v.id))
+          : scoped;
         const query = searchQuery.trim().toLowerCase();
         const filtered = query
           ? myVacancies.filter((v) =>
@@ -93,7 +102,10 @@ export default function AddToVacancyModal({
 
     const debounce = setTimeout(loadVacancies, 300);
     return () => clearTimeout(debounce);
-  }, [isHrAdmin, searchQuery, user]);
+    // excludeKey (стабильная строка) вместо массива — иначе инлайн-массив от
+    // родителя триггерил бы перезагрузку списка на каждый рендер.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHrAdmin, searchQuery, user, (excludeVacancyIds ?? []).join(",")]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

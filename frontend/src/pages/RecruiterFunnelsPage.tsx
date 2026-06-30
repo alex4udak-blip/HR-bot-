@@ -2412,6 +2412,8 @@ export default function RecruiterFunnelsPage() {
                             id: c.entity_id,
                             name: c.entity_name || 'Без имени',
                           }))}
+                        // Прячем текущую воронку из назначений — перемещаем ИЗ неё.
+                        excludeVacancyIds={selectedVacancyId ? [selectedVacancyId] : undefined}
                         onClose={() => setShowBulkMove(false)}
                         onSuccess={() => {
                           setShowBulkMove(false);
