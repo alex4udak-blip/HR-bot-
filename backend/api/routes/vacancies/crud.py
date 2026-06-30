@@ -626,7 +626,10 @@ async def take_vacancy(
         assigned_to_list = source.assigned_to or []
         is_assigned = current_user.id in assigned_to_list
         is_assigned_all = bool(getattr(source, 'assigned_to_all', False))
-        if not is_assigned and not is_assigned_all:
+        # Создатель заявки тоже может взять её в работу — раньше проверка смотрела
+        # только assigned_to/assigned_to_all, и рекрутёр не мог взять СВОЮ заявку.
+        is_creator = source.created_by == current_user.id
+        if not is_assigned and not is_assigned_all and not is_creator:
             raise HTTPException(status_code=403, detail="You are not assigned to this vacancy")
 
     # Проверка: рекрутёр уже брал эту заявку. Если force=False — не блокируем

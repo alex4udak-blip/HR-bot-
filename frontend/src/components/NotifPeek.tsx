@@ -92,10 +92,15 @@ export function NotifPeek() {
     return () => window.clearTimeout(t);
   }, [oldestPeekId, dismissPeek]);
 
-  const handleOpenPeek = (p: { link: string | null }) => {
+  const handleOpenPeek = (p: { id: number; link: string | null }) => {
+    // Синхрон с красной кнопкой-счётчиком: клик по всплывающему уведомлению
+    // помечает его прочитанным и уменьшает счётчик. Раньше peek и unreadCount
+    // жили отдельно — кнопка продолжала гореть, хотя уведомление уже открыли.
+    markNotificationRead(p.id).catch(() => {});
+    setUnreadCount((c) => Math.max(0, c - 1));
+    dismissPeek(p.id);
     if (p.link) {
       navigate(p.link);
-      clearPeeks();
     } else {
       openPanel();
     }
