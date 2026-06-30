@@ -881,7 +881,11 @@ async def get_candidates_kanban(
                     # Skip resume-page JPEGs (AI-generated profile pages) —
                     # those are multi-page PDF renders, not a real avatar.
                     fname = (row.file_name or "").lower()
-                    if "_стр" in fname or "профиль_" in fname or "_page" in fname:
+                    # Аватар — ТОЛЬКО авто-фото: и резюме-портрет (Фото_из_резюме),
+                    # и парсер-фото (Фото_<имя>) сохраняются с именем на «Фото_».
+                    # Произвольные картинки, загруженные вручную через «Файл», в
+                    # аватар НЕ идут (у них оригинальное имя файла).
+                    if not fname.startswith("фото"):
                         continue
                     photo_file_map[row.entity_id] = (
                         f"/api/entities/{row.entity_id}/files/{row.id}/download"
