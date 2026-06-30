@@ -604,8 +604,22 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <div className="hf-vacancy-recruiters">
                   <label className={hfLabelClass}>Назначенные рекрутеры</label>
                   <div className="hf-vacancy-recruiter-row">
-                    <span className="hf-vacancy-avatar">Я</span>
-                    <span className="truncate">Я, {user?.name || user?.email || "Профиль"}</span>
+                    {assignAll ? (
+                      <span className="truncate">Всем рекрутёрам</span>
+                    ) : selectedRecruiters.length > 0 ? (
+                      <span className="truncate">
+                        {selectedRecruiters
+                          .map((id) => users.find((u) => u.id === id)?.name)
+                          .filter(Boolean)
+                          .join(", ")}
+                      </span>
+                    ) : (
+                      // Никто не выбран → заявка уходит «ничьей» в общий пул «Заявки»
+                      // на распределение, а не закрепляется за создателем.
+                      <span className="truncate text-[var(--hf-main-500)]">
+                        Не назначено — заявка уйдёт в пул на распределение
+                      </span>
+                    )}
                   </div>
                   <button
                     type="button"
