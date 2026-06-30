@@ -1145,9 +1145,27 @@ async def dismiss_shadow_duplicate(
     extra["dismissed_duplicate_ids"] = dismissed
     extra.pop("hidden_duplicate_id", None)
     entity.extra_data = extra
+
+    # Двусторонне: помечаем пару и у ВТОРОГО профиля, иначе при просмотре его
+    # карточки эта же пара всплыла бы снова как «похожий».
+    other = (await db.execute(
+        select(Entity).where(Entity.id == request.duplicate_id, Entity.org_id == org.id)
+    )).scalar_one_or_none()
+    if other is not None:
+        oextra = dict(other.extra_data or {})
+        odismissed = list(oextra.get("dismissed_duplicate_ids") or [])
+        if entity_id not in odismissed:
+            odismissed.append(entity_id)
+        oextra["dismissed_duplicate_ids"] = odismissed
+        if oextra.get("hidden_duplicate_id") == entity_id:
+            oextra.pop("hidden_duplicate_id", None)
+        other.extra_data = oextra
+
     await db.commit()
 
     await broadcast_entity_updated(org.id, entity.id)
+    if other is not None:
+        await broadcast_entity_updated(org.id, other.id)
     return {"success": True, "dismissed_duplicate_id": request.duplicate_id}
 
 

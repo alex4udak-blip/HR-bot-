@@ -765,6 +765,12 @@ class SimilarityService:
 
         duplicates: List[DuplicateCandidate] = []
         seen_ids: Set[int] = {entity.id}
+        # Пары, отмеченные «Нет, это разные люди», больше НЕ предлагаем к матчу.
+        for _d in (entity.extra_data or {}).get("dismissed_duplicate_ids") or []:
+            try:
+                seen_ids.add(int(_d))
+            except (TypeError, ValueError):
+                pass
 
         # Get accessible entity IDs for security filtering
         accessible_ids: Optional[Set[int]] = None
