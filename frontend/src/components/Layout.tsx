@@ -1278,39 +1278,29 @@ export default function Layout() {
     });
   }
   const sidebarRequestVacancies = vacancies
-    .filter(
-      (v) =>
-        v.status === "pending_review" ||
-        v.status === "draft" ||
-        v.status === "open" ||
-        v.status === "paused",
-    )
+    // «Заявки» = только заявочные статусы (pending_review/draft). open/paused —
+    // это рабочие воронки, им место в «Мои вакансии», не в «Заявки».
+    .filter((v) => v.status === "pending_review" || v.status === "draft")
     .filter((v) => {
       // Клон (вакансия, взятая рекрутёром в работу) — это НЕ заявка,
-      // а рабочая копия в «Мои вакансии». Без этой проверки после
-      // «Взять в работу» клон висел дубликатом в «Заявки», и каждый
-      // повторный клик плодил ещё один.
+      // а рабочая копия в «Мои вакансии».
       const clonedFrom = (v.extra_data as Record<string, unknown> | undefined)
         ?.cloned_from_request_id;
       if (typeof clonedFrom === "number") return false;
-      // Заявку, которую текущий юзер уже взял в работу, прячем —
-      // и для админа, и для рекрутёра.
+      // Заявку, которую текущий юзер уже взял в работу, прячем.
       if (myTakenRequestIds.has(v.id)) return false;
-      if (isHrSidebarAdmin) {
-        if (v.assigned_to_all) return false;
-        if (v.assigned_to && v.assigned_to.length > 0) return false;
-        return true;
-      }
+      // Админ видит ВСЕ заявки (в т.ч. уже назначенные) — он их распределяет и
+      // ведёт, пока рекрутёр не возьмёт в работу. Раньше назначенные заявки
+      // пропадали из сайдбара, хотя на странице «Заявки» были видны.
+      if (isHrSidebarAdmin) return true;
       if (!user) return false;
-      // Рекрутёр видит назначенные на него заявки И свои собственные
-      // созданные через «+» — раньше своя заявка скрывалась и казалось
-      // что создание не сработало.
+      // Рекрутёр видит назначенные на него заявки И свои собственные созданные.
       if (v.created_by === user.id) return true;
       if (v.assigned_to_all) return true;
       if (v.assigned_to && v.assigned_to.includes(user.id)) return true;
       return false;
     })
-    .slice(0, 2);
+    .slice(0, 8);
   const getSidebarRequestAuthor = (vacancy: Vacancy) =>
     vacancy.created_by_name ||
     vacancy.hiring_manager_name ||
