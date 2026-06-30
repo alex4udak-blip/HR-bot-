@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Lock,
   Upload,
+  Trash2,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -29,6 +30,8 @@ import { buildStageContainers, readSystemHrTags, type EntryReaction } from "@/co
 import {
   getCandidatesKanban,
   getCandidateIds,
+  wipeHrSection,
+  type WipeHrResult,
   changeCandidateStatus,
 } from "@/services/api/candidates";
 import type {
@@ -387,6 +390,10 @@ export default function AllCandidatesPage() {
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [detailTab, setDetailTab] = useState<DetailSection>("resume");
   const [showListSettings, setShowListSettings] = useState(false);
+  // Очистка HR-раздела (только админ): превью → подтверждение → удаление.
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipePreview, setWipePreview] = useState<WipeHrResult | null>(null);
+  const [wipeBusy, setWipeBusy] = useState(false);
   // F7-fix: настройки списка (scope + видимые поля) — persist + применяются к карточкам.
   const [listSettings, setListSettings] = useState<CandidateListSettings>(
     loadCandidateListSettings,
@@ -424,6 +431,34 @@ export default function AllCandidatesPage() {
       if (!silent) setLoading(false);
     }
   }, [debouncedSearch]);
+
+  const openWipe = useCallback(async () => {
+    setWipeBusy(true);
+    try {
+      const preview = await wipeHrSection(false); // confirm=false → только числа
+      setWipePreview(preview);
+      setWipeOpen(true);
+    } catch {
+      toast.error("Не удалось получить превью очистки");
+    } finally {
+      setWipeBusy(false);
+    }
+  }, []);
+
+  const confirmWipe = useCallback(async () => {
+    setWipeBusy(true);
+    try {
+      const res = await wipeHrSection(true);
+      toast.success(`HR-раздел очищен. Удалено кандидатов: ${res.deleted?.active_candidates ?? 0}`);
+      setWipeOpen(false);
+      setWipePreview(null);
+      fetchBoard();
+    } catch {
+      toast.error("Не удалось очистить HR-раздел");
+    } finally {
+      setWipeBusy(false);
+    }
+  }, [fetchBoard]);
 
   useEffect(() => {
     fetchBoard();
@@ -1068,6 +1103,21 @@ export default function AllCandidatesPage() {
           )}
         </div>
         <div className="hf-top-stage-action-cell">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={openWipe}
+              disabled={wipeBusy}
+              className="hf-top-stage-action-btn"
+              title="Очистить HR-раздел (тестовые данные)"
+              aria-label="Очистить HR-раздел"
+            >
+              <Trash2
+                className="hf-top-stage-options-icon"
+                style={{ color: "var(--hf-status-red)" }}
+              />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowListSettings(true)}
@@ -1511,6 +1561,55 @@ export default function AllCandidatesPage() {
               name: c.name,
             }))}
           />
+        )}
+        {wipeOpen && wipePreview && (
+          <motion.div
+            key="wipe-confirm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--hf-black-alpha-30)] p-4"
+            onMouseDown={() => !wipeBusy && setWipeOpen(false)}
+          >
+            <div
+              onMouseDown={(e) => e.stopPropagation()}
+              className="w-full max-w-[440px] rounded-[12px] bg-[var(--hf-white)] p-6 shadow-[0_0_40px_var(--hf-alpha-300)]"
+            >
+              <h2 className="text-[18px] font-semibold text-[var(--hf-status-red)]">
+                Очистить HR-раздел?
+              </h2>
+              <p className="mt-2 text-[14px] text-[var(--hf-main-600)]">
+                Действие НЕОБРАТИМО. Будет удалено в вашей организации:
+              </p>
+              <ul className="mt-3 space-y-1 text-[14px] text-[var(--hf-main-900)]">
+                <li>• Кандидаты (активные): <b>{wipePreview.will_delete?.active_candidates ?? 0}</b></li>
+                <li>• Вакансии: <b>{wipePreview.will_delete?.vacancies ?? 0}</b></li>
+                <li>• Анкеты (шаблоны): <b>{wipePreview.will_delete?.anketa_templates ?? 0}</b>, ответы: <b>{wipePreview.will_delete?.anketa_submissions ?? 0}</b></li>
+                <li>• Уведомления: <b>{wipePreview.will_delete?.notifications ?? 0}</b></li>
+              </ul>
+              <p className="mt-3 text-[13px] text-[var(--hf-main-600)]">
+                НЕ затрагивается: архив (CSV) — <b>{wipePreview.preserved?.archived_candidates ?? 0}</b> кандидатов, а также Практика, чаты, звонки, пользователи и настройки.
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWipeOpen(false)}
+                  disabled={wipeBusy}
+                  className="h-[36px] rounded-[6px] px-3 text-[14px] font-medium text-[var(--hf-main-700)] hover:bg-[var(--hf-black-alpha-04)]"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmWipe}
+                  disabled={wipeBusy}
+                  className="h-[36px] rounded-[6px] bg-[var(--hf-status-red)] px-4 text-[14px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {wipeBusy ? "Удаление…" : "Удалить всё"}
+                </button>
+              </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
