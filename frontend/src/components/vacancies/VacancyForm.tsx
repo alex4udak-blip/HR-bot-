@@ -301,6 +301,12 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       toast.error('Введите название вакансии');
       return;
     }
+    if (formData.title.trim().length < 3) {
+      // На бэке validate_title требует ≥3 символов — раньше падало 422 с общим
+      // тостом «Ошибка при создании», и было непонятно, что не так.
+      toast.error('Название должно содержать минимум 3 символа');
+      return;
+    }
 
     const minNum = formData.salary_min !== '' ? Number(formData.salary_min) : null;
     const maxNum = formData.salary_max !== '' ? Number(formData.salary_max) : null;
@@ -349,7 +355,18 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       }
       onSuccess();
     } catch (error) {
-      toast.error(vacancy ? 'Ошибка при обновлении' : 'Ошибка при создании');
+      // Достаём реальную причину из ответа бэка (422 валидация / 403 и т.п.),
+      // иначе показываем общий текст.
+      const err = error as { response?: { data?: { detail?: unknown } } };
+      const detail = err?.response?.data?.detail;
+      let msg = vacancy ? 'Ошибка при обновлении' : 'Ошибка при создании';
+      if (typeof detail === 'string') {
+        msg = detail;
+      } else if (Array.isArray(detail) && detail[0] && typeof detail[0] === 'object') {
+        const first = detail[0] as { msg?: string };
+        if (first.msg) msg = first.msg;
+      }
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
