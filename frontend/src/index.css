@@ -1744,6 +1744,10 @@
   color: var(--hf-cyan-700);
   text-decoration: underline;
 }
+.hf-vacancy-richtext u,
+.hf-vacancy-richtext a {
+  text-underline-offset: 2px;
+}
 
 .hf-vacancy-attach-btn {
   display: inline-flex;
@@ -1963,6 +1967,26 @@
   color: var(--hf-main-900);
   font-size: var(--hf-fs-xs);
   line-height: var(--hf-lh-primary);
+}
+/* .prose (общий класс для маркдауна чата) переопределял color бледным
+   --prose-fg — здесь нужен контраст, поэтому явно перебиваем составным
+   селектором (специфичность выше одиночного .prose независимо от порядка
+   в файле). */
+.hf-request-preview-value.prose {
+  color: var(--hf-main-900);
+}
+/* Ссылка внутри заявки/резюме визуально ничем не отличалась от обычного
+   текста — Tailwind preflight сбрасывает <a> на color/text-decoration:
+   inherit. Возвращаем цвет и подчёркивание, как у самого редактора. */
+.hf-request-preview-value a {
+  color: var(--hf-cyan-700);
+  text-decoration: underline;
+}
+/* Небольшой зазор, чтобы подчёркивание не «наезжало» на буквы (особенно
+   с нижними выносными элементами — р, у, д). */
+.hf-request-preview-value u,
+.hf-request-preview-value a {
+  text-underline-offset: 2px;
 }
 
 .hf-request-preview-settings-icon,
