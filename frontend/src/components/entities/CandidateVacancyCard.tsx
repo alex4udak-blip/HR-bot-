@@ -843,12 +843,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                       </div>
                     </>
                   )}
-                  <button
-                    type="button"
-                    className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
-                  >
-                    <ChevronDown className="h-[14px] w-[14px] text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
-                  </button>
                   {!readonly && event.historyId ? (
                     <button
                       type="button"

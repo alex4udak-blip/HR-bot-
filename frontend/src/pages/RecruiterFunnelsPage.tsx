@@ -430,7 +430,12 @@ export default function RecruiterFunnelsPage() {
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
   const [entityActivity, setEntityActivity] = useState<ActivityBlockData[]>([]);
   const [dupCard, setDupCard] = useState<KanbanCard | null>(null);
-  const [detailTab, setDetailTab] = useState<'info' | 'resume' | 'anketa'>('info');
+  // По умолчанию 'resume' — как в «Все кандидаты» (detailTab там тоже стартует
+  // с "resume"): резюме видно сразу прокруткой, без клика по вкладке. 'info'
+  // здесь ничего не рендерит (тут нет отдельной вкладки «Личные заметки»,
+  // комментарий пишется прямо в композере таймлайна) — де-факто был мёртвым
+  // состоянием, из-за которого низ панели оставался пустым до первого клика.
+  const [detailTab, setDetailTab] = useState<'info' | 'resume' | 'anketa'>('resume');
   const [editingCandidateCard, setEditingCandidateCard] = useState<KanbanCard | null>(null);
   const [anketaOpen, setAnketaOpen] = useState(false);
   const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
@@ -643,7 +648,7 @@ export default function RecruiterFunnelsPage() {
     loadCandidates(selectedVacancyId);
     setSelectedCandidateId(null);
     setSelectedTab('applied');
-    setDetailTab('info');
+    setDetailTab('resume');
     setSelectedIds(new Set());
   }, [selectedVacancyId]);
 
@@ -886,7 +891,7 @@ export default function RecruiterFunnelsPage() {
       // эффект авто-первого (фильтрует по вкладке) не перебьёт наш выбор.
       setSelectedTab('all');
       setSelectedCandidateId(match.id);
-      setDetailTab('info');
+      setDetailTab('resume');
       return;
     }
     // entity из URL ещё не загружен в этом списке (другая вакансия / не подгрузился) —
@@ -960,7 +965,7 @@ export default function RecruiterFunnelsPage() {
     if (pendingDeepLinkEntity != null) return;
     if (!selectedCandidateId || !tabFilteredCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
       setSelectedCandidateId(tabFilteredCandidates[0].id);
-      setDetailTab('info');
+      setDetailTab('resume');
     }
   }, [selectedCandidateId, tabFilteredCandidates, pendingDeepLinkEntity]);
 
@@ -2349,7 +2354,7 @@ export default function RecruiterFunnelsPage() {
                         return (
                           <div
                             key={candidate.id}
-                            onClick={() => { setSelectedCandidateId(candidate.id); setDetailTab('info'); }}
+                            onClick={() => { setSelectedCandidateId(candidate.id); setDetailTab('resume'); }}
                             className={clsx(
                               'hf-candidate-row',
                               isChecked || isSelected

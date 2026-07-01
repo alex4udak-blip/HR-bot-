@@ -249,7 +249,10 @@
   --hf-sidebar-settings-scale:   1.06;
   --hf-sidebar-user-chevron:     16px;
   --hf-sidebar-user-menu-gap:    2px;
-  --hf-sidebar-resizer-z:        80;
+  /* Была 80 — выше поповера уведомлений (NotifPeek, z-[40]/[41]/[45]), поэтому
+     полоска-ручка для растягивания сайдбара рисовалась ПОВЕРХ открытой
+     панели «Уведомления». Опущена ниже любого поповера/пика в приложении. */
+  --hf-sidebar-resizer-z:        20;
   --hf-sidebar-resizer-right:    -8px;
   --hf-sidebar-resizer-w:        14px;
   --hf-sidebar-resizer-line-right: 6px;
