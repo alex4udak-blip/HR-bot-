@@ -988,14 +988,21 @@ def _note_org_check(entity, current_user, org):
             raise HTTPException(404, "Entity not found")
 
 
-def _note_can_modify(note: dict, current_user) -> bool:
-    """Edit/delete: только автор коммента или админ/owner/superadmin."""
+async def _note_can_modify(note: dict, current_user, org, db) -> bool:
+    """Edit/delete: только автор коммента или админ/owner/superadmin.
+
+    F-fix: докстринг всегда обещал «или админ/owner», но код проверял ТОЛЬКО
+    superadmin + автора — обычный org-admin/owner получал 403 при попытке
+    удалить чужой (например, с @-упоминанием) комментарий.
+    """
     if current_user.role == UserRole.superadmin:
         return True
-    # Owner/admin org-роли проверяются на уровне аутентификации; здесь —
-    # просто сверяем author_id с текущим пользователем.
     author_id = note.get("author_id")
-    return author_id is not None and int(author_id) == int(current_user.id)
+    if author_id is not None and int(author_id) == int(current_user.id):
+        return True
+    if org and await has_full_database_access(current_user, org.id, db):
+        return True
+    return False
 
 
 @router.post("/{entity_id}/notes")
@@ -1157,7 +1164,7 @@ async def update_entity_note(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Редактировать комментарий — только автор или superadmin."""
+    """Редактировать комментарий — автор, org-admin/owner или superadmin."""
     from datetime import timezone as _tz
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
@@ -1181,7 +1188,7 @@ async def update_entity_note(
         raise HTTPException(404, "Comment not found")
 
     note = dict(notes[idx])
-    if not _note_can_modify(note, current_user):
+    if not await _note_can_modify(note, current_user, org, db):
         raise HTTPException(403, "You can only edit your own comments")
 
     note["text"] = text_clean
@@ -1201,7 +1208,7 @@ async def delete_entity_note(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Удалить комментарий — только автор или superadmin."""
+    """Удалить комментарий — автор, org-admin/owner или superadmin."""
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
 
@@ -1217,7 +1224,7 @@ async def delete_entity_note(
     if idx < 0:
         raise HTTPException(404, "Comment not found")
 
-    if not _note_can_modify(notes[idx], current_user):
+    if not await _note_can_modify(notes[idx], current_user, org, db):
         raise HTTPException(403, "You can only delete your own comments")
 
     notes.pop(idx)

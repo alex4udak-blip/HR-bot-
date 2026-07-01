@@ -31,7 +31,7 @@ import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
-import { addEntityNote } from '@/services/api/entities';
+import { addEntityNote, deleteEntityNote } from '@/services/api/entities';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
@@ -1422,6 +1422,40 @@ export default function RecruiterFunnelsPage() {
     [saveEntityNote, refreshActivity],
   );
 
+  // F-fix: комментарии (extra_data.notes, включая с @-упоминанием) раньше
+  // вообще не имели кнопки удаления — historyId у них не бывает, это не
+  // StageTransition. DELETE /entities/{id}/notes/{note_id} уже был на бэке,
+  // просто не был подключён на фронте.
+  const cardDeleteNote = useCallback(
+    async (entityId: number, noteId: string) => {
+      try {
+        await deleteEntityNote(entityId, noteId);
+        setEntityExtraData((prev) => {
+          const existing = Array.isArray(prev?.notes)
+            ? (prev!.notes as Array<Record<string, unknown>>)
+            : [];
+          return {
+            ...(prev || {}),
+            notes: existing.filter((n) => String(n.id) !== noteId),
+          };
+        });
+        toast.success('Комментарий удалён');
+      } catch {
+        toast.error('Не удалось удалить комментарий');
+      }
+      const eid = selectedCandidate?.entity_id;
+      if (eid) {
+        try {
+          const fresh = await getEntity(eid);
+          setEntityExtraData(fresh.extra_data || null);
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [selectedCandidate?.entity_id],
+  );
+
   const cardDeleteHistory = useCallback(
     async (appId: number, historyId: number) => {
       await deleteApplicationHistory(appId, historyId);
@@ -2727,6 +2761,7 @@ export default function RecruiterFunnelsPage() {
                                       onChangeStage={cardChangeStage}
                                       onComment={cardComment}
                                       onDeleteHistory={cardDeleteHistory}
+                                      onDeleteNote={cardDeleteNote}
                                       onUploadFile={cardUploadFile}
                                       onAnketa={c.origin === 'live' ? () => setAnketaOpen(true) : undefined}
                                       anketaCount={anketaCount}

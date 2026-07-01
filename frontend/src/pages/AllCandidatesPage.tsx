@@ -47,6 +47,7 @@ import {
   getEntity,
   detectDuplicate,
   addEntityNote,
+  deleteEntityNote,
   toggleTimelineReaction,
   getEntityActivity,
 } from "@/services/api/entities";
@@ -1842,6 +1843,33 @@ const InfoTab = memo(function InfoTab({
     [loadActivity],
   );
 
+  // F-fix: комментарии (extra_data.notes, включая с @-упоминанием) раньше
+  // вообще не имели кнопки удаления — historyId у них не бывает, это не
+  // StageTransition. DELETE /entities/{id}/notes/{note_id} уже был на бэке,
+  // просто не был подключён на фронте.
+  const cardDeleteNote = useCallback(
+    async (entityId: number, noteId: string) => {
+      try {
+        await deleteEntityNote(entityId, noteId);
+        if (card.extra_data && Array.isArray(card.extra_data.notes)) {
+          card.extra_data.notes = (
+            card.extra_data.notes as Array<Record<string, unknown>>
+          ).filter((n) => String(n.id) !== noteId);
+        }
+        toast.success("Комментарий удалён");
+      } catch {
+        toast.error("Не удалось удалить комментарий");
+      }
+      try {
+        const fresh = await getEntity(entityId);
+        if (fresh.extra_data) card.extra_data = fresh.extra_data;
+      } catch {
+        /* ignore */
+      }
+    },
+    [card],
+  );
+
   const cardRemoveFromVacancy = useCallback(
     async (appId: number) => {
       // Нет активной заявки (appId 0) → кандидат не в воронке: дружелюбная
@@ -2504,6 +2532,7 @@ const InfoTab = memo(function InfoTab({
           onChangeStage={cardChangeStage}
           onComment={cardComment}
           onDeleteHistory={cardDeleteHistory}
+          onDeleteNote={cardDeleteNote}
           onUploadFile={cardUploadFile}
           onAnketa={c.origin === "live" ? () => setAnketaOpen(true) : undefined}
           onReact={c.origin === "live" ? cardReact : undefined}

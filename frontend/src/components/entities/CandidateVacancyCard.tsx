@@ -159,6 +159,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onChangeStage,
   onComment,
   onDeleteHistory,
+  onDeleteNote,
   onUploadFile,
   onAnketa,
   anketaCount,
@@ -196,6 +197,12 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onDeleteHistory: (
     applicationId: number,
     historyId: number,
+  ) => Promise<void> | void;
+  // Удаление комментария (extra_data.notes) — отдельно от истории переходов,
+  // т.к. это не StageTransition, а запись в JSON-поле кандидата.
+  onDeleteNote?: (
+    entityId: number,
+    noteId: string,
   ) => Promise<void> | void;
   onUploadFile: (entityId: number, file: File) => Promise<void> | void;
   // Только живой контейнер: открыть анкеты (чип в ряду действий) + бейдж кол-ва.
@@ -255,6 +262,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       body?: string;
       author?: string;
       historyId?: number;
+      // Заметки (extra_data.notes) удаляются НЕ через историю переходов
+      // (StageTransition), а отдельным DELETE /entities/{id}/notes/{note_id}.
+      noteId?: string;
       reactionKey: string;
       // Тип записи для фильтра «Действия»: смена этапа vs свободный комментарий.
       kind: "stage" | "comment";
@@ -269,6 +279,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           : note.text || "Комментарий",
         body: note.stage_label ? note.text || undefined : undefined,
         author: note.author_name || undefined,
+        noteId: note.id ? String(note.id) : undefined,
         reactionKey: note.id ? `n:${note.id}` : `nd:${note.date || ""}`,
         // Заметки (extra_data.notes) — это КОММЕНТАРИИ (даже если несут stage_label
         // текущего этапа). Смена этапа — отдельные события (eventRows, kind=stage).
@@ -373,6 +384,20 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     [stageOptions],
   );
 
+  // currentStage (сырой ключ этапа) не всегда дословно совпадает с каким-то
+  // option.status (кастомные/устаревшие ключи) — тогда сверяем по лейблу.
+  // Резолвим ОДИН РАЗ здесь и используем как единственный источник правды для
+  // pendingStage, чтобы при рендере подсвечивался только реальный текущий/
+  // выбранный вариант, а не оба сразу (баг «выбор не отлипает»).
+  const resolvedCurrentStageStatus = useMemo(() => {
+    const exact = stagePickerOptions.find((o) => o.status === currentStage);
+    if (exact) return exact.status;
+    const byLabel = stagePickerOptions.find(
+      (o) => normalizeStageLabel(o.label) === normalizeStageLabel(statusLabel),
+    );
+    return byLabel ? byLabel.status : currentStage;
+  }, [stagePickerOptions, currentStage, statusLabel]);
+
   useEffect(() => {
     setTimelineExpanding(false);
     if (timelineExpandTimerRef.current) {
@@ -421,10 +446,10 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
 
   useEffect(() => {
     if (showStageDD) {
-      setPendingStage(currentStage);
+      setPendingStage(resolvedCurrentStageStatus);
       setStageChangeComment("");
     }
-  }, [showStageDD, currentStage]);
+  }, [showStageDD, resolvedCurrentStageStatus]);
 
   useEffect(() => {
     if (showActionMenu) {
@@ -521,10 +546,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
               <div className="hf-stage-picker">
                 <div className="hf-stage-picker-list huntflow-scrollbar">
                   {stagePickerOptions.map((option) => {
-                    const isSelected =
-                      pendingStage === option.status ||
-                      normalizeStageLabel(statusLabel) ===
-                        normalizeStageLabel(option.label);
+                    const isSelected = pendingStage === option.status;
                     return (
                       <button
                         type="button"
@@ -833,6 +855,20 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                         onDeleteHistory(applicationId, event.historyId as number)
                       }
                       title="Удалить запись"
+                      className="ml-auto inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] opacity-0 transition-opacity hover:text-[var(--hf-status-red)] group-hover/timeline:opacity-100 focus:outline-none focus-visible:outline-none"
+                    >
+                      <Trash2 className="h-[14px] w-[14px]" />
+                    </button>
+                  ) : !readonly && event.noteId && onDeleteNote ? (
+                    // F-fix: комментарии (extra_data.notes, в т.ч. с @-упоминанием)
+                    // раньше вообще не имели кнопки удаления — historyId у них
+                    // никогда не бывает (это не StageTransition).
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onDeleteNote(card.id, event.noteId as string)
+                      }
+                      title="Удалить комментарий"
                       className="ml-auto inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] opacity-0 transition-opacity hover:text-[var(--hf-status-red)] group-hover/timeline:opacity-100 focus:outline-none focus-visible:outline-none"
                     >
                       <Trash2 className="h-[14px] w-[14px]" />
