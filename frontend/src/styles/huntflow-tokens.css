@@ -454,7 +454,10 @@
   --hf-candidates-stage-arrow-right: 72px;
   --hf-candidates-stage-arrow-size: 36px;
   --hf-candidates-stage-arrow-icon: 18px;
-  --hf-candidates-stage-arrow-z:    90;
+  /* Была 90 — выше .hf-vacancy-modal-overlay (z-index: 50), поэтому стрелка
+     прокрутки этапов рисовалась ПОВЕРХ открытых модалок (превью/редактирование
+     заявки). Опущена ниже любого модального оверлея в приложении. */
+  --hf-candidates-stage-arrow-z:    30;
   --hf-candidates-stage-arrow-shadow: 0 2px 10px var(--hf-alpha-200);
   --hf-candidates-stage-tooltip-top: 52px;
   --hf-candidates-stage-tooltip-z:   120;
