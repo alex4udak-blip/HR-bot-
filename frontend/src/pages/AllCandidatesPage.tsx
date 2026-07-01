@@ -3189,7 +3189,7 @@ export function NewCandidateModal({
                 <select
                   value={salaryCurrency}
                   onChange={(e) => setSalaryCurrency(e.target.value)}
-                  className="hf-candidate-input"
+                  className="hf-candidate-input hf-candidate-currency-select"
                 >
                   {SALARY_INPUT_CURRENCIES.map((c) => (
                     <option key={c.value} value={c.value}>{c.label}</option>
@@ -3734,7 +3734,7 @@ export function EditCandidateModal({
                 <select
                   value={salaryCurrency}
                   onChange={(e) => setSalaryCurrency(e.target.value)}
-                  className="h-[var(--hf-edit-field-h)] w-full rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-[var(--hf-white)] px-[var(--hf-edit-field-px)] text-[length:var(--hf-edit-field-fs)] text-[var(--hf-main-900)] focus:outline-none focus:border-[color:var(--hf-cyan-500)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]"
+                  className="hf-candidate-currency-select h-[var(--hf-edit-field-h)] w-full rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-[var(--hf-white)] pl-[var(--hf-edit-field-px)] text-[length:var(--hf-edit-field-fs)] text-[var(--hf-main-900)] focus:outline-none focus:border-[color:var(--hf-cyan-500)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]"
                 >
                   {SALARY_INPUT_CURRENCIES.map((c) => (
                     <option key={c.value} value={c.value}>{c.label}</option>

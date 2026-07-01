@@ -872,6 +872,19 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   />
                 </div>
                 <div>
+                  <label className={hfLabelClass}>Заказчик</label>
+                  <HfSelect
+                    id="hiring_manager"
+                    value={formData.hiring_manager_id}
+                    options={[
+                      { value: "", label: "Не указан" },
+                      ...users.map((u) => ({ value: u.id, label: u.name })),
+                    ]}
+                    onChange={(value) => setFormData({ ...formData, hiring_manager_id: value })}
+                    disabled={isReadOnlyRequest}
+                  />
+                </div>
+                <div>
                   <label className={hfLabelClass}>Видимость</label>
                   <HfSelect
                     id="visibility"

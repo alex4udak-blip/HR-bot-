@@ -26,6 +26,8 @@ import {
   Lock,
   MapPin,
   ExternalLink,
+  Phone,
+  Send,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -2606,6 +2608,27 @@ export default function RecruiterFunnelsPage() {
                                         {selectedCandidate.entity_phone}
                                       </a>
                                       <CopyButton value={selectedCandidate.entity_phone} />
+                                      {/* Мессенджер-иконки — были в «Все кандидаты», но отсутствовали здесь. */}
+                                      <a
+                                        href={`https://wa.me/${selectedCandidate.entity_phone.replace(/\D/g, '')}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-whatsapp)] flex items-center justify-center hover:opacity-80"
+                                        title="WhatsApp"
+                                      >
+                                        <Phone className="w-[11px] h-[11px] text-[var(--hf-white)]" />
+                                      </a>
+                                      {(funnelCard?.telegram_username || selectedCandidate.entity_telegram) && (
+                                        <a
+                                          href={`https://t.me/${(funnelCard?.telegram_username || selectedCandidate.entity_telegram || '').replace(/^@/, '')}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-telegram)] flex items-center justify-center hover:opacity-80"
+                                          title="Telegram"
+                                        >
+                                          <Send className="w-[11px] h-[11px] text-[var(--hf-white)]" />
+                                        </a>
+                                      )}
                                     </div>
                                   </HuntflowInfoRow>
                                 )}
@@ -2643,6 +2666,11 @@ export default function RecruiterFunnelsPage() {
                                       <MapPin className="w-3.5 h-3.5 text-[var(--hf-main-500)]" />
                                       {funnelCard.city}
                                     </span>
+                                  </HuntflowInfoRow>
+                                )}
+                                {funnelCard?.salary && (
+                                  <HuntflowInfoRow label="Зарплата">
+                                    <span className="text-[var(--hf-main-900)]">{funnelCard.salary}</span>
                                   </HuntflowInfoRow>
                                 )}
                                 {funnelCard?.total_experience && (

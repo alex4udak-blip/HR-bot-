@@ -235,6 +235,15 @@ export function SidebarRequestPreviewModal({
           ?.cloned_from_request_id === vacancy.id,
     );
   }, [user, vacancies, vacancy.id]);
+  // Кто взял заявку в работу — клоны заявки (extra_data.cloned_from_request_id).
+  // Показываем ВСЕХ рекрутёров, у кого есть личный клон, а не только «меня».
+  const takenByRecruiters = useMemo(() => {
+    return vacancies.filter(
+      (v) =>
+        (v.extra_data as Record<string, unknown> | undefined)
+          ?.cloned_from_request_id === vacancy.id,
+    );
+  }, [vacancies, vacancy.id]);
   const requestDate = formatSidebarVacancyDate(
     vacancy.published_at || vacancy.created_at,
   );
@@ -370,6 +379,18 @@ export function SidebarRequestPreviewModal({
               {requestDate && (
                 <RequestPreviewBlock title="Заявка получена">
                   {requestDate}
+                </RequestPreviewBlock>
+              )}
+              {takenByRecruiters.length > 0 && (
+                <RequestPreviewBlock title="Заявка в работе">
+                  {takenByRecruiters.map((v) => (
+                    <div key={v.id}>
+                      {v.created_by_name || "Рекрутёр"}
+                      {v.published_at || v.created_at
+                        ? `, ${formatSidebarVacancyDate(v.published_at || v.created_at)}`
+                        : ""}
+                    </div>
+                  ))}
                 </RequestPreviewBlock>
               )}
             </aside>
