@@ -219,6 +219,13 @@ export function SidebarRequestPreviewModal({
   const { user } = useAuthStore();
   const { vacancies, fetchVacancies } = useVacancyStore();
   const [taking, setTaking] = useState(false);
+  // Редактировать заявку (в т.ч. закрыть/удалить вакансию из формы) может
+  // только HR-админ. Рекрутёру заявку только назначают/выдают — редактировать
+  // условия найма он не должен, даже если уже взял её в работу.
+  const isHrAdmin =
+    user?.role === "superadmin" ||
+    user?.org_role === "owner" ||
+    user?.org_role === "admin";
   const isTakenByMe = useMemo(() => {
     if (!user) return false;
     return vacancies.some(
@@ -381,9 +388,11 @@ export function SidebarRequestPreviewModal({
           <button type="button" onClick={onClose} className="hf-vacancy-secondary-btn">
             Закрыть
           </button>
-          <button type="button" onClick={onEdit} className="hf-vacancy-secondary-btn">
-            Редактировать
-          </button>
+          {isHrAdmin && (
+            <button type="button" onClick={onEdit} className="hf-vacancy-secondary-btn">
+              Редактировать
+            </button>
+          )}
         </div>
       </motion.div>
     </motion.div>

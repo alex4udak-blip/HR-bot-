@@ -2272,6 +2272,10 @@ export default function RecruiterFunnelsPage() {
                       </>
                     )}
                   </div>
+                  {/* Открывает полную форму редактирования (в т.ч. закрыть/
+                      удалить вакансию) — только HR-админ. Рекрутёр не должен
+                      редактировать условия найма, даже уже взяв заявку в работу. */}
+                  {isHrAdmin && (
                   <div className="hf-top-stage-action-cell">
                     <button
                       type="button"
@@ -2283,6 +2287,7 @@ export default function RecruiterFunnelsPage() {
                       <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
                     </button>
                   </div>
+                  )}
                   {vacancyStageCanScrollLeft && !showVacancyTopSearch && !candidateSearch ? (
                     <button
                       type="button"
