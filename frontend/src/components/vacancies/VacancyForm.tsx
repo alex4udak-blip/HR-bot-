@@ -55,6 +55,9 @@ function RichTextField({
   disabled?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Активные форматы под курсором — чтобы кнопки визуально «нажимались»
+  // (иначе жирный/курсив срабатывали, но было не видно, что применено).
+  const [activeFormats, setActiveFormats] = useState<Record<string, boolean>>({});
 
   // Инициализация / внешняя синхронизация без перезаписи при наборе (курсор не прыгает).
   useEffect(() => {
@@ -64,11 +67,30 @@ function RichTextField({
 
   const sync = () => onChange(ref.current?.innerHTML || '');
 
+  const refreshActiveFormats = () => {
+    if (document.activeElement !== ref.current) return;
+    setActiveFormats({
+      bold: document.queryCommandState('bold'),
+      italic: document.queryCommandState('italic'),
+      underline: document.queryCommandState('underline'),
+      insertUnorderedList: document.queryCommandState('insertUnorderedList'),
+      insertOrderedList: document.queryCommandState('insertOrderedList'),
+    });
+  };
+
+  // Курсор/выделение может двигаться кликом или стрелками без событий на самом
+  // contentEditable — слушаем на уровне document и фильтруем по фокусу.
+  useEffect(() => {
+    document.addEventListener('selectionchange', refreshActiveFormats);
+    return () => document.removeEventListener('selectionchange', refreshActiveFormats);
+  }, []);
+
   const exec = (command: string, arg?: string) => {
     if (disabled) return;
     ref.current?.focus();
     document.execCommand(command, false, arg);
     sync();
+    refreshActiveFormats();
   };
 
   const addLink = () => {
@@ -94,23 +116,28 @@ function RichTextField({
   return (
     <div className="hf-vacancy-editor">
       <div className="hf-vacancy-editor-toolbar flex items-center">
-        <button type="button" aria-label="Жирный" disabled={disabled} className={btnClass}
+        <button type="button" aria-label="Жирный" aria-pressed={activeFormats.bold} disabled={disabled}
+          className={clsx(btnClass, activeFormats.bold && 'hf-vacancy-editor-btn-active')}
           onMouseDown={(e) => { e.preventDefault(); exec('bold'); }}>
           <HfSpriteIcon id="bold" className="hf-vacancy-editor-icon" />
         </button>
-        <button type="button" aria-label="Курсив" disabled={disabled} className={btnClass}
+        <button type="button" aria-label="Курсив" aria-pressed={activeFormats.italic} disabled={disabled}
+          className={clsx(btnClass, activeFormats.italic && 'hf-vacancy-editor-btn-active')}
           onMouseDown={(e) => { e.preventDefault(); exec('italic'); }}>
           <HfSpriteIcon id="italic" className="hf-vacancy-editor-icon" />
         </button>
-        <button type="button" aria-label="Подчёркнутый" disabled={disabled} className={btnClass}
+        <button type="button" aria-label="Подчёркнутый" aria-pressed={activeFormats.underline} disabled={disabled}
+          className={clsx(btnClass, activeFormats.underline && 'hf-vacancy-editor-btn-active')}
           onMouseDown={(e) => { e.preventDefault(); exec('underline'); }}>
           <span className="text-[13px] font-semibold leading-none underline">U</span>
         </button>
-        <button type="button" aria-label="Маркированный список" disabled={disabled} className={btnClass}
+        <button type="button" aria-label="Маркированный список" aria-pressed={activeFormats.insertUnorderedList} disabled={disabled}
+          className={clsx(btnClass, activeFormats.insertUnorderedList && 'hf-vacancy-editor-btn-active')}
           onMouseDown={(e) => { e.preventDefault(); exec('insertUnorderedList'); }}>
           <HfSpriteIcon id="bullet-list" className="hf-vacancy-editor-icon" />
         </button>
-        <button type="button" aria-label="Нумерованный список" disabled={disabled} className={btnClass}
+        <button type="button" aria-label="Нумерованный список" aria-pressed={activeFormats.insertOrderedList} disabled={disabled}
+          className={clsx(btnClass, activeFormats.insertOrderedList && 'hf-vacancy-editor-btn-active')}
           onMouseDown={(e) => { e.preventDefault(); exec('insertOrderedList'); }}>
           <HfSpriteIcon id="numbered-list" className="hf-vacancy-editor-icon" />
         </button>
@@ -126,6 +153,10 @@ function RichTextField({
         role="textbox"
         aria-multiline="true"
         onInput={sync}
+        onKeyUp={refreshActiveFormats}
+        onMouseUp={refreshActiveFormats}
+        onFocus={refreshActiveFormats}
+        onBlur={() => setActiveFormats({})}
         onPaste={(e) => {
           e.preventDefault();
           const text = e.clipboardData.getData('text/plain');
@@ -133,6 +164,176 @@ function RichTextField({
         }}
         className="hf-vacancy-textarea hf-vacancy-richtext"
       />
+    </div>
+  );
+}
+
+const WEEKDAYS_MON_FIRST = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+function toDeadlineIso(y: number, m: number, d: number): string {
+  // Дедлайн = конец выбранного дня. ВАЖНО: если писать T00:00:00, для «сегодня»
+  // бэк (validate_closes_at, naive datetime.utcnow()) сочтёт момент уже прошедшим
+  // и отклонит 422-й — «closes_at cannot be in the past».
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${y}-${pad(m + 1)}-${pad(d)}T23:59:59`;
+}
+
+// F-fix: «Без дедлайна» была нередактируемым readOnly-инпутом — просто текст,
+// без реальной привязки к closes_at. Заменил на попап-календарь: сегодня и
+// будущее кликабельны, прошлые дни — нет.
+function DeadlinePicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const today = useMemo(() => {
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    return t;
+  }, []);
+
+  const selectedDate = useMemo(() => {
+    if (!value) return null;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [value]);
+
+  const [viewMonth, setViewMonth] = useState(() => {
+    const base = selectedDate || today;
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+
+  useEffect(() => {
+    if (open) {
+      const base = selectedDate || today;
+      setViewMonth(new Date(base.getFullYear(), base.getMonth(), 1));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.closest('[data-deadline-root]') && !target?.closest('[data-deadline-menu]')) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', closeOnOutside);
+    return () => document.removeEventListener('pointerdown', closeOnOutside);
+  }, [open]);
+
+  const openPicker = () => {
+    if (disabled) return;
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setMenuPos({ left: r.left, top: r.bottom + 4 });
+    setOpen(true);
+  };
+
+  const monthLabel = viewMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+  const firstWeekday = (new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
+  const cells: (number | null)[] = [
+    ...Array(firstWeekday).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+
+  const displayValue = selectedDate
+    ? selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+    : 'Без дедлайна';
+
+  const menu = open && menuPos ? createPortal(
+    <div
+      data-deadline-menu
+      className="hf-vacancy-calendar-menu"
+      style={{ left: menuPos.left, top: menuPos.top }}
+    >
+      <div className="hf-vacancy-calendar-header">
+        <button
+          type="button"
+          className="hf-vacancy-calendar-nav"
+          onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))}
+          aria-label="Предыдущий месяц"
+        >
+          ‹
+        </button>
+        <span className="hf-vacancy-calendar-title">{monthLabel}</span>
+        <button
+          type="button"
+          className="hf-vacancy-calendar-nav"
+          onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))}
+          aria-label="Следующий месяц"
+        >
+          ›
+        </button>
+      </div>
+      <div className="hf-vacancy-calendar-weekdays">
+        {WEEKDAYS_MON_FIRST.map((w) => (
+          <span key={w}>{w}</span>
+        ))}
+      </div>
+      <div className="hf-vacancy-calendar-grid">
+        {cells.map((day, i) => {
+          if (day === null) return <span key={`blank-${i}`} />;
+          const cellDate = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day);
+          const isPast = cellDate < today;
+          const isToday = cellDate.getTime() === today.getTime();
+          const isSelected = !!selectedDate
+            && cellDate.getFullYear() === selectedDate.getFullYear()
+            && cellDate.getMonth() === selectedDate.getMonth()
+            && cellDate.getDate() === selectedDate.getDate();
+          return (
+            <button
+              key={day}
+              type="button"
+              disabled={isPast}
+              className={clsx(
+                'hf-vacancy-calendar-day',
+                isPast && 'hf-vacancy-calendar-day-disabled',
+                isToday && 'hf-vacancy-calendar-day-today',
+                isSelected && 'hf-vacancy-calendar-day-selected',
+              )}
+              onClick={() => {
+                onChange(toDeadlineIso(viewMonth.getFullYear(), viewMonth.getMonth(), day));
+                setOpen(false);
+              }}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        className="hf-vacancy-calendar-clear"
+        onClick={() => { onChange(''); setOpen(false); }}
+      >
+        Без дедлайна
+      </button>
+    </div>,
+    document.body,
+  ) : null;
+
+  return (
+    <div data-deadline-root>
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={disabled}
+        className="hf-vacancy-input hf-vacancy-deadline-trigger"
+        onClick={openPicker}
+      >
+        <span className={clsx(!selectedDate && 'hf-vacancy-deadline-placeholder')}>{displayValue}</span>
+      </button>
+      {menu}
     </div>
   );
 }
@@ -262,6 +463,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     tags: initialData?.tags?.join(', ') || '',
     hiring_manager_id: vacancy?.hiring_manager_id || '',
     visible_to_all: vacancy?.visible_to_all ?? initialData?.visible_to_all ?? true,
+    closes_at: vacancy?.closes_at || '',
   });
 
   const [selectedRecruiters, setSelectedRecruiters] = useState<number[]>(vacancy?.assigned_to || []);
@@ -332,6 +534,10 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
         visible_to_all: formData.visible_to_all,
         hiring_manager_id: formData.hiring_manager_id ? parseInt(String(formData.hiring_manager_id)) : undefined,
+        // ВАЖНО: при редактировании бэк применяет model_dump(exclude_unset=True) —
+        // undefined убирает ключ из JSON и старый closes_at НЕ очистится. Нужен
+        // явный null, чтобы «Без дедлайна» реально снимал ранее сохранённый дедлайн.
+        closes_at: formData.closes_at || null,
       };
 
       if (vacancy) {
@@ -655,14 +861,15 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               <div className="hf-vacancy-side-stack">
                 <div className="hf-vacancy-side-section">
                   <label className="hf-vacancy-side-title">Сколько человек нужно нанять</label>
-                  <div className="hf-vacancy-people-grid">
-                    <input className={hfInputClass} defaultValue="1" />
-                    <input
-                      className="hf-vacancy-input"
-                      value="Без дедлайна"
-                      readOnly
-                    />
-                  </div>
+                  <input className={hfInputClass} defaultValue="1" />
+                </div>
+                <div>
+                  <label className={hfLabelClass}>Дедлайн</label>
+                  <DeadlinePicker
+                    value={formData.closes_at}
+                    onChange={(value) => setFormData({ ...formData, closes_at: value })}
+                    disabled={isReadOnlyRequest}
+                  />
                 </div>
                 <div>
                   <label className={hfLabelClass}>Видимость</label>
