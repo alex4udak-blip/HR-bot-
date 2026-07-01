@@ -130,7 +130,11 @@ export default function VacancyDetail({ vacancy }: VacancyDetailProps) {
                 <User className="w-5 h-5 text-[color:var(--hf-white-alpha-40)]" />
                 <div>
                   <p className="text-sm text-[color:var(--hf-white-alpha-60)]">Ответственный</p>
-                  <p>{vacancy.hiring_manager_name || 'Не назначен'}</p>
+                  <p>
+                    {vacancy.hiring_manager_name ||
+                      String((vacancy.extra_data as Record<string, unknown> | undefined)?.customer_name || '') ||
+                      'Не назначен'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

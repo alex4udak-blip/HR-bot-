@@ -199,15 +199,20 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
                 </p>
               </div>
             )}
-            {vacancy.hiring_manager_name && (
-              <div className="p-3 glass-light rounded-lg">
-                <div className="flex items-center gap-1.5 text-[color:var(--hf-white-alpha-60)] mb-1">
-                  <User className="w-4 h-4" />
-                  <span className="text-xs">Ответственный</span>
+            {(() => {
+              const customerName =
+                vacancy.hiring_manager_name ||
+                String((vacancy.extra_data as Record<string, unknown> | undefined)?.customer_name || '');
+              return customerName && (
+                <div className="p-3 glass-light rounded-lg">
+                  <div className="flex items-center gap-1.5 text-[color:var(--hf-white-alpha-60)] mb-1">
+                    <User className="w-4 h-4" />
+                    <span className="text-xs">Ответственный</span>
+                  </div>
+                  <p className="font-medium text-sm">{customerName}</p>
                 </div>
-                <p className="font-medium text-sm">{vacancy.hiring_manager_name}</p>
-              </div>
-            )}
+              );
+            })()}
             <div className="p-3 glass-light rounded-lg">
               <div className="flex items-center gap-1.5 text-[color:var(--hf-white-alpha-60)] mb-1">
                 <Calendar className="w-4 h-4" />

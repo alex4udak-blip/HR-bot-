@@ -36,7 +36,7 @@ export interface VacancyCreate {
   extra_data?: Record<string, unknown>;
   visible_to_all?: boolean;
   department_id?: number;
-  hiring_manager_id?: number;
+  hiring_manager_id?: number | null;
   closes_at?: string | null;
 }
 
@@ -57,7 +57,7 @@ export interface VacancyUpdate {
   extra_data?: Record<string, unknown>;
   visible_to_all?: boolean;
   department_id?: number;
-  hiring_manager_id?: number;
+  hiring_manager_id?: number | null;
   closes_at?: string | null;
   custom_stages?: {
     columns: Array<{ key: string; label: string; visible: boolean; maps_to?: string }>;

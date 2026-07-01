@@ -248,7 +248,9 @@ export function SidebarRequestPreviewModal({
     vacancy.published_at || vacancy.created_at,
   );
   const customerName =
-    vacancy.hiring_manager_name || vacancy.created_by_name || "Не указан";
+    vacancy.hiring_manager_name ||
+    String((vacancy.extra_data as Record<string, unknown> | undefined)?.customer_name || "") ||
+    "Не указан";
   const salaryText =
     vacancy.salary_min || vacancy.salary_max
       ? formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency || "RUB")

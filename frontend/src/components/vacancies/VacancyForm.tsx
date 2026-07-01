@@ -461,7 +461,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     status: vacancy?.status || 'pending_review' as VacancyStatus,
     priority: vacancy?.priority || 0,
     tags: initialData?.tags?.join(', ') || '',
-    hiring_manager_id: vacancy?.hiring_manager_id || '',
     visible_to_all: vacancy?.visible_to_all ?? initialData?.visible_to_all ?? true,
     closes_at: vacancy?.closes_at || '',
   });
@@ -472,11 +471,72 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [openSelectId, setOpenSelectId] = useState<string | null>(null);
   const [selectMenuRect, setSelectMenuRect] = useState<HfSelectMenuRect | null>(null);
 
+  // Заказчик: либо реальный пользователь (hiring_manager_id), либо свободный
+  // текст (extra_data.customer_name) — внешний руководитель отдела, которого
+  // нет в системе как учётной записи. customerUserId==null означает «свободный
+  // текст» (может быть пустым, если заказчик вообще не указан).
+  const [customerText, setCustomerText] = useState(
+    () => vacancy?.hiring_manager_name || String(vacancy?.extra_data?.customer_name || ''),
+  );
+  const [customerUserId, setCustomerUserId] = useState<number | null>(vacancy?.hiring_manager_id ?? null);
+  const [showCustomerDD, setShowCustomerDD] = useState(false);
+  const customerRef = useRef<HTMLDivElement>(null);
+
+  // Ранее введённые свободнотекстовые заказчики — собираем по всем вакансиям
+  // орга (extra_data.customer_name), чтобы «+» сохранял их для повторного
+  // выбора, без отдельного backend-хранилища.
+  const pastCustomerNames = useMemo(() => {
+    const names = new Set<string>();
+    vacancies.forEach((v) => {
+      const n = (v.extra_data as Record<string, unknown> | undefined)?.customer_name;
+      if (typeof n === 'string' && n.trim()) names.add(n.trim());
+    });
+    return Array.from(names);
+  }, [vacancies]);
+
+  const customerSuggestions = useMemo(() => {
+    const q = customerText.trim().toLowerCase();
+    const userOptions = users
+      .filter((u) => !q || u.name.toLowerCase().includes(q))
+      .map((u) => ({ kind: 'user' as const, id: u.id, label: u.name }));
+    const customOptions = pastCustomerNames
+      .filter((n) => !q || n.toLowerCase().includes(q))
+      .filter((n) => !users.some((u) => u.name === n))
+      .map((n) => ({ kind: 'custom' as const, id: n, label: n }));
+    return [...userOptions, ...customOptions];
+  }, [customerText, users, pastCustomerNames]);
+
+  const customerExactMatch = customerSuggestions.some(
+    (o) => o.label.toLowerCase() === customerText.trim().toLowerCase(),
+  );
+  const canAddCustomerText = customerText.trim().length > 0 && !customerExactMatch;
+
+  const selectCustomerUser = (id: number, name: string) => {
+    setCustomerUserId(id);
+    setCustomerText(name);
+    setShowCustomerDD(false);
+  };
+  const selectCustomerFreeText = (name: string) => {
+    setCustomerUserId(null);
+    setCustomerText(name);
+    setShowCustomerDD(false);
+  };
+
   useEffect(() => {
     getAssignableUsers()
       .then(setUsers)
       .catch((err) => console.error('Failed to load assignable users:', err));
   }, []);
+
+  useEffect(() => {
+    if (!showCustomerDD) return;
+    const closeCustomerDD = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && !customerRef.current?.contains(target)) setShowCustomerDD(false);
+    };
+    document.addEventListener('pointerdown', closeCustomerDD);
+    return () => document.removeEventListener('pointerdown', closeCustomerDD);
+  }, [showCustomerDD]);
 
   useEffect(() => {
     const closeSelect = (event: PointerEvent) => {
@@ -533,11 +593,23 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         priority: formData.priority,
         tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
         visible_to_all: formData.visible_to_all,
-        hiring_manager_id: formData.hiring_manager_id ? parseInt(String(formData.hiring_manager_id)) : undefined,
+        // Заказчик — либо реальный пользователь (hiring_manager_id), либо
+        // свободный текст (extra_data.customer_name). Явный null (не undefined)
+        // на обоих полях — та же история, что и с closes_at: exclude_unset
+        // просто отбросит ключ, и старое значение при переключении между
+        // «юзер» ⇄ «свободный текст» не очистится.
+        hiring_manager_id: customerUserId ?? null,
         // ВАЖНО: при редактировании бэк применяет model_dump(exclude_unset=True) —
         // undefined убирает ключ из JSON и старый closes_at НЕ очистится. Нужен
         // явный null, чтобы «Без дедлайна» реально снимал ранее сохранённый дедлайн.
         closes_at: formData.closes_at || null,
+        // extra_data ЗАМЕНЯЕТСЯ на бэке целиком (не мержится) — обязательно
+        // спредим существующий, иначе стирается cloned_from_request_id и
+        // прочие служебные ключи при первом же редактировании заявки.
+        extra_data: {
+          ...(vacancy?.extra_data || {}),
+          customer_name: customerUserId ? undefined : (customerText.trim() || undefined),
+        },
       };
 
       if (vacancy) {
@@ -871,18 +943,60 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     disabled={isReadOnlyRequest}
                   />
                 </div>
-                <div>
+                <div ref={customerRef}>
                   <label className={hfLabelClass}>Заказчик</label>
-                  <HfSelect
-                    id="hiring_manager"
-                    value={formData.hiring_manager_id}
-                    options={[
-                      { value: "", label: "Не указан" },
-                      ...users.map((u) => ({ value: u.id, label: u.name })),
-                    ]}
-                    onChange={(value) => setFormData({ ...formData, hiring_manager_id: value })}
+                  <input
+                    type="text"
+                    value={customerText}
+                    onChange={(e) => {
+                      setCustomerUserId(null);
+                      setCustomerText(e.target.value);
+                      setShowCustomerDD(true);
+                    }}
+                    onFocus={() => setShowCustomerDD(true)}
+                    placeholder="Выберите или впишите заказчика"
                     disabled={isReadOnlyRequest}
+                    className="hf-vacancy-input"
                   />
+                  {showCustomerDD && !isReadOnlyRequest && (
+                    <div className="hf-vacancy-dropdown">
+                      <button
+                        type="button"
+                        onClick={() => selectCustomerFreeText('')}
+                        className="hf-vacancy-dropdown-item"
+                      >
+                        <span className="truncate text-[var(--hf-main-600)]">Не указан</span>
+                      </button>
+                      {customerSuggestions.map((o) => (
+                        <button
+                          type="button"
+                          key={`${o.kind}-${o.id}`}
+                          onClick={() =>
+                            o.kind === 'user'
+                              ? selectCustomerUser(o.id as number, o.label)
+                              : selectCustomerFreeText(o.label)
+                          }
+                          className="hf-vacancy-dropdown-item"
+                        >
+                          <span className="truncate">{o.label}</span>
+                          {o.kind === 'custom' && (
+                            <span className="ml-auto text-[11px] text-[var(--hf-main-500)]">внешний</span>
+                          )}
+                        </button>
+                      ))}
+                      {canAddCustomerText && (
+                        <button
+                          type="button"
+                          onClick={() => selectCustomerFreeText(customerText.trim())}
+                          className="hf-vacancy-dropdown-item"
+                        >
+                          <span className="truncate text-[var(--hf-cyan-700)]">
+                            + Добавить «{customerText.trim()}»
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className={hfLabelClass}>Видимость</label>
