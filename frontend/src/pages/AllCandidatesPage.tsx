@@ -3546,6 +3546,14 @@ export function EditCandidateModal({
         telegram_username: cleanTelegram || undefined,
         position: position.trim() || undefined,
         company: company.trim() || undefined,
+        // KanbanCard.salary/city — ОТДЕЛЬНЫЕ плоские поля (не читаются из
+        // extra_data на фронте), backend их флэттенит из extra_data сам. Без
+        // этого handleCardUpdated мержил только extra_data, а видимый
+        // card.salary/card.city оставался старым до следующего fetchBoard() —
+        // «работает только после обновления страницы».
+        salary: extraData.salary,
+        city: extraData.city,
+        source: extraData.source,
         extra_data: extraData,
       });
     } catch {

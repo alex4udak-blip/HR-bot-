@@ -24,6 +24,8 @@ import {
   Trash2,
   Inbox,
   Lock,
+  MapPin,
+  ExternalLink,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -1487,13 +1489,21 @@ export default function RecruiterFunnelsPage() {
   const funnelCard = useMemo<KanbanCard | null>(() => {
     if (!selectedCandidate) return null;
     return {
+      // dupCard уже несёт полный набор полей кандидата (email/phone/telegram_
+      // username/position/company/city/age/salary/total_experience/source/
+      // source_url) — тот же getEntity(), что грузится для баннера дублей.
+      // Раньше funnelCard собирался «голым» (только id/name/created_at/tags),
+      // из-за чего карточка в воронке была заметно беднее, чем в «Все
+      // кандидаты» (не было возраста/города/опыта/компании/телеграма,
+      // источник не был кликабельной ссылкой).
+      ...dupCard,
       id: selectedCandidate.entity_id,
       name: selectedCandidate.entity_name || '',
       created_at: selectedCandidate.applied_at,
-      tags: [],
+      tags: dupCard?.tags || [],
       extra_data: entityExtraData || {},
     };
-  }, [selectedCandidate, entityExtraData]);
+  }, [selectedCandidate, entityExtraData, dupCard]);
 
   // «Первичный» блок = заявка на текущую вакансию воронки (если определима),
   // иначе первый блок активности. Его applicationId/events/vacancyTitle уходят в
@@ -2575,11 +2585,17 @@ export default function RecruiterFunnelsPage() {
                                   <h2 className="hf-profile-title">
                                     {selectedCandidate.entity_name || 'Без имени'}
                                   </h2>
-                                  {(selectedCandidate.entity_position || selectedCandidate.entity_company) && (
-                                    <p className="hf-profile-subtitle">
-                                      {[selectedCandidate.entity_position, selectedCandidate.entity_company].filter(Boolean).join(' · ')}
-                                    </p>
-                                  )}
+                                  {(() => {
+                                    // funnelCard обогащён полным Entity (dupCard) — берём оттуда с
+                                    // fallback на «снэпшот»-поля заявки, пока dupCard ещё грузится.
+                                    const position = funnelCard?.position || selectedCandidate.entity_position;
+                                    const company = funnelCard?.company || selectedCandidate.entity_company;
+                                    return (position || company) && (
+                                      <p className="hf-profile-subtitle">
+                                        {[position, company].filter(Boolean).join(' · ')}
+                                      </p>
+                                    );
+                                  })()}
 
                               {/* Contact info — Huntflow dotted-line rows */}
                               <div className="mb-[var(--hf-space-xl)]">
@@ -2603,21 +2619,58 @@ export default function RecruiterFunnelsPage() {
                                     </div>
                                   </HuntflowInfoRow>
                                 )}
-                                {selectedCandidate.entity_telegram && (
-                                  <HuntflowInfoRow label="Telegram">
-                                    <div className="flex items-center gap-2">
-                                      <a href={`https://t.me/${selectedCandidate.entity_telegram}`} target="_blank" rel="noopener noreferrer" className="text-[var(--hf-main-900)] hover:text-[var(--hf-cyan-700)] transition-colors">
-                                        @{selectedCandidate.entity_telegram}
-                                      </a>
-                                      <CopyButton value={`@${selectedCandidate.entity_telegram}`} />
-                                    </div>
+                                {(() => {
+                                  const telegram = funnelCard?.telegram_username || selectedCandidate.entity_telegram;
+                                  return telegram && (
+                                    <HuntflowInfoRow label="Telegram">
+                                      <div className="flex items-center gap-2">
+                                        <a href={`https://t.me/${telegram}`} target="_blank" rel="noopener noreferrer" className="text-[var(--hf-main-900)] hover:text-[var(--hf-cyan-700)] transition-colors">
+                                          @{telegram}
+                                        </a>
+                                        <CopyButton value={`@${telegram}`} />
+                                      </div>
+                                    </HuntflowInfoRow>
+                                  );
+                                })()}
+                                {funnelCard?.age && (
+                                  <HuntflowInfoRow label="Возраст">
+                                    <span className="text-[var(--hf-main-900)]">{funnelCard.age}</span>
                                   </HuntflowInfoRow>
                                 )}
-                                {selectedCandidate.source && (
-                                  <HuntflowInfoRow label="Источник">
-                                    <span className="text-[var(--hf-main-900)]">{selectedCandidate.source}</span>
+                                {funnelCard?.city && (
+                                  <HuntflowInfoRow label="Город">
+                                    <span className="text-[var(--hf-main-900)] inline-flex items-center gap-1">
+                                      <MapPin className="w-3.5 h-3.5 text-[var(--hf-main-500)]" />
+                                      {funnelCard.city}
+                                    </span>
                                   </HuntflowInfoRow>
                                 )}
+                                {funnelCard?.total_experience && (
+                                  <HuntflowInfoRow label="Опыт">
+                                    <span className="text-[var(--hf-main-900)]">{funnelCard.total_experience}</span>
+                                  </HuntflowInfoRow>
+                                )}
+                                {(() => {
+                                  const source = funnelCard?.source || selectedCandidate.source;
+                                  const sourceUrl = funnelCard?.source_url;
+                                  if (!source && !sourceUrl) return null;
+                                  return (
+                                    <HuntflowInfoRow label="Источник">
+                                      {sourceUrl ? (
+                                        <a
+                                          href={sourceUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-[var(--hf-cyan-700)] hover:text-[var(--hf-red-500)] transition-colors inline-flex items-center gap-1"
+                                        >
+                                          {source || 'Ссылка'} <ExternalLink className="w-3 h-3" />
+                                        </a>
+                                      ) : (
+                                        <span className="text-[var(--hf-main-900)]">{source}</span>
+                                      )}
+                                    </HuntflowInfoRow>
+                                  );
+                                })()}
                               </div>
 
 
