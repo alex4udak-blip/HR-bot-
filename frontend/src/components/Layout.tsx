@@ -237,6 +237,11 @@ export function SidebarRequestPreviewModal({
     vacancy.salary_min || vacancy.salary_max
       ? formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency || "RUB")
       : null;
+  const deadlineText = vacancy.closes_at
+    ? formatSidebarVacancyDate(vacancy.closes_at)
+    : null;
+  const priorityLabel =
+    vacancy.priority === 2 ? "Срочно" : vacancy.priority === 1 ? "Высокий" : "Обычный";
   const positionsCount =
     typeof vacancy.extra_data?.positions_count === "number"
       ? vacancy.extra_data.positions_count
@@ -337,6 +342,14 @@ export function SidebarRequestPreviewModal({
               {salaryText && (
                 <RequestPreviewBlock title="Зарплата">
                   {salaryText}
+                </RequestPreviewBlock>
+              )}
+              <RequestPreviewBlock title="Приоритет">
+                {priorityLabel}
+              </RequestPreviewBlock>
+              {deadlineText && (
+                <RequestPreviewBlock title="Дедлайн">
+                  {deadlineText}
                 </RequestPreviewBlock>
               )}
               <RequestPreviewBlock title="Сколько человек нужно нанять">
