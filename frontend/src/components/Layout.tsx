@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { sanitizeHtml } from "../utils/sanitizeHtml";
+import { formatSalary } from "@/utils/currency";
 import {
   LayoutDashboard,
   Users,
@@ -231,7 +232,10 @@ export function SidebarRequestPreviewModal({
   );
   const customerName =
     vacancy.hiring_manager_name || vacancy.created_by_name || "Не указан";
-  const departmentName = vacancy.department_name || "Не выбрано";
+  const salaryText =
+    vacancy.salary_min || vacancy.salary_max
+      ? formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency || "RUB")
+      : null;
   const positionsCount =
     typeof vacancy.extra_data?.positions_count === "number"
       ? vacancy.extra_data.positions_count
@@ -314,9 +318,6 @@ export function SidebarRequestPreviewModal({
         <div className="hf-vacancy-form-scroll">
           <div className="hf-vacancy-modal-grid hf-request-preview-grid grid min-h-full">
             <div className="hf-vacancy-modal-main hf-request-preview-main">
-              <RequestPreviewBlock title="Отдел, подразделение">
-                {departmentName}
-              </RequestPreviewBlock>
               <RequestPreviewBlock
                 title="Обязанности кандидата"
                 html={vacancy.responsibilities || vacancy.description}
@@ -336,6 +337,11 @@ export function SidebarRequestPreviewModal({
             </div>
 
             <aside className="hf-vacancy-modal-aside hf-request-preview-aside">
+              {salaryText && (
+                <RequestPreviewBlock title="Зарплата">
+                  {salaryText}
+                </RequestPreviewBlock>
+              )}
               <RequestPreviewBlock title="Сколько человек нужно нанять">
                 {positionsCount}
               </RequestPreviewBlock>
@@ -344,9 +350,11 @@ export function SidebarRequestPreviewModal({
               >
                 {customerName}
               </RequestPreviewBlock>
-              <RequestPreviewBlock title="Заявка получена">
-                {departmentName}
-              </RequestPreviewBlock>
+              {requestDate && (
+                <RequestPreviewBlock title="Заявка получена">
+                  {requestDate}
+                </RequestPreviewBlock>
+              )}
             </aside>
           </div>
         </div>
