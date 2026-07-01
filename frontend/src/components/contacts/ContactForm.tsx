@@ -6,7 +6,8 @@ import toast from 'react-hot-toast';
 import { useEntityStore } from '@/stores/entityStore';
 import { parseResumeFromFile, uploadEntityFile } from '@/services/api';
 import type { Entity, EntityType, EntityStatus, CurrencyCode } from '@/types';
-import { ENTITY_TYPES, STATUS_LABELS, CURRENCIES } from '@/types';
+import { ENTITY_TYPES, STATUS_LABELS } from '@/types';
+import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
 
 interface ContactFormProps {
   entity?: Entity | null;
@@ -437,35 +438,42 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
                 Expected Salary
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm pointer-events-none">
+                    {getCurrencySymbol(formData.expected_salary_currency)}
+                  </span>
                   <input
                     type="number"
                     value={formData.expected_salary_min}
                     onChange={(e) => setFormData((prev) => ({ ...prev, expected_salary_min: e.target.value }))}
-                    className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                    className="w-full pl-7 pr-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
                     placeholder="Min"
                     min="0"
                   />
                 </div>
-                <div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm pointer-events-none">
+                    {getCurrencySymbol(formData.expected_salary_currency)}
+                  </span>
                   <input
                     type="number"
                     value={formData.expected_salary_max}
                     onChange={(e) => setFormData((prev) => ({ ...prev, expected_salary_max: e.target.value }))}
-                    className="w-full px-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
+                    className="w-full pl-7 pr-4 py-2 glass-light rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-cyan-500/50"
                     placeholder="Max"
                     min="0"
                   />
                 </div>
                 <div>
+                  {/* Валюта — только рубль или доллар. */}
                   <select
                     value={formData.expected_salary_currency}
                     onChange={(e) => setFormData((prev) => ({ ...prev, expected_salary_currency: e.target.value as CurrencyCode }))}
                     className="w-full px-4 py-2 glass-light rounded-lg text-white focus:outline-none focus:border-cyan-500/50"
                   >
-                    {CURRENCIES.map((curr) => (
-                      <option key={curr.code} value={curr.code} className="bg-gray-900">
-                        {curr.code} ({curr.symbol})
+                    {SALARY_INPUT_CURRENCIES.map((curr) => (
+                      <option key={curr.value} value={curr.value} className="bg-gray-900">
+                        {curr.label}
                       </option>
                     ))}
                   </select>
