@@ -922,6 +922,10 @@ class Vacancy(Base):
     published_at = Column(DateTime, nullable=True)
     closes_at = Column(DateTime, nullable=True)  # Application deadline
     deleted_at = Column(DateTime, nullable=True, index=True)  # Мягкое удаление: NULL = активна
+    # Точка отсчёта «серии»: момент последнего переоткрытия (closed→open). Отклики,
+    # чей last_stage_change_at < reopened_at, показываются как «В предыдущих сериях».
+    # NAIVE UTC (как все таймстемпы тут), иначе сравнение с naive-колонками ломается.
+    reopened_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 

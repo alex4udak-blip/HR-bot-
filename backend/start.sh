@@ -433,6 +433,11 @@ async def ensure_shadow_columns():
         await raw_conn.execute(text(\"ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP\"))
         print('Ensured vacancies.deleted_at column')
 
+        # «Серии» подбора: reopened_at — момент последнего переоткрытия (closed→open).
+        # Отклики старше этой даты уходят в «В предыдущих сериях» (идемпотентно).
+        await raw_conn.execute(text(\"ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMP\"))
+        print('Ensured vacancies.reopened_at column')
+
         # Теневая база дедупликации: entities.is_archived (идемпотентно).
         # bulk/CSV/парсер-импорт ставит true; индекс — для фильтра активных списков.
         await raw_conn.execute(text(\"ALTER TABLE entities ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false\"))

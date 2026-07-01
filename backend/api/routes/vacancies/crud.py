@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, or_, text, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .common import (
     logger, get_db, Vacancy, VacancyStatus, VacancyApplication,
@@ -209,6 +209,7 @@ async def list_vacancies(
             created_by_name=creator_name,
             published_at=vacancy.published_at,
             closes_at=vacancy.closes_at,
+        reopened_at=vacancy.reopened_at,
             created_at=vacancy.created_at,
             updated_at=vacancy.updated_at,
             applications_count=total_apps,
@@ -304,6 +305,7 @@ async def create_vacancy(
         created_by_name=current_user.name,  # Creator is current user
         published_at=vacancy.published_at,
         closes_at=vacancy.closes_at,
+        reopened_at=vacancy.reopened_at,
         created_at=vacancy.created_at,
         updated_at=vacancy.updated_at,
         applications_count=0,
@@ -397,6 +399,7 @@ async def get_vacancy(
         created_by_name=creator_name,
         published_at=vacancy.published_at,
         closes_at=vacancy.closes_at,
+        reopened_at=vacancy.reopened_at,
         created_at=vacancy.created_at,
         updated_at=vacancy.updated_at,
         applications_count=total_apps,
@@ -447,6 +450,10 @@ async def update_vacancy(
     if "extra_data" in update_data and update_data["extra_data"] is None:
         update_data["extra_data"] = {}
 
+    # Запоминаем статус ДО применения апдейта — нужен для детекта строго
+    # перехода closed→open (переоткрытие вакансии для новой «серии» подбора).
+    was_closed = vacancy.status == VacancyStatus.closed
+
     # Update fields
     for field, value in update_data.items():
         setattr(vacancy, field, value)
@@ -454,6 +461,15 @@ async def update_vacancy(
     # Set published_at when status changes to open
     if data.status == VacancyStatus.open and not vacancy.published_at:
         vacancy.published_at = datetime.utcnow()
+
+    # Переоткрытие: closed → open ставит точку отсчёта новой «серии». Отклики
+    # старше этого момента фронт покажет под «В предыдущих сериях». Строки
+    # VacancyApplication НЕ трогаем — этапы кандидатов сохраняются, меняется
+    # только визуальная сегментация. NAIVE UTC — как все таймстемпы в проекте
+    # (колонки TIMESTAMP WITHOUT TIME ZONE, last_stage_change_at тоже naive),
+    # иначе сравнение в case() рассинхронится по смещению.
+    if was_closed and data.status == VacancyStatus.open:
+        vacancy.reopened_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Когда рекрутёр закрывает/отменяет свой клон заявки, заявка должна исчезнуть
     # у него из "Заявок": убираем его из assigned_to оригинала и помечаем dismissed_by.

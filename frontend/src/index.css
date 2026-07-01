@@ -6611,6 +6611,26 @@ body.performance-mode .glass-card:hover {
   background: var(--hf-white);
 }
 
+/* «В предыдущих сериях»: разделитель + приглушённые карточки старой итерации.
+   Приглушение снимается автоматически при смене этапа (см. is_previous_series). */
+.hf-prev-series-divider {
+  margin: var(--hf-space-l) var(--hf-space-xxl) var(--hf-space-xs);
+  padding-top: var(--hf-space-s);
+  border-top: var(--hf-border-xs) solid var(--hf-main-200);
+  color: var(--hf-main-500);
+  font-size: var(--hf-fs-xxs);
+  font-weight: var(--hf-fw-medium);
+}
+
+.hf-candidate-row-prev-series {
+  opacity: 0.55;
+  filter: grayscale(0.35);
+}
+
+.hf-candidate-row-prev-series:hover {
+  opacity: 0.8;
+}
+
 .hf-candidate-row-idle:hover {
   border-color: var(--hf-ui-border);
   background: var(--hf-white);

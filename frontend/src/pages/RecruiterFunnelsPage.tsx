@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy, startTransition } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, Suspense, lazy, startTransition } from 'react';
 import { useHorizontalScroll } from '../hooks/useHorizontalScroll';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -328,7 +328,8 @@ function ClosedVacancyDetail({
               <strong>Открывайте старые вакансии вместо создания новых</strong>
               <span>
                 Статистика посчитается корректно, история работы не потеряется,
-                а кандидаты автоматически снимутся с этапов.
+                а прежние кандидаты уйдут в «предыдущие серии» — вернутся в
+                активную воронку, как только смените им этап.
               </span>
             </div>
           </section>
@@ -947,6 +948,16 @@ export default function RecruiterFunnelsPage() {
     });
   }, [filteredCandidates, selectedTab, stagesConfig]);
 
+  // «В предыдущих сериях»: отклики старше последнего переоткрытия вакансии
+  // (is_previous_series с бэка) уходят ВНИЗ списка под разделитель. Активные
+  // сверху, порядок внутри групп сохраняется. У обычных (не переоткрытых)
+  // вакансий previous всегда пуст → поведение не меняется.
+  const orderedCandidates = useMemo(() => {
+    const active = tabFilteredCandidates.filter(c => !c.is_previous_series);
+    const previous = tabFilteredCandidates.filter(c => c.is_previous_series);
+    return { list: [...active, ...previous], firstPreviousId: previous[0]?.id };
+  }, [tabFilteredCandidates]);
+
   useEffect(() => {
     if (selectedTab === 'all') return;
     const activeKeys = new Set(stagesConfig.keys);
@@ -1251,9 +1262,12 @@ export default function RecruiterFunnelsPage() {
   const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage, comment?: string) => {
     try {
       await updateApplication(applicationId, { stage: newStage, ...(comment ? { comment } : {}) });
-      // Локально двигаем кандидата на новый этап.
+      // Локально двигаем кандидата на новый этап + СРАЗУ снимаем «предыдущую
+      // серию» (оптимистично): смена этапа обновляет last_stage_change_at на
+      // бэке → отклик уходит из серой зоны. Не ждём рефетча, иначе серость
+      // спадала бы с задержкой. Бэк подтвердит is_previous_series=false.
       setCandidates((prev) =>
-        prev.map((c) => c.id === applicationId ? { ...c, stage: newStage } : c)
+        prev.map((c) => c.id === applicationId ? { ...c, stage: newStage, is_previous_series: false } : c)
       );
       // НЕ переключаем вкладку и НЕ «следуем» за кандидатом (требование Маши):
       // остаёмся на текущем этапе, карточка просто исчезает из текущего списка.
@@ -2266,7 +2280,10 @@ export default function RecruiterFunnelsPage() {
                     ) : (
                       <>
                         {vacancyVisibleStageKeys.map(key => {
-                          const count = groupedByStageMap[key]?.length || 0;
+                          // Счётчик вкладки считает ТОЛЬКО активных — «предыдущие
+                          // серии» не входят в тотал, пока их не тронут (как в референсе:
+                          // бейдж «1» при нескольких серых карточках под плашкой).
+                          const count = (groupedByStageMap[key] || []).filter(c => !c.is_previous_series).length;
                           const vacancyStageLabel = stagesConfig.labels[key];
                           const isActive = selectedTab === key;
                           return (
@@ -2347,16 +2364,20 @@ export default function RecruiterFunnelsPage() {
                         Нет кандидатов
                       </div>
                     ) : (
-                      tabFilteredCandidates.map(candidate => {
+                      orderedCandidates.list.map(candidate => {
                         const isSelected = candidate.id === selectedCandidateId;
                         const isChecked = selectedIds.has(candidate.id);
                         const listMetaPrimary = candidate.entity_company || candidate.source;
                         return (
+                          <Fragment key={candidate.id}>
+                          {candidate.id === orderedCandidates.firstPreviousId && (
+                            <div className="hf-prev-series-divider">В предыдущих сериях</div>
+                          )}
                           <div
-                            key={candidate.id}
                             onClick={() => { setSelectedCandidateId(candidate.id); setDetailTab('resume'); }}
                             className={clsx(
                               'hf-candidate-row',
+                              candidate.is_previous_series && 'hf-candidate-row-prev-series',
                               isChecked || isSelected
                                 ? 'hf-candidate-row-selected'
                                 : 'hf-candidate-row-idle',
@@ -2442,6 +2463,7 @@ export default function RecruiterFunnelsPage() {
                               </div>
                             </div>
                           </div>
+                          </Fragment>
                         );
                       })
                     )}

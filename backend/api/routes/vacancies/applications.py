@@ -119,9 +119,19 @@ async def list_applications(
 
     photo_file_map = await _load_photo_file_map(db, entity_ids)
 
+    # Точка отсчёта «серии» — момент последнего переоткрытия вакансии. Константа
+    # для всех откликов (vacancy уже загружен выше), поэтому флаг считаем в этом
+    # же цикле, а не отдельным SQL — сравнение x < const, O(1) на строку.
+    reopened_at = vacancy.reopened_at
+
     responses = []
     for app in applications:
         entity = entities_map.get(app.entity_id)
+        # Фоллбэк на applied_at, если last_stage_change_at вдруг NULL (старые данные).
+        is_previous_series = bool(
+            reopened_at is not None
+            and (app.last_stage_change_at or app.applied_at) < reopened_at
+        )
 
         responses.append(ApplicationResponse(
             id=app.id,
@@ -144,7 +154,8 @@ async def list_applications(
             next_interview_at=app.next_interview_at,
             applied_at=app.applied_at,
             last_stage_change_at=app.last_stage_change_at,
-            updated_at=app.updated_at
+            updated_at=app.updated_at,
+            is_previous_series=is_previous_series,
         ))
 
     return responses

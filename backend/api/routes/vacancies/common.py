@@ -600,6 +600,7 @@ class VacancyResponse(BaseModel):
     created_by_name: Optional[str] = None
     published_at: Optional[datetime] = None
     closes_at: Optional[datetime] = None
+    reopened_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
@@ -660,6 +661,10 @@ class ApplicationResponse(BaseModel):
     applied_at: datetime
     last_stage_change_at: datetime
     updated_at: datetime
+    # «В предыдущих сериях»: отклик старше последнего переоткрытия вакансии
+    # (last_stage_change_at < vacancy.reopened_at). Дефолт False — страховка на
+    # старых данных и для create/update-эндпоинтов, где не вычисляется.
+    is_previous_series: bool = False
 
     class Config:
         from_attributes = True

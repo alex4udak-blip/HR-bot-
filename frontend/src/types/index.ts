@@ -597,6 +597,7 @@ export interface Vacancy {
   created_by_name?: string;
   published_at?: string;
   closes_at?: string;
+  reopened_at?: string;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -636,6 +637,8 @@ export interface VacancyApplication {
   applied_at: string;
   last_stage_change_at: string;
   updated_at: string;
+  // «В предыдущих сериях»: отклик старше последнего переоткрытия вакансии.
+  is_previous_series?: boolean;
 }
 
 // === AI Compatibility Scoring ===
