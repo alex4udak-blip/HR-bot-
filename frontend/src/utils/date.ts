@@ -8,6 +8,20 @@
 export type DateFormatType = 'short' | 'medium' | 'long' | 'time' | 'relative' | 'datetime';
 
 /**
+ * Backend отдаёт datetime как НАИВНЫЙ UTC ISO-стрингой БЕЗ суффикса Z/offset
+ * (Pydantic .isoformat() на naive datetime из TIMESTAMP WITHOUT TIME ZONE
+ * колонок). `new Date("2026-07-01T08:56:00")` без явного офсета браузер
+ * парсит как ЛОКАЛЬНОЕ время — из-за этого смена этапа в 11:56 по Москве
+ * (08:56 UTC) отображалась как 08:56. Если офсета нет — трактуем строку как
+ * UTC, дописывая Z перед парсингом.
+ */
+export function parseServerDate(dateString: string | Date): Date {
+  if (dateString instanceof Date) return dateString;
+  const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(dateString);
+  return new Date(hasTz ? dateString : `${dateString}Z`);
+}
+
+/**
  * Format a date string according to the specified format type.
  * 
  * @param dateString - ISO date string or undefined
@@ -29,7 +43,7 @@ export function formatDate(
   if (!dateString) return '';
   
   try {
-    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+    const date = parseServerDate(dateString);
     
     // Check for invalid date
     if (isNaN(date.getTime())) return '';
@@ -116,7 +130,7 @@ export function formatRelativeTime(dateString: string | Date | undefined | null)
   if (!dateString) return '';
   
   try {
-    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+    const date = parseServerDate(dateString);
     if (isNaN(date.getTime())) return '';
     
     const now = new Date();
@@ -144,7 +158,7 @@ export function isToday(dateString: string | Date | undefined | null): boolean {
   if (!dateString) return false;
   
   try {
-    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+    const date = parseServerDate(dateString);
     const today = new Date();
     
     return (
@@ -164,7 +178,7 @@ export function isPast(dateString: string | Date | undefined | null): boolean {
   if (!dateString) return false;
   
   try {
-    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+    const date = parseServerDate(dateString);
     return date.getTime() < Date.now();
   } catch {
     return false;

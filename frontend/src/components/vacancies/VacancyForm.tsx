@@ -785,6 +785,14 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               </div>
 
               <div>
+                <label className={hfLabelClass}>Описание вакансии</label>
+                {renderEditor(
+                  formData.description,
+                  (value) => setFormData({ ...formData, description: value }),
+                )}
+              </div>
+
+              <div>
                 <label className={hfLabelClass}>Обязанности</label>
                 {renderEditor(
                   formData.responsibilities,
@@ -797,14 +805,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 {renderEditor(
                   formData.requirements,
                   (value) => setFormData({ ...formData, requirements: value }),
-                )}
-              </div>
-
-              <div>
-                <label className={hfLabelClass}>Условия работы</label>
-                {renderEditor(
-                  formData.description,
-                  (value) => setFormData({ ...formData, description: value }),
                 )}
               </div>
             </div>

@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { sanitizeHtml } from "../utils/sanitizeHtml";
 import { formatSalary } from "@/utils/currency";
+import { parseServerDate } from "@/utils/date";
 import {
   LayoutDashboard,
   Users,
@@ -173,7 +174,7 @@ function formatSidebarVacancyDate(date?: string | null) {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(new Date(date));
+  }).format(parseServerDate(date));
 }
 
 function RequestPreviewBlock({
@@ -319,20 +320,16 @@ export function SidebarRequestPreviewModal({
           <div className="hf-vacancy-modal-grid hf-request-preview-grid grid min-h-full">
             <div className="hf-vacancy-modal-main hf-request-preview-main">
               <RequestPreviewBlock
+                title="Описание вакансии"
+                html={vacancy.description}
+              />
+              <RequestPreviewBlock
                 title="Обязанности кандидата"
-                html={vacancy.responsibilities || vacancy.description}
+                html={vacancy.responsibilities}
               />
               <RequestPreviewBlock
                 title="Требования к кандидату"
                 html={vacancy.requirements}
-              />
-              <RequestPreviewBlock
-                title="Условия работы"
-                html={
-                  vacancy.description && vacancy.responsibilities
-                    ? vacancy.description
-                    : null
-                }
               />
             </div>
 

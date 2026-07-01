@@ -100,6 +100,12 @@ export function formatSalary(
 ): string {
   const symbol = getCurrencySymbol(currency);
 
+  // VacancyForm — одно поле «Зарплата» пишет ОДНО и то же число в min И max
+  // (нет отдельных «от»/«до»). Без этой проверки такая запись показывалась
+  // как псевдо-диапазон «100 000 - 100 000 ₽» вместо «100 000 ₽».
+  if (min && max && min === max) {
+    return `${formatNumber(min)} ${symbol}`;
+  }
   if (min && max) {
     return `${formatNumber(min)} - ${formatNumber(max)} ${symbol}`;
   }

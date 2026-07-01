@@ -234,8 +234,8 @@ describe('Currency Utilities', () => {
     });
 
     describe('equal min and max', () => {
-      it('should format correctly when min equals max', () => {
-        expect(formatSalary(150000, 150000, 'RUB')).toBe('150\u00a0000 - 150\u00a0000 \u20bd');
+      it('should format as single value, not a pseudo-range (VacancyForm single field writes min=max)', () => {
+        expect(formatSalary(150000, 150000, 'RUB')).toBe('150\u00a0000 \u20bd');
       });
     });
   });

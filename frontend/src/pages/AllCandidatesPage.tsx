@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense, startTransition } from "react";
+import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -26,6 +27,8 @@ import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import { buildStageContainers, readSystemHrTags, type EntryReaction } from "@/components/entities/candidateDetail/model";
+import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from "@/utils/currency";
+import { parseServerDate } from "@/utils/date";
 import {
   getCandidatesKanban,
   getCandidateIds,
@@ -204,11 +207,11 @@ function getInitials(name: string): string {
 }
 
 function formatDateShort(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("ru");
+  return parseServerDate(dateStr).toLocaleDateString("ru");
 }
 
 function formatDateFull(dateStr: string): string {
-  return new Date(dateStr).toLocaleString("ru", {
+  return parseServerDate(dateStr).toLocaleString("ru", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -261,6 +264,28 @@ function formatPhoneDisplay(phone?: string): string {
   const match = digits.match(/^7(\d{3})(\d{3})(\d{4})$/);
   if (match) return `+7 ${match[1]} ${match[2]} ${match[3]}`;
   return phone;
+}
+
+// «Зарплатные ожидания» хранится как СВОБОДНЫЙ ТЕКСТ (Entity.salary), без
+// отдельных числовых полей — в отличие от VacancyForm/ParsedDataPreview/
+// ContactForm. Чтобы валюта была видна и здесь, дописываем символ выбранной
+// валюты в конец строки при сохранении и разбираем его обратно при
+// открытии на редактирование (иначе повторное сохранение задваивало бы символ).
+function splitSalaryCurrency(raw: string): { amount: string; currency: string } {
+  const trimmed = (raw || "").trim();
+  for (const { value } of SALARY_INPUT_CURRENCIES) {
+    const symbol = getCurrencySymbol(value);
+    if (trimmed.endsWith(` ${symbol}`)) {
+      return { amount: trimmed.slice(0, -(symbol.length + 1)).trim(), currency: value };
+    }
+  }
+  return { amount: trimmed, currency: "RUB" };
+}
+
+function joinSalaryCurrency(amount: string, currency: string): string {
+  const trimmed = amount.trim();
+  if (!trimmed) return "";
+  return `${trimmed} ${getCurrencySymbol(currency)}`;
 }
 
 function formatPhoneForEdit(phone?: string): string {
@@ -1866,8 +1891,14 @@ const InfoTab = memo(function InfoTab({
       } catch {
         /* ignore */
       }
+      // card.extra_data мутируется НАПРЯМУЮ (не через setState) — без этого
+      // вызова InfoTab (memo) не перерисуется и удалённый комментарий висел
+      // бы на экране до ручного обновления страницы. loadActivity меняет
+      // activityBlocks → containers (useMemo) пересчитывается и подхватывает
+      // уже обновлённый card.extra_data.notes. Тот же приём, что и в cardComment.
+      await loadActivity();
     },
-    [card],
+    [card, loadActivity],
   );
 
   const cardRemoveFromVacancy = useCallback(
@@ -2882,6 +2913,7 @@ export function NewCandidateModal({
   const [position, setPosition] = useState("");
   const [company, setCompany] = useState("");
   const [salary, setSalary] = useState("");
+  const [salaryCurrency, setSalaryCurrency] = useState("RUB");
   const [city, setCity] = useState("");
   const [skills, setSkills] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -2966,7 +2998,7 @@ export function NewCandidateModal({
           birth_date: birthDate.trim() || undefined,
           resume_text: resumeText.trim() || undefined,
           source: source.trim() || undefined,
-          salary: salary.trim() || undefined,
+          salary: joinSalaryCurrency(salary, salaryCurrency) || undefined,
           city: city.trim() || undefined,
           skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
         },
@@ -3153,6 +3185,17 @@ export function NewCandidateModal({
               label="Зарплатные ожидания"
               value={salary}
               onChange={setSalary}
+              addon={
+                <select
+                  value={salaryCurrency}
+                  onChange={(e) => setSalaryCurrency(e.target.value)}
+                  className="hf-candidate-input"
+                >
+                  {SALARY_INPUT_CURRENCIES.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              }
             />
             <CandidateField
               label="Город"
@@ -3299,6 +3342,7 @@ function CandidateField({
   hideLabel,
   compactGap,
   autoFocus,
+  addon,
 }: {
   label: string;
   value: string;
@@ -3311,7 +3355,30 @@ function CandidateField({
   hideLabel?: boolean;
   compactGap?: boolean;
   autoFocus?: boolean;
+  // Доп. контрол справа от инпута (напр. выбор валюты для зарплаты).
+  addon?: ReactNode;
 }) {
+  const input =
+    type === "date" ? (
+      // В формах кандидата единственное date-поле — дата рождения → будущее запрещаем.
+      <DatePickerFactorial
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder || "дд.мм.гггг"}
+        disableFuture
+      />
+    ) : (
+      <input
+        type={type || "text"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        aria-invalid={!!error}
+        className={clsx("hf-candidate-input", error && "hf-candidate-input-error")}
+      />
+    );
   return (
     <div className={clsx("hf-candidate-field", compactGap && "hf-candidate-field-compact")}>
       {!hideLabel && (
@@ -3320,25 +3387,13 @@ function CandidateField({
           {required && <span className="sr-only"> *</span>}
         </label>
       )}
-      {type === "date" ? (
-        // В формах кандидата единственное date-поле — дата рождения → будущее запрещаем.
-        <DatePickerFactorial
-          value={value}
-          onChange={onChange}
-          placeholder={placeholder || "дд.мм.гггг"}
-          disableFuture
-        />
+      {addon ? (
+        <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+          <div style={{ flex: 1 }}>{input}</div>
+          <div style={{ width: 110, flexShrink: 0 }}>{addon}</div>
+        </div>
       ) : (
-        <input
-          type={type || "text"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onBlur}
-          placeholder={placeholder}
-          autoFocus={autoFocus}
-          aria-invalid={!!error}
-          className={clsx("hf-candidate-input", error && "hf-candidate-input-error")}
-        />
+        input
       )}
       {error && <p className="hf-candidate-error">{error}</p>}
     </div>
@@ -3398,7 +3453,8 @@ export function EditCandidateModal({
   const [telegram, setTelegram] = useState(card.telegram_username || "");
   const [position, setPosition] = useState(card.position || "");
   const [company, setCompany] = useState(card.company || "");
-  const [salary, setSalary] = useState(card.salary || "");
+  const [salary, setSalary] = useState(() => splitSalaryCurrency(card.salary || "").amount);
+  const [salaryCurrency, setSalaryCurrency] = useState(() => splitSalaryCurrency(card.salary || "").currency);
   const [city, setCity] = useState((card.extra_data?.city as string) || "");
   const [skills, setSkills] = useState(
     Array.isArray(card.extra_data?.skills)
@@ -3466,7 +3522,7 @@ export function EditCandidateModal({
       const normalizedPhone = phone.trim() ? normalizePhone(phone) : undefined;
       const cleanTelegram = telegram.trim().replace(/^@/, "");
       const extraData = {
-        salary: salary.trim() || undefined,
+        salary: joinSalaryCurrency(salary, salaryCurrency) || undefined,
         birth_date: birthDate.trim() || undefined,
         resume_text: resumeText.trim() || undefined,
         source: source.trim() || undefined,
@@ -3666,6 +3722,17 @@ export function EditCandidateModal({
               value={salary}
               onChange={setSalary}
               placeholder=""
+              addon={
+                <select
+                  value={salaryCurrency}
+                  onChange={(e) => setSalaryCurrency(e.target.value)}
+                  className="h-[var(--hf-edit-field-h)] w-full rounded-[var(--hf-edit-field-radius)] border border-[color:var(--hf-black-alpha-16)] bg-[var(--hf-white)] px-[var(--hf-edit-field-px)] text-[length:var(--hf-edit-field-fs)] text-[var(--hf-main-900)] focus:outline-none focus:border-[color:var(--hf-cyan-500)] hf-dark-disabled:bg-transparent hf-dark-disabled:text-[var(--hf-white)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]"
+                >
+                  {SALARY_INPUT_CURRENCIES.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              }
             />
             <EditField
               label="Город"
@@ -3822,6 +3889,7 @@ function EditField({
   clearable,
   compactGap,
   autoFocus,
+  addon,
 }: {
   label: string;
   value: string;
@@ -3836,6 +3904,8 @@ function EditField({
   clearable?: boolean;
   compactGap?: boolean;
   autoFocus?: boolean;
+  // Доп. контрол справа от инпута (напр. выбор валюты для зарплаты).
+  addon?: ReactNode;
 }) {
   return (
     <div className={clsx(compactGap ? "mb-[var(--hf-space-s)]" : "mb-[var(--hf-space-l)]", className)}>
@@ -3845,7 +3915,8 @@ function EditField({
           {required && <span className="sr-only"> *</span>}
         </label>
       )}
-      <div className="relative">
+      <div className={addon ? "flex items-stretch gap-2" : undefined}>
+      <div className="relative flex-1">
         {type === "date" ? (
           // В формах кандидата единственное date-поле — дата рождения → будущее запрещаем.
           <DatePickerFactorial
@@ -3884,6 +3955,8 @@ function EditField({
         )}
           </>
         )}
+      </div>
+      {addon && <div style={{ width: 110, flexShrink: 0 }}>{addon}</div>}
       </div>
       {error && (
         <p className="mt-[var(--hf-space-xs)] text-[length:var(--hf-edit-error-fs)] leading-[var(--hf-edit-error-lh)] text-[var(--hf-red-500)]">

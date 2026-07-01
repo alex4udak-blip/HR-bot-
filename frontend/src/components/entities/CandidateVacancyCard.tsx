@@ -26,6 +26,7 @@ import { HuntflowComposer } from "@/components/hr/HuntflowComposer";
 import { HuntflowRichInput } from "@/components/hr/HuntflowRichInput";
 import { HuntflowActionChip as ActionChip } from "@/components/hr/HuntflowControls";
 import { sanitizeHtml } from "@/utils/sanitizeHtml";
+import { parseServerDate } from "@/utils/date";
 import { useAuthStore } from "@/stores/authStore";
 import { downloadEntityFile } from "@/services/api/entities";
 import type { ActivityEvent, EntityFile } from "@/services/api/entities";
@@ -97,7 +98,7 @@ function TimelineMetaIcon() {
 }
 
 function formatTimelineDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = parseServerDate(dateStr);
   const months = [
     "января",
     "февраля",
