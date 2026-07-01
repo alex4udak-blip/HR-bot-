@@ -85,9 +85,20 @@ export default function DatePickerFactorial({
   // чтобы overflow/z-index родителя (модалка кандидата, скролл-контейнер) его не резал
   // и он не «уходил за текстурки».
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
-  const [currentMonth, setCurrentMonth] = useState<Date>(
-    () => safeParseDate(value) || new Date()
-  );
+  const [currentMonth, setCurrentMonth] = useState<Date>(() => {
+    const parsed = safeParseDate(value);
+    if (parsed) return parsed;
+    // Пустая дата рождения: открывать календарь на ТЕКУЩЕМ месяце бессмысленно —
+    // почти все дни там заблокированы disableFuture (это будущее), и с первого
+    // взгляда кажется, что весь календарь сломан/некликабелен. Стартуем сразу с
+    // разумного «типичного взрослого» года — от него до факта проще долистать.
+    if (disableFuture) {
+      const d = new Date();
+      d.setFullYear(d.getFullYear() - 25);
+      return d;
+    }
+    return new Date();
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
