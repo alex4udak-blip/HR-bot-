@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Check, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import type { ParsedResume, ParsedVacancy } from '@/services/api';
-import { getCurrencyDropdownOptions, formatSalary } from '@/utils';
+import { formatSalary, getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils';
 
 interface ParsedDataPreviewProps {
   type: 'resume' | 'vacancy';
@@ -10,7 +10,7 @@ interface ParsedDataPreviewProps {
   onDataChange: (data: ParsedResume | ParsedVacancy) => void;
 }
 
-const CURRENCY_DROPDOWN_OPTIONS = getCurrencyDropdownOptions();
+const CURRENCY_DROPDOWN_OPTIONS = SALARY_INPUT_CURRENCIES;
 
 export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDataPreviewProps) {
   const [localData, setLocalData] = useState<ParsedResume | ParsedVacancy>(data);
@@ -178,23 +178,33 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-sm text-slate-600 mb-1">Зарплата от</label>
-            <input
-              type="number"
-              value={resumeData.salary_min || ''}
-              onChange={(e) => handleNumberChange('salary_min', e.target.value)}
-              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
-              placeholder="200000"
-            />
+            <div className="relative">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">
+                {getCurrencySymbol(resumeData.salary_currency || 'RUB')}
+              </span>
+              <input
+                type="number"
+                value={resumeData.salary_min || ''}
+                onChange={(e) => handleNumberChange('salary_min', e.target.value)}
+                className="w-full pl-7 pr-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
+                placeholder="200000"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-sm text-slate-600 mb-1">Зарплата до</label>
-            <input
-              type="number"
-              value={resumeData.salary_max || ''}
-              onChange={(e) => handleNumberChange('salary_max', e.target.value)}
-              className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
-              placeholder="300000"
-            />
+            <div className="relative">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">
+                {getCurrencySymbol(resumeData.salary_currency || 'RUB')}
+              </span>
+              <input
+                type="number"
+                value={resumeData.salary_max || ''}
+                onChange={(e) => handleNumberChange('salary_max', e.target.value)}
+                className="w-full pl-7 pr-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
+                placeholder="300000"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-sm text-slate-600 mb-1">Валюта</label>
@@ -352,23 +362,33 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
       <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="block text-sm text-slate-600 mb-1">Зарплата от</label>
-          <input
-            type="number"
-            value={vacancyData.salary_min || ''}
-            onChange={(e) => handleNumberChange('salary_min', e.target.value)}
-            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
-            placeholder="200000"
-          />
+          <div className="relative">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">
+              {getCurrencySymbol(vacancyData.salary_currency || 'RUB')}
+            </span>
+            <input
+              type="number"
+              value={vacancyData.salary_min || ''}
+              onChange={(e) => handleNumberChange('salary_min', e.target.value)}
+              className="w-full pl-7 pr-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
+              placeholder="200000"
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm text-slate-600 mb-1">Зарплата до</label>
-          <input
-            type="number"
-            value={vacancyData.salary_max || ''}
-            onChange={(e) => handleNumberChange('salary_max', e.target.value)}
-            className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
-            placeholder="300000"
-          />
+          <div className="relative">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">
+              {getCurrencySymbol(vacancyData.salary_currency || 'RUB')}
+            </span>
+            <input
+              type="number"
+              value={vacancyData.salary_max || ''}
+              onChange={(e) => handleNumberChange('salary_max', e.target.value)}
+              className="w-full pl-7 pr-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
+              placeholder="300000"
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm text-slate-600 mb-1">Валюта</label>

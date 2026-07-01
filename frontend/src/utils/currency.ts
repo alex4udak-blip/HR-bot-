@@ -38,6 +38,16 @@ export const CURRENCY_OPTIONS = [
 export type CurrencyCode = typeof CURRENCY_OPTIONS[number]['code'];
 
 /**
+ * Валюты, доступные для ВЫБОРА при вводе зарплаты (по требованию — только рубль и
+ * доллар). CURRENCY_SYMBOLS/OPTIONS остаются полными, чтобы старые данные в других
+ * валютах корректно форматировались (formatSalary).
+ */
+export const SALARY_INPUT_CURRENCIES: Array<{ value: string; label: string }> = [
+  { value: 'RUB', label: 'Рубль (₽)' },
+  { value: 'USD', label: 'Доллар ($)' },
+];
+
+/**
  * Default base currency for conversions
  */
 export const DEFAULT_BASE_CURRENCY: CurrencyCode = 'RUB';

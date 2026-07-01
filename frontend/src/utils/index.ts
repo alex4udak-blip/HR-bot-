@@ -9,6 +9,7 @@ export {
   formatCurrency,
   formatSalary,
   getCurrencyDropdownOptions,
+  SALARY_INPUT_CURRENCIES,
 } from './currency';
 export type { CurrencyCode } from './currency';
 

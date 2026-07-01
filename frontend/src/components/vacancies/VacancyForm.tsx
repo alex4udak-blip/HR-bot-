@@ -11,8 +11,9 @@ import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
-import { getDepartments, getAssignableUsers, assignVacancy, takeVacancy } from '@/services/api';
-import type { Department, AssignableUser } from '@/services/api';
+import { getAssignableUsers, assignVacancy, takeVacancy } from '@/services/api';
+import type { AssignableUser } from '@/services/api';
+import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
@@ -240,7 +241,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
   const { createVacancy, updateVacancy, deleteVacancy } = useVacancyStore();
   const [loading, setLoading] = useState(false);
-  const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<AssignableUser[]>([]);
 
   // Use prefillData when creating new vacancy, vacancy when editing
@@ -260,7 +260,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     status: vacancy?.status || 'pending_review' as VacancyStatus,
     priority: vacancy?.priority || 0,
     tags: initialData?.tags?.join(', ') || '',
-    department_id: vacancy?.department_id || '',
     hiring_manager_id: vacancy?.hiring_manager_id || '',
     visible_to_all: vacancy?.visible_to_all ?? initialData?.visible_to_all ?? true,
   });
@@ -272,10 +271,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [selectMenuRect, setSelectMenuRect] = useState<HfSelectMenuRect | null>(null);
 
   useEffect(() => {
-    // Load departments and users independently so one failure doesn't block the other
-    getDepartments(-1)
-      .then(setDepartments)
-      .catch((err) => console.error('Failed to load departments:', err));
     getAssignableUsers()
       .then(setUsers)
       .catch((err) => console.error('Failed to load assignable users:', err));
@@ -336,7 +331,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         priority: formData.priority,
         tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
         visible_to_all: formData.visible_to_all,
-        department_id: formData.department_id ? parseInt(String(formData.department_id)) : undefined,
         hiring_manager_id: formData.hiring_manager_id ? parseInt(String(formData.hiring_manager_id)) : undefined,
       };
 
@@ -549,29 +543,39 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               </div>
 
               <div>
-                <label className={hfLabelClass}>Отдел, подразделение</label>
-                <HfSelect
-                  id="department"
-                  value={formData.department_id}
-                  options={[
-                    { value: "", label: "Не выбрано" },
-                    ...departments.map((dept) => ({ value: dept.id, label: dept.name })),
-                  ]}
-                  onChange={(value) => setFormData({ ...formData, department_id: value })}
-                  disabled={isReadOnlyRequest}
-                />
-              </div>
-
-              <div>
                 <label className={hfLabelClass}>Зарплата</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={formData.salary_min || formData.salary_max}
-                  onChange={(e) => setFormData({ ...formData, salary_min: e.target.value, salary_max: e.target.value })}
-                  disabled={isReadOnlyRequest}
-                  className="hf-vacancy-input hf-vacancy-salary-input"
-                />
+                <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                  {/* Сумма с авто-подстановкой символа выбранной валюты (₽/$). */}
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <span
+                      style={{
+                        position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                        color: 'var(--hf-main-500)', fontSize: 14, pointerEvents: 'none',
+                      }}
+                    >
+                      {getCurrencySymbol(formData.salary_currency)}
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={formData.salary_min || formData.salary_max}
+                      onChange={(e) => setFormData({ ...formData, salary_min: e.target.value, salary_max: e.target.value })}
+                      disabled={isReadOnlyRequest}
+                      className="hf-vacancy-input hf-vacancy-salary-input"
+                      style={{ paddingLeft: 26 }}
+                    />
+                  </div>
+                  {/* Валюта — только рубль или доллар. */}
+                  <div style={{ width: 150, flexShrink: 0 }}>
+                    <HfSelect
+                      id="salary_currency"
+                      value={formData.salary_currency}
+                      options={SALARY_INPUT_CURRENCIES}
+                      onChange={(value) => setFormData({ ...formData, salary_currency: String(value) })}
+                      disabled={isReadOnlyRequest}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>

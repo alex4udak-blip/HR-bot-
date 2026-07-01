@@ -264,17 +264,16 @@ describe('ParsedDataPreview', () => {
         expect(currencySelect.value).toBe('RUB');
       });
 
-      it('should show all currency options with symbols', () => {
+      it('should show only RUB and USD currency options', () => {
         renderResumePreview();
         const currencySelect = screen.getByRole('combobox');
         const options = currencySelect.querySelectorAll('option');
-        // Now we have 10 currency options with symbols
-        expect(options.length).toBeGreaterThanOrEqual(9);
-        // Check format: "CODE (symbol)"
-        expect(options[0].textContent).toContain('RUB');
-        expect(options[0].textContent).toContain('(');
-        expect(options[1].textContent).toContain('USD');
-        expect(options[2].textContent).toContain('EUR');
+        // По требованию — только рубль и доллар.
+        expect(options.length).toBe(2);
+        expect((options[0] as HTMLOptionElement).value).toBe('RUB');
+        expect(options[0].textContent).toContain('₽');
+        expect((options[1] as HTMLOptionElement).value).toBe('USD');
+        expect(options[1].textContent).toContain('$');
       });
 
       it('should update currency when changed', async () => {
@@ -582,11 +581,11 @@ describe('ParsedDataPreview', () => {
       it('should display current currency', () => {
         renderVacancyPreview();
         const selects = screen.getAllByRole('combobox');
-        // Find the currency select by looking for options containing currency codes with symbols
+        // Валютный select — тот, где среди опций есть символ рубля.
         const currencySelect = selects.find(
           (select) => {
             const options = select.querySelectorAll('option');
-            return Array.from(options).some(opt => opt.textContent?.includes('RUB ('));
+            return Array.from(options).some(opt => opt.textContent?.includes('₽'));
           }
         );
         expect(currencySelect).toBeInTheDocument();
@@ -595,19 +594,19 @@ describe('ParsedDataPreview', () => {
       it('should update salary_currency when changed', async () => {
         renderVacancyPreview();
         const selects = screen.getAllByRole('combobox');
-        // Find the currency select by looking for options containing currency codes with symbols
+        // Валютный select — тот, где среди опций есть символ рубля.
         const currencySelect = selects.find(
           (select) => {
             const options = select.querySelectorAll('option');
-            return Array.from(options).some(opt => opt.textContent?.includes('EUR ('));
+            return Array.from(options).some(opt => opt.textContent?.includes('₽'));
           }
         );
         if (currencySelect) {
-          await userEvent.selectOptions(currencySelect, 'EUR');
+          await userEvent.selectOptions(currencySelect, 'USD');
 
           expect(mockOnDataChange).toHaveBeenCalled();
           const lastCall = mockOnDataChange.mock.calls[mockOnDataChange.mock.calls.length - 1][0];
-          expect(lastCall.salary_currency).toBe('EUR');
+          expect(lastCall.salary_currency).toBe('USD');
         }
       });
     });
