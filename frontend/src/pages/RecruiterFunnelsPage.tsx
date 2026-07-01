@@ -2869,6 +2869,9 @@ export default function RecruiterFunnelsPage() {
                                       events={c.events}
                                       addedAt={c.addedAt}
                                       readonly={c.origin === 'merged'}
+                                      /* Серая карточка этапа — только живой контейнер
+                                         и только пока отклик в «предыдущих сериях». */
+                                      isPreviousSeries={c.origin === 'live' && !!selectedCandidate?.is_previous_series}
                                       stageOptions={stagePickerOptions}
                                       getStageLabel={getVacancyStageLabel}
                                       onChangeStage={cardChangeStage}

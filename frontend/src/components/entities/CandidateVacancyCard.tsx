@@ -168,6 +168,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   files,
   onDeleteFile,
   onRemoveFromVacancy,
+  isPreviousSeries = false,
 }: {
   card: KanbanCard;
   applicationId: number;
@@ -217,6 +218,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onDeleteFile?: (fileId: number) => void;
   // Убрать кандидата из воронки (снять заявку). Только живой контейнер.
   onRemoveFromVacancy?: (applicationId: number) => void;
+  // «В предыдущих сериях»: отклик старше переоткрытия вакансии → карточка этапа
+  // серая (как в референсе). Смена этапа снимает флаг → карточка зеленеет.
+  isPreviousSeries?: boolean;
 }) {
   // --- per-instance UI state (раньше было singleton в InfoTab) ---
   const [showStageDD, setShowStageDD] = useState(false);
@@ -248,7 +252,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   // Цвет карточки СТРОГО по СВОЕМУ статусу контейнера: серая если этап
   // отклонён (rejected/fired/archived), иначе зелёная. Слияние НЕ
   // перекрашивает живую карточку — каждый контейнер изолирован.
-  const grayed = isRejectedStage(currentStage);
+  // + «В предыдущих сериях»: пока отклик не тронут после переоткрытия — серая
+  // (референс Huntflow: «Новые» серая → после взятия в работу зелёная).
+  const grayed = isRejectedStage(currentStage) || isPreviousSeries;
   const stageCardStyle: CSSProperties = grayed
     ? GRAY_STAGE_CARD_STYLE
     : GREEN_STAGE_CARD_STYLE;

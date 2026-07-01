@@ -6622,13 +6622,15 @@ body.performance-mode .glass-card:hover {
   font-weight: var(--hf-fw-medium);
 }
 
+/* Строки «предыдущих серий» — как в референсе: почти обычные (аватарки
+   цветные, текст читаемый), лишь лёгкий намёк. Основной серый сигнал — на
+   карточке этапа в детали (grayed), не на списке. */
 .hf-candidate-row-prev-series {
-  opacity: 0.55;
-  filter: grayscale(0.35);
+  opacity: 0.82;
 }
 
 .hf-candidate-row-prev-series:hover {
-  opacity: 0.8;
+  opacity: 1;
 }
 
 .hf-candidate-row-idle:hover {
