@@ -43,8 +43,8 @@ export type CurrencyCode = typeof CURRENCY_OPTIONS[number]['code'];
  * валютах корректно форматировались (formatSalary).
  */
 export const SALARY_INPUT_CURRENCIES: Array<{ value: string; label: string }> = [
-  { value: 'RUB', label: 'Рубль (₽)' },
-  { value: 'USD', label: 'Доллар ($)' },
+  { value: 'RUB', label: '₽' },
+  { value: 'USD', label: '$' },
 ];
 
 /**
