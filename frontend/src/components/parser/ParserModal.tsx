@@ -15,6 +15,7 @@ import {
 import ParsedDataPreview from './ParsedDataPreview';
 import type { Entity, Vacancy } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
+import { isVacancyParticipant } from '@/utils/vacancy';
 
 interface ParserModalProps {
   type: 'resume' | 'vacancy';
@@ -72,10 +73,10 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         const seenTitles = new Set<string>();
         const myOpen: { id: number; title: string }[] = [];
         for (const v of all) {
-          // Только СВОИ открытые воронки; заявки (pending_review) и чужие
-          // visible_to_all — НЕ цель (рекрутёр их сначала берёт в работу).
+          // Свои воронки = где участник (создатель/назначенный, минус dismissed) —
+          // общая модель 2026-07-02. Невзятые заявки — НЕ цель.
           if (v.status !== 'open') continue;
-          if (!isHrAdmin && !(user && v.created_by === user.id)) continue;
+          if (!isHrAdmin && !(user && isVacancyParticipant(v, user.id))) continue;
           if (clonedSourceIds.has(v.id)) continue; // оригинал, у которого уже есть клон
           const key = (v.title || '').trim().toLowerCase();
           if (seenTitles.has(key)) continue; // дубль по названию

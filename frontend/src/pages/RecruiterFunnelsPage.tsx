@@ -36,6 +36,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote } from '@/services/api/entities';
+import { isVacancyParticipant, otherActiveParticipants } from '@/utils/vacancy';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
@@ -514,7 +515,7 @@ export default function RecruiterFunnelsPage() {
   const scopedVacancies = useMemo(() => {
     if (statusFilter === 'deleted') {
       return (!isHrAdmin && user)
-        ? deletedVacancies.filter((v) => v.created_by === user.id)
+        ? deletedVacancies.filter((v) => isVacancyParticipant(v, user.id))
         : deletedVacancies;
     }
     let result = vacancies;
@@ -529,11 +530,12 @@ export default function RecruiterFunnelsPage() {
       if (typeof src === 'number') clonedSourceIds.add(src);
     });
     result = result.filter((v) => !clonedSourceIds.has(v.id));
-    // Модель «только свои»: рекрутёр в списке воронок видит лишь СВОИ (созданные/
-    // взятые им) — как и в «Переместить»/создании/расширении. Чужие visible_to_all
-    // он не ведёт (увидит их в «Заявки», если назначены, чтобы сначала взять).
+    // Общая модель (2026-07-02): рекрутёр видит воронки, где он УЧАСТНИК —
+    // создатель ИЛИ назначенный (assigned_to/assigned_to_all), минус те, из
+    // которых он «закрыл у себя» (dismissed_by). Клонов больше нет — все
+    // участники работают в одной воронке и видят всех её кандидатов.
     if (!isHrAdmin && user) {
-      result = result.filter((v) => v.created_by === user.id);
+      result = result.filter((v) => isVacancyParticipant(v, user.id));
     }
     if (statusFilter !== 'all') {
       result = result.filter((v) => v.status === statusFilter);
@@ -1238,7 +1240,15 @@ export default function RecruiterFunnelsPage() {
     try {
       if (confirmDialog.type === 'close') {
         await updateVacancy(confirmDialog.vacancy.id, { status: 'closed' });
-        toast.success('Вакансия закрыта');
+        // Общая воронка: если есть другие активные участники, бэкенд трактует
+        // закрытие участником как ВЫХОД (статус не меняется) — отражаем в тосте.
+        const leftOnly =
+          !isHrAdmin && user &&
+          isVacancyParticipant(confirmDialog.vacancy, user.id) &&
+          otherActiveParticipants(confirmDialog.vacancy, user.id).length > 0;
+        toast.success(leftOnly
+          ? 'Вы завершили работу над вакансией — у остальных участников она осталась'
+          : 'Вакансия закрыта');
         fetchVacancies();
       } else {
         await deleteVacancy(confirmDialog.vacancy.id);
@@ -1692,9 +1702,9 @@ export default function RecruiterFunnelsPage() {
       v.id !== selectedVacancyId &&
       v.status === 'open' &&
       !clonedSourceIds.has(v.id) &&
-      // Только СВОИ воронки: рекрутёр перемещает кандидата лишь во взятые/созданные
-      // им (created_by). Чужие / visible_to_all / невзятые заявки — НЕ цель.
-      (isHrAdmin || (!!user && v.created_by === user.id))
+      // Свои воронки = где участник (создатель/назначенный, минус dismissed) —
+      // общая модель 2026-07-02. Чужие / невзятые заявки — НЕ цель.
+      (isHrAdmin || (!!user && isVacancyParticipant(v, user.id)))
     );
   }, [vacancies, selectedVacancyId, selectedCandidate?.entity_id, isHrAdmin, user]);
 

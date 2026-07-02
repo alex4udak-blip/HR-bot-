@@ -14,6 +14,7 @@ import type { Vacancy, VacancyStatus } from '@/types';
 import { getAssignableUsers, assignVacancy, takeVacancy } from '@/services/api';
 import type { AssignableUser } from '@/services/api';
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
+import { isVacancyParticipant, otherActiveParticipants } from '@/utils/vacancy';
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
@@ -648,10 +649,22 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [statusAction, setStatusAction] = useState(false);
   const runStatusAction = async (status: VacancyStatus, msg: string) => {
     if (!vacancy) return;
+    // Общая воронка (2026-07-02): «Закрыть вакансию» участником при других
+    // активных участниках = ВЫХОД из воронки (бэкенд не меняет статус, снимает
+    // участника). Если участник ПОСЛЕДНИЙ — спрашиваем про полное закрытие.
+    let toastMsg = msg;
+    if (status === 'closed' && user && !isAdmin) {
+      const others = otherActiveParticipants(vacancy, user.id);
+      if (others.length === 0) {
+        if (!window.confirm('Вы последний рекрутёр на этой вакансии. Закрыть её полностью?')) return;
+      } else if (isVacancyParticipant(vacancy, user.id)) {
+        toastMsg = 'Вы завершили работу над вакансией — у остальных участников она осталась';
+      }
+    }
     setStatusAction(true);
     try {
       await updateVacancy(vacancy.id, { status });
-      toast.success(msg);
+      toast.success(toastMsg);
       onSuccess();
       onClose();
     } catch (_) {

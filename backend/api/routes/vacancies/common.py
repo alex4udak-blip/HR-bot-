@@ -244,6 +244,13 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
         return True
 
+    # Участник общей воронки (назначенный рекрутёр) может её редактировать —
+    # в т.ч. «закрыть у себя» (leave-семантика в update_vacancy). Без этого
+    # назначенный рекрутёр не мог завершить свою работу над воронкой, если
+    # она не visible_to_all (общая модель 2026-07-02).
+    if user.id in (vacancy.assigned_to or []) or getattr(vacancy, 'assigned_to_all', False):
+        return True
+
     # If vacancy has a department, check if user is lead/sub_admin of that dept
     if vacancy.department_id:
         if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):

@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { sanitizeHtml } from "../utils/sanitizeHtml";
 import { formatSalary } from "@/utils/currency";
 import { parseServerDate } from "@/utils/date";
+import { isVacancyParticipant } from "@/utils/vacancy";
 import {
   LayoutDashboard,
   Users,
@@ -1306,7 +1307,9 @@ export default function Layout() {
   const sidebarOpenVacancies = vacancies
     .filter((v) => v.status === "open")
     .filter((v) => !allClonedSourceIds.has(v.id))
-    .filter((v) => isHrSidebarAdmin || (user && v.created_by === user.id));
+    // Общая модель (2026-07-02): «Мои вакансии» = где я участник (создатель
+    // ИЛИ назначенный, минус «закрыл у себя»), а не только созданные мной.
+    .filter((v) => isHrSidebarAdmin || (user && isVacancyParticipant(v, user.id)));
   // Заявки, которые ТЕКУЩИЙ юзер уже взял в работу (есть свой клон).
   // После «Взять в работу» исходная заявка должна пропасть из списка —
   // она уже взята. Раньше она оставалась висеть.
@@ -2034,7 +2037,7 @@ export default function Layout() {
                         // "Мои воронки" — expandable with vacancy sub-list
                         if (item.path === "/my-funnels") {
                           // Логика та же, что на RecruiterFunnelsPage: HR Admin видит все
-                          // open/paused, рекрутёр — только свои (created_by === user.id).
+                          // open/paused, рекрутёр — где он УЧАСТНИК (общая модель 2026-07-02).
                           const isAdminViewer =
                             user?.role === "superadmin" ||
                             user?.org_role === "owner" ||
@@ -2047,7 +2050,7 @@ export default function Layout() {
                             .filter(
                               (v) =>
                                 isAdminViewer ||
-                                (user && v.created_by === user.id),
+                                (user && isVacancyParticipant(v, user.id)),
                             )
                             .slice(0, 10);
                           return (

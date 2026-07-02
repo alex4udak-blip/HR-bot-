@@ -34,6 +34,7 @@ import {
   VacancyStatusBadge,
 } from '@/components/vacancies';
 import { SidebarRequestPreviewModal } from '@/components/Layout';
+import { isVacancyParticipant, otherActiveParticipants } from '@/utils/vacancy';
 import {
   ContextMenu,
   createVacancyContextMenu,
@@ -533,7 +534,15 @@ export default function VacanciesPage() {
       if (confirmDialog.type === 'close') {
         // Task 14: Close vacancy and auto-switch to "open" filter
         await updateVacancy(confirmDialog.vacancy.id, { status: 'closed' });
-        toast.success('Заявка закрыта');
+        // Общая воронка: участник с другими активными участниками не закрывает,
+        // а ВЫХОДИТ (бэкенд статус не меняет) — честный тост.
+        const leftOnly =
+          !isAdmin && user &&
+          isVacancyParticipant(confirmDialog.vacancy, user.id) &&
+          otherActiveParticipants(confirmDialog.vacancy, user.id).length > 0;
+        toast.success(leftOnly
+          ? 'Вы завершили работу над заявкой — у остальных участников она осталась'
+          : 'Заявка закрыта');
         setStatusFilter('open');
         fetchVacancies();
       } else {

@@ -335,6 +335,16 @@ async def get_vacancy(
     if not await can_access_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
+    return await _serialize_vacancy(vacancy, db)
+
+
+async def _serialize_vacancy(vacancy: Vacancy, db: AsyncSession) -> VacancyResponse:
+    """Полный VacancyResponse без проверки доступа (проверяет вызывающий).
+
+    Нужен отдельно от get_vacancy: после «закрыл у себя» (leave) юзер сам
+    снимает с себя доступ, и повторная проверка в get_vacancy дала бы 403
+    на сериализации собственного успешного действия.
+    """
     # Get department name
     dept_name = None
     if vacancy.department_id:
@@ -450,8 +460,11 @@ async def update_vacancy(
         update_data["extra_data"] = {}
 
     # Запоминаем статус ДО применения апдейта — нужен для детекта строго
-    # перехода closed→open (переоткрытие вакансии для новой «серии» подбора).
+    # перехода closed→open (переоткрытие вакансии для новой «серии» подбора)
+    # и для leave-семантики закрытия общей воронки (откат статуса).
     was_closed = vacancy.status == VacancyStatus.closed
+    prev_status = vacancy.status
+    left_shared_funnel = False
 
     # Update fields
     for field, value in update_data.items():
@@ -475,6 +488,8 @@ async def update_vacancy(
     if data.status in (VacancyStatus.closed, VacancyStatus.cancelled):
         cloned_from = (vacancy.extra_data or {}).get("cloned_from_request_id")
         if isinstance(cloned_from, int):
+            # ЛЕГАСИ-ветка: клоны, созданные до отказа от клонирования
+            # (2026-07-02), продолжают закрываться по-старому.
             original = await db.get(Vacancy, cloned_from)
             if original is not None:
                 assigned = list(original.assigned_to or [])
@@ -488,6 +503,36 @@ async def update_vacancy(
                     dismissed.append(current_user.id)
                     orig_extra["dismissed_by"] = dismissed
                     original.extra_data = orig_extra
+        elif not await has_full_database_access(current_user, org, db):
+            # ОБЩАЯ воронка (сценарий А всегда): участник «закрывает у себя».
+            # Если в вакансии остаются ДРУГИЕ активные участники — это ВЫХОД
+            # из воронки, а не закрытие: статус откатываем, участника снимаем
+            # (assigned_to + метка dismissed_by, чтобы «Мои вакансии» его
+            # больше не показывали). Реальное закрытие происходит только когда
+            # закрывает ПОСЛЕДНИЙ участник (фронт спрашивает подтверждение)
+            # или HR-админ (ветку leave не проходит — полный доступ).
+            extra = dict(vacancy.extra_data or {})
+            dismissed_set = set(extra.get("dismissed_by") or [])
+            participants = set(vacancy.assigned_to or [])
+            if vacancy.created_by:
+                participants.add(vacancy.created_by)
+            active = participants - dismissed_set
+            others = active - {current_user.id}
+            if current_user.id in active and others:
+                left_shared_funnel = True
+                vacancy.status = prev_status  # откат закрытия
+                vacancy.assigned_to = [
+                    u for u in (vacancy.assigned_to or []) if u != current_user.id
+                ]
+                dismissed_list = list(extra.get("dismissed_by") or [])
+                if current_user.id not in dismissed_list:
+                    dismissed_list.append(current_user.id)
+                extra["dismissed_by"] = dismissed_list
+                vacancy.extra_data = extra
+                logger.info(
+                    f"Vacancy {vacancy.id}: user {current_user.id} left shared funnel "
+                    f"(others still active: {sorted(others)})"
+                )
 
     await db.commit()
     await db.refresh(vacancy)
@@ -504,7 +549,11 @@ async def update_vacancy(
 
     logger.info(f"Updated vacancy {vacancy.id}")
 
-    # Return full response
+    # Return full response. После leave юзер сам снял с себя доступ — обычный
+    # get_vacancy() дал бы 403 на сериализации собственного успешного действия,
+    # поэтому отдаём напрямую (право на действие уже проверено can_edit выше).
+    if left_shared_funnel:
+        return await _serialize_vacancy(vacancy, db)
     return await get_vacancy(vacancy_id, db, current_user)
 
 
@@ -627,18 +676,22 @@ async def take_vacancy(
 ):
     """Рекрутёр берёт заявку в работу.
 
-    Создаётся НОВАЯ вакансия — клон заявки, где рекрутёр становится
-    creator/hiring_manager, статус 'open'. Оригинал заявки не меняется,
-    остаётся доступен другим рекрутёрам.
+    НОВАЯ МОДЕЛЬ (2026-07-02): заявка = ОДНА общая воронка, клонов больше нет.
+    «Взять в работу» присоединяет рекрутёра к ТОЙ ЖЕ вакансии: добавляет его в
+    assigned_to, снимает из dismissed_by (если возвращается) и переводит заявку
+    pending_review/draft → open при первом взятии. Все участники видят всех
+    кандидатов воронки; кто с кем работает — по чипам «HR: Имя» на карточках.
+    Параметр force сохранён для совместимости API (больше не используется —
+    дублей-клонов не существует). Старые клоны в проде не трогаются и живут
+    по легаси-логике закрытия (ветка cloned_from_request_id в update_vacancy).
 
-    Доступно тем, кто в assigned_to или при assigned_to_all=True
+    Доступно тем, кто в assigned_to или при assigned_to_all=True, создателю
     (либо у пользователя полный доступ к БД).
     """
+    _ = force  # legacy param, no-op
     org = await get_user_org(current_user, db)
-    # FOR UPDATE на строке-заявке: сериализует одновременные «Взять в работу».
-    # Без этого 3 быстрых клика проходили dedup-SELECT до первого COMMIT и
-    # создавали 3 клона. С блокировкой второй и третий запрос ждут, а потом
-    # видят уже созданный клон и получают 409.
+    # FOR UPDATE: сериализует одновременные «Взять в работу» (join мутирует
+    # assigned_to/status одной строки).
     source_result = await db.execute(
         select(Vacancy).where(Vacancy.id == vacancy_id).with_for_update()
     )
@@ -651,86 +704,36 @@ async def take_vacancy(
         assigned_to_list = source.assigned_to or []
         is_assigned = current_user.id in assigned_to_list
         is_assigned_all = bool(getattr(source, 'assigned_to_all', False))
-        # Создатель заявки тоже может взять её в работу — раньше проверка смотрела
-        # только assigned_to/assigned_to_all, и рекрутёр не мог взять СВОЮ заявку.
+        # Создатель заявки тоже может взять её в работу.
         is_creator = source.created_by == current_user.id
         if not is_assigned and not is_assigned_all and not is_creator:
             raise HTTPException(status_code=403, detail="You are not assigned to this vacancy")
 
-    # Проверка: рекрутёр уже брал эту заявку. Если force=False — не блокируем
-    # жёстко, а возвращаем 409 со структурой, чтобы фронт показал диалог
-    # «у вас уже есть такая вакансия, создать дубль?». При force=True
-    # сознательно создаём дубликат.
-    src_id = int(source.id)
-    if not force:
-        existing = await db.execute(
-            select(Vacancy.id).where(
-                Vacancy.created_by == current_user.id,
-                # Дублем считаем только АКТИВНЫЙ клон. Закрытый/отменённый/удалённый
-                # клон рекрутёр уже не видит в списках — иначе guard блокировал
-                # повторное взятие заявки, клона которой по факту нет («первой не видно»).
-                Vacancy.deleted_at.is_(None),
-                Vacancy.status.notin_([VacancyStatus.closed, VacancyStatus.cancelled]),
-                text(
-                    f"vacancies.extra_data::jsonb @> '{{\"cloned_from_request_id\": {src_id}}}'::jsonb"
-                ),
-            )
-        )
-        if existing.scalar():
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "duplicate_clone",
-                    "message": f"У вас уже есть вакансия по заявке «{source.title}». Создать дубликат?",
-                },
-            )
+    # Join: участник = в assigned_to. Идемпотентно (повторное взятие — no-op).
+    assigned = list(source.assigned_to or [])
+    if current_user.id not in assigned:
+        assigned.append(current_user.id)
+        source.assigned_to = assigned
 
-    cloned_extra = dict(source.extra_data or {})
-    cloned_extra['cloned_from_request_id'] = source.id
+    # Возвращение после «завершил работу»: снимаем метку dismissed_by.
+    extra = dict(source.extra_data or {})
+    dismissed = list(extra.get("dismissed_by") or [])
+    if current_user.id in dismissed:
+        extra["dismissed_by"] = [u for u in dismissed if u != current_user.id]
+        source.extra_data = extra
 
-    # Оригинал-заявку НЕ переводим в 'open': иначе она висела бы открытой
-    # вакансией рядом со своим клоном (рабочей копией) — отсюда дубли в списках
-    # «Мои вакансии»/«Взять на вакансию». Заявка остаётся в исходном статусе и
-    # доступна другим назначенным рекрутёрам; рабочей вакансией становится клон.
+    # Первое взятие делает заявку рабочей воронкой.
+    if source.status in (VacancyStatus.pending_review, VacancyStatus.draft):
+        source.status = VacancyStatus.open
+        if not source.published_at:
+            source.published_at = datetime.utcnow()
 
-    clone_kwargs = dict(
-        org_id=source.org_id,
-        department_id=source.department_id,
-        title=source.title,
-        description=source.description,
-        requirements=source.requirements,
-        responsibilities=source.responsibilities,
-        salary_min=source.salary_min,
-        salary_max=source.salary_max,
-        salary_currency=source.salary_currency,
-        location=source.location,
-        employment_type=source.employment_type,
-        experience_level=source.experience_level,
-        status=VacancyStatus.open,
-        priority=source.priority,
-        tags=list(source.tags or []),
-        extra_data=cloned_extra,
-        visible_to_all=False,
-        hiring_manager_id=current_user.id,
-        created_by=current_user.id,
-        published_at=datetime.utcnow(),
-        closes_at=source.closes_at,
-        assigned_to=[],
-        assigned_to_all=False,
-    )
-    if hasattr(Vacancy, 'custom_stages'):
-        clone_kwargs['custom_stages'] = source.custom_stages
-    if hasattr(Vacancy, 'kanban_card_fields'):
-        clone_kwargs['kanban_card_fields'] = source.kanban_card_fields
-
-    clone = Vacancy(**clone_kwargs)
-    db.add(clone)
     await db.commit()
-    await db.refresh(clone)
+    await db.refresh(source)
 
-    logger.info(f"Request {source.id} taken by user {current_user.id} → cloned vacancy {clone.id}")
+    logger.info(f"Request {source.id} taken (joined) by user {current_user.id}")
 
-    return await get_vacancy(clone.id, db=db, current_user=current_user)
+    return await get_vacancy(source.id, db=db, current_user=current_user)
 
 
 async def assign_vacancy(
