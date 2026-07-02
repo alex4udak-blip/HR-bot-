@@ -1247,3 +1247,40 @@ export const cancelParseJob = async (jobId: number): Promise<{ success: boolean;
   const { data } = await api.delete(`/parse-jobs/${jobId}`);
   return data;
 };
+
+// ============================================================
+// CANDIDATE SHARE LINK (публичный предпросмотр для заказчика)
+// ============================================================
+
+export interface CandidateShareLinkResult {
+  token: string;
+  url_path: string;
+  expires_at: string;
+}
+
+export interface PublicCandidatePreview {
+  name: string;
+  position?: string | null;
+  company?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  telegram?: string | null;
+  city?: string | null;
+  salary?: string | null;
+  resume_text?: string | null;
+  notes: Array<{ author_name?: string | null; text: string; date?: string | null; stage_label?: string | null }>;
+  rating?: number | null;
+  expires_at?: string | null;
+}
+
+/** Создать публичную ссылку предпросмотра кандидата (живёт 30 дней). */
+export const createCandidateShareLink = async (entityId: number): Promise<CandidateShareLinkResult> => {
+  const { data } = await api.post(`/entities/${entityId}/share-link`);
+  return data;
+};
+
+/** Публичные данные кандидата по токену (без авторизации). */
+export const getPublicCandidatePreview = async (token: string): Promise<PublicCandidatePreview> => {
+  const { data } = await api.get(`/entities/public/candidate-preview/${encodeURIComponent(token)}`);
+  return data;
+};

@@ -537,6 +537,26 @@ async def update_vacancy(
     await db.commit()
     await db.refresh(vacancy)
 
+    # Заявка из ТГ-чата: при РЕАЛЬНОМ закрытии (не leave-выходе участника и не
+    # повторном закрытии) бот отчитывается в исходный чат «Найм завершён».
+    # Ошибка Telegram не должна ломать закрытие — только лог.
+    if (
+        vacancy.status == VacancyStatus.closed
+        and prev_status != VacancyStatus.closed
+        and not left_shared_funnel
+    ):
+        source_chat_id = (vacancy.extra_data or {}).get("source_chat_id")
+        if source_chat_id:
+            try:
+                from ...bot import get_bot
+                await get_bot().send_message(
+                    int(source_chat_id),
+                    f"🎉 Найм по заявке «{vacancy.title}» успешно завершён",
+                )
+                logger.info(f"Vacancy {vacancy.id}: closure notice sent to TG chat {source_chat_id}")
+            except Exception as tg_err:
+                logger.error(f"Vacancy {vacancy.id}: TG closure notice failed: {tg_err}")
+
     # Invalidate scoring cache if relevant fields changed
     # (requirements, salary, experience level, etc.)
     scoring_relevant_fields = {

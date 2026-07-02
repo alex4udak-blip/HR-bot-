@@ -51,6 +51,7 @@ import {
   detectDuplicate,
   addEntityNote,
   deleteEntityNote,
+  createCandidateShareLink,
   toggleTimelineReaction,
   getEntityActivity,
 } from "@/services/api/entities";
@@ -1982,6 +1983,18 @@ const InfoTab = memo(function InfoTab({
     setShowEmailModal(true);
   };
 
+  // Модуль 4: «Поделиться» — публичная ссылка предпросмотра кандидата для
+  // заказчика (без авторизации, 30 дней), сразу в буфер — удобно кинуть в ТГ.
+  const handleShareCandidate = async () => {
+    try {
+      const link = await createCandidateShareLink(card.id);
+      await navigator.clipboard.writeText(`${window.location.origin}${link.url_path}`);
+      toast.success('Ссылка на предпросмотр скопирована — действует 30 дней');
+    } catch {
+      toast.error('Не удалось создать ссылку');
+    }
+  };
+
   const handleSaveInterview = async () => {
     const composedDateTime =
       interviewDate && interviewStartTime
@@ -2305,6 +2318,13 @@ const InfoTab = memo(function InfoTab({
           className="hf-profile-action-btn"
         >
           <Send className="hf-profile-action-icon" /> Отправить
+        </button>
+        <button
+          onClick={handleShareCandidate}
+          className="hf-profile-action-btn"
+          title="Скопировать публичную ссылку предпросмотра для заказчика (действует 30 дней)"
+        >
+          <ExternalLink className="hf-profile-action-icon" /> Поделиться
         </button>
         <button
           onClick={onEdit}

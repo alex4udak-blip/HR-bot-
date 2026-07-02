@@ -472,20 +472,19 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [openSelectId, setOpenSelectId] = useState<string | null>(null);
   const [selectMenuRect, setSelectMenuRect] = useState<HfSelectMenuRect | null>(null);
 
-  // Заказчик: либо реальный пользователь (hiring_manager_id), либо свободный
-  // текст (extra_data.customer_name) — внешний руководитель отдела, которого
-  // нет в системе как учётной записи. customerUserId==null означает «свободный
-  // текст» (может быть пустым, если заказчик вообще не указан).
+  // Заказчик — ТОЛЬКО свободный текст (решение 2026-07-02): пользователей
+  // системы (рекрутёров и остальных) в подсказках НЕТ. Значения приходят из
+  // ручного ввода и из бота («Влад — RND Facebook»: имя отправителя + чат).
+  // Легаси hiring_manager_name показываем как текст и при сохранении
+  // конвертируем в customer_name (hiring_manager_id зануляется).
   const [customerText, setCustomerText] = useState(
     () => vacancy?.hiring_manager_name || String(vacancy?.extra_data?.customer_name || ''),
   );
-  const [customerUserId, setCustomerUserId] = useState<number | null>(vacancy?.hiring_manager_id ?? null);
   const [showCustomerDD, setShowCustomerDD] = useState(false);
   const customerRef = useRef<HTMLDivElement>(null);
 
-  // Ранее введённые свободнотекстовые заказчики — собираем по всем вакансиям
-  // орга (extra_data.customer_name), чтобы «+» сохранял их для повторного
-  // выбора, без отдельного backend-хранилища.
+  // Ранее введённые заказчики — собираем по всем вакансиям орга
+  // (extra_data.customer_name), включая созданных ботом.
   const pastCustomerNames = useMemo(() => {
     const names = new Set<string>();
     vacancies.forEach((v) => {
@@ -497,28 +496,17 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
   const customerSuggestions = useMemo(() => {
     const q = customerText.trim().toLowerCase();
-    const userOptions = users
-      .filter((u) => !q || u.name.toLowerCase().includes(q))
-      .map((u) => ({ kind: 'user' as const, id: u.id, label: u.name }));
-    const customOptions = pastCustomerNames
+    return pastCustomerNames
       .filter((n) => !q || n.toLowerCase().includes(q))
-      .filter((n) => !users.some((u) => u.name === n))
-      .map((n) => ({ kind: 'custom' as const, id: n, label: n }));
-    return [...userOptions, ...customOptions];
-  }, [customerText, users, pastCustomerNames]);
+      .map((n) => ({ id: n, label: n }));
+  }, [customerText, pastCustomerNames]);
 
   const customerExactMatch = customerSuggestions.some(
     (o) => o.label.toLowerCase() === customerText.trim().toLowerCase(),
   );
   const canAddCustomerText = customerText.trim().length > 0 && !customerExactMatch;
 
-  const selectCustomerUser = (id: number, name: string) => {
-    setCustomerUserId(id);
-    setCustomerText(name);
-    setShowCustomerDD(false);
-  };
   const selectCustomerFreeText = (name: string) => {
-    setCustomerUserId(null);
     setCustomerText(name);
     setShowCustomerDD(false);
   };
@@ -599,7 +587,9 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         // на обоих полях — та же история, что и с closes_at: exclude_unset
         // просто отбросит ключ, и старое значение при переключении между
         // «юзер» ⇄ «свободный текст» не очистится.
-        hiring_manager_id: customerUserId ?? null,
+        // Заказчик — только текст: hiring_manager_id всегда null (легаси-значение
+        // при первом же сохранении конвертируется в customer_name).
+        hiring_manager_id: null,
         // ВАЖНО: при редактировании бэк применяет model_dump(exclude_unset=True) —
         // undefined убирает ключ из JSON и старый closes_at НЕ очистится. Нужен
         // явный null, чтобы «Без дедлайна» реально снимал ранее сохранённый дедлайн.
@@ -609,7 +599,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         // прочие служебные ключи при первом же редактировании заявки.
         extra_data: {
           ...(vacancy?.extra_data || {}),
-          customer_name: customerUserId ? undefined : (customerText.trim() || undefined),
+          customer_name: customerText.trim() || undefined,
         },
       };
 
@@ -946,12 +936,11 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     type="text"
                     value={customerText}
                     onChange={(e) => {
-                      setCustomerUserId(null);
                       setCustomerText(e.target.value);
                       setShowCustomerDD(true);
                     }}
                     onFocus={() => setShowCustomerDD(true)}
-                    placeholder="Выберите или впишите заказчика"
+                    placeholder="Например: Влад — RND Facebook"
                     disabled={isReadOnlyRequest}
                     className="hf-vacancy-input"
                   />
@@ -967,18 +956,11 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                       {customerSuggestions.map((o) => (
                         <button
                           type="button"
-                          key={`${o.kind}-${o.id}`}
-                          onClick={() =>
-                            o.kind === 'user'
-                              ? selectCustomerUser(o.id as number, o.label)
-                              : selectCustomerFreeText(o.label)
-                          }
+                          key={o.id}
+                          onClick={() => selectCustomerFreeText(o.label)}
                           className="hf-vacancy-dropdown-item"
                         >
                           <span className="truncate">{o.label}</span>
-                          {o.kind === 'custom' && (
-                            <span className="ml-auto text-[11px] text-[var(--hf-main-500)]">внешний</span>
-                          )}
                         </button>
                       ))}
                       {canAddCustomerText && (

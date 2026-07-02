@@ -1588,6 +1588,25 @@ class FormDispatch(Base):
     entity = relationship("Entity")
 
 
+class CandidateShareLink(Base):
+    """Публичная ссылка предпросмотра кандидата для заказчика (без авторизации).
+
+    Токен неугадываемый, живёт ограниченно (expires_at, 30 дней) — страница
+    показывает только ФИО/контакты/резюме/комментарии HR, без CRM-интерфейса.
+    """
+    __tablename__ = "candidate_share_links"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    expires_at = Column(DateTime, nullable=False)
+
+    entity = relationship("Entity")
+
+
 # ============================================================
 # EMPLOYEE MANAGEMENT (Personal Cabinet, Leave Counter, Reminders)
 # ============================================================

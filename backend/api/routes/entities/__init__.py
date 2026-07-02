@@ -17,6 +17,7 @@ from .files import router as files_router
 from .memory import router as memory_router
 from .search import router as search_router
 from .bulk import router as bulk_router
+from .share_links import router as share_links_router
 
 # Re-export common items for backwards compatibility with tests
 from .common import (
@@ -50,6 +51,10 @@ from .files import (
 router = APIRouter()
 
 # Include all sub-routers
+# ВАЖНО: share_links раньше crud — иначе GET /{entity_id:int} перехватывает
+# путь /public/candidate-preview/{token} и отдаёт 422 на "public".
+router.include_router(share_links_router, tags=["entities-share-links"])
+
 # CRUD operations (basic entity operations)
 router.include_router(crud_router, tags=["entities-crud"])
 

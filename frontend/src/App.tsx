@@ -94,6 +94,7 @@ const RecruiterWorkspacePage = lazyWithRetry(() => import('@/pages/RecruiterWork
 const PracticeListPage = lazyWithRetry(() => import('@/pages/PracticeListPage'));
 const FormBuilderPage = lazyWithRetry(() => import('@/pages/FormBuilderPage'));
 const PublicFormPage = lazyWithRetry(() => import('@/pages/PublicFormPage'));
+const CandidatePreviewPage = lazyWithRetry(() => import('@/pages/CandidatePreviewPage'));
 const DocumentTemplatesPage = lazyWithRetry(() => import('@/pages/DocumentTemplatesPage'));
 const EmployeePortalPage = lazyWithRetry(() => import('@/pages/EmployeePortalPage'));
 const PENDashboardPage = lazyWithRetry(() => import('@/pages/PENDashboardPage'));
@@ -180,6 +181,8 @@ export default function App() {
         <Route path="/invite/:token" element={<InvitePage />} />
         <Route path="/form/:slug" element={<Suspense fallback={<PageLoader />}><PublicFormPage /></Suspense>} />
         <Route path="/form/d/:token" element={<Suspense fallback={<PageLoader />}><PublicFormPage /></Suspense>} />
+        {/* Публичный предпросмотр кандидата для заказчика — вне Layout, без авторизации. */}
+        <Route path="/candidate-preview/:token" element={<Suspense fallback={<PageLoader />}><CandidatePreviewPage /></Suspense>} />
         <Route
           path="/"
           element={

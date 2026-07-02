@@ -2006,7 +2006,8 @@ async def _parse_vacancy_text(text: str) -> dict:
   "location": "город или 'Удаленно' или null",
   "employment_type": "full-time" / "part-time" / "contract" / "remote" или null,
   "experience_level": "junior" / "middle" / "senior" / "lead" или null,
-  "priority": 0 / 1 / 2 (0=обычный, 1=высокий, 2=срочный)
+  "priority": 0 / 1 / 2 (0=обычный, 1=высокий, 2=срочный),
+  "positions_count": сколько человек нужно нанять (например "нужно 3 таргетолога" = 3), 1 если не указано
 }}
 
 Верни ТОЛЬКО JSON-объект, без markdown."""}],
@@ -2078,6 +2079,30 @@ async def cmd_vacancy(message: types.Message):
             parsed = await _parse_vacancy_text(raw)
             title = (parsed.get("title") or "Без названия")[:255]
 
+            # Заказчик — свободный текст «Имя отправителя — Название чата»
+            # (например «Влад — RND Facebook»). Если имя уже входит в название
+            # чата («влад - rnd facebook») — берём просто название чата. В личке
+            # (нет названия) — только имя. Пользователей системы в заказчики НЕ
+            # пишем (hiring_manager_id не ставится) — решение 2026-07-02.
+            sender_name = (
+                (user.name if user else None)
+                or " ".join(filter(None, [message.from_user.first_name, message.from_user.last_name]))
+                or (message.from_user.username or "Неизвестный")
+            ).strip()
+            chat_title = (message.chat.title or "").strip() if message.chat.type in ("group", "supergroup") else ""
+            first_word = sender_name.split()[0].lower() if sender_name else ""
+            if chat_title and first_word and first_word in chat_title.lower():
+                customer_name = chat_title
+            elif chat_title:
+                customer_name = f"{sender_name} — {chat_title}"
+            else:
+                customer_name = sender_name
+
+            try:
+                positions_count = max(1, int(parsed.get("positions_count") or 1))
+            except (TypeError, ValueError):
+                positions_count = 1
+
             from .models.database import Vacancy, VacancyStatus as _VS
             vacancy = Vacancy(
                 org_id=org_id,
@@ -2092,13 +2117,31 @@ async def cmd_vacancy(message: types.Message):
                 employment_type=parsed.get("employment_type"),
                 experience_level=parsed.get("experience_level"),
                 priority=parsed.get("priority") or 0,
-                status=_VS.draft,
+                # «Новая» (нераспределённая): попадает в раздел «Заявки», никому
+                # не назначена — HR-админ распределит. Раньше был draft, который
+                # в UI не показывался вовсе.
+                status=_VS.pending_review,
                 created_by=user_id,
-                hiring_manager_id=user_id,
+                extra_data={
+                    "customer_name": customer_name,
+                    "positions_count": positions_count,
+                    # Чат-источник: сюда бот отчитается «Найм успешно завершён»
+                    # при реальном закрытии вакансии.
+                    "source_chat_id": message.chat.id,
+                },
             )
             session.add(vacancy)
             await session.commit()
             await session.refresh(vacancy)
+
+            # Уведомление HR-админам (Маше) — как при создании заявки через веб.
+            try:
+                from .services.hr_notifications import notify_new_request
+                creator = user or await session.get(User, user_id)
+                if creator is not None:
+                    await notify_new_request(session, vacancy, creator)
+            except Exception as notify_err:
+                logger.error(f"/vacancy notify_new_request failed: {notify_err}")
 
             import os as _os
             frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
@@ -2116,11 +2159,14 @@ async def cmd_vacancy(message: types.Message):
             exp = f"\n🎓 {vacancy.experience_level}" if vacancy.experience_level else ""
             emp = f"\n💼 {vacancy.employment_type}" if vacancy.employment_type else ""
 
+            people = f"\n👥 Нанять: {positions_count}" if positions_count > 1 else ""
             await message.answer(
                 f"✅ <b>Заявка создана</b>\n\n"
                 f"📝 {vacancy.title}"
-                f"{salary}{loc}{exp}{emp}\n\n"
-                f"Статус: Черновик. HR рекрутёры увидят её в разделе «Заявки».\n"
+                f"{salary}{loc}{exp}{emp}{people}\n"
+                f"🧑‍💼 Заказчик: {customer_name}\n\n"
+                f"Статус: На рассмотрении — HR-администратор распределит заявку рекрутёру.\n"
+                f"Когда найм завершится, я напишу в этот чат.\n"
                 f'🔗 <a href="{frontend_url}/vacancies/{vacancy.id}">Открыть</a>',
                 parse_mode="HTML",
             )

@@ -1539,6 +1539,20 @@ export default function Layout() {
                       className="hf-hr-nav-icon"
                     />
                     <span className="min-w-0 flex-1">Заявки</span>
+                    {/* Модуль 2: индикатор нераспределённых заявок для админа. */}
+                    {isHrSidebarAdmin && (() => {
+                      const unassignedCount = vacancies.filter(
+                        (v) =>
+                          v.status === "pending_review" &&
+                          !(v.assigned_to && v.assigned_to.length > 0) &&
+                          !v.assigned_to_all,
+                      ).length;
+                      return unassignedCount > 0 ? (
+                        <span className="mr-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--hf-status-red)] px-1.5 text-[11px] font-semibold leading-none text-white">
+                          {unassignedCount}
+                        </span>
+                      ) : null;
+                    })()}
                     <span className="hf-hr-secondary-text">
                       {expandedRequests ? "Свернуть" : "Развернуть"}
                     </span>
