@@ -1266,9 +1266,16 @@ export interface PublicCandidatePreview {
   email?: string | null;
   telegram?: string | null;
   city?: string | null;
+  age?: string | null;
+  total_experience?: string | null;
+  source?: string | null;
   salary?: string | null;
-  resume_text?: string | null;
-  notes: Array<{ author_name?: string | null; text: string; date?: string | null; stage_label?: string | null }>;
+  photo_url?: string | null;
+  stage?: string | null;
+  stage_label?: string | null;
+  vacancy_title?: string | null;
+  timeline: Array<{ author_name?: string | null; date?: string | null; title?: string | null; text?: string | null }>;
+  files: string[];
   rating?: number | null;
   expires_at?: string | null;
 }

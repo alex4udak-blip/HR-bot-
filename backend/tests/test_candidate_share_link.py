@@ -52,9 +52,11 @@ async def test_create_and_read_share_link(
     body = pub.json()
     assert body["name"] == "Пётр Кандидатов"
     assert body["phone"] == "+79990001122"
-    assert body["resume_text"] == "Опыт 5 лет, автотесты"
-    # Пустой комментарий отфильтрован
-    assert [n["text"] for n in body["notes"]] == ["Хороший кандидат"]
+    assert body["city"] == "Казань"
+    # Пустой комментарий отфильтрован, содержательный — в таймлайне
+    assert [n["text"] for n in body["timeline"]] == ["Хороший кандидат"]
+    assert body["files"] == []  # файлов нет
+    assert body["stage_label"] is None  # заявок нет — этап не показываем
 
 
 @pytest.mark.asyncio
