@@ -632,19 +632,18 @@ export default function VacanciesPage() {
             Заявки
           </h1>
 
-          {isAdmin && (
-            <button
-              onClick={() => {
-                setShowCreateModal(true);
-              }}
-              data-tour="create-vacancy"
-              title="Создать заявку"
-              className="hf-funnels-primary-btn"
-            >
-              <Plus className="hf-funnels-primary-icon" strokeWidth={2.5} />
-              Новая заявка
-            </button>
-          )}
+          {/* Создание заявок доступно всем, включая рекрутёров (гейт снят 2026-07-02). */}
+          <button
+            onClick={() => {
+              setShowCreateModal(true);
+            }}
+            data-tour="create-vacancy"
+            title="Создать заявку"
+            className="hf-funnels-primary-btn"
+          >
+            <Plus className="hf-funnels-primary-icon" strokeWidth={2.5} />
+            Новая заявка
+          </button>
         </div>
 
         <div className="hf-vacancies-toolbar">
@@ -869,7 +868,7 @@ export default function VacanciesPage() {
             <EmptyVacancies
               variant={searchQuery ? 'search' : activeFilterCount > 0 ? 'filter' : 'primary'}
               query={searchQuery}
-              onCreate={isAdmin ? () => setShowCreateModal(true) : undefined}
+              onCreate={() => setShowCreateModal(true)}
             />
           </div>
         ) : (

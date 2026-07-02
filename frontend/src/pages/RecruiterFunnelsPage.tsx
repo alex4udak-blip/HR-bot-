@@ -1784,7 +1784,8 @@ export default function RecruiterFunnelsPage() {
             {isHrAdmin ? 'Рекрутеры' : 'Мои вакансии'}
           </span>
           <div className="flex items-center gap-1">
-            {isHrAdmin && (
+            {/* Создание доступно всем, включая рекрутёров (гейт снят 2026-07-02). */}
+            {(
               <button
                 onClick={() => setShowCreateModal(true)}
                 className="hf-recruiter-sidebar-icon-btn"
@@ -2038,7 +2039,8 @@ export default function RecruiterFunnelsPage() {
                   )}
                 </div>
 
-                {isHrAdmin && (
+                {/* Создание доступно всем, включая рекрутёров (гейт снят 2026-07-02). */}
+                {(
                   <button
                     type="button"
                     onClick={() => setShowCreateModal(true)}
@@ -2071,7 +2073,7 @@ export default function RecruiterFunnelsPage() {
                           {search ? 'Измените поиск или фильтр статуса' : 'Создайте первую вакансию для начала работы'}
                         </p>
                       </div>
-                      {!search && isHrAdmin && (
+                      {!search && (
                         <button
                           onClick={() => setShowCreateModal(true)}
                           className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-400)] text-[var(--hf-white)] text-sm font-medium rounded-lg transition-colors"
@@ -2306,10 +2308,8 @@ export default function RecruiterFunnelsPage() {
                       </>
                     )}
                   </div>
-                  {/* Открывает полную форму редактирования (в т.ч. закрыть/
-                      удалить вакансию) — только HR-админ. Рекрутёр не должен
-                      редактировать условия найма, даже уже взяв заявку в работу. */}
-                  {isHrAdmin && (
+                  {/* Полная форма редактирования (в т.ч. закрыть вакансию) —
+                      доступна и рекрутёрам (гейт «только админ» снят 2026-07-02). */}
                   <div className="hf-top-stage-action-cell">
                     <button
                       type="button"
@@ -2321,7 +2321,6 @@ export default function RecruiterFunnelsPage() {
                       <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
                     </button>
                   </div>
-                  )}
                   {vacancyStageCanScrollLeft && !showVacancyTopSearch && !candidateSearch ? (
                     <button
                       type="button"

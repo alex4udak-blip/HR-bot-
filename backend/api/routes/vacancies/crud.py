@@ -227,13 +227,12 @@ async def create_vacancy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """Create a new vacancy."""
-    org = await get_user_org(current_user, db)
+    """Create a new vacancy.
 
-    # Создавать заявки/вакансии может только HR-админ (owner/admin/superadmin).
-    # Рекрутёр (member) не создаёт — он берёт назначенные ему заявки в работу.
-    if not await has_full_database_access(current_user, org, db):
-        raise HTTPException(status_code=403, detail="Создавать заявки может только HR-администратор")
+    Создавать заявки могут ВСЕ члены орга, включая рекрутёров (гейт «только
+    HR-админ» из 16c5141 снят по решению пользователя 2026-07-02).
+    """
+    org = await get_user_org(current_user, db)
 
     # Build vacancy kwargs — custom_stages/kanban_card_fields are optional (migration may not be applied yet)
     vacancy_kwargs = dict(
