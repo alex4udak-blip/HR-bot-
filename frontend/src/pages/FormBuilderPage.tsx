@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import {
   getMyForms,
   createForm,
+  updateForm,
   deleteForm,
 } from '@/services/api/forms';
 import type { FormTemplate } from '@/services/api/forms';
@@ -66,6 +67,20 @@ function FormListView() {
       toast.success('Форма удалена');
     } catch {
       toast.error('Не удалось удалить');
+    }
+  };
+
+  // Продвижение разовой/старой анкеты в шаблоны: спасает анкеты, созданные до
+  // появления этой страницы (без is_template), — одним кликом переносит их в
+  // секцию «Шаблоны», после чего они видны в карточке кандидата.
+  const handlePromote = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await updateForm(id, { is_template: true });
+      setForms(prev => prev.map(f => (f.id === id ? { ...f, is_template: true } : f)));
+      toast.success('Анкета перенесена в шаблоны');
+    } catch {
+      toast.error('Не удалось перенести в шаблоны');
     }
   };
 
@@ -129,6 +144,15 @@ function FormListView() {
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 {/* «Скопировать ссылку» убрана: публичный slug-сабмит намеренно
                     отключён (403) — анкеты уходят персональной token-ссылкой. */}
+                {!form.is_template && (
+                  <button
+                    onClick={(e) => handlePromote(form.id, e)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-accent-500/15 text-accent-500 hover:bg-accent-500/25 transition-colors"
+                    title="Перенести в шаблоны — станет доступна в карточке кандидата"
+                  >
+                    В шаблоны
+                  </button>
+                )}
                 <button
                   onClick={(e) => handleDelete(form.id, e)}
                   className="p-2 rounded-lg hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
