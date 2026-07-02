@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
 from api.models.database import (
-    CandidateShareLink, Entity, EntityFile, EntityType, StageTransition,
-    User, Vacancy, VacancyApplication,
+    CandidateShareLink, Entity, EntityFile, EntityFileType, StageTransition,
+    EntityType, User, Vacancy, VacancyApplication,
 )
 from api.services.auth import get_current_user, get_user_org
 from .common import check_entity_access
@@ -24,6 +24,27 @@ from .common import check_entity_access
 router = APIRouter()
 
 SHARE_LINK_TTL_DAYS = 30
+
+# Типы, которые безопасно отдавать inline для предпросмотра в браузере
+# (та же логика, что download_entity_file: PDF + растровые картинки; docx/svg/
+# html и прочее — только attachment, чтобы не словить inline-XSS из файла).
+_INLINE_SAFE_MIMES = {
+    "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp",
+}
+
+_EXT_MIME = {
+    "pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg",
+    "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
+}
+
+
+def _serve_mime(f: EntityFile) -> str:
+    """Эффективный mime: из БД, а при пустом/octet-stream — по расширению."""
+    mime = (f.mime_type or "").lower()
+    if not mime or mime == "application/octet-stream":
+        ext = (f.file_name or "").lower().rsplit(".", 1)[-1]
+        mime = _EXT_MIME.get(ext, "application/octet-stream")
+    return mime
 
 # Единый RU-словарь этапов (согласован с analytics/funnel.py и фронтом).
 STAGE_LABELS = {
@@ -188,14 +209,35 @@ async def public_candidate_preview(
             })
     timeline.sort(key=lambda x: x.get("date") or "", reverse=True)
 
-    # Файлы — ТОЛЬКО названия (некликабельно, это просто предпросмотр).
-    file_names = [
-        row[0] for row in (await db.execute(
-            select(EntityFile.file_name)
-            .where(EntityFile.entity_id == entity.id)
-            .order_by(EntityFile.id.desc())
-        )).all()
-        if row[0] and not (row[0] or "").lower().startswith("фото")
+    # Файлы: резюме отдаём отдельно (встраивается на страницу), остальные —
+    # списком с предпросмотром по клику (PDF/картинки; прочие типы только именем).
+    all_files = (await db.execute(
+        select(EntityFile)
+        .where(EntityFile.entity_id == entity.id)
+        .order_by(EntityFile.id.desc())
+    )).scalars().all()
+
+    def _file_payload(f: EntityFile) -> dict:
+        mime = _serve_mime(f)
+        return {
+            "id": f.id,
+            "name": f.file_name,
+            "mime_type": mime,
+            "size": f.file_size,
+            "previewable": mime in _INLINE_SAFE_MIMES and bool(f.file_data or f.file_path),
+            "url": f"/api/entities/public/candidate-preview/{link.token}/files/{f.id}",
+        }
+
+    resume_rows = [f for f in all_files if f.file_type == EntityFileType.resume]
+    # Свежий PDF-резюме вперёд, затем сканы-картинки — как в карточке (ResumeViewer)
+    resume_files = (
+        [_file_payload(f) for f in resume_rows if _serve_mime(f) == "application/pdf"]
+        + [_file_payload(f) for f in resume_rows if _serve_mime(f).startswith("image/")]
+    )
+    other_files = [
+        _file_payload(f) for f in all_files
+        if f.file_type != EntityFileType.resume
+        and f.file_name and not f.file_name.lower().startswith("фото")
     ]
 
     # Фото: локальный файл (через публичный photo-эндпоинт) → extra_data.photo_url.
@@ -232,7 +274,8 @@ async def public_candidate_preview(
         "stage_label": _stage_label(stage_value, vacancy) if stage_value else None,
         "vacancy_title": vacancy.title if vacancy is not None else None,
         "timeline": timeline,
-        "files": file_names,
+        "resume_files": resume_files,
+        "files": other_files,
         "rating": rating,
         "expires_at": link.expires_at.isoformat() if link.expires_at else None,
     }
@@ -249,3 +292,52 @@ async def public_candidate_photo(
     if photo is None or not photo.file_data:
         raise HTTPException(404, "Фото не найдено")
     return Response(content=photo.file_data, media_type=photo.mime_type or "image/jpeg")
+
+
+@router.get("/public/candidate-preview/{token}/files/{file_id}")
+async def public_candidate_file(
+    token: str,
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Файл кандидата для публичного предпросмотра (по тому же токену).
+
+    Inline отдаём только безопасные типы (PDF/растровые картинки) — их страница
+    встраивает предпросмотром; остальные типы недоступны (403), чтобы публичная
+    ссылка не превращалась в раздачу произвольных файлов.
+    """
+    link = await _resolve_valid_link(db, token)
+
+    f = (await db.execute(
+        select(EntityFile).where(
+            EntityFile.id == file_id,
+            EntityFile.entity_id == link.entity_id,
+        )
+    )).scalar_one_or_none()
+    if f is None:
+        raise HTTPException(404, "Файл не найден")
+
+    mime = _serve_mime(f)
+    if mime not in _INLINE_SAFE_MIMES:
+        raise HTTPException(403, "Этот тип файла недоступен в предпросмотре")
+
+    data = f.file_data
+    if not data and f.file_path:
+        try:
+            from pathlib import Path
+            p = Path(f.file_path)
+            if p.exists():
+                data = p.read_bytes()
+        except OSError:
+            data = None
+    if not data:
+        raise HTTPException(404, "Файл утерян на сервере")
+
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "Content-Disposition": "inline",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

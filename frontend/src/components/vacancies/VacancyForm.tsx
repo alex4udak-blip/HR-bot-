@@ -441,7 +441,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     }
   };
 
-  const { createVacancy, updateVacancy } = useVacancyStore();
+  const { createVacancy, updateVacancy, deleteVacancy } = useVacancyStore();
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<AssignableUser[]>([]);
 
@@ -659,6 +659,23 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       onClose();
     } catch (_) {
       toast.error('Не удалось изменить статус вакансии');
+    } finally {
+      setStatusAction(false);
+    }
+  };
+  // Удаление доступно ТОЛЬКО суперадмину (возврат кнопки 2026-07-02);
+  // жизненный цикл у остальных ролей закрывается «Закрыть вакансию».
+  const handleDeleteVacancy = async () => {
+    if (!vacancy) return;
+    if (!window.confirm('Удалить вакансию навсегда? Её заявки и история тоже удалятся. Действие необратимо.')) return;
+    setStatusAction(true);
+    try {
+      await deleteVacancy(vacancy.id);
+      toast.success('Вакансия удалена');
+      onSuccess();
+      onClose();
+    } catch (_) {
+      toast.error('Не удалось удалить вакансию');
     } finally {
       setStatusAction(false);
     }
@@ -1013,8 +1030,16 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     >
                       Закрыть вакансию
                     </button>
-                    {/* «Удалить вакансию» убрана полностью (решение 2026-07-02):
-                        закрытие покрывает жизненный цикл, удаление не нужно. */}
+                    {user?.role === 'superadmin' && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteVacancy}
+                        disabled={statusAction}
+                        className="w-full h-[36px] rounded-[8px] border border-[var(--hf-status-red-badge)] text-[13px] font-medium text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-status-red-badge)] disabled:opacity-50"
+                      >
+                        Удалить вакансию
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

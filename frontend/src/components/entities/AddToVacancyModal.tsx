@@ -9,6 +9,7 @@ import { getVacancies, applyEntityToVacancy, getEntityVacancies } from "@/servic
 import type { Vacancy } from "@/types";
 import { VACANCY_STATUS_LABELS, VACANCY_STATUS_COLORS } from "@/types";
 import { formatSalary } from "@/utils";
+import { isVacancyParticipant } from "@/utils/vacancy";
 import { useAuthStore } from "@/stores/authStore";
 
 interface AddToVacancyModalProps {
@@ -90,9 +91,11 @@ export default function AddToVacancyModal({
           if (typeof src === "number") clonedSourceIds.add(src);
         });
         const deduped = data.filter((v) => !clonedSourceIds.has(v.id));
+        // Общая воронка без клонов: рекрутёру доступны воронки, где он УЧАСТНИК
+        // (создатель ИЛИ назначенный, минус dismissed_by) — не только созданные им.
         const scoped =
           user && !isHrAdmin
-            ? deduped.filter((v) => v.created_by === user.id)
+            ? deduped.filter((v) => isVacancyParticipant(v, user.id))
             : deduped;
         // Динамика: прячем (а) исходную воронку, переданную родителем, и (б) те,
         // где кандидат уже есть — нельзя переместить в ту же воронку.

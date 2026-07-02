@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { MapPin, Paperclip, Star, FileText } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, MapPin, Paperclip, Star } from 'lucide-react';
 import {
   getPublicCandidatePreview,
   type PublicCandidatePreview,
+  type PublicPreviewFile,
 } from '@/services/api/entities';
 
 /**
  * Публичный предпросмотр кандидата для заказчика (модуль 3).
  * Реплика КАРТОЧКИ кандидата: инфо-строки + фото, зелёный блок текущего этапа
- * с историей/комментариями и названиями файлов. НИЧЕГО кликабельного — это
- * просто предпросмотр без авторизации, вне Layout.
+ * с историей/комментариями, встроенное резюме (PDF/сканы) и предпросмотр
+ * файлов по клику. Без авторизации, вне Layout, никаких CRM-действий.
  */
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -18,6 +19,68 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
     <div className="flex items-baseline gap-3 py-[3px] text-[14px]">
       <span className="w-[96px] shrink-0 text-slate-400">{label}</span>
       <span className="text-slate-900 min-w-0">{children}</span>
+    </div>
+  );
+}
+
+function formatSize(size?: number | null): string {
+  if (!size) return '';
+  return size >= 1024 * 1024
+    ? `${(size / (1024 * 1024)).toFixed(1)} МБ`
+    : `${Math.max(1, Math.round(size / 1024))} КБ`;
+}
+
+/** Встроенный просмотр одного файла: PDF — iframe, картинка — <img>. */
+function FileEmbed({ file }: { file: PublicPreviewFile }) {
+  if (file.mime_type === 'application/pdf') {
+    return (
+      <iframe
+        src={`${file.url}#toolbar=0&navpanes=0`}
+        title={file.name}
+        className="w-full min-h-[700px] rounded-lg border border-slate-200 bg-white"
+      />
+    );
+  }
+  return (
+    <img
+      src={file.url}
+      alt={file.name}
+      className="w-full rounded-lg border border-slate-200 bg-white"
+    />
+  );
+}
+
+/** Строка файла в списке: previewable — раскрывается по клику, иначе просто имя. */
+function FileRow({ file }: { file: PublicPreviewFile }) {
+  const [open, setOpen] = useState(false);
+  const meta = formatSize(file.size);
+
+  if (!file.previewable) {
+    return (
+      <div className="flex items-center gap-2 py-1.5 text-[14px] text-slate-700">
+        <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <span className="truncate">{file.name}</span>
+        {meta && <span className="text-xs text-slate-400 shrink-0">{meta}</span>}
+        <span className="text-xs text-slate-400 shrink-0">· предпросмотр недоступен</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 py-1 text-[14px] text-slate-700 hover:text-slate-900 transition-colors w-full text-left"
+      >
+        {open
+          ? <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          : <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+        <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <span className="truncate underline decoration-dotted underline-offset-2">{file.name}</span>
+        {meta && <span className="text-xs text-slate-400 shrink-0">{meta}</span>}
+      </button>
+      {open && <div className="mt-2">{<FileEmbed file={file} />}</div>}
     </div>
   );
 }
@@ -61,6 +124,12 @@ export default function CandidatePreviewPage() {
   }
 
   const subtitle = [data.position, data.company].filter(Boolean).join(' · ');
+  // На страницу встраиваем один главный источник резюме (свежий PDF или сканы);
+  // бэкенд уже отдаёт resume_files в порядке «PDF-новые → картинки».
+  const resumePdf = data.resume_files.find((f) => f.mime_type === 'application/pdf' && f.previewable);
+  const resumeImages = resumePdf
+    ? []
+    : data.resume_files.filter((f) => f.mime_type.startsWith('image/') && f.previewable);
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
@@ -140,10 +209,24 @@ export default function CandidatePreviewPage() {
               {data.files.length > 0 && (
                 <div className="mt-4">
                   <div className="text-xs text-emerald-600/90 mb-1">Файлы</div>
-                  {data.files.map((f, i) => (
-                    <div key={i} className="text-[14px] text-emerald-950 inline-flex items-center gap-1.5 mr-4">
-                      <Paperclip className="w-3.5 h-3.5 text-emerald-600/70" /> {f}
-                    </div>
+                  {data.files.map((f) => (
+                    <FileRow key={f.id} file={f} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Резюме — встроенным просмотром, как вкладка «Резюме» в карточке */}
+          {(resumePdf || resumeImages.length > 0) && (
+            <div className="mt-6">
+              <h2 className="text-lg font-semibold text-slate-900 mb-3">Резюме</h2>
+              {resumePdf ? (
+                <FileEmbed file={resumePdf} />
+              ) : (
+                <div className="space-y-3">
+                  {resumeImages.map((f) => (
+                    <FileEmbed key={f.id} file={f} />
                   ))}
                 </div>
               )}

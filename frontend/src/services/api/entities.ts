@@ -1258,6 +1258,15 @@ export interface CandidateShareLinkResult {
   expires_at: string;
 }
 
+export interface PublicPreviewFile {
+  id: number;
+  name: string;
+  mime_type: string;
+  size?: number | null;
+  previewable: boolean;
+  url: string;
+}
+
 export interface PublicCandidatePreview {
   name: string;
   position?: string | null;
@@ -1275,7 +1284,8 @@ export interface PublicCandidatePreview {
   stage_label?: string | null;
   vacancy_title?: string | null;
   timeline: Array<{ author_name?: string | null; date?: string | null; title?: string | null; text?: string | null }>;
-  files: string[];
+  resume_files: PublicPreviewFile[];
+  files: PublicPreviewFile[];
   rating?: number | null;
   expires_at?: string | null;
 }
