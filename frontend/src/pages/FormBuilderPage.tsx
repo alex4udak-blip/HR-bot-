@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
-  getFormTemplates,
+  getMyForms,
   createForm,
   deleteForm,
 } from '@/services/api/forms';
@@ -26,11 +26,11 @@ function FormListView() {
 
   const loadForms = useCallback(async () => {
     try {
-      // Только ШАБЛОНЫ (is_template=true) — те же, что в «Шаблонах анкет»
-      // карточки кандидата. Раньше тут был getMyForms() (все формы орга
-      // вперемешку), а создание шло без is_template — созданное на этой
-      // странице не появлялось в карточке кандидата.
-      const data = await getFormTemplates();
+      // ВСЕ анкеты орга (GET /forms отдаёт полный шейп с is_template).
+      // На странице делим на две секции: «Шаблоны» (is_template=true — те же,
+      // что в «Шаблонах анкет» карточки кандидата) и «Остальные анкеты»
+      // (разовые/старые, в т.ч. созданные до появления этой страницы).
+      const data = await getMyForms();
       setForms(data);
     } catch {
       toast.error('Не удалось загрузить анкеты');
@@ -95,60 +95,87 @@ function FormListView() {
         </button>
       </div>
 
-      {forms.length === 0 ? (
-        <div className="text-center py-20 text-dark-400">
-          <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p className="text-lg">Пока нет шаблонов</p>
-          <p className="text-sm mt-1">Создайте первый шаблон — он появится в карточке кандидата в «Шаблонах анкет»</p>
-        </div>
-      ) : (
-        <div className="grid gap-3">
-          {forms.map(form => (
-            <motion.div
-              key={form.id}
-              layout
-              onClick={() => navigate(`/form-builder/${form.id}`)}
-              className="bg-dark-800 border border-dark-700 rounded-xl p-4 hover:border-dark-600 cursor-pointer transition-colors group"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-white truncate">{form.title}</h3>
-                    {/* /forms/templates не отдаёт is_active — бейдж только при явном false,
-                        иначе undefined давал ложную «Неактивна» на каждом шаблоне. */}
-                    {form.is_active === false && (
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-dark-600 text-dark-400">
-                        Неактивна
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4 mt-1 text-sm text-dark-400">
-                    <span>{form.fields.length} {fieldWord(form.fields.length)}</span>
-                    {typeof form.submissions_count === 'number' && (
-                      <span>{form.submissions_count} {submissionWord(form.submissions_count)}</span>
-                    )}
-                    {form.created_at && (
-                      <span>{new Date(form.created_at).toLocaleDateString('ru')}</span>
-                    )}
-                  </div>
+      {(() => {
+        const templates = forms.filter(f => f.is_template);
+        const others = forms.filter(f => !f.is_template);
+
+        const renderCard = (form: FormTemplate) => (
+          <motion.div
+            key={form.id}
+            layout
+            onClick={() => navigate(`/form-builder/${form.id}`)}
+            className="bg-dark-800 border border-dark-700 rounded-xl p-4 hover:border-dark-600 cursor-pointer transition-colors group"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-white truncate">{form.title}</h3>
+                  {form.is_active === false && (
+                    <span className="px-2 py-0.5 text-xs rounded-full bg-dark-600 text-dark-400">
+                      Неактивна
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {/* Кнопка «Скопировать ссылку» убрана: /templates не отдаёт slug, и
-                      публичный slug-сабмит намеренно отключён (403) — анкеты
-                      отправляются кандидату персональной token-ссылкой из карточки. */}
-                  <button
-                    onClick={(e) => handleDelete(form.id, e)}
-                    className="p-2 rounded-lg hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
-                    title="Удалить"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                <div className="flex items-center gap-4 mt-1 text-sm text-dark-400">
+                  <span>{form.fields.length} {fieldWord(form.fields.length)}</span>
+                  {typeof form.submissions_count === 'number' && (
+                    <span>{form.submissions_count} {submissionWord(form.submissions_count)}</span>
+                  )}
+                  {form.created_at && (
+                    <span>{new Date(form.created_at).toLocaleDateString('ru')}</span>
+                  )}
                 </div>
               </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
+              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* «Скопировать ссылку» убрана: публичный slug-сабмит намеренно
+                    отключён (403) — анкеты уходят персональной token-ссылкой. */}
+                <button
+                  onClick={(e) => handleDelete(form.id, e)}
+                  className="p-2 rounded-lg hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
+                  title="Удалить"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        );
+
+        if (forms.length === 0) {
+          return (
+            <div className="text-center py-20 text-dark-400">
+              <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p className="text-lg">Пока нет шаблонов</p>
+              <p className="text-sm mt-1">Создайте первый шаблон — он появится в карточке кандидата в «Шаблонах анкет»</p>
+            </div>
+          );
+        }
+
+        return (
+          <>
+            <div className="text-sm font-medium text-dark-400 uppercase tracking-wide mb-3">
+              Шаблоны
+            </div>
+            {templates.length === 0 ? (
+              <div className="text-sm text-dark-400 mb-6">
+                Пока нет шаблонов — создайте первый, он появится в карточке кандидата.
+              </div>
+            ) : (
+              <div className="grid gap-3 mb-8">{templates.map(renderCard)}</div>
+            )}
+            {/* Остальные сохранённые анкеты: разовые/старые (созданные до этой
+                страницы, без is_template) — чтобы они не «терялись» из виду. */}
+            {others.length > 0 && (
+              <>
+                <div className="text-sm font-medium text-dark-400 uppercase tracking-wide mb-3">
+                  Остальные анкеты
+                </div>
+                <div className="grid gap-3">{others.map(renderCard)}</div>
+              </>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
