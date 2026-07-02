@@ -1514,6 +1514,20 @@ export default function Layout() {
                     />
                     Аналитика
                   </NavLink>
+                  {/* Standalone-вход к шаблонам анкет: раньше добраться до них
+                      можно было только из карточки кандидата (дровер «Анкета»). */}
+                  <NavLink
+                    to="/form-builder"
+                    className={({ isActive }) =>
+                      clsx(
+                        "hf-hr-nav-item",
+                        isActive && "hf-hr-nav-item-active",
+                      )
+                    }
+                  >
+                    <ClipboardList className="hf-hr-nav-icon" strokeWidth={1.8} />
+                    Анкеты
+                  </NavLink>
                 </div>
 
                 <div className="hf-hr-sidebar-divider hf-hr-sidebar-divider-requests" />
