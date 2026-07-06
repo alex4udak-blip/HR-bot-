@@ -22,7 +22,6 @@ import {
   Pencil,
   Archive,
   Trash2,
-  Inbox,
   Lock,
   MapPin,
   ExternalLink,
@@ -41,6 +40,7 @@ import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag 
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
+import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import { getVacancies } from '@/services/api/vacancies';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
@@ -127,9 +127,6 @@ const formatVacancyListDate = (date?: string | null) => {
   }).replace(/\sг\.$/, '');
 };
 
-const getClosedVacancyDate = (vacancy: Vacancy) =>
-  vacancy.closes_at || vacancy.updated_at || vacancy.created_at;
-
 const getCandidateFallbackInitial = (name?: string | null) =>
   name?.match(/[0-9A-Za-zА-Яа-яЁё]/)?.[0]?.toUpperCase() || '?';
 
@@ -191,184 +188,6 @@ function CopyButton({ value }: { value: string }) {
     >
       {copied ? <Check className="w-3.5 h-3.5 text-[var(--hf-status-green)]" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
-  );
-}
-
-type VacancyStagesConfig = {
-  keys: string[];
-  labels: Record<string, string>;
-  keyToEnum: Record<string, string>;
-  enumToKeys: Record<string, string[]>;
-  colorKeys: Record<string, string>;
-  isVirtual: Record<string, boolean>;
-};
-
-function ClosedVacancyDetail({
-  vacancy,
-  stageKeys,
-  stagesConfig,
-  groupedByStageMap,
-  onReopen,
-  onEdit,
-}: {
-  vacancy: Vacancy;
-  stageKeys: string[];
-  stagesConfig: VacancyStagesConfig;
-  groupedByStageMap: Record<string, VacancyApplication[]>;
-  onReopen: () => void;
-  onEdit: () => void;
-}) {
-  // Горизонтальный скролл табов этапов — самодостаточно через единый хук.
-  const {
-    ref: stageScrollRef,
-    canScrollLeft,
-    canScrollRight,
-    scrollLeft: scrollStagesLeft,
-    scrollRight: scrollStagesRight,
-  } = useHorizontalScroll<HTMLDivElement>({ step: 520 });
-  const [activeClosedStage, setActiveClosedStage] = useState<'summary' | string>('summary');
-  const activeStageCandidates =
-    activeClosedStage === 'summary'
-      ? []
-      : groupedByStageMap[activeClosedStage] || [];
-  const activeStageLabel =
-    activeClosedStage === 'summary'
-      ? ''
-      : stagesConfig.labels[activeClosedStage] || activeClosedStage;
-
-  return (
-    <div className="hf-vacancy-workspace hf-vacancy-workspace-closed flex-1 flex flex-col overflow-hidden">
-      <div className="hf-vacancy-stage-shell hf-top-stage-shell">
-        <div className="hf-vacancy-source-tabs hf-vacancy-source-tabs-closed">
-          <button
-            type="button"
-            onClick={() => setActiveClosedStage('summary')}
-            className={clsx(
-              'hf-vacancy-source-tab',
-              activeClosedStage === 'summary' && 'hf-vacancy-source-tab-active',
-            )}
-          >
-            Вакансия закрыта
-          </button>
-        </div>
-        <div
-          ref={stageScrollRef}
-          className="hf-vacancy-stage-tabs hf-top-stage-tabs hf-top-stage-tabs-padded no-scrollbar"
-        >
-          {stageKeys.map((key) => {
-            const count = groupedByStageMap[key]?.length || 0;
-            const vacancyStageLabel = stagesConfig.labels[key];
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setActiveClosedStage(key)}
-                className={clsx(
-                  'hf-top-stage-item',
-                  activeClosedStage === key
-                    ? 'hf-top-stage-item-active'
-                    : 'hf-top-stage-item-idle',
-                )}
-              >
-                {vacancyStageLabel}
-                {count > 0 && <span className="hf-top-stage-badge hf-top-stage-badge-muted">{count}</span>}
-                {activeClosedStage === key && <span className="hf-top-stage-underline" />}
-              </button>
-            );
-          })}
-        </div>
-        <div className="hf-top-stage-action-cell">
-          <button
-            type="button"
-            onClick={onEdit}
-            className="hf-top-stage-action-btn"
-            title="Информация о вакансии"
-            aria-label="Информация о вакансии"
-          >
-            <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
-          </button>
-        </div>
-        {canScrollLeft ? (
-          <button
-            type="button"
-            onClick={scrollStagesLeft}
-            className="hf-top-stage-arrow hf-top-stage-arrow-left"
-            title="Прокрутить этапы влево"
-          >
-            <ChevronLeft className="hf-top-stage-arrow-icon" />
-          </button>
-        ) : null}
-        {canScrollRight ? (
-          <button
-            type="button"
-            onClick={scrollStagesRight}
-            className="hf-top-stage-arrow hf-top-stage-arrow-right"
-            title="Прокрутить этапы вправо"
-          >
-            <ChevronRight className="hf-top-stage-arrow-icon" />
-          </button>
-        ) : null}
-      </div>
-
-      <div className="hf-vacancy-closed-panel flex-1 overflow-y-auto">
-        {activeClosedStage === 'summary' ? (
-          <section className="hf-vacancy-closed-card">
-            <Inbox className="hf-vacancy-closed-icon" />
-            <h2>Вакансия закрыта {formatVacancyListDate(getClosedVacancyDate(vacancy))}</h2>
-            <p className="hf-vacancy-closed-status">Все наняты</p>
-            <p className="hf-vacancy-closed-muted">Нет закрытых позиций</p>
-            <div className="hf-vacancy-closed-actions">
-              <button type="button" onClick={onReopen} className="hf-vacancy-closed-button">
-                Открыть заново
-              </button>
-              <button type="button" onClick={onEdit} className="hf-vacancy-closed-button">
-                Информация о вакансии
-              </button>
-            </div>
-            <div className="hf-vacancy-closed-note">
-              <strong>Открывайте старые вакансии вместо создания новых</strong>
-              <span>
-                Статистика посчитается корректно, история работы не потеряется,
-                а прежние кандидаты уйдут в «предыдущие серии» — вернутся в
-                активную воронку, как только смените им этап.
-              </span>
-            </div>
-          </section>
-        ) : (
-          <section className="hf-vacancy-closed-stage">
-            <div className="hf-vacancy-closed-stage-head">
-              <h2>{activeStageLabel}</h2>
-              <span>{activeStageCandidates.length}</span>
-            </div>
-            {activeStageCandidates.length === 0 ? (
-              <div className="hf-vacancy-closed-stage-empty">
-                На этом этапе пока нет кандидатов
-              </div>
-            ) : (
-              <div className="hf-vacancy-closed-stage-list">
-                {activeStageCandidates.map((candidate) => (
-                  <div key={candidate.id} className="hf-vacancy-closed-stage-row">
-                    <div className="hf-vacancy-closed-stage-name">
-                      {candidate.entity_name || 'Без имени'}
-                    </div>
-                    {candidate.entity_position ? (
-                      <div className="hf-vacancy-closed-stage-meta">
-                        {candidate.entity_position}
-                      </div>
-                    ) : null}
-                    {candidate.entity_company || candidate.source ? (
-                      <div className="hf-vacancy-closed-stage-meta">
-                        {candidate.entity_company || candidate.source}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -641,6 +460,18 @@ export default function RecruiterFunnelsPage() {
     [vacancies, selectedVacancyId],
   );
 
+  // Закрытая (архивная) вакансия открывается тем же полноценным окном, что и
+  // активная (просмотр, резюме, история) — но любая попытка её изменить
+  // (смена этапа, комментарий, файл, снятие с воронки) блокируется тостом.
+  const vacancyArchived = selectedVacancy?.status === 'closed';
+  const blockIfArchived = useCallback(() => {
+    if (vacancyArchived) {
+      toast.error('Вакансия находится в архиве');
+      return true;
+    }
+    return false;
+  }, [vacancyArchived]);
+
 
   // Load candidates when vacancy selected
   useEffect(() => {
@@ -771,9 +602,16 @@ export default function RecruiterFunnelsPage() {
   }, [selectedVacancy, orgStageOverrides]);
 
   const getVacancyStageLabel = useCallback((stageOrKey: string) => {
+    // Контейнеры смёрдженных (исторических) кандидатов хранят статус как
+    // EntityStatus (practice/tech_practice/is_interview/...), а не как
+    // ApplicationStage — их нет в STAGE_LABELS/stagesConfig.labels (те только
+    // про этапы заявки), из-за чего плашка показывала сырой английский ключ
+    // («practice» вместо «Интервью с HR»). STATUS_LABELS (canon, @/types)
+    // покрывает оба набора ключей — как в AllCandidatesPage.
     return (
       stagesConfig.labels[stageOrKey] ||
       STAGE_LABELS[stageOrKey] ||
+      (STATUS_LABELS as Record<string, string>)[stageOrKey] ||
       stageOrKey
     );
   }, [stagesConfig]);
@@ -1218,18 +1056,6 @@ export default function RecruiterFunnelsPage() {
     setConfirmDialog({ type: 'close', vacancy });
   };
 
-  const handleReopenVacancy = async (vacancy: Vacancy) => {
-    try {
-      await updateVacancy(vacancy.id, { status: 'open' });
-      toast.success('Вакансия открыта заново');
-      setStatusFilter('open');
-      setSearchParams({ v: String(vacancy.id), status: 'open' });
-      fetchVacancies();
-    } catch {
-      toast.error('Не удалось открыть вакансию заново');
-    }
-  };
-
   const handleDeleteVacancy = (vacancy: Vacancy) => {
     setConfirmDialog({ type: 'delete', vacancy });
   };
@@ -1270,6 +1096,7 @@ export default function RecruiterFunnelsPage() {
 
   // Change candidate stage
   const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage, comment?: string) => {
+    if (blockIfArchived()) return;
     try {
       await updateApplication(applicationId, { stage: newStage, ...(comment ? { comment } : {}) });
       // Локально двигаем кандидата на новый этап + СРАЗУ снимаем «предыдущую
@@ -1290,7 +1117,7 @@ export default function RecruiterFunnelsPage() {
     } catch {
       toast.error('Ошибка смены статуса');
     }
-  }, [fetchVacancies, getVacancyStageLabel]);
+  }, [fetchVacancies, getVacancyStageLabel, blockIfArchived]);
 
   // ─── Interview scheduling modal ───
   const [interviewForCandidate, setInterviewForCandidate] = useState<typeof selectedCandidate | null>(null);
@@ -1346,6 +1173,7 @@ export default function RecruiterFunnelsPage() {
   // Прошлый этап для отката — from_stage самой свежей записи истории
   // (to_stage у неё = текущий этап).
   const handleRemoveFromVacancy = useCallback(async () => {
+    if (blockIfArchived()) return;
     const targetAppId = removeTargetAppId ?? selectedCandidate?.id;
     if (!targetAppId) return;
     // entity_id целевого кандидата (по отклику в списке или по выбранному).
@@ -1378,13 +1206,14 @@ export default function RecruiterFunnelsPage() {
     } finally {
       setRemoveBusy(false);
     }
-  }, [removeTargetAppId, selectedCandidate, candidates, refreshActivity]);
+  }, [removeTargetAppId, selectedCandidate, candidates, refreshActivity, blockIfArchived]);
 
   const saveEntityNote = useCallback(async (
     text: string,
     stage?: string | null,
     stageLabel?: string | null,
   ) => {
+    if (blockIfArchived()) return;
     if (!selectedCandidate?.entity_id || !text.trim()) return;
     setCommentSaving(true);
     try {
@@ -1422,7 +1251,7 @@ export default function RecruiterFunnelsPage() {
       }
       setCommentSaving(false);
     }
-  }, [selectedCandidate?.entity_id]);
+  }, [selectedCandidate?.entity_id, blockIfArchived]);
 
   // Этапы для пикера — тот же список и лейблы, что были в StageDropdown.
   const stagePickerOptions = useMemo(
@@ -1461,6 +1290,7 @@ export default function RecruiterFunnelsPage() {
   // просто не был подключён на фронте.
   const cardDeleteNote = useCallback(
     async (entityId: number, noteId: string) => {
+      if (blockIfArchived()) return;
       try {
         await deleteEntityNote(entityId, noteId);
         setEntityExtraData((prev) => {
@@ -1486,19 +1316,21 @@ export default function RecruiterFunnelsPage() {
         }
       }
     },
-    [selectedCandidate?.entity_id],
+    [selectedCandidate?.entity_id, blockIfArchived],
   );
 
   const cardDeleteHistory = useCallback(
     async (appId: number, historyId: number) => {
+      if (blockIfArchived()) return;
       await deleteApplicationHistory(appId, historyId);
       await refreshActivity();
     },
-    [refreshActivity],
+    [refreshActivity, blockIfArchived],
   );
 
   const cardUploadFile = useCallback(
     async (entityId: number, file: File) => {
+      if (blockIfArchived()) return;
       try {
         await uploadEntityFile(entityId, file, 'other');
         toast.success(`Файл "${file.name}" загружен`);
@@ -1510,7 +1342,7 @@ export default function RecruiterFunnelsPage() {
       }
       await refreshActivity();
     },
-    [refreshActivity],
+    [refreshActivity, blockIfArchived],
   );
 
   // ─── Общая богатая карточка «Все кандидаты» (CandidateVacancyCard) в детали
@@ -1586,6 +1418,7 @@ export default function RecruiterFunnelsPage() {
 
   const cardDeleteFile = useCallback(
     async (fileId: number) => {
+      if (blockIfArchived()) return;
       const eid = selectedCandidate?.entity_id;
       if (!eid) return;
       if (!window.confirm('Удалить этот файл?')) return;
@@ -1598,7 +1431,7 @@ export default function RecruiterFunnelsPage() {
         toast.error('Не удалось удалить файл');
       }
     },
-    [selectedCandidate?.entity_id],
+    [selectedCandidate?.entity_id, blockIfArchived],
   );
 
   // Toggle checkbox selection for a candidate
@@ -1613,6 +1446,7 @@ export default function RecruiterFunnelsPage() {
 
   // Bulk «Удалить с воронки» — удаляет выбранных кандидатов из текущей вакансии.
   const handleBulkRemoveFromVacancy = useCallback(async () => {
+    if (blockIfArchived()) return;
     if (selectedIds.size === 0) return;
     // entity_id выбранных карточек → затем ВСЕ их отклики на этой вакансии (на
     // случай дублей из мержа), иначе дубль остался бы после снятия.
@@ -1641,7 +1475,7 @@ export default function RecruiterFunnelsPage() {
     } finally {
       setBulkMoving(false);
     }
-  }, [selectedIds, candidates, fetchVacancies]);
+  }, [selectedIds, candidates, fetchVacancies, blockIfArchived]);
 
   const anySelected = selectedIds.size > 0;
 
@@ -2161,17 +1995,19 @@ export default function RecruiterFunnelsPage() {
                                   <Archive className="hf-vacancies-search-action-icon" />
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  handleDeleteVacancy(v);
-                                }}
-                                className="hf-vacancies-search-action"
-                                title="Удалить"
-                              >
-                                <Trash2 className="hf-vacancies-search-action-icon" />
-                              </button>
+                              {user?.role === 'superadmin' && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleDeleteVacancy(v);
+                                  }}
+                                  className="hf-vacancies-search-action"
+                                  title="Удалить"
+                                >
+                                  <Trash2 className="hf-vacancies-search-action-icon" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2182,15 +2018,6 @@ export default function RecruiterFunnelsPage() {
               </section>
             </div>
           </div>
-        ) : selectedVacancy.status === 'closed' ? (
-          <ClosedVacancyDetail
-            vacancy={selectedVacancy}
-            stageKeys={vacancyVisibleStageKeys}
-            stagesConfig={stagesConfig}
-            groupedByStageMap={groupedByStageMap}
-            onReopen={() => handleReopenVacancy(selectedVacancy)}
-            onEdit={() => setEditingVacancy(selectedVacancy)}
-          />
         ) : (
           /* Vacancy selected — show candidates (Huntflow-style master-detail) */
           <div className="hf-vacancy-workspace flex-1 flex flex-col overflow-hidden">
@@ -3010,7 +2837,15 @@ export default function RecruiterFunnelsPage() {
           key={`edit-${editingVacancy.id}`}
           vacancy={editingVacancy}
           onClose={() => setEditingVacancy(null)}
-          onSuccess={() => { setEditingVacancy(null); fetchVacancies(); }}
+          onSuccess={() => {
+            const reopenedId = editingVacancy.id;
+            setEditingVacancy(null);
+            fetchVacancies();
+            // Тот же кандидат мог быть открыт в «предыдущей серии» — без
+            // перезагрузки списка её этап/зелёный статус не обновится наверху
+            // до ручного F5 (см. handleReopenVacancy).
+            if (reopenedId === selectedVacancyId) loadCandidates(reopenedId);
+          }}
         />
       )}
 

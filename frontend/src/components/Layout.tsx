@@ -2171,8 +2171,12 @@ export default function Layout() {
                                 return true;
                               }
                               if (!user) return false;
-                              if (v.created_by === user.id) return false;
                               if (myClonesFor.has(v.id)) return false;
+                              // Рекрутёр видит и назначенные на него, и свои
+                              // собственные созданные заявки — как в основном
+                              // списке «Заявки» (иначе её же заявки, которые она
+                              // сама подала, не показывались бы нигде в сайдбаре).
+                              if (v.created_by === user.id) return true;
                               if (v.assigned_to_all) return true;
                               if (
                                 v.assigned_to &&

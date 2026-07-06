@@ -254,7 +254,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   // перекрашивает живую карточку — каждый контейнер изолирован.
   // + «В предыдущих сериях»: пока отклик не тронут после переоткрытия — серая
   // (референс Huntflow: «Новые» серая → после взятия в работу зелёная).
-  const grayed = isRejectedStage(currentStage) || isPreviousSeries;
+  // + merged (readonly) — это исторический снапшот прошлого участия, не
+  // текущая активность, поэтому всегда серая, а не зелёная.
+  const grayed = isRejectedStage(currentStage) || isPreviousSeries || readonly;
   const stageCardStyle: CSSProperties = grayed
     ? GRAY_STAGE_CARD_STYLE
     : GREEN_STAGE_CARD_STYLE;

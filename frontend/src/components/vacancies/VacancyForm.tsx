@@ -1022,14 +1022,25 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 {vacancy && !isReadOnlyRequest && (
                   <div className="mt-[var(--hf-space-l)] pt-[var(--hf-space-l)] border-t border-[var(--hf-ui-border)] flex flex-col gap-[8px]">
                     <span className={hfLabelClass}>Действия с вакансией</span>
-                    <button
-                      type="button"
-                      onClick={() => runStatusAction('closed', 'Вакансия закрыта')}
-                      disabled={statusAction}
-                      className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
-                    >
-                      Закрыть вакансию
-                    </button>
+                    {vacancy.status === 'closed' ? (
+                      <button
+                        type="button"
+                        onClick={() => runStatusAction('open', 'Вакансия открыта заново')}
+                        disabled={statusAction}
+                        className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
+                      >
+                        Открыть вакансию
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => runStatusAction('closed', 'Вакансия закрыта')}
+                        disabled={statusAction}
+                        className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
+                      >
+                        Закрыть вакансию
+                      </button>
+                    )}
                     {user?.role === 'superadmin' && (
                       <button
                         type="button"

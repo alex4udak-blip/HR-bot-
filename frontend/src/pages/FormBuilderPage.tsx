@@ -75,9 +75,16 @@ function FormListView() {
   // секцию «Шаблоны», после чего они видны в карточке кандидата.
   const handlePromote = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
+    const form = forms.find((f) => f.id === id);
+    // Разовые анкеты называются «Анкета — Имя Кандидата» (AnketaDrawer
+    // подставляет entityName при создании) — шаблон не должен нести имя
+    // конкретного кандидата, иначе оно так и останется в библиотеке навсегда
+    // и будет предлагаться для ВСЕХ следующих кандидатов. Отрезаем суффикс
+    // « — Имя» (последнее тире в названии) при переносе в шаблоны.
+    const cleanTitle = form?.title.replace(/\s+—\s+[^—]+$/, '').trim() || form?.title;
     try {
-      await updateForm(id, { is_template: true });
-      setForms(prev => prev.map(f => (f.id === id ? { ...f, is_template: true } : f)));
+      await updateForm(id, { is_template: true, ...(cleanTitle ? { title: cleanTitle } : {}) });
+      setForms(prev => prev.map(f => (f.id === id ? { ...f, is_template: true, title: cleanTitle || f.title } : f)));
       toast.success('Анкета перенесена в шаблоны');
     } catch {
       toast.error('Не удалось перенести в шаблоны');
