@@ -237,6 +237,11 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   const [comment, setComment] = useState("");
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // Гейт от даблклика/медленной сети: без него «Сохранить» в дропдауне смены
+  // этапа можно нажать второй раз до ответа сервера — и комментарий +
+  // переход этапа создаются ДВАЖДЫ (дублируется вся пара строк в таймлайне).
+  const [savingStageChange, setSavingStageChange] = useState(false);
+  const [sendingComment, setSendingComment] = useState(false);
   const [showAllTimeline, setShowAllTimeline] = useState(false);
   const [timelineExpanding, setTimelineExpanding] = useState(false);
 
@@ -468,12 +473,17 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
 
   // --- per-instance action handlers ---
   const handleComment = async () => {
-    if (!comment.trim()) {
-      toast.error("Введите комментарий");
+    if (!comment.trim() || sendingComment) {
+      if (!comment.trim()) toast.error("Введите комментарий");
       return;
     }
-    await onComment(applicationId, currentStage, statusLabel, comment.trim());
-    setComment("");
+    setSendingComment(true);
+    try {
+      await onComment(applicationId, currentStage, statusLabel, comment.trim());
+      setComment("");
+    } finally {
+      setSendingComment(false);
+    }
   };
 
   const saveStageChangeComment = async () => {
@@ -587,21 +597,28 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                   <div className="hf-stage-picker-footer">
                     <button
                       type="button"
+                      disabled={savingStageChange}
                       onClick={async () => {
-                        const selectedOption = stagePickerOptions.find(
-                          (option) => option.status === pendingStage,
-                        );
-                        if (stageChangeComment.trim()) {
-                          await saveStageChangeComment();
+                        if (savingStageChange) return;
+                        setSavingStageChange(true);
+                        try {
+                          const selectedOption = stagePickerOptions.find(
+                            (option) => option.status === pendingStage,
+                          );
+                          if (stageChangeComment.trim()) {
+                            await saveStageChangeComment();
+                          }
+                          if (
+                            pendingStage !== currentStage &&
+                            selectedOption?.isRealStage
+                          )
+                            await onChangeStage(applicationId, pendingStage);
+                          setShowStageDD(false);
+                        } finally {
+                          setSavingStageChange(false);
                         }
-                        if (
-                          pendingStage !== currentStage &&
-                          selectedOption?.isRealStage
-                        )
-                          await onChangeStage(applicationId, pendingStage);
-                        setShowStageDD(false);
                       }}
-                      className="inline-flex h-[33px] min-w-[74px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)]"
+                      className="inline-flex h-[33px] min-w-[74px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[11px] text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-secondary)] !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] disabled:opacity-60"
                     >
                       Сохранить
                     </button>
@@ -631,6 +648,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
         onOpenChange={setCommentComposerOpen}
         placeholder="Написать комментарий"
         onSubmit={handleComment}
+        saving={sendingComment}
         onCancel={() => {
           setComment("");
           setCommentComposerOpen(false);
