@@ -282,6 +282,18 @@ async def get_form_templates(
         )
         for fid, vid in fv_rows.all():
             fv_map.setdefault(fid, []).append(vid)
+    # Кол-во ответов по шаблону: раз «Использовать» теперь шлёт FormDispatch
+    # напрямую на шаблон (без клона), удаление шаблона каскадно стирает ВСЕ
+    # ответы всех кандидатов, кто по нему отвечал — фронту нужно это число,
+    # чтобы предупредить/заблокировать удаление шаблона с ответами.
+    submissions_map: dict[int, int] = {}
+    if form_ids:
+        sub_rows = await db.execute(
+            select(FormSubmission.form_id, func.count(FormSubmission.id))
+            .where(FormSubmission.form_id.in_(form_ids))
+            .group_by(FormSubmission.form_id)
+        )
+        submissions_map = {fid: count for fid, count in sub_rows.all()}
     return [
         {
             "id": f.id,
@@ -290,6 +302,7 @@ async def get_form_templates(
             "fields": f.fields or [],
             "is_template": True,
             "vacancy_ids": fv_map.get(f.id, [f.vacancy_id] if f.vacancy_id else []),
+            "submissions_count": submissions_map.get(f.id, 0),
             "created_at": f.created_at.isoformat() if f.created_at else None,
         }
         for f in forms

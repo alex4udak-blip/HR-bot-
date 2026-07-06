@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import toast from 'react-hot-toast';
 import { Plus, LayoutGrid, Sparkles, X, Send, Loader2, ChevronLeft, FileText, PenLine, Trash2 } from 'lucide-react';
-import { FormBuilder } from './FormBuilder';
+import { FormBuilder, submissionWord } from './FormBuilder';
 import {
   createForm, createDispatch, getFormTemplates, deleteForm,
   aiFormChat,
@@ -22,6 +22,8 @@ export function AnketaDrawer({
   const [step, setStep] = useState<Step>('entry');
   const [formId, setFormId] = useState<number | null>(null);
   const [isTemplate, setIsTemplate] = useState(false);
+  // «Использовать» шаблон напрямую (без клона) — id шаблона, пока идёт запрос.
+  const [dispatchingTemplateId, setDispatchingTemplateId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!open) { setStep('entry'); setFormId(null); setIsTemplate(false); }
@@ -36,19 +38,23 @@ export function AnketaDrawer({
     } catch { toast.error('Не удалось создать анкету'); }
   };
 
-  const startFromTemplate = async (tpl: FormTemplate) => {
+  // «Использовать» шаблон = отправить его напрямую (FormDispatch ссылается на
+  // сам шаблон по form_id) — БЕЗ клонирования в новую анкету. Раньше каждое
+  // использование шаблона создавало ещё одну сохранённую анкету; новая строка
+  // должна появляться только когда её явно создают («Создать шаблон» / «С нуля»).
+  const useTemplateDirectly = async (tpl: FormTemplate) => {
+    setDispatchingTemplateId(tpl.id);
     try {
-      const form = await createForm({
-        // Имя кандидата НЕ пишем в title — только контекст в шапке дровера
-        // (ниже). Раньше title был «Шаблон — Имя», и если анкету потом
-        // «переносили в шаблоны», имя кандидата навсегда оседало в общей
-        // библиотеке для всех остальных.
-        title: tpl.title,
-        description: tpl.description ?? undefined,
-        fields: tpl.fields.map((f, i) => ({ ...f, id: `f${Date.now()}_${i}` })),
-      });
-      setFormId(form.id); setIsTemplate(false); setStep('builder');
-    } catch { toast.error('Не удалось создать анкету'); }
+      const { url } = await createDispatch(tpl.id, entityId);
+      const full = `${window.location.origin}${url}`;
+      await navigator.clipboard.writeText(full);
+      toast.success('Персональная ссылка скопирована');
+      onOpenChange(false);
+    } catch {
+      toast.error('Не удалось создать ссылку');
+    } finally {
+      setDispatchingTemplateId(null);
+    }
   };
 
   const createNewTemplate = async () => {
@@ -117,7 +123,8 @@ export function AnketaDrawer({
             {step === 'template-select' && (
               <TemplateSelectStep
                 onBack={() => setStep('entry')}
-                onUse={startFromTemplate}
+                onUse={useTemplateDirectly}
+                usingTemplateId={dispatchingTemplateId}
                 onEdit={editTemplate}
                 onNew={createNewTemplate}
                 vacancyId={vacancyId}
@@ -202,9 +209,12 @@ function EntryStep({ onBlank, onTemplates, onAI }: {
 // Template select step
 // ─────────────────────────────────────────────
 
-function TemplateSelectStep({ onBack, onUse, onEdit, onNew, vacancyId, vacancyTitle }: {
+function TemplateSelectStep({ onBack, onUse, usingTemplateId, onEdit, onNew, vacancyId, vacancyTitle }: {
   onBack: () => void;
   onUse: (tpl: FormTemplate) => void;
+  // id шаблона, который сейчас отправляется (спиннер на его кнопке) — null,
+  // если ничего не отправляется.
+  usingTemplateId: number | null;
   onEdit: (id: number) => void;
   onNew: () => void;
   vacancyId?: number;
@@ -221,7 +231,17 @@ function TemplateSelectStep({ onBack, onUse, onEdit, onNew, vacancyId, vacancyTi
       .finally(() => setLoading(false));
   }, []);
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number, submissionsCount: number) => {
+    // «Использовать» шлёт FormDispatch напрямую на шаблон (без клона) — удаление
+    // шаблона каскадно стирает ответы ВСЕХ кандидатов, кто по нему отвечал.
+    // Если ответы уже есть, блокируем удаление и предлагаем деактивировать.
+    if (submissionsCount > 0) {
+      toast.error(
+        `У шаблона уже есть ${submissionsCount} ${submissionWord(submissionsCount)} — удаление сотрёт их. Деактивируйте шаблон вместо удаления.`,
+        { duration: 6000 },
+      );
+      return;
+    }
     if (!confirm('Удалить шаблон? Это действие необратимо.')) return;
     setDeletingId(id);
     try {
@@ -279,7 +299,10 @@ function TemplateSelectStep({ onBack, onUse, onEdit, onNew, vacancyId, vacancyTi
                 {tpl.description && (
                   <p className="text-xs text-gray-500 mt-0.5 truncate">{tpl.description}</p>
                 )}
-                <p className="text-xs text-gray-400 mt-1">{tpl.fields.length} вопросов</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {tpl.fields.length} вопросов
+                  {tpl.submissions_count > 0 && ` · ${tpl.submissions_count} ${submissionWord(tpl.submissions_count)}`}
+                </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
@@ -290,7 +313,7 @@ function TemplateSelectStep({ onBack, onUse, onEdit, onNew, vacancyId, vacancyTi
                   <PenLine className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => handleDelete(tpl.id)}
+                  onClick={() => handleDelete(tpl.id, tpl.submissions_count)}
                   disabled={deletingId === tpl.id}
                   className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
                   title="Удалить шаблон"
@@ -299,8 +322,10 @@ function TemplateSelectStep({ onBack, onUse, onEdit, onNew, vacancyId, vacancyTi
                 </button>
                 <button
                   onClick={() => onUse(tpl)}
-                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
+                  disabled={usingTemplateId === tpl.id}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors disabled:opacity-60"
                 >
+                  {usingTemplateId === tpl.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   Использовать
                 </button>
               </div>
