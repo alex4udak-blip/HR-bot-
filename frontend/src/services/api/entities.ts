@@ -736,12 +736,14 @@ export const deleteEntityFile = async (entityId: number, fileId: number): Promis
 };
 
 export interface EntityNote {
+  id?: string;
   text: string;
   date: string;
   stage?: string | null;
   stage_label?: string | null;
   author_id?: number | null;
   author_name?: string | null;
+  edited_at?: string | null;
 }
 
 export const addEntityNote = async (

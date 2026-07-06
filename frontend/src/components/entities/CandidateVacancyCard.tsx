@@ -18,6 +18,7 @@ import {
   Trash2,
   ChevronDown,
   ClipboardList,
+  PenLine,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -161,6 +162,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onComment,
   onDeleteHistory,
   onDeleteNote,
+  onEditNote,
   onUploadFile,
   onAnketa,
   anketaCount,
@@ -206,6 +208,13 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     entityId: number,
     noteId: string,
   ) => Promise<void> | void;
+  // Редактировать текст комментария (extra_data.notes) — бэк проставляет
+  // edited_at, лента показывает «отредактировано» с таймстампом при наведении.
+  onEditNote?: (
+    entityId: number,
+    noteId: string,
+    text: string,
+  ) => Promise<void> | void;
   onUploadFile: (entityId: number, file: File) => Promise<void> | void;
   // Только живой контейнер: открыть анкеты (чип в ряду действий) + бейдж кол-ва.
   onAnketa?: () => void;
@@ -234,6 +243,10 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   const [timelineActionFilter, setTimelineActionFilter] = useState<
     string | null
   >(null);
+  // Инлайн-редактирование комментария: id заметки, которая сейчас редактируется.
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState("");
+  const [savingNoteEdit, setSavingNoteEdit] = useState(false);
   const [comment, setComment] = useState("");
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -279,6 +292,11 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       // Заметки (extra_data.notes) удаляются НЕ через историю переходов
       // (StageTransition), а отдельным DELETE /entities/{id}/notes/{note_id}.
       noteId?: string;
+      // Исходный текст заметки (без "Этап: X" префикса) — нужен только для
+      // предзаполнения инлайн-редактора, не для отображения.
+      rawText?: string;
+      // Когда заметка последний раз отредактирована (бэк проставляет сам).
+      editedAt?: string;
       reactionKey: string;
       // Тип записи для фильтра «Действия»: смена этапа vs свободный комментарий.
       kind: "stage" | "comment";
@@ -294,6 +312,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
         body: note.stage_label ? note.text || undefined : undefined,
         author: note.author_name || undefined,
         noteId: note.id ? String(note.id) : undefined,
+        rawText: note.text || "",
+        editedAt: note.edited_at || undefined,
         reactionKey: note.id ? `n:${note.id}` : `nd:${note.date || ""}`,
         // Заметки (extra_data.notes) — это КОММЕНТАРИИ (даже если несут stage_label
         // текущего этапа). Смена этапа — отдельные события (eventRows, kind=stage).
@@ -387,6 +407,28 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     },
     [onReact],
   );
+
+  const startEditNote = (noteId: string, rawText: string) => {
+    setEditingNoteId(noteId);
+    setEditingNoteText(rawText);
+  };
+
+  const cancelEditNote = () => {
+    setEditingNoteId(null);
+    setEditingNoteText("");
+  };
+
+  const saveEditNote = async () => {
+    const text = editingNoteText.trim();
+    if (!editingNoteId || !text || !onEditNote) return;
+    setSavingNoteEdit(true);
+    try {
+      await onEditNote(card.id, editingNoteId, text);
+      cancelEditNote();
+    } finally {
+      setSavingNoteEdit(false);
+    }
+  };
 
   const stagePickerOptions = useMemo(
     () =>
@@ -880,22 +922,68 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                     >
                       <Trash2 className="h-[14px] w-[14px]" />
                     </button>
-                  ) : !readonly && event.noteId && onDeleteNote ? (
+                  ) : !readonly && event.noteId ? (
                     // F-fix: комментарии (extra_data.notes, в т.ч. с @-упоминанием)
                     // раньше вообще не имели кнопки удаления — historyId у них
-                    // никогда не бывает (это не StageTransition).
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onDeleteNote(card.id, event.noteId as string)
-                      }
-                      title="Удалить комментарий"
-                      className="ml-auto inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] opacity-0 transition-opacity hover:text-[var(--hf-status-red)] group-hover/timeline:opacity-100 focus:outline-none focus-visible:outline-none"
-                    >
-                      <Trash2 className="h-[14px] w-[14px]" />
-                    </button>
+                    // никогда не бывает (это не StageTransition). Редактирование —
+                    // тем же путём, бэк уже умел PATCH .../notes/{id}, не хватало
+                    // только кнопки на фронте.
+                    <div className="ml-auto flex items-center gap-[2px] opacity-0 transition-opacity group-hover/timeline:opacity-100">
+                      {onEditNote && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            startEditNote(event.noteId as string, event.rawText || "")
+                          }
+                          title="Редактировать комментарий"
+                          className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:text-[var(--hf-main-900)] focus:outline-none focus-visible:outline-none"
+                        >
+                          <PenLine className="h-[13px] w-[13px]" />
+                        </button>
+                      )}
+                      {onDeleteNote && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onDeleteNote(card.id, event.noteId as string)
+                          }
+                          title="Удалить комментарий"
+                          className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:text-[var(--hf-status-red)] focus:outline-none focus-visible:outline-none"
+                        >
+                          <Trash2 className="h-[14px] w-[14px]" />
+                        </button>
+                      )}
+                    </div>
                   ) : null}
                 </div>
+                {editingNoteId && editingNoteId === event.noteId ? (
+                  <div className="mt-[4px]">
+                    <HuntflowRichInput
+                      value={editingNoteText}
+                      onChange={setEditingNoteText}
+                      placeholder="Текст комментария"
+                      editableClassName="hf-stage-picker-textarea overflow-y-auto"
+                    />
+                    <div className="mt-[6px] flex items-center gap-[8px]">
+                      <button
+                        type="button"
+                        onClick={saveEditNote}
+                        disabled={savingNoteEdit || !editingNoteText.trim()}
+                        className="inline-flex h-[28px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[10px] text-[length:var(--hf-fs-xxs)] font-medium !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] disabled:opacity-60"
+                      >
+                        Сохранить
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditNote}
+                        disabled={savingNoteEdit}
+                        className="inline-flex h-[28px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[10px] text-[length:var(--hf-fs-xxs)] font-medium text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)]"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                 <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)] whitespace-pre-wrap hf-rich-content">
                   <div
                     dangerouslySetInnerHTML={{
@@ -909,7 +997,16 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                       }}
                     />
                   )}
+                  {event.editedAt && (
+                    <span
+                      className="ml-[6px] text-[length:var(--hf-fs-2xs)] italic text-[var(--hf-main-500)] cursor-default"
+                      title={`Отредактировано ${formatTimelineDate(event.editedAt)}`}
+                    >
+                      (отредактировано)
+                    </span>
+                  )}
                 </div>
+                )}
                 {(() => {
                   const rs = localReactions[event.reactionKey] || [];
                   if (rs.length === 0) return null;

@@ -34,7 +34,7 @@ import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
-import { addEntityNote, deleteEntityNote } from '@/services/api/entities';
+import { addEntityNote, deleteEntityNote, updateEntityNote } from '@/services/api/entities';
 import { isVacancyParticipant, otherActiveParticipants } from '@/utils/vacancy';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
@@ -1317,6 +1317,30 @@ export default function RecruiterFunnelsPage() {
       }
     },
     [selectedCandidate?.entity_id, blockIfArchived],
+  );
+
+  // Редактирование текста заметки — бэк (PATCH /entities/{id}/notes/{id}) уже
+  // проставлял edited_at, не хватало только кнопки на фронте.
+  const cardEditNote = useCallback(
+    async (entityId: number, noteId: string, text: string) => {
+      if (blockIfArchived()) return;
+      try {
+        const { note } = await updateEntityNote(entityId, noteId, text);
+        setEntityExtraData((prev) => {
+          const existing = Array.isArray(prev?.notes)
+            ? (prev!.notes as Array<Record<string, unknown>>)
+            : [];
+          return {
+            ...(prev || {}),
+            notes: existing.map((n) => (String(n.id) === noteId ? note : n)),
+          };
+        });
+        toast.success('Комментарий обновлён');
+      } catch {
+        toast.error('Не удалось отредактировать комментарий');
+      }
+    },
+    [blockIfArchived],
   );
 
   const cardDeleteHistory = useCallback(
@@ -2704,7 +2728,10 @@ export default function RecruiterFunnelsPage() {
                                       notes={c.notes}
                                       events={c.events}
                                       addedAt={c.addedAt}
-                                      readonly={c.origin === 'merged'}
+                                      /* Архивная (закрытая) вакансия — карточка визуально
+                                         read-only, как merged: не должна выглядеть
+                                         активной, если менять всё равно нельзя. */
+                                      readonly={c.origin === 'merged' || vacancyArchived}
                                       /* Серая карточка этапа — только живой контейнер
                                          и только пока отклик в «предыдущих сериях». */
                                       isPreviousSeries={c.origin === 'live' && !!selectedCandidate?.is_previous_series}
@@ -2714,12 +2741,13 @@ export default function RecruiterFunnelsPage() {
                                       onComment={cardComment}
                                       onDeleteHistory={cardDeleteHistory}
                                       onDeleteNote={cardDeleteNote}
+                                      onEditNote={cardEditNote}
                                       onUploadFile={cardUploadFile}
-                                      onAnketa={c.origin === 'live' ? () => setAnketaOpen(true) : undefined}
+                                      onAnketa={c.origin === 'live' && !vacancyArchived ? () => setAnketaOpen(true) : undefined}
                                       anketaCount={anketaCount}
                                       onReact={c.origin === 'live' ? cardReact : undefined}
                                       files={c.files}
-                                      onDeleteFile={c.origin === 'live' ? cardDeleteFile : undefined}
+                                      onDeleteFile={c.origin === 'live' && !vacancyArchived ? cardDeleteFile : undefined}
                                     />
                                   ))
                                 )}

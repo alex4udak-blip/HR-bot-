@@ -51,6 +51,7 @@ import {
   detectDuplicate,
   addEntityNote,
   deleteEntityNote,
+  updateEntityNote,
   createCandidateShareLink,
   toggleTimelineReaction,
   getEntityActivity,
@@ -1902,6 +1903,26 @@ const InfoTab = memo(function InfoTab({
     [card, loadActivity],
   );
 
+  // Редактирование текста заметки — бэк (PATCH /entities/{id}/notes/{id}) уже
+  // проставлял edited_at, не хватало только кнопки на фронте.
+  const cardEditNote = useCallback(
+    async (entityId: number, noteId: string, text: string) => {
+      try {
+        const { note } = await updateEntityNote(entityId, noteId, text);
+        if (card.extra_data && Array.isArray(card.extra_data.notes)) {
+          card.extra_data.notes = (
+            card.extra_data.notes as Array<Record<string, unknown>>
+          ).map((n) => (String(n.id) === noteId ? note : n));
+        }
+        toast.success("Комментарий обновлён");
+      } catch {
+        toast.error("Не удалось отредактировать комментарий");
+      }
+      await loadActivity();
+    },
+    [card, loadActivity],
+  );
+
   const cardRemoveFromVacancy = useCallback(
     async (appId: number) => {
       // Нет активной заявки (appId 0) → кандидат не в воронке: дружелюбная
@@ -2584,6 +2605,7 @@ const InfoTab = memo(function InfoTab({
           onComment={cardComment}
           onDeleteHistory={cardDeleteHistory}
           onDeleteNote={cardDeleteNote}
+          onEditNote={cardEditNote}
           onUploadFile={cardUploadFile}
           onAnketa={c.origin === "live" ? () => setAnketaOpen(true) : undefined}
           onReact={c.origin === "live" ? cardReact : undefined}
