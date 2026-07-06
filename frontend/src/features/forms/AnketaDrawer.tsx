@@ -29,7 +29,7 @@ export function AnketaDrawer({
 
   const startBlank = async () => {
     try {
-      const form = await createForm({ title: `Анкета — ${entityName}`, fields: [
+      const form = await createForm({ title: 'Анкета', fields: [
         { id: `f${Date.now()}`, type: 'text', label: 'ФИО', required: true },
       ] });
       setFormId(form.id); setIsTemplate(false); setStep('builder');
@@ -39,7 +39,11 @@ export function AnketaDrawer({
   const startFromTemplate = async (tpl: FormTemplate) => {
     try {
       const form = await createForm({
-        title: `${tpl.title} — ${entityName}`,
+        // Имя кандидата НЕ пишем в title — только контекст в шапке дровера
+        // (ниже). Раньше title был «Шаблон — Имя», и если анкету потом
+        // «переносили в шаблоны», имя кандидата навсегда оседало в общей
+        // библиотеке для всех остальных.
+        title: tpl.title,
         description: tpl.description ?? undefined,
         fields: tpl.fields.map((f, i) => ({ ...f, id: `f${Date.now()}_${i}` })),
       });
@@ -64,7 +68,7 @@ export function AnketaDrawer({
 
   const createFromAIFields = async (rawFields: Omit<FormField, 'id'>[]) => {
     const form = await createForm({
-      title: `AI-анкета — ${entityName}`,
+      title: 'AI-анкета',
       fields: rawFields.map((f, i) => ({ ...f, id: `f${Date.now()}_${i}` })),
     });
     setFormId(form.id); setIsTemplate(false); setStep('builder');
@@ -86,9 +90,16 @@ export function AnketaDrawer({
         <Dialog.Overlay className="fixed inset-0 bg-black/40 z-[1000]" />
         <Dialog.Content className="fixed right-0 top-0 bottom-0 z-[1001] w-full max-w-3xl bg-white shadow-xl flex flex-col">
           <div className="flex items-center justify-between border-b px-5 py-3 shrink-0">
-            <Dialog.Title className="text-base font-semibold text-gray-900">
-              {isTemplate ? 'Шаблон анкеты' : 'Анкета'}
-            </Dialog.Title>
+            <div className="min-w-0">
+              <Dialog.Title className="text-base font-semibold text-gray-900">
+                {isTemplate ? 'Шаблон анкеты' : 'Анкета'}
+              </Dialog.Title>
+              {/* Кандидат — контекст дровера, НЕ часть названия анкеты: имя не
+                  должно попадать в title (и тем более в шаблон при переносе). */}
+              {!isTemplate && (
+                <p className="text-xs text-gray-500 truncate">{entityName}</p>
+              )}
+            </div>
             <Dialog.Close className="text-gray-400 hover:text-gray-700" aria-label="Закрыть">
               <X className="w-5 h-5" />
             </Dialog.Close>
