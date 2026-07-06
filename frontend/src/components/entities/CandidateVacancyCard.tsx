@@ -295,6 +295,10 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       // Исходный текст заметки (без "Этап: X" префикса) — нужен только для
       // предзаполнения инлайн-редактора, не для отображения.
       rawText?: string;
+      // Автор заметки — для проверки прав редактирования/удаления на фронте
+      // (бэк и так это проверяет, но кнопки не должны показываться тем, кому
+      // всё равно откажут: правит/удаляет только автор либо admin/owner/superadmin).
+      authorId?: number;
       // Когда заметка последний раз отредактирована (бэк проставляет сам).
       editedAt?: string;
       reactionKey: string;
@@ -313,6 +317,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
         author: note.author_name || undefined,
         noteId: note.id ? String(note.id) : undefined,
         rawText: note.text || "",
+        authorId: typeof note.author_id === "number" ? note.author_id : undefined,
         editedAt: note.edited_at || undefined,
         reactionKey: note.id ? `n:${note.id}` : `nd:${note.date || ""}`,
         // Заметки (extra_data.notes) — это КОММЕНТАРИИ (даже если несут stage_label
@@ -383,6 +388,16 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
 
   // --- Эмодзи-реакции на записи таймлайна ---
   const { user: reactionUser } = useAuthStore();
+  // Правка/удаление комментария — только автор либо admin/owner/superadmin
+  // (зеркалит бэковую _note_can_modify): показывать кнопки остальным бессмысленно,
+  // сервер всё равно ответит 403.
+  const canModifyNote = (authorId?: number) => {
+    if (!reactionUser) return false;
+    if (reactionUser.role === "superadmin") return true;
+    if (reactionUser.org_role === "owner" || reactionUser.org_role === "admin")
+      return true;
+    return authorId !== undefined && authorId === reactionUser.id;
+  };
   const [reactionPickerKey, setReactionPickerKey] = useState<string | null>(null);
   const [localReactions, setLocalReactions] = useState<
     Record<string, EntryReaction[]>
@@ -922,12 +937,13 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                     >
                       <Trash2 className="h-[14px] w-[14px]" />
                     </button>
-                  ) : !readonly && event.noteId ? (
+                  ) : !readonly && event.noteId && canModifyNote(event.authorId) ? (
                     // F-fix: комментарии (extra_data.notes, в т.ч. с @-упоминанием)
                     // раньше вообще не имели кнопки удаления — historyId у них
                     // никогда не бывает (это не StageTransition). Редактирование —
                     // тем же путём, бэк уже умел PATCH .../notes/{id}, не хватало
-                    // только кнопки на фронте.
+                    // только кнопки на фронте. Кнопки видны только автору либо
+                    // admin/owner/superadmin — иначе сервер всё равно ответит 403.
                     <div className="ml-auto flex items-center gap-[2px] opacity-0 transition-opacity group-hover/timeline:opacity-100">
                       {onEditNote && (
                         <button
