@@ -911,10 +911,39 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               {!isReadOnlyRequest && isAdmin && (
                 <div className="hf-vacancy-recruiters">
                   <label className={hfLabelClass}>Назначенные рекрутеры</label>
-                  <div className="hf-vacancy-recruiter-row">
-                    <span className="hf-vacancy-avatar">Я</span>
-                    <span className="truncate">Я, {user?.name || user?.email || "Профиль"}</span>
-                  </div>
+                  {/* Показываем РЕАЛЬНО назначенных (assigned_to), а не хардкод «Я».
+                      Раньше всегда висело «Я, {юзер}», даже если он не назначен. */}
+                  {(() => {
+                    if (assignAll) {
+                      return (
+                        <div className="hf-vacancy-recruiter-row">
+                          <span className="hf-vacancy-avatar">∀</span>
+                          <span className="truncate">Все рекрутёры</span>
+                        </div>
+                      );
+                    }
+                    const rows: { id: number; isMe: boolean; name: string }[] = [];
+                    for (const id of selectedRecruiters) {
+                      const isMe = id === user?.id;
+                      const name = isMe
+                        ? `Я, ${user?.name || user?.email || "Профиль"}`
+                        : (users.find((x) => x.id === id)?.name || "");
+                      if (name) rows.push({ id, isMe, name });
+                    }
+                    if (rows.length === 0) {
+                      return (
+                        <div className="hf-vacancy-recruiter-row">
+                          <span className="truncate text-[var(--hf-main-500)]">Пока никто не назначен</span>
+                        </div>
+                      );
+                    }
+                    return rows.map((r) => (
+                      <div key={r.id} className="hf-vacancy-recruiter-row">
+                        <span className="hf-vacancy-avatar">{r.isMe ? "Я" : (r.name[0] || "?")}</span>
+                        <span className="truncate">{r.name}</span>
+                      </div>
+                    ));
+                  })()}
                   <button
                     type="button"
                     onClick={() => setShowRecruiterDD(!showRecruiterDD)}
