@@ -183,12 +183,12 @@ export function FieldRenderer({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <span className="text-sm text-gray-500">Нажмите для выбора файла</span>
-                <span className="block text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG — до 10 МБ</span>
+                <span className="block text-xs text-gray-400 mt-1">PDF, DOC, JPG, PNG — до 10 МБ · видео MP4/MOV/AVI — до 100 МБ</span>
               </div>
               <input
                 type="file"
                 className="hidden"
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,video/mp4,video/quicktime,video/x-msvideo"
                 onChange={e => {
                   const file = e.target.files?.[0];
                   if (file) {

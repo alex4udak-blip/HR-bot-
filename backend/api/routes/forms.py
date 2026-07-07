@@ -31,9 +31,14 @@ from ..services.auth import get_current_user, get_user_org
 
 # File upload settings for public forms
 ENTITY_FILES_DIR = Path(__file__).parent.parent.parent / "uploads" / "entity_files"
-PUBLIC_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB per file for public forms
+PUBLIC_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB per file (документы/картинки)
+PUBLIC_MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100MB для видео (MP4/MOV/AVI)
+# ВНИМАНИЕ: файлы читаются целиком в память и хранятся в БД (bytea — диск на
+# проде эфемерный, теряется при редеплое). Видео тяжёлые → лимит жёсткий,
+# чтобы не ловить OOM и не раздувать БД. Для больших видео нужен S3 (отдельно).
 PUBLIC_MAX_FILES = 5  # Max files per public form submission
-ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".webp"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi"}
+ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".webp"} | VIDEO_EXTENSIONS
 PDF_RENDER_DPI = 200
 
 logger = logging.getLogger("hr-analyzer.forms")
@@ -1173,8 +1178,9 @@ async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files)
         if file_size == 0:
             skipped.append({"name": original_name, "reason": "пустой файл"})
             continue
-        if file_size > PUBLIC_MAX_FILE_SIZE:
-            skipped.append({"name": original_name, "reason": "файл больше 10 МБ"})
+        max_size = PUBLIC_MAX_VIDEO_SIZE if ext in VIDEO_EXTENSIONS else PUBLIC_MAX_FILE_SIZE
+        if file_size > max_size:
+            skipped.append({"name": original_name, "reason": f"файл больше {max_size // (1024 * 1024)} МБ"})
             continue
         content_type = upload_file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
         unique_name = f"{uuid.uuid4().hex}{ext}"

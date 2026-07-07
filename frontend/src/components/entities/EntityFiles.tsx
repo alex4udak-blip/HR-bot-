@@ -8,6 +8,7 @@ import {
   Loader2,
   File,
   FileImage,
+  FileVideo,
   FileArchive,
   X,
   FolderOpen
@@ -48,6 +49,7 @@ const FILE_TYPE_LABELS: Record<string, string> = {
 // Get icon for file based on mime type
 const getFileIcon = (mimeType: string) => {
   if (mimeType.startsWith('image/')) return FileImage;
+  if (mimeType.startsWith('video/')) return FileVideo;
   if (mimeType.includes('zip') || mimeType.includes('archive') || mimeType.includes('rar')) return FileArchive;
   if (mimeType.includes('pdf') || mimeType.includes('document') || mimeType.includes('word')) return FileText;
   return File;
