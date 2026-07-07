@@ -2028,6 +2028,7 @@ export default function RecruiterFunnelsPage() {
                                   }}
                                   className="hf-vacancies-search-action"
                                   title="Удалить"
+                                  style={{ color: 'var(--hf-status-red)' }}
                                 >
                                   <Trash2 className="hf-vacancies-search-action-icon" />
                                 </button>

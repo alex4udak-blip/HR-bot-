@@ -1113,6 +1113,7 @@ export default function VacanciesPage() {
                                 handleDeleteClick(vacancy);
                               }}
                               title="Удалить"
+                              style={{ color: 'var(--hf-status-red)' }}
                             >
                               <Trash2 className="hf-vacancies-search-action-icon" />
                             </button>
