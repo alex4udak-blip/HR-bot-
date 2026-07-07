@@ -11,7 +11,7 @@ import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
-import { getAssignableUsers, assignVacancy, takeVacancy } from '@/services/api';
+import { getAssignableUsers, assignVacancy, takeVacancy, declineVacancy } from '@/services/api';
 import type { AssignableUser } from '@/services/api';
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
 import { isVacancyParticipant, otherActiveParticipants } from '@/utils/vacancy';
@@ -426,6 +426,21 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   }, [vacancies, vacancy, user, isReadOnlyRequest]);
 
   const [taking, setTaking] = useState(false);
+  const [declining, setDeclining] = useState(false);
+  // «Отказаться» — рекрутёр снимает себя с заявки (backend /decline), не удаляет.
+  const handleDecline = async () => {
+    if (!vacancy || declining) return;
+    setDeclining(true);
+    try {
+      await declineVacancy(vacancy.id);
+      toast.success('Вы отказались от заявки');
+      onSuccess();
+    } catch {
+      toast.error('Не удалось отказаться от заявки');
+    } finally {
+      setDeclining(false);
+    }
+  };
   const handleTake = async () => {
     if (!vacancy) return;
     setTaking(true);
@@ -1060,6 +1075,16 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                         Закрыть вакансию
                       </button>
                     )}
+                    {!isAdmin && (
+                      <button
+                        type="button"
+                        onClick={handleDecline}
+                        disabled={declining}
+                        className="w-full h-[36px] rounded-[8px] border border-[var(--hf-status-red-badge)] text-[13px] font-medium text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-status-red-badge)] disabled:opacity-50"
+                      >
+                        {declining ? 'Отказ...' : 'Отказаться'}
+                      </button>
+                    )}
                     {user?.role === 'superadmin' && (
                       <button
                         type="button"
@@ -1097,6 +1122,15 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 {taking ? 'Беру...' : 'Взять в работу'}
               </button>
               )}
+              <button
+                type="button"
+                onClick={handleDecline}
+                disabled={declining}
+                className="hf-vacancy-secondary-btn"
+                style={{ color: 'var(--hf-status-red)', borderColor: 'var(--hf-status-red)' }}
+              >
+                {declining ? 'Отказ...' : 'Отказаться'}
+              </button>
             </>
           ) : (
             <>

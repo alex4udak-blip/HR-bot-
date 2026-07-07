@@ -315,9 +315,11 @@ export default function VacanciesPage() {
       const cloneSrc = extra?.cloned_from_request_id;
       if (typeof cloneSrc === 'number') return false;
 
-      // Рекрутёр, который уже закрыл/отменил свой клон, больше не должен
-      // видеть оригинальную заявку (бэкенд складывает его id в dismissed_by).
-      if (user) {
+      // Рекрутёр, который «отказался»/закрыл свой клон, больше не видит заявку
+      // (бэкенд кладёт его id в dismissed_by). НО админ/hr/owner видят ВСЕ
+      // заявки (оверсайт) — на них dismissed_by не распространяем, иначе после
+      // назначения заявка могла «пропасть» и у админа.
+      if (user && !isAdmin) {
         const dismissedBy = extra?.dismissed_by;
         if (Array.isArray(dismissedBy) && dismissedBy.includes(user.id)) return false;
       }
@@ -406,7 +408,7 @@ export default function VacanciesPage() {
 
       return true;
     });
-  }, [vacancies, searchQuery, departmentFilter, quickFilters, getComparableSalary, effectiveShowOnlyMine, assignmentFilter, statusFilter, user]);
+  }, [vacancies, searchQuery, departmentFilter, quickFilters, getComparableSalary, effectiveShowOnlyMine, assignmentFilter, statusFilter, user, isAdmin]);
 
   // Sync quick filters to URL
   useEffect(() => {
