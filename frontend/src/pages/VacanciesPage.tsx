@@ -245,7 +245,8 @@ export default function VacanciesPage() {
 
   // Auth state for role-based UI
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+  // hr = полноценный админ (2026-07-07) — входит в isAdmin наравне с owner/admin.
+  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
 
   // Task 9: "My vacancies" filter — non-admin users see only their vacancies by default
   const [showOnlyMine, setShowOnlyMine] = useState(false);
@@ -511,6 +512,15 @@ export default function VacanciesPage() {
   }, [vacancyId, fetchVacancy, clearCurrentVacancy]);
 
   const handleVacancyClick = (vacancy: Vacancy) => {
+    // «Заявки» показывает и ещё не взятые (pending_review/draft), и уже
+    // активные (open/paused) вакансии вперемешку. Для НЕ взятых — сводка
+    // (SidebarRequestPreviewModal: приоритет/заказчик + «Взять в работу»).
+    // Для уже активных внутри есть кандидаты/этапы/комментарии — их видно
+    // только в воронке, поэтому сразу ведём туда вместо той же карточки-сводки.
+    if (vacancy.status === 'open' || vacancy.status === 'paused') {
+      navigate(`/my-funnels?v=${vacancy.id}`);
+      return;
+    }
     setPreviewVacancy(vacancy);
   };
 

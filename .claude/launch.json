@@ -3,10 +3,17 @@
   "configurations": [
     {
       "name": "frontend",
-      "runtimeExecutable": "/opt/homebrew/opt/node/bin/node",
-      "runtimeArgs": ["node_modules/.bin/vite", "--host"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "--host"],
       "port": 5173,
       "cwd": "frontend"
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "powershell.exe",
+      "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "start_dev.ps1"],
+      "port": 8000,
+      "cwd": "backend"
     }
   ]
 }

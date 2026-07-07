@@ -960,16 +960,17 @@ export default function Layout() {
   );
 
   // Count of vacancies for the "Заявки" badge.
-  // Админ — нераспределённые заявки 'На рассмотрении' (+ legacy draft),
-  //   но НЕ свои собственные (когда админ сам создаёт заявку, ему не
-  //   нужен пинг про неё — иначе любая создание сразу "флешит жёлтым").
-  // Рекрутёр — назначенные ему/всем, ещё не взятые в работу (нет клона).
+  // Админ (owner/admin/hr) — нераспределённые заявки 'На рассмотрении'
+  //   (+ legacy draft), но НЕ свои собственные (когда админ сам создаёт заявку,
+  //   ему не нужен пинг про неё — иначе любое создание сразу "флешит жёлтым").
+  // Member — назначенные ему/всем, ещё не взятые в работу (нет клона).
   const assignedDraftCount = useMemo(() => {
     if (!user) return 0;
     const isAdmin =
       user.role === "superadmin" ||
       user.org_role === "owner" ||
-      user.org_role === "admin";
+      user.org_role === "admin" ||
+      user.org_role === "hr";
     if (isAdmin) {
       return vacancies.filter(
         (v) =>
@@ -1279,13 +1280,16 @@ export default function Layout() {
     navigate(path);
   };
 
+  // hr = полноценный админ (2026-07-07): входит наравне с owner/admin во ВСЕ
+  // админ-проверки, включая эту (сайдбар, заявки, /users, canUseAdmin).
   const isHrSidebarAdmin =
     user?.role === "superadmin" ||
     user?.org_role === "owner" ||
-    user?.org_role === "admin";
-  // Factorial: «Сотрудники» и «Документы» — только для HR/админа (и рекрутёра).
+    user?.org_role === "admin" ||
+    user?.org_role === "hr";
+  // Factorial: «Сотрудники» и «Документы» — для админа (owner/admin/hr).
   // Обычный сотрудник (org_role=member) видит лишь «Отпуска» и «Личный кабинет».
-  const canManageFactorialPeople = isHrSidebarAdmin || user?.org_role === "hr";
+  const canManageFactorialPeople = isHrSidebarAdmin;
   const sidebarSearchParams = new URLSearchParams(location.search);
   const sidebarSelectedVacancyId = sidebarSearchParams.get("v");
   const isClosedFunnelsView =
@@ -1307,9 +1311,13 @@ export default function Layout() {
   const sidebarOpenVacancies = vacancies
     .filter((v) => v.status === "open")
     .filter((v) => !allClonedSourceIds.has(v.id))
-    // Общая модель (2026-07-02): «Мои вакансии» = где я участник (создатель
-    // ИЛИ назначенный, минус «закрыл у себя»), а не только созданные мной.
-    .filter((v) => isHrSidebarAdmin || (user && isVacancyParticipant(v, user.id)));
+    // «Мои вакансии» = где я реально участник (создатель ИЛИ назначенный,
+    // минус «закрыл у себя») — ДАЖЕ для admin/superadmin. Раньше админ видел
+    // тут вообще ВСЕ открытые вакансии орга, из-за чего любое «взятие в
+    // работу» рекрутёром выглядело так, будто заявку взял и сам админ тоже.
+    // Просмотр «всего» без участия остаётся доступен на полной странице
+    // «Мои вакансии» — там у admin/owner/superadmin свой отдельный полный список.
+    .filter((v) => user && isVacancyParticipant(v, user.id));
   // Заявки, которые ТЕКУЩИЙ юзер уже взял в работу (есть свой клон).
   // После «Взять в работу» исходная заявка должна пропасть из списка —
   // она уже взята. Раньше она оставалась висеть.
@@ -1724,9 +1732,8 @@ export default function Layout() {
                       className="hf-hr-fab-menu"
                     >
                       {[
-                        // «Создать заявку» — только для админов/суперадмина:
-                        // заявки на подбор заводят они, рекрутёры их разбирают.
-                        // Открывает модалку-форму прямо на месте.
+                        // «Создать заявку» — все админы (owner/admin/hr) и
+                        // суперадмин. Открывает модалку-форму прямо на месте.
                         ...(isHrSidebarAdmin
                           ? [{
                               label: "Создать заявку",
@@ -2043,21 +2050,17 @@ export default function Layout() {
                       {section.items.map((item) => {
                         // "Мои воронки" — expandable with vacancy sub-list
                         if (item.path === "/my-funnels") {
-                          // Логика та же, что на RecruiterFunnelsPage: HR Admin видит все
-                          // open/paused, рекрутёр — где он УЧАСТНИК (общая модель 2026-07-02).
-                          const isAdminViewer =
-                            user?.role === "superadmin" ||
-                            user?.org_role === "owner" ||
-                            user?.org_role === "admin";
+                          // «Мои вакансии» = где я реально участник — ДАЖЕ для
+                          // admin/superadmin (иначе взятие заявки любым рекрутёром
+                          // выглядело так, будто её взял и сам админ). Просмотр
+                          // «всего» без участия — на полной странице /my-funnels.
                           const myVacancies = vacancies
                             .filter(
                               (v) =>
                                 v.status === "open" || v.status === "paused",
                             )
                             .filter(
-                              (v) =>
-                                isAdminViewer ||
-                                (user && isVacancyParticipant(v, user.id)),
+                              (v) => user && isVacancyParticipant(v, user.id),
                             )
                             .slice(0, 10);
                           return (
@@ -2137,10 +2140,7 @@ export default function Layout() {
                           // созданные И назначенные на него. Раньше админ здесь
                           // видел только НЕназначенные — расхождение с основным
                           // списком «Заявки», где админ видит всё.
-                          const isAdminUser =
-                            user?.role === "superadmin" ||
-                            user?.org_role === "owner" ||
-                            user?.org_role === "admin";
+                          const isAdminUser = isHrSidebarAdmin;
                           const myClonesFor = new Set<number>();
                           if (user) {
                             vacancies.forEach((v) => {

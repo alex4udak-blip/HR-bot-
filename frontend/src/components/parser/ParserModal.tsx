@@ -47,7 +47,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
   const isHrAdmin =
     user?.role === 'superadmin' ||
     user?.org_role === 'owner' ||
-    user?.org_role === 'admin';
+    user?.org_role === 'admin' ||
+    user?.org_role === 'hr';
 
   // Vacancy attachment state — кандидата можно сразу добавить на воронку
   const [vacancyOptions, setVacancyOptions] = useState<Pick<Vacancy, 'id' | 'title'>[]>([]);

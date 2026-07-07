@@ -38,7 +38,7 @@ interface ResourceUser {
 export default function TeamPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const isPlatformAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+  const isPlatformAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
   const [resources, setResources] = useState<ResourceUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});

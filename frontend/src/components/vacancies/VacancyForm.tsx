@@ -411,7 +411,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   // - не админ
   // - не creator и не hiring_manager
   // - назначен (assigned_to / assigned_to_all)
-  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
   const isMineByOwnership = !!(user && vacancy && (vacancy.created_by === user.id || vacancy.hiring_manager_id === user.id));
   const isAssignedToMe = !!(user && vacancy && (vacancy.assigned_to_all || (vacancy.assigned_to || []).includes(user.id)));
   const isReadOnlyRequest = !!vacancy && !isAdmin && !isMineByOwnership && isAssignedToMe;

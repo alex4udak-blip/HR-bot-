@@ -431,7 +431,8 @@ export default function AllCandidatesPage() {
   const isAdmin =
     user?.role === "superadmin" ||
     user?.org_role === "owner" ||
-    user?.org_role === "admin";
+    user?.org_role === "admin" ||
+    user?.org_role === "hr";
   const anySelected = selectedIds.size > 0;
 
   const fetchBoard = useCallback(async (silent = false) => {

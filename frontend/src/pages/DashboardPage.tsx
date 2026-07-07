@@ -177,10 +177,12 @@ export default function DashboardPage() {
   const isAdminAnalytics =
     user?.role === 'superadmin' ||
     user?.org_role === 'owner' ||
-    user?.org_role === 'admin';
-  // Не-админ (HR рекрутёр) видит только категорию "Вакансии" — все цифры
-  // backend отскейпит на его recruiter_id. Категория "Рекрутеры" скрыта,
-  // т.к. там воронка по всем рекрутерам — для не-админа смысла нет.
+    user?.org_role === 'admin' ||
+    user?.org_role === 'hr';
+  // Не-админ (member) видит только категорию "Вакансии" — все цифры backend
+  // отскейпит на его recruiter_id. Категория "Рекрутеры" скрыта, т.к. там
+  // воронка по всем рекрутерам — для не-админа смысла нет. hr = полноценный
+  // админ (2026-07-07) → видит всё.
   const visibleCategories = isAdminAnalytics
     ? REPORT_CATEGORIES
     : REPORT_CATEGORIES.filter(c => c.id !== 'recruiter');

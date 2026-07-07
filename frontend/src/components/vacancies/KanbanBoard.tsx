@@ -127,7 +127,7 @@ function getStagesConfig(vacancy: Vacancy): {
 export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<VacancyApplication | null>(null);
   const [showStagesConfig, setShowStagesConfig] = useState(false);
