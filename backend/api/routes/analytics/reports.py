@@ -205,8 +205,8 @@ def _get_date_filter(period: str, date_from_str: Optional[str] = None, date_to_s
 
 
 async def _is_admin_analytics(user: User, org_id: int, db: AsyncSession) -> bool:
-    """Видит общую аналитику по всей организации: superadmin/owner/admin/hr
-    (hr = полноценный админ, 2026-07-07). Обычный member видит только свои данные.
+    """Видит общую аналитику по всей организации: superadmin/owner/admin.
+    hr (ограниченный рекрутёр) и member видят только свои данные.
     """
     if user.role == UserRole.superadmin:
         return True
@@ -217,7 +217,7 @@ async def _is_admin_analytics(user: User, org_id: int, db: AsyncSession) -> bool
         )
     )
     role = res.scalar_one_or_none()
-    return role in (OrgRole.owner, OrgRole.admin, OrgRole.hr)
+    return role in (OrgRole.owner, OrgRole.admin)
 
 
 async def _scope_recruiter_id(

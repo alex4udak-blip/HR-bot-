@@ -364,7 +364,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAdmin: () => {
     const { user } = get();
     // Org admin or department lead/sub_admin
-    return user?.org_role === 'admin' || user?.org_role === 'hr' || user?.department_role === 'lead' || user?.department_role === 'sub_admin';
+    return user?.org_role === 'admin' || user?.department_role === 'lead' || user?.department_role === 'sub_admin';
   },
 
   isSubAdmin: () => {

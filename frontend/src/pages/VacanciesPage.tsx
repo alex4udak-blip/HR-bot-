@@ -245,8 +245,7 @@ export default function VacanciesPage() {
 
   // Auth state for role-based UI
   const { user } = useAuthStore();
-  // hr = полноценный админ (2026-07-07) — входит в isAdmin наравне с owner/admin.
-  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
+  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
 
   // Task 9: "My vacancies" filter — non-admin users see only their vacancies by default
   const [showOnlyMine, setShowOnlyMine] = useState(false);

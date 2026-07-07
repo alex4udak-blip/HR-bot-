@@ -81,7 +81,7 @@ export default function RecruiterWorkspacePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuthStore();
 
-  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
+  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
 
   // sidebar state
   const [spaces, setSpaces] = useState<SidebarSpace[]>([]);

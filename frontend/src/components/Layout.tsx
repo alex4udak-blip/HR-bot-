@@ -224,8 +224,7 @@ export function SidebarRequestPreviewModal({
   const isModalAdmin =
     user?.role === "superadmin" ||
     user?.org_role === "owner" ||
-    user?.org_role === "admin" ||
-    user?.org_role === "hr";
+    user?.org_role === "admin";
   // «Отказаться» — рекрутёр снимает себя с заявки (backend /decline).
   const handleDecline = async () => {
     if (declining) return;
@@ -1002,8 +1001,7 @@ export default function Layout() {
     const isAdmin =
       user.role === "superadmin" ||
       user.org_role === "owner" ||
-      user.org_role === "admin" ||
-      user.org_role === "hr";
+      user.org_role === "admin";
     if (isAdmin) {
       return vacancies.filter(
         (v) =>
@@ -1313,16 +1311,16 @@ export default function Layout() {
     navigate(path);
   };
 
-  // hr = полноценный админ (2026-07-07): входит наравне с owner/admin во ВСЕ
-  // админ-проверки, включая эту (сайдбар, заявки, /users, canUseAdmin).
+  // Полный админ сайдбара: owner/admin/superadmin. hr (HR Рекрутер) СЮДА НЕ
+  // входит — он ограниченный рекрутёр (видит только свои/назначенные заявки,
+  // «Отказаться», без удаления и без /users). Откат hr=админ, 2026-07-07.
   const isHrSidebarAdmin =
     user?.role === "superadmin" ||
     user?.org_role === "owner" ||
-    user?.org_role === "admin" ||
-    user?.org_role === "hr";
-  // Factorial: «Сотрудники» и «Документы» — для админа (owner/admin/hr).
-  // Обычный сотрудник (org_role=member) видит лишь «Отпуска» и «Личный кабинет».
-  const canManageFactorialPeople = isHrSidebarAdmin;
+    user?.org_role === "admin";
+  // Factorial «Сотрудники»/«Документы» — админ (owner/admin) + hr-рекрутёр.
+  // Обычный сотрудник (member) видит лишь «Отпуска» и «Личный кабинет».
+  const canManageFactorialPeople = isHrSidebarAdmin || user?.org_role === "hr";
   const sidebarSearchParams = new URLSearchParams(location.search);
   const sidebarSelectedVacancyId = sidebarSearchParams.get("v");
   const isClosedFunnelsView =

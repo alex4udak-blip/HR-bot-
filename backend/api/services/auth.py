@@ -453,8 +453,11 @@ async def has_full_database_access(user: User, org_id: int, db: AsyncSession) ->
     This includes:
     - Superadmins (global access)
     - Organization owners
-    - Organization admins and HR recruiters (owner/admin/hr — все три полноценные
-      HR-роли с полным доступом к данным орга)
+    - Organization admins (owner/admin)
+
+    hr (HR Рекрутер) — НЕ полный доступ (2026-07-07, откат): это ограниченный
+    рекрутёр (создаёт/редактирует заявки, видит только свои/назначенные), а не
+    админ. Полный доступ — только owner/admin/superadmin.
 
     Use this instead of checking just for owner when determining if user
     can see all entities/vacancies in the organization.
@@ -462,12 +465,12 @@ async def has_full_database_access(user: User, org_id: int, db: AsyncSession) ->
     if user.role == UserRole.superadmin:
         return True
 
-    # Org owner/admin/hr — все имеют полный доступ (hr = обычный админ, 2026-07-07).
+    # Только org owner/admin (hr исключён — он ограниченный рекрутёр).
     result = await db.execute(
         select(OrgMember.id, OrgMember.role).where(
             OrgMember.org_id == org_id,
             OrgMember.user_id == user.id,
-            OrgMember.role.in_([OrgRole.owner, OrgRole.admin, OrgRole.hr])
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin])
         )
     )
     return result.first() is not None

@@ -864,7 +864,7 @@ export default function EmployeePortalPage() {
   const location = useLocation();
   const { user } = useAuthStore();
   const isAdminView = location.pathname === '/employees';
-  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin' || user?.org_role === 'hr';
+  const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
 
   // If /employees but not admin, redirect to profile view
   const showAdmin = isAdminView && isAdmin;
