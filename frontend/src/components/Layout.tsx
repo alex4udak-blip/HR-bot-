@@ -1330,7 +1330,7 @@ export default function Layout() {
       if (typeof src === "number") myTakenRequestIds.add(src);
     });
   }
-  const sidebarRequestVacancies = vacancies
+  const allSidebarRequests = vacancies
     // «Заявки» = только заявочные статусы (pending_review/draft). open/paused —
     // это рабочие воронки, им место в «Мои вакансии», не в «Заявки».
     .filter((v) => v.status === "pending_review" || v.status === "draft")
@@ -1345,8 +1345,11 @@ export default function Layout() {
       // Единое правило видимости заявки (utils/vacancy.ts): admin/owner/
       // superadmin видят ВСЕ, рекрутёр — свои созданные И назначенные на него.
       return isRequestVisibleTo(v, user?.id, isHrSidebarAdmin);
-    })
-    .slice(0, 8);
+    });
+  // Бейдж рядом с «Заявки» = ВСЕГО заявок (совпадает со списком), не только
+  // нераспределённых. Список визуально ограничен 8, счётчик — полный.
+  const sidebarRequestCount = allSidebarRequests.length;
+  const sidebarRequestVacancies = allSidebarRequests.slice(0, 8);
   const getSidebarRequestAuthor = (vacancy: Vacancy) =>
     vacancy.created_by_name ||
     vacancy.hiring_manager_name ||
@@ -1540,20 +1543,13 @@ export default function Layout() {
                       className="hf-hr-nav-icon"
                     />
                     <span className="min-w-0 flex-1">Заявки</span>
-                    {/* Модуль 2: индикатор нераспределённых заявок для админа. */}
-                    {isHrSidebarAdmin && (() => {
-                      const unassignedCount = vacancies.filter(
-                        (v) =>
-                          v.status === "pending_review" &&
-                          !(v.assigned_to && v.assigned_to.length > 0) &&
-                          !v.assigned_to_all,
-                      ).length;
-                      return unassignedCount > 0 ? (
-                        <span className="mr-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--hf-status-red)] px-1.5 text-[11px] font-semibold leading-none text-white">
-                          {unassignedCount}
-                        </span>
-                      ) : null;
-                    })()}
+                    {/* Счётчик рядом с «Заявки» = ВСЕГО заявок (как в списке),
+                        а не только нераспределённых. */}
+                    {isHrSidebarAdmin && sidebarRequestCount > 0 && (
+                      <span className="mr-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--hf-status-red)] px-1.5 text-[11px] font-semibold leading-none text-white">
+                        {sidebarRequestCount}
+                      </span>
+                    )}
                     <span className="hf-hr-secondary-text">
                       {expandedRequests ? "Свернуть" : "Развернуть"}
                     </span>
