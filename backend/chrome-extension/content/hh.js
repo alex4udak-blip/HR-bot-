@@ -54,13 +54,31 @@
     // Быстрый путь: hh.ru magritte (2024–2025+) — имя кандидата в шапке резюме
     // [data-qa="resume-main-info__header"] h2 > span. Span может иметь дочерние
     // элементы, поэтому читаем text-узлы вместо обычного leaf-scan.
+    // Имя «на вид»: полное ФИО (2–3 слова) ИЛИ анонимизированный формат hh.ru —
+    // инициалы + имя, напр. «Н Станислав А», «Иван И.», «И. И. Иванов». Раньше в
+    // шапке принимали только полное ФИО, поэтому анонимные резюме приезжали с
+    // именем-плейсхолдером «Должность, Город, Возраст».
+    function isLikelyName(s) {
+      if (!s) return false;
+      s = s.trim();
+      if (s.length < 3 || s.length > 60) return false;
+      if (/^\s*(кандидат|candidate)\s*$/i.test(s)) return false;
+      if (FIO_RE.test(s)) return true;
+      const tokens = s.split(/[\s.]+/).filter(Boolean);
+      if (tokens.length < 2 || tokens.length > 4) return false;
+      // Каждый токен — заглавная + опц. строчные (инициал «Н» или слово «Станислав»).
+      if (!tokens.every((t) => /^[A-ZА-ЯЁ][a-zа-яё]*$/.test(t))) return false;
+      // Хотя бы один «настоящий» токен (имя/фамилия ≥ 3 букв), не только инициалы.
+      return tokens.some((t) => t.length >= 3);
+    }
+
     const magritteH2 = document.querySelector('[data-qa="resume-main-info__header"] h2');
     if (magritteH2) {
       const h2txt = ownText(magritteH2);
-      if (h2txt.length >= 5 && h2txt.length <= 60 && FIO_RE.test(h2txt)) return h2txt;
+      if (isLikelyName(h2txt)) return h2txt;
       for (const span of magritteH2.querySelectorAll('span')) {
         const stxt = ownText(span);
-        if (stxt.length >= 5 && stxt.length <= 60 && FIO_RE.test(stxt)) return stxt;
+        if (isLikelyName(stxt)) return stxt;
       }
     }
 
