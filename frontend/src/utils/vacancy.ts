@@ -18,17 +18,23 @@ export function isVacancyParticipant(v: Vacancy, userId: number | undefined | nu
 }
 
 /**
- * Видимость ЗАЯВКИ (pending_review/draft) для пользователя — единое правило,
- * которое раньше было продублировано (с расхождениями) в нескольких местах
- * сайдбара/страниц: рекрутёр видит заявки, которые сам создал ИЛИ на него
- * назначены; admin/owner/superadmin видят ВСЕ заявки орга без исключений.
+ * Видимость ЗАЯВКИ в быстром списке «Заявки» (сайдбар), 2026-07-07:
+ * - admin/owner/superadmin/hr → только НЕРАСПРЕДЕЛЁННЫЕ заявки (нужно раздать).
+ *   Как только админ назначил рекрутёра — заявка уходит из сайдбара (она целиком
+ *   есть в «Перейти к заявкам», ничего не теряется).
+ * - рекрутёр (member) → заявки, где он участник: создал ИЛИ назначен на него.
+ * ВНИМАНИЕ: правило для САЙДБАРА. Полная страница /vacancies («Перейти к
+ * заявкам») показывает админу ВСЕ заявки независимо от назначения.
  */
 export function isRequestVisibleTo(
   v: Vacancy,
   userId: number | undefined | null,
   isAdmin: boolean,
 ): boolean {
-  if (isAdmin) return true;
+  if (isAdmin) {
+    const assigned = (v.assigned_to || []).length > 0 || !!v.assigned_to_all;
+    return !assigned;
+  }
   return isVacancyParticipant(v, userId);
 }
 

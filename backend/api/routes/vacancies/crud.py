@@ -91,8 +91,11 @@ async def list_vacancies(
         if shared_vacancy_ids:
             access_conditions.append(Vacancy.id.in_(shared_vacancy_ids))
 
-        # Vacancies marked as visible to all org members
-        access_conditions.append(Vacancy.visible_to_all == True)
+        # ВАЖНО (2026-07-07): visible_to_all БОЛЬШЕ НЕ даёт member видимость.
+        # Рекрутёр видит заявку ТОЛЬКО если она реально на него назначена
+        # (assigned_to / assigned_to_all) или он создатель/наниматель/лид/шара.
+        # Иначе «Общая» (visible_to_all) заявка утекала всем рекрутёрам, хотя
+        # назначена на другого. Админ/owner/hr видят всё через has_full_access.
 
         # Vacancies assigned to this user (JSON containment via PostgreSQL)
         access_conditions.append(
@@ -594,9 +597,11 @@ async def delete_vacancy(
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Check edit rights (delete requires same permissions as edit)
-    if not await can_edit_vacancy(vacancy, current_user, org, db):
-        raise HTTPException(status_code=403, detail="You don't have permission to delete this vacancy")
+    # Удалять заявки может ТОЛЬКО админ-уровень (owner/admin/hr/superadmin),
+    # 2026-07-07. Рекрутёр (member) вместо удаления «Отказывается» (decline_vacancy)
+    # — он снимает себя, а не сносит заявку у всех.
+    if not await has_full_database_access(current_user, org, db):
+        raise HTTPException(status_code=403, detail="Удалять заявки может только админ")
 
     # Если удаляем КЛОН заявки — «закрываем» оригинал у этого рекрутёра (как при
     # закрытии клона), иначе после удаления рабочей вакансии исходная заявка снова
@@ -754,6 +759,46 @@ async def take_vacancy(
     logger.info(f"Request {source.id} taken (joined) by user {current_user.id}")
 
     return await get_vacancy(source.id, db=db, current_user=current_user)
+
+
+async def decline_vacancy(
+    vacancy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access),
+):
+    """Рекрутёр «Отказывается» от заявки: снимает ТОЛЬКО СЕБЯ.
+
+    Убирает current_user из assigned_to + ставит метку dismissed_by. Заявку НЕ
+    удаляет — если после этого не осталось назначенных, она снова становится
+    нераспределённой и возвращается в сайдбар «Заявки» к админу. Это замена
+    кнопки «Удалить» для рекрутёра (member); удалять заявки может только
+    админ-уровень (can_edit_vacancy → owner/admin/hr/superadmin/создатель).
+    """
+    org = await get_user_org(current_user, db)
+    result = await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id).with_for_update()
+    )
+    vacancy = result.scalar_one_or_none()
+    if not vacancy or (org and vacancy.org_id != org.id):
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Снять себя из назначенных.
+    assigned = list(vacancy.assigned_to or [])
+    if current_user.id in assigned:
+        vacancy.assigned_to = [u for u in assigned if u != current_user.id]
+
+    # Пометить dismissed_by — исключает себя и из assigned_to_all/общей воронки.
+    extra = dict(vacancy.extra_data or {})
+    dismissed = list(extra.get("dismissed_by") or [])
+    if current_user.id not in dismissed:
+        dismissed.append(current_user.id)
+        extra["dismissed_by"] = dismissed
+        vacancy.extra_data = extra
+
+    await db.commit()
+    logger.info(f"Vacancy {vacancy.id}: user {current_user.id} declined (removed self)")
+    # НЕ возвращаем get_vacancy: юзер уже снял себя и мог потерять доступ (403).
+    return {"declined": True, "vacancy_id": vacancy.id}
 
 
 async def assign_vacancy(

@@ -61,7 +61,7 @@ import ParserModal from "@/components/parser/ParserModal";
 import TelegramConnectBanner from "@/components/TelegramConnectBanner";
 import { NotifPeek } from "@/components/NotifPeek";
 import { NotifSettings } from "@/components/NotifSettings";
-import { getVacancy, takeVacancy } from "@/services/api/vacancies";
+import { getVacancy, takeVacancy, declineVacancy } from "@/services/api/vacancies";
 import type { Vacancy } from "@/types";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
@@ -220,6 +220,27 @@ export function SidebarRequestPreviewModal({
   const { user } = useAuthStore();
   const { vacancies, fetchVacancies } = useVacancyStore();
   const [taking, setTaking] = useState(false);
+  const [declining, setDeclining] = useState(false);
+  const isModalAdmin =
+    user?.role === "superadmin" ||
+    user?.org_role === "owner" ||
+    user?.org_role === "admin" ||
+    user?.org_role === "hr";
+  // «Отказаться» — рекрутёр снимает себя с заявки (backend /decline).
+  const handleDecline = async () => {
+    if (declining) return;
+    setDeclining(true);
+    try {
+      await declineVacancy(vacancy.id);
+      await fetchVacancies();
+      toast.success("Вы отказались от заявки");
+      onTaken();
+    } catch {
+      toast.error("Не удалось отказаться от заявки");
+    } finally {
+      setDeclining(false);
+    }
+  };
   const isTakenByMe = useMemo(() => {
     if (!user) return false;
     return vacancies.some(
@@ -409,6 +430,18 @@ export function SidebarRequestPreviewModal({
           <button type="button" onClick={onEdit} className="hf-vacancy-secondary-btn">
             Редактировать
           </button>
+          {/* «Отказаться» — только рекрутёр (member): снимает себя с заявки. */}
+          {!isModalAdmin && (
+            <button
+              type="button"
+              onClick={handleDecline}
+              disabled={declining}
+              className="hf-vacancy-secondary-btn"
+              style={{ color: "var(--hf-status-red)", borderColor: "var(--hf-status-red)" }}
+            >
+              {declining ? "Отказ..." : "Отказаться"}
+            </button>
+          )}
         </div>
       </motion.div>
     </motion.div>

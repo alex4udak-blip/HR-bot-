@@ -342,6 +342,7 @@ export {
   // Vacancy assignment
   assignVacancy,
   takeVacancy,
+  declineVacancy,
   // Recruiter stats
   getVacancyRecruiterStats,
   // AI Scoring

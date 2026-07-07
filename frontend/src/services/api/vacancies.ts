@@ -135,6 +135,11 @@ export const takeVacancy = async (id: number, force = false): Promise<Vacancy> =
   return data;
 };
 
+// «Отказаться» — рекрутёр снимает себя с заявки (backend: /decline).
+export const declineVacancy = async (id: number): Promise<void> => {
+  await debouncedMutation('post', `/vacancies/${id}/decline`);
+};
+
 // ============================================================
 // VACANCY APPLICATIONS API
 // ============================================================

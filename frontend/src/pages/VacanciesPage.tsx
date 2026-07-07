@@ -27,7 +27,7 @@ import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { EMPLOYMENT_TYPES } from '@/types';
 import { formatSalary } from '@/utils';
-import { getDepartments, assignVacancy, takeVacancy, getAssignableUsers } from '@/services/api';
+import { getDepartments, assignVacancy, takeVacancy, declineVacancy, getAssignableUsers } from '@/services/api';
 import type { Department, AssignableUser } from '@/services/api';
 import {
   VacancyForm,
@@ -532,6 +532,21 @@ export default function VacanciesPage() {
     setConfirmDialog({ open: true, vacancy, type: 'delete' });
   };
 
+  // «Отказаться» — рекрутёр (member) снимает СЕБЯ с заявки (вместо удаления).
+  const [decliningId, setDecliningId] = useState<number | null>(null);
+  const handleDecline = async (vacancy: Vacancy) => {
+    setDecliningId(vacancy.id);
+    try {
+      await declineVacancy(vacancy.id);
+      toast.success('Вы отказались от заявки');
+      fetchVacancies();
+    } catch {
+      toast.error('Не удалось отказаться от заявки');
+    } finally {
+      setDecliningId(null);
+    }
+  };
+
   // Task 14: Close vacancy handler
   const handleCloseClick = (vacancy: Vacancy) => {
     setConfirmDialog({ open: true, vacancy, type: 'close' });
@@ -918,8 +933,12 @@ export default function VacanciesPage() {
                     ...createVacancyContextMenu(
                       () => handleVacancyClick(vacancy),
                       () => setEditingVacancy(vacancy),
-                      () => handleDeleteClick(vacancy),
+                      () => (isAdmin ? handleDeleteClick(vacancy) : handleDecline(vacancy)),
                       () => handleCopyLink(vacancy)
+                    ).map((it) =>
+                      it.id === 'delete' && !isAdmin
+                        ? { ...it, label: 'Отказаться', icon: X }
+                        : it
                     ),
                     ...(vacancy.status === 'open' || vacancy.status === 'paused' ? [{
                       id: 'close',
@@ -1084,17 +1103,33 @@ export default function VacanciesPage() {
                               <Archive className="hf-vacancies-search-action-icon" />
                             </button>
                           )}
-                          <button
-                            type="button"
-                            className="hf-vacancies-search-action"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteClick(vacancy);
-                            }}
-                            title="Удалить"
-                          >
-                            <Trash2 className="hf-vacancies-search-action-icon" />
-                          </button>
+                          {isAdmin ? (
+                            <button
+                              type="button"
+                              className="hf-vacancies-search-action"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteClick(vacancy);
+                              }}
+                              title="Удалить"
+                            >
+                              <Trash2 className="hf-vacancies-search-action-icon" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="hf-vacancies-search-action"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDecline(vacancy);
+                              }}
+                              disabled={decliningId === vacancy.id}
+                              title="Отказаться от заявки"
+                              style={{ color: 'var(--hf-status-red)' }}
+                            >
+                              <X className="hf-vacancies-search-action-icon" />
+                            </button>
+                          )}
                         </div>
                     </div>
                   </article>

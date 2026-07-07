@@ -513,8 +513,15 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
 
   useEffect(() => {
     getAssignableUsers()
-      .then(setUsers)
+      .then((list) => {
+        // Себя в списке «Добавить» не показываем — текущий юзер уже назначен ("Я").
+        const others = list.filter((u) => u.id !== user?.id);
+        setUsers(others);
+        // Если заявка была назначена «всем» — визуально отмечаем всех рекрутёров.
+        if (vacancy?.assigned_to_all) setSelectedRecruiters(others.map((u) => u.id));
+      })
       .catch((err) => console.error('Failed to load assignable users:', err));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -902,14 +909,24 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   </button>
                   {showRecruiterDD && (
                     <div className="hf-vacancy-dropdown">
-                      <button
-                        type="button"
-                        onClick={() => { setAssignAll(!assignAll); if (!assignAll) setSelectedRecruiters([]); }}
-                        className="hf-vacancy-dropdown-item"
-                      >
-                        <span className={clsx("hf-vacancy-dropdown-check", assignAll && "hf-vacancy-dropdown-check-active")} />
-                        Всем рекрутерам
-                      </button>
+                      {(() => {
+                        const allIds = users.map((u) => u.id);
+                        const allSelected = allIds.length > 0 && allIds.every((id) => selectedRecruiters.includes(id));
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Чек-олл: отметить всех рекрутёров; повторно — снять со всех.
+                              setSelectedRecruiters(allSelected ? [] : allIds);
+                              setAssignAll(!allSelected);
+                            }}
+                            className="hf-vacancy-dropdown-item"
+                          >
+                            <span className={clsx("hf-vacancy-dropdown-check", allSelected && "hf-vacancy-dropdown-check-active")} />
+                            Всем рекрутерам
+                          </button>
+                        );
+                      })()}
                       {users.map((u) => {
                         const isSelected = selectedRecruiters.includes(u.id);
                         return (
@@ -917,10 +934,12 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                             key={u.id}
                             type="button"
                             onClick={() => {
-                              setSelectedRecruiters(isSelected
+                              const next = isSelected
                                 ? selectedRecruiters.filter(id => id !== u.id)
-                                : [...selectedRecruiters, u.id]
-                              );
+                                : [...selectedRecruiters, u.id];
+                              setSelectedRecruiters(next);
+                              // Держим «Всем рекрутерам» в синхроне: активна, только если выбраны все.
+                              setAssignAll(users.length > 0 && users.every(x => next.includes(x.id)));
                             }}
                             className="hf-vacancy-dropdown-item"
                           >

@@ -187,11 +187,11 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     if org is None or getattr(vacancy, 'org_id', None) != org.id:
         return False
 
-    # Vacancy marked as visible to all org members
-    if getattr(vacancy, 'visible_to_all', False):
-        return True
+    # visible_to_all БОЛЬШЕ НЕ даёт member доступ (2026-07-07): рекрутёр видит
+    # заявку только если реально назначен/создатель/наниматель/лид/шара, иначе
+    # «Общая» заявка утекала всем. Админ/owner/hr уже прошли по has_full_access.
 
-    # Vacancy open for all HR recruiters
+    # Vacancy open for all HR recruiters (назначение «всем рекрутёрам» — это ok)
     if getattr(vacancy, 'assigned_to_all', False):
         return True
 
