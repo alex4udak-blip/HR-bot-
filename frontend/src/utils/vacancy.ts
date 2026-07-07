@@ -17,6 +17,21 @@ export function isVacancyParticipant(v: Vacancy, userId: number | undefined | nu
   return false;
 }
 
+/**
+ * Видимость ЗАЯВКИ (pending_review/draft) для пользователя — единое правило,
+ * которое раньше было продублировано (с расхождениями) в нескольких местах
+ * сайдбара/страниц: рекрутёр видит заявки, которые сам создал ИЛИ на него
+ * назначены; admin/owner/superadmin видят ВСЕ заявки орга без исключений.
+ */
+export function isRequestVisibleTo(
+  v: Vacancy,
+  userId: number | undefined | null,
+  isAdmin: boolean,
+): boolean {
+  if (isAdmin) return true;
+  return isVacancyParticipant(v, userId);
+}
+
 /** Активные участники, кроме указанного юзера (для вопроса «ты последний?»). */
 export function otherActiveParticipants(v: Vacancy, userId: number | undefined | null): number[] {
   const dismissed = new Set(

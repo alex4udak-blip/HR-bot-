@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { sanitizeHtml } from "../utils/sanitizeHtml";
 import { formatSalary } from "@/utils/currency";
 import { parseServerDate } from "@/utils/date";
-import { isVacancyParticipant } from "@/utils/vacancy";
+import { isVacancyParticipant, isRequestVisibleTo } from "@/utils/vacancy";
 import {
   LayoutDashboard,
   Users,
@@ -1334,16 +1334,9 @@ export default function Layout() {
       if (typeof clonedFrom === "number") return false;
       // Заявку, которую текущий юзер уже взял в работу, прячем.
       if (myTakenRequestIds.has(v.id)) return false;
-      // Админ видит ВСЕ заявки (в т.ч. уже назначенные) — он их распределяет и
-      // ведёт, пока рекрутёр не возьмёт в работу. Раньше назначенные заявки
-      // пропадали из сайдбара, хотя на странице «Заявки» были видны.
-      if (isHrSidebarAdmin) return true;
-      if (!user) return false;
-      // Рекрутёр видит назначенные на него заявки И свои собственные созданные.
-      if (v.created_by === user.id) return true;
-      if (v.assigned_to_all) return true;
-      if (v.assigned_to && v.assigned_to.includes(user.id)) return true;
-      return false;
+      // Единое правило видимости заявки (utils/vacancy.ts): admin/owner/
+      // superadmin видят ВСЕ, рекрутёр — свои созданные И назначенные на него.
+      return isRequestVisibleTo(v, user?.id, isHrSidebarAdmin);
     })
     .slice(0, 8);
   const getSidebarRequestAuthor = (vacancy: Vacancy) =>
@@ -2138,8 +2131,12 @@ export default function Layout() {
 
                         // "Заявки" — expandable with vacancy request sub-list
                         if (item.path === "/vacancies") {
-                          // Админ видит НЕназначенные заявки (нужно распределить).
-                          // Рекрутёр — назначенные на него и ещё не взятые в работу.
+                          // Единое правило видимости (utils/vacancy.ts), то же,
+                          // что и в основном списке «Заявки»: admin/owner/
+                          // superadmin видят ВСЕ заявки орга, рекрутёр — свои
+                          // созданные И назначенные на него. Раньше админ здесь
+                          // видел только НЕназначенные — расхождение с основным
+                          // списком «Заявки», где админ видит всё.
                           const isAdminUser =
                             user?.role === "superadmin" ||
                             user?.org_role === "owner" ||
@@ -2164,26 +2161,8 @@ export default function Layout() {
                                 v.status === "open" ||
                                 v.status === "paused";
                               if (!statusOk) return false;
-                              if (isAdminUser) {
-                                if (v.assigned_to_all) return false;
-                                if (v.assigned_to && v.assigned_to.length > 0)
-                                  return false;
-                                return true;
-                              }
-                              if (!user) return false;
                               if (myClonesFor.has(v.id)) return false;
-                              // Рекрутёр видит и назначенные на него, и свои
-                              // собственные созданные заявки — как в основном
-                              // списке «Заявки» (иначе её же заявки, которые она
-                              // сама подала, не показывались бы нигде в сайдбаре).
-                              if (v.created_by === user.id) return true;
-                              if (v.assigned_to_all) return true;
-                              if (
-                                v.assigned_to &&
-                                v.assigned_to.includes(user.id)
-                              )
-                                return true;
-                              return false;
+                              return isRequestVisibleTo(v, user?.id, isAdminUser);
                             })
                             .slice(0, 15);
                           return (
