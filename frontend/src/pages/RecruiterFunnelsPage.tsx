@@ -35,7 +35,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote, updateEntityNote } from '@/services/api/entities';
-import { isVacancyParticipant, otherActiveParticipants } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive } from '@/utils/vacancy';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
@@ -353,8 +353,12 @@ export default function RecruiterFunnelsPage() {
     // создатель ИЛИ назначенный (assigned_to/assigned_to_all), минус те, из
     // которых он «закрыл у себя» (dismissed_by). Клонов больше нет — все
     // участники работают в одной воронке и видят всех её кандидатов.
+    // 2026-07-08: но «Мои вакансии» показывает только ЛИЧНО принятые
+    // (isPersonallyActive) — назначенный, ещё не нажавший «Взять в работу»,
+    // видит её в «Заявки», а не здесь, даже если статус уже open (её взял
+    // кто-то другой из назначенных).
     if (!isHrAdmin && user) {
-      result = result.filter((v) => isVacancyParticipant(v, user.id));
+      result = result.filter((v) => isPersonallyActive(v, user.id));
     }
     if (statusFilter !== 'all') {
       result = result.filter((v) => v.status === statusFilter);
@@ -1560,9 +1564,10 @@ export default function RecruiterFunnelsPage() {
       v.id !== selectedVacancyId &&
       v.status === 'open' &&
       !clonedSourceIds.has(v.id) &&
-      // Свои воронки = где участник (создатель/назначенный, минус dismissed) —
-      // общая модель 2026-07-02. Чужие / невзятые заявки — НЕ цель.
-      (isHrAdmin || (!!user && isVacancyParticipant(v, user.id)))
+      // Свои воронки = где ЛИЧНО принял (isPersonallyActive, 2026-07-08) —
+      // назначенный, но ещё не нажавший «Взять в работу», не должен
+      // перекидывать кандидатов в воронку, к которой сам ещё не присоединился.
+      (isHrAdmin || (!!user && isPersonallyActive(v, user.id)))
     );
   }, [vacancies, selectedVacancyId, selectedCandidate?.entity_id, isHrAdmin, user]);
 

@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { sanitizeHtml } from "../utils/sanitizeHtml";
 import { formatSalary } from "@/utils/currency";
 import { parseServerDate } from "@/utils/date";
-import { isVacancyParticipant, isRequestVisibleTo } from "@/utils/vacancy";
+import { isRequestVisibleTo, isPersonallyActive, hasPersonallyAccepted } from "@/utils/vacancy";
 import {
   LayoutDashboard,
   Users,
@@ -218,7 +218,7 @@ export function SidebarRequestPreviewModal({
   onTaken: () => void;
 }) {
   const { user } = useAuthStore();
-  const { vacancies, fetchVacancies } = useVacancyStore();
+  const { fetchVacancies } = useVacancyStore();
   const [taking, setTaking] = useState(false);
   const [declining, setDeclining] = useState(false);
   const isModalAdmin =
@@ -240,24 +240,18 @@ export function SidebarRequestPreviewModal({
       setDeclining(false);
     }
   };
+  // 2026-07-08: личное принятие (extra_data.accepted_by) — воронка общая, но
+  // «Взять в работу» личное для каждого. Легаси-клоны (cloned_from_request_id)
+  // больше не создаются, старая проверка всегда была бы false.
   const isTakenByMe = useMemo(() => {
     if (!user) return false;
-    return vacancies.some(
-      (v) =>
-        v.created_by === user.id &&
-        (v.extra_data as Record<string, unknown> | undefined)
-          ?.cloned_from_request_id === vacancy.id,
-    );
-  }, [user, vacancies, vacancy.id]);
-  // Кто взял заявку в работу — клоны заявки (extra_data.cloned_from_request_id).
-  // Показываем ВСЕХ рекрутёров, у кого есть личный клон, а не только «меня».
-  const takenByRecruiters = useMemo(() => {
-    return vacancies.filter(
-      (v) =>
-        (v.extra_data as Record<string, unknown> | undefined)
-          ?.cloned_from_request_id === vacancy.id,
-    );
-  }, [vacancies, vacancy.id]);
+    return hasPersonallyAccepted(vacancy, user.id);
+  }, [user, vacancy]);
+  const acceptedCount = useMemo(() => {
+    const acceptedBy = (vacancy.extra_data as Record<string, unknown> | undefined)
+      ?.accepted_by as number[] | undefined;
+    return acceptedBy?.length || 0;
+  }, [vacancy]);
   const requestDate = formatSidebarVacancyDate(
     vacancy.published_at || vacancy.created_at,
   );
@@ -397,16 +391,11 @@ export function SidebarRequestPreviewModal({
                   {requestDate}
                 </RequestPreviewBlock>
               )}
-              {takenByRecruiters.length > 0 && (
+              {acceptedCount > 0 && (
                 <RequestPreviewBlock title="Заявка в работе">
-                  {takenByRecruiters.map((v) => (
-                    <div key={v.id}>
-                      {v.created_by_name || "Рекрутёр"}
-                      {v.published_at || v.created_at
-                        ? `, ${formatSidebarVacancyDate(v.published_at || v.created_at)}`
-                        : ""}
-                    </div>
-                  ))}
+                  {acceptedCount === 1
+                    ? "Уже взята в работу 1 рекрутёром"
+                    : `Уже взята в работу (${acceptedCount})`}
                 </RequestPreviewBlock>
               )}
             </aside>
@@ -995,7 +984,8 @@ export default function Layout() {
   // Админ (owner/admin/hr) — нераспределённые заявки 'На рассмотрении'
   //   (+ legacy draft), но НЕ свои собственные (когда админ сам создаёт заявку,
   //   ему не нужен пинг про неё — иначе любое создание сразу "флешит жёлтым").
-  // Member — назначенные ему/всем, ещё не взятые в работу (нет клона).
+  // Member — назначенные ему/всем, ещё НЕ принятые ЛИЧНО (2026-07-08:
+  //   accepted_by, не «нет клона» — клонов в новой модели не существует).
   const assignedDraftCount = useMemo(() => {
     if (!user) return 0;
     const isAdmin =
@@ -1009,19 +999,20 @@ export default function Layout() {
           v.created_by !== user.id,
       ).length;
     }
-    const myCloneFor = new Set<number>();
-    vacancies.forEach((v) => {
-      if (v.created_by !== user.id) return;
-      const src = (v.extra_data as Record<string, unknown> | undefined)
-        ?.cloned_from_request_id;
-      if (typeof src === "number") myCloneFor.add(src);
-    });
     return vacancies.filter((v) => {
+      if (
+        v.status !== "pending_review" &&
+        v.status !== "draft" &&
+        v.status !== "open" &&
+        v.status !== "paused"
+      ) {
+        return false;
+      }
       if (v.created_by === user.id) return false;
       const assigned =
         v.assigned_to_all || (v.assigned_to && v.assigned_to.includes(user.id));
       if (!assigned) return false;
-      return !myCloneFor.has(v.id);
+      return !isPersonallyActive(v, user.id);
     }).length;
   }, [vacancies, user]);
 
@@ -1348,7 +1339,10 @@ export default function Layout() {
     // работу» рекрутёром выглядело так, будто заявку взял и сам админ тоже.
     // Просмотр «всего» без участия остаётся доступен на полной странице
     // «Мои вакансии» — там у admin/owner/superadmin свой отдельный полный список.
-    .filter((v) => user && isVacancyParticipant(v, user.id));
+    // 2026-07-08: назначенный, но ещё лично НЕ принявший (isVacancyParticipant
+    // без accepted_by) не должен видеть её тут как «свою» — только после
+    // личного «Взять в работу» (isPersonallyActive). До этого она в «Заявки».
+    .filter((v) => user && isPersonallyActive(v, user.id));
   // Заявки, которые ТЕКУЩИЙ юзер уже взял в работу (есть свой клон).
   // После «Взять в работу» исходная заявка должна пропасть из списка —
   // она уже взята. Раньше она оставалась висеть.
@@ -1362,9 +1356,17 @@ export default function Layout() {
     });
   }
   const allSidebarRequests = vacancies
-    // «Заявки» = только заявочные статусы (pending_review/draft). open/paused —
-    // это рабочие воронки, им место в «Мои вакансии», не в «Заявки».
-    .filter((v) => v.status === "pending_review" || v.status === "draft")
+    // «Заявки» = заявочные статусы (pending_review/draft) ПЛЮС open/paused, где
+    // ТЕКУЩИЙ юзер назначен, но ещё лично не принял (кто-то другой уже взял —
+    // воронка общая, но принятие личное, 2026-07-08). isRequestVisibleTo ниже
+    // отфильтрует «свои» (уже лично принятые) через isPersonallyActive.
+    .filter(
+      (v) =>
+        v.status === "pending_review" ||
+        v.status === "draft" ||
+        v.status === "open" ||
+        v.status === "paused",
+    )
     .filter((v) => {
       // Клон (вакансия, взятая рекрутёром в работу) — это НЕ заявка,
       // а рабочая копия в «Мои вакансии».
@@ -2086,8 +2088,10 @@ export default function Layout() {
                               (v) =>
                                 v.status === "open" || v.status === "paused",
                             )
+                            // Личное принятие (2026-07-08): назначенный, но
+                            // ещё не принявший лично — не «моя воронка».
                             .filter(
-                              (v) => user && isVacancyParticipant(v, user.id),
+                              (v) => user && isPersonallyActive(v, user.id),
                             )
                             .slice(0, 10);
                           return (

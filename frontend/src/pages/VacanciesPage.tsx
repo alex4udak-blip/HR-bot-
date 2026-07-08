@@ -34,7 +34,7 @@ import {
   VacancyStatusBadge,
 } from '@/components/vacancies';
 import { SidebarRequestPreviewModal } from '@/components/Layout';
-import { isVacancyParticipant, otherActiveParticipants } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive } from '@/utils/vacancy';
 import {
   ContextMenu,
   createVacancyContextMenu,
@@ -281,14 +281,13 @@ export default function VacanciesPage() {
     return false;
   }, [user]);
 
-  // Уже ли рекрутёр взял эту заявку в работу (есть клон с cloned_from_request_id)
+  // Уже ли ЭТОТ юзер лично взял заявку в работу (2026-07-08: extra_data.accepted_by —
+  // воронка общая, но принятие личное; легаси-проверка через клон
+  // (cloned_from_request_id) больше не применима — клонов не создаётся).
   const hasAlreadyTaken = useCallback((vacancy: Vacancy) => {
     if (!user) return false;
-    return vacancies.some(v =>
-      v.created_by === user.id &&
-      (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id === vacancy.id
-    );
-  }, [vacancies, user]);
+    return isPersonallyActive(vacancy, user.id);
+  }, [user]);
 
   // Currency rates for salary conversion during filtering
   const { getComparableSalary } = useCurrencyRates();
@@ -518,7 +517,11 @@ export default function VacanciesPage() {
     // (SidebarRequestPreviewModal: приоритет/заказчик + «Взять в работу»).
     // Для уже активных внутри есть кандидаты/этапы/комментарии — их видно
     // только в воронке, поэтому сразу ведём туда вместо той же карточки-сводки.
-    if (vacancy.status === 'open' || vacancy.status === 'paused') {
+    // 2026-07-08: НО если статус уже open/paused (кто-то ДРУГОЙ из назначенных
+    // уже взял её в работу), а ТЕКУЩИЙ юзер сам ещё не принял лично — ведём
+    // на ту же сводку с «Взять в работу», а не в чужую пока воронку.
+    const canEnterFunnel = isAdmin || !user || isPersonallyActive(vacancy, user.id);
+    if ((vacancy.status === 'open' || vacancy.status === 'paused') && canEnterFunnel) {
       navigate(`/my-funnels?v=${vacancy.id}`);
       return;
     }

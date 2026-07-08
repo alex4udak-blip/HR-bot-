@@ -14,7 +14,7 @@ import type { Vacancy, VacancyStatus } from '@/types';
 import { getAssignableUsers, assignVacancy, takeVacancy, declineVacancy } from '@/services/api';
 import type { AssignableUser } from '@/services/api';
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
-import { isVacancyParticipant, otherActiveParticipants } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, hasPersonallyAccepted } from '@/utils/vacancy';
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
@@ -416,14 +416,13 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const isAssignedToMe = !!(user && vacancy && (vacancy.assigned_to_all || (vacancy.assigned_to || []).includes(user.id)));
   const isReadOnlyRequest = !!vacancy && !isAdmin && !isMineByOwnership && isAssignedToMe;
 
-  // Уже ли рекрутёр взял эту заявку (есть клон с cloned_from_request_id)
+  // Уже ли ЭТОТ юзер лично принял заявку (2026-07-08: extra_data.accepted_by —
+  // воронка общая, но принятие личное; старая проверка через клон
+  // (cloned_from_request_id) больше не применима — клонов не создаётся).
   const alreadyTaken = useMemo(() => {
     if (!isReadOnlyRequest || !vacancy || !user) return false;
-    return vacancies.some(v =>
-      v.created_by === user.id &&
-      (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id === vacancy.id
-    );
-  }, [vacancies, vacancy, user, isReadOnlyRequest]);
+    return hasPersonallyAccepted(vacancy, user.id);
+  }, [vacancy, user, isReadOnlyRequest]);
 
   const [taking, setTaking] = useState(false);
   const [declining, setDeclining] = useState(false);
@@ -953,37 +952,43 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   </button>
                   {showRecruiterDD && (
                     <div className="hf-vacancy-dropdown">
-                      {(() => {
-                        const allIds = users.map((u) => u.id);
-                        const allSelected = allIds.length > 0 && allIds.every((id) => selectedRecruiters.includes(id));
-                        return (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // Чек-олл: отметить всех рекрутёров; повторно — снять со всех.
-                              setSelectedRecruiters(allSelected ? [] : allIds);
-                              setAssignAll(!allSelected);
-                            }}
-                            className="hf-vacancy-dropdown-item"
-                          >
-                            <span className={clsx("hf-vacancy-dropdown-check", allSelected && "hf-vacancy-dropdown-check-active")} />
-                            Всем рекрутерам
-                          </button>
-                        );
-                      })()}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // «Всем рекрутёрам» — отдельный флаг (assigned_to_all), а НЕ
+                          // производная от «отметили всех текущих людей в списке».
+                          // Раньше выбор ДВУХ конкретных людей, которые случайно
+                          // составляли весь список assignable-users, молча превращался
+                          // в assigned_to_all=true — заявка становилась видна вообще
+                          // всем рекрутёрам орга (и будущим), а не только этим двоим.
+                          setAssignAll(!assignAll);
+                          setSelectedRecruiters([]);
+                        }}
+                        className="hf-vacancy-dropdown-item"
+                      >
+                        <span className={clsx("hf-vacancy-dropdown-check", assignAll && "hf-vacancy-dropdown-check-active")} />
+                        Всем рекрутерам
+                      </button>
                       {users.map((u) => {
-                        const isSelected = selectedRecruiters.includes(u.id);
+                        // При «Всем рекрутёрам» визуально отмечаем каждого — они все
+                        // покрыты флагом assigned_to_all. Данные при этом не меняются:
+                        // individual selectedRecruiters остаётся пустым, это чисто
+                        // отображение (клик по конкретному человеку всё равно снимет
+                        // assignAll и переключит на явный список — см. onClick ниже).
+                        const isSelected = assignAll || selectedRecruiters.includes(u.id);
                         return (
                           <button
                             key={u.id}
                             type="button"
                             onClick={() => {
-                              const next = isSelected
-                                ? selectedRecruiters.filter(id => id !== u.id)
-                                : [...selectedRecruiters, u.id];
+                              // Клик по конкретному человеку всегда означает «именно
+                              // эти люди», а не «все» — снимаем assignAll, если был включён.
+                              const base = assignAll ? [] : selectedRecruiters;
+                              const next = base.includes(u.id)
+                                ? base.filter(id => id !== u.id)
+                                : [...base, u.id];
+                              setAssignAll(false);
                               setSelectedRecruiters(next);
-                              // Держим «Всем рекрутерам» в синхроне: активна, только если выбраны все.
-                              setAssignAll(users.length > 0 && users.every(x => next.includes(x.id)));
                             }}
                             className="hf-vacancy-dropdown-item"
                           >

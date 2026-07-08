@@ -710,6 +710,15 @@ async def take_vacancy(
     дублей-клонов не существует). Старые клоны в проде не трогаются и живут
     по легаси-логике закрытия (ветка cloned_from_request_id в update_vacancy).
 
+    ЛИЧНОЕ ПРИНЯТИЕ (2026-07-08): «воронка общая, но заявку каждый берёт сам» —
+    статус вакансии переключается pending_review/draft → open один раз, при
+    ПЕРВОМ чьём-либо взятии (иначе воронка никогда не станет рабочей), но это
+    НЕ означает, что все назначенные автоматически «приняли» её. Кто именно
+    лично нажал «Взять в работу», трекается отдельно в extra_data.accepted_by —
+    остальные назначенные, ещё не принявшие, продолжают видеть её как заявку
+    (сайдбар «Заявки», utils/vacancy.ts: isRequestVisibleTo/isPersonallyActive),
+    пока не примут сами.
+
     Доступно тем, кто в assigned_to или при assigned_to_all=True, создателю
     (либо у пользователя полный доступ к БД).
     """
@@ -743,8 +752,19 @@ async def take_vacancy(
     # Возвращение после «завершил работу»: снимаем метку dismissed_by.
     extra = dict(source.extra_data or {})
     dismissed = list(extra.get("dismissed_by") or [])
+    changed_extra = False
     if current_user.id in dismissed:
         extra["dismissed_by"] = [u for u in dismissed if u != current_user.id]
+        changed_extra = True
+
+    # Личное принятие: ЭТОТ пользователь лично взял заявку в работу —
+    # независимо от того, брал ли её уже кто-то другой.
+    accepted_by = list(extra.get("accepted_by") or [])
+    if current_user.id not in accepted_by:
+        accepted_by.append(current_user.id)
+        extra["accepted_by"] = accepted_by
+        changed_extra = True
+    if changed_extra:
         source.extra_data = extra
 
     # Первое взятие делает заявку рабочей воронкой.
@@ -790,9 +810,18 @@ async def decline_vacancy(
     # Пометить dismissed_by — исключает себя и из assigned_to_all/общей воронки.
     extra = dict(vacancy.extra_data or {})
     dismissed = list(extra.get("dismissed_by") or [])
+    changed_extra = False
     if current_user.id not in dismissed:
         dismissed.append(current_user.id)
         extra["dismissed_by"] = dismissed
+        changed_extra = True
+
+    # Снять личное принятие — «отказался» значит больше не «взял в работу».
+    accepted_by = list(extra.get("accepted_by") or [])
+    if current_user.id in accepted_by:
+        extra["accepted_by"] = [u for u in accepted_by if u != current_user.id]
+        changed_extra = True
+    if changed_extra:
         vacancy.extra_data = extra
 
     await db.commit()
