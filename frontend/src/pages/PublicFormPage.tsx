@@ -6,17 +6,24 @@ import { FieldRenderer } from '@/features/forms/FieldRenderer';
 
 // Должны совпадать с бэкендом (_save_public_form_files): иначе файл «принимается»
 // на фронте, но тихо отбрасывается на сервере. Стоп даём СРАЗУ при выборе.
-const ALLOWED_FILE_EXTS = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.webp'];
+// Видео (mp4/mov/avi) — до 100 МБ; остальное — до 10 МБ. Совпадает с бэкендом
+// (forms.py: ALLOWED_EXTENSIONS / VIDEO_EXTENSIONS / PUBLIC_MAX_*).
+const VIDEO_EXTS = ['.mp4', '.mov', '.avi'];
+const ALLOWED_FILE_EXTS = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.webp', ...VIDEO_EXTS];
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
 /** Проверка файла при выборе; null = ок, строка = причина отказа. */
 function validatePickedFile(file: File): string | null {
   const dot = file.name.lastIndexOf('.');
   const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
   if (!ALLOWED_FILE_EXTS.includes(ext)) {
-    return 'Неподдерживаемый формат. Допустимы PDF, DOC/DOCX, JPG, PNG, WEBP.';
+    return 'Неподдерживаемый формат. Допустимы PDF, DOC/DOCX, JPG, PNG, WEBP, видео MP4/MOV/AVI.';
   }
-  if (file.size > MAX_FILE_BYTES) return 'Файл больше 10 МБ.';
+  const isVideo = VIDEO_EXTS.includes(ext);
+  if (file.size > (isVideo ? MAX_VIDEO_BYTES : MAX_FILE_BYTES)) {
+    return isVideo ? 'Видео больше 100 МБ.' : 'Файл больше 10 МБ.';
+  }
   if (file.size === 0) return 'Файл пустой.';
   return null;
 }
