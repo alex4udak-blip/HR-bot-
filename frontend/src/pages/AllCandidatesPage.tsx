@@ -751,6 +751,47 @@ export default function AllCandidatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCard?.id]);
 
+  // Свежесть профиля при ОТКРЫТИИ: карточка берётся из доски, которая могла
+  // устареть (статус/этап/коммент сменили в другом месте — напр. в воронке, или
+  // прод-WebSocket не доставил апдейт). Тянем свежие данные кандидата и обновляем
+  // открытую карточку + статус — иначе актуальность видна только после F5.
+  useEffect(() => {
+    const id = selectedCard?.id;
+    if (!id) return;
+    let cancelled = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getEntity(id).then((e: any) => {
+      if (cancelled || !e?.id || e.id !== id) return;
+      setSelectedCard((prev) => {
+        if (!prev || prev.id !== id) return prev;
+        const prevExtra = (prev.extra_data || {}) as Record<string, unknown>;
+        const mergedExtra = { ...((e.extra_data || {}) as Record<string, unknown>) };
+        // hidden_duplicate_id (детект дубля) и is_archived (deep-link архивного,
+        // строка ~700) проставляются локально — не теряем их при рефетче.
+        if (prevExtra.hidden_duplicate_id && !mergedExtra.hidden_duplicate_id) {
+          mergedExtra.hidden_duplicate_id = prevExtra.hidden_duplicate_id;
+        }
+        if (prevExtra.is_archived && !mergedExtra.is_archived) {
+          mergedExtra.is_archived = prevExtra.is_archived;
+        }
+        return {
+          ...prev,
+          name: e.name ?? prev.name,
+          email: e.email ?? prev.email,
+          phone: e.phone ?? prev.phone,
+          position: e.position ?? prev.position,
+          company: e.company ?? prev.company,
+          tags: e.tags ?? prev.tags,
+          photo_url: e.photo_url ?? prev.photo_url,
+          extra_data: mergedExtra,
+        } as KanbanCard;
+      });
+      if (typeof e.status === 'string' && e.status) setSelectedStatus(e.status);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCard?.id]);
+
   const handleStatusChange = async (newStatus: string) => {
     if (!selectedCard || newStatus === selectedStatus) return;
     const old = selectedStatus;
