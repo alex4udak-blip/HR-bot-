@@ -282,8 +282,12 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
       });
       setForm(updated);
       toast.success(saveAsTemplate ? 'Сохранено в шаблоны' : 'Форма сохранена');
-    } catch {
-      toast.error('Ошибка сохранения');
+    } catch (error) {
+      // Жёсткая защита от дублей названия шаблонов — бэкенд (update_form)
+      // возвращает 409 с конкретным текстом («Шаблон с названием «X» уже
+      // существует»), показываем его вместо общей ошибки.
+      const detail = (error as { response?: { status?: number; data?: { detail?: string } } })?.response;
+      toast.error(detail?.status === 409 && detail.data?.detail ? detail.data.detail : 'Ошибка сохранения');
     } finally {
       setSaving(false);
     }

@@ -196,6 +196,7 @@ async def list_forms(
             "vacancy_id": f.vacancy_id,
             "vacancy_ids": fv_map.get(f.id, [f.vacancy_id] if f.vacancy_id else []),
             "is_active": f.is_active,
+            "is_template": f.is_template,
             "fields": f.fields or [],
             "submissions_count": counts.get(f.id, 0),
             "created_at": f.created_at.isoformat() if f.created_at else None,
@@ -641,6 +642,31 @@ async def update_form(
         if not org or form.org_id != org.id:
             raise HTTPException(status_code=403, detail="Access denied")
 
+    # Жёсткая защита от дублей названия — но только для ШАБЛОНОВ (библиотека
+    # переиспользуемых анкет в «Анкеты»): разовые анкеты «с нуля»/AI-чат
+    # автосохраняются под общим дефолтным названием («Анкета», «AI-анкета»)
+    # до того, как их переименуют, — блокировать это было бы багом, а не
+    # защитой. is_template учитывает и уже сохранённый флаг, и тот, что
+    # приходит этим же запросом (сохранение «Создать шаблон» шлёт title и
+    # is_template=True одним PUT).
+    will_be_template = body.is_template if body.is_template is not None else form.is_template
+    new_title = body.title if body.title is not None else form.title
+    if will_be_template and new_title:
+        normalized = new_title.strip().lower()
+        dup_result = await db.execute(
+            select(FormTemplate.id).where(
+                FormTemplate.id != form.id,
+                FormTemplate.org_id == form.org_id,
+                FormTemplate.is_template == True,  # noqa: E712
+                func.lower(func.trim(FormTemplate.title)) == normalized,
+            )
+        )
+        if dup_result.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Шаблон с названием «{new_title.strip()}» уже существует — выберите другое название",
+            )
+
     if body.title is not None:
         form.title = body.title
     if body.description is not None:
@@ -692,6 +718,7 @@ async def update_form(
         "vacancy_id": form.vacancy_id,
         "vacancy_ids": current_vacancy_ids,
         "is_active": form.is_active,
+        "is_template": form.is_template,
         "fields": form.fields or [],
         "submissions_count": submissions_count,
         "created_at": form.created_at.isoformat() if form.created_at else None,

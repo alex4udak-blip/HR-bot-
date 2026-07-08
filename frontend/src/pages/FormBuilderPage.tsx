@@ -86,8 +86,11 @@ function FormListView() {
       await updateForm(id, { is_template: true, ...(cleanTitle ? { title: cleanTitle } : {}) });
       setForms(prev => prev.map(f => (f.id === id ? { ...f, is_template: true, title: cleanTitle || f.title } : f)));
       toast.success('Анкета перенесена в шаблоны');
-    } catch {
-      toast.error('Не удалось перенести в шаблоны');
+    } catch (error) {
+      // Жёсткая защита от дублей названия шаблонов (backend update_form, 409) —
+      // показываем конкретную причину вместо общей ошибки.
+      const detail = (error as { response?: { status?: number; data?: { detail?: string } } })?.response;
+      toast.error(detail?.status === 409 && detail.data?.detail ? detail.data.detail : 'Не удалось перенести в шаблоны');
     }
   };
 
@@ -189,7 +192,11 @@ function FormListView() {
             </div>
             {templates.length === 0 ? (
               <div className="text-sm text-dark-400 mb-6">
-                Пока нет шаблонов — создайте первый, он появится в карточке кандидата.
+                {others.length > 0 ? (
+                  <>Пока нет шаблонов — создайте новый или нажмите «В шаблоны» на анкете ниже, чтобы сделать её переиспользуемой.</>
+                ) : (
+                  <>Пока нет шаблонов — создайте первый, он появится в карточке кандидата.</>
+                )}
               </div>
             ) : (
               <div className="grid gap-3 mb-8">{templates.map(renderCard)}</div>
