@@ -3,6 +3,8 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { getPublicForm, submitPublicForm, submitPublicFormWithFiles, getPublicFormByToken, submitPublicFormByToken, submitPublicFormByTokenWithFiles, type SkippedFile, type SubmitWithFilesResult } from '@/services/api/forms';
 import type { PublicFormData } from '@/services/api/forms';
 import { FieldRenderer } from '@/features/forms/FieldRenderer';
+import { sanitizeHtml } from '@/utils/sanitizeHtml';
+import { autoLinkify } from '@/utils/linkify';
 
 // Должны совпадать с бэкендом (_save_public_form_files): иначе файл «принимается»
 // на фронте, но тихо отбрасывается на сервере. Стоп даём СРАЗУ при выборе.
@@ -241,7 +243,10 @@ export default function PublicFormPage() {
             <p className="text-gray-500 mt-1">Вакансия: {form.vacancy_title}</p>
           )}
           {form.description && (
-            <p className="text-gray-600 mt-3">{form.description}</p>
+            <p
+              className="text-gray-600 mt-3 [&_a]:text-blue-600 [&_a]:underline [&_a]:hover:text-blue-700"
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(autoLinkify(form.description)) }}
+            />
           )}
         </div>
 

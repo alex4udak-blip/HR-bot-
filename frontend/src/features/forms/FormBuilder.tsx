@@ -100,6 +100,100 @@ export function submissionWord(n: number): string {
   return 'ответов';
 }
 
+// Мини rich-text редактор для описания анкеты (contentEditable + execCommand,
+// как RichTextField в VacancyForm, но лёгкий Tailwind-стиль под светлую тему
+// конструктора форм). Значение хранится как HTML — санитайзится при рендере
+// на публичной странице (PublicFormPage, sanitizeHtml). Нужен, чтобы ссылки в
+// «О компании» были кликабельны и чтобы можно было превращать в ссылку любое
+// выделенное слово, а не только вставлять голый URL.
+function DescriptionEditor({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isEmpty, setIsEmpty] = useState(!value);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el && el.innerHTML !== (value || '')) el.innerHTML = value || '';
+    setIsEmpty(!value);
+  }, [value]);
+
+  const sync = () => {
+    const html = ref.current?.innerHTML || '';
+    onChange(html);
+    setIsEmpty(!ref.current?.textContent?.trim());
+  };
+
+  const addLink = () => {
+    const url = (window.prompt('Ссылка (URL):', 'https://') || '').trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      toast.error('Ссылка должна начинаться с http:// или https://');
+      return;
+    }
+    ref.current?.focus();
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      document.execCommand('createLink', false, url);
+    } else {
+      document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>`);
+    }
+    sync();
+  };
+
+  return (
+    <div className="border border-gray-300 rounded-lg focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-colors overflow-hidden">
+      <div className="flex items-center px-2 py-1.5 border-b border-gray-200 bg-gray-50">
+        <button
+          type="button"
+          title="Выделите текст и нажмите, чтобы сделать его ссылкой — или вставьте новую"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 transition-colors"
+          onMouseDown={(e) => { e.preventDefault(); addLink(); }}
+        >
+          <Link2 className="w-3.5 h-3.5" />
+          Вставить ссылку
+        </button>
+      </div>
+      <div className="relative">
+        {isEmpty && placeholder && (
+          <span className="absolute left-3 top-2 text-sm text-gray-400 pointer-events-none">
+            {placeholder}
+          </span>
+        )}
+        <div
+          ref={ref}
+          contentEditable
+          suppressContentEditableWarning
+          role="textbox"
+          aria-multiline="true"
+          onInput={sync}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData('text/plain');
+            e.preventDefault();
+            // Голая ссылка, вставленная целиком, — сразу делаем кликабельной
+            // (самый частый кейс: «Сайт: https://...»). Остальной текст —
+            // как есть, без превращения каждого URL в тексте автоматически,
+            // чтобы не удивлять при вставке большого абзаца.
+            if (/^https?:\/\/\S+$/i.test(text.trim())) {
+              document.execCommand('insertHTML', false, `<a href="${text.trim()}">${text.trim()}</a>`);
+            } else {
+              document.execCommand('insertText', false, text);
+            }
+            sync();
+          }}
+          className="w-full px-3 py-2 text-sm text-gray-700 outline-none min-h-[38px] [&_a]:text-blue-600 [&_a]:underline"
+        />
+      </div>
+    </div>
+  );
+}
+
 // Non-interactive preview value for each field type
 function previewValue(field: FormField): unknown {
   if (field.type === 'multiselect') return [];
@@ -391,11 +485,13 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
 
         {/* Description */}
         <div className="mb-4">
-          <input
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Описание <span className="font-normal text-gray-400">(необязательно)</span>
+          </label>
+          <DescriptionEditor
             value={description}
-            onChange={e => setDescription(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 placeholder-gray-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
-            placeholder="Описание формы (необязательно)"
+            onChange={setDescription}
+            placeholder="Например: о компании, условия, ссылки на сайт и соцсети"
           />
         </div>
 
