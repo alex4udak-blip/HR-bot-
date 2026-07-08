@@ -300,8 +300,11 @@ function TemplateSelectStep({ onBack, onUse, usingTemplateId, onEdit, onNew, vac
                   <p className="text-xs text-gray-500 mt-0.5 truncate">{tpl.description}</p>
                 )}
                 <p className="text-xs text-gray-400 mt-1">
+                  {/* Количество ответов на шаблон (агрегат по ВСЕМ кандидатам,
+                      кому его отправляли) тут не показываем — не читается как
+                      метрика самого шаблона. tpl.submissions_count не убираем
+                      из данных: им же защищено удаление ниже (handleDelete). */}
                   {tpl.fields.length} вопросов
-                  {tpl.submissions_count > 0 && ` · ${tpl.submissions_count} ${submissionWord(tpl.submissions_count)}`}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">

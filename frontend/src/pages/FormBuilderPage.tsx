@@ -143,7 +143,13 @@ function FormListView() {
                 </div>
                 <div className="flex items-center gap-4 mt-1 text-sm text-dark-400">
                   <span>{form.fields.length} {fieldWord(form.fields.length)}</span>
-                  {typeof form.submissions_count === 'number' && (
+                  {/* «Ответов» имеет смысл только для разовой анкеты конкретного
+                      кандидата (заполнил/нет). У шаблона это агрегат по ВСЕМ, кому
+                      его когда-либо отправляли — рядом с названием формы это число
+                      не читается и только сбивало с толку. Само поле submissions_count
+                      не трогаем — оно используется в защите от удаления шаблона
+                      с уже существующими ответами (handleDelete в AnketaDrawer). */}
+                  {!form.is_template && typeof form.submissions_count === 'number' && (
                     <span>{form.submissions_count} {submissionWord(form.submissions_count)}</span>
                   )}
                   {form.created_at && (
