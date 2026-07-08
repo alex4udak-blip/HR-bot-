@@ -646,12 +646,23 @@ async def update_form(
     # переиспользуемых анкет в «Анкеты»): разовые анкеты «с нуля»/AI-чат
     # автосохраняются под общим дефолтным названием («Анкета», «AI-анкета»)
     # до того, как их переименуют, — блокировать это было бы багом, а не
-    # защитой. is_template учитывает и уже сохранённый флаг, и тот, что
-    # приходит этим же запросом (сохранение «Создать шаблон» шлёт title и
-    # is_template=True одним PUT).
-    will_be_template = body.is_template if body.is_template is not None else form.is_template
+    # защитой.
+    # ВАЖНО: проверяем дубль ТОЛЬКО когда название реально меняется в этом
+    # запросе, либо анкета только что становится шаблоном (was False -> True).
+    # Иначе обычное сохранение УЖЕ существующего шаблона (правка полей,
+    # is_active и т.п., имя не трогали) навсегда блокировалось бы 409, если
+    # где-то в органе уже случайно есть тёзка — а такие тёзки уже были в
+    # проде («Трафик» x2) ДО этой защиты, и их правка должна продолжать
+    # работать, а не намертво зависать из-за старого дубля.
+    was_template = form.is_template
+    now_template = body.is_template if body.is_template is not None else form.is_template
     new_title = body.title if body.title is not None else form.title
-    if will_be_template and new_title:
+    title_changed = (
+        body.title is not None
+        and body.title.strip().lower() != (form.title or "").strip().lower()
+    )
+    newly_became_template = now_template and not was_template
+    if now_template and new_title and (title_changed or newly_became_template):
         normalized = new_title.strip().lower()
         dup_result = await db.execute(
             select(FormTemplate.id).where(
