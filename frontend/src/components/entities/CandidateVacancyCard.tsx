@@ -7,6 +7,7 @@ import {
   memo,
 } from "react";
 import type { CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import {
   Search,
   Paperclip,
@@ -236,6 +237,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   const [pendingStage, setPendingStage] = useState(currentStage);
   const [stageChangeComment, setStageChangeComment] = useState("");
   const [showActionMenu, setShowActionMenu] = useState(false);
+  // Видео из «Файлов» открываем в модальном плеере (закрывается X/фоном/Esc).
+  const [videoModal, setVideoModal] = useState<{ url: string; name: string } | null>(null);
   const [actionMenuPlacement, setActionMenuPlacement] = useState<
     "above" | "below"
   >("above");
@@ -1086,8 +1089,12 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
               >
                 <button
                   type="button"
-                  onClick={() => handleDownloadFile(f.id, f.file_name)}
-                  title="Скачать"
+                  onClick={() =>
+                    /\.(mp4|mov|avi|webm|m4v)$/i.test(f.file_name)
+                      ? setVideoModal({ url: `/api/entities/${card.id}/files/${f.id}/download`, name: f.file_name })
+                      : handleDownloadFile(f.id, f.file_name)
+                  }
+                  title={/\.(mp4|mov|avi|webm|m4v)$/i.test(f.file_name) ? "Смотреть видео" : "Скачать"}
                   className="flex min-w-0 flex-1 items-center gap-[6px] px-[6px] py-[4px] text-left text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)] text-[var(--hf-main-700)] transition-colors hover:text-[var(--hf-main-900)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)] hf-dark-disabled:hover:text-[var(--hf-white)]"
                 >
                   <Paperclip className="h-[13px] w-[13px] shrink-0 text-[var(--hf-ui-icon-light)] hf-dark-disabled:text-[color:var(--hf-white-alpha-25)]" />
@@ -1108,6 +1115,28 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           </div>
         </div>
       ) : null}
+      {videoModal && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setVideoModal(null)}
+        >
+          <div className="relative w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setVideoModal(null)}
+              className="absolute -top-11 right-0 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+              title="Закрыть"
+              aria-label="Закрыть"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video src={videoModal.url} controls autoPlay className="max-h-[80vh] w-full rounded-lg bg-black" />
+            <div className="mt-2 truncate text-center text-sm text-white/70">{videoModal.name}</div>
+          </div>
+        </div>,
+        document.body,
+      )}
       {hasHiddenTimelineItems ? (
         <button
           type="button"

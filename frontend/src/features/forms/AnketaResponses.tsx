@@ -58,17 +58,27 @@ export function AnketaResponses({ dispatches }: { dispatches: (FormDispatchInfo 
             <div className="mt-3 border-t pt-2 space-y-1">
               {Object.entries(d.answers).map(([k, v]) => {
                 const fileUrl = d.file_links?.[k];
+                const vs = String(v);
+                // Видео/картинку показываем прямо в анкете (плеер/превью), а не ссылкой.
+                const isVid = !!fileUrl && (/\.(mp4|mov|avi|webm|m4v)(\?|#|$)/i.test(vs) || /\.(mp4|mov|avi|webm|m4v)(\?|#|$)/i.test(fileUrl));
+                const isImg = !!fileUrl && !isVid && (/\.(jpe?g|png|webp|gif)(\?|#|$)/i.test(vs) || /\.(jpe?g|png|webp|gif)(\?|#|$)/i.test(fileUrl));
                 return (
-                  <div key={k} className="flex gap-2 text-xs">
+                  <div key={k} className={isVid || isImg ? "text-xs" : "flex gap-2 text-xs"}>
                     <span className="text-gray-400">{d.field_labels?.[k] || k}:</span>
-                    {fileUrl ? (
-                      <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
-                        {String(v) || 'Открыть файл'}
+                    {isVid ? (
+                      <video src={fileUrl} controls preload="metadata" className="mt-1 block max-h-[220px] max-w-[320px] rounded-lg border border-gray-200" />
+                    ) : isImg ? (
+                      <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="mt-1 block w-fit">
+                        <img src={fileUrl} alt={vs || 'файл'} className="max-h-[180px] max-w-[240px] rounded-lg border border-gray-200 object-cover" />
                       </a>
-                    ) : /^https?:\/\//i.test(String(v)) ? (
-                      <a href={String(v)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{String(v)}</a>
+                    ) : fileUrl ? (
+                      <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">
+                        {vs || 'Открыть файл'}
+                      </a>
+                    ) : /^https?:\/\//i.test(vs) ? (
+                      <a href={vs} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{vs}</a>
                     ) : (
-                      <span className="text-gray-800 break-all">{String(v)}</span>
+                      <span className="text-gray-800 break-all">{vs}</span>
                     )}
                   </div>
                 );

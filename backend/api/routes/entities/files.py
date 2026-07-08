@@ -971,9 +971,15 @@ async def download_entity_file(
         serve_mime = {
             "pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg",
             "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
+            # Видео — нужен верный Content-Type, иначе <video> не заиграет.
+            "mp4": "video/mp4", "m4v": "video/mp4", "mov": "video/quicktime",
+            "webm": "video/webm", "avi": "video/x-msvideo",
         }.get(_ext, "application/octet-stream")
+    # inline можно для безопасных типов: PDF, растровые картинки И видео (не XSS-
+    # вектор, с nosniff браузер не переинтерпретирует). Остальное — attachment.
     _inline_ok = serve_mime in {
         "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp",
+        "video/mp4", "video/quicktime", "video/webm", "video/x-msvideo",
     }
     disposition = "inline" if (_inline_ok and not download) else "attachment"
 
