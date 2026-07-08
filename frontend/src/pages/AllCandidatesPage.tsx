@@ -2975,9 +2975,21 @@ export function NewCandidateModal({
       try {
         const all = await getVacancies({ status: 'open' });
         if (cancelled) return;
+        const seen = new Set<string>();
         const myOpen = all
           .filter(v => v.status === 'open' || v.status === 'pending_review')
-          .map(v => ({ id: v.id, title: v.title }));
+          // Легаси-клоны (extra_data.cloned_from_request_id) — это дубли воронки
+          // (как и на странице «Заявки», где они тоже исключаются). Иначе в
+          // списке «Трафик» ×2, «Reverse» ×2.
+          .filter(v => typeof (v.extra_data as Record<string, unknown> | undefined)?.cloned_from_request_id !== 'number')
+          .map(v => ({ id: v.id, title: v.title }))
+          // Подстраховка: схлопываем одинаковые названия (первое побеждает).
+          .filter(v => {
+            const key = (v.title || '').trim().toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
         setVacancyOptions(myOpen);
       } catch (e) {
         console.warn('Failed to load vacancies:', e);
