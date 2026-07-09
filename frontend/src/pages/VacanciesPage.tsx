@@ -34,7 +34,7 @@ import {
   VacancyStatusBadge,
 } from '@/components/vacancies';
 import { SidebarRequestPreviewModal } from '@/components/Layout';
-import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds } from '@/utils/vacancy';
 import {
   ContextMenu,
   createVacancyContextMenu,
@@ -486,6 +486,19 @@ export default function VacanciesPage() {
       }
     };
     loadDepartments();
+  }, []);
+
+  // Резолвер id → имя для «Рекрутер: ...» (accepted_by может ссылаться на
+  // любого назначаемого пользователя, не только создателя заявки).
+  const [usersById, setUsersById] = useState<Record<number, string>>({});
+  useEffect(() => {
+    getAssignableUsers()
+      .then((list) => {
+        const map: Record<number, string> = {};
+        list.forEach((u) => { map[u.id] = u.name; });
+        setUsersById(map);
+      })
+      .catch(() => {});
   }, []);
 
   // Update filters when search/filters change
@@ -1001,11 +1014,20 @@ export default function VacanciesPage() {
                         <span>Последнее действие: {formatVacancyDate(vacancy.updated_at)}</span>
                         </div>
 
-                        {vacancy.created_by_name && (
-                        <div className="hf-vacancies-search-meta">
-                          <span>Рекрутер: {vacancy.created_by_name}</span>
-                        </div>
-                        )}
+                        {(() => {
+                          // «Рекрутер:» = кто ЛИЧНО принял заявку (accepted_by), а не
+                          // создатель — 2026-07-09, см. utils/vacancy.ts getAcceptorIds.
+                          const names = getAcceptorIds(vacancy).map((uid) =>
+                            uid === vacancy.created_by && vacancy.created_by_name
+                              ? vacancy.created_by_name
+                              : usersById[uid]
+                          ).filter((n): n is string => Boolean(n));
+                          return names.length > 0 && (
+                            <div className="hf-vacancies-search-meta">
+                              <span>Рекрутер: {names.join(', ')}</span>
+                            </div>
+                          );
+                        })()}
 
                       {vacancy.hiring_manager_name && (
                         <div className="hf-vacancies-search-meta">

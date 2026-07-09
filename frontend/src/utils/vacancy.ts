@@ -31,15 +31,17 @@ export function hasPersonallyAccepted(v: Vacancy, userId: number | undefined | n
 }
 
 /**
- * «Моя» ли эта воронка ЛИЧНО для юзера прямо сейчас: создатель (создание =
- * неявное согласие работать) ИЛИ лично принял через «Взять в работу».
- * Просто «назначен» (assigned_to/assigned_to_all) — недостаточно, если сам
- * ещё не принял. Используется для «Мои вакансии» (в отличие от
- * isVacancyParticipant, который считает участником любого назначенного).
+ * «Моя» ли эта воронка ЛИЧНО для юзера прямо сейчас: только через личное
+ * «Взять в работу» (accepted_by) — БЕЗ исключения для создателя. 2026-07-09:
+ * раньше создатель считался «неявно согласившимся» автоматически, из-за чего
+ * админ, создавший заявку чисто для раздачи рекрутёрам, видел её в «Мои
+ * вакансии» сразу как только её принимал КТО-ТО ДРУГОЙ — хотя сам её не брал.
+ * Новые заявки всегда стартуют как pending_review (см. VacancyForm.tsx) — их
+ * переводит в open только «Взять в работу», и создателю это правило теперь
+ * тоже применяется без исключений (сам создатель тоже может нажать «Взять
+ * в работу» на своей заявке — take_vacancy это явно разрешает).
  */
 export function isPersonallyActive(v: Vacancy, userId: number | undefined | null): boolean {
-  if (!userId) return false;
-  if (v.created_by === userId) return true;
   return hasPersonallyAccepted(v, userId);
 }
 
@@ -66,6 +68,21 @@ export function isRequestVisibleTo(
     return !assigned;
   }
   return isVacancyParticipant(v, userId) && !isPersonallyActive(v, userId);
+}
+
+/**
+ * Кто реально ведёт заявку прямо сейчас — те, кто лично нажал «Взять в
+ * работу» (extra_data.accepted_by), а НЕ создатель (2026-07-09: раньше
+ * группировки/подписи «Рекрутер: ...» показывали создателя, что вводило в
+ * заблуждение — админ, раздающий заявки, не обязательно сам их ведёт).
+ * Если ещё никто не принял (pending_review/draft, либо старые данные до
+ * личного принятия) — откатываемся на создателя, чтобы заявка не «терялась»
+ * без исполнителя вообще.
+ */
+export function getAcceptorIds(v: Vacancy): number[] {
+  const acceptedBy = ((v.extra_data as Record<string, unknown> | undefined)?.accepted_by as number[] | undefined) || [];
+  if (acceptedBy.length > 0) return acceptedBy;
+  return v.created_by ? [v.created_by] : [];
 }
 
 /** Активные участники, кроме указанного юзера (для вопроса «ты последний?»). */

@@ -32,10 +32,10 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
+import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote, updateEntityNote } from '@/services/api/entities';
-import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds } from '@/utils/vacancy';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
@@ -159,6 +159,31 @@ const colorToStageColor = (colorKey?: string, enumVal?: string): string => {
   if (enumVal && STAGE_COLORS[enumVal]) return enumVal;
   return 'screening'; // fallback cyan
 };
+
+// Группировка админ-вида (2026-07-09): раньше группировали по created_by (кто
+// СОЗДАЛ заявку) — но создатель часто просто раздаёт заявки, не работая над
+// ними лично. Реальный «владелец» воронки — тот, кто лично нажал «Взять в
+// работу» (getAcceptorIds, utils/vacancy.ts: extra_data.accepted_by). Заявку
+// могут принять НЕСКОЛЬКО рекрутёров (общая воронка) — тогда она
+// показывается у КАЖДОГО из них. groupAcceptorIds — та же функция, но с
+// гарантированным непустым результатом (uid=0 «Без автора»), чтобы заявка
+// без created_by не выпала из группировки совсем.
+function groupAcceptorIds(v: Vacancy): number[] {
+  const ids = getAcceptorIds(v);
+  return ids.length > 0 ? ids : [0];
+}
+
+function resolveGroupUserName(
+  uid: number,
+  v: Vacancy,
+  usersMap: Record<number, string>,
+  currentUser: { id?: number; name?: string } | null | undefined,
+): string {
+  if (uid === v.created_by && v.created_by_name) return v.created_by_name;
+  if (usersMap[uid]) return usersMap[uid];
+  if (currentUser && uid === currentUser.id) return currentUser.name || 'Мои';
+  return 'Без исполнителя';
+}
 
 // ==================== Types ====================
 
@@ -322,14 +347,17 @@ export default function RecruiterFunnelsPage() {
   }, [searchParams, statusFilter]);
 
   useEffect(() => {
-    if (isHrAdmin) {
-      getUsers().then((users) => {
-        const map: Record<number, string> = {};
-        users.forEach((u) => { map[u.id] = u.name; });
-        setUsersMap(map);
-      }).catch(() => {});
-    }
-  }, [isHrAdmin]);
+    // Резолвер id → имя нужен ВСЕМ, не только admin-виду: обычный рекрутёр
+    // тоже видит «Рекрутер: ...» с именами других принявших (общая воронка,
+    // 2026-07-09). getUsers() отдаёт список по ОТДЕЛУ (для member — пусто,
+    // если отдел не назначен), поэтому берём assignable-users — тот же
+    // org-wide HR-пул, что и в дропдауне «Назначить рекрутёрам», без гейта.
+    getAssignableUsers().then((users) => {
+      const map: Record<number, string> = {};
+      users.forEach((u) => { map[u.id] = u.name; });
+      setUsersMap(map);
+    }).catch(() => {});
+  }, []);
 
   const scopedVacancies = useMemo(() => {
     if (statusFilter === 'deleted') {
@@ -378,7 +406,7 @@ export default function RecruiterFunnelsPage() {
   const filteredVacancies = useMemo(() => {
     let result = scopedVacancies;
     if (isHrAdmin && selectedRecruiterFilter !== null) {
-      result = result.filter((v) => (v.created_by ?? 0) === selectedRecruiterFilter);
+      result = result.filter((v) => groupAcceptorIds(v).includes(selectedRecruiterFilter));
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -394,10 +422,11 @@ export default function RecruiterFunnelsPage() {
 
     const groups = new Map<number, string>();
     scopedVacancies.forEach((v) => {
-      const uid = v.created_by ?? 0;
-      if (!groups.has(uid)) {
-        groups.set(uid, v.created_by_name || usersMap[uid] || (uid === user?.id ? (user?.name || 'Мои') : 'Без автора'));
-      }
+      groupAcceptorIds(v).forEach((uid) => {
+        if (!groups.has(uid)) {
+          groups.set(uid, resolveGroupUserName(uid, v, usersMap, user));
+        }
+      });
     });
 
     const firstGroup = Array.from(groups.entries()).sort((a, b) => a[1].localeCompare(b[1]))[0];
@@ -407,29 +436,34 @@ export default function RecruiterFunnelsPage() {
     setExpandedGroups(new Set([firstGroup[0]]));
   }, [isHrAdmin, scopedVacancies, user, usersMap]);
 
-  // Group by recruiter (for admin) or single group (for hr)
+  // Группировка по тому, кто ЛИЧНО принял заявку в работу (accepted_by), а не
+  // по создателю — см. getAcceptorIds выше. Заявка с несколькими принявшими
+  // показывается у КАЖДОГО (сумма счётчиков по группам может быть больше
+  // общего числа заявок — это ожидаемо; «Найдено вакансий: N» ниже считает
+  // по scopedVacancies/filteredVacancies напрямую, без дублей).
   const recruiterGroups = useMemo((): RecruiterGroup[] => {
     const groups: Record<number, RecruiterGroup> = {};
     const vacs = scopedVacancies;
     vacs.forEach((v) => {
-      const uid = v.created_by ?? 0;
-      if (!groups[uid]) {
-        groups[uid] = {
-          userId: uid,
-          userName: v.created_by_name || usersMap[uid] || (uid === user?.id ? (user?.name || 'Мои') : 'Без автора'),
-          vacancies: [],
-          expanded: !isHrAdmin || expandedGroups.has(uid),
-        };
-      }
-      groups[uid].vacancies.push(v);
+      groupAcceptorIds(v).forEach((uid) => {
+        if (!groups[uid]) {
+          groups[uid] = {
+            userId: uid,
+            userName: resolveGroupUserName(uid, v, usersMap, user),
+            vacancies: [],
+            expanded: !isHrAdmin || expandedGroups.has(uid),
+          };
+        }
+        groups[uid].vacancies.push(v);
+      });
     });
     return Object.values(groups).sort((a, b) => a.userName.localeCompare(b.userName));
   }, [scopedVacancies, isHrAdmin, usersMap, expandedGroups, user]);
 
   const filteredRecruiterCount = useMemo(() => {
-    const ids = new Set<string>();
+    const ids = new Set<number>();
     filteredVacancies.forEach((vacancy) => {
-      ids.add(String(vacancy.created_by ?? vacancy.created_by_name ?? 'unknown'));
+      getAcceptorIds(vacancy).forEach((uid) => ids.add(uid));
     });
     return ids.size;
   }, [filteredVacancies]);
@@ -1989,7 +2023,7 @@ export default function RecruiterFunnelsPage() {
                               {v.updated_at && (
                                 <span>Последнее действие: {formatVacancyListDate(v.updated_at)}</span>
                               )}
-                              <span>Рекрутер: {v.created_by_name || usersMap[v.created_by ?? 0] || 'Не назначен'}</span>
+                              <span>Рекрутер: {getAcceptorIds(v).map((uid) => resolveGroupUserName(uid, v, usersMap, user)).join(', ')}</span>
                             </div>
                             <div className="hf-vacancies-search-department">
                               {v.department_name || 'Общая'}
