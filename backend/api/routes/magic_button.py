@@ -720,14 +720,18 @@ async def get_my_vacancies_for_extension(
 ):
     """Get recruiter's vacancies for the extension popup dropdown.
 
-    Показываем ровно то же, что веб в «Мои вакансии» (isPersonallyActive /
-    getAcceptorIds, utils/vacancy.ts): status=open И юзер ЛИЧНО принял
-    воронку (extra_data.accepted_by содержит его id). Просто «назначен»
-    (assigned_to) — недостаточно: пока рекрутёр не нажал «Взять в работу»
-    сам, воронка для него ещё «Заявка», а не рабочая, и класть туда
-    кандидата рано (2026-07-08, личное принятие — воронка общая, но взятие
-    личное). Для очень старых записей без accepted_by (до этой фичи)
-    откатываемся на created_by — как getAcceptorIds.
+    Показываем ровно то же, что веб в «Мои вакансии» (isPersonallyActive,
+    utils/vacancy.ts): status=open И юзер ЛИЧНО принял воронку
+    (extra_data.accepted_by содержит его id). Просто «назначен» (assigned_to)
+    — недостаточно: пока рекрутёр не нажал «Взять в работу» сам, воронка для
+    него ещё «Заявка», а не рабочая, и класть туда кандидата рано
+    (2026-07-08, личное принятие — воронка общая, но взятие личное). СТРОГО
+    accepted_by, БЕЗ фолбэка на created_by — тот же баг, что чинили в
+    funnelsPickerRecruiters (Layout.tsx) и groupAcceptorIds
+    (RecruiterFunnelsPage.tsx): фолбэк засчитывал воронку создателю, даже
+    если он её не принимал, и расходился с реальным списком «Мои вакансии».
+    Легаси-записи без accepted_by (созданные до этой фичи) заполняются
+    разовым бэкафиллом в start.sh, а не фолбэком здесь.
     pending_review/draft — это ЗАЯВКИ (ещё не взяты в работу), класть в них
     кандидата нельзя, поэтому их НЕ показываем (синхронно с вебом «Мои
     вакансии»). paused/closed/cancelled тоже исключены."""
@@ -743,10 +747,7 @@ async def get_my_vacancies_for_extension(
     all_vacancies = result.scalars().all()
 
     def _acceptor_ids(v: Vacancy) -> list:
-        accepted_by = (v.extra_data or {}).get("accepted_by") or []
-        if accepted_by:
-            return accepted_by
-        return [v.created_by] if v.created_by else []
+        return (v.extra_data or {}).get("accepted_by") or []
 
     vacancies = [v for v in all_vacancies if current_user.id in _acceptor_ids(v)]
     # Схлопываем «заявку + её клон»: если у рекрутёра есть личный клон заявки
