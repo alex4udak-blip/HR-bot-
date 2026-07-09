@@ -407,22 +407,26 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const { user } = useAuthStore();
   const { vacancies, fetchVacancies } = useVacancyStore();
 
-  // Режим заявки: рекрутёр без прав на редактирование смотрит чужую заявку.
-  // - не админ
-  // - не creator и не hiring_manager
-  // - назначен (assigned_to / assigned_to_all)
+  // Редактирование заявки (2026-07-09): бэкенд (can_edit_vacancy) уже давно
+  // разрешает редактировать назначенному рекрутёру (assigned_to/assigned_to_all)
+  // наравне с создателем — ограничение было чисто фронтовым и без причины строже
+  // бэка. Теперь назначенный рекрутёр получает ту же полноценную форму, что и
+  // создатель/админ. isReadOnlyRequest остаётся true только для теоретического
+  // случая просмотра без прав редактирования вообще (например, узкая share-view
+  // без edit) — на практике почти не встречается, раз форму вообще открыли.
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
   const isMineByOwnership = !!(user && vacancy && (vacancy.created_by === user.id || vacancy.hiring_manager_id === user.id));
   const isAssignedToMe = !!(user && vacancy && (vacancy.assigned_to_all || (vacancy.assigned_to || []).includes(user.id)));
-  const isReadOnlyRequest = !!vacancy && !isAdmin && !isMineByOwnership && isAssignedToMe;
+  const canEditVacancy = isAdmin || isMineByOwnership || isAssignedToMe;
+  const isReadOnlyRequest = !!vacancy && !canEditVacancy;
 
-  // Уже ли ЭТОТ юзер лично принял заявку (2026-07-08: extra_data.accepted_by —
-  // воронка общая, но принятие личное; старая проверка через клон
-  // (cloned_from_request_id) больше не применима — клонов не создаётся).
+  // Уже ли ЭТОТ юзер лично принял заявку (extra_data.accepted_by, 2026-07-08) —
+  // воронка общая, но принятие личное. Не зависит от режима формы (read-only
+  // vs редактируемая) — назначенный рекрутёр видит статус принятия в любом случае.
   const alreadyTaken = useMemo(() => {
-    if (!isReadOnlyRequest || !vacancy || !user) return false;
+    if (!isAssignedToMe || !vacancy || !user) return false;
     return hasPersonallyAccepted(vacancy, user.id);
-  }, [vacancy, user, isReadOnlyRequest]);
+  }, [vacancy, user, isAssignedToMe]);
 
   const [taking, setTaking] = useState(false);
   const [declining, setDeclining] = useState(false);
@@ -1090,6 +1094,22 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 {vacancy && !isReadOnlyRequest && (
                   <div className="mt-[var(--hf-space-l)] pt-[var(--hf-space-l)] border-t border-[var(--hf-ui-border)] flex flex-col gap-[8px]">
                     <span className={hfLabelClass}>Действия с вакансией</span>
+                    {/* Личное принятие (2026-07-08): назначенный рекрутёр, ещё не
+                        нажимавший «Взять в работу», видит это тут — раньше кнопка
+                        была только в read-only виде заявки, но теперь форма для
+                        назначенных полноценно редактируемая, и без этой кнопки
+                        принять заявку было бы негде. */}
+                    {isAssignedToMe && !alreadyTaken && (
+                      <button
+                        type="button"
+                        onClick={handleTake}
+                        disabled={taking}
+                        className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      >
+                        {taking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+                        {taking ? 'Беру...' : 'Взять в работу'}
+                      </button>
+                    )}
                     {vacancy.status === 'closed' ? (
                       <button
                         type="button"
