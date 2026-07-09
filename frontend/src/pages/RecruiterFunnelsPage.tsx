@@ -163,14 +163,17 @@ const colorToStageColor = (colorKey?: string, enumVal?: string): string => {
 // Группировка админ-вида (2026-07-09): раньше группировали по created_by (кто
 // СОЗДАЛ заявку) — но создатель часто просто раздаёт заявки, не работая над
 // ними лично. Реальный «владелец» воронки — тот, кто лично нажал «Взять в
-// работу» (getAcceptorIds, utils/vacancy.ts: extra_data.accepted_by). Заявку
-// могут принять НЕСКОЛЬКО рекрутёров (общая воронка) — тогда она
-// показывается у КАЖДОГО из них. groupAcceptorIds — та же функция, но с
-// гарантированным непустым результатом (uid=0 «Без автора»), чтобы заявка
-// без created_by не выпала из группировки совсем.
+// работу» (extra_data.accepted_by). Заявку могут принять НЕСКОЛЬКО
+// рекрутёров (общая воронка) — тогда она показывается у КАЖДОГО из них.
+// СТРОГО accepted_by, БЕЗ фолбэка на created_by (в отличие от getAcceptorIds,
+// utils/vacancy.ts) — иначе старые вакансии без личного принятия
+// приписывались создателю, и счётчик «N вакансий» у него расходился с тем,
+// что реально показывает сайдбар «Мои вакансии» (тот же баг, что чинили в
+// Layout.tsx funnelsPickerRecruiters). Пустой accepted_by → uid=0
+// «Без исполнителя», чтобы заявка не выпала из группировки совсем.
 function groupAcceptorIds(v: Vacancy): number[] {
-  const ids = getAcceptorIds(v);
-  return ids.length > 0 ? ids : [0];
+  const acceptedBy = ((v.extra_data as Record<string, unknown> | undefined)?.accepted_by as number[] | undefined) || [];
+  return acceptedBy.length > 0 ? acceptedBy : [0];
 }
 
 function resolveGroupUserName(

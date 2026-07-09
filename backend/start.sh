@@ -626,6 +626,35 @@ async def ensure_shadow_columns():
         \"\"\"))
         print(f\"Cleared stale system_hr_tags on {res.rowcount} candidates\")
 
+    # Backfill: легаси-вакансии (созданы ДО фичи личного принятия, 2026-07-08
+    # 55048d8) — юзер уже в assigned_to, но extra_data.accepted_by пуст (само
+    # поле тогда ещё не существовало). По старой модели «назначен» = «взял в
+    # работу»; новые проверки (isPersonallyActive/getAcceptorIds) требуют
+    # accepted_by — без бэкафилла такие воронки проваливались в щель между
+    # «Заявками» (для admin уже назначена — не показывается) и «Мои вакансии»
+    # (accepted_by пуст). Идемпотентно — заполняет только пустой accepted_by,
+    # не трогает воронки, назначенные уже ПОСЛЕ фичи (там ожидается явное
+    # «Взять в работу»).
+    async with engine.begin() as ab_conn:
+        res = await ab_conn.execute(text(\"\"\"
+            UPDATE vacancies v
+            SET extra_data = (
+                CASE WHEN jsonb_typeof(v.extra_data::jsonb) = 'object'
+                     THEN v.extra_data::jsonb
+                     ELSE '{}'::jsonb END
+                || jsonb_build_object('accepted_by', v.assigned_to::jsonb)
+            )::json
+            WHERE v.status = 'open'
+              AND v.created_at < '2026-07-08 11:47:14+03:00'
+              AND jsonb_typeof(v.assigned_to::jsonb) = 'array'
+              AND jsonb_array_length(v.assigned_to::jsonb) > 0
+              AND COALESCE(jsonb_array_length(
+                    CASE WHEN jsonb_typeof(v.extra_data::jsonb -> 'accepted_by') = 'array'
+                         THEN v.extra_data::jsonb -> 'accepted_by' END
+                  ), 0) = 0
+        \"\"\"))
+        print(f\"Backfilled accepted_by from assigned_to on {res.rowcount} legacy vacancies\")
+
     await engine.dispose()
 
 asyncio.run(ensure_shadow_columns())
