@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy import select, or_, String, func, text
+from sqlalchemy import select, or_, String, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional
@@ -720,40 +720,35 @@ async def get_my_vacancies_for_extension(
 ):
     """Get recruiter's vacancies for the extension popup dropdown.
 
-    Только РАБОЧИЕ воронки, где юзер УЧАСТНИК: status=open И (создал ИЛИ
-    назначен через assigned_to/assigned_to_all), минус те, что сам «закрыл у
-    себя» (extra_data.dismissed_by) — та же модель участника, что
-    isVacancyParticipant (utils/vacancy.ts) и её веб-аналог ParserModal.tsx
-    (дропдаун «Свои воронки» при ручном добавлении резюме). Раньше здесь был
-    только created_by — рекрутёр, назначенный на чужую воронку, не видел её
-    в дропдауне расширения.
+    Показываем ровно то же, что веб в «Мои вакансии» (isPersonallyActive /
+    getAcceptorIds, utils/vacancy.ts): status=open И юзер ЛИЧНО принял
+    воронку (extra_data.accepted_by содержит его id). Просто «назначен»
+    (assigned_to) — недостаточно: пока рекрутёр не нажал «Взять в работу»
+    сам, воронка для него ещё «Заявка», а не рабочая, и класть туда
+    кандидата рано (2026-07-08, личное принятие — воронка общая, но взятие
+    личное). Для очень старых записей без accepted_by (до этой фичи)
+    откатываемся на created_by — как getAcceptorIds.
     pending_review/draft — это ЗАЯВКИ (ещё не взяты в работу), класть в них
     кандидата нельзя, поэтому их НЕ показываем (синхронно с вебом «Мои
-    вакансии»). Заявка становится рабочей воронкой (open) только когда её
-    «Взять в работу» → клон open под рекрутёром. paused/closed/cancelled тоже
-    исключены."""
+    вакансии»). paused/closed/cancelled тоже исключены."""
     org = await get_user_org(current_user, db)
     result = await db.execute(
         select(Vacancy).where(
             Vacancy.org_id == org.id,
             # Только АКТИВНЫЕ воронки (open). pending_review/draft — это заявки, а не
-            # рабочие воронки: класть в них кандидата нельзя. Раньше они попадали в
-            # дропдаун расширения и он рассинхронивался с вебом (там только open).
+            # рабочие воронки: класть в них кандидата нельзя.
             Vacancy.status == VacancyStatus.open,
-            or_(
-                Vacancy.created_by == current_user.id,
-                text(f"vacancies.assigned_to::jsonb @> '[{int(current_user.id)}]'::jsonb"),
-                Vacancy.assigned_to_all == True,
-            ),
         ).order_by(Vacancy.title)
     )
     all_vacancies = result.scalars().all()
-    # dismissed_by — рекрутёр сам «закрыл у себя» эту воронку: убираем, иначе
-    # она вернётся в дропдаун сразу после того, как он от неё отказался.
-    vacancies = [
-        v for v in all_vacancies
-        if current_user.id not in ((v.extra_data or {}).get("dismissed_by") or [])
-    ]
+
+    def _acceptor_ids(v: Vacancy) -> list:
+        accepted_by = (v.extra_data or {}).get("accepted_by") or []
+        if accepted_by:
+            return accepted_by
+        return [v.created_by] if v.created_by else []
+
+    vacancies = [v for v in all_vacancies if current_user.id in _acceptor_ids(v)]
     # Схлопываем «заявку + её клон»: если у рекрутёра есть личный клон заявки
     # (extra_data.cloned_from_request_id == X), оригинал X из дропдауна убираем —
     # иначе одна воронка двоится («Mob dev ×2 / Трафик ×2»). Тот же дедуп, что

@@ -1408,6 +1408,11 @@ export default function Layout() {
     const lastVacancyId = new Map<number, number>();
     vacancies.forEach((v) => {
       if (v.status !== "open") return;
+      // Оригинал заявки, у которой уже есть личный клон рекрутёра, — не
+      // отдельная воронка, а дубликат (см. allClonedSourceIds/sidebarOpenVacancies
+      // выше). Без этого фильтра счётчик в попапе расходился с реальным
+      // списком «Мои вакансии» — легаси-клоны считались дважды.
+      if (allClonedSourceIds.has(v.id)) return;
       getAcceptorIds(v).forEach((uid) => {
         if (user && uid === user.id) return;
         counts.set(uid, (counts.get(uid) || 0) + 1);
@@ -1422,7 +1427,7 @@ export default function Layout() {
         onlyVacancyId: count === 1 ? lastVacancyId.get(id) ?? null : null,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [vacancies, user, pickerUsersById]);
+  }, [vacancies, user, pickerUsersById, allClonedSourceIds]);
   const filteredFunnelsPickerRecruiters = pickerSearch.trim()
     ? funnelsPickerRecruiters.filter((r) =>
         r.name.toLowerCase().includes(pickerSearch.trim().toLowerCase()),
