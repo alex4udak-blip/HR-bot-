@@ -1620,79 +1620,88 @@ export default function Layout() {
 
                 <div className="hf-hr-sidebar-divider hf-hr-sidebar-divider-funnels" />
 
-                <div className="hf-hr-funnels-picker-wrap" ref={hrFunnelsPickerRef}>
-                  <div className="hf-hr-funnels-header">
-                    <button
-                      type="button"
-                      className={clsx(
-                        "hf-hr-nav-item hf-hr-funnels-trigger min-w-0",
-                        isMyFunnelsRootView
-                          ? "hf-hr-nav-item-active"
-                          : "hf-hr-nav-item-white",
-                      )}
-                      onClick={() => setShowHrFunnelsPicker((value) => !value)}
-                      aria-label="Выбрать владельца вакансий"
-                      aria-expanded={showHrFunnelsPicker}
-                      aria-haspopup="listbox"
-                    >
-                      <HfSpriteIcon
-                        id="business-folder"
-                        className="hf-hr-nav-icon"
-                      />
-                      <span className="truncate">Мои вакансии</span>
-                      <span className="hf-hr-funnels-trigger-caret">
-                        <ChevronDown
-                          className={clsx(
-                            "hf-hr-chevron-icon",
-                            showHrFunnelsPicker && "rotate-180",
-                          )}
-                        />
-                      </span>
-                    </button>
-                  </div>
-                  <AnimatePresence>
-                    {showHrFunnelsPicker && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -4, scale: 0.985 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -4, scale: 0.985 }}
-                        transition={{ duration: 0.12, ease: "easeOut" }}
-                        className="hf-hr-funnels-picker"
-                        role="listbox"
+                <div ref={hrFunnelsPickerRef}>
+                  {/* position:relative-якорь для попапа должен оборачивать ТОЛЬКО
+                      кнопку-триггер, а не весь блок вместе со списком вакансий
+                      ниже — иначе top: calc(100% + gap) в .hf-hr-funnels-picker
+                      считается от высоты ВСЕГО блока (заголовок + сколько бы ни
+                      было вакансий в hf-hr-subnav), и попап съезжает вниз тем
+                      сильнее, чем больше у юзера принятых вакансий — вплоть до
+                      наложения на сам список вместо появления сразу под кнопкой. */}
+                  <div className="hf-hr-funnels-picker-wrap">
+                    <div className="hf-hr-funnels-header">
+                      <button
+                        type="button"
+                        className={clsx(
+                          "hf-hr-nav-item hf-hr-funnels-trigger min-w-0",
+                          isMyFunnelsRootView
+                            ? "hf-hr-nav-item-active"
+                            : "hf-hr-nav-item-white",
+                        )}
+                        onClick={() => setShowHrFunnelsPicker((value) => !value)}
+                        aria-label="Выбрать владельца вакансий"
+                        aria-expanded={showHrFunnelsPicker}
+                        aria-haspopup="listbox"
                       >
-                        <label className="hf-hr-funnels-search">
-                          <Search className="hf-hr-funnels-search-icon" />
-                          <input
-                            className="hf-hr-funnels-search-input"
-                            placeholder="Поиск..."
+                        <HfSpriteIcon
+                          id="business-folder"
+                          className="hf-hr-nav-icon"
+                        />
+                        <span className="truncate">Мои вакансии</span>
+                        <span className="hf-hr-funnels-trigger-caret">
+                          <ChevronDown
+                            className={clsx(
+                              "hf-hr-chevron-icon",
+                              showHrFunnelsPicker && "rotate-180",
+                            )}
                           />
-                        </label>
-                        <button
-                          type="button"
-                          className="hf-hr-funnels-option"
-                          onClick={() => {
-                            setShowHrFunnelsPicker(false);
-                            navigate("/my-funnels");
-                          }}
-                          role="option"
-                          aria-selected="true"
+                        </span>
+                      </button>
+                    </div>
+                    <AnimatePresence>
+                      {showHrFunnelsPicker && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -4, scale: 0.985 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -4, scale: 0.985 }}
+                          transition={{ duration: 0.12, ease: "easeOut" }}
+                          className="hf-hr-funnels-picker"
+                          role="listbox"
                         >
-                          <Check className="hf-hr-funnels-check" />
-                          <span className="hf-hr-funnels-avatar">
-                            {user?.name?.[0]?.toUpperCase() || "Я"}
-                          </span>
-                          <span className="hf-hr-funnels-option-text">
-                            <span className="hf-hr-funnels-option-title">
-                              Я, {user?.name || user?.email || "Профиль"}
+                          <label className="hf-hr-funnels-search">
+                            <Search className="hf-hr-funnels-search-icon" />
+                            <input
+                              className="hf-hr-funnels-search-input"
+                              placeholder="Поиск..."
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="hf-hr-funnels-option"
+                            onClick={() => {
+                              setShowHrFunnelsPicker(false);
+                              navigate("/my-funnels");
+                            }}
+                            role="option"
+                            aria-selected="true"
+                          >
+                            <Check className="hf-hr-funnels-check" />
+                            <span className="hf-hr-funnels-avatar">
+                              {user?.name?.[0]?.toUpperCase() || "Я"}
                             </span>
-                            <span className="hf-hr-funnels-option-subtitle">
-                              {user?.email || "—"}
+                            <span className="hf-hr-funnels-option-text">
+                              <span className="hf-hr-funnels-option-title">
+                                Я, {user?.name || user?.email || "Профиль"}
+                              </span>
+                              <span className="hf-hr-funnels-option-subtitle">
+                                {user?.email || "—"}
+                              </span>
                             </span>
-                          </span>
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                   {sidebarOpenVacancies.length > 0 && (
                     <div className="hf-hr-subnav">
                       {sidebarOpenVacancies.map((v) => (
