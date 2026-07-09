@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { sanitizeHtml } from "../utils/sanitizeHtml";
 import { formatSalary } from "@/utils/currency";
 import { parseServerDate } from "@/utils/date";
-import { isRequestVisibleTo, isPersonallyActive, hasPersonallyAccepted } from "@/utils/vacancy";
+import { isRequestVisibleTo, isPersonallyActive, hasPersonallyAccepted, getAcceptorIds } from "@/utils/vacancy";
 import {
   LayoutDashboard,
   Users,
@@ -61,7 +61,7 @@ import ParserModal from "@/components/parser/ParserModal";
 import TelegramConnectBanner from "@/components/TelegramConnectBanner";
 import { NotifPeek } from "@/components/NotifPeek";
 import { NotifSettings } from "@/components/NotifSettings";
-import { getVacancy, takeVacancy, declineVacancy } from "@/services/api/vacancies";
+import { getVacancy, takeVacancy, declineVacancy, getAssignableUsers } from "@/services/api/vacancies";
 import type { Vacancy } from "@/types";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
@@ -868,6 +868,27 @@ export default function Layout() {
   const [showHrUserMenu, setShowHrUserMenu] = useState(false);
   const hrFabActionsRef = useRef<HTMLDivElement | null>(null);
   const hrFunnelsPickerRef = useRef<HTMLDivElement | null>(null);
+  // Фильтр «чьи вакансии показывать» в попапе «Мои вакансии» (2026-07-09):
+  // null = свои (текущий юзер), иначе — id выбранного рекрутёра из числа тех,
+  // кто лично принял хотя бы одну вакансию (accepted_by). Сбрасывается при
+  // перезагрузке страницы — это быстрая линза, а не постоянная настройка.
+  const [pickerOwnerId, setPickerOwnerId] = useState<number | null>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerUsersById, setPickerUsersById] = useState<Record<number, string>>({});
+  useEffect(() => {
+    getAssignableUsers()
+      .then((list) => {
+        const map: Record<number, string> = {};
+        list.forEach((u) => { map[u.id] = u.name; });
+        setPickerUsersById(map);
+      })
+      .catch(() => {});
+  }, []);
+  // Очищаем поиск при закрытии — иначе при следующем открытии попапа
+  // остаётся старый текст фильтра, будто список пуст без видимой причины.
+  useEffect(() => {
+    if (!showHrFunnelsPicker) setPickerSearch("");
+  }, [showHrFunnelsPicker]);
 
   useEffect(() => {
     if (routeBlock === "hr") {
@@ -1330,19 +1351,45 @@ export default function Layout() {
       ?.cloned_from_request_id;
     if (typeof src === "number") allClonedSourceIds.add(src);
   });
+  // Кого показывать в «Мои вакансии» — себя (по умолчанию) или того, кого
+  // выбрали в попапе «Выбрать владельца вакансий» (2026-07-09, фильтр по
+  // принявшим). null в pickerOwnerId = «я».
+  const funnelsPickerOwnerId = pickerOwnerId ?? user?.id ?? null;
   const sidebarOpenVacancies = vacancies
     .filter((v) => v.status === "open")
     .filter((v) => !allClonedSourceIds.has(v.id))
-    // «Мои вакансии» = где я реально участник (создатель ИЛИ назначенный,
-    // минус «закрыл у себя») — ДАЖЕ для admin/superadmin. Раньше админ видел
-    // тут вообще ВСЕ открытые вакансии орга, из-за чего любое «взятие в
-    // работу» рекрутёром выглядело так, будто заявку взял и сам админ тоже.
-    // Просмотр «всего» без участия остаётся доступен на полной странице
-    // «Мои вакансии» — там у admin/owner/superadmin свой отдельный полный список.
+    // «Мои вакансии» = где выбранный владелец реально участник (создатель ИЛИ
+    // назначенный, минус «закрыл у себя») — ДАЖЕ для admin/superadmin. Раньше
+    // админ видел тут вообще ВСЕ открытые вакансии орга, из-за чего любое
+    // «взятие в работу» рекрутёром выглядело так, будто заявку взял и сам
+    // админ тоже. Просмотр «всего» без участия остаётся доступен на полной
+    // странице «Мои вакансии» — там у admin/owner/superadmin свой полный список.
     // 2026-07-08: назначенный, но ещё лично НЕ принявший (isVacancyParticipant
     // без accepted_by) не должен видеть её тут как «свою» — только после
     // личного «Взять в работу» (isPersonallyActive). До этого она в «Заявки».
-    .filter((v) => user && isPersonallyActive(v, user.id));
+    .filter((v) => isPersonallyActive(v, funnelsPickerOwnerId));
+  // Список рекрутёров для попапа — все, кто лично принял хотя бы одну
+  // вакансию (accepted_by), кроме текущего юзера (он уже пришпилен как «Я»
+  // отдельным пунктом). Считаем и сколько вакансий у каждого — видно сразу
+  // в списке, без перехода на полную страницу «Мои вакансии».
+  const funnelsPickerRecruiters = useMemo(() => {
+    const counts = new Map<number, number>();
+    vacancies.forEach((v) => {
+      if (v.status !== "open") return;
+      getAcceptorIds(v).forEach((uid) => {
+        if (user && uid === user.id) return;
+        counts.set(uid, (counts.get(uid) || 0) + 1);
+      });
+    });
+    return Array.from(counts.entries())
+      .map(([id, count]) => ({ id, count, name: pickerUsersById[id] || `#${id}` }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [vacancies, user, pickerUsersById]);
+  const filteredFunnelsPickerRecruiters = pickerSearch.trim()
+    ? funnelsPickerRecruiters.filter((r) =>
+        r.name.toLowerCase().includes(pickerSearch.trim().toLowerCase()),
+      )
+    : funnelsPickerRecruiters;
   // Заявки, которые ТЕКУЩИЙ юзер уже взял в работу (есть свой клон).
   // После «Взять в работу» исходная заявка должна пропасть из списка —
   // она уже взята. Раньше она оставалась висеть.
@@ -1647,7 +1694,11 @@ export default function Layout() {
                           id="business-folder"
                           className="hf-hr-nav-icon"
                         />
-                        <span className="truncate">Мои вакансии</span>
+                        <span className="truncate">
+                          {pickerOwnerId === null
+                            ? "Мои вакансии"
+                            : `Вакансии: ${pickerUsersById[pickerOwnerId] || "..."}`}
+                        </span>
                         <span className="hf-hr-funnels-trigger-caret">
                           <ChevronDown
                             className={clsx(
@@ -1673,19 +1724,22 @@ export default function Layout() {
                             <input
                               className="hf-hr-funnels-search-input"
                               placeholder="Поиск..."
+                              value={pickerSearch}
+                              onChange={(e) => setPickerSearch(e.target.value)}
                             />
                           </label>
                           <button
                             type="button"
                             className="hf-hr-funnels-option"
                             onClick={() => {
+                              setPickerOwnerId(null);
                               setShowHrFunnelsPicker(false);
                               navigate("/my-funnels");
                             }}
                             role="option"
-                            aria-selected="true"
+                            aria-selected={pickerOwnerId === null}
                           >
-                            <Check className="hf-hr-funnels-check" />
+                            {pickerOwnerId === null && <Check className="hf-hr-funnels-check" />}
                             <span className="hf-hr-funnels-avatar">
                               {user?.name?.[0]?.toUpperCase() || "Я"}
                             </span>
@@ -1698,11 +1752,45 @@ export default function Layout() {
                               </span>
                             </span>
                           </button>
+                          {/* Рекрутёры, которые лично приняли хотя бы одну вакансию
+                              (accepted_by) — выбор фильтрует список ниже под них,
+                              можно пройтись по их воронкам прямо из сайдбара. */}
+                          {filteredFunnelsPickerRecruiters.map((r) => (
+                            <button
+                              key={r.id}
+                              type="button"
+                              className="hf-hr-funnels-option"
+                              onClick={() => {
+                                setPickerOwnerId(r.id);
+                                setShowHrFunnelsPicker(false);
+                                navigate("/my-funnels");
+                              }}
+                              role="option"
+                              aria-selected={pickerOwnerId === r.id}
+                            >
+                              {pickerOwnerId === r.id && <Check className="hf-hr-funnels-check" />}
+                              <span className="hf-hr-funnels-avatar">
+                                {r.name[0]?.toUpperCase() || "?"}
+                              </span>
+                              <span className="hf-hr-funnels-option-text">
+                                <span className="hf-hr-funnels-option-title">
+                                  {r.name}
+                                </span>
+                                <span className="hf-hr-funnels-option-subtitle">
+                                  {r.count} {r.count === 1 ? "вакансия" : "вакансий"}
+                                </span>
+                              </span>
+                            </button>
+                          ))}
                         </motion.div>
                       )}
                     </AnimatePresence>
                   </div>
-                  {sidebarOpenVacancies.length > 0 && (
+                  {/* Список скрываем, пока открыт попап выбора владельца —
+                      иначе при длинном списке (много принятых вакансий)
+                      вакансии внизу выглядывают из-под попапа, который
+                      рассчитан на компактную высоту (поиск + один пункт). */}
+                  {!showHrFunnelsPicker && sidebarOpenVacancies.length > 0 && (
                     <div className="hf-hr-subnav">
                       {sidebarOpenVacancies.map((v) => (
                         <NavLink

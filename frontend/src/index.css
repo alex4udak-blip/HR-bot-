@@ -512,10 +512,15 @@
   top: calc(100% + var(--hf-space-xs));
   left: 0;
   z-index: var(--hf-z-dropdown);
-  width: min(
-    var(--hf-sidebar-funnels-popover-w),
-    calc(100vw - var(--hf-space-xl))
-  );
+  /* HR-сайдбар resizable (266–416px, см. Layout.tsx HF_HR_SIDEBAR_WIDTH_*) —
+     фиксированная ширина попапа (было var(--hf-sidebar-funnels-popover-w),
+     382px) на дефолтной/узкой ширине вылезала за пределы сайдбара в основной
+     контент. 100% — попап всегда ровно по ширине своего якоря
+     (.hf-hr-funnels-picker-wrap = ширина кнопки-триггера), какой бы сайдбар
+     ни был. calc(100vw - gap) остаётся защитой на случай совсем маленького
+     вьюпорта (мобильный оверлей сайдбара шире экрана).
+  */
+  width: min(100%, calc(100vw - var(--hf-space-xl)));
   border-radius: var(--hf-radius-s);
   background: var(--hf-white);
   padding: var(--hf-space-m);
