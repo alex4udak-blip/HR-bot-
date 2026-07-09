@@ -112,6 +112,32 @@ function RichTextField({
     sync();
   };
 
+  // Копирует содержимое поля целиком, сохраняя форматирование (жирный,
+  // списки и т.п.) — при вставке в Word/Google Docs/почту оно применится;
+  // в обычные текстовые поля вставится как plain text (браузер сам выбирает
+  // подходящий MIME из clipboard item). ClipboardItem поддерживается не
+  // везде (недоступен вне https/localhost) — тогда откатываемся на голый текст.
+  const copyContent = async () => {
+    const html = ref.current?.innerHTML || '';
+    const text = ref.current?.innerText || '';
+    if (!html && !text) return;
+    try {
+      if (typeof ClipboardItem !== 'undefined') {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([text], { type: 'text/plain' }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+      toast.success('Скопировано');
+    } catch {
+      toast.error('Не удалось скопировать');
+    }
+  };
+
   const btnClass = 'hf-vacancy-editor-btn flex items-center justify-center';
 
   return (
@@ -145,6 +171,10 @@ function RichTextField({
         <button type="button" aria-label="Ссылка" disabled={disabled} className={btnClass}
           onMouseDown={(e) => { e.preventDefault(); addLink(); }}>
           <HfSpriteIcon id="link" className="hf-vacancy-editor-icon" />
+        </button>
+        <button type="button" aria-label="Копировать" title="Копировать текст" className={btnClass}
+          onMouseDown={(e) => { e.preventDefault(); copyContent(); }}>
+          <HfSpriteIcon id="clipboard" className="hf-vacancy-editor-icon" />
         </button>
       </div>
       <div
