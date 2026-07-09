@@ -79,7 +79,11 @@ ALLOWED_MIME_TYPES = {
 # Mapping of file extensions to expected MIME types
 EXTENSION_MIME_MAP = {
     'pdf': {'application/pdf'},
-    'docx': {'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip'},
+    # libmagic на реальных Word-.docx (полная структура MS Word) часто отдаёт
+    # application/octet-stream, а не OOXML/zip — поэтому octet-stream тоже валиден
+    # для .docx (иначе анти-спуфинг рубил нормальные ворд-резюме 400-й ошибкой).
+    'docx': {'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+             'application/zip', 'application/octet-stream'},
     'doc': {'application/msword', 'application/octet-stream', 'application/x-cfbf',
             'application/CDFV2', 'application/vnd.ms-office', 'application/x-ole-storage'},
     'txt': {'text/plain'},
