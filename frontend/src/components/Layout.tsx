@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { sanitizeHtml } from "../utils/sanitizeHtml";
 import { formatSalary } from "@/utils/currency";
 import { parseServerDate } from "@/utils/date";
-import { isRequestVisibleTo, isPersonallyActive, hasPersonallyAccepted, getAcceptorIds } from "@/utils/vacancy";
+import { isRequestVisibleTo, isPersonallyActive, hasPersonallyAccepted } from "@/utils/vacancy";
 import {
   LayoutDashboard,
   Users,
@@ -1413,7 +1413,15 @@ export default function Layout() {
       // выше). Без этого фильтра счётчик в попапе расходился с реальным
       // списком «Мои вакансии» — легаси-клоны считались дважды.
       if (allClonedSourceIds.has(v.id)) return;
-      getAcceptorIds(v).forEach((uid) => {
+      // СТРОГО accepted_by, БЕЗ фолбэка на created_by (в отличие от
+      // getAcceptorIds) — список ниже (sidebarOpenVacancies) фильтрует через
+      // isPersonallyActive, у которой фолбэка тоже нет. На старых вакансиях
+      // (созданы до обязательного личного «Взять в работу», accepted_by
+      // пустой) getAcceptorIds засчитывала их создателю — счётчик в попапе
+      // («N вакансий») расходился с реальным списком под кнопкой (например,
+      // «5» в счётчике при 1 вакансии в списке).
+      const acceptedBy = ((v.extra_data as Record<string, unknown> | undefined)?.accepted_by as number[] | undefined) || [];
+      acceptedBy.forEach((uid) => {
         if (user && uid === user.id) return;
         counts.set(uid, (counts.get(uid) || 0) + 1);
         lastVacancyId.set(uid, v.id);
