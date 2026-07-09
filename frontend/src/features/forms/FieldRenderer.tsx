@@ -1,4 +1,165 @@
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Calendar as CalendarIcon, ChevronDown } from 'lucide-react';
+import clsx from 'clsx';
 import type { FormField } from '@/services/api/forms';
+
+const WEEKDAYS_MON_FIRST = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const MONTH_NAMES = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+];
+// Диапазон лет с запасом в обе стороны: назад достаточно для даты рождения,
+// вперёд — для дедлайнов.
+const DATE_PICKER_MIN_YEAR = 1930;
+const DATE_PICKER_MAX_FUTURE_YEARS = 2;
+
+/**
+ * Попап-календарь для поля типа «Дата» (клик по полю открывает выбор дня).
+ */
+function DateFieldPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  const selectedDate = useMemo(() => {
+    if (!value) return null;
+    const d = new Date(`${value}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [value]);
+
+  const [viewDate, setViewDate] = useState(() => selectedDate || new Date());
+
+  useEffect(() => {
+    if (open) setViewDate(selectedDate || new Date());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onOutside = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, [open]);
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = [
+    ...Array(firstWeekday).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  const currentYear = new Date().getFullYear();
+  const years = Array.from(
+    { length: (currentYear + DATE_PICKER_MAX_FUTURE_YEARS) - DATE_PICKER_MIN_YEAR + 1 },
+    (_, i) => (currentYear + DATE_PICKER_MAX_FUTURE_YEARS) - i,
+  );
+  const toIso = (y: number, m: number, d: number) =>
+    `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const todayStr = new Date().toDateString();
+  const displayValue = selectedDate
+    ? selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+    : 'Выберите дату';
+
+  return (
+    <div className="relative" ref={rootRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 border border-gray-300 bg-white rounded-xl text-left outline-none transition-colors focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 hover:border-gray-400"
+      >
+        <CalendarIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+        <span className={selectedDate ? 'text-gray-900' : 'text-gray-400'}>{displayValue}</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1.5 w-72 bg-white border border-gray-200 rounded-xl shadow-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            {/* appearance-none + свой ChevronDown — нативная стрелка браузера
+                накладывалась на текст года (узкий select, "199X" почти впритык
+                к краю), да и вся пара month/year выглядела тускло (светлая
+                border-gray-200 + слабый контраст текста). border-gray-300 +
+                text-gray-900 + явный правый паддинг под иконку — как у
+                остальных полей ввода в этом файле. */}
+            <div className="relative flex-1 min-w-0">
+              <select
+                value={month}
+                onChange={(e) => setViewDate(new Date(year, Number(e.target.value), 1))}
+                className="w-full appearance-none text-sm font-medium text-gray-900 border border-gray-300 rounded-lg pl-2.5 pr-7 py-1.5 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
+                style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
+              >
+                {MONTH_NAMES.map((m, i) => (
+                  <option key={m} value={i}>{m}</option>
+                ))}
+              </select>
+              <ChevronDown className="hf-date-picker-chevron pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+            </div>
+            <div className="relative shrink-0">
+              <select
+                value={year}
+                onChange={(e) => setViewDate(new Date(Number(e.target.value), month, 1))}
+                className="w-[92px] appearance-none text-sm font-medium text-gray-900 border border-gray-300 rounded-lg pl-2.5 pr-7 py-1.5 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
+                style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <ChevronDown className="hf-date-picker-chevron pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+            </div>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center text-xs text-gray-400 mb-1">
+            {WEEKDAYS_MON_FIRST.map((w) => (
+              <span key={w}>{w}</span>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((day, i) => {
+              if (day === null) return <span key={`b${i}`} />;
+              const isSelected = !!selectedDate
+                && selectedDate.getFullYear() === year
+                && selectedDate.getMonth() === month
+                && selectedDate.getDate() === day;
+              const isToday = new Date(year, month, day).toDateString() === todayStr;
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => { onChange(toIso(year, month, day)); setOpen(false); }}
+                  className={clsx(
+                    'h-8 w-8 flex items-center justify-center rounded-full text-sm transition-colors',
+                    isSelected
+                      ? 'bg-blue-600 text-white'
+                      : isToday
+                        ? 'border border-blue-400 text-blue-600'
+                        : 'text-gray-700 hover:bg-gray-100',
+                  )}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+          {selectedDate && (
+            <button
+              type="button"
+              onClick={() => { onChange(''); setOpen(false); }}
+              className="mt-2 w-full text-xs text-gray-500 hover:text-gray-700 text-center py-1"
+            >
+              Очистить
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function FieldRenderer({
   field,
@@ -123,6 +284,13 @@ export function FieldRenderer({
             );
           })}
         </div>
+      )}
+
+      {field.type === 'date' && (
+        <DateFieldPicker
+          value={String(value || '')}
+          onChange={onChange}
+        />
       )}
 
       {field.type === 'url' && (

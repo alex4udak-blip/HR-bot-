@@ -52,7 +52,7 @@ router = APIRouter()
 
 class FormFieldSchema(BaseModel):
     id: str
-    type: str  # text, email, phone, textarea, select, multiselect, radio, file, url, scale
+    type: str  # text, email, phone, textarea, select, multiselect, radio, file, url, scale, date
     label: str
     required: bool = False
     placeholder: Optional[str] = None

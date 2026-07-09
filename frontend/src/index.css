@@ -9200,3 +9200,16 @@ body.performance-mode .glass-card:hover {
 [data-theme="light"] .placeholder-white\/30::placeholder {
   color: rgba(26, 26, 46, 0.35) !important;
 }
+
+/* ============================================
+   DateFieldPicker (анкета, поле «Дата»): в режиме forced-colors
+   (Windows High Contrast) браузер игнорирует appearance:none на <select>
+   ради доступности и рисует свою нативную стрелку поверх любых стилей —
+   наша добавленная иконка ChevronDown тогда накладывается на неё, и видно
+   две стрелки сразу. Прячем свою — нативной в этом режиме достаточно.
+   ============================================ */
+@media (forced-colors: active) {
+  .hf-date-picker-chevron {
+    display: none;
+  }
+}

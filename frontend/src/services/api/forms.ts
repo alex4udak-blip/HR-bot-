@@ -9,7 +9,7 @@ import api from './client';
 
 export interface FormField {
   id: string;
-  type: 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'multiselect' | 'radio' | 'file' | 'url' | 'scale';
+  type: 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'multiselect' | 'radio' | 'file' | 'url' | 'scale' | 'date';
   label: string;
   required: boolean;
   placeholder?: string;

@@ -25,6 +25,7 @@ import {
   Link2,
   Loader2,
   Check,
+  Calendar,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -50,6 +51,7 @@ export const FIELD_TYPES: { type: FormField['type']; label: string; icon: React.
   { type: 'file', label: 'Файл', icon: Upload },
   { type: 'url', label: 'Ссылка (URL)', icon: ExternalLink },
   { type: 'scale', label: 'Шкала', icon: Star },
+  { type: 'date', label: 'Дата', icon: Calendar },
 ];
 
 export const TYPE_LABELS: Record<string, string> = {
@@ -63,12 +65,13 @@ export const TYPE_LABELS: Record<string, string> = {
   file: 'Файл',
   url: 'Ссылка (URL)',
   scale: 'Шкала',
+  date: 'Дата',
 };
 
 // Type-picker groups (Survio-style sections)
 const TYPE_GROUPS: { title: string; types: FormField['type'][] }[] = [
   { title: 'Базовые',   types: ['text', 'textarea', 'radio', 'multiselect', 'select'] },
-  { title: 'Открытые',  types: ['email', 'phone', 'url', 'file'] },
+  { title: 'Открытые',  types: ['email', 'phone', 'url', 'file', 'date'] },
   { title: 'Оценочные', types: ['scale'] },
 ];
 
@@ -887,6 +890,7 @@ function QuestionBlock({
                   </div>
                 </div>
               )}
+
         </div>
       )}
     </div>
