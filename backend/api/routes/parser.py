@@ -84,8 +84,12 @@ EXTENSION_MIME_MAP = {
     # для .docx (иначе анти-спуфинг рубил нормальные ворд-резюме 400-й ошибкой).
     'docx': {'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
              'application/zip', 'application/octet-stream'},
+    # .doc в реальности часто оказывается RTF, сохранённым с расширением .doc
+    # (сайты вакансий, старый Word) — libmagic видит text/rtf. Плюс сам бинарный
+    # OLE2-.doc детектится кучей разных MIME. Все они валидны для .doc.
     'doc': {'application/msword', 'application/octet-stream', 'application/x-cfbf',
-            'application/CDFV2', 'application/vnd.ms-office', 'application/x-ole-storage'},
+            'application/CDFV2', 'application/vnd.ms-office', 'application/x-ole-storage',
+            'text/rtf', 'application/rtf'},
     'txt': {'text/plain'},
     'rtf': {'text/rtf', 'application/rtf'},
     'jpg': {'image/jpeg'},

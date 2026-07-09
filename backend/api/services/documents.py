@@ -242,6 +242,16 @@ class DocumentParser:
     async def _convert_then_parse_docx(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
         ext = Path(filename).suffix
 
+        # Частый кейс: RTF, сохранённый с расширением .doc (сайты вакансий, старый
+        # Word). Нативный striprtf разбирает его чисто и без LibreOffice — иначе
+        # .doc-путь гонит его через конвертацию, а без LibreOffice сваливается в
+        # бинарный фолбэк, дающий мусор (UTF-16-каша из RTF-байтов).
+        if file_bytes[:16].lstrip().startswith(b'{\\rtf'):
+            logger.info(f"{filename}: RTF-контент под .doc-расширением → нативный RTF-парсер")
+            result = await self._parse_rtf(file_bytes, filename)
+            result.metadata["detected_format"] = "rtf"
+            return result
+
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_input = os.path.join(temp_dir, f"input{ext}")
 
