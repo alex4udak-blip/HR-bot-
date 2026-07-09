@@ -346,6 +346,21 @@ export default function RecruiterFunnelsPage() {
     }
   }, [searchParams, statusFilter]);
 
+  // Выбор рекрутёра в попапе «Мои вакансии» сайдбара (Layout.tsx) шлёт сюда
+  // ?recruiter=<id> — раньше он просто делал navigate("/my-funnels") без
+  // параметра, поэтому клик по ЛЮБОМУ рекрутёру в попапе визуально ничего не
+  // менял на этой странице (уже открытый общий вид «Все вакансии» оставался
+  // как есть). Теперь синхронизируем с тем же selectedRecruiterFilter, что и
+  // родное меню «Рекрутеры» этой страницы.
+  useEffect(() => {
+    const urlRecruiter = searchParams.get('recruiter');
+    const parsed = urlRecruiter ? Number(urlRecruiter) : NaN;
+    const nextFilter = Number.isFinite(parsed) ? parsed : null;
+    if (nextFilter !== selectedRecruiterFilter) {
+      setSelectedRecruiterFilter(nextFilter);
+    }
+  }, [searchParams]);
+
   useEffect(() => {
     // Резолвер id → имя нужен ВСЕМ, не только admin-виду: обычный рекрутёр
     // тоже видит «Рекрутер: ...» с именами других принявших (общая воронка,

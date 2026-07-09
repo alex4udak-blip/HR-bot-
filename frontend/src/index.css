@@ -521,11 +521,34 @@
      вьюпорта (мобильный оверлей сайдбара шире экрана).
   */
   width: min(100%, calc(100vw - var(--hf-space-xl)));
+  /* max-height приходит инлайном из Layout.tsx (реально измеренное свободное
+     место до края экрана) — этот токен лишь дефолт до первого замера и
+     защита на очень короткий вьюпорт. display:flex + overflow:hidden здесь,
+     а не на самом попапе — скроллится только .hf-hr-funnels-options-scroll
+     ниже, поиск остаётся зафиксированным сверху. */
+  max-height: min(420px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-radius: var(--hf-radius-s);
   background: var(--hf-white);
   padding: var(--hf-space-m);
   box-shadow: var(--hf-shadow-popover);
   color: var(--hf-text-main);
+}
+
+/* На маленьком экране, если снизу от кнопки не хватает места, а сверху
+   свободнее — попап открывается ВВЕРХ (класс ставится в Layout.tsx после
+   замера через getBoundingClientRect). */
+.hf-hr-funnels-picker-up {
+  top: auto;
+  bottom: calc(100% + var(--hf-space-xs));
+}
+
+.hf-hr-funnels-options-scroll {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .hf-hr-funnels-search {

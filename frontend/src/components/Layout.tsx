@@ -890,6 +890,34 @@ export default function Layout() {
     if (!showHrFunnelsPicker) setPickerSearch("");
   }, [showHrFunnelsPicker]);
 
+  // На маленьком экране (короткий вьюпорт, много рекрутёров в списке) попап,
+  // который всегда открывался вниз от кнопки, мог вылезать за нижний край
+  // экрана — списка не докрутить, ничего не видно. Меряем реальное свободное
+  // место при каждом открытии/ресайзе: если снизу тесно, а сверху свободнее —
+  // открываем вверх; в любом случае ограничиваем высоту тем, что реально
+  // есть, и скроллим список опций (см. .hf-hr-funnels-options-scroll).
+  const funnelsHeaderRef = useRef<HTMLDivElement | null>(null);
+  const [pickerOpensUpward, setPickerOpensUpward] = useState(false);
+  const [pickerMaxHeight, setPickerMaxHeight] = useState<number | null>(null);
+  useEffect(() => {
+    if (!showHrFunnelsPicker) return;
+    const GAP = 8;
+    const EDGE_MARGIN = 16;
+    const compute = () => {
+      const header = funnelsHeaderRef.current;
+      if (!header) return;
+      const rect = header.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom - GAP - EDGE_MARGIN;
+      const spaceAbove = rect.top - GAP - EDGE_MARGIN;
+      const upward = spaceBelow < 220 && spaceAbove > spaceBelow;
+      setPickerOpensUpward(upward);
+      setPickerMaxHeight(Math.max(160, Math.floor(upward ? spaceAbove : spaceBelow)));
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [showHrFunnelsPicker]);
+
   useEffect(() => {
     if (routeBlock === "hr") {
       fetchVacancies();
@@ -1374,15 +1402,25 @@ export default function Layout() {
   // в списке, без перехода на полную страницу «Мои вакансии».
   const funnelsPickerRecruiters = useMemo(() => {
     const counts = new Map<number, number>();
+    // Запоминаем id последней встреченной вакансии — нужен, когда у
+    // рекрутёра ровно ОДНА (см. onlyVacancyId ниже: прямой переход в её
+    // воронку без промежуточного списка).
+    const lastVacancyId = new Map<number, number>();
     vacancies.forEach((v) => {
       if (v.status !== "open") return;
       getAcceptorIds(v).forEach((uid) => {
         if (user && uid === user.id) return;
         counts.set(uid, (counts.get(uid) || 0) + 1);
+        lastVacancyId.set(uid, v.id);
       });
     });
     return Array.from(counts.entries())
-      .map(([id, count]) => ({ id, count, name: pickerUsersById[id] || `#${id}` }))
+      .map(([id, count]) => ({
+        id,
+        count,
+        name: pickerUsersById[id] || `#${id}`,
+        onlyVacancyId: count === 1 ? lastVacancyId.get(id) ?? null : null,
+      }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [vacancies, user, pickerUsersById]);
   const filteredFunnelsPickerRecruiters = pickerSearch.trim()
@@ -1675,7 +1713,7 @@ export default function Layout() {
                       было вакансий в hf-hr-subnav), и попап съезжает вниз тем
                       сильнее, чем больше у юзера принятых вакансий — вплоть до
                       наложения на сам список вместо появления сразу под кнопкой. */}
-                  <div className="hf-hr-funnels-picker-wrap">
+                  <div className="hf-hr-funnels-picker-wrap" ref={funnelsHeaderRef}>
                     <div className="hf-hr-funnels-header">
                       <button
                         type="button"
@@ -1712,11 +1750,15 @@ export default function Layout() {
                     <AnimatePresence>
                       {showHrFunnelsPicker && (
                         <motion.div
-                          initial={{ opacity: 0, y: -4, scale: 0.985 }}
+                          initial={{ opacity: 0, y: pickerOpensUpward ? 4 : -4, scale: 0.985 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -4, scale: 0.985 }}
+                          exit={{ opacity: 0, y: pickerOpensUpward ? 4 : -4, scale: 0.985 }}
                           transition={{ duration: 0.12, ease: "easeOut" }}
-                          className="hf-hr-funnels-picker"
+                          className={clsx(
+                            "hf-hr-funnels-picker",
+                            pickerOpensUpward && "hf-hr-funnels-picker-up",
+                          )}
+                          style={pickerMaxHeight ? { maxHeight: pickerMaxHeight } : undefined}
                           role="listbox"
                         >
                           <label className="hf-hr-funnels-search">
@@ -1728,60 +1770,80 @@ export default function Layout() {
                               onChange={(e) => setPickerSearch(e.target.value)}
                             />
                           </label>
-                          <button
-                            type="button"
-                            className="hf-hr-funnels-option"
-                            onClick={() => {
-                              setPickerOwnerId(null);
-                              setShowHrFunnelsPicker(false);
-                              navigate("/my-funnels");
-                            }}
-                            role="option"
-                            aria-selected={pickerOwnerId === null}
-                          >
-                            {pickerOwnerId === null && <Check className="hf-hr-funnels-check" />}
-                            <span className="hf-hr-funnels-avatar">
-                              {user?.name?.[0]?.toUpperCase() || "Я"}
-                            </span>
-                            <span className="hf-hr-funnels-option-text">
-                              <span className="hf-hr-funnels-option-title">
-                                Я, {user?.name || user?.email || "Профиль"}
-                              </span>
-                              <span className="hf-hr-funnels-option-subtitle">
-                                {user?.email || "—"}
-                              </span>
-                            </span>
-                          </button>
-                          {/* Рекрутёры, которые лично приняли хотя бы одну вакансию
-                              (accepted_by) — выбор фильтрует список ниже под них,
-                              можно пройтись по их воронкам прямо из сайдбара. */}
-                          {filteredFunnelsPickerRecruiters.map((r) => (
+                          {/* Скролл только тут — поиск остаётся на виду, пока
+                              длинный список рекрутёров прокручивается внутри
+                              ограниченной по высоте (см. pickerMaxHeight) области.
+                              Без этого на невысоком экране низ списка был
+                              недоступен — не хватало места, и не было скролла. */}
+                          <div className="hf-hr-funnels-options-scroll">
                             <button
-                              key={r.id}
                               type="button"
                               className="hf-hr-funnels-option"
                               onClick={() => {
-                                setPickerOwnerId(r.id);
+                                setPickerOwnerId(null);
                                 setShowHrFunnelsPicker(false);
                                 navigate("/my-funnels");
                               }}
                               role="option"
-                              aria-selected={pickerOwnerId === r.id}
+                              aria-selected={pickerOwnerId === null}
                             >
-                              {pickerOwnerId === r.id && <Check className="hf-hr-funnels-check" />}
+                              {pickerOwnerId === null && <Check className="hf-hr-funnels-check" />}
                               <span className="hf-hr-funnels-avatar">
-                                {r.name[0]?.toUpperCase() || "?"}
+                                {user?.name?.[0]?.toUpperCase() || "Я"}
                               </span>
                               <span className="hf-hr-funnels-option-text">
                                 <span className="hf-hr-funnels-option-title">
-                                  {r.name}
+                                  Я, {user?.name || user?.email || "Профиль"}
                                 </span>
                                 <span className="hf-hr-funnels-option-subtitle">
-                                  {r.count} {r.count === 1 ? "вакансия" : "вакансий"}
+                                  {user?.email || "—"}
                                 </span>
                               </span>
                             </button>
-                          ))}
+                            {/* Рекрутёры, которые лично приняли хотя бы одну вакансию
+                                (accepted_by) — выбор фильтрует список ниже под них,
+                                можно пройтись по их воронкам прямо из сайдбара. */}
+                            {filteredFunnelsPickerRecruiters.map((r) => (
+                              <button
+                                key={r.id}
+                                type="button"
+                                className="hf-hr-funnels-option"
+                                onClick={() => {
+                                  setPickerOwnerId(r.id);
+                                  setShowHrFunnelsPicker(false);
+                                  // 2026-07-09: ровно одна вакансия — сразу открываем
+                                  // её воронку (без промежуточного списка, однозначно
+                                  // понятно, что показывать), с любой страницы.
+                                  // Несколько вакансий — НЕ уводим с текущей страницы
+                                  // (главная/заявки/что угодно остаётся как есть);
+                                  // если уже на «Мои вакансии» — просто фильтруем её
+                                  // под этого рекрутёра (см. ?recruiter= в
+                                  // RecruiterFunnelsPage), иначе трогаем только
+                                  // мини-список под кнопкой в сайдбаре.
+                                  if (r.onlyVacancyId) {
+                                    navigate(`/my-funnels?v=${r.onlyVacancyId}`);
+                                  } else if (location.pathname === "/my-funnels") {
+                                    navigate(`/my-funnels?recruiter=${r.id}`);
+                                  }
+                                }}
+                                role="option"
+                                aria-selected={pickerOwnerId === r.id}
+                              >
+                                {pickerOwnerId === r.id && <Check className="hf-hr-funnels-check" />}
+                                <span className="hf-hr-funnels-avatar">
+                                  {r.name[0]?.toUpperCase() || "?"}
+                                </span>
+                                <span className="hf-hr-funnels-option-text">
+                                  <span className="hf-hr-funnels-option-title">
+                                    {r.name}
+                                  </span>
+                                  <span className="hf-hr-funnels-option-subtitle">
+                                    {r.count} {r.count === 1 ? "вакансия" : "вакансий"}
+                                  </span>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
