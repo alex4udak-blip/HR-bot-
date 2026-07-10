@@ -57,6 +57,7 @@ class MagicButtonResponse(BaseModel):
     entity_id: int
     is_duplicate: bool = False
     duplicate_info: Optional[dict] = None  # who added, when, last status
+    has_hidden_duplicate: bool = False  # похож на кандидата в архиве (superadmin-only) — деталей не раскрываем
     message: str
 
 class UpdatePhotoRequest(BaseModel):
@@ -465,7 +466,9 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         db.add(app)
 
     # Теневая дедупликация: сверяем нового кандидата с архивом до коммита.
-    # При совпадении помечаем профиль флагом — веб-карточка покажет баннер «Проверить».
+    # При совпадении помечаем профиль флагом — веб-карточка покажет баннер «Проверить»,
+    # а расширению отдаём has_hidden_duplicate — теперь показывает то же самое сразу.
+    _hidden_dup = None
     try:
         from ..services.similarity import detect_archived_duplicate
         _hidden_dup = await detect_archived_duplicate(db, entity)
@@ -538,6 +541,7 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         entity_id=entity.id,
         is_duplicate=is_duplicate,
         duplicate_info=duplicate_info,
+        has_hidden_duplicate=bool(_hidden_dup),
         message="Кандидат добавлен" + (" (дубликат найден)" if is_duplicate else ""),
     )
 

@@ -749,6 +749,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
           ? 'Кандидат добавлен (дубликат)'
           : 'Кандидат добавлен!';
         document.getElementById('resultMessage').textContent = result.message;
+        const hiddenDupEl = document.getElementById('hiddenDupWarning');
+        if (hiddenDupEl) hiddenDupEl.style.display = result.has_hidden_duplicate ? 'block' : 'none';
         const linkEl = document.getElementById('resultLink');
         if (linkEl && result.entity_id) {
           const candidateUrl = `${serverUrl}/all-candidates?entity=${result.entity_id}`;

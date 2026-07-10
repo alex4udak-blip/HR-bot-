@@ -11,6 +11,7 @@ Endpoints:
 import csv
 import io
 import logging
+import re
 from datetime import date, datetime
 from typing import List, Optional
 
@@ -39,6 +40,7 @@ from api.models.database import (
 )
 from api.services.auth import get_current_user, get_user_org, has_full_database_access
 from api.services.shadow_filter import get_isolated_creator_ids
+from api.services.similarity import transliterate_ru_to_en, transliterate_en_to_ru
 
 logger = logging.getLogger("hr-analyzer.candidate-search")
 
@@ -105,6 +107,24 @@ class RecruiterItem(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _name_search_terms(q: str) -> List[str]:
+    """ILIKE-паттерны для поиска по имени с учётом транслитерации RU<->EN.
+
+    Часть кандидатов заведена с латинским именем (импорт с hh.ru/LinkedIn),
+    часть — с русским; без этого поиск «Иванов» не находил «Ivanov» и
+    наоборот. Та же таблица транслитерации, что и в детекции дублей
+    (api/services/similarity.py) — только тут генерим варианты САМОГО
+    поискового запроса, а не сравниваем два уже известных имени.
+    """
+    q = q.strip()
+    terms = {q}
+    if re.search(r'[а-яёА-ЯЁ]', q):
+        terms.add(transliterate_ru_to_en(q))
+    if re.search(r'[a-zA-Z]', q):
+        terms.add(transliterate_en_to_ru(q))
+    return [f"%{t}%" for t in terms if t]
+
 
 def _base_candidate_query(org_id: Optional[int], current_user: User, isolated_ids: list) -> Select:
     """Return a base SELECT for Entity filtered to candidates + org scoping.
@@ -208,9 +228,10 @@ async def search_candidates(
     # --- full-text search ---
     if q and q.strip():
         term = f"%{q.strip()}%"
+        name_terms = _name_search_terms(q)
         base = base.where(
             or_(
-                Entity.name.ilike(term),
+                *[Entity.name.ilike(t) for t in name_terms],
                 Entity.email.ilike(term),
                 Entity.phone.ilike(term),
                 Entity.position.ilike(term),
@@ -792,9 +813,10 @@ async def get_candidates_kanban(
     # Optional text search
     if q and q.strip():
         search_term = f"%{q.strip().lower()}%"
+        name_terms = _name_search_terms(q)
         base_q = base_q.where(
             or_(
-                Entity.name.ilike(search_term),
+                *[Entity.name.ilike(t) for t in name_terms],
                 Entity.email.ilike(search_term),
                 Entity.phone.ilike(search_term),
                 Entity.position.ilike(search_term),
@@ -1009,8 +1031,9 @@ async def get_candidate_ids(
 
     if q and q.strip():
         term = f"%{q.strip().lower()}%"
+        name_terms = _name_search_terms(q)
         base_q = base_q.where(or_(
-            Entity.name.ilike(term),
+            *[Entity.name.ilike(t) for t in name_terms],
             Entity.email.ilike(term),
             Entity.phone.ilike(term),
             Entity.position.ilike(term),
