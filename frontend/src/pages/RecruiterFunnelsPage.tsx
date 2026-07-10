@@ -1655,6 +1655,20 @@ export default function RecruiterFunnelsPage() {
           }
         : candidate
     )));
+    // entityExtraData/dupCard — ОТДЕЛЬНОЕ состояние (грузится через getEntity()
+    // только при смене selectedCandidate, см. useEffect выше), сохранение
+    // кандидата его не трогало. Из-за этого дата рождения/возраст (funnelCard.age,
+    // и сама форма при повторном открытии — buildCandidateEditCard берёт
+    // entityExtraData) продолжали показывать старые значения до перевыбора
+    // кандидата. Мержим extra_data из ответа сохранения сразу.
+    if (updated.extra_data) {
+      setEntityExtraData((prev) => ({ ...(prev || {}), ...updated.extra_data }));
+      setDupCard((prev) => (prev ? {
+        ...prev,
+        extra_data: { ...(prev.extra_data || {}), ...updated.extra_data },
+        age: updated.extra_data?.age != null ? String(updated.extra_data.age) : prev.age,
+      } : prev));
+    }
     setEditingCandidateCard(null);
   }, [editingCandidateCard]);
 
