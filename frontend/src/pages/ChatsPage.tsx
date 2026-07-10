@@ -29,6 +29,7 @@ import ChatList from '@/components/chat/ChatList';
 import ChatDetail from '@/components/chat/ChatDetail';
 import AIPanel from '@/components/chat/AIPanel';
 import type { ChatTypeId } from '@/types';
+import { matchesTranslit } from '@/utils/translit';
 import clsx from 'clsx';
 
 // Chat type filter options
@@ -92,9 +93,11 @@ export default function ChatsPage() {
   }, [chatId, setSelectedChatId]);
 
   // Backend already filters chats by access control (ownership, department, sharing)
-  // Frontend only needs to filter by search and type
+  // Frontend only needs to filter by search and type. Поиск делаем с транслитерацией
+  // RU↔EN — «Simonberg» найдёт «Симонберг», и наоборот. См. utils/translit.
   const filteredChats = chats.filter((chat) => {
-    const matchesSearch = (chat.custom_name || chat.title).toLowerCase().includes(searchQuery.toLowerCase());
+    const haystack = chat.custom_name || chat.title;
+    const matchesSearch = matchesTranslit(haystack, searchQuery);
     const matchesType = typeFilter === 'all' || chat.chat_type === typeFilter;
     return matchesSearch && matchesType;
   });
