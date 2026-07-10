@@ -26,6 +26,12 @@ from ...services.shadow_filter import get_isolated_creator_ids
 
 router = APIRouter()
 
+# Комментарии-заметки (add/update_entity_note) хранят СЫРОЙ HTML из rich-text
+# редактора (теги форматирования + @-упоминания <span data-uid=...>) — реальный
+# видимый текст заметно короче этого числа. Было 5000 — рекрутёры жаловались,
+# что не могут дописать длинный комментарий при смене этапа; подняли с запасом.
+NOTE_TEXT_MAX_LENGTH = 20000
+
 
 @router.get("/")
 async def list_entities(
@@ -1037,8 +1043,8 @@ async def add_entity_note(
     text_clean = (data.text or "").strip()
     if not text_clean:
         raise HTTPException(400, "Comment text cannot be empty")
-    if len(text_clean) > 5000:
-        raise HTTPException(400, "Comment too long (max 5000)")
+    if len(text_clean) > NOTE_TEXT_MAX_LENGTH:
+        raise HTTPException(400, f"Comment too long (max {NOTE_TEXT_MAX_LENGTH})")
 
     extra = dict(entity.extra_data or {})
     notes = list(extra.get("notes") or [])
@@ -1178,8 +1184,8 @@ async def update_entity_note(
     text_clean = (data.text or "").strip()
     if not text_clean:
         raise HTTPException(400, "Comment text cannot be empty")
-    if len(text_clean) > 5000:
-        raise HTTPException(400, "Comment too long (max 5000)")
+    if len(text_clean) > NOTE_TEXT_MAX_LENGTH:
+        raise HTTPException(400, f"Comment too long (max {NOTE_TEXT_MAX_LENGTH})")
 
     extra = dict(entity.extra_data or {})
     notes = list(extra.get("notes") or [])

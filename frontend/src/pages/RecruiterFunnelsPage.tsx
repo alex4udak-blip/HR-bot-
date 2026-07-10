@@ -1290,7 +1290,15 @@ export default function RecruiterFunnelsPage() {
       if (commentRef.current) commentRef.current.value = '';
     } catch (err) {
       console.error('Failed to save comment:', err);
-      toast.error('Не удалось сохранить комментарий');
+      // Бэкенд (add_entity_note) отдаёт 400 «Comment too long» при превышении
+      // NOTE_TEXT_MAX_LENGTH — без этой проверки юзер видел generic «Не удалось
+      // сохранить» и не понимал, что дело именно в длине комментария.
+      const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
+      toast.error(
+        detail?.status === 400 && detail.data?.detail?.includes('too long')
+          ? 'Комментарий слишком длинный — сократите текст'
+          : 'Не удалось сохранить комментарий'
+      );
     } finally {
       // ВСЕГДА синхронизируем авторитетное состояние с сервера — даже если
       // запрос отвалился (таймаут/сеть), но бэкенд успел закоммитить коммент
@@ -1392,8 +1400,13 @@ export default function RecruiterFunnelsPage() {
           };
         });
         toast.success('Комментарий обновлён');
-      } catch {
-        toast.error('Не удалось отредактировать комментарий');
+      } catch (err) {
+        const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
+        toast.error(
+          detail?.status === 400 && detail.data?.detail?.includes('too long')
+            ? 'Комментарий слишком длинный — сократите текст'
+            : 'Не удалось отредактировать комментарий'
+        );
       }
     },
     [blockIfArchived],

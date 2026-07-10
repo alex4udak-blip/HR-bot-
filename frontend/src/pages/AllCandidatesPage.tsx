@@ -1858,7 +1858,15 @@ const InfoTab = memo(function InfoTab({
         toast.success("Комментарий сохранён");
       } catch (err) {
         console.error("Failed to save comment:", err);
-        toast.error("Ошибка сохранения комментария");
+        // Бэкенд (add_entity_note) отдаёт 400 «Comment too long» при превышении
+        // NOTE_TEXT_MAX_LENGTH — без этой проверки юзер видел generic ошибку и
+        // не понимал, что дело именно в длине комментария.
+        const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
+        toast.error(
+          detail?.status === 400 && detail.data?.detail?.includes("too long")
+            ? "Комментарий слишком длинный — сократите текст"
+            : "Ошибка сохранения комментария"
+        );
       }
       // ВСЕГДА синхронизируем с сервера — даже если запрос отвалился, но бэкенд
       // закоммитил коммент (с @-тэгом), он появится сразу. getEntity не кэшируется.
@@ -1956,8 +1964,13 @@ const InfoTab = memo(function InfoTab({
           ).map((n) => (String(n.id) === noteId ? note : n));
         }
         toast.success("Комментарий обновлён");
-      } catch {
-        toast.error("Не удалось отредактировать комментарий");
+      } catch (err) {
+        const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
+        toast.error(
+          detail?.status === 400 && detail.data?.detail?.includes("too long")
+            ? "Комментарий слишком длинный — сократите текст"
+            : "Не удалось отредактировать комментарий"
+        );
       }
       await loadActivity();
     },
@@ -2806,7 +2819,12 @@ const PersonalNotesTab = memo(function PersonalNotesTab({
       toast.success("Заметка сохранена");
     } catch (err) {
       console.error("Failed to save personal note:", err);
-      toast.error("Не удалось сохранить заметку");
+      const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
+      toast.error(
+        detail?.status === 400 && detail.data?.detail?.includes("too long")
+          ? "Заметка слишком длинная — сократите текст"
+          : "Не удалось сохранить заметку"
+      );
     } finally {
       setSaving(false);
     }
