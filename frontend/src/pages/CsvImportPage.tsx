@@ -29,6 +29,7 @@ interface PreviewResponse {
 interface ImportResult {
   imported: number;
   skipped: number;
+  skipped_details?: { row: number; name: string; reason: string }[];
   errors: { row: number; reason: string }[];
 }
 
@@ -97,6 +98,7 @@ export default function CsvImportPage() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState('');
   const [errorsExpanded, setErrorsExpanded] = useState(false);
+  const [skippedExpanded, setSkippedExpanded] = useState(false);
 
   // ---- drag-and-drop handlers ----
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -676,6 +678,72 @@ export default function CsvImportPage() {
                                   </td>
                                   <td className="px-4 py-2 text-red-300/80">
                                     {err.reason}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              {/* Skipped details (expandable) */}
+              {!!result.skipped_details?.length && (
+                <div className="rounded-xl border border-yellow-500/20 overflow-hidden">
+                  <button
+                    onClick={() => setSkippedExpanded(!skippedExpanded)}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-yellow-500/5 hover:bg-yellow-500/10 transition-colors"
+                  >
+                    <span className="text-sm font-medium text-yellow-400">
+                      Детали пропущенных ({result.skipped_details.length})
+                    </span>
+                    {skippedExpanded ? (
+                      <ChevronUp className="w-4 h-4 text-yellow-400" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-yellow-400" />
+                    )}
+                  </button>
+                  <AnimatePresence>
+                    {skippedExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="max-h-64 overflow-y-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-white/[0.06]">
+                                <th className="px-4 py-2 text-left text-xs font-semibold text-white/40 uppercase tracking-wider bg-white/[0.02] w-24">
+                                  Строка
+                                </th>
+                                <th className="px-4 py-2 text-left text-xs font-semibold text-white/40 uppercase tracking-wider bg-white/[0.02]">
+                                  Имя
+                                </th>
+                                <th className="px-4 py-2 text-left text-xs font-semibold text-white/40 uppercase tracking-wider bg-white/[0.02]">
+                                  Причина
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {result.skipped_details.map((s, i) => (
+                                <tr
+                                  key={i}
+                                  className="border-b border-white/[0.03] hover:bg-white/[0.02]"
+                                >
+                                  <td className="px-4 py-2 text-white/50 font-mono">
+                                    {s.row}
+                                  </td>
+                                  <td className="px-4 py-2 text-white/70">
+                                    {s.name}
+                                  </td>
+                                  <td className="px-4 py-2 text-yellow-300/80">
+                                    {s.reason}
                                   </td>
                                 </tr>
                               ))}

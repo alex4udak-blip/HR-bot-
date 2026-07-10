@@ -103,10 +103,17 @@ class ImportErrorDetail(BaseModel):
     reason: str
 
 
+class SkippedRowDetail(BaseModel):
+    row: int
+    name: str
+    reason: str  # напр. «Дубликат по email: Иванов Иван»
+
+
 class ImportResult(BaseModel):
     total: int
     imported: int
     skipped: int
+    skipped_details: List[SkippedRowDetail] = []
     errors_count: int
     errors: List[ImportErrorDetail]
 
@@ -353,29 +360,33 @@ async def import_execute(
         # Imported ClickUp candidates are historical/archival
         default_entity_status = EntityStatus.reserve
 
-    # Pre-load existing identifiers for duplicate check (email / phone / telegram)
-    existing_emails: set = set()
-    existing_phones: set = set()
-    existing_telegrams: set = set()
+    # Pre-load existing identifiers for duplicate check (email / phone / telegram).
+    # Значение -> имя существующего кандидата (не только само совпадение), чтобы
+    # в отчёте показать НА КОГО именно похожа пропущенная строка — иначе «503
+    # пропущено» ничего не объясняет пользователю.
+    existing_emails: Dict[str, str] = {}
+    existing_phones: Dict[str, str] = {}
+    existing_telegrams: Dict[str, str] = {}
     if skip_duplicates:
         result = await db.execute(
             select(
-                Entity.email, Entity.phone, Entity.phones, Entity.telegram_usernames
+                Entity.email, Entity.phone, Entity.phones, Entity.telegram_usernames, Entity.name
             ).where(Entity.org_id == org.id)
         )
-        for email_r, phone_r, phones_r, tg_r in result.all():
+        for email_r, phone_r, phones_r, tg_r, name_r in result.all():
             if email_r:
-                existing_emails.add(email_r.lower())
+                existing_emails.setdefault(email_r.lower(), name_r or "")
             for p in ([phone_r] if phone_r else []) + (phones_r or []):
                 pn = _normalize_phone(p)
                 if pn:
-                    existing_phones.add(pn)
+                    existing_phones.setdefault(pn, name_r or "")
             for t in (tg_r or []):
-                existing_telegrams.add(str(t).lower().lstrip("@"))
+                existing_telegrams.setdefault(str(t).lower().lstrip("@"), name_r or "")
 
     total = 0
     imported = 0
     skipped = 0
+    skipped_details: List[SkippedRowDetail] = []
     errors: List[ImportErrorDetail] = []
     batch: List[Entity] = []
     vacancy_apps: List[VacancyApplication] = []
@@ -408,14 +419,33 @@ async def import_execute(
             tg_list = _normalize_telegram(telegram_val) if telegram_val else []
             phone_norm = _normalize_phone(phone_val)
 
-            # Duplicate check by email / phone / telegram
-            if skip_duplicates and (
-                (email_val and email_val in existing_emails)
-                or (phone_norm and phone_norm in existing_phones)
-                or any(t in existing_telegrams for t in tg_list)
-            ):
-                skipped += 1
-                continue
+            # Duplicate check by email / phone / telegram — какое ИМЕННО поле
+            # совпало и с кем, попадает в skipped_details (иначе непонятно,
+            # почему строка пропущена и на кого она похожа).
+            if skip_duplicates:
+                matched_name = None
+                matched_reason = None
+                if email_val and email_val in existing_emails:
+                    matched_name = existing_emails[email_val]
+                    matched_reason = "email"
+                elif phone_norm and phone_norm in existing_phones:
+                    matched_name = existing_phones[phone_norm]
+                    matched_reason = "телефону"
+                else:
+                    for t in tg_list:
+                        if t in existing_telegrams:
+                            matched_name = existing_telegrams[t]
+                            matched_reason = "Telegram"
+                            break
+                if matched_reason:
+                    skipped += 1
+                    skipped_details.append(SkippedRowDetail(
+                        row=row_num,
+                        name=name_val,
+                        reason=f"Дубликат по {matched_reason}"
+                        + (f": {matched_name}" if matched_name else ""),
+                    ))
+                    continue
 
             # Preserve every column not used as a first-class field into extra_data
             extra_data: Dict[str, Any] = {}
@@ -463,11 +493,11 @@ async def import_execute(
 
             # Track identifiers to dedup within this import too
             if email_val:
-                existing_emails.add(email_val)
+                existing_emails.setdefault(email_val, name_val)
             if phone_norm:
-                existing_phones.add(phone_norm)
+                existing_phones.setdefault(phone_norm, name_val)
             for t in tg_list:
-                existing_telegrams.add(t)
+                existing_telegrams.setdefault(t, name_val)
 
             imported += 1
 
@@ -512,6 +542,7 @@ async def import_execute(
         total=total,
         imported=imported,
         skipped=skipped,
+        skipped_details=skipped_details,
         errors_count=len(errors),
         errors=errors,
     )
