@@ -176,11 +176,31 @@ export function isToday(dateString: string | Date | undefined | null): boolean {
  */
 export function isPast(dateString: string | Date | undefined | null): boolean {
   if (!dateString) return false;
-  
+
   try {
     const date = parseServerDate(dateString);
     return date.getTime() < Date.now();
   } catch {
     return false;
   }
+}
+
+/**
+ * Calculate age in full years from a birth date (YYYY-MM-DD или ISO-строка).
+ * Учитывает, наступил ли день рождения в этом году. Используется, чтобы
+ * возраст кандидата (extra_data.age) всегда пересчитывался из точной даты
+ * рождения (extra_data.birth_date) при её сохранении, а не хранился как
+ * отдельное несвязанное число.
+ */
+export function calculateAge(birthDate: string | undefined | null): number | null {
+  if (!birthDate) return null;
+  const birth = new Date(birthDate);
+  if (isNaN(birth.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const monthDiff = now.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birth.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 ? age : null;
 }

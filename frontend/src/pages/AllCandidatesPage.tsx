@@ -28,7 +28,7 @@ import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidat
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import { buildStageContainers, readSystemHrTags, type EntryReaction } from "@/components/entities/candidateDetail/model";
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from "@/utils/currency";
-import { parseServerDate } from "@/utils/date";
+import { parseServerDate, calculateAge } from "@/utils/date";
 import {
   getCandidatesKanban,
   getCandidateIds,
@@ -3080,6 +3080,7 @@ export function NewCandidateModal({
     try {
       const normalizedPhone = phone.trim() ? normalizePhone(phone) : undefined;
       const cleanTelegram = telegram.trim().replace(/^@/, "");
+      const trimmedBirthDate = birthDate.trim();
       const created = await createEntity({
         type: "candidate",
         name: fullName,
@@ -3090,7 +3091,10 @@ export function NewCandidateModal({
         position: position.trim() || undefined,
         company: company.trim() || undefined,
         extra_data: {
-          birth_date: birthDate.trim() || undefined,
+          birth_date: trimmedBirthDate || undefined,
+          // См. calculateAge — возраст всегда считается из точной даты
+          // рождения, если она указана при создании.
+          age: trimmedBirthDate ? calculateAge(trimmedBirthDate) ?? undefined : undefined,
           resume_text: resumeText.trim() || undefined,
           source: source.trim() || undefined,
           salary: joinSalaryCurrency(salary, salaryCurrency) || undefined,
@@ -3616,9 +3620,16 @@ export function EditCandidateModal({
     try {
       const normalizedPhone = phone.trim() ? normalizePhone(phone) : undefined;
       const cleanTelegram = telegram.trim().replace(/^@/, "");
+      const trimmedBirthDate = birthDate.trim();
       const extraData = {
         salary: joinSalaryCurrency(salary, salaryCurrency) || undefined,
-        birth_date: birthDate.trim() || undefined,
+        birth_date: trimmedBirthDate || undefined,
+        // Возраст пересчитываем из точной даты рождения при каждом сохранении —
+        // иначе (extra_data.age как отдельное несвязанное число) смена даты
+        // рождения не двигала отображаемый возраст. Если дата не указана —
+        // не трогаем age вообще (undefined выпадает при сериализации, PUT
+        // мержит extra_data — старое значение от парсера hh.ru сохранится).
+        age: trimmedBirthDate ? calculateAge(trimmedBirthDate) ?? undefined : undefined,
         resume_text: resumeText.trim() || undefined,
         source: source.trim() || undefined,
         city: city.trim() || undefined,
@@ -3649,6 +3660,7 @@ export function EditCandidateModal({
         salary: extraData.salary,
         city: extraData.city,
         source: extraData.source,
+        age: extraData.age != null ? String(extraData.age) : undefined,
         extra_data: extraData,
       });
     } catch {

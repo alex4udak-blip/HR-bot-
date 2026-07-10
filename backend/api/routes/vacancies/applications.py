@@ -141,8 +141,8 @@ async def list_applications(
             entity_type=entity.type if entity else None,
             entity_email=entity.email if entity else None,
             entity_phone=entity.phone if entity else None,
+            entity_telegram=(entity.telegram_usernames[0] if entity and entity.telegram_usernames else None),
             entity_position=entity.position if entity else None,
-
             entity_photo=_entity_photo(entity, photo_file_map),
             stage=app.stage,
             stage_order=app.stage_order or 0,
