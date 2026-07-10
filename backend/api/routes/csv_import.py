@@ -326,8 +326,26 @@ async def import_execute(
     reader = csv.DictReader(io.StringIO(text))
     headers = reader.fieldnames or []
 
-    # Invert mapping: entity_field -> csv_column
-    field_to_csv: Dict[str, str] = {v: k for k, v in mapping.items()}
+    # Invert mapping: entity_field -> [csv_column, ...]
+    # Несколько CSV-колонок могут мапиться на одно поле (напр. родная `name`
+    # и кастомное `cf:ФИО`). Раньше инверсия {v:k} молча оставляла последнюю
+    # колонку — и почти пустое кастомное поле перебивало настоящее имя, давая
+    # массовый «Missing name». Теперь храним ВСЕ колонки поля (в порядке заголовка)
+    # и на каждой строке берём первое непустое значение.
+    field_to_csvs: Dict[str, List[str]] = {}
+    for csv_col, field in mapping.items():
+        if not field:
+            continue
+        field_to_csvs.setdefault(field, []).append(csv_col)
+    for field, cols in field_to_csvs.items():
+        cols.sort(key=lambda c: headers.index(c) if c in headers else len(headers))
+
+    def pick(field: str, row: Dict[str, str]) -> str:
+        for col in field_to_csvs.get(field, []):
+            val = (row.get(col, "") or "").strip()
+            if val:
+                return val
+        return ""
 
     # Detect a ClickUp export by its signature columns
     is_clickup = "task_id" in headers and any(h.startswith("funnel_") for h in headers)
@@ -365,17 +383,17 @@ async def import_execute(
     for row_num, row in enumerate(reader, start=2):  # row 1 = header
         total += 1
         try:
-            # Extract mapped first-class values
-            name_val = (row.get(field_to_csv.get("name", ""), "") or "").strip()
-            email_val = (row.get(field_to_csv.get("email", ""), "") or "").strip().lower()
-            phone_val = (row.get(field_to_csv.get("phone", ""), "") or "").strip()
-            position_val = (row.get(field_to_csv.get("position", ""), "") or "").strip()
-            company_val = (row.get(field_to_csv.get("company", ""), "") or "").strip()
-            status_val = (row.get(field_to_csv.get("status", ""), "") or "").strip()
-            tags_val = (row.get(field_to_csv.get("tags", ""), "") or "").strip()
-            telegram_val = (row.get(field_to_csv.get("telegram", ""), "") or "").strip()
-            source_val = (row.get(field_to_csv.get("source", ""), "") or "").strip()
-            comment_val = (row.get(field_to_csv.get("comment", ""), "") or "").strip()
+            # Extract mapped first-class values (first non-empty column per field)
+            name_val = pick("name", row)
+            email_val = pick("email", row).lower()
+            phone_val = pick("phone", row)
+            position_val = pick("position", row)
+            company_val = pick("company", row)
+            status_val = pick("status", row)
+            tags_val = pick("tags", row)
+            telegram_val = pick("telegram", row)
+            source_val = pick("source", row)
+            comment_val = pick("comment", row)
 
             # ClickUp: applied vacancy lives in the funnel list name
             if is_clickup and not position_val:
