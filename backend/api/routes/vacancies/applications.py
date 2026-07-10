@@ -304,8 +304,8 @@ async def create_application(
         entity_type=entity.type,
         entity_email=entity.email,
         entity_phone=entity.phone,
+        entity_telegram=(entity.telegram_usernames[0] if entity.telegram_usernames else None),
         entity_position=entity.position,
-
         entity_photo=_entity_photo(entity, photo_file_map),
         stage=application.stage,
         stage_order=application.stage_order or 0,
@@ -470,8 +470,8 @@ async def update_application(
         entity_type=entity.type if entity else None,
         entity_email=entity.email if entity else None,
         entity_phone=entity.phone if entity else None,
+        entity_telegram=(entity.telegram_usernames[0] if entity and entity.telegram_usernames else None),
         entity_position=entity.position if entity else None,
-
         entity_photo=_entity_photo(entity, photo_file_map),
         stage=application.stage,
         stage_order=application.stage_order or 0,
