@@ -95,8 +95,14 @@ export default function ChatsPage() {
   // Backend already filters chats by access control (ownership, department, sharing)
   // Frontend only needs to filter by search and type. Поиск делаем с транслитерацией
   // RU↔EN — «Simonberg» найдёт «Симонберг», и наоборот. См. utils/translit.
+  //
+  // ВАЖНО: если у чата задан custom_name (пусть даже «тест»), title мимо
+  // проверки не должен проскочить — иначе поиск по фамилии, лежащей в title,
+  // ломается. Поэтому склеиваем оба поля (плюс owner_name на всякий случай).
   const filteredChats = chats.filter((chat) => {
-    const haystack = chat.custom_name || chat.title;
+    const haystack = [chat.custom_name, chat.title, (chat as { owner_name?: string }).owner_name]
+      .filter(Boolean)
+      .join(' ');
     const matchesSearch = matchesTranslit(haystack, searchQuery);
     const matchesType = typeFilter === 'all' || chat.chat_type === typeFilter;
     return matchesSearch && matchesType;
