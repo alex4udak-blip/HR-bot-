@@ -102,6 +102,10 @@ class DuplicateCheckRequest(BaseModel):
 class DuplicateCheckResponse(BaseModel):
     is_duplicate: bool
     duplicates: list = []  # [{entity_id, name, email, phone, status, created_at}]
+    # Совпадение в АРХИВЕ (теневая база, superadmin-only): только флаг, БЕЗ деталей —
+    # рекрутёр (не superadmin) не должен видеть архивные карточки. Расширение
+    # показывает по нему плашку «Похожий кандидат есть в архиве».
+    has_archive_match: bool = False
 
 @router.post("/check-duplicate")
 async def check_duplicate(
@@ -114,44 +118,32 @@ async def check_duplicate(
     if not org:
         raise HTTPException(400, "User not in organization")
 
-    from ..services.similarity import is_matchable_telegram, looks_like_person_name, normalize_source_url
+    from ..services.similarity import build_dup_keys, find_duplicate_matches
 
-    conditions = []
-    # Primary identifier: resume URL (works even when contacts are hidden).
-    # Сравниваем и по сырому URL, и по нормализованному ключу — query-параметры hh
-    # (?t=…&vacancyId=…) меняются при каждом открытии и ломают точное сравнение.
-    if data.source_url:
-        conditions.append(Entity.extra_data.op('->>')('source_url') == data.source_url)
-        _skey = normalize_source_url(data.source_url)
-        if _skey:
-            conditions.append(Entity.extra_data.op('->>')('source_key') == _skey)
-    if data.email:
-        conditions.append(Entity.email == data.email)
-    if data.phone:
-        conditions.append(Entity.phone == data.phone)
-    # Telegram — только если это реальный хэндл, а не мусорный ярлык источника
-    # («hh_b2b», «telegram», …): иначе по нему совпадают десятки разных людей.
-    if data.telegram and is_matchable_telegram(data.telegram):
-        conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
-    # Имя — только если это похоже на ФИО, а не на должность («Flutter Developer,
-    # Минск, 25 лет») и не placeholder («Кандидат …»). Иначе по «имени-должности»
-    # матчатся все одинаковые должности между собой.
-    name_lower = (data.full_name or "").strip().lower()
-    is_placeholder_name = name_lower.startswith("кандидат") or name_lower.startswith("candidate")
-    if data.full_name and not is_placeholder_name and looks_like_person_name(data.full_name):
-        name_parts = data.full_name.strip().split()
-        conditions.append(Entity.name.ilike(f"%{name_parts[0]}%{name_parts[1]}%"))
+    # ЕДИНЫЙ матчер дублей (тот же, что detect_archived_duplicate на веб/парсере):
+    # нормализованное сравнение по email/телефону-10/telegram/ФИО/URL, активные И
+    # архив. Раньше здесь была отдельная копия на СЫРЫХ SQL-== (телефон в другом
+    # формате не совпадал) и с явным исключением архива — из-за этого расширение
+    # не находило архивные дубли и пропускало «+7 910…» ↔ «+79 10…».
+    keys = build_dup_keys(
+        name=data.full_name,
+        email=data.email,
+        phone=data.phone,
+        telegram=data.telegram,
+        source_url=data.source_url,
+    )
+    matches = await find_duplicate_matches(db, org.id, keys)
+    # Активные — с деталями; архив — только флаг (superadmin-only, деталей не даём).
+    active_ids = [m.entity_id for m in matches if not m.is_archived][:5]
+    has_archive_match = any(m.is_archived for m in matches)
 
-    if not conditions:
-        return DuplicateCheckResponse(is_duplicate=False, duplicates=[])
+    if not active_ids:
+        return DuplicateCheckResponse(
+            is_duplicate=False, duplicates=[], has_archive_match=has_archive_match
+        )
 
     dup_result = await db.execute(
-        select(Entity).where(
-            Entity.org_id == org.id,
-            Entity.type == EntityType.candidate,
-            Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
-            or_(*conditions)
-        ).limit(5)
+        select(Entity).where(Entity.id.in_(active_ids))
     )
     duplicates = dup_result.scalars().all()
 
@@ -206,6 +198,7 @@ async def check_duplicate(
     return DuplicateCheckResponse(
         is_duplicate=len(duplicates) > 0,
         duplicates=result_list,
+        has_archive_match=has_archive_match,
     )
 
 @router.post("/parse")

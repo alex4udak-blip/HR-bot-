@@ -423,10 +423,17 @@ async function checkDuplicatesOnLoad() {
       dupStatus.innerHTML = '⚠️ Не удалось проверить дубликаты';
       return;
     }
+    // Совпадение в архиве (теневая база) — только флаг, без деталей: архив
+    // superadmin-only. Показываем плашку и при активных дублях, и когда активных
+    // нет (иначе рекрутёр видел зелёное «дубликатов нет», хотя человек в архиве).
+    const hasArchive = !!checkResp.data.has_archive_match;
+    const archiveNote = hasArchive
+      ? `<div class="dup-archive-note">📦 Похожий кандидат есть в архиве</div>`
+      : '';
     if (checkResp.data.is_duplicate) {
       const dups = checkResp.data.duplicates;
       dupStatus.className = 'dup-status found';
-      dupStatus.innerHTML = `⚠️ <b>Уже в базе (${dups.length}):</b>` +
+      dupStatus.innerHTML = `⚠️ <b>Уже в базе (${dups.length}):</b>` + archiveNote +
         dups.map(d => {
           const st = STATUS_MAP[d.status] || { label: d.status, badge: 'badge-default' };
           // Correct URL: open candidate in Kanban board via entity query param
@@ -474,6 +481,9 @@ async function checkDuplicatesOnLoad() {
           });
         });
       }, 0);
+    } else if (hasArchive) {
+      dupStatus.className = 'dup-status found';
+      dupStatus.innerHTML = archiveNote;
     } else {
       dupStatus.className = 'dup-status clean';
       dupStatus.innerHTML = '✅ Новый кандидат — дубликатов нет';

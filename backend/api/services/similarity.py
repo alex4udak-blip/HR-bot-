@@ -309,7 +309,13 @@ def looks_like_person_name(name: str) -> bool:
     n = (name or "").strip()
     if not n or any(ch.isdigit() for ch in n) or "," in n:
         return False
-    words = n.lower().replace("-", " ").split()
+    nl = n.lower()
+    # Плейсхолдеры импорта/расширения («Кандидат …», «Candidate …») — не ФИО:
+    # по ним матчить нельзя, иначе все безымянные слипаются. Раньше этот гард
+    # жил отдельной копией в magic_button.check_duplicate — теперь единый.
+    if nl.startswith("кандидат") or nl.startswith("candidate"):
+        return False
+    words = nl.replace("-", " ").split()
     if len(words) < 2:
         return False
     if any(w.strip("().") in _POSITION_HINT_WORDS for w in words):
@@ -1236,85 +1242,111 @@ class SimilarityService:
 similarity_service = SimilarityService()
 
 
-async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optional[int]:
-    """Найти дубликат среди кандидатов организации — активные И архив (кроме self),
-    совпадение по нормализованному email, телефону (последние 10 цифр) или
-    telegram-username. (Раньше сверял только с архивом — теперь и активных между собой.)
+@dataclass
+class DupMatch:
+    """Одно совпадение единого матчера дублей."""
+    entity_id: int
+    is_archived: bool
+    strength: str  # 'source' | 'email' | 'telegram' | 'name' | 'phone'
 
-    Вызывается на путях создания АКТИВНОГО кандидата (ручное добавление,
-    расширение, загрузка резюме), чтобы пометить новый профиль флагом
-    extra_data.hidden_duplicate_id. Возвращает id архивного совпадения или None.
-    Исключает self и id из extra_data.dismissed_duplicate_ids.
-    """
-    # Нормализованные идентификаторы нового кандидата (основной + доп. массивы)
-    emails: Set[str] = set()
-    primary_email = normalize_email(entity.email or "")
-    if primary_email:
-        emails.add(primary_email)
-    for e in (entity.emails or []):
+
+def build_dup_keys(
+    *,
+    name: Optional[str] = None,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    telegram: Optional[str] = None,
+    source_url: Optional[str] = None,
+    emails: Optional[list] = None,
+    phones: Optional[list] = None,
+    telegram_usernames: Optional[list] = None,
+    extra_data: Optional[dict] = None,
+) -> dict:
+    """Нормализованные ключи дедупа из полей кандидата ИЛИ запроса расширения.
+    Единый вход для find_duplicate_matches — чтобы веб/парсер и расширение
+    сравнивали дубли по ОДНИМ правилам (email/телефон-10/telegram/ФИО/URL)."""
+    ek: Set[str] = set()
+    pe = normalize_email(email or "")
+    if pe:
+        ek.add(pe)
+    for e in (emails or []):
         ne = normalize_email(e or "")
         if ne:
-            emails.add(ne)
+            ek.add(ne)
 
-    phones10: Set[str] = set()
-    primary_digits = normalize_phone(entity.phone or "")
-    if len(primary_digits) >= 10:
-        phones10.add(primary_digits[-10:])
-    for p in (entity.phones or []):
+    ph: Set[str] = set()
+    pd = normalize_phone(phone or "")
+    if len(pd) >= 10:
+        ph.add(pd[-10:])
+    for p in (phones or []):
         d = normalize_phone(p or "")
         if len(d) >= 10:
-            phones10.add(d[-10:])
+            ph.add(d[-10:])
 
-    tg_names: Set[str] = set()
-    for t in (entity.telegram_usernames or []):
-        nt = normalize_telegram(t)
-        if nt:
-            tg_names.add(nt)
+    tg: Set[str] = set()
+    nt = normalize_telegram(telegram or "")
+    if nt:
+        tg.add(nt)
+    for t in (telegram_usernames or []):
+        n2 = normalize_telegram(t)
+        if n2:
+            tg.add(n2)
 
-    # Полное ФИО: совпадение по нему тоже считаем дублем — кандидаты из импорта
-    # часто без контактов, с одинаковым ФИО. НО только если это похоже на ФИО, а не
-    # на должность/мусор («Flutter Developer, Минск, 25 лет»), иначе все «Flutter
-    # Developer» слипаются между собой.
-    my_name = " ".join((entity.name or "").strip().lower().split())
-    name_ok = looks_like_person_name(entity.name)
+    ed = extra_data if isinstance(extra_data, dict) else {}
+    skey = normalize_source_url(source_url or ed.get("source_url") or ed.get("source_key") or "")
 
-    # source_url резюме — самый надёжный ключ: один и тот же URL = один человек,
-    # даже когда контакты скрыты, а имя — заглушка-должность. Нормализуем (убираем
-    # волатильные query-параметры hh), иначе один и тот же href ломает сравнение.
-    my_extra = entity.extra_data if isinstance(entity.extra_data, dict) else {}
-    my_source_key = normalize_source_url(my_extra.get("source_url") or my_extra.get("source_key") or "")
+    return {
+        "emails": ek,
+        "phones10": ph,
+        "tg_names": tg,
+        "name": " ".join((name or "").strip().lower().split()),
+        "name_ok": looks_like_person_name(name or ""),
+        "source_key": skey,
+    }
 
-    if not emails and not phones10 and not tg_names and not name_ok and not my_source_key:
-        return None
 
-    # «Разъединённые» ранее совпадения не поднимаем повторно
-    dismissed: Set[int] = set()
-    if isinstance(entity.extra_data, dict):
-        for x in (entity.extra_data.get("dismissed_duplicate_ids") or []):
-            try:
-                dismissed.add(int(x))
-            except (TypeError, ValueError):
-                continue
+async def find_duplicate_matches(
+    db: AsyncSession,
+    org_id: Optional[int],
+    keys: dict,
+    *,
+    exclude_id: Optional[int] = None,
+    dismissed: Optional[Set[int]] = None,
+) -> List[DupMatch]:
+    """ЕДИНЫЙ матчер дублей для всей платформы: активные + архив, нормализованное
+    сравнение в Python (портируемо Postgres+SQLite). Возвращает ВСЕ совпадения в
+    порядке id-desc с флагом is_archived и типом (strength). Общий источник для
+    расширения (check-duplicate, до добавления) и detect_archived_duplicate
+    (веб/парсер, флаг после добавления) — раньше это были 3 разошедшихся копии."""
+    emails: Set[str] = keys.get("emails") or set()
+    phones10: Set[str] = keys.get("phones10") or set()
+    tg_names: Set[str] = set(keys.get("tg_names") or set())
+    my_name: str = keys.get("name") or ""
+    name_ok: bool = bool(keys.get("name_ok"))
+    source_key: str = keys.get("source_key") or ""
+    dismissed = dismissed or set()
 
-    # Грузим ВСЕХ кандидатов организации (активные + архив) и сравниваем
-    # нормализованные контакты в Python — портируемо (Postgres + SQLite-тесты),
-    # тот же подход, что в detect_duplicates.
-    q = select(
+    if not emails and not phones10 and not tg_names and not name_ok and not source_key:
+        return []
+
+    # extra_data (полное резюме JSON) грузим ТОЛЬКО когда матчим по source_url —
+    # иначе на больших оргах тянули бы килобайты JSON на каждого кандидата зря.
+    cols = [
         Entity.id, Entity.name, Entity.email, Entity.phone,
-        Entity.telegram_usernames, Entity.extra_data,
-    ).where(
-        Entity.type == EntityType.candidate,
-        Entity.id != entity.id,
-    )
-    if entity.org_id is not None:
-        q = q.where(Entity.org_id == entity.org_id)
+        Entity.telegram_usernames, Entity.is_archived,
+    ]
+    if source_key:
+        cols.append(Entity.extra_data)
+    q = select(*cols).where(Entity.type == EntityType.candidate)
+    if exclude_id is not None:
+        q = q.where(Entity.id != exclude_id)
+    if org_id is not None:
+        q = q.where(Entity.org_id == org_id)
     q = q.order_by(Entity.id.desc())
-
     rows = (await db.execute(q)).all()
 
-    # Частота telegram-значений по всей выборке: «общие» (≥ порога) и мусорные
-    # ярлыки источника («telegram», «hh_b2b», …) — НЕ личные хэндлы. Матчить по
-    # ним нельзя, иначе десятки разных людей слипаются в один ложный дубль.
+    # Частота telegram по выборке: «общие»/мусорные хэндлы отсеиваем (иначе десятки
+    # разных людей слипаются по ярлыку источника «telegram»/«hh_b2b»).
     tg_freq: dict = {}
     for r in rows:
         for t in (r[4] or []):
@@ -1325,33 +1357,72 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
         tg_freq[k] = tg_freq.get(k, 0) + 1
     tg_names = {t for t in tg_names if is_matchable_telegram(t, tg_freq)}
 
-    match_id: Optional[int] = None
-    phone_match: Optional[int] = None
-    for cand_id, cand_name, cand_email, cand_phone, cand_tg, cand_extra in rows:
+    out: List[DupMatch] = []
+    for r in rows:
+        # r: id, name, email, phone, telegram_usernames, is_archived [, extra_data]
+        cand_id, cand_name, cand_email, cand_phone, cand_tg, cand_arch = r[0], r[1], r[2], r[3], r[4], r[5]
+        cand_extra = r[6] if source_key and len(r) > 6 else None
         if cand_id in dismissed:
             continue
-        if my_source_key:
+        strength: Optional[str] = None
+        if source_key:
             ce = cand_extra if isinstance(cand_extra, dict) else {}
-            if normalize_source_url(ce.get("source_url") or ce.get("source_key") or "") == my_source_key:
-                match_id = cand_id  # тот же URL резюме — однозначный дубль
-                break
-        if emails and normalize_email(cand_email or "") in emails:
-            match_id = cand_id  # email — сильнейшее совпадение
-            break
-        if tg_names and any(
+            if normalize_source_url(ce.get("source_url") or ce.get("source_key") or "") == source_key:
+                strength = "source"
+        if strength is None and emails and normalize_email(cand_email or "") in emails:
+            strength = "email"
+        if strength is None and tg_names and any(
             normalize_telegram(t) in tg_names for t in (cand_tg or [])
         ):
-            match_id = cand_id  # telegram-username — тоже надёжный идентификатор
-            break
-        if name_ok and " ".join((cand_name or "").strip().lower().split()) == my_name:
-            match_id = cand_id  # одинаковое полное ФИО
-            break
-        if phone_match is None and phones10:
+            strength = "telegram"
+        if strength is None and name_ok and " ".join((cand_name or "").strip().lower().split()) == my_name:
+            strength = "name"
+        if strength is None and phones10:
             d = normalize_phone(cand_phone or "")
             if len(d) >= 10 and d[-10:] in phones10:
-                phone_match = cand_id
+                strength = "phone"
+        if strength is not None:
+            out.append(DupMatch(entity_id=cand_id, is_archived=bool(cand_arch), strength=strength))
+    return out
+
+
+async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optional[int]:
+    """Найти дубликат среди кандидатов организации — активные И архив (кроме self),
+    совпадение по нормализованному email, телефону (последние 10 цифр) или
+    telegram-username. (Раньше сверял только с архивом — теперь и активных между собой.)
+
+    Вызывается на путях создания АКТИВНОГО кандидата (ручное добавление,
+    расширение, загрузка резюме), чтобы пометить новый профиль флагом
+    extra_data.hidden_duplicate_id. Возвращает id архивного совпадения или None.
+    Исключает self и id из extra_data.dismissed_duplicate_ids.
+    """
+    # Единый матчер (build_dup_keys + find_duplicate_matches) — те же правила,
+    # что теперь использует расширение (check-duplicate). Приоритет: сильное
+    # совпадение (source/email/telegram/name) в порядке id-desc, иначе первое по
+    # телефону — как было в прежней прямой реализации.
+    keys = build_dup_keys(
+        name=entity.name,
+        email=entity.email,
+        phone=entity.phone,
+        emails=entity.emails,
+        phones=entity.phones,
+        telegram_usernames=entity.telegram_usernames,
+        extra_data=entity.extra_data,
+    )
+    dismissed: Set[int] = set()
+    if isinstance(entity.extra_data, dict):
+        for x in (entity.extra_data.get("dismissed_duplicate_ids") or []):
+            try:
+                dismissed.add(int(x))
+            except (TypeError, ValueError):
+                continue
+
+    matches = await find_duplicate_matches(
+        db, entity.org_id, keys, exclude_id=entity.id, dismissed=dismissed
+    )
+    match_id = next((m.entity_id for m in matches if m.strength != "phone"), None)
     if match_id is None:
-        match_id = phone_match
+        match_id = next((m.entity_id for m in matches if m.strength == "phone"), None)
 
     # Помечаем найденного дубля ОБРАТНОЙ ссылкой (его hidden_duplicate_id → наш id),
     # чтобы баннер «Похожий кандидат» появлялся у ОБОИХ профилей пары.
