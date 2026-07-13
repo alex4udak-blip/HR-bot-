@@ -235,6 +235,30 @@ function resolveRecruiter(
   return null;
 }
 
+// Внешняя ссылка на резюме (hh/rabota.by) для архивных импортов: своего AI-резюме
+// нет, но у большинства кандидатов ссылка лежит в ответах анкеты прохождений.
+const RESUME_URL_RE = /(https?:\/\/(?:www\.)?(?:hh\.ru|rabota\.by)\/resume\/[0-9a-zA-Z]+)/i;
+
+function findExternalResume(card: KanbanCard): string | null {
+  const src = card.source_url || "";
+  const sm = RESUME_URL_RE.exec(src);
+  if (sm) return sm[1];
+  const ed = card.extra_data as Record<string, unknown> | undefined;
+  const parts = Array.isArray(ed?.participations)
+    ? (ed!.participations as Array<Record<string, unknown>>)
+    : [];
+  for (const p of parts) {
+    const anketa = Array.isArray(p.anketa)
+      ? (p.anketa as Array<Record<string, unknown>>)
+      : [];
+    for (const qa of anketa) {
+      const m = RESUME_URL_RE.exec(String(qa.answer ?? ""));
+      if (m) return m[1];
+    }
+  }
+  return null;
+}
+
 const ImportedQuestionnaire = memo(function ImportedQuestionnaire({
   card,
 }: {
@@ -453,8 +477,28 @@ const ResumeTab = memo(function ResumeTab({
 
   if (resumeFiles.length === 0 && !resumeDemo) {
     const importedQuestionnaire = getImportedQuestionnaire(card);
+    const externalResume = findExternalResume(card);
     const qMainContent = importedQuestionnaire.rows.length > 0 ? (
       <ImportedQuestionnaire card={card} />
+    ) : externalResume ? (
+      <div className="p-5 max-w-3xl">
+        <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-sm min-h-[200px] flex flex-col items-center justify-center gap-3">
+          <FileText className="w-8 h-8 opacity-40 text-[var(--hf-cyan-600)]" />
+          <p className="text-[var(--hf-main-800)] hf-dark-disabled:text-[var(--hf-white)]">
+            Внешнее резюме кандидата
+          </p>
+          <a
+            href={externalResume}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--hf-cyan-600)] text-white hover:bg-[var(--hf-cyan-500)] transition-colors"
+          >
+            <Eye className="w-4 h-4" /> Открыть на{" "}
+            {externalResume.includes("rabota.by") ? "rabota.by" : "hh.ru"}
+          </a>
+          <p className="text-xs text-[var(--hf-dark-600)] break-all">{externalResume}</p>
+        </div>
+      </div>
     ) : (
       <div className="p-5 max-w-3xl">
         <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-[var(--hf-dark-500)] text-sm min-h-[200px] flex flex-col items-center justify-center gap-2">

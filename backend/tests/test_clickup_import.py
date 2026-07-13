@@ -146,3 +146,13 @@ def test_merge_participations_idempotent():
     merged = merge_participations(existing, incoming)
     assert len(merged) == 2
     assert {p["task_id"] for p in merged} == {"T1", "T2"}
+
+
+def test_merge_participations_identity_is_funnel_recruiter_not_task_id():
+    # Та же связка (воронка + рекрутёр), но ДРУГОЙ task_id → это один проход, не добавляем.
+    existing = [{"vacancy_title": "Media Buyer", "recruiter": "Эльвира", "status": "x",
+                 "anketa": [], "date": None, "task_id": "T1", "url": None}]
+    incoming = [{"vacancy_title": "Media Buyer", "recruiter": "Эльвира", "status": "y",
+                 "anketa": [], "date": None, "task_id": "T99", "url": None}]
+    merged = merge_participations(existing, incoming)
+    assert len(merged) == 1  # task_id в ключ не идёт — связка совпала

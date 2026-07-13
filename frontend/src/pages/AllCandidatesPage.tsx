@@ -81,6 +81,7 @@ import { AnketaResponses } from "@/features/forms/AnketaResponses";
 import CandidateVacancyCard from "@/components/entities/CandidateVacancyCard";
 import { BulkSelectionBar } from "@/components/entities/BulkSelectionBar";
 import ResumeTab, { useResumeSources } from "@/components/entities/candidateDetail/ResumeTab";
+import ImportedParticipations, { readParticipations } from "@/components/entities/candidateDetail/ImportedParticipations";
 const AnketaDrawer = lazy(() =>
   import("@/features/forms/AnketaDrawer").then((m) => ({ default: m.AnketaDrawer })),
 );
@@ -2681,7 +2682,6 @@ const InfoTab = memo(function InfoTab({
           events={c.events}
           addedAt={c.addedAt}
           recruiter={c.recruiter}
-          anketa={c.anketa}
           readonly={c.origin === "merged"}
           stageOptions={stagePickerOptions}
           getStageLabel={getStackStageLabel}
@@ -2792,7 +2792,20 @@ function AnketaTab({ card }: { card: KanbanCard }) {
     const t = setInterval(fetchRows, 15000);
     return () => { alive = false; clearInterval(t); };
   }, [card.id, clearBadge]);
-  return <AnketaResponses dispatches={dispatches} />;
+  // Импортированные прохождения (ClickUp-архив) показываем здесь, сгруппированные
+  // по метке «воронка · рекрутёр». Родные FormDispatch-анкеты — ниже; их пустое
+  // состояние показываем только если нет ни диспатчей, ни импортных прохождений.
+  const participations = readParticipations(card);
+  return (
+    <>
+      {participations.length > 0 && (
+        <ImportedParticipations participations={participations} />
+      )}
+      {(dispatches.length > 0 || participations.length === 0) && (
+        <AnketaResponses dispatches={dispatches} />
+      )}
+    </>
+  );
 }
 
 const PersonalNotesTab = memo(function PersonalNotesTab({

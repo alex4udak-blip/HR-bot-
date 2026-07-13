@@ -173,7 +173,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onRemoveFromVacancy,
   isPreviousSeries = false,
   recruiter,
-  anketa,
 }: {
   card: KanbanCard;
   applicationId: number;
@@ -233,9 +232,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   // «В предыдущих сериях»: отклик старше переоткрытия вакансии → карточка этапа
   // серая (как в референсе). Смена этапа снимает флаг → карточка зеленеет.
   isPreviousSeries?: boolean;
-  // Импортированное прохождение (ClickUp-архив): рекрутёр (чип «HR: Имя») + анкета (Q&A), read-only.
+  // Импортированное прохождение (ClickUp-архив): рекрутёр (чип «HR: Имя»), read-only.
   recruiter?: string;
-  anketa?: Array<{ question: string; answer: string }>;
 }) {
   // --- per-instance UI state (раньше было singleton в InfoTab) ---
   const [showStageDD, setShowStageDD] = useState(false);
@@ -1124,26 +1122,6 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
             ))}
           </div>
         </div>
-      ) : null}
-      {/* ── Анкета прохождения (ClickUp-импорт): свёрнутый Q&A, read-only. ── */}
-      {anketa && anketa.length > 0 ? (
-        <details className="px-[var(--hf-space-xxl)] pt-[14px]">
-          <summary className="cursor-pointer select-none text-[length:var(--hf-fs-xxs)] font-medium leading-[var(--hf-lh-field)] text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-            Анкета ({anketa.length})
-          </summary>
-          <div className="mt-[8px] flex flex-col gap-[8px]">
-            {anketa.map((qa, i) => (
-              <div key={i} className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-field)]">
-                <div className="text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-                  {qa.question}
-                </div>
-                <div className="whitespace-pre-wrap break-words text-[var(--hf-main-800)] hf-dark-disabled:text-[color:var(--hf-white-alpha-75)]">
-                  {qa.answer}
-                </div>
-              </div>
-            ))}
-          </div>
-        </details>
       ) : null}
       {videoModal && createPortal(
         <div

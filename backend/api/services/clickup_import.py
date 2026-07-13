@@ -181,11 +181,14 @@ def extract_email_from_row(row: Dict[str, Any]) -> Optional[str]:
 def merge_participations(
     existing: List[Dict[str, Any]], incoming: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
-    """До-кладываем участия. Идентичность = task_id (если есть), иначе (вакансия, рекрутёр)."""
+    """До-кладываем участия. Идентичность прохождения = связка (воронка + рекрутёр)
+    — так задумано владельцем: одна воронка у одного рекрутёра = одно прохождение,
+    даже если в ClickUp это несколько задач (разные task_id). task_id в ключ НЕ идёт,
+    иначе один и тот же проход задваивался бы при переимпорте."""
     def sig(p: Dict[str, Any]):
-        return p.get("task_id") or (
-            (p.get("vacancy_title") or "").lower(),
-            (p.get("recruiter") or "").lower(),
+        return (
+            (p.get("vacancy_title") or "").strip().lower(),
+            (p.get("recruiter") or "").strip().lower(),
         )
 
     seen = {sig(p) for p in existing}
