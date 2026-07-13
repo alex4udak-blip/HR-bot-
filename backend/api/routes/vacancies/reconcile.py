@@ -95,6 +95,24 @@ async def reconcile_clones(
 
     clones = [v for v in rows if _cloned_from(v) is not None]
 
+    # TEMP DEBUG (снять после диагностики): reconcile возвращает 0 клонов, хотя
+    # GET /api/vacancies/126 (та же БД) читает cloned_from_request_id=125. Логируем
+    # что реально видит reconcile: сколько воронок, у кого есть ключ, и сырой
+    # extra_data вакансии 126.
+    _v126 = next((v for v in rows if v.id == 126), None)
+    _keyed = [
+        v.id for v in rows
+        if isinstance(v.extra_data, dict) and v.extra_data.get("cloned_from_request_id") is not None
+    ]
+    _cf126 = (_v126.extra_data.get("cloned_from_request_id") if (_v126 and isinstance(_v126.extra_data, dict)) else "N/A")
+    logger.warning(
+        "RECONCILE_DEBUG rows=%d clones=%d keyed_ids=%s v126_in_rows=%s "
+        "v126_extra_type=%s cf126=%r cf126_type=%s",
+        len(rows), len(clones), _keyed[:30], _v126 is not None,
+        type(_v126.extra_data).__name__ if _v126 else "NONE",
+        _cf126, type(_cf126).__name__,
+    )
+
     # Кэш кандидатов, уже присутствующих в каждом оригинале — чтобы дедуп был
     # точным и в dry-run (несколько клонов одного оригинала с общим кандидатом).
     root_entities: Dict[int, Set[int]] = {}
