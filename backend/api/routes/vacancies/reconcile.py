@@ -48,7 +48,15 @@ class CloneReconcileReport(BaseModel):
 
 def _cloned_from(v: Vacancy) -> Optional[int]:
     cf = (v.extra_data or {}).get("cloned_from_request_id")
-    return cf if isinstance(cf, int) else None
+    if cf is None or isinstance(cf, bool):
+        return None
+    # Толерантно к типу: старый код клонирования мог записать id как int ИЛИ как
+    # строку «125» — оба должны детектиться как клон, иначе reconcile молча
+    # пропускает клон (clones_found=0), хотя он есть.
+    try:
+        return int(cf)
+    except (TypeError, ValueError):
+        return None
 
 
 async def reconcile_clones(

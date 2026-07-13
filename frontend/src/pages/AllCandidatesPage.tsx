@@ -2402,12 +2402,18 @@ const InfoTab = memo(function InfoTab({
         >
           <PlusCircle className="hf-profile-action-icon" /> Взять на вакансию
         </button>
-        <button
-          onClick={() => cardRemoveFromVacancy(primaryBlock?.application_id ?? 0)}
-          className="hf-profile-action-btn"
-        >
-          <X className="hf-profile-action-icon" /> Удалить с воронки
-        </button>
+        {/* «Удалить с воронки» имеет смысл ТОЛЬКО когда кандидат реально в воронке
+            (есть application). На «Все кандидаты» пул-кандидат в воронку не входит —
+            раньше кнопка висела всегда и слала application_id=0 (no-op). Маша: в пуле
+            этой кнопки быть не должно. */}
+        {primaryBlock?.application_id ? (
+          <button
+            onClick={() => cardRemoveFromVacancy(primaryBlock.application_id)}
+            className="hf-profile-action-btn"
+          >
+            <X className="hf-profile-action-icon" /> Удалить с воронки
+          </button>
+        ) : null}
         <button
           onClick={handleEmail}
           className="hf-profile-action-btn"

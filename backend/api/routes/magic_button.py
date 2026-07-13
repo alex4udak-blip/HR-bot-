@@ -413,29 +413,18 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     await db.flush()
 
     # Add to vacancy/funnel if specified.
-    # Если выбранная вакансия — это заявка (request), а у текущего рекрутёра
-    # уже есть свой клон этой заявки (взял её в работу), кладём кандидата
-    # в КЛОН — иначе он не появится в /my-funnels у рекрутёра, application
-    # будет лежать на оригинале, а в воронке «Мои вакансии» виден клон.
+    # ОБЩАЯ ВОРОНКА (модель без клонов): кандидат добавляется НАПРЯМУЮ в
+    # выбранную вакансию — как в apply-to-vacancy («взять на вакансию»).
+    # РАНЬШЕ здесь был редирект на легаси-клон этой заявки, созданный текущим
+    # рекрутёром (Vacancy.created_by==self + extra_data.cloned_from_request_id).
+    # Из-за него парсинг с hh улетал в orphan-клон рекрутёра, и кандидат «не
+    # добавлялся» в общую воронку (напр. «Трафик»), хотя перемещением он
+    # добавлялся. Клонов в новой модели нет — редирект убран (2026-07-13).
     target_vacancy_id = data.vacancy_id
     if target_vacancy_id:
-        from sqlalchemy import text as _text
-        clone_q = await db.execute(
-            select(Vacancy.id).where(
-                Vacancy.created_by == current_user.id,
-                _text(
-                    f"vacancies.extra_data::jsonb @> "
-                    f"'{{\"cloned_from_request_id\": {int(target_vacancy_id)}}}'::jsonb"
-                ),
-            ).limit(1)
-        )
-        my_clone_id = clone_q.scalar_one_or_none()
-        if my_clone_id:
-            target_vacancy_id = my_clone_id
-
-        # Org-граница: целевая вакансия (или резолвнутый клон) должна быть в орг
-        # вызывающего — иначе vacancy_id из тела позволял создать заявку в чужой
-        # воронке. org здесь гарантированно не None (выше entity создаётся с org.id).
+        # Org-граница: целевая вакансия должна быть в орг вызывающего — иначе
+        # vacancy_id из тела позволял создать заявку в чужой воронке. org здесь
+        # гарантированно не None (выше entity создаётся с org.id).
         target_vac = await db.get(Vacancy, target_vacancy_id)
         if not target_vac or target_vac.org_id != org.id:
             raise HTTPException(404, "Vacancy not found")
@@ -745,6 +734,9 @@ async def get_my_vacancies_for_extension(
             # Только АКТИВНЫЕ воронки (open). pending_review/draft — это заявки, а не
             # рабочие воронки: класть в них кандидата нельзя.
             Vacancy.status == VacancyStatus.open,
+            # Soft-deleted воронки не предлагаем — иначе схлопнутый реконсайлом клон
+            # (deleted_at выставлен, но status ещё open) снова всплыл бы в дропдауне.
+            Vacancy.deleted_at.is_(None),
         ).order_by(Vacancy.title)
     )
     all_vacancies = result.scalars().all()
@@ -753,29 +745,38 @@ async def get_my_vacancies_for_extension(
         return (v.extra_data or {}).get("accepted_by") or []
 
     vacancies = [v for v in all_vacancies if current_user.id in _acceptor_ids(v)]
-    # Схлопываем «заявку + её клон»: если у рекрутёра есть личный клон заявки
-    # (extra_data.cloned_from_request_id == X), оригинал X из дропдауна убираем —
-    # иначе одна воронка двоится («Mob dev ×2 / Трафик ×2»). Тот же дедуп, что
-    # на фронте (hasAlreadyTaken в VacanciesPage/RecruiterFunnelsPage).
-    cloned_request_ids = set()
-    for v in vacancies:
-        src = (v.extra_data or {}).get("cloned_from_request_id")
-        try:
-            cloned_request_ids.add(int(src))
-        except (TypeError, ValueError):
-            pass
-    # После клон-схлопывания дополнительно убираем повторы по названию: одну
-    # воронку рекрутёр мог «взять» несколько раз → несколько клонов с одинаковым
-    # названием («tesy / tesy / tesy»), которые в списке не различить. Оставляем
-    # по одной записи на название.
+    # ОБЩАЯ ВОРОНКА: в дропдаун отдаём ВСЕГДА общую воронку-ОРИГИНАЛ, а не личный
+    # клон рекрутёра. РАНЬШЕ делали наоборот (оригинал убирали, оставляли клон) —
+    # из-за этого парс уходил в приватный клон рекрутёра (напр. «Трафик» id 126),
+    # а сам он смотрел общую воронку (125), и кандидат «пропадал» — даже свой.
+    # Теперь: если принятая воронка — это клон (extra_data.cloned_from_request_id=X),
+    # подменяем её на оригинал X; сам клон отдельным пунктом не показываем.
+    # Дедуп по id и по названию (одну воронку могли «взять» несколько раз).
+    # ВАЖНО: работает В ПАРЕ с убранным клон-редиректом в _do_magic_parse — иначе
+    # редирект завернул бы target с оригинала обратно в клон.
+    by_id = {v.id: v for v in all_vacancies}
+    seen_ids: set = set()
     seen_titles: set = set()
     out = []
     for v in vacancies:
-        if v.id in cloned_request_ids:
+        target = v
+        src = (v.extra_data or {}).get("cloned_from_request_id")
+        if src is not None:
+            try:
+                original = by_id.get(int(src))
+            except (TypeError, ValueError):
+                original = None
+            if original is None:
+                # Оригинал недоступен (не open / вне выборки) — личный клон в
+                # дропдаун НЕ тащим, чтобы парс снова не ушёл в приватную воронку.
+                continue
+            target = original
+        if target.id in seen_ids:
             continue
-        key = (v.title or "").strip().lower()
+        key = (target.title or "").strip().lower()
         if key in seen_titles:
             continue
+        seen_ids.add(target.id)
         seen_titles.add(key)
-        out.append({"id": v.id, "title": v.title})
+        out.append({"id": target.id, "title": target.title})
     return out
