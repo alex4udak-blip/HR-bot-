@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Lock,
   Upload,
+  Archive,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -55,6 +56,7 @@ import {
   createCandidateShareLink,
   toggleTimelineReaction,
   getEntityActivity,
+  archiveEntity,
 } from "@/services/api/entities";
 import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
 import type { ApplicationStage } from "@/types";
@@ -2070,6 +2072,20 @@ const InfoTab = memo(function InfoTab({
     }
   };
 
+  // «В архив» (superadmin): кандидат уходит в теневую базу — исчезает из активных
+  // списков/канбана/поиска, но остаётся для сверки дублей. Обратно — только с
+  // superadmin-страницы «Архив кандидатов».
+  const handleArchive = async () => {
+    if (!window.confirm(`Отправить «${card.name || 'кандидата'}» в архив? Он исчезнет из активных списков, но будет участвовать в проверке дублей.`)) return;
+    try {
+      await archiveEntity(card.id);
+      toast.success('Кандидат отправлен в архив');
+      onRemovedFromVacancy?.();
+    } catch {
+      toast.error('Не удалось отправить в архив');
+    }
+  };
+
   const handleSaveInterview = async () => {
     const composedDateTime =
       interviewDate && interviewStartTime
@@ -2407,6 +2423,15 @@ const InfoTab = memo(function InfoTab({
         >
           <PenSquare className="hf-profile-action-icon" /> Редактировать
         </button>
+        {currentUser?.role === 'superadmin' && (
+          <button
+            onClick={handleArchive}
+            className="hf-profile-action-btn"
+            title="Отправить кандидата в теневой архив (участвует в проверке дублей)"
+          >
+            <Archive className="hf-profile-action-icon" /> В архив
+          </button>
+        )}
       </div>
 
       {/* ---- Name + Contact info (left column) | Photo (right column) ---- */}
