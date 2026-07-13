@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime, timezone
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, AliasChoices
 
 from .common import (
     logger, TaskCreate, TaskUpdate, TaskResponse, TaskKanbanColumn, TaskKanbanBoard,
@@ -502,7 +502,10 @@ async def get_task_kanban(
 
 class BulkMoveRequest(BaseModel):
     task_ids: List[int]
-    target_status: str
+    # Фронт (bulkMoveTasks) шлёт поле `status`; исторически бэк ждал `target_status`,
+    # из-за чего массовое перемещение падало с 422 «Ошибка перемещения задач».
+    # Принимаем оба имени, канонично — `status` (как во всём остальном task-API).
+    status: str = Field(validation_alias=AliasChoices("status", "target_status"))
 
 
 async def bulk_move_tasks(
@@ -528,8 +531,8 @@ async def bulk_move_tasks(
 
     for task in tasks:
         old_status_str = task.status if isinstance(task.status, str) else (task.status.value if task.status else None)
-        task.status = data.target_status
-        if data.target_status == "done":
+        task.status = data.status
+        if data.status == "done":
             task.completed_at = now
             if old_status_str != "done":
                 await _close_linked_blocker_on_done(task, project, current_user, db)
