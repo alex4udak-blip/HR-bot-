@@ -571,3 +571,40 @@ export const getVacanciesSharedWithMe = async (): Promise<{ vacancies: SharedVac
   );
   return data;
 };
+
+// ============================================================
+// LEGACY CLONE RECONCILIATION (superadmin one-off)
+// ============================================================
+
+export interface CloneReconcileItem {
+  clone_id: number;
+  original_id: number | null;
+  title: string;
+  action: 'merge' | 'skip';
+  reason: string | null;
+  moved: number;
+  deduped: number;
+  accepted_rescued: boolean;
+}
+
+export interface CloneReconcileReport {
+  dry_run: boolean;
+  clones_found: number;
+  merged: number;
+  skipped: number;
+  apps_moved: number;
+  apps_deduped: number;
+  items: CloneReconcileItem[];
+}
+
+/**
+ * Схлопнуть легаси-клоны вакансий в оригиналы (только superadmin).
+ * dryRun=true — отчёт без изменений; false — выполнить перенос+удаление клонов.
+ */
+export const reconcileVacancyClones = async (dryRun: boolean): Promise<CloneReconcileReport> => {
+  const { data } = await debouncedMutation<CloneReconcileReport>(
+    'post',
+    `/vacancies/admin/reconcile-clones?dry_run=${dryRun}`
+  );
+  return data;
+};

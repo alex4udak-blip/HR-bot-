@@ -12,6 +12,10 @@ import {
   type RescanResult,
   type ArchiveDupGroups,
 } from "@/services/api/entities";
+import {
+  reconcileVacancyClones,
+  type CloneReconcileReport,
+} from "@/services/api/vacancies";
 
 /**
  * Суперадминская страница «Архив кандидатов» (теневая база).
@@ -31,6 +35,9 @@ export default function CandidateArchivePage() {
   const [dupGroups, setDupGroups] = useState<ArchiveDupGroups | null>(null);
   const [groupSurvivor, setGroupSurvivor] = useState<Record<number, number>>({});
   const [mergingGroup, setMergingGroup] = useState<number | null>(null);
+  // Схлопывание легаси-клонов вакансий: сначала dry-run (отчёт), затем выполнить.
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileReport, setReconcileReport] = useState<CloneReconcileReport | null>(null);
 
   const load = useCallback(async (query: string) => {
     setLoading(true);
@@ -78,6 +85,29 @@ export default function CandidateArchivePage() {
       toast.error("Не удалось выполнить сверку");
     } finally {
       setRescanning(false);
+    }
+  };
+
+  const handleReconcileClones = async (dryRun: boolean) => {
+    setReconciling(true);
+    try {
+      const res = await reconcileVacancyClones(dryRun);
+      setReconcileReport(res);
+      if (dryRun) {
+        toast.success(
+          `Найдено клонов: ${res.clones_found}. Будет слито: ${res.merged}, ` +
+            `перенести кандидатов: ${res.apps_moved}`
+        );
+      } else {
+        toast.success(
+          `Схлопнуто клонов: ${res.merged}. Перенесено кандидатов: ${res.apps_moved}` +
+            (res.apps_deduped ? ` (дублей убрано: ${res.apps_deduped})` : "")
+        );
+      }
+    } catch {
+      toast.error("Не удалось выполнить схлопывание клонов");
+    } finally {
+      setReconciling(false);
     }
   };
 
@@ -155,7 +185,60 @@ export default function CandidateArchivePage() {
           {finding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
           Найти дубликаты в архиве
         </button>
+        <button
+          onClick={() => handleReconcileClones(true)}
+          disabled={reconciling}
+          className="inline-flex items-center gap-2 rounded-lg border border-indigo-500 px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
+          title="Найти легаси-клоны вакансий и показать отчёт, что будет слито (без изменений)"
+        >
+          {reconciling ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitMerge className="w-4 h-4" />}
+          Схлопнуть клоны вакансий
+        </button>
       </div>
+
+      {reconcileReport && (
+        <div className="mb-4 rounded-lg border border-indigo-300 bg-indigo-50 p-4">
+          <div className="text-sm text-indigo-900 mb-2">
+            {reconcileReport.dry_run ? "Предпросмотр — изменений пока НЕ внесено." : "Выполнено."}{" "}
+            Клонов найдено: <b>{reconcileReport.clones_found}</b> · будет/слито:{" "}
+            <b>{reconcileReport.merged}</b> · перенос кандидатов:{" "}
+            <b>{reconcileReport.apps_moved}</b>
+            {reconcileReport.apps_deduped ? (
+              <> · дублей убрано: <b>{reconcileReport.apps_deduped}</b></>
+            ) : null}
+            {reconcileReport.skipped ? (
+              <> · пропущено (нет оригинала): <b>{reconcileReport.skipped}</b></>
+            ) : null}
+          </div>
+          {reconcileReport.items.length > 0 && (
+            <div className="max-h-60 overflow-y-auto space-y-1 mb-3">
+              {reconcileReport.items.map((it) => (
+                <div key={it.clone_id} className="text-sm px-2 py-1 rounded flex items-center gap-2">
+                  <span className="font-medium text-indigo-900">{it.title || `#${it.clone_id}`}</span>
+                  {it.action === "merge" ? (
+                    <span className="text-indigo-700/80">
+                      клон #{it.clone_id} → #{it.original_id} · перенос {it.moved}
+                      {it.deduped ? `, дублей ${it.deduped}` : ""}
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">пропуск — {it.reason}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {reconcileReport.dry_run && reconcileReport.merged > 0 && (
+            <button
+              onClick={() => handleReconcileClones(false)}
+              disabled={reconciling}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {reconciling ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitMerge className="w-4 h-4" />}
+              Выполнить схлопывание ({reconcileReport.merged})
+            </button>
+          )}
+        </div>
+      )}
 
       {rescanResult && (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">

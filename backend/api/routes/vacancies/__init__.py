@@ -102,6 +102,9 @@ from .sharing import (
     VacancyShareResponse,
 )
 
+# Import legacy-clone reconciliation (superadmin one-off)
+from .reconcile import reconcile_clones, CloneReconcileReport
+
 # Register routes in the correct order
 # More specific routes must come before generic ones (like /{vacancy_id})
 
@@ -124,6 +127,9 @@ router.add_api_route("/applications/{application_id}", delete_application, metho
 
 # Assignable users for responsible dropdown (must be before /{vacancy_id})
 router.add_api_route("/assignable-users", get_assignable_users, methods=["GET"], tags=["vacancies"])
+
+# Legacy-clone reconciliation (superadmin one-off) — before /{vacancy_id}
+router.add_api_route("/admin/reconcile-clones", reconcile_clones, methods=["POST"], tags=["vacancies"])
 
 # CRUD: list and create vacancies (root path)
 router.add_api_route("", list_vacancies, methods=["GET"], tags=["vacancies"])
