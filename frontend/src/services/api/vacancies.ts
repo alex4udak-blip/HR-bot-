@@ -144,9 +144,13 @@ export const declineVacancy = async (id: number): Promise<void> => {
 // VACANCY APPLICATIONS API
 // ============================================================
 
-export const getApplications = async (vacancyId: number, stage?: ApplicationStage): Promise<VacancyApplication[]> => {
-  const params = stage ? { stage } : undefined;
-  const { data } = await deduplicatedGet<VacancyApplication[]>(`/vacancies/${vacancyId}/applications`, { params });
+export const getApplications = async (vacancyId: number, stage?: ApplicationStage, createdBy?: number): Promise<VacancyApplication[]> => {
+  const params: Record<string, string | number> = {};
+  if (stage) params.stage = stage;
+  if (createdBy != null) params.created_by = createdBy;
+  const { data } = await deduplicatedGet<VacancyApplication[]>(`/vacancies/${vacancyId}/applications`, {
+    params: Object.keys(params).length ? params : undefined,
+  });
   return data;
 };
 

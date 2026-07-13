@@ -175,6 +175,42 @@ async def test_recruiter_sees_legacy_null_author(
 
 
 @pytest.mark.asyncio
+async def test_recruiter_applications_only_own(
+    client, db_session, organization, admin_user, org_owner,
+    second_user, org_member, shared_vacancy_with_two_apps,
+):
+    """GET /applications (страница /my-funnels) тоже скоупится: рекрутёр видит
+    только своих кандидатов."""
+    v, e_admin_id, e_member_id = shared_vacancy_with_two_apps
+
+    r = await client.get(f"/api/vacancies/{v.id}/applications", headers=_h(second_user))
+    assert r.status_code == 200, r.text
+    ids = {a["entity_id"] for a in r.json()}
+    assert ids == {e_member_id}
+
+
+@pytest.mark.asyncio
+async def test_admin_applications_filter_by_recruiter(
+    client, db_session, organization, admin_user, org_owner,
+    second_user, org_member, shared_vacancy_with_two_apps,
+):
+    """Админ видит всех, а с ?created_by=<id> скоупит воронку по рекрутёру
+    (селектор «Вакансии: <имя>» в сайдбаре)."""
+    v, e_admin_id, e_member_id = shared_vacancy_with_two_apps
+
+    r_all = await client.get(f"/api/vacancies/{v.id}/applications", headers=_h(admin_user))
+    assert r_all.status_code == 200, r_all.text
+    assert {a["entity_id"] for a in r_all.json()} == {e_admin_id, e_member_id}
+
+    r_scoped = await client.get(
+        f"/api/vacancies/{v.id}/applications?created_by={second_user.id}",
+        headers=_h(admin_user),
+    )
+    assert r_scoped.status_code == 200, r_scoped.text
+    assert {a["entity_id"] for a in r_scoped.json()} == {e_member_id}
+
+
+@pytest.mark.asyncio
 async def test_recruiter_cannot_move_foreign_candidate(
     client, db_session, organization, admin_user, org_owner,
     second_user, org_member, shared_vacancy_with_two_apps,

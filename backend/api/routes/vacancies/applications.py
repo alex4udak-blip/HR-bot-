@@ -1,7 +1,7 @@
 """
 Application management endpoints for vacancies.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
@@ -77,10 +77,18 @@ def _entity_photo(entity, photo_file_map: Optional[dict] = None):
 async def list_applications(
     vacancy_id: int,
     stage: Optional[ApplicationStage] = None,
+    created_by: Optional[int] = Query(None, description="Filter by recruiter (who added the candidate)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
-    """List all applications for a vacancy (with access control)."""
+    """List all applications for a vacancy (with access control).
+
+    Приватность воронки (как в /kanban): обычный рекрутёр видит ТОЛЬКО своих
+    кандидатов (created_by == self) + legacy без автора (created_by IS NULL).
+    Админ/овнер/суперадмин/полный доступ видят всех и могут скоупить по
+    конкретному рекрутёру через created_by (селектор «Вакансии: <рекрутёр>» в
+    левом сайдбаре /my-funnels).
+    """
     org = await get_user_org(current_user, db)
 
     # Verify vacancy exists
@@ -100,6 +108,17 @@ async def list_applications(
         .where(VacancyApplication.vacancy_id == vacancy_id)
         .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at.desc())
     )
+
+    if not await sees_all_candidates(current_user, org, db):
+        # Обычный рекрутёр: только свои + legacy без автора. Клиентский
+        # created_by игнорируем — сервер жёстко ограничивает своими.
+        query = query.where(or_(
+            VacancyApplication.created_by == current_user.id,
+            VacancyApplication.created_by.is_(None),
+        ))
+    elif created_by is not None:
+        # Админ скоупит воронку по конкретному рекрутёру (сайдбар /my-funnels).
+        query = query.where(VacancyApplication.created_by == created_by)
 
     if stage:
         query = query.where(VacancyApplication.stage == stage)

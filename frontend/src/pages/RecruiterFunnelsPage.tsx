@@ -547,18 +547,32 @@ export default function RecruiterFunnelsPage() {
   // вернуть только что снятого кандидата («удаляй дважды»). Применяем результат
   // загрузки ТОЛЬКО если это последний запрос; любая мутация бампает счётчик.
   const loadSeqRef = useRef(0);
+  // Скоуп кандидатов по рекрутёру: админ, выбрав рекрутёра в сайдбаре «Вакансии:
+  // <имя>», видит внутри воронки только его кандидатов (created_by). Для обычного
+  // рекрутёра сервер и так отдаёт только его — тут ничего не шлём. Отдельного
+  // пикера на доске не нужно: селектор в сайдбаре и есть источник скоупа.
+  const candidateScopeRecruiterId = (isHrAdmin && selectedRecruiterFilter != null)
+    ? selectedRecruiterFilter
+    : undefined;
   const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
     const seq = ++loadSeqRef.current;
     if (!silent) setCandidatesLoading(true);
     try {
-      const apps = await getApplications(vacancyId);
+      const apps = await getApplications(vacancyId, undefined, candidateScopeRecruiterId);
       if (seq === loadSeqRef.current) setCandidates(apps);
     } catch {
       if (!silent && seq === loadSeqRef.current) setCandidates([]);
     } finally {
       if (!silent) setCandidatesLoading(false);
     }
-  }, []);
+  }, [candidateScopeRecruiterId]);
+
+  // Админ сменил рекрутёра в сайдбаре при открытой воронке — перезагружаем
+  // кандидатов под новый скоуп (тихо, без скелетона).
+  useEffect(() => {
+    if (selectedVacancyId) loadCandidates(selectedVacancyId, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidateScopeRecruiterId]);
 
   // Авто-refresh когда юзер возвращается на вкладку браузера —
   // например, после добавления кандидата через волшебную кнопку из
