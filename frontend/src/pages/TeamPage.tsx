@@ -7,6 +7,10 @@ import {
   ChevronDown,
   ChevronRight,
   UserPlus,
+  UserMinus,
+  FolderPlus,
+  Settings2,
+  Loader2,
   X,
   Check,
   Copy,
@@ -14,7 +18,17 @@ import {
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import * as api from '@/services/api';
-import { getMyDeptRoles, quickAddDepartmentMember, getDepartments, type MyDeptRole, type QuickAddMemberResult } from '@/services/api/auth';
+import {
+  getMyDeptRoles,
+  quickAddDepartmentMember,
+  getDepartments,
+  getDepartmentMembers,
+  removeDepartmentMember,
+  createDepartment,
+  type MyDeptRole,
+  type QuickAddMemberResult,
+  type DepartmentMember,
+} from '@/services/api/auth';
 import { useAuthStore } from '@/stores/authStore';
 
 // Use the type from the backend response (array of user objects)
@@ -43,7 +57,11 @@ export default function TeamPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
   const [addOpen, setAddOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [myDepts, setMyDepts] = useState<MyDeptRole[]>([]);
+  // Управление отделом (удаление участников + под-отделы) — только для руководителей.
+  // Для platform-админов ветка ниже проставляет role:'lead' всем их отделам.
+  const myLeadDepts = myDepts.filter((d) => d.role === 'lead');
 
   const loadResources = useCallback(() => {
     setIsLoading(true);
@@ -107,6 +125,15 @@ export default function TeamPage() {
           <h1 className="text-lg font-bold text-white">Команда</h1>
           <p className="text-[11px] text-white/30">Распределение ресурсов по проектам</p>
         </div>
+        {myLeadDepts.length > 0 && (
+          <button
+            onClick={() => setManageOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.1] text-white/60 text-xs font-medium transition-colors"
+          >
+            <Settings2 className="w-4 h-4" />
+            Управление отделом
+          </button>
+        )}
         {myDepts.length > 0 && (
           <button
             onClick={() => setAddOpen(true)}
@@ -224,6 +251,17 @@ export default function TeamPage() {
               setAddOpen(false);
               loadResources();
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {manageOpen && (
+          <ManageDeptModal
+            depts={myLeadDepts}
+            currentUserId={user?.id}
+            onClose={() => setManageOpen(false)}
+            onChanged={loadResources}
           />
         )}
       </AnimatePresence>
@@ -443,6 +481,205 @@ function AddMemberModal({
             </div>
           </div>
         )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ============================================================
+// MANAGE DEPARTMENT MODAL (руководитель: удаление участников + под-отделы)
+// ============================================================
+
+const DEPT_ROLE_LABELS: Record<string, string> = {
+  lead: 'Руководитель',
+  sub_admin: 'Зам. руководителя',
+  member: 'Участник',
+};
+
+function ManageDeptModal({
+  depts,
+  currentUserId,
+  onClose,
+  onChanged,
+}: {
+  depts: MyDeptRole[];
+  currentUserId?: number;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [deptId, setDeptId] = useState<number>(depts[0]?.department_id ?? 0);
+  const [members, setMembers] = useState<DepartmentMember[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+  const [subName, setSubName] = useState('');
+  const [creatingSub, setCreatingSub] = useState(false);
+
+  const loadMembers = useCallback(() => {
+    if (!deptId) return;
+    setLoading(true);
+    getDepartmentMembers(deptId)
+      .then(setMembers)
+      .catch(() => setMembers([]))
+      .finally(() => setLoading(false));
+  }, [deptId]);
+
+  useEffect(() => { loadMembers(); }, [loadMembers]);
+
+  const removeMember = async (m: DepartmentMember) => {
+    // Руководителя и себя из этого интерфейса не удаляем (бэкенд тоже запретит).
+    if (!confirm(`Удалить ${m.user_name} из отдела?`)) return;
+    setRemovingId(m.user_id);
+    try {
+      await removeDepartmentMember(deptId, m.user_id);
+      toast.success('Участник удалён из отдела');
+      setMembers((prev) => prev.filter((x) => x.user_id !== m.user_id));
+      onChanged();
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || 'Не удалось удалить';
+      toast.error(typeof msg === 'string' ? msg : 'Ошибка');
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  const createSub = async () => {
+    const name = subName.trim();
+    if (!name || creatingSub) return;
+    setCreatingSub(true);
+    try {
+      await createDepartment({ name, parent_id: deptId });
+      toast.success('Под-отдел создан');
+      setSubName('');
+      onChanged();
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || 'Не удалось создать под-отдел';
+      toast.error(typeof msg === 'string' ? msg : 'Ошибка');
+    } finally {
+      setCreatingSub(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, y: 10 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.95, y: 10 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md bg-white dark:bg-[#0c0c10] border border-black/10 dark:border-white/[0.08] rounded-2xl p-5 shadow-xl max-h-[85vh] overflow-y-auto"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Settings2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Управление отделом</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 dark:text-white/30 dark:hover:text-white/60">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {depts.length > 1 ? (
+            <Field label="Отдел">
+              <select
+                value={deptId}
+                onChange={(e) => setDeptId(Number(e.target.value))}
+                className="w-full bg-gray-50 dark:bg-white/[0.04] border border-black/10 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+              >
+                {depts.map((d) => (
+                  <option key={d.department_id} value={d.department_id} className="bg-white dark:bg-[#0c0c10] text-gray-900 dark:text-white">
+                    {d.department_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <p className="text-[11px] text-gray-500 dark:text-white/40">
+              Отдел: <span className="text-gray-800 dark:text-white/70">{depts[0]?.department_name}</span>
+            </p>
+          )}
+
+          {/* Members */}
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-white/30 mb-1.5">Участники</div>
+            {loading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+              </div>
+            ) : members.length === 0 ? (
+              <p className="text-xs text-gray-400 dark:text-white/30 py-2">В отделе нет участников</p>
+            ) : (
+              <div className="space-y-1">
+                {members.map((m) => {
+                  const isLead = m.role === 'lead';
+                  const isSelf = currentUserId != null && m.user_id === currentUserId;
+                  const canRemove = !isLead && !isSelf;
+                  return (
+                    <div
+                      key={m.user_id}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-white/[0.03] border border-black/5 dark:border-white/[0.06]"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-gray-900 dark:text-white truncate">{m.user_name}</div>
+                        <div className="text-[10px] text-gray-500 dark:text-white/30">
+                          {DEPT_ROLE_LABELS[m.role] || m.role}
+                        </div>
+                      </div>
+                      {canRemove ? (
+                        <button
+                          onClick={() => removeMember(m)}
+                          disabled={removingId === m.user_id}
+                          className="p-1.5 rounded-md text-red-500 hover:bg-red-500/10 disabled:opacity-40 transition-colors"
+                          title={`Удалить ${m.user_name} из отдела`}
+                        >
+                          {removingId === m.user_id
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : <UserMinus className="w-4 h-4" />}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-gray-400 dark:text-white/20 pr-1">
+                          {isSelf ? 'вы' : 'руков.'}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Create sub-department */}
+          <div className="pt-1 border-t border-black/5 dark:border-white/[0.06]">
+            <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-white/30 mb-1.5 mt-3">Под-отдел</div>
+            <div className="flex gap-2">
+              <input
+                value={subName}
+                onChange={(e) => setSubName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') createSub(); }}
+                placeholder="Название под-отдела"
+                className="flex-1 bg-gray-50 dark:bg-white/[0.04] border border-black/10 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+              />
+              <button
+                onClick={createSub}
+                disabled={!subName.trim() || creatingSub}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-sm font-medium"
+              >
+                {creatingSub ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderPlus className="w-4 h-4" />}
+                Создать
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-500 dark:text-white/30 mt-1">
+              Создаётся внутри «{depts.find((d) => d.department_id === deptId)?.department_name}». Вы станете его руководителем.
+            </p>
+          </div>
+        </div>
       </motion.div>
     </motion.div>
   );
