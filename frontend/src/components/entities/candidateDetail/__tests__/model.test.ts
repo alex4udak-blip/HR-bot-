@@ -258,6 +258,51 @@ describe("buildStageContainers", () => {
     expect(out[2].files).toEqual([]); // второй пустой (дедуп)
     expect(out[0].files).toEqual([live]);
   });
+
+  it("participations рендерятся как read-only контейнеры с рекрутёром и анкетой", () => {
+    const out = buildStageContainers({
+      ...base,
+      liveApplicationId: 0,
+      liveVacancyTitle: null,
+      card: card({
+        extra_data: {
+          participations: [
+            {
+              vacancy_title: "Android dev",
+              recruiter: "Мария",
+              status: "собес (1): нет",
+              anketa: [{ question: "Telegram", answer: "@x" }],
+              date: "2026-07-08",
+            },
+            { vacancy_title: "Unity dev", recruiter: "Эльвира", status: "анкета: нет", anketa: [] },
+          ],
+        },
+      }),
+    });
+    const parts = out.filter((c) => c.recruiter);
+    expect(parts).toHaveLength(2);
+    expect(parts[0].vacancyTitle).toBe("Android dev");
+    expect(parts[0].recruiter).toBe("Мария");
+    expect(parts[0].status).toBe("собес (1): нет");
+    expect(parts[0].anketa).toEqual([{ question: "Telegram", answer: "@x" }]);
+    // архивный без живой заявки → вырожденный live-контейнер не показываем
+    expect(out.every((c) => c.origin === "merged")).toBe(true);
+  });
+
+  it("keeps the live container when a real application exists alongside participations", () => {
+    const out = buildStageContainers({
+      ...base, // liveApplicationId 100, liveVacancyTitle "Frontend"
+      card: card({
+        extra_data: {
+          participations: [
+            { vacancy_title: "Android dev", recruiter: "Мария", status: "x", anketa: [] },
+          ],
+        },
+      }),
+    });
+    expect(out.some((c) => c.origin === "live")).toBe(true);
+    expect(out.filter((c) => c.recruiter)).toHaveLength(1);
+  });
 });
 
 // ── matchesTimelineFilter ──────────────────────────────────────────────────

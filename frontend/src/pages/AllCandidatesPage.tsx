@@ -1656,6 +1656,9 @@ type StageContainer = {
   fileIds?: number[];
   // Реальные EntityFile для этого контейнера (резолв по fileIds, см. useMemo).
   files?: EntityFile[];
+  // Импортированное прохождение (ClickUp-архив): рекрутёр (текст) + анкета (Q&A). Read-only.
+  recruiter?: string;
+  anketa?: Array<{ question: string; answer: string }>;
 };
 
 // Лейбл статуса контейнера (EntityStatus → русский). Сначала org-override из
@@ -2677,6 +2680,8 @@ const InfoTab = memo(function InfoTab({
           notes={c.notes}
           events={c.events}
           addedAt={c.addedAt}
+          recruiter={c.recruiter}
+          anketa={c.anketa}
           readonly={c.origin === "merged"}
           stageOptions={stagePickerOptions}
           getStageLabel={getStackStageLabel}

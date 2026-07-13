@@ -391,6 +391,101 @@ async def import_execute(
     batch: List[Entity] = []
     vacancy_apps: List[VacancyApplication] = []
 
+    # ── ClickUp combine: одна карточка на человека со всеми прохождениями ──
+    # Один человек лежит в нескольких строках (разные вакансии/рекрутёры/анкеты).
+    # Группируем по сильному ключу (hh/email/телефон), собираем участия в
+    # extra_data.participations и создаём ОДНУ архивную карточку на человека.
+    # Идемпотентно: совпал с уже существующей архивной карточкой → до-кладываем
+    # недостающие участия, новую не плодим.
+    if is_clickup:
+        from ..services.clickup_import import (
+            row_strong_keys as _cu_keys,
+            group_rows_by_person as _cu_group,
+            assemble_person as _cu_assemble,
+            extract_hh_from_row as _cu_hh,
+            extract_email_from_row as _cu_email,
+            merge_participations as _cu_merge,
+        )
+        cf_headers = [h for h in headers if h.lower().startswith("cf:")]
+
+        def _norm(r: Dict[str, str]) -> Dict[str, str]:
+            # ClickUp хранит контакты в cf:-колонках с произвольными именами.
+            # Нормализуем name/email/phone/telegram, СОХРАНЯЯ raw funnel_*/cf: колонки
+            # (нужны build_participation и hh/email-экстракторам).
+            out = dict(r)
+            out["name"] = pick("name", r)
+            out["email"] = pick("email", r) or (_cu_email(r) or "")
+            out["phone"] = pick("phone", r)
+            out["telegram"] = pick("telegram", r)
+            return out
+
+        all_rows = [_norm(r) for r in reader]
+        total = len(all_rows)
+
+        def _key_fn(r: Dict[str, str]) -> set:
+            return _cu_keys(r.get("email", ""), r.get("phone", ""), _cu_hh(r))
+
+        # Индекс существующего архива: сильный-ключ → Entity (для идемпотентности).
+        existing_res = await db.execute(
+            select(Entity).where(Entity.org_id == org.id, Entity.is_archived.is_(True))
+        )
+        key_index: Dict[str, Entity] = {}
+        for ent in existing_res.scalars().all():
+            ident = _cu_keys(ent.email or "", ent.phone or "", None)
+            for ph in (ent.phones or []):
+                ident |= _cu_keys("", ph, None)
+            for k in ident:
+                key_index.setdefault(k, ent)
+
+        for group in _cu_group(all_rows, _key_fn):
+            try:
+                payload = _cu_assemble(group, cf_headers)
+                if not payload["name"]:
+                    errors.append(ImportErrorDetail(row=0, reason="Missing name"))
+                    continue
+                group_keys: set = set()
+                for r in group:
+                    group_keys |= _key_fn(r)
+                match = next((key_index[k] for k in group_keys if k in key_index), None)
+                if match is not None:
+                    # Идемпотентно до-кладываем участия в существующую карточку.
+                    ed = dict(match.extra_data or {})
+                    ed["participations"] = _cu_merge(
+                        ed.get("participations", []),
+                        payload["extra_data"]["participations"],
+                    )
+                    match.extra_data = ed
+                    for k in group_keys:
+                        key_index.setdefault(k, match)
+                    skipped += 1
+                    continue
+                entity = Entity(
+                    org_id=org.id,
+                    type=EntityType.candidate,
+                    name=payload["name"],
+                    email=payload["email"],
+                    phone=payload["phone"],
+                    phones=payload["phones"],
+                    position=payload["position"],
+                    status=EntityStatus.reserve,
+                    telegram_usernames=payload["telegram_usernames"],
+                    extra_data=payload["extra_data"],
+                    created_by=current_user.id,
+                    is_archived=True,
+                )
+                db.add(entity)
+                for k in group_keys:
+                    key_index[k] = entity
+                imported += 1
+            except Exception as exc:  # noqa: BLE001
+                errors.append(ImportErrorDetail(row=0, reason=str(exc)))
+        await db.commit()
+        return ImportResult(
+            total=total, imported=imported, skipped=skipped,
+            skipped_details=skipped_details, errors_count=len(errors), errors=errors,
+        )
+    # ── /ClickUp combine ── (ниже — прежний построчный путь для не-ClickUp CSV)
+
     for row_num, row in enumerate(reader, start=2):  # row 1 = header
         total += 1
         try:

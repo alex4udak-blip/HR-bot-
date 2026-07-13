@@ -53,6 +53,9 @@ export type StageContainer = {
   events?: ActivityEvent[];
   fileIds?: number[];
   files?: EntityFile[];
+  /** Импортированное прохождение (ClickUp-архив): рекрутёр (текст) + анкета (Q&A). Read-only. */
+  recruiter?: string;
+  anketa?: Array<{ question: string; answer: string }>;
 };
 
 export type ResumeSource =
@@ -282,7 +285,44 @@ export function buildStageContainers(params: {
     _docFiles.filter((f) => !_mergedFileIds.has(f.id)),
   );
 
-  return [liveContainer, ...mergedContainers];
+  // ── Импортированные прохождения (ClickUp-архив) ──
+  // extra_data.participations[] — отдельный от merged_from массив: каждое прохождение
+  // человека = вакансия + рекрутёр + статус + анкета (Q&A). Рисуем их теми же
+  // read-only контейнерами. Отдельный ключ (не merged_from), чтобы не путать
+  // консьюмеров слияния (/all-dispatches, merge-flow).
+  const participationsRaw = Array.isArray(
+    (card.extra_data as Record<string, unknown> | undefined)?.participations,
+  )
+    ? ((card.extra_data as Record<string, unknown>)
+        .participations as Array<Record<string, unknown>>)
+    : [];
+
+  const participationContainers: StageContainer[] = participationsRaw.map((p, i) => ({
+    origin: "merged" as const,
+    // Фиктивный отрицательный ключ ниже merged_from — read-only, действий нет.
+    applicationId: -(mergedContainers.length + i + 1),
+    status: typeof p.status === "string" && p.status ? p.status : "reserve",
+    name: null,
+    notes: [],
+    resumeDemos: [],
+    vacancyTitle: typeof p.vacancy_title === "string" ? p.vacancy_title : null,
+    addedAt: typeof p.date === "string" ? p.date : undefined,
+    recruiter: typeof p.recruiter === "string" ? p.recruiter : undefined,
+    anketa: Array.isArray(p.anketa)
+      ? (p.anketa as Array<{ question: string; answer: string }>)
+      : [],
+  }));
+
+  // Архивный импорт: живой заявки нет (liveApplicationId===0) и live-контейнер пуст
+  // (нет лога/событий/вакансии), но есть участия → не показываем вырожденный live.
+  const _liveEmpty =
+    liveApplicationId === 0 &&
+    _liveNotes.length === 0 &&
+    !(liveEvents && liveEvents.length) &&
+    !liveVacancyTitle;
+  const _head = _liveEmpty && participationContainers.length > 0 ? [] : [liveContainer];
+
+  return [..._head, ...mergedContainers, ...participationContainers];
 }
 
 // ── Timeline reactions + «Действия» filter (pure) ──
