@@ -234,6 +234,22 @@ def count_shared_name_words(name1: str, name2: str) -> int:
     return count
 
 
+def names_match_surname_firstname(name1: str, name2: str) -> bool:
+    """Совпадают ли ФИО по «Фамилия + Имя» (первые два слова ПОЗИЦИОННО, каждое
+    с учётом транслитерации). Ловит «Векленко Кирилл» ↔ «Векленко Кирилл
+    Дмитриевич» (с отчеством и без), но НЕ матчит разных однофамильцев-тёзок по
+    одному лишь имени/отчеству («Борисов Кирилл Евгеньевич» ↔ «Сапрыкин Кирилл
+    Евгеньевич» — фамилии разные → НЕ дубль). Полное совпадение ФИО — частный
+    случай (первые два слова тоже совпадут)."""
+    w1 = [_name_word_variants(w) for w in (name1 or "").split()
+          if len(w.strip("-_.,")) >= 2]
+    w2 = [_name_word_variants(w) for w in (name2 or "").split()
+          if len(w.strip("-_.,")) >= 2]
+    if len(w1) < 2 or len(w2) < 2:
+        return False
+    return bool(w1[0] & w2[0]) and bool(w1[1] & w2[1])
+
+
 def normalize_phone(phone: str) -> str:
     """Нормализация телефонного номера."""
     if not phone:
@@ -843,15 +859,12 @@ class SimilarityService:
 
             # 1. Проверка имени (40 баллов) — только если ОБА значения похожи на
             # ФИО, а не на должность/мусор («Flutter Developer, Минск, 25 лет»).
-            # Иначе кандидаты с именем-должностью массово слипаются.
-            # Имя совпадает ТОЛЬКО при ≥2 общих токенах (имя+фамилия) ИЛИ полном
-            # совпадении строки — иначе разные люди с общим именем («Дарья Мысник»
-            # и «Варламова Дарья Аллановна») давали ложные +40 по одному «Дарья».
-            shared_name_words = count_shared_name_words(entity.name, candidate.name)
-            name_match = (
-                shared_name_words >= 2
-                or (entity_name_norm and entity_name_norm == (candidate.name or "").strip().lower())
-            )
+            # Совпадение по «Фамилия + Имя» (первые два слова позиционно): ловит
+            # варианты с отчеством/без, но НЕ матчит однофамильцев-тёзок по одному
+            # имени+отчеству («Борисов Кирилл Евгеньевич» ↔ «Сапрыкин Кирилл
+            # Евгеньевич»). Раньше был «≥2 общих слова» — и имя+отчество при разных
+            # фамилиях давало ложный +40.
+            name_match = names_match_surname_firstname(entity.name, candidate.name)
             if name_match and looks_like_person_name(entity.name) and looks_like_person_name(candidate.name):
                 confidence += 40
                 match_reasons.append("Совпадение имени (с учетом транслитерации)")
@@ -1375,7 +1388,11 @@ async def find_duplicate_matches(
             normalize_telegram(t) in tg_names for t in (cand_tg or [])
         ):
             strength = "telegram"
-        if strength is None and name_ok and " ".join((cand_name or "").strip().lower().split()) == my_name:
+        if (
+            strength is None and name_ok
+            and looks_like_person_name(cand_name or "")
+            and names_match_surname_firstname(my_name, cand_name or "")
+        ):
             strength = "name"
         if strength is None and phones10:
             d = normalize_phone(cand_phone or "")

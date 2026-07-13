@@ -135,6 +135,20 @@ function joinStrs(v: unknown, sep = ", "): string {
   return typeof v === "string" ? v : "";
 }
 
+// Текст резюме для сравнения. Импортированные (архивные) кандидаты из CSV/ClickUp
+// не имеют resume_text — их резюме лежит в description (текст формы ClickUp) и в
+// cf:* полях (как читает собственная карточка, ResumeTab). Без этого фолбэка
+// правая (архивная) анкета в сравнении показывала «—», хотя данные есть.
+function resumeTextFrom(extra: Record<string, unknown> | undefined): string {
+  const e = extra || {};
+  if (typeof e.resume_text === "string" && e.resume_text.trim()) return e.resume_text;
+  if (typeof e.description === "string" && e.description.trim()) return e.description;
+  const cf = Object.entries(e)
+    .filter(([k, v]) => k.startsWith("cf:") && typeof v === "string" && (v as string).trim())
+    .map(([k, v]) => `${k.slice(3).trim()}: ${v}`);
+  return cf.join("\n");
+}
+
 // Собираем «резюме из структурных полей» (опыт/навыки/языки/образование) —
 // fallback, когда полноценного resume_text/resume_demos нет.
 function resumeExtraFrom(extra: Record<string, unknown> | undefined): ResumeExtra {
@@ -188,7 +202,7 @@ export function sideFromCard(card: KanbanCard, statusKey?: string): Side {
     rejectedAt: isRejected ? rejectedDate(history) : "",
     history,
     resumes: resumesFrom(extra),
-    resumeText: (extra.resume_text as string) || "",
+    resumeText: resumeTextFrom(extra),
     resumeExtra: resumeExtraFrom(extra),
     notes: notesFrom(extra),
   };
@@ -227,7 +241,7 @@ export function sideFromEntity(e: EntityWithRelations): Side {
     rejectedAt: isRejected ? rejectedDate(history) : "",
     history,
     resumes: resumesFrom(extra),
-    resumeText: (extra.resume_text as string) || "",
+    resumeText: resumeTextFrom(extra),
     resumeExtra: resumeExtraFrom(extra),
     notes: notesFrom(extra),
   };

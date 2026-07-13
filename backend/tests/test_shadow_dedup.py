@@ -78,6 +78,34 @@ async def test_detect_single_word_name_not_matched(db_session, organization):
 
 
 @pytest.mark.asyncio
+async def test_detect_matches_surname_firstname_ignoring_patronymic(db_session, organization):
+    # «Векленко Кирилл» ↔ «Векленко Кирилл Дмитриевич» (с отчеством/без) → дубль
+    existing = await _mk(db_session, organization.id, "Векленко Кирилл Дмитриевич")
+    newc = await _mk(db_session, organization.id, "Векленко Кирилл")
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) == existing.id
+
+
+@pytest.mark.asyncio
+async def test_detect_same_firstname_patronymic_diff_surname_not_matched(db_session, organization):
+    # разные фамилии, общий Имя+Отчество («Кирилл Евгеньевич») → НЕ дубль
+    await _mk(db_session, organization.id, "Борисов Кирилл Евгеньевич")
+    newc = await _mk(db_session, organization.id, "Сапрыкин Кирилл Евгеньевич")
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) is None
+
+
+def test_names_match_surname_firstname_unit():
+    from api.services.similarity import names_match_surname_firstname as m
+    assert m("Векленко Кирилл", "Векленко Кирилл Дмитриевич") is True
+    assert m("Векленко Кирилл Дмитриевич", "Векленко Кирилл") is True
+    assert m("Борисов Кирилл Евгеньевич", "Сапрыкин Кирилл Евгеньевич") is False
+    assert m("Иванов Иван", "Иванов Иван") is True   # тёзки-однофамильцы — да (предупреждение)
+    assert m("Иванов", "Иванов Иван") is False        # одно слово → нет
+    assert m("Иванов Пётр", "Иванов Иван") is False   # разное имя → нет
+
+
+@pytest.mark.asyncio
 async def test_detect_no_match_returns_none(db_session, organization):
     await _mk(db_session, organization.id, "Архив", email="someone@x.com", is_archived=True)
     newc = await _mk(db_session, organization.id, "Новый", email="other@x.com", phone="+7 999 0000000")
