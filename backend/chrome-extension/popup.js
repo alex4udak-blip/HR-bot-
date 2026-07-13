@@ -427,8 +427,15 @@ async function checkDuplicatesOnLoad() {
     // superadmin-only. Показываем плашку и при активных дублях, и когда активных
     // нет (иначе рекрутёр видел зелёное «дубликатов нет», хотя человек в архиве).
     const hasArchive = !!checkResp.data.has_archive_match;
+    const archiveMatchId = checkResp.data.archive_match_id;
+    // Кликом открываем ОДНУ архивную карточку (?archived=1) — рекрутёр смотрит
+    // совпавшего, но список архива ему закрыт (superadmin-only). read-грант на
+    // одного кандидата уже есть (check_entity_access).
+    const archiveUrl = archiveMatchId
+      ? `${serverUrl || document.getElementById('serverUrl').value}/all-candidates?entity=${archiveMatchId}&archived=1`
+      : '';
     const archiveNote = hasArchive
-      ? `<div class="dup-archive-note">📦 Похожий кандидат есть в архиве</div>`
+      ? `<div class="dup-archive-note"${archiveUrl ? ` data-archive-url="${archiveUrl}" title="Открыть карточку архивного кандидата"` : ''}>📦 Похожий кандидат есть в архиве${archiveUrl ? ' <span class="dup-archive-open">— открыть ↗</span>' : ''}</div>`
       : '';
     if (checkResp.data.is_duplicate) {
       const dups = checkResp.data.duplicates;
@@ -487,6 +494,13 @@ async function checkDuplicatesOnLoad() {
     } else {
       dupStatus.className = 'dup-status clean';
       dupStatus.innerHTML = '✅ Новый кандидат — дубликатов нет';
+    }
+
+    // Клик по плашке архива → открыть карточку совпавшего архивного (обе ветки).
+    const an = dupStatus.querySelector('.dup-archive-note[data-archive-url]');
+    if (an) {
+      an.style.cursor = 'pointer';
+      an.addEventListener('click', () => chrome.tabs.create({ url: an.dataset.archiveUrl }));
     }
   } catch (e) {
     console.error('Duplicate check failed:', e);

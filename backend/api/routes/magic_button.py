@@ -102,10 +102,12 @@ class DuplicateCheckRequest(BaseModel):
 class DuplicateCheckResponse(BaseModel):
     is_duplicate: bool
     duplicates: list = []  # [{entity_id, name, email, phone, status, created_at}]
-    # Совпадение в АРХИВЕ (теневая база, superadmin-only): только флаг, БЕЗ деталей —
-    # рекрутёр (не superadmin) не должен видеть архивные карточки. Расширение
-    # показывает по нему плашку «Похожий кандидат есть в архиве».
+    # Совпадение в АРХИВЕ (теневая база). Расширение показывает плашку «Похожий
+    # кандидат есть в архиве». Списком архив закрыт (superadmin-only), но ОДНУ
+    # совпавшую карточку рекрутёр может открыть по id (read-грант члену орга на
+    # любого кандидата, check_entity_access) — просмотреть, не листая архив.
     has_archive_match: bool = False
+    archive_match_id: Optional[int] = None  # id архивного совпадения — открыть карточку
 
 @router.post("/check-duplicate")
 async def check_duplicate(
@@ -133,13 +135,16 @@ async def check_duplicate(
         source_url=data.source_url,
     )
     matches = await find_duplicate_matches(db, org.id, keys)
-    # Активные — с деталями; архив — только флаг (superadmin-only, деталей не даём).
+    # Активные — с деталями; архив — плашка + id ОДНОГО совпадения (чтобы рекрутёр
+    # мог открыть именно эту карточку, не листая архив). Списком архив закрыт.
     active_ids = [m.entity_id for m in matches if not m.is_archived][:5]
-    has_archive_match = any(m.is_archived for m in matches)
+    archive_match_id = next((m.entity_id for m in matches if m.is_archived), None)
+    has_archive_match = archive_match_id is not None
 
     if not active_ids:
         return DuplicateCheckResponse(
-            is_duplicate=False, duplicates=[], has_archive_match=has_archive_match
+            is_duplicate=False, duplicates=[],
+            has_archive_match=has_archive_match, archive_match_id=archive_match_id,
         )
 
     dup_result = await db.execute(
@@ -199,6 +204,7 @@ async def check_duplicate(
         is_duplicate=len(duplicates) > 0,
         duplicates=result_list,
         has_archive_match=has_archive_match,
+        archive_match_id=archive_match_id,
     )
 
 @router.post("/parse")
