@@ -547,13 +547,16 @@ export default function RecruiterFunnelsPage() {
   // вернуть только что снятого кандидата («удаляй дважды»). Применяем результат
   // загрузки ТОЛЬКО если это последний запрос; любая мутация бампает счётчик.
   const loadSeqRef = useRef(0);
-  // Скоуп кандидатов по рекрутёру: админ, выбрав рекрутёра в сайдбаре «Вакансии:
-  // <имя>», видит внутри воронки только его кандидатов (created_by). Для обычного
-  // рекрутёра сервер и так отдаёт только его — тут ничего не шлём. Отдельного
-  // пикера на доске не нужно: селектор в сайдбаре и есть источник скоупа.
-  const candidateScopeRecruiterId = (isHrAdmin && selectedRecruiterFilter != null)
-    ? selectedRecruiterFilter
-    : undefined;
+  // Скоуп кандидатов по рекрутёру в общей воронке:
+  //  • обычный рекрутёр — сервер сам отдаёт только его кандидатов, тут ничего
+  //    не шлём (undefined);
+  //  • АДМИН по умолчанию видит ТОЛЬКО СВОИХ (кого сам добавил) — как обычный
+  //    рекрутёр, а не всех. Через левое меню «Вакансии: <рекрутёр>» может
+  //    выбрать любого и посмотреть его кандидатов (selectedRecruiterFilter).
+  //    Чтобы увидеть всех — есть общий раздел «Все кандидаты».
+  const candidateScopeRecruiterId = !isHrAdmin
+    ? undefined
+    : (selectedRecruiterFilter != null ? selectedRecruiterFilter : (user?.id ?? undefined));
   const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
     const seq = ++loadSeqRef.current;
     if (!silent) setCandidatesLoading(true);
@@ -1084,35 +1087,41 @@ export default function RecruiterFunnelsPage() {
   };
 
   const handleRecruiterFilterChange = (userId: number | null) => {
+    setShowRecruiterMenu(false);
     if (!isHrAdmin) {
       setSelectedRecruiterFilter(null);
-      setShowRecruiterMenu(false);
       return;
     }
     setSelectedRecruiterFilter(userId);
-    setShowRecruiterMenu(false);
     if (userId !== null) {
       setExpandedGroups((prev) => new Set(prev).add(userId));
     }
-    if (selectedVacancyId) {
-      deselectVacancy();
-    }
+    // ?recruiter — единый источник истины для скоупа кандидатов по рекрутёру.
+    // Пишем его в URL и закрываем вакансию (смена рекрутёра = новый контекст).
+    const params: Record<string, string> = {};
+    if (statusFilter !== 'all') params.status = statusFilter;
+    if (userId !== null) params.recruiter = String(userId);
+    setSearchParams(params);
   };
 
   const selectVacancy = (vacancyId: number) => {
     const params: Record<string, string> = { v: String(vacancyId) };
     if (statusFilter !== 'all') params.status = statusFilter;
+    // Сохраняем выбранного рекрутёра — иначе при открытии воронки скоуп
+    // кандидатов по рекрутёру сбрасывался, и админ видел ВСЕХ (баг 2026-07-13).
+    const recruiter = searchParams.get('recruiter');
+    if (recruiter) params.recruiter = recruiter;
     setSearchParams(params);
     setCandidateSearch('');
     setMobileSidebar(false);
   };
 
   const deselectVacancy = () => {
-    if (statusFilter !== 'all') {
-      setSearchParams({ status: statusFilter });
-      return;
-    }
-    setSearchParams({});
+    const params: Record<string, string> = {};
+    if (statusFilter !== 'all') params.status = statusFilter;
+    const recruiter = searchParams.get('recruiter');
+    if (recruiter) params.recruiter = recruiter;
+    setSearchParams(params);
   };
 
   // Confirmation modal — единый для close/delete (window.confirm не везде работает в headless/iframe).
@@ -2827,6 +2836,8 @@ export default function RecruiterFunnelsPage() {
                                       notes={c.notes}
                                       events={c.events}
                                       addedAt={c.addedAt}
+                                      recruiter={c.recruiter}
+                                      anketa={c.anketa}
                                       /* Архивная (закрытая) вакансия — карточка визуально
                                          read-only, как merged: не должна выглядеть
                                          активной, если менять всё равно нельзя. */

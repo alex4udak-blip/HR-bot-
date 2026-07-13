@@ -1834,7 +1834,9 @@ export default function Layout() {
                                   // RecruiterFunnelsPage), иначе трогаем только
                                   // мини-список под кнопкой в сайдбаре.
                                   if (r.onlyVacancyId) {
-                                    navigate(`/my-funnels?v=${r.onlyVacancyId}`);
+                                    // recruiter=<id> скоупит кандидатов воронки на
+                                    // этого рекрутёра (см. RecruiterFunnelsPage).
+                                    navigate(`/my-funnels?v=${r.onlyVacancyId}&recruiter=${r.id}`);
                                   } else if (location.pathname === "/my-funnels") {
                                     navigate(`/my-funnels?recruiter=${r.id}`);
                                   }
@@ -1870,7 +1872,9 @@ export default function Layout() {
                       {sidebarOpenVacancies.map((v) => (
                         <NavLink
                           key={v.id}
-                          to={`/my-funnels?v=${v.id}`}
+                          to={pickerOwnerId != null
+                            ? `/my-funnels?v=${v.id}&recruiter=${pickerOwnerId}`
+                            : `/my-funnels?v=${v.id}`}
                           className={() =>
                             clsx(
                               "hf-hr-subnav-link",
