@@ -1349,6 +1349,8 @@
 }
 
 .hf-vacancy-modal-main {
+  min-width: 0; /* grid-item: разрешаем колонке сжиматься уже контента */
+  overflow-wrap: anywhere; /* длинные слова/URL в описании переносятся, а не распирают */
   padding: var(--hf-vacancy-modal-y) var(--hf-vacancy-modal-x) var(--hf-vacancy-modal-body-bottom);
   row-gap: var(--hf-space-l);
 }

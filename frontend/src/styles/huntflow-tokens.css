@@ -793,7 +793,10 @@
   --hf-vacancy-modal-footer-h: 74px;
   --hf-vacancy-modal-x: 24px;
   --hf-vacancy-modal-y: 24px;
-  --hf-vacancy-modal-main-col: 1fr;
+  /* minmax(0, 1fr): БЕЗ этого у 1fr-колонки min-width:auto, и длинный текст/
+     ссылка в описании распирает её шире трека — правая колонка (валюта) и часть
+     текста уезжают за край модалки. minmax(0,…) зажимает колонку по контейнеру. */
+  --hf-vacancy-modal-main-col: minmax(0, 1fr);
   --hf-vacancy-modal-side-col: 275.33px;
   --hf-vacancy-modal-body-bottom: 36px;
   --hf-vacancy-field-h: 40px;
