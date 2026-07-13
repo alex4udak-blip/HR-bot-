@@ -876,27 +876,47 @@ async def assign_vacancy(
         vacancy.assigned_to_all = False
         vacancy.assigned_to = list(dict.fromkeys(data.user_ids))  # unique, preserve order
 
-    # НЕ переводим заявку в open при назначении. Назначенная заявка остаётся
-    # ЗАЯВКОЙ для конкретного рекрутёра (pending_review + assigned_to) и висит у
-    # него в «Заявки». Рабочей воронкой (open) она становится ТОЛЬКО когда сам
-    # рекрутёр нажмёт «Взять в работу» (создаётся клон open под ним). Иначе
-    # заявка сразу падала в «выполнение» под создателем — «создал и сам же взял».
-
-    # Синхронизируем accepted_by с новым назначением: убираем из «ведущих» тех,
-    # кого переназначением сняли (их больше нет в assigned_to). Без этого «Рекрутер:»
-    # на карточке (getAcceptorIds = accepted_by) залипал старыми принявшими — «стоят
-    # два рекрутёра, хотя на них вакансии быть не должно». assigned_to_all — все
-    # назначены, никого не убираем. Инвариант accepted_by ⊆ assigned_to (take_vacancy
-    # добавляет в оба, decline/leave снимают из обоих; дыра была только тут).
+    # ЗАЯВКА vs ВОРОНКА (2026-07-13, по уточнению юзера — это РАЗНОЕ):
+    #   • ЗАЯВКА (pending_review/draft) — ещё не в работе. Назначение = РАЗДАЧА:
+    #     рекрутёр видит её в «Заявки», статус НЕ меняем, ведущим НЕ делаем —
+    #     он сам жмёт «Взять в работу» (take_vacancy → open + accepted_by).
+    #   • ВОРОНКА (open) — уже рабочий пайплайн. Тут «назначил = сразу ведёт»:
+    #     назначенный сразу попадает в accepted_by (карточка «Рекрутер: …» +
+    #     раздел «Мои вакансии»), без отдельного «Взять в работу».
     if not vacancy.assigned_to_all:
         extra = dict(vacancy.extra_data or {})
+        assigned_list = list(vacancy.assigned_to or [])
+        assigned_set = set(assigned_list)
         accepted = list(extra.get("accepted_by") or [])
-        if accepted:
-            assigned_set = set(vacancy.assigned_to or [])
-            pruned = [u for u in accepted if u in assigned_set]
-            if pruned != accepted:
-                extra["accepted_by"] = pruned
-                vacancy.extra_data = extra
+        changed = False
+
+        if vacancy.status == VacancyStatus.open:
+            # Активная воронка: accepted_by == assigned_to (добавляем новых
+            # назначенных в «ведущие», убираем снятых переназначением).
+            desired = assigned_list
+        else:
+            # Заявка: ведущим не делаем. Лишь поддерживаем инвариант
+            # accepted_by ⊆ assigned_to (если кого-то сняли — убираем).
+            desired = [u for u in accepted if u in assigned_set]
+        if desired != accepted:
+            extra["accepted_by"] = desired
+            changed = True
+
+        # dismissed_by: снимаем метку «вышел/снят» с назначенных — иначе
+        # isVacancyParticipant отсёк бы их (первым делом смотрит dismissed_by),
+        # и повторно добавленный рекрутёр остался бы невидимым (и в «Заявки»,
+        # и в воронке). Применяем в обоих случаях.
+        dismissed = list(extra.get("dismissed_by") or [])
+        if dismissed:
+            un_dismissed = [u for u in dismissed if u not in assigned_set]
+            if un_dismissed != dismissed:
+                extra["dismissed_by"] = un_dismissed
+                changed = True
+
+        if changed:
+            vacancy.extra_data = extra
+    # Статус НЕ трогаем: заявка остаётся заявкой (pending_review) до «Взять в
+    # работу». Воронкой (open) её делает только take_vacancy.
 
     await db.commit()
     await db.refresh(vacancy)

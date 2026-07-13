@@ -177,3 +177,80 @@ async def test_reassign_all_keeps_accepted_by(
     assert r.status_code == 200, r.text
     # all=True → accepted_by не трогаем
     assert (r.json().get("extra_data") or {}).get("accepted_by") == [second_user.id]
+
+
+@pytest.mark.asyncio
+async def test_assign_to_open_funnel_makes_lead(
+    client, db_session, organization, org_owner, second_user, org_member
+):
+    # ВОРОНКА (open): «назначил = сразу ведёт» — назначенный сразу в accepted_by
+    # (карточка «Рекрутер: …» + «Мои вакансии»), без «Взять в работу».
+    v = Vacancy(
+        org_id=organization.id, title="Воронка", status=VacancyStatus.open,
+        created_by=org_owner.id, assigned_to=[],
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v); await db_session.commit(); await db_session.refresh(v)
+    vid = v.id
+
+    r = await client.post(
+        f"/api/vacancies/{vid}/assign", headers=_h(org_owner),
+        json={"user_ids": [second_user.id], "all": False},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert (body.get("extra_data") or {}).get("accepted_by") == [second_user.id]
+    assert body["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_assign_to_request_stays_request(
+    client, db_session, organization, org_owner, second_user, org_member
+):
+    # ЗАЯВКА (pending_review): назначение = РАЗДАЧА. Статус НЕ меняется, рекрутёр
+    # НЕ становится ведущим (accepted_by пуст) — он сам жмёт «Взять в работу».
+    # Но он назначен (в assigned_to) → видит заявку в «Заявки».
+    v = Vacancy(
+        org_id=organization.id, title="Заявка", status=VacancyStatus.pending_review,
+        created_by=org_owner.id, assigned_to=[],
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v); await db_session.commit(); await db_session.refresh(v)
+    vid = v.id
+
+    r = await client.post(
+        f"/api/vacancies/{vid}/assign", headers=_h(org_owner),
+        json={"user_ids": [second_user.id], "all": False},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "pending_review"  # осталась заявкой
+    assert (body.get("extra_data") or {}).get("accepted_by") in (None, [])  # не ведущий
+    assert second_user.id in (body.get("assigned_to") or [])  # но назначен
+
+
+@pytest.mark.asyncio
+async def test_reassign_undismisses_added_recruiter(
+    client, db_session, organization, org_owner, second_user, org_member
+):
+    # second_user был снят/вышел (в dismissed_by). Повторно назначаем его →
+    # dismissed_by очищается, иначе он остаётся невидимым (isVacancyParticipant).
+    v = Vacancy(
+        org_id=organization.id, title="Заявка", status=VacancyStatus.open,
+        created_by=org_owner.id, assigned_to=[],
+        extra_data={"dismissed_by": [second_user.id, 999999]},
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v); await db_session.commit(); await db_session.refresh(v)
+    vid = v.id
+
+    r = await client.post(
+        f"/api/vacancies/{vid}/assign", headers=_h(org_owner),
+        json={"user_ids": [second_user.id], "all": False},
+    )
+    assert r.status_code == 200, r.text
+    extra = r.json().get("extra_data") or {}
+    # назначенный снят с dismissed_by, чужой (999999) остаётся
+    assert second_user.id not in (extra.get("dismissed_by") or [])
+    assert 999999 in (extra.get("dismissed_by") or [])
+    assert second_user.id in (r.json().get("assigned_to") or [])
