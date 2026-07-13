@@ -882,6 +882,22 @@ async def assign_vacancy(
     # рекрутёр нажмёт «Взять в работу» (создаётся клон open под ним). Иначе
     # заявка сразу падала в «выполнение» под создателем — «создал и сам же взял».
 
+    # Синхронизируем accepted_by с новым назначением: убираем из «ведущих» тех,
+    # кого переназначением сняли (их больше нет в assigned_to). Без этого «Рекрутер:»
+    # на карточке (getAcceptorIds = accepted_by) залипал старыми принявшими — «стоят
+    # два рекрутёра, хотя на них вакансии быть не должно». assigned_to_all — все
+    # назначены, никого не убираем. Инвариант accepted_by ⊆ assigned_to (take_vacancy
+    # добавляет в оба, decline/leave снимают из обоих; дыра была только тут).
+    if not vacancy.assigned_to_all:
+        extra = dict(vacancy.extra_data or {})
+        accepted = list(extra.get("accepted_by") or [])
+        if accepted:
+            assigned_set = set(vacancy.assigned_to or [])
+            pruned = [u for u in accepted if u in assigned_set]
+            if pruned != accepted:
+                extra["accepted_by"] = pruned
+                vacancy.extra_data = extra
+
     await db.commit()
     await db.refresh(vacancy)
     logger.info(f"Vacancy {vacancy_id} assigned: all={vacancy.assigned_to_all}, ids={vacancy.assigned_to}")

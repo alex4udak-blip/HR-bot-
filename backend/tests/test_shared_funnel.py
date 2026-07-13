@@ -129,3 +129,51 @@ async def test_legacy_clone_close_still_dismisses_on_original(
     await db_session.refresh(original)
     assert second_user.id not in (original.assigned_to or [])
     assert second_user.id in ((original.extra_data or {}).get("dismissed_by") or [])
+
+
+@pytest.mark.asyncio
+async def test_reassign_prunes_accepted_by(
+    client, db_session, organization, org_owner, second_user, org_member
+):
+    # accepted_by=[second_user, 999999], переназначаем только на second_user →
+    # 999999 (сняли с назначения) выпадает из accepted_by. Фейковый id для
+    # «снимаемого» — assign валидирует только user_ids, не accepted_by.
+    # org_member в сигнатуре ради членства user 2 в орге (иначе assign даёт 400).
+    OTHER = 999999
+    v = Vacancy(
+        org_id=organization.id, title="Заявка", status=VacancyStatus.open,
+        created_by=org_owner.id, assigned_to=[second_user.id, OTHER],
+        extra_data={"accepted_by": [second_user.id, OTHER]},
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v); await db_session.commit(); await db_session.refresh(v)
+    vid = v.id
+
+    r = await client.post(
+        f"/api/vacancies/{vid}/assign", headers=_h(org_owner),
+        json={"user_ids": [second_user.id], "all": False},
+    )
+    assert r.status_code == 200, r.text
+    assert (r.json().get("extra_data") or {}).get("accepted_by") == [second_user.id]
+
+
+@pytest.mark.asyncio
+async def test_reassign_all_keeps_accepted_by(
+    client, db_session, organization, org_owner, second_user
+):
+    v = Vacancy(
+        org_id=organization.id, title="Заявка", status=VacancyStatus.open,
+        created_by=org_owner.id, assigned_to=[second_user.id],
+        extra_data={"accepted_by": [second_user.id]},
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v); await db_session.commit(); await db_session.refresh(v)
+    vid = v.id
+
+    r = await client.post(
+        f"/api/vacancies/{vid}/assign", headers=_h(org_owner),
+        json={"user_ids": [], "all": True},
+    )
+    assert r.status_code == 200, r.text
+    # all=True → accepted_by не трогаем
+    assert (r.json().get("extra_data") or {}).get("accepted_by") == [second_user.id]
