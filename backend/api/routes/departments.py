@@ -936,28 +936,25 @@ async def quick_add_member(
         # Существующий аккаунт без TG — мягко проставим (не перетираем уже заполненный)
         user.telegram_username = tg_handle
 
-        # Add to organization
-        org_member = OrgMember(
+    # Гарантируем членство в организации — идемпотентно, и для НОВЫХ, и для
+    # существующих пользователей. Раньше добавление OrgMember по ошибке было
+    # вложено в ветку `elif tg_handle`, из-за чего:
+    #   * новый участник создавался БЕЗ org-membership → его не видно в команде,
+    #     а его собственные org-scoped запросы (/projects и т.п.) падали с 400;
+    #   * существующему юзеру с проставляемым TG OrgMember добавлялся без проверки
+    #     дубля → IntegrityError на uq_org_member_user_org.
+    result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.org_id == org.id,
+            OrgMember.user_id == user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        db.add(OrgMember(
             org_id=org.id,
             user_id=user.id,
             role=OrgRole.member,
-        )
-        db.add(org_member)
-    else:
-        # Check if already in org
-        result = await db.execute(
-            select(OrgMember).where(
-                OrgMember.org_id == org.id,
-                OrgMember.user_id == user.id
-            )
-        )
-        if not result.scalar_one_or_none():
-            org_member = OrgMember(
-                org_id=org.id,
-                user_id=user.id,
-                role=OrgRole.member,
-            )
-            db.add(org_member)
+        ))
 
     # Check if already a department member
     result = await db.execute(
