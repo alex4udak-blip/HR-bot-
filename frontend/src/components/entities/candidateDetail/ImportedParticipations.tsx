@@ -46,6 +46,19 @@ function linkify(text: string): ReactNode {
 // Показываем вложения кликабельными ссылками, а не сырым JSON-текстом.
 function renderAnswer(answer: string): ReactNode {
   const t = (answer || "").trim();
+  // ClickUp «Местонахождение» = geo-JSON {location, place_id, formatted_address} —
+  // показываем читаемый адрес, а не сырой JSON.
+  if (t.startsWith("{") && t.includes("formatted_address")) {
+    try {
+      const obj = JSON.parse(t) as Record<string, unknown>;
+      if (typeof obj.formatted_address === "string" && obj.formatted_address.trim()) {
+        return obj.formatted_address;
+      }
+    } catch {
+      /* не JSON — покажем как текст ниже */
+    }
+  }
+  // ClickUp «вложение» = JSON-массив [{title,url,mimetype,...}].
   if (
     t.startsWith("[") &&
     (t.includes("clickup-attachments") || t.includes('"mimetype"') || t.includes('"url"'))

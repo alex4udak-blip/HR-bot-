@@ -2836,8 +2836,6 @@ export default function RecruiterFunnelsPage() {
                                       notes={c.notes}
                                       events={c.events}
                                       addedAt={c.addedAt}
-                                      recruiter={c.recruiter}
-                                      anketa={c.anketa}
                                       /* Архивная (закрытая) вакансия — карточка визуально
                                          read-only, как merged: не должна выглядеть
                                          активной, если менять всё равно нельзя. */
