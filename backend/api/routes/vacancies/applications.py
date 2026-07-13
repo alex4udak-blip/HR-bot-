@@ -12,7 +12,7 @@ from .common import (
     Entity, EntityType, User, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
     check_vacancy_access, can_access_vacancy, can_manage_applications,
-    is_org_admin_or_owner
+    is_org_admin_or_owner, sees_all_candidates,
 )
 from ...services.auth import get_user_org
 
@@ -356,6 +356,16 @@ async def update_application(
         or await can_access_vacancy(vacancy, current_user, org, db)
     ):
         raise HTTPException(status_code=403, detail="Недостаточно прав для изменения этой вакансии")
+
+    # Приватность воронки: не-админ меняет ТОЛЬКО своих кандидатов (кого сам
+    # добавил). Чужих он не видит на доске — защита в глубину (как в bulk-move).
+    if not await sees_all_candidates(current_user, org, db):
+        # Свои + legacy без автора (created_by=NULL) менять можно, чужие — нет.
+        if application.created_by is not None and application.created_by != current_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="Можно изменять только своих кандидатов",
+            )
 
     # Save old values for notifications
     old_stage = application.stage

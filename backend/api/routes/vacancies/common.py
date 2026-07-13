@@ -80,6 +80,22 @@ async def has_full_database_access(user: User, org: Organization, db: AsyncSessi
     return await auth_has_full_database_access(user, org.id, db)
 
 
+async def sees_all_candidates(user: User, org: Organization, db: AsyncSession) -> bool:
+    """Видит ли пользователь ВСЕ отклики в воронке (не только свои).
+
+    Модель приватности «общая воронка, но каждый видит своих»: обычный рекрутёр
+    (member без полного доступа) видит в kanban ТОЛЬКО кандидатов, которых сам
+    добавил (VacancyApplication.created_by == self). Полный обзор воронки — у
+    админа/владельца орга, суперадмина и member с полным доступом к базе.
+    Ограничение действует ТОЛЬКО в воронке вакансии; глобальная база кандидатов
+    и поиск остаются общими.
+    """
+    return (
+        await is_org_admin_or_owner(user, org, db)
+        or await has_full_database_access(user, org, db)
+    )
+
+
 async def get_user_department_ids(user_id: int, org_id: int, db: AsyncSession) -> List[int]:
     """Get all department IDs user belongs to in the organization."""
     result = await db.execute(

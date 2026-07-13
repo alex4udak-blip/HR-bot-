@@ -624,20 +624,23 @@ export default function KanbanBoard({ vacancy }: KanbanBoardProps) {
               className="overflow-hidden"
             >
               <div className="px-3 sm:px-4 pb-3 flex flex-wrap items-end gap-3">
-                {/* Recruiter filter */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-[color:var(--hf-white-alpha-40)]">Рекрутер</label>
-                  <select
-                    value={filterRecruiter ?? ''}
-                    onChange={(e) => setFilterRecruiter(e.target.value ? Number(e.target.value) : undefined)}
-                    className="bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-white-alpha-10)] rounded-lg px-3 py-1.5 text-sm text-[color:var(--hf-white-alpha-80)] min-w-[160px] focus:border-[color:var(--hf-status-blue-badge)] focus:outline-none"
-                  >
-                    <option value="">Все</option>
-                    {recruiters.map((r) => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Recruiter filter — только для админов/лида. Обычный рекрутёр
+                    и так видит только своих кандидатов, пикер ему бесполезен. */}
+                {isAdmin && (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-[color:var(--hf-white-alpha-40)]">Рекрутер</label>
+                    <select
+                      value={filterRecruiter ?? ''}
+                      onChange={(e) => setFilterRecruiter(e.target.value ? Number(e.target.value) : undefined)}
+                      className="bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-white-alpha-10)] rounded-lg px-3 py-1.5 text-sm text-[color:var(--hf-white-alpha-80)] min-w-[160px] focus:border-[color:var(--hf-status-blue-badge)] focus:outline-none"
+                    >
+                      <option value="">Все</option>
+                      {recruiters.map((r) => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Date from */}
                 <div className="flex flex-col gap-1">

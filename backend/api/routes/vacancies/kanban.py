@@ -2,7 +2,7 @@
 Kanban board endpoints for vacancy management.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime, date
@@ -11,7 +11,8 @@ from .common import (
     logger, get_db, Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
     Entity, User, STAGE_SYNC_MAP,
     ApplicationResponse, KanbanColumn, KanbanBoard, BulkStageUpdate,
-    check_vacancy_access, can_access_vacancy, is_org_admin_or_owner
+    check_vacancy_access, can_access_vacancy, is_org_admin_or_owner,
+    sees_all_candidates,
 )
 from ...services.auth import get_user_org
 
@@ -111,9 +112,21 @@ async def get_kanban_board(
     else:
         stage_config = default_stage_config
 
+    # Приватность воронки: обычный рекрутёр видит ТОЛЬКО своих кандидатов
+    # (created_by == self). Админ/овнер/суперадмин/полный доступ видят всех и
+    # могут вручную фильтровать по рекрутёру. Клиентский created_by от не-админа
+    # игнорируем — сервер жёстко ограничивает своими откликами.
+    see_all = await sees_all_candidates(current_user, org, db)
+
     # Build base filter conditions
     base_filters = [VacancyApplication.vacancy_id == vacancy_id]
-    if created_by is not None:
+    if not see_all:
+        # Свои + legacy без автора (created_by=NULL) — старые импорты видны всем.
+        base_filters.append(or_(
+            VacancyApplication.created_by == current_user.id,
+            VacancyApplication.created_by.is_(None),
+        ))
+    elif created_by is not None:
         base_filters.append(VacancyApplication.created_by == created_by)
     if applied_after is not None:
         base_filters.append(VacancyApplication.applied_at >= datetime.combine(applied_after, datetime.min.time()))
@@ -226,6 +239,7 @@ async def get_kanban_column(
     stage: ApplicationStage,
     skip: int = Query(0, ge=0, description="Number of items to skip"),
     limit: int = Query(50, ge=1, le=200, description="Max candidates to return"),
+    created_by: Optional[int] = Query(None, description="Filter by recruiter (user who created the application)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
@@ -260,23 +274,32 @@ async def get_kanban_column(
         ApplicationStage.withdrawn: "Otozvan",
     }
 
+    # Приватность воронки (как в get_kanban_board): обычный рекрутёр видит в
+    # колонке только своих кандидатов; иначе бесконечный скролл стал бы дырой.
+    see_all = await sees_all_candidates(current_user, org, db)
+    col_filters = [
+        VacancyApplication.vacancy_id == vacancy_id,
+        VacancyApplication.stage == stage,
+    ]
+    if not see_all:
+        col_filters.append(or_(
+            VacancyApplication.created_by == current_user.id,
+            VacancyApplication.created_by.is_(None),
+        ))
+    elif created_by is not None:
+        col_filters.append(VacancyApplication.created_by == created_by)
+
     # Get total count for this stage
     total_count_result = await db.execute(
         select(func.count(VacancyApplication.id))
-        .where(
-            VacancyApplication.vacancy_id == vacancy_id,
-            VacancyApplication.stage == stage
-        )
+        .where(*col_filters)
     )
     total_count = total_count_result.scalar() or 0
 
     # Get applications with pagination
     apps_result = await db.execute(
         select(VacancyApplication)
-        .where(
-            VacancyApplication.vacancy_id == vacancy_id,
-            VacancyApplication.stage == stage
-        )
+        .where(*col_filters)
         .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at.desc())
         .offset(skip)
         .limit(limit)
@@ -403,6 +426,17 @@ async def bulk_move_applications(
         or await can_access_vacancy(vacancy, current_user, org, db)
     ):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
+
+    # Приватность воронки: не-админ двигает ТОЛЬКО своих кандидатов (тех, кого
+    # сам добавил). Чужих он даже не видит на доске — это защита в глубину.
+    if not await sees_all_candidates(current_user, org, db):
+        for app in applications:
+            # Свои + legacy без автора (created_by=NULL) двигать можно, чужие — нет.
+            if app.created_by is not None and app.created_by != current_user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Можно перемещать только своих кандидатов",
+                )
 
     # Verify all applications belong to the same vacancy
     for app in applications:
