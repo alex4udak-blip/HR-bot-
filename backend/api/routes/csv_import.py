@@ -430,12 +430,16 @@ async def import_execute(
             select(Entity).where(Entity.org_id == org.id, Entity.is_archived.is_(True))
         )
         key_index: Dict[str, Entity] = {}
+        task_index: Dict[str, Entity] = {}
         for ent in existing_res.scalars().all():
             ident = _cu_keys(ent.email or "", ent.phone or "", None)
             for ph in (ent.phones or []):
                 ident |= _cu_keys("", ph, None)
             for k in ident:
                 key_index.setdefault(k, ent)
+            for tid in ((ent.extra_data or {}).get("clickup_task_ids") or []):
+                if tid:
+                    task_index.setdefault(tid, ent)
 
         for group in _cu_group(all_rows, _key_fn):
             try:
@@ -446,7 +450,17 @@ async def import_execute(
                 group_keys: set = set()
                 for r in group:
                     group_keys |= _key_fn(r)
+                group_task_ids = {
+                    (r.get("task_id") or "").strip()
+                    for r in group
+                    if (r.get("task_id") or "").strip()
+                }
+                # Матч с существующим: сначала по сильному ключу, затем по task_id
+                # (последнее ловит людей без телефона/почты — только hh или только ФИО,
+                # которые иначе дублировались бы при каждом переимпорте).
                 match = next((key_index[k] for k in group_keys if k in key_index), None)
+                if match is None:
+                    match = next((task_index[t] for t in group_task_ids if t in task_index), None)
                 if match is not None:
                     # Идемпотентно до-кладываем участия в существующую карточку.
                     ed = dict(match.extra_data or {})
@@ -454,9 +468,14 @@ async def import_execute(
                         ed.get("participations", []),
                         payload["extra_data"]["participations"],
                     )
+                    ed["clickup_task_ids"] = sorted(
+                        set(ed.get("clickup_task_ids") or []) | group_task_ids
+                    )
                     match.extra_data = ed
                     for k in group_keys:
                         key_index.setdefault(k, match)
+                    for t in group_task_ids:
+                        task_index.setdefault(t, match)
                     skipped += 1
                     continue
                 entity = Entity(
@@ -476,6 +495,8 @@ async def import_execute(
                 db.add(entity)
                 for k in group_keys:
                     key_index[k] = entity
+                for t in group_task_ids:
+                    task_index[t] = entity
                 imported += 1
             except Exception as exc:  # noqa: BLE001
                 errors.append(ImportErrorDetail(row=0, reason=str(exc)))

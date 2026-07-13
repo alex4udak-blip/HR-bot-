@@ -138,6 +138,12 @@ def assemble_person(group: List[Dict[str, Any]], cf_headers: List[str]) -> Dict[
            for r in group if (r.get("telegram") or "").strip()}
     participations = _dedup_twin_participations([build_participation(r, cf_headers) for r in group])
     primary = participations[0] if participations else {}
+    # ВСЕ ClickUp task_id человека — надёжный якорь идемпотентности при переимпорте.
+    # Часть людей без телефона/почты (только hh-ссылка или только ФИО) — их иначе
+    # не узнать при повторном импорте, и они дублировались бы каждый раз.
+    task_ids = sorted(
+        {(r.get("task_id") or "").strip() for r in group if (r.get("task_id") or "").strip()}
+    )
     return {
         "name": _longest(names),
         "email": (sorted(emails)[0] if emails else None),
@@ -145,7 +151,11 @@ def assemble_person(group: List[Dict[str, Any]], cf_headers: List[str]) -> Dict[
         "phones": sorted(phones),
         "telegram_usernames": sorted(tgs),
         "position": primary.get("vacancy_title") or None,
-        "extra_data": {"participations": participations, "import_source": "clickup"},
+        "extra_data": {
+            "participations": participations,
+            "import_source": "clickup",
+            "clickup_task_ids": task_ids,
+        },
     }
 
 

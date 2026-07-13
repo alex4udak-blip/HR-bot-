@@ -118,6 +118,18 @@ def test_assemble_person_dedups_twin_passes():
     assert person["name"] == "Панасик Т"
 
 
+def test_assemble_person_collects_all_task_ids():
+    # Все task_id человека сохраняются — якорь идемпотентности при переимпорте.
+    group = [
+        {"name": "X", "phone": "+79000000000", "funnel_list": "A",
+         "funnel_folder": "Sandbox - М", "task_id": "T2"},
+        {"name": "X", "phone": "+79000000000", "funnel_list": "B",
+         "funnel_folder": "Sandbox - М", "task_id": "T1"},
+    ]
+    person = assemble_person(group, cf_headers=[])
+    assert person["extra_data"]["clickup_task_ids"] == ["T1", "T2"]
+
+
 # ── Task 4/5: hh-экстрактор + идемпотентное слияние участий ──
 
 def test_extract_hh_from_row():
