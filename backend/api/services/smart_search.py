@@ -482,11 +482,10 @@ Respond ONLY with valid JSON, no explanations."""
         # Full-text search on remaining text
         if parsed.text_query:
             text_lower = parsed.text_query.lower()
-            from .search_index import name_search_conditions
+            from .search_index import name_search_conditions, contact_search_conditions
             text_conditions = [
                 *name_search_conditions(text_lower),  # умный поиск по имени (транслит+порядок+опечатки)
-                func.lower(Entity.email).contains(text_lower),
-                func.lower(Entity.phone).contains(text_lower),
+                *contact_search_conditions(text_lower),  # почта/телефон(норм.)/telegram + доп-списки
                 func.lower(Entity.company).contains(text_lower),
                 func.lower(Entity.position).contains(text_lower),
                 func.lower(cast(Entity.extra_data, String)).contains(text_lower),

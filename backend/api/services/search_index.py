@@ -15,7 +15,7 @@
 """
 import re
 from typing import Optional, List
-from sqlalchemy import event, func, or_, and_, text
+from sqlalchemy import cast, event, func, or_, and_, text, String
 from sqlalchemy.sql.elements import ColumnElement
 
 from ..models.database import Entity
@@ -209,6 +209,42 @@ def name_search_conditions(q: str) -> List:
         conds.append(snf)
     for t in _translit_ilike_patterns(q):
         conds.append(Entity.name.ilike(t))
+    return conds
+
+
+def _phone_digits_sql(col):
+    """Портабельно (PG+SQLite) выкидывает из телефона разделители, чтобы
+    «9991234567» нашёл «+7 (999) 123-45-67». Только цифры сравниваем по цифрам."""
+    expr = col
+    for ch in (" ", " ", "-", "(", ")", "+", ".", "/"):
+        expr = func.replace(expr, ch, "")
+    return expr
+
+
+def contact_search_conditions(q: str) -> List:
+    """OR-условия поиска кандидата по КОНТАКТАМ для ЛЮБОГО окна поиска: почта
+    (email + emails[]), телефон (phone + phones[], с нормализацией по цифрам:
+    «9991234567» ↔ «+7 (999) 123-45-67»), telegram (telegram_usernames[], «@»
+    необязателен). Ставить рядом с именем:
+      where(or_(*name_search_conditions(q), *contact_search_conditions(q)))."""
+    q = (q or "").strip()
+    if not q:
+        return []
+    like = f"%{q}%"
+    conds: List = [
+        Entity.email.ilike(like),
+        cast(Entity.emails, String).ilike(like),
+        Entity.phone.ilike(like),
+        cast(Entity.phones, String).ilike(like),
+    ]
+    # Telegram хранится без «@» и в нижнем регистре — «@» из запроса убираем.
+    tg = q.lstrip("@")
+    if tg:
+        conds.append(cast(Entity.telegram_usernames, String).ilike(f"%{tg}%"))
+    # Телефон по одним цифрам — форматы («+7 (999)…» vs «999…») не совпадают.
+    digits = re.sub(r"\D", "", q)
+    if len(digits) >= 4:
+        conds.append(_phone_digits_sql(Entity.phone).ilike(f"%{digits}%"))
     return conds
 
 

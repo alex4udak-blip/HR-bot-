@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import * as workspacesApi from '@/services/api/workspaces';
-import { smartNameMatch } from '@/utils/translit';
+import { smartNameMatch, contactMatch } from '@/utils/translit';
 
 // --------------- constants ---------------
 
@@ -190,13 +190,10 @@ export default function RecruiterWorkspacePage() {
 
   const filteredCandidates = useMemo(() => {
     if (!searchQuery.trim()) return candidates;
-    const q = searchQuery.toLowerCase();
     return candidates.filter(
       (c) =>
-        smartNameMatch(c.name || '', searchQuery) ||  // транслит + порядок слов + опечатки + раскладка
-        c.email?.toLowerCase().includes(q) ||
-        c.phone?.includes(q) ||
-        c.telegram?.toLowerCase().includes(q),
+        smartNameMatch(c.name || '', searchQuery) ||  // транслит + порядок + опечатки + раскладка
+        contactMatch(searchQuery, { email: c.email, phone: c.phone, telegram: c.telegram }),
     );
   }, [candidates, searchQuery]);
 

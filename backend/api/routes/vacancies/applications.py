@@ -127,14 +127,13 @@ async def list_applications(
     # Умный поиск кандидата в воронке по имени (транслит + любой порядок слов +
     # опечатки через pg_trgm; при отсутствии pg_trgm — транслит-ILIKE).
     if search and search.strip():
-        from ...services.search_index import name_search_conditions, ensure_pg_trgm_checked
+        from ...services.search_index import name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions
         await ensure_pg_trgm_checked(db)
         _term = f"%{search.strip()}%"
         query = query.join(Entity, Entity.id == VacancyApplication.entity_id).where(
             or_(
                 *name_search_conditions(search),
-                Entity.email.ilike(_term),
-                Entity.phone.ilike(_term),
+                *contact_search_conditions(search),  # почта/телефон(норм.)/telegram + доп-списки
             )
         )
 

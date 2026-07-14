@@ -170,3 +170,25 @@ export function smartNameMatch(haystack: string, query: string): boolean {
   if (sw && sw !== raw) queries.add(sw);
   return [...queries].some((q) => matchQueryTokens(hay, q));
 }
+
+/**
+ * Матч кандидата по КОНТАКТАМ для клиентского поиска (воронка/рабочее
+ * пространство): почта, телефон (в т.ч. по одним цифрам «9991234567» ↔
+ * «+7 (999) 123-45-67»), telegram («@» необязателен). Substring, регистр не важен.
+ * Аналог серверного contact_search_conditions, но по уже загруженному списку.
+ */
+export function contactMatch(
+  query: string,
+  fields: { email?: string | null; phone?: string | null; telegram?: string | null },
+): boolean {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return false;
+  const { email, phone, telegram } = fields;
+  if (email && email.toLowerCase().includes(q)) return true;
+  if (phone && phone.toLowerCase().includes(q)) return true;
+  const qDigits = q.replace(/\D/g, '');
+  if (qDigits.length >= 4 && phone && phone.replace(/\D/g, '').includes(qDigits)) return true;
+  const qTg = q.replace(/^@+/, ''); // telegram хранится/показывается без «@»
+  if (qTg && telegram && telegram.toLowerCase().includes(qTg)) return true;
+  return false;
+}

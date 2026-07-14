@@ -44,7 +44,7 @@ import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } fro
 import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import { getVacancies } from '@/services/api/vacancies';
-import { smartNameMatch } from '@/utils/translit';
+import { smartNameMatch, contactMatch } from '@/utils/translit';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
@@ -625,12 +625,14 @@ export default function RecruiterFunnelsPage() {
   // email/телефону — обычная подстрока.
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return candidates;
-    const q = candidateSearch.toLowerCase();
     return candidates.filter(
       (c) =>
         smartNameMatch(c.entity_name || '', candidateSearch) ||
-        c.entity_email?.toLowerCase().includes(q) ||
-        c.entity_phone?.includes(q),
+        contactMatch(candidateSearch, {
+          email: c.entity_email,
+          phone: c.entity_phone,
+          telegram: c.entity_telegram,
+        }),
     );
   }, [candidates, candidateSearch]);
 
