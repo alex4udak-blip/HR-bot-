@@ -2,7 +2,7 @@
 
 Один реальный человек в ClickUp-выгрузке лежит в нескольких строках (разные
 вакансии/рекрутёры/анкеты). Эти функции группируют строки по человеку (по
-сильному ключу: hh-URL / email / телефон) и собирают из каждой строки
+сильному ключу: hh-URL / email / телефон / telegram) и собирают из каждой строки
 «прохождение». Без I/O и без БД — всё юнит-тестируется (tests/test_clickup_import.py).
 """
 import json
@@ -10,6 +10,11 @@ import re
 from datetime import date
 from typing import Optional, Set, List, Dict, Any
 from collections import defaultdict
+
+# Telegram как идентификатор: нормализация + денилист источников/ярлыков —
+# единый источник правды с дедупом (similarity), чтобы «hh_b2b»/«telegram» и т.п.
+# не слепляли разных людей.
+from .similarity import normalize_telegram, is_matchable_telegram
 
 
 def normalize_phone(value: str) -> str:
@@ -128,8 +133,15 @@ def distill_person_fields(group: List[Dict[str, Any]]) -> Dict[str, Any]:
     return out
 
 
-def row_strong_keys(email: str, phone: str, hh: Optional[str]) -> Set[str]:
-    """Сильные ключи строки (может быть несколько). Пусто → только ФИО (не склеиваем)."""
+def row_strong_keys(
+    email: str, phone: str, hh: Optional[str], telegram: Optional[str] = None
+) -> Set[str]:
+    """Сильные ключи строки (может быть несколько). Пусто → только ФИО (не склеиваем).
+
+    telegram — опциональный: добавляем `tg:<handle>` ТОЛЬКО для годного личного
+    хэндла (не из денилиста источников). Частотный гвард (один хэндл на много
+    РАЗНЫХ людей = мусор) применяет вызывающий — здесь его нет, т.к. он требует
+    статистики по всей выгрузке. Ловит людей без телефона/почты/hh (только tg)."""
     keys: Set[str] = set()
     e = (email or "").strip().lower()
     if e:
@@ -140,6 +152,10 @@ def row_strong_keys(email: str, phone: str, hh: Optional[str]) -> Set[str]:
     h = normalize_hh_url(hh or "")
     if h:
         keys.add(f"hh:{h}")
+    if telegram:
+        tg = normalize_telegram(telegram)
+        if tg and is_matchable_telegram(tg):
+            keys.add(f"tg:{tg}")
     return keys
 
 
@@ -255,6 +271,7 @@ def assemble_person(group: List[Dict[str, Any]], cf_headers: List[str]) -> Dict[
     return {
         "name": _longest(names),
         "email": (sorted(emails)[0] if emails else None),
+        "emails": sorted(emails),
         "phone": (sorted(phones)[0] if phones else None),
         "phones": sorted(phones),
         "telegram_usernames": sorted(tgs),
@@ -290,6 +307,19 @@ def extract_email_from_row(row: Dict[str, Any]) -> Optional[str]:
                 return m.group(0).lower()
     m = _EMAIL_RE.search(row.get("description", "") or "")
     return m.group(0).lower() if m else None
+
+
+_TG_COL_HINTS = ("telegram", "телеграм", "телеграмм", "tg")
+
+
+def extract_telegram_from_row(row: Dict[str, Any]) -> Optional[str]:
+    """Telegram из cf:-колонки с намёком на телеграм — независимо от того,
+    смапил ли пользователь эту колонку на поле «telegram». Нужно для группировки
+    по telegram у людей без телефона/почты/hh (иначе зависели бы от маппинга)."""
+    for col, val in row.items():
+        if any(h in col.lower() for h in _TG_COL_HINTS) and isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
 
 
 def merge_participations(

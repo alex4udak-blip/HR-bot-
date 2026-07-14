@@ -139,6 +139,12 @@ export interface KanbanCard {
   email?: string;
   phone?: string;
   telegram_username?: string;
+  // Полные списки контактов (после склейки дублей у человека их может быть
+  // несколько — разные телефоны/телеграмы/почты из разных записей). Заполняются
+  // там, где грузится полный Entity (архивная карточка, дедуп-баннер).
+  phones?: string[];
+  emails?: string[];
+  telegram_usernames?: string[];
   position?: string;
   source?: string;
   source_url?: string;

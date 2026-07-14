@@ -386,6 +386,7 @@ async def import_execute(
             assemble_person as _cu_assemble,
             extract_hh_from_row as _cu_hh,
             extract_email_from_row as _cu_email,
+            extract_telegram_from_row as _cu_tg,
             merge_participations as _cu_merge,
         )
         cf_headers = [h for h in headers if h.lower().startswith("cf:")]
@@ -398,14 +399,42 @@ async def import_execute(
             out["name"] = pick("name", r)
             out["email"] = pick("email", r) or (_cu_email(r) or "")
             out["phone"] = pick("phone", r)
-            out["telegram"] = pick("telegram", r)
+            # Telegram: маппинг ИЛИ фолбэк-экстрактор из cf:-колонки — группировка
+            # по телеграму не должна зависеть от того, смапил ли юзер колонку.
+            out["telegram"] = pick("telegram", r) or (_cu_tg(r) or "")
             return out
 
         all_rows = [_norm(r) for r in reader]
         total = len(all_rows)
 
+        # Частотный гвард telegram: один хэндл на МНОГО разных людей = мусорный
+        # тег-источник (не личный). Считаем РАЗНЫЕ имена на хэндл (не строки —
+        # один человек законно лежит в неск. строках с тем же tg). ≥ порога имён →
+        # не группируем по нему. Так @hier_sonne (одно имя, 3 строки) склеивается,
+        # а «telegram»/«hh_b2b» у сотен людей — нет.
+        from ..services.similarity import (
+            normalize_telegram as _tg_norm,
+            is_matchable_telegram as _tg_ok,
+            TG_COMMON_THRESHOLD as _TG_THRESH,
+        )
+        tg_name_freq: Dict[str, set] = {}
+        for r in all_rows:
+            k = _tg_norm(r.get("telegram", "") or "")
+            if k:
+                tg_name_freq.setdefault(k, set()).add((r.get("name", "") or "").strip().lower())
+
+        def _groupable_tg(r: Dict[str, str]) -> Optional[str]:
+            raw = r.get("telegram", "") or ""
+            k = _tg_norm(raw)
+            if k and _tg_ok(k) and len(tg_name_freq.get(k, ())) < _TG_THRESH:
+                return raw
+            return None
+
         def _key_fn(r: Dict[str, str]) -> set:
-            return _cu_keys(r.get("email", ""), r.get("phone", ""), _cu_hh(r))
+            return _cu_keys(
+                r.get("email", ""), r.get("phone", ""), _cu_hh(r),
+                telegram=_groupable_tg(r),
+            )
 
         # Индекс существующего архива: сильный-ключ → Entity (для идемпотентности).
         existing_res = await db.execute(
@@ -415,6 +444,8 @@ async def import_execute(
         task_index: Dict[str, Entity] = {}
         for ent in existing_res.scalars().all():
             ident = _cu_keys(ent.email or "", ent.phone or "", None)
+            for _tg in (ent.telegram_usernames or []):
+                ident |= _cu_keys("", "", None, telegram=str(_tg))
             for ph in (ent.phones or []):
                 ident |= _cu_keys("", ph, None)
             for k in ident:
@@ -449,6 +480,7 @@ async def import_execute(
                     # не рвутся), не наслаивая старьё. Активные (не архив) не трогаем.
                     match.name = payload["name"] or match.name
                     match.email = payload["email"]
+                    match.emails = payload["emails"]
                     match.phone = payload["phone"]
                     match.phones = payload["phones"]
                     match.position = payload["position"]
@@ -488,6 +520,7 @@ async def import_execute(
                     type=EntityType.candidate,
                     name=payload["name"],
                     email=payload["email"],
+                    emails=payload["emails"],
                     phone=payload["phone"],
                     phones=payload["phones"],
                     position=payload["position"],

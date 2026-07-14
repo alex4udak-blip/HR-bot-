@@ -837,6 +837,10 @@ class SimilarityService:
         all_emails = {normalized_email} | set(additional_emails)
         all_emails.discard("")
 
+        # Telegram сущности — сильный личный идентификатор (не слабее телефона).
+        all_telegrams = {normalize_telegram(t) for t in (entity.telegram_usernames or []) if t}
+        all_telegrams.discard("")
+
         # Загружаем всех кандидатов организации
         conditions = [
             Entity.org_id == org_id,
@@ -854,6 +858,17 @@ class SimilarityService:
             candidates = [c for c in all_candidates if c.id in accessible_ids]
         else:
             candidates = all_candidates
+
+        # Частота telegram-хэндлов по РАЗНЫМ ИМЕНАМ: один хэндл у многих разных
+        # людей = мусорный тег (не матчим по нему). Одно имя на неск. карточек —
+        # это тот же человек, матчим.
+        tg_name_freq: Dict[str, Set[str]] = {}
+        for _c in list(candidates) + [entity]:
+            _nm = (_c.name or "").strip().lower()
+            for _t in (_c.telegram_usernames or []):
+                _k = normalize_telegram(_t)
+                if _k:
+                    tg_name_freq.setdefault(_k, set()).add(_nm)
 
         for candidate in candidates:
             if candidate.id in seen_ids:
@@ -901,6 +916,21 @@ class SimilarityService:
                 match_reasons.append("Совпадение телефона")
                 common_phone = list(all_phones & candidate_phones)[0]
                 matched_fields['phone'] = (normalized_phone or list(all_phones)[0], common_phone)
+
+            # 3b. Проверка telegram (30 баллов) — сильный личный идентификатор.
+            # Раньше telegram не участвовал: два профиля с одним @хэндлом, но без
+            # общего телефона/почты, давали лишь +40 за имя (те самые «40%»).
+            candidate_telegrams = {normalize_telegram(t) for t in (candidate.telegram_usernames or []) if t}
+            candidate_telegrams.discard("")
+            tg_common = {
+                k for k in (all_telegrams & candidate_telegrams)
+                if is_matchable_telegram(k) and len(tg_name_freq.get(k, ())) < TG_COMMON_THRESHOLD
+            }
+            if tg_common:
+                confidence += 30
+                match_reasons.append("Совпадение Telegram")
+                _k = list(tg_common)[0]
+                matched_fields['telegram'] = ((entity.telegram_usernames or [_k])[0], _k)
 
             # 4. Проверка навыки + компания (20 баллов)
             if entity.company and candidate.company:
@@ -1242,6 +1272,21 @@ class SimilarityService:
         _target_mf = target_extra.get("merged_from") if isinstance(target_extra.get("merged_from"), list) else []
         _te["merged_from"] = list(_target_mf) + [_b_container] + list(_src_mf)
 
+        # Импортные прохождения (ClickUp-архив) ОБЪЕДИНЯЕМ в корень (а не только
+        # прячем в merged_from-контейнер) — иначе survivor показал бы лишь свои
+        # анкеты, а прохождения источника пропали бы с виду. Дедуп по
+        # (воронка+рекрутёр+статус). Так склейка разъехавшихся карточек одного
+        # человека даёт одну карточку со ВСЕМИ его анкетами.
+        _t_parts = _te.get("participations") if isinstance(_te.get("participations"), list) else []
+        _s_parts = _se.get("participations") if isinstance(_se.get("participations"), list) else []
+        if _s_parts or _t_parts:
+            from .clickup_import import merge_participations as _merge_parts
+            _te["participations"] = _merge_parts(_t_parts, _s_parts)
+        _t_tids = _te.get("clickup_task_ids") if isinstance(_te.get("clickup_task_ids"), list) else []
+        _s_tids = _se.get("clickup_task_ids") if isinstance(_se.get("clickup_task_ids"), list) else []
+        if _s_tids or _t_tids:
+            _te["clickup_task_ids"] = sorted(set(_t_tids) | set(_s_tids))
+
         _te.pop("hidden_duplicate_id", None)
         target_entity.extra_data = _te
 
@@ -1364,17 +1409,23 @@ async def find_duplicate_matches(
     q = q.order_by(Entity.id.desc())
     rows = (await db.execute(q)).all()
 
-    # Частота telegram по выборке: «общие»/мусорные хэндлы отсеиваем (иначе десятки
-    # разных людей слипаются по ярлыку источника «telegram»/«hh_b2b»).
-    tg_freq: dict = {}
+    # Годность telegram-хэндла — по РАЗНЫМ ИМЕНАМ, а не карточкам. Один человек,
+    # разъехавшийся на неск. карточек с одним @хэндлом → одно имя → матчим (иначе
+    # 3 карточки давали бы частоту 3 и хэндл отсекался). Мусорный ярлык источника
+    # («telegram», «hh_b2b») сидит у МНОГИХ РАЗНЫХ имён → не идентификатор.
+    tg_name_freq: dict = {}
     for r in rows:
+        _nm = (r[1] or "").strip().lower()
         for t in (r[4] or []):
             k = normalize_telegram(t)
             if k:
-                tg_freq[k] = tg_freq.get(k, 0) + 1
+                tg_name_freq.setdefault(k, set()).add(_nm)
     for k in tg_names:
-        tg_freq[k] = tg_freq.get(k, 0) + 1
-    tg_names = {t for t in tg_names if is_matchable_telegram(t, tg_freq)}
+        tg_name_freq.setdefault(k, set()).add((my_name or "").strip().lower())
+    tg_names = {
+        t for t in tg_names
+        if is_matchable_telegram(t) and len(tg_name_freq.get(t, ())) < TG_COMMON_THRESHOLD
+    }
 
     out: List[DupMatch] = []
     for r in rows:

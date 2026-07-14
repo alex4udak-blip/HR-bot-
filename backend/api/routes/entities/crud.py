@@ -1717,7 +1717,7 @@ async def find_archive_duplicates(
 
     from ...services.similarity import (
         normalize_email, normalize_phone, normalize_telegram, is_matchable_telegram,
-        normalize_source_url,
+        normalize_source_url, TG_COMMON_THRESHOLD,
     )
 
     q = select(
@@ -1728,14 +1728,17 @@ async def find_archive_duplicates(
         q = q.where(Entity.org_id == org.id)
     rows = (await db.execute(q)).all()
 
-    # Частота telegram-значений: мусорные ярлыки источника («telegram», «hh_b2b»)
-    # и прочие «общие» хэндлы НЕ матчим — иначе разные люди слипаются в одну группу.
-    tg_freq: dict = {}
+    # Годность telegram-хэндла: считаем РАЗНЫЕ ИМЕНА на хэндл, а не карточки.
+    # Иначе один человек, разъехавшийся на 3 карточки с одним @хэндлом, давал бы
+    # частоту 3 и НЕ матчился (ровно кейс, который мы и хотим склеить). Мусорный
+    # ярлык («telegram», «hh_b2b») сидит у МНОГИХ РАЗНЫХ имён → не матчим.
+    tg_name_freq: dict = {}
     for _r in rows:
+        _nm = (_r[1] or "").strip().lower()
         for t in (_r[4] or []):
             k = normalize_telegram(t)
             if k:
-                tg_freq[k] = tg_freq.get(k, 0) + 1
+                tg_name_freq.setdefault(k, set()).add(_nm)
 
     # Union-find: связываем профили, делящие хотя бы один идентификатор
     parent: dict = {}
@@ -1769,8 +1772,9 @@ async def find_archive_duplicates(
         if len(d) >= 10:
             keys.append("p:" + d[-10:])
         for t in (tg or []):
-            if is_matchable_telegram(t, tg_freq):
-                keys.append("t:" + normalize_telegram(t))
+            k = normalize_telegram(t)
+            if k and is_matchable_telegram(k) and len(tg_name_freq.get(k, ())) < TG_COMMON_THRESHOLD:
+                keys.append("t:" + k)
         # source_url резюме (hh) — стабильный ключ (без волатильных query hh)
         ex = extra if isinstance(extra, dict) else {}
         sk = normalize_source_url(ex.get("source_url") or ex.get("source_key") or "")

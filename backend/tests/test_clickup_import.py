@@ -45,6 +45,49 @@ def test_row_strong_keys():
     assert "hh:hh.ru/resume/abc" in keys
 
 
+def test_row_strong_keys_telegram():
+    # Годный личный хэндл → tg-ключ (ловит людей без телефона/почты/hh).
+    keys = row_strong_keys("", "", None, telegram="@hier_sonne")
+    assert keys == {"tg:hier_sonne"}
+    # С @ и регистром — нормализуется.
+    assert row_strong_keys("", "", None, telegram="HIER_SONNE") == {"tg:hier_sonne"}
+
+
+def test_row_strong_keys_junk_telegram_ignored():
+    # Мусорный тег-источник в telegram → НЕ ключ (иначе слипнутся разные люди).
+    assert row_strong_keys("", "", None, telegram="hh_b2b") == set()
+    assert row_strong_keys("", "", None, telegram="@telegram") == set()
+
+
+def test_group_by_telegram_only_no_phone_email():
+    # Реальный кейс Пройдакова: 3 строки, нет телефона/почты/hh, один @hier_sonne
+    # → одна группа (склеиваются по telegram).
+    rows = [
+        {"name": "Пройдаков Владимир", "telegram": "@hier_sonne", "funnel_list": "Android dev"},
+        {"name": "Пройдаков Владимир", "telegram": "@hier_sonne", "funnel_list": "Unity"},
+        {"name": "Пройдаков Владимир", "telegram": "@hier_sonne", "funnel_list": "Unity dev"},
+    ]
+    key_fn = lambda r: row_strong_keys("", "", None, telegram=r.get("telegram"))
+    groups = group_rows_by_person(rows, key_fn)
+    assert len(groups) == 1
+    assert len(groups[0]) == 3
+
+
+def test_assemble_telegram_only_person_one_card_many_passes():
+    rows = [
+        {"name": "Пройдаков Владимир Дмитриевич", "telegram": "@hier_sonne",
+         "funnel_list": "Android dev", "funnel_folder": "Sandbox - Мария", "status": "собес"},
+        {"name": "Пройдаков Владимир Дмитриевич", "telegram": "@hier_sonne",
+         "funnel_list": "Unity", "funnel_folder": "Sandbox - Мария", "status": "собес"},
+        {"name": "Пройдаков Владимир Дмитриевич", "telegram": "@hier_sonne",
+         "funnel_list": "Unity dev", "funnel_folder": "Sandbox - Эльвира", "status": "собес"},
+    ]
+    person = assemble_person(rows, cf_headers=[])
+    assert person["telegram_usernames"] == ["hier_sonne"]
+    parts = person["extra_data"]["participations"]
+    assert {p["vacancy_title"] for p in parts} == {"Android dev", "Unity", "Unity dev"}
+
+
 def test_row_strong_keys_name_only_is_empty():
     assert row_strong_keys("", "", None) == set()
 
@@ -142,6 +185,13 @@ def test_extract_hh_from_row():
     assert extract_hh_from_row(row) == "hh.ru/resume/abc"
     assert extract_hh_from_row({"description": "смотри https://hh.ru/resume/ZZZ"}) == "hh.ru/resume/zzz"
     assert extract_hh_from_row({"name": "нет"}) is None
+
+
+def test_extract_telegram_from_row():
+    from api.services.clickup_import import extract_telegram_from_row
+    assert extract_telegram_from_row({"cf:Telegram": "@hier_sonne", "name": "X"}) == "@hier_sonne"
+    assert extract_telegram_from_row({"cf:Твой tg": "  @user  "}) == "@user"
+    assert extract_telegram_from_row({"name": "нет тг"}) is None
 
 
 def test_extract_email_from_row():

@@ -431,6 +431,21 @@ async def test_detect_real_unique_telegram_still_matched(db_session, organizatio
 
 
 @pytest.mark.asyncio
+async def test_detect_same_person_split_cards_same_telegram_matched(db_session, organization):
+    # ОДИН человек (одно ФИО), разъехавшийся на неск. карточек с ОДНИМ хэндлом,
+    # ловится по telegram, хотя карточек ≥3. Гвард частоты — по РАЗНЫМ ИМЕНАМ, а
+    # не по числу карточек (кейс Пройдакова: 3 воронки без телефона/почты).
+    existing = await _mk(db_session, organization.id, "Пройдаков Владимир Дмитриевич",
+                         telegram_usernames=["hier_sonne"])
+    await _mk(db_session, organization.id, "Пройдаков Владимир Дмитриевич",
+              telegram_usernames=["hier_sonne"])
+    newc = await _mk(db_session, organization.id, "Пройдаков Владимир Дмитриевич",
+                     telegram_usernames=["hier_sonne"])
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, newc) is not None
+
+
+@pytest.mark.asyncio
 async def test_rescan_clears_stale_flag_from_junk_telegram(
     client, db_session, organization, admin_user, org_owner,
     superadmin_user, superadmin_token,

@@ -712,6 +712,11 @@ export default function AllCandidatesPage() {
           email: e.email || undefined,
           phone: e.phone || undefined,
           telegram_username: (e.telegram_usernames && e.telegram_usernames[0]) || undefined,
+          // Полные списки — у склеенного человека телефонов/телеграмов/почт может
+          // быть несколько (из разных записей); показываем все, не только первый.
+          phones: Array.isArray(e.phones) ? e.phones : undefined,
+          emails: Array.isArray(e.emails) ? e.emails : undefined,
+          telegram_usernames: Array.isArray(e.telegram_usernames) ? e.telegram_usernames : undefined,
           position: e.position || undefined,
           company: e.company || undefined,
           source: e.source || extra.source || undefined,
@@ -1742,6 +1747,20 @@ const InfoTab = memo(function InfoTab({
   useEffect(() => {
     setAnketaIndex(0);
   }, [card.id]);
+  // Доп. контакты после склейки: у человека из импорта могут быть РАЗНЫЕ
+  // телефоны/телеграмы/почты из разных записей — показываем все, кроме уже
+  // выведенного «основного» (дедуп по цифрам телефона / нижнему регистру).
+  const _digits = (s: string) => (s || "").replace(/\D/g, "");
+  const _tgKey = (s: string) => (s || "").replace(/^@/, "").toLowerCase();
+  const extraPhones = Array.from(
+    new Set((card.phones || []).map((p) => (p || "").trim()).filter(Boolean)),
+  ).filter((p) => _digits(p) && _digits(p) !== _digits(card.phone || ""));
+  const extraEmails = Array.from(
+    new Set((card.emails || []).map((e) => (e || "").trim()).filter(Boolean)),
+  ).filter((e) => e.toLowerCase() !== (card.email || "").trim().toLowerCase());
+  const extraTelegrams = Array.from(
+    new Set((card.telegram_usernames || []).map((t) => (t || "").trim()).filter(Boolean)),
+  ).filter((t) => _tgKey(t) !== _tgKey(card.telegram_username || ""));
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
@@ -2514,6 +2533,27 @@ const InfoTab = memo(function InfoTab({
               </div>
             </InfoRow>
           )}
+          {extraPhones.map((ph) => (
+            <InfoRow key={`ph-${ph}`} label="Ещё телефон">
+              <div className="flex items-center gap-2">
+                <a
+                  href={`tel:${ph}`}
+                  className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
+                >
+                  {formatPhoneDisplay(ph)}
+                </a>
+                <a
+                  href={`https://wa.me/${ph.replace(/\D/g, "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-[22px] h-[22px] rounded-full bg-[var(--hf-ui-social-whatsapp)] flex items-center justify-center hover:opacity-80"
+                  title="WhatsApp"
+                >
+                  <Phone className="w-[11px] h-[11px] text-[var(--hf-white)]" />
+                </a>
+              </div>
+            </InfoRow>
+          ))}
           {card.email && (
             <InfoRow label="Эл. почта">
               <a
@@ -2524,10 +2564,20 @@ const InfoTab = memo(function InfoTab({
               </a>
             </InfoRow>
           )}
+          {extraEmails.map((em) => (
+            <InfoRow key={`em-${em}`} label="Ещё почта">
+              <a
+                href={`mailto:${em}`}
+                className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
+              >
+                {em}
+              </a>
+            </InfoRow>
+          ))}
           {card.telegram_username && (
             <InfoRow label="Telegram">
               <a
-                href={`https://t.me/${card.telegram_username}`}
+                href={`https://t.me/${card.telegram_username.replace(/^@/, "")}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
@@ -2536,6 +2586,18 @@ const InfoTab = memo(function InfoTab({
               </a>
             </InfoRow>
           )}
+          {extraTelegrams.map((tg) => (
+            <InfoRow key={`tg-${tg}`} label="Ещё Telegram">
+              <a
+                href={`https://t.me/${tg.replace(/^@/, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] hover:text-[var(--hf-cyan-700)] hf-dark-disabled:hover:text-[var(--hf-white)] transition-colors"
+              >
+                {tg.startsWith("@") ? tg : `@${tg}`}
+              </a>
+            </InfoRow>
+          ))}
           {card.age && (
             <InfoRow label="Возраст">
               <span className="text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)]">
