@@ -443,6 +443,14 @@ async def ensure_shadow_columns():
         await raw_conn.execute(text(\"ALTER TABLE entities ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false\"))
         await raw_conn.execute(text(\"CREATE INDEX IF NOT EXISTS ix_entities_is_archived ON entities (is_archived)\"))
         print('Ensured entities.is_archived column + index')
+
+        # Умный поиск кандидатов (транслит + любой порядок слов + опечатки):
+        # pg_trgm/unaccent, денормализованное search_name, GIN-триграммный индекс.
+        await raw_conn.execute(text(\"CREATE EXTENSION IF NOT EXISTS pg_trgm\"))
+        await raw_conn.execute(text(\"CREATE EXTENSION IF NOT EXISTS unaccent\"))
+        await raw_conn.execute(text(\"ALTER TABLE entities ADD COLUMN IF NOT EXISTS search_name TEXT\"))
+        await raw_conn.execute(text(\"CREATE INDEX IF NOT EXISTS ix_entities_search_name_trgm ON entities USING gin (search_name gin_trgm_ops)\"))
+        print('Ensured pg_trgm/unaccent + entities.search_name + trigram index')
     await raw_engine.dispose()
 
     # One-time data migration: legacy draft → pending_review
@@ -654,6 +662,21 @@ async def ensure_shadow_columns():
                   ), 0) = 0
         \"\"\"))
         print(f\"Backfilled accepted_by from assigned_to on {res.rowcount} legacy vacancies\")
+
+    # Backfill search_name для существующих кандидатов (WHERE NULL — идемпотентно,
+    # фактически один раз; новые получают search_name через event-листенер на insert).
+    async with engine.begin() as sn_conn:
+        from api.services.search_index import build_search_name as _bsn
+        sn_rows = (await sn_conn.execute(text(
+            \"SELECT id, name, position, company, tags FROM entities WHERE search_name IS NULL\"
+        ))).fetchall()
+        sn_params = [
+            {'sv': _bsn(r.name, r.position, r.company, r.tags), 'id': r.id}
+            for r in sn_rows
+        ]
+        if sn_params:
+            await sn_conn.execute(text(\"UPDATE entities SET search_name = :sv WHERE id = :id\"), sn_params)
+        print(f\"Backfilled search_name on {len(sn_params)} entities\")
 
     await engine.dispose()
 

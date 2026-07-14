@@ -229,8 +229,11 @@ async def search_candidates(
     if q and q.strip():
         term = f"%{q.strip()}%"
         name_terms = _name_search_terms(q)
+        from ..services.search_index import smart_name_filter
+        _snf = smart_name_filter(q)  # транслит + любой порядок слов + опечатки (pg_trgm)
         base = base.where(
             or_(
+                *([_snf] if _snf is not None else []),
                 *[Entity.name.ilike(t) for t in name_terms],
                 Entity.email.ilike(term),
                 Entity.phone.ilike(term),
@@ -273,10 +276,15 @@ async def search_candidates(
         "status": Entity.status,
     }[sort_by]
 
-    if sort_order == "desc":
-        base = base.order_by(sort_col.desc())
+    # При поиске (q) — сначала по релевантности (лучшее совпадение первым),
+    # затем по выбранной сортировке. Без q — как выбрано.
+    from ..services.search_index import smart_name_score
+    _score = smart_name_score(q) if (q and q.strip()) else None
+    _primary = sort_col.desc() if sort_order == "desc" else sort_col.asc()
+    if _score is not None:
+        base = base.order_by(_score.desc(), _primary)
     else:
-        base = base.order_by(sort_col.asc())
+        base = base.order_by(_primary)
 
     # --- pagination ---
     offset = (page - 1) * per_page
@@ -814,8 +822,11 @@ async def get_candidates_kanban(
     if q and q.strip():
         search_term = f"%{q.strip().lower()}%"
         name_terms = _name_search_terms(q)
+        from ..services.search_index import smart_name_filter
+        _snf = smart_name_filter(q)  # транслит + любой порядок слов + опечатки (pg_trgm)
         base_q = base_q.where(
             or_(
+                *([_snf] if _snf is not None else []),
                 *[Entity.name.ilike(t) for t in name_terms],
                 Entity.email.ilike(search_term),
                 Entity.phone.ilike(search_term),
@@ -837,8 +848,14 @@ async def get_candidates_kanban(
             pass
     base_q = base_q.where(Entity.status.in_(status_enums))
 
-    # Order within each column: newest first
-    base_q = base_q.order_by(Entity.created_at.desc())
+    # Порядок: при поиске — по релевантности (лучшее совпадение первым, ранг —
+    # сумма пословных word_similarity), иначе новизна.
+    from ..services.search_index import smart_name_score
+    _score = smart_name_score(q) if (q and q.strip()) else None
+    if _score is not None:
+        base_q = base_q.order_by(_score.desc(), Entity.created_at.desc())
+    else:
+        base_q = base_q.order_by(Entity.created_at.desc())
 
     result = await db.execute(base_q)
     entities = result.scalars().all()
@@ -1032,7 +1049,10 @@ async def get_candidate_ids(
     if q and q.strip():
         term = f"%{q.strip().lower()}%"
         name_terms = _name_search_terms(q)
+        from ..services.search_index import smart_name_filter
+        _snf = smart_name_filter(q)  # транслит + любой порядок слов + опечатки (pg_trgm)
         base_q = base_q.where(or_(
+            *([_snf] if _snf is not None else []),
             *[Entity.name.ilike(t) for t in name_terms],
             Entity.email.ilike(term),
             Entity.phone.ilike(term),

@@ -562,6 +562,12 @@ class Entity(Base):
     # archive is visible only to superadmin. See shadow-dedup design spec.
     is_archived = Column(Boolean, default=False, nullable=False, index=True)
 
+    # Денормализованный поисковый блоб для умного поиска (транслитерация + любой
+    # порядок слов + опечатки через pg_trgm): ФИО в ДВУХ алфавитах + должность/
+    # компания/теги. Пишется на insert/update (services/search_index.py events),
+    # GIN-триграммный индекс создаётся в start.sh.
+    search_name = Column(Text, nullable=True)
+
     organization = relationship("Organization", back_populates="entities")
     department = relationship("Department", back_populates="entities")
     creator = relationship("User", foreign_keys=[created_by])
