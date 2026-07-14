@@ -600,12 +600,16 @@ async def change_candidate_status(
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(403, "No organization access")
+    # FOR UPDATE: сериализует конкурентную смену статуса ОДНОГО кандидата —
+    # та же гонка, что чинили в update_application/bulk-move (2026-07-14): без
+    # лока два почти одновременных drag-n-drop запроса оба читают старый
+    # stage/status и оба пишут дубль-переход в StageTransition.
     result = await db.execute(
         select(Entity).where(
             Entity.id == entity_id,
             Entity.type == EntityType.candidate,
             Entity.org_id == org.id,
-        )
+        ).with_for_update()
     )
     entity = result.scalar_one_or_none()
     if not entity:
@@ -624,7 +628,7 @@ async def change_candidate_status(
     if new_status in STATUS_SYNC_MAP:
         target_stage = STATUS_SYNC_MAP[new_status]
         apps_result = await db.execute(
-            select(VacancyApplication).where(VacancyApplication.entity_id == entity_id)
+            select(VacancyApplication).where(VacancyApplication.entity_id == entity_id).with_for_update()
         )
         for app in apps_result.scalars().all():
             if app.stage != target_stage:

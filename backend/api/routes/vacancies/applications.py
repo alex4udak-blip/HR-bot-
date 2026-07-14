@@ -368,8 +368,13 @@ async def update_application(
 
     org = await get_user_org(current_user, db)
 
+    # FOR UPDATE: сериализует конкурентные PUT на ОДНУ заявку — иначе два
+    # почти одновременных запроса (двойной клик/задвоенный запрос) оба читают
+    # ещё не закоммиченный старый stage и оба пишут дубль-переход в
+    # StageTransition (баг 2026-07-14, найден на проде в воронке «Трафик»:
+    # разрыв между дублями от 0 до ~400мс — гонка, не повторное действие юзера).
     result = await db.execute(
-        select(VacancyApplication).where(VacancyApplication.id == application_id)
+        select(VacancyApplication).where(VacancyApplication.id == application_id).with_for_update()
     )
     application = result.scalar()
 

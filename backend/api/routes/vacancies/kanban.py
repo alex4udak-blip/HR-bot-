@@ -398,10 +398,14 @@ async def bulk_move_applications(
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
+    # FOR UPDATE: сериализует конкурентные bulk-move над теми же заявками —
+    # та же гонка, что чинили в update_application (2026-07-14): без лока два
+    # почти одновременных запроса оба читают старый stage и оба пишут дубль
+    # в StageTransition.
     result = await db.execute(
         select(VacancyApplication).where(
             VacancyApplication.id.in_(data.application_ids)
-        )
+        ).with_for_update()
     )
     applications = result.scalars().all()
 
