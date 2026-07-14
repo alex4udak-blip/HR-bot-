@@ -32,9 +32,10 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useFunnelFilterStore } from '@/stores/funnelFilterStore';
 import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
-import { addEntityNote, deleteEntityNote, updateEntityNote } from '@/services/api/entities';
+import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink } from '@/services/api/entities';
 import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds } from '@/utils/vacancy';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
@@ -235,6 +236,9 @@ export default function RecruiterFunnelsPage() {
   const [recruiterSearch, setRecruiterSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all' | 'deleted'>('all');
   const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState<number | null>(null);
+  // Суперадмин: чекбокс «Только мои» — быстрый self-фильтр поверх дефолта «видеть
+  // всех». Стейт в общем сторе — чекбокс дублируется в сайдбаре (Layout), оба синхронны.
+  const { onlyMine: superadminOnlyMine, setOnlyMine: setSuperadminOnlyMine } = useFunnelFilterStore();
   // «Удалённые»: мягко-удалённые вакансии тянем отдельным запросом (deleted=true).
   const [deletedVacancies, setDeletedVacancies] = useState<Vacancy[]>([]);
   useEffect(() => {
@@ -560,7 +564,7 @@ export default function RecruiterFunnelsPage() {
   const candidateScopeRecruiterId = !isHrAdmin
     ? undefined
     : isSuperadmin
-      ? (selectedRecruiterFilter ?? undefined)
+      ? (superadminOnlyMine ? (user?.id ?? undefined) : (selectedRecruiterFilter ?? undefined))
       : (selectedRecruiterFilter != null ? selectedRecruiterFilter : (user?.id ?? undefined));
   const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
     const seq = ++loadSeqRef.current;
@@ -2331,6 +2335,27 @@ export default function RecruiterFunnelsPage() {
                 <div className="hf-candidates-master">
                   {/* Left: candidate list */}
                   <div className="hf-candidates-list-panel relative">
+                    {/* Суперадмин: «Только мои» — фильтр списка на свои карточки.
+                        Пилюля-тоггл; при наведении — тултип с пояснением. */}
+                    {isSuperadmin && (
+                      <div className="flex items-center px-3 py-2 border-b border-[color:var(--hf-white-alpha-06)]">
+                        <label
+                          className="group inline-flex items-center cursor-pointer select-none"
+                          title="Показывать в воронке только кандидатов, которых добавил я. Снимите — снова видны все."
+                        >
+                          <input
+                            type="checkbox"
+                            checked={superadminOnlyMine}
+                            onChange={(e) => setSuperadminOnlyMine(e.target.checked)}
+                            className="peer sr-only"
+                          />
+                          <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors border-[color:var(--hf-white-alpha-12)] text-[var(--hf-main-600)] group-hover:border-[color:var(--hf-white-alpha-25)] group-hover:text-[var(--hf-main-800)] peer-checked:border-[color:var(--hf-accent)] peer-checked:text-[color:var(--hf-accent)] peer-checked:bg-[color:var(--hf-accent-soft,var(--hf-white-alpha-06))] peer-focus-visible:ring-2 peer-focus-visible:ring-[color:var(--hf-accent)]">
+                            <Users className="w-3.5 h-3.5" aria-hidden="true" />
+                            Только мои
+                          </span>
+                        </label>
+                      </div>
+                    )}
                     <div className={clsx('hf-candidates-list-scroll', anySelected && 'pb-14')}>
                     {tabFilteredCandidates.length === 0 ? (
                       <div className="flex items-center justify-center h-40 text-hf-xxs text-[var(--hf-main-500)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)]">
@@ -2566,6 +2591,23 @@ export default function RecruiterFunnelsPage() {
                                       </div>
                                     )}
                                   </div>
+                                )}
+                                {selectedCandidate.entity_id && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const link = await createCandidateShareLink(selectedCandidate.entity_id!);
+                                        await navigator.clipboard.writeText(`${window.location.origin}${link.url_path}`);
+                                        toast.success('Ссылка на предпросмотр скопирована — действует 30 дней');
+                                      } catch {
+                                        toast.error('Не удалось создать ссылку');
+                                      }
+                                    }}
+                                    className="hf-profile-action-btn"
+                                    title="Скопировать публичную ссылку предпросмотра для заказчика (действует 30 дней)"
+                                  >
+                                    <ExternalLink className="hf-profile-action-icon" /> Поделиться
+                                  </button>
                                 )}
                                 <button
                                   onClick={() => setEditingCandidateCard(buildCandidateEditCard(selectedCandidate))}
