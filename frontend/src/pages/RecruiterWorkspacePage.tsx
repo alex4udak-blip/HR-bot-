@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import * as workspacesApi from '@/services/api/workspaces';
+import { smartNameMatch } from '@/utils/translit';
 
 // --------------- constants ---------------
 
@@ -192,7 +193,7 @@ export default function RecruiterWorkspacePage() {
     const q = searchQuery.toLowerCase();
     return candidates.filter(
       (c) =>
-        c.name.toLowerCase().includes(q) ||
+        smartNameMatch(c.name || '', searchQuery) ||  // транслит + порядок слов + опечатки + раскладка
         c.email?.toLowerCase().includes(q) ||
         c.phone?.includes(q) ||
         c.telegram?.toLowerCase().includes(q),

@@ -123,6 +123,10 @@ def _name_search_terms(q: str) -> List[str]:
         terms.add(transliterate_ru_to_en(q))
     if re.search(r'[a-zA-Z]', q):
         terms.add(transliterate_en_to_ru(q))
+    from ..services.search_index import switch_layout
+    sw = switch_layout(q)  # раскладка клавиатуры: «bdfy» → «иван»
+    if sw and sw != q.lower():
+        terms.add(sw)
     return [f"%{t}%" for t in terms if t]
 
 

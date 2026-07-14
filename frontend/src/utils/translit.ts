@@ -104,18 +104,32 @@ function wordForms(w: string): string[] {
   return [...set];
 }
 
-/**
- * Умный матч имени для КЛИЕНТСКОГО поиска (воронка и т.п.), где список уже
- * загружен и невелик: транслитерация RU↔EN + независимость от порядка слов
- * (каждое слово запроса ищется где угодно) + терпимость к опечаткам (Левенштейн).
- * Функциональный аналог серверного pg_trgm-поиска (search_index.py), но в JS.
- */
-export function smartNameMatch(haystack: string, query: string): boolean {
-  const q = (query || '').trim().toLowerCase();
-  if (!q) return true;
-  const hay = (haystack || '').toLowerCase();
-  if (!hay) return false;
+// Раскладка клавиатуры ЙЦУКЕН(RU) ↔ QWERTY(EN): один и тот же ФИЗИЧЕСКИЙ клавиш.
+// «bdfy» — это «иван», набранное в EN-раскладке (забыли переключить язык). Это
+// НЕ транслитерация (та фонетическая: ivan→иван) — тут соответствие клавиш.
+const RU_TO_EN_LAYOUT: Record<string, string> = {
+  й: 'q', ц: 'w', у: 'e', к: 'r', е: 't', н: 'y', г: 'u', ш: 'i', щ: 'o', з: 'p', х: '[', ъ: ']',
+  ф: 'a', ы: 's', в: 'd', а: 'f', п: 'g', р: 'h', о: 'j', л: 'k', д: 'l', ж: ';', э: "'",
+  я: 'z', ч: 'x', с: 'c', м: 'v', и: 'b', т: 'n', ь: 'm', б: ',', ю: '.', ё: '`',
+};
+const EN_TO_RU_LAYOUT: Record<string, string> = Object.fromEntries(
+  Object.entries(RU_TO_EN_LAYOUT).map(([ru, en]) => [en, ru]),
+);
 
+/** Флип раскладки RU↔EN по физическим клавишам («bdfy»→«иван»). Латиница →
+ *  кириллица, кириллица → латиница. Мусор («ivan»→«шмфт») безвреден — не найдёт. */
+export function switchLayout(s: string): string {
+  const str = (s || '').toLowerCase();
+  if (!str) return '';
+  const map = /[а-яё]/.test(str) ? RU_TO_EN_LAYOUT : EN_TO_RU_LAYOUT;
+  let out = '';
+  for (const ch of str) out += map[ch] ?? ch;
+  return out;
+}
+
+// Матч слов запроса против стога: КАЖДОЕ слово должно найтись (AND по словам,
+// порядок не важен) — прямо/транслитом или с опечаткой (Левенштейн).
+function matchQueryTokens(hay: string, q: string): boolean {
   const tokens = q
     .split(/\s+/)
     .map((t) => t.replace(/^[-_.,]+|[-_.,]+$/g, ''))
@@ -125,7 +139,6 @@ export function smartNameMatch(haystack: string, query: string): boolean {
   // Слова стога сена во всех формах — для fuzzy-сравнения по опечаткам.
   const hayWordForms = hay.split(/\s+/).filter(Boolean).flatMap(wordForms);
 
-  // Каждое слово запроса должно найтись (AND по словам) — порядок не важен.
   return tokens.every((tok) => {
     if (matchesTranslit(hay, tok)) return true; // прямое/транслит вхождение
     const thr = typoThreshold(tok.length);
@@ -137,4 +150,23 @@ export function smartNameMatch(haystack: string, query: string): boolean {
       ),
     );
   });
+}
+
+/**
+ * Умный матч имени для КЛИЕНТСКОГО поиска (воронка и т.п.), где список уже
+ * загружен и невелик: транслитерация RU↔EN + независимость от порядка слов +
+ * терпимость к опечаткам (Левенштейн) + флип РАСКЛАДКИ клавиатуры («bdfy»→«иван»).
+ * Функциональный аналог серверного pg_trgm-поиска (search_index.py), но в JS.
+ */
+export function smartNameMatch(haystack: string, query: string): boolean {
+  const raw = (query || '').trim().toLowerCase();
+  if (!raw) return true;
+  const hay = (haystack || '').toLowerCase();
+  if (!hay) return false;
+
+  // Пробуем запрос как есть И с перевёрнутой раскладкой («bdfy» → «иван»).
+  const queries = new Set([raw]);
+  const sw = switchLayout(raw);
+  if (sw && sw !== raw) queries.add(sw);
+  return [...queries].some((q) => matchQueryTokens(hay, q));
 }

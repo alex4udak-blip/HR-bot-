@@ -110,6 +110,45 @@ def query_tokens(q: str) -> List[str]:
     return [w for w in re.split(r"\s+", (q or "").strip().lower()) if len(w.strip("-_.,")) >= 2]
 
 
+# Раскладка клавиатуры ЙЦУКЕН(RU) ↔ QWERTY(EN): один и тот же ФИЗИЧЕСКИЙ клавиш.
+# «иван», набранное в EN-раскладке, выглядит как «bdfy»; перевернув раскладку —
+# снова «иван». Это НЕ транслитерация (та фонетическая: ivan→иван) — тут
+# соответствие клавиш. Частая жалоба: искал «иван», забыл переключить язык.
+_RU_TO_EN_LAYOUT = {
+    "й": "q", "ц": "w", "у": "e", "к": "r", "е": "t", "н": "y", "г": "u",
+    "ш": "i", "щ": "o", "з": "p", "х": "[", "ъ": "]",
+    "ф": "a", "ы": "s", "в": "d", "а": "f", "п": "g", "р": "h", "о": "j",
+    "л": "k", "д": "l", "ж": ";", "э": "'",
+    "я": "z", "ч": "x", "с": "c", "м": "v", "и": "b", "т": "n", "ь": "m",
+    "б": ",", "ю": ".", "ё": "`",
+}
+_EN_TO_RU_LAYOUT = {v: k for k, v in _RU_TO_EN_LAYOUT.items()}
+
+
+def switch_layout(q: str) -> str:
+    """Флип раскладки RU↔EN по физическим клавишам. Латиница → трактуем как
+    EN-раскладку и переводим в кириллицу («bdfy»→«иван»); кириллица → наоборот.
+    Неотображаемые символы остаются как есть. Мусорные результаты (напр. «ivan»→
+    «шмфт») просто ничего не находят — безвредны."""
+    if not q:
+        return ""
+    mapping = _RU_TO_EN_LAYOUT if re.search(r"[а-яёА-ЯЁ]", q) else _EN_TO_RU_LAYOUT
+    return "".join(mapping.get(ch, ch) for ch in q.lower())
+
+
+def _search_word_variants(tok: str) -> set:
+    """Словоформы слова для поиска: транслит-варианты (_name_word_variants) +
+    вариант с перевёрнутой раскладкой и уже ЕГО транслит-варианты
+    («bdfy» → «иван» → …). Отдельно от similarity._name_word_variants, чтобы НЕ
+    засорять раскладкой дедуп кандидатов."""
+    variants = set(_name_word_variants(tok) or {tok})
+    sw = switch_layout(tok)
+    if sw and sw != tok:
+        variants.add(sw)
+        variants |= (_name_word_variants(sw) or set())
+    return variants
+
+
 def smart_name_filter(q: str) -> Optional[ColumnElement]:
     """SQL-условие: КАЖДОЕ слово запроса (в любом алфавите, с опечатками)
     триграммно присутствует в search_name. Порядок слов не важен (AND по словам,
@@ -121,7 +160,7 @@ def smart_name_filter(q: str) -> Optional[ColumnElement]:
         return None
     per_token = []
     for tok in tokens:
-        variants = _name_word_variants(tok) or {tok}
+        variants = _search_word_variants(tok)
         # search_name %> v  ==  word_similarity(v, search_name) >= threshold  (использует GIN-триграмму)
         per_token.append(or_(*[Entity.search_name.op("%>")(v) for v in variants]))
     return and_(*per_token)
@@ -137,7 +176,7 @@ def smart_name_score(q: str) -> Optional[ColumnElement]:
         return None
     terms = []
     for tok in tokens:
-        variants = _name_word_variants(tok) or {tok}
+        variants = _search_word_variants(tok)
         terms.append(func.greatest(*[func.word_similarity(v, Entity.search_name) for v in variants]))
     expr = terms[0]
     for t in terms[1:]:
@@ -153,6 +192,9 @@ def _translit_ilike_patterns(q: str) -> List[str]:
         terms.add(transliterate_ru_to_en(q))
     if re.search(r"[a-zA-Z]", q):
         terms.add(transliterate_en_to_ru(q))
+    sw = switch_layout(q)  # раскладка: «bdfy» → «иван»
+    if sw and sw != q.lower():
+        terms.add(sw)
     return [f"%{t}%" for t in terms if t]
 
 

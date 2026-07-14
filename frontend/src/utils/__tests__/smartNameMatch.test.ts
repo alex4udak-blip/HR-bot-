@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { smartNameMatch, editDistance } from '@/utils/translit';
+import { smartNameMatch, editDistance, switchLayout } from '@/utils/translit';
 
 describe('editDistance', () => {
   it('handles empty strings', () => {
@@ -44,6 +44,16 @@ describe('smartNameMatch — умный поиск имени (клиент)', (
   it('не матчит чужое имя', () => {
     expect(smartNameMatch('Иванов Иван', 'сидоров')).toBe(false);
     expect(smartNameMatch('Иванов Иван', 'петров')).toBe(false);
+  });
+
+  it('флип раскладки клавиатуры (EN-раскладка, русское слово)', () => {
+    // «иван», набранное в английской раскладке = «bdfy»
+    expect(switchLayout('bdfy')).toBe('иван');
+    expect(switchLayout('иван')).toBe('bdfy');
+    expect(smartNameMatch('Петухов Иван Андреевич', 'bdfy')).toBe(true);
+    expect(smartNameMatch('Иван', 'bdfy')).toBe(true);
+    // латиница-транслит по-прежнему работает (не регресс)
+    expect(smartNameMatch('Иван', 'ivan')).toBe(true);
   });
 
   it('короткие токены не прощают опечаток (нет шума)', () => {
