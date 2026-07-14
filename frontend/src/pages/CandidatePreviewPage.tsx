@@ -6,6 +6,7 @@ import {
   type PublicCandidatePreview,
   type PublicPreviewFile,
 } from '@/services/api/entities';
+import { sanitizeHtml } from '@/utils/sanitizeHtml';
 
 /**
  * Публичный предпросмотр кандидата для заказчика (модуль 3).
@@ -199,7 +200,9 @@ export default function CandidatePreviewPage() {
                       </div>
                       <div className="text-[14px] text-emerald-950 whitespace-pre-wrap">
                         {item.title && <div>{item.title}</div>}
-                        {item.text && <div>{item.text}</div>}
+                        {item.text && (
+                          <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.text) }} />
+                        )}
                       </div>
                     </div>
                   ))}
