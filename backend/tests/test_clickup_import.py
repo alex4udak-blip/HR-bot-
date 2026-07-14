@@ -10,7 +10,12 @@ from api.services.clickup_import import (
     extract_hh_from_row,
     extract_email_from_row,
     merge_participations,
+    extract_birthdate,
+    extract_location,
+    distill_person_fields,
+    birthdate_from_cf,
 )
+from datetime import date
 
 
 # ── Task 1: ключи и нормализация ──
@@ -160,11 +165,97 @@ def test_merge_participations_idempotent():
     assert {p["task_id"] for p in merged} == {"T1", "T2"}
 
 
-def test_merge_participations_identity_is_funnel_recruiter_not_task_id():
-    # Та же связка (воронка + рекрутёр), но ДРУГОЙ task_id → это один проход, не добавляем.
-    existing = [{"vacancy_title": "Media Buyer", "recruiter": "Эльвира", "status": "x",
+def test_merge_participations_task_id_not_in_key():
+    # Та же связка (воронка + рекрутёр + статус), но ДРУГОЙ task_id → один проход.
+    existing = [{"vacancy_title": "Media Buyer", "recruiter": "Эльвира", "status": "собес",
                  "anketa": [], "date": None, "task_id": "T1", "url": None}]
-    incoming = [{"vacancy_title": "Media Buyer", "recruiter": "Эльвира", "status": "y",
+    incoming = [{"vacancy_title": "Media Buyer", "recruiter": "Эльвира", "status": "собес",
                  "anketa": [], "date": None, "task_id": "T99", "url": None}]
     merged = merge_participations(existing, incoming)
-    assert len(merged) == 1  # task_id в ключ не идёт — связка совпала
+    assert len(merged) == 1  # task_id в ключ не идёт — связка+статус совпали
+
+
+def test_merge_participations_different_status_is_separate_pass():
+    # Та же воронка+рекрутёр, но РАЗНЫЙ статус (этап) → разные прохождения.
+    existing = [{"vacancy_title": "Android dev", "recruiter": "Мария", "status": "выполняет ТЗ",
+                 "anketa": [], "date": None, "task_id": "T1", "url": None}]
+    incoming = [{"vacancy_title": "Android dev", "recruiter": "Мария", "status": "вышел на ИС",
+                 "anketa": [], "date": None, "task_id": "T2", "url": None}]
+    merged = merge_participations(existing, incoming)
+    assert len(merged) == 2  # разные этапы = отдельные анкеты
+
+
+# ── Дистилляция структурных полей карточки (дата рождения / локация) ──
+
+def test_extract_birthdate_from_description_iso():
+    desc = "Что-то\nДата рождения: 1995-03-12T00:00:00+03:00\nещё"
+    assert extract_birthdate(desc, today=date(2026, 7, 14)) == "1995-03-12"
+
+
+def test_extract_birthdate_rejects_junk_year():
+    # Год-мусор (форм-сабмит 2026 / слишком старый) отсекается.
+    assert extract_birthdate("Дата рождения: 2026-01-01T00:00:00Z", today=date(2026, 7, 14)) is None
+    assert extract_birthdate("Дата рождения: 1900-01-01T00:00:00Z", today=date(2026, 7, 14)) is None
+    assert extract_birthdate("нет даты") is None
+
+
+def test_birthdate_from_cf_column():
+    # Реальный формат cf-колонки ClickUp: '2002-08-21 21:00:00' (без T, UTC).
+    assert birthdate_from_cf("2002-08-21 21:00:00", today=date(2026, 7, 14)) == "2002-08-21"
+    assert birthdate_from_cf("2026-01-01 00:00:00", today=date(2026, 7, 14)) is None  # мусор-год
+    assert birthdate_from_cf("") is None
+
+
+def test_distill_falls_back_to_cf_birthdate_when_no_description():
+    # Реальный кейс: description пуст, дата рождения только в cf-колонке (UTC).
+    group = [
+        {"cf:Дата рождения": "2002-08-21 21:00:00",
+         "cf:Местонахождение": '{"formatted_address": "Новокузнецк, Россия"}'},
+    ]
+    out = distill_person_fields(group)
+    assert out["birth_date"] == "2002-08-21"
+    assert out["location"] == "Новокузнецк, Россия"
+
+
+def test_extract_location_formatted_address():
+    raw = '{"location": {"lat": 55.7}, "formatted_address": "Москва, Россия"}'
+    assert extract_location(raw) == "Москва, Россия"
+    assert extract_location("не json") is None
+    assert extract_location("") is None
+
+
+def test_distill_person_fields_first_nonempty():
+    group = [
+        {"description": "нет полей", "cf:Местонахождение": ""},
+        {"description": "Дата рождения: 1990-06-01T00:00:00+03:00",
+         "cf:Местонахождение": '{"formatted_address": "Минск, Беларусь"}'},
+    ]
+    out = distill_person_fields(group)
+    assert out["birth_date"] == "1990-06-01"
+    assert out["location"] == "Минск, Беларусь"
+
+
+def test_assemble_person_distills_structured_fields():
+    group = [
+        {"name": "Марк", "phone": "+375259182441", "funnel_list": "Android dev",
+         "funnel_folder": "Sandbox - Мария", "status": "вышел ис",
+         "description": "Дата рождения: 1993-09-20T00:00:00+03:00",
+         "cf:Местонахождение": '{"formatted_address": "Гомель, Беларусь"}', "cf:A": "1"},
+    ]
+    person = assemble_person(group, cf_headers=["cf:A"])
+    assert person["extra_data"]["birth_date"] == "1993-09-20"
+    assert person["extra_data"]["location"] == "Гомель, Беларусь"
+
+
+def test_assemble_person_different_status_same_funnel_are_separate():
+    # Один человек, одна воронка, РАЗНЫЕ этапы (статусы) → две анкеты.
+    group = [
+        {"name": "Марк", "phone": "+375259182441", "funnel_list": "Unity",
+         "funnel_folder": "Sandbox - Мария", "status": "выполняет ТЗ", "cf:A": "1"},
+        {"name": "Марк", "phone": "+375259182441", "funnel_list": "Unity",
+         "funnel_folder": "Sandbox - Мария", "status": "вышел на ИС", "cf:B": "2"},
+    ]
+    person = assemble_person(group, cf_headers=["cf:A", "cf:B"])
+    parts = person["extra_data"]["participations"]
+    assert len(parts) == 2
+    assert {p["status"] for p in parts} == {"выполняет ТЗ", "вышел на ИС"}

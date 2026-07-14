@@ -701,6 +701,11 @@ export default function AllCandidatesPage() {
           extra.notes = [{ text: String(extra.comment), date: e.created_at, author_name: "Импорт" }];
         }
         extra.is_archived = true;
+        // Импорт (ClickUp/CSV) кладёт location/birth_date, а шапка карточки
+        // показывает city/age/salary/опыт — маппим с фолбэком, иначе у архивной
+        // карточки шапка пустая, хотя данные есть (совпадает с бэкенд-билдером
+        // в candidate_search.get_candidates_kanban).
+        const _archAge = extra.age ?? calculateAge(extra.birth_date) ?? undefined;
         setSelectedCard({
           id: e.id,
           name: e.name,
@@ -713,6 +718,11 @@ export default function AllCandidatesPage() {
           created_at: e.created_at || "",
           tags: e.tags || [],
           photo_url: e.photo_url || undefined,
+          city: extra.city || extra.location || undefined,
+          age: _archAge != null ? String(_archAge) : undefined,
+          salary: extra.salary != null ? String(extra.salary) : undefined,
+          total_experience:
+            extra.total_experience != null ? String(extra.total_experience) : undefined,
           extra_data: extra,
         } as KanbanCard);
         setSelectedStatus((e.status as string) || "");
@@ -1724,6 +1734,14 @@ const InfoTab = memo(function InfoTab({
   useEffect(() => {
     setResumeIndex(0);
   }, [card.id]);
+  // Импортированные прохождения (ClickUp-архив) — каждое СВОЯ вкладка «Анкета»
+  // в том же ряду, что и «Резюме». Анкеты бывают длинными, поэтому не
+  // складываем их простынёй, а переключаем чипами. anketaIndex — активное.
+  const participations = readParticipations(card);
+  const [anketaIndex, setAnketaIndex] = useState(0);
+  useEffect(() => {
+    setAnketaIndex(0);
+  }, [card.id]);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
@@ -2710,24 +2728,44 @@ const InfoTab = memo(function InfoTab({
           они во вкладке «Личные заметки». */}
 
       <div className="mt-[30px]">
-        <div className="flex h-[49.333px] items-start gap-[var(--hf-space-xxl)] border-b border-[var(--hf-main-300)] pb-[20px] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
-          <button
-            type="button"
-            onClick={() => onDetailSectionChange("anketa")}
-            className={clsx(
-              "relative h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
-              detailSection === "anketa"
-                ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
-                : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
-            )}
-          >
-            Анкеты
-            {anketaCount > 0 && (
-              <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
-                {anketaCount > 9 ? "9+" : anketaCount}
-              </span>
-            )}
-          </button>
+        <div className="flex h-[49.333px] items-start gap-[var(--hf-space-xxl)] overflow-x-auto no-scrollbar border-b border-[var(--hf-main-300)] pb-[20px] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
+          {/* Одна вкладка «Анкета» на каждое прохождение (ClickUp-архив). Если
+              прохождений нет — одна вкладка «Анкеты» под нативные форм-анкеты и
+              пустое состояние (с бейджем непрочитанных). Подсказка при наведении
+              — «воронка · этап», чтобы длинный ряд одинаковых «Анкета» различать. */}
+          {(participations.length > 0 ? participations : [null]).map((p, i) => {
+            const isFallback = p === null;
+            const active =
+              detailSection === "anketa" && (isFallback || anketaIndex === i);
+            const hint = isFallback
+              ? undefined
+              : [p!.vacancy_title, p!.status].filter(Boolean).join(" · ") ||
+                undefined;
+            return (
+              <button
+                key={`anketa-${i}`}
+                type="button"
+                title={hint}
+                onClick={() => {
+                  onDetailSectionChange("anketa");
+                  setAnketaIndex(i);
+                }}
+                className={clsx(
+                  "relative h-[24px] shrink-0 border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+                  active
+                    ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
+                    : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
+                )}
+              >
+                Анкета
+                {isFallback && anketaCount > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
+                    {anketaCount > 9 ? "9+" : anketaCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
           {/* По одной вкладке «Резюме» на каждый источник резюме. Если у
               кандидата резюме нет вовсе — одна вкладка-заглушка ([null]),
               чтобы показать пустое состояние. Вкладка «Личные заметки» убрана —
@@ -2741,7 +2779,7 @@ const InfoTab = memo(function InfoTab({
                 setResumeIndex(i);
               }}
               className={clsx(
-                "h-[24px] border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+                "h-[24px] shrink-0 border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
                 detailSection === "resume" && resumeIndex === i
                   ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
                   : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
@@ -2768,13 +2806,21 @@ const InfoTab = memo(function InfoTab({
             )}
           />
         )}
-        {detailSection === "anketa" && <AnketaTab card={card} />}
+        {detailSection === "anketa" && (
+          <AnketaTab
+            card={card}
+            activeIndex={Math.min(
+              anketaIndex,
+              Math.max(0, participations.length - 1),
+            )}
+          />
+        )}
       </div>
     </div>
   );
 });
 
-function AnketaTab({ card }: { card: KanbanCard }) {
+function AnketaTab({ card, activeIndex }: { card: KanbanCard; activeIndex: number }) {
   const [dispatches, setDispatches] = useState<(FormDispatchInfo & { source_entity_id?: number; source_name?: string | null })[]>([]);
   const clearBadge = useFormBadgeStore((s) => s.clear);
   useEffect(() => {
@@ -2802,14 +2848,21 @@ function AnketaTab({ card }: { card: KanbanCard }) {
   // по метке «воронка · рекрутёр». Родные FormDispatch-анкеты — ниже; их пустое
   // состояние показываем только если нет ни диспатчей, ни импортных прохождений.
   const participations = readParticipations(card);
+  // Показываем ТОЛЬКО выбранную анкету-прохождение (по чипу), а не все простынёй.
+  const selected =
+    participations.length > 0
+      ? [participations[Math.min(activeIndex, participations.length - 1)]].filter(
+          Boolean,
+        )
+      : [];
   return (
     <>
-      {participations.length > 0 && (
-        <ImportedParticipations participations={participations} />
+      {selected.length > 0 && (
+        <ImportedParticipations participations={selected} />
       )}
-      {(dispatches.length > 0 || participations.length === 0) && (
-        <AnketaResponses dispatches={dispatches} />
-      )}
+      {/* Нативные форм-анкеты и пустое состояние — только когда импортных
+          прохождений нет (у них своих чипов нет; для архива их обычно и не бывает). */}
+      {participations.length === 0 && <AnketaResponses dispatches={dispatches} />}
     </>
   );
 }

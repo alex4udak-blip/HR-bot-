@@ -6,7 +6,6 @@ import io
 import json
 import logging
 import re
-from datetime import date
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -113,6 +112,7 @@ class ImportResult(BaseModel):
     total: int
     imported: int
     skipped: int
+    replaced: int = 0  # перезаписано начисто (режим replace_existing)
     skipped_details: List[SkippedRowDetail] = []
     errors_count: int
     errors: List[ImportErrorDetail]
@@ -183,39 +183,13 @@ def _normalize_phone(value: str) -> str:
     return digits[-10:] if len(digits) >= 10 else digits
 
 
-_BIRTHDATE_RE = re.compile(r"Дата рождения:\s*(\d{4}-\d{2}-\d{2})T")
-
-
-def _extract_clickup_birthdate(description: str) -> Optional[str]:
-    """Birth date as a local calendar date (YYYY-MM-DD).
-
-    ClickUp's custom-field column stores the value in UTC, which can shift the
-    date by a day. The task description keeps the original timezone-aware ISO
-    value, so we take the date part (before 'T') from there instead.
-    """
-    if not description:
-        return None
-    m = _BIRTHDATE_RE.search(description)
-    if not m:
-        return None
-    value = m.group(1)
-    year = int(value[:4])
-    # Guard against junk values (form-submission dates, test entries)
-    if year < 1940 or year > date.today().year - 14:
-        return None
-    return value
-
-
-def _extract_clickup_location(raw: str) -> Optional[str]:
-    """Readable address from ClickUp's location custom field (a geo-JSON blob)."""
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-        addr = data.get("formatted_address")
-        return addr or None
-    except (json.JSONDecodeError, AttributeError, TypeError):
-        return None
+# Экстракторы даты рождения / локации живут в services.clickup_import (чистый,
+# юнит-тестируемый модуль) — единый источник правды для обоих путей импорта
+# (построчного и combine). Здесь просто переиспользуем.
+from ..services.clickup_import import (
+    extract_birthdate as _extract_clickup_birthdate,
+    extract_location as _extract_clickup_location,
+)
 
 
 def _clickup_postprocess(extra_data: Dict[str, Any], row: Dict[str, str]) -> None:
@@ -302,10 +276,17 @@ async def import_execute(
     default_status: str = Form("new"),
     vacancy_id: Optional[int] = Form(None),
     skip_duplicates: bool = Form(True),
+    replace_existing: bool = Form(False),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Import candidates from CSV using the provided column mapping."""
+    """Import candidates from CSV using the provided column mapping.
+
+    replace_existing — «перезалить начисто» (только ClickUp-combine + архив):
+    совпавшую архивную карточку не дополняем, а ПОЛНОСТЬЮ перезаписываем данными
+    из файла (участия/поля/структурные поля). Активные (не в архиве) карточки в
+    этом режиме не трогаем — чтобы не снести идущую по кандидату работу.
+    """
 
     # Resolve organisation
     org = await get_user_org(current_user, db)
@@ -386,6 +367,7 @@ async def import_execute(
     total = 0
     imported = 0
     skipped = 0
+    replaced = 0
     skipped_details: List[SkippedRowDetail] = []
     errors: List[ImportErrorDetail] = []
     batch: List[Entity] = []
@@ -461,6 +443,24 @@ async def import_execute(
                 match = next((key_index[k] for k in group_keys if k in key_index), None)
                 if match is None:
                     match = next((task_index[t] for t in group_task_ids if t in task_index), None)
+                if match is not None and replace_existing and match.is_archived:
+                    # «Перезалить начисто»: совпавшую АРХИВНУЮ карточку полностью
+                    # перезаписываем данными из файла (id сохраняется, ссылки/файлы
+                    # не рвутся), не наслаивая старьё. Активные (не архив) не трогаем.
+                    match.name = payload["name"] or match.name
+                    match.email = payload["email"]
+                    match.phone = payload["phone"]
+                    match.phones = payload["phones"]
+                    match.position = payload["position"]
+                    match.telegram_usernames = payload["telegram_usernames"]
+                    match.status = EntityStatus.reserve
+                    match.extra_data = payload["extra_data"]  # полная замена
+                    for k in group_keys:
+                        key_index.setdefault(k, match)
+                    for t in group_task_ids:
+                        task_index.setdefault(t, match)
+                    replaced += 1
+                    continue
                 if match is not None:
                     # Идемпотентно до-кладываем участия в существующую карточку.
                     ed = dict(match.extra_data or {})
@@ -471,6 +471,11 @@ async def import_execute(
                     ed["clickup_task_ids"] = sorted(
                         set(ed.get("clickup_task_ids") or []) | group_task_ids
                     )
+                    # Бэкфилл структурных полей: старые карточки (до дистилляции)
+                    # и частично заполненные строки дозаполняем, не перетирая.
+                    for _fld in ("birth_date", "location"):
+                        if not ed.get(_fld) and payload["extra_data"].get(_fld):
+                            ed[_fld] = payload["extra_data"][_fld]
                     match.extra_data = ed
                     for k in group_keys:
                         key_index.setdefault(k, match)
@@ -502,7 +507,7 @@ async def import_execute(
                 errors.append(ImportErrorDetail(row=0, reason=str(exc)))
         await db.commit()
         return ImportResult(
-            total=total, imported=imported, skipped=skipped,
+            total=total, imported=imported, skipped=skipped, replaced=replaced,
             skipped_details=skipped_details, errors_count=len(errors), errors=errors,
         )
     # ── /ClickUp combine ── (ниже — прежний построчный путь для не-ClickUp CSV)

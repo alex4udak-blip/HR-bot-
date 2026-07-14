@@ -29,6 +29,7 @@ interface PreviewResponse {
 interface ImportResult {
   imported: number;
   skipped: number;
+  replaced?: number;
   skipped_details?: { row: number; name: string; reason: string }[];
   errors: { row: number; reason: string }[];
 }
@@ -90,6 +91,7 @@ export default function CsvImportPage() {
   const [vacancyId, setVacancyId] = useState<string>('');
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
 
@@ -99,6 +101,13 @@ export default function CsvImportPage() {
   const [importError, setImportError] = useState('');
   const [errorsExpanded, setErrorsExpanded] = useState(false);
   const [skippedExpanded, setSkippedExpanded] = useState(false);
+
+  // ClickUp-выгрузка (combine-путь в архив) — только для неё есть смысл в
+  // «перезаписать начисто» (детект по сигнатурным колонкам, как на бэкенде).
+  const isClickupFile =
+    !!preview &&
+    preview.headers.includes('task_id') &&
+    preview.headers.some((h) => h.startsWith('funnel_'));
 
   // ---- drag-and-drop handlers ----
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -183,6 +192,7 @@ export default function CsvImportPage() {
       formData.append('file', file);
       formData.append('column_mapping', JSON.stringify(columnMapping));
       formData.append('skip_duplicates', String(skipDuplicates));
+      formData.append('replace_existing', String(replaceExisting));
       if (vacancyId) formData.append('vacancy_id', vacancyId);
 
       const res = await fetch('/api/import/execute', { method: 'POST', body: formData });
@@ -207,6 +217,7 @@ export default function CsvImportPage() {
     setColumnMapping({});
     setVacancyId('');
     setSkipDuplicates(true);
+    setReplaceExisting(false);
     setResult(null);
     setImportError('');
     setPreviewError('');
@@ -549,6 +560,27 @@ export default function CsvImportPage() {
                       </span>
                     </label>
                   </div>
+
+                  {/* Replace existing — только для ClickUp-выгрузки (combine-путь в архив) */}
+                  {isClickupFile && (
+                    <div className="p-4 rounded-xl bg-amber-500/[0.06] border border-amber-500/20 sm:col-span-2">
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={replaceExisting}
+                          onChange={(e) => setReplaceExisting(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded border-white/20 bg-white/[0.04] text-amber-500 focus:ring-amber-500 focus:ring-offset-0"
+                        />
+                        <span className="text-sm text-white/70">
+                          <span className="font-medium text-amber-300">Перезаписать существующих начисто</span>
+                          <br />
+                          Кто уже есть в архиве и присутствует в файле — их карточки
+                          полностью пересобираются из этого файла (старые прохождения не
+                          наслаиваются). Активных кандидатов в воронках не трогает.
+                        </span>
+                      </label>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -614,6 +646,15 @@ export default function CsvImportPage() {
                   </div>
                   <p className="text-3xl font-bold text-green-300">{result.imported}</p>
                 </div>
+                {!!result.replaced && (
+                  <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                    <div className="flex items-center gap-3 mb-2">
+                      <CheckCircle2 className="w-5 h-5 text-amber-400" />
+                      <span className="text-sm text-amber-400 font-medium">Перезаписано</span>
+                    </div>
+                    <p className="text-3xl font-bold text-amber-300">{result.replaced}</p>
+                  </div>
+                )}
                 <div className="p-5 rounded-2xl bg-yellow-500/10 border border-yellow-500/20">
                   <div className="flex items-center gap-3 mb-2">
                     <AlertTriangle className="w-5 h-5 text-yellow-400" />

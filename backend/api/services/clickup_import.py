@@ -5,7 +5,9 @@
 сильному ключу: hh-URL / email / телефон) и собирают из каждой строки
 «прохождение». Без I/O и без БД — всё юнит-тестируется (tests/test_clickup_import.py).
 """
+import json
 import re
+from datetime import date
 from typing import Optional, Set, List, Dict, Any
 from collections import defaultdict
 
@@ -35,6 +37,95 @@ def clean_recruiter(folder: str) -> str:
     if " - " in folder:
         folder = folder.split(" - ", 1)[1].strip()
     return folder
+
+
+# ── Дистилляция структурных полей карточки (дата рождения / локация) ──
+# ВАЖНО: карточка кандидата (KanbanCard) читает extra_data.birth_date → возраст и
+# extra_data.location → город. Раньше combine-путь клал только participations и
+# карточка выглядела пустой («мало инфы»). Эти чистые экстракторы позволяют
+# вытащить те же поля, что и построчный путь (_clickup_postprocess), — единый
+# источник правды: csv_import импортирует их отсюда.
+
+_BIRTHDATE_RE = re.compile(r"Дата рождения:\s*(\d{4}-\d{2}-\d{2})T")
+
+
+def extract_birthdate(description: str, today: Optional[date] = None) -> Optional[str]:
+    """Дата рождения как локальная дата (YYYY-MM-DD) из ISO в description.
+
+    cf-колонка «Дата рождения» хранит значение в UTC (может сместить день на ±1),
+    а описание задачи держит исходный timezone-aware ISO — берём дату оттуда.
+    Мусорные значения (даты форм-сабмита / тестовые) отсекаем по диапазону года.
+    """
+    if not description:
+        return None
+    m = _BIRTHDATE_RE.search(description)
+    if not m:
+        return None
+    value = m.group(1)
+    year = int(value[:4])
+    today = today or date.today()
+    if year < 1940 or year > today.year - 14:
+        return None
+    return value
+
+
+_CF_DATE_RE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})")
+
+
+def birthdate_from_cf(raw: str, today: Optional[date] = None) -> Optional[str]:
+    """Фолбэк: дата рождения из cf-колонки «Дата рождения» (формат '2002-08-21 …').
+
+    Колонка в UTC (может сместить день на ±1) — поэтому предпочтение у
+    extract_birthdate из описания. Но когда описания нет, дата из cf лучше, чем
+    пусто: для ВОЗРАСТА расхождение в один день практически не важно.
+    """
+    if not raw:
+        return None
+    m = _CF_DATE_RE.match(raw)
+    if not m:
+        return None
+    year = int(m.group(1)[:4])
+    today = today or date.today()
+    if year < 1940 or year > today.year - 14:
+        return None
+    return m.group(1)
+
+
+def extract_location(raw: str) -> Optional[str]:
+    """Читаемый адрес из geo-JSON ClickUp (custom field «Местонахождение»)."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        addr = data.get("formatted_address")
+        return addr or None
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return None
+
+
+def distill_person_fields(group: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Структурные поля карточки из строк человека (первое непустое по группе).
+
+    Кладёт те же ключи, что читает карточка: `birth_date` (→ возраст) и `location`
+    (→ город). Строки одного человека личные поля обычно повторяют, но не всегда
+    заполнены во всех — поэтому берём первое непустое.
+    """
+    out: Dict[str, Any] = {}
+    for r in group:
+        if "birth_date" not in out:
+            # Приоритет — timezone-aware ISO из описания; иначе cf-колонка (UTC).
+            bd = extract_birthdate(r.get("description", "") or "") or birthdate_from_cf(
+                r.get("cf:Дата рождения", "") or ""
+            )
+            if bd:
+                out["birth_date"] = bd
+        if "location" not in out:
+            loc = extract_location(r.get("cf:Местонахождение", "") or "")
+            if loc:
+                out["location"] = loc
+        if "birth_date" in out and "location" in out:
+            break
+    return out
 
 
 def row_strong_keys(email: str, phone: str, hh: Optional[str]) -> Set[str]:
@@ -108,10 +199,19 @@ def build_participation(row: Dict[str, Any], cf_headers: List[str]) -> Dict[str,
 
 
 def _dedup_twin_participations(parts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Близнецы (одна вакансия + один рекрутёр) → одно прохождение, анкеты объединены."""
+    """Истинные близнецы → одно прохождение, анкеты объединены.
+
+    Идентичность прохождения = (вакансия + рекрутёр + статус). Статус в ключе
+    ВАЖЕН: разные этапы одной воронки (напр. «выполняет ТЗ» и «вышел на ИС») —
+    это РАЗНЫЕ прохождения и должны показываться отдельными анкетами. Схлопываем
+    лишь дословные дубли одной задачи (та же воронка+рекрутёр+статус)."""
     by_key: Dict[tuple, Dict[str, Any]] = {}
     for p in parts:
-        key = (p["vacancy_title"].lower(), p["recruiter"].lower())
+        key = (
+            p["vacancy_title"].lower(),
+            p["recruiter"].lower(),
+            (p.get("status") or "").strip().lower(),
+        )
         if key not in by_key:
             by_key[key] = {**p, "anketa": list(p["anketa"])}
             continue
@@ -144,6 +244,14 @@ def assemble_person(group: List[Dict[str, Any]], cf_headers: List[str]) -> Dict[
     task_ids = sorted(
         {(r.get("task_id") or "").strip() for r in group if (r.get("task_id") or "").strip()}
     )
+    extra_data: Dict[str, Any] = {
+        "participations": participations,
+        "import_source": "clickup",
+        "clickup_task_ids": task_ids,
+    }
+    # Структурные поля карточки (дата рождения → возраст, локация → город) —
+    # иначе шапка архивной карточки пустая, вся инфа сидит только в анкетах.
+    extra_data.update(distill_person_fields(group))
     return {
         "name": _longest(names),
         "email": (sorted(emails)[0] if emails else None),
@@ -151,11 +259,7 @@ def assemble_person(group: List[Dict[str, Any]], cf_headers: List[str]) -> Dict[
         "phones": sorted(phones),
         "telegram_usernames": sorted(tgs),
         "position": primary.get("vacancy_title") or None,
-        "extra_data": {
-            "participations": participations,
-            "import_source": "clickup",
-            "clickup_task_ids": task_ids,
-        },
+        "extra_data": extra_data,
     }
 
 
@@ -191,14 +295,16 @@ def extract_email_from_row(row: Dict[str, Any]) -> Optional[str]:
 def merge_participations(
     existing: List[Dict[str, Any]], incoming: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
-    """До-кладываем участия. Идентичность прохождения = связка (воронка + рекрутёр)
-    — так задумано владельцем: одна воронка у одного рекрутёра = одно прохождение,
-    даже если в ClickUp это несколько задач (разные task_id). task_id в ключ НЕ идёт,
-    иначе один и тот же проход задваивался бы при переимпорте."""
+    """До-кладываем участия. Идентичность прохождения = (воронка + рекрутёр +
+    статус): разные этапы одной воронки — разные прохождения (отдельные анкеты).
+    task_id в ключ НЕ идёт, иначе один и тот же проход задваивался бы при
+    переимпорте; статус же стабилен между выгрузками, поэтому идемпотентность
+    сохраняется."""
     def sig(p: Dict[str, Any]):
         return (
             (p.get("vacancy_title") or "").strip().lower(),
             (p.get("recruiter") or "").strip().lower(),
+            (p.get("status") or "").strip().lower(),
         )
 
     seen = {sig(p) for p in existing}

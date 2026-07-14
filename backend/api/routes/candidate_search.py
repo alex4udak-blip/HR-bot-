@@ -163,6 +163,29 @@ def _as_str(v):
     return v if isinstance(v, str) else str(v)
 
 
+def _age_from_birthdate(v, today: Optional[date] = None) -> Optional[str]:
+    """'YYYY-MM-DD' → возраст (строка) для карточки.
+
+    Импорт/парсер кладут в extra_data `birth_date`, но карточка показывает
+    `age`. Считаем возраст на лету (не храним — иначе устаревает после дня
+    рождения). Мусор/непарсимое → None.
+    """
+    if not v or not isinstance(v, str):
+        return None
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", v.strip())
+    if not m:
+        return None
+    try:
+        bd = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+    today = today or date.today()
+    age = today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day))
+    if age < 14 or age > 100:
+        return None
+    return str(age)
+
+
 async def _get_org_id(current_user: User, db: AsyncSession) -> Optional[int]:
     if current_user.role == UserRole.superadmin:
         return None
@@ -989,8 +1012,10 @@ async def get_candidates_kanban(
                 # /api/entities/.../files/.../download грузится по куке.
                 photo_url=photo_file_map.get(e.id) or (ed.get("photo_url") if ed else None),
                 company=getattr(e, 'company', None),
-                city=_as_str(ed.get("city")),
-                age=_as_str(ed.get("age")),
+                # Импорт (ClickUp/CSV) кладёт location/birth_date, а карточка
+                # показывает city/age — маппим с фолбэком, иначе шапка пустая.
+                city=_as_str(ed.get("city")) or _as_str(ed.get("location")),
+                age=_as_str(ed.get("age")) or _age_from_birthdate(ed.get("birth_date")),
                 salary=_as_str(ed.get("salary")),
                 total_experience=_as_str(ed.get("total_experience")),
                 vacancy_name=vacancy_map.get(e.id),
