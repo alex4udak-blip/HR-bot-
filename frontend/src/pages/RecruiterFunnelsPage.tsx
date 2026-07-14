@@ -228,6 +228,7 @@ export default function RecruiterFunnelsPage() {
   const { user } = useAuthStore();
 
   const isHrAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+  const isSuperadmin = user?.role === 'superadmin';
 
   // UI state
   const [search, setSearch] = useState('');
@@ -550,13 +551,17 @@ export default function RecruiterFunnelsPage() {
   // Скоуп кандидатов по рекрутёру в общей воронке:
   //  • обычный рекрутёр — сервер сам отдаёт только его кандидатов, тут ничего
   //    не шлём (undefined);
-  //  • АДМИН по умолчанию видит ТОЛЬКО СВОИХ (кого сам добавил) — как обычный
-  //    рекрутёр, а не всех. Через левое меню «Вакансии: <рекрутёр>» может
-  //    выбрать любого и посмотреть его кандидатов (selectedRecruiterFilter).
-  //    Чтобы увидеть всех — есть общий раздел «Все кандидаты».
+  //  • СУПЕРАДМИН по умолчанию видит ВСЕХ кандидатов в любой воронке (undefined).
+  //    Выбор конкретного рекрутёра в свитчере фильтрует на него (selectedRecruiterFilter).
+  //    (чекбокс «только мои» — следующим шагом.)
+  //  • АДМИН/ОВНЕР по умолчанию видит ТОЛЬКО СВОИХ (кого сам добавил) — как обычный
+  //    рекрутёр, а не всех. Через свитчер «Рекрутеры: <рекрутёр>» может выбрать
+  //    любого и посмотреть его кандидатов.
   const candidateScopeRecruiterId = !isHrAdmin
     ? undefined
-    : (selectedRecruiterFilter != null ? selectedRecruiterFilter : (user?.id ?? undefined));
+    : isSuperadmin
+      ? (selectedRecruiterFilter ?? undefined)
+      : (selectedRecruiterFilter != null ? selectedRecruiterFilter : (user?.id ?? undefined));
   const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
     const seq = ++loadSeqRef.current;
     if (!silent) setCandidatesLoading(true);
