@@ -543,7 +543,8 @@ export default function RecruiterFunnelsPage() {
     }
     loadCandidates(selectedVacancyId);
     setSelectedCandidateId(null);
-    setSelectedTab('applied');
+    // Дефолтную вкладку выставляет эффект авто-выбора (гейт по id воронки) —
+    // здесь не трогаем, иначе он повторно дёргается на каждый ре-рендер.
     setDetailTab('resume');
     setSelectedIds(new Set());
   }, [selectedVacancyId]);
@@ -883,13 +884,22 @@ export default function RecruiterFunnelsPage() {
     return { list: [...active, ...previous], firstPreviousId: previous[0]?.id };
   }, [tabFilteredCandidates]);
 
+  // Дефолтная вкладка ставится ОДИН раз при открытии воронки (первая рабочая).
+  // Гейт по id воронки: последующие ре-рендеры (фильтр «Только мои», перезагрузка
+  // кандидатов) больше НЕ сбрасывают выбранную пользователем вкладку на «Новый».
+  // Если этап-конфиг сменился и текущая вкладка стала невалидной — мягко чиним.
+  const autoTabVacancyRef = useRef<number | null>(null);
   useEffect(() => {
-    if (selectedTab === 'all') return;
-    const activeKeys = new Set(stagesConfig.keys);
-    if (!activeKeys.has(selectedTab)) {
+    const vid = selectedVacancyId ?? null;
+    if (autoTabVacancyRef.current !== vid) {
+      autoTabVacancyRef.current = vid;
+      setSelectedTab(vacancyWorkflowKeys[0] || 'all');
+      return;
+    }
+    if (selectedTab !== 'all' && !stagesConfig.keys.includes(selectedTab)) {
       setSelectedTab(vacancyWorkflowKeys[0] || 'all');
     }
-  }, [selectedTab, stagesConfig.keys, vacancyWorkflowKeys]);
+  }, [selectedVacancyId, selectedTab, stagesConfig.keys, vacancyWorkflowKeys]);
 
   useEffect(() => {
     if (tabFilteredCandidates.length === 0) {
@@ -2324,6 +2334,29 @@ export default function RecruiterFunnelsPage() {
                   ) : null}
                 </div>
 
+                {/* Суперадмин: «Только мои» — ПОСТОЯННАЯ полоса над контентом (а не в
+                    списке), чтобы фильтр можно было снять и когда этап пуст (включил →
+                    опустошил вкладку → иначе не вернуть всех без F5). */}
+                {isSuperadmin && (
+                  <div className="flex items-center px-3 sm:px-5 py-2 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
+                    <label
+                      className="group inline-flex items-center cursor-pointer select-none"
+                      title="Показывать в воронке только кандидатов, которых добавил я. Снимите — снова видны все."
+                    >
+                      <input
+                        type="checkbox"
+                        checked={superadminOnlyMine}
+                        onChange={(e) => setSuperadminOnlyMine(e.target.checked)}
+                        className="peer sr-only"
+                      />
+                      <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors border-[color:var(--hf-white-alpha-12)] text-[var(--hf-main-600)] group-hover:border-[color:var(--hf-white-alpha-25)] group-hover:text-[var(--hf-main-800)] peer-checked:border-[color:var(--hf-accent)] peer-checked:text-[color:var(--hf-accent)] peer-checked:bg-[color:var(--hf-accent-soft,var(--hf-white-alpha-06))] peer-focus-visible:ring-2 peer-focus-visible:ring-[color:var(--hf-accent)]">
+                        <Users className="w-3.5 h-3.5" aria-hidden="true" />
+                        Только мои
+                      </span>
+                    </label>
+                  </div>
+                )}
+
                 {tabFilteredCandidates.length === 0 && !candidateSearch.trim() ? (
                   <div className="hf-vacancy-empty flex-1 overflow-y-auto">
                     <section className="hf-vacancy-empty-card">
@@ -2338,27 +2371,6 @@ export default function RecruiterFunnelsPage() {
                 <div className="hf-candidates-master">
                   {/* Left: candidate list */}
                   <div className="hf-candidates-list-panel relative">
-                    {/* Суперадмин: «Только мои» — фильтр списка на свои карточки.
-                        Пилюля-тоггл; при наведении — тултип с пояснением. */}
-                    {isSuperadmin && (
-                      <div className="flex items-center px-3 py-2 border-b border-[color:var(--hf-white-alpha-06)]">
-                        <label
-                          className="group inline-flex items-center cursor-pointer select-none"
-                          title="Показывать в воронке только кандидатов, которых добавил я. Снимите — снова видны все."
-                        >
-                          <input
-                            type="checkbox"
-                            checked={superadminOnlyMine}
-                            onChange={(e) => setSuperadminOnlyMine(e.target.checked)}
-                            className="peer sr-only"
-                          />
-                          <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors border-[color:var(--hf-white-alpha-12)] text-[var(--hf-main-600)] group-hover:border-[color:var(--hf-white-alpha-25)] group-hover:text-[var(--hf-main-800)] peer-checked:border-[color:var(--hf-accent)] peer-checked:text-[color:var(--hf-accent)] peer-checked:bg-[color:var(--hf-accent-soft,var(--hf-white-alpha-06))] peer-focus-visible:ring-2 peer-focus-visible:ring-[color:var(--hf-accent)]">
-                            <Users className="w-3.5 h-3.5" aria-hidden="true" />
-                            Только мои
-                          </span>
-                        </label>
-                      </div>
-                    )}
                     <div className={clsx('hf-candidates-list-scroll', anySelected && 'pb-14')}>
                     {tabFilteredCandidates.length === 0 ? (
                       <div className="flex items-center justify-center h-40 text-hf-xxs text-[var(--hf-main-500)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)]">
