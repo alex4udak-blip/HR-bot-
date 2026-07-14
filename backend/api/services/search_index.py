@@ -15,11 +15,40 @@
 """
 import re
 from typing import Optional, List
-from sqlalchemy import event, func, or_, and_
+from sqlalchemy import event, func, or_, and_, text
 from sqlalchemy.sql.elements import ColumnElement
 
 from ..models.database import Entity
-from .similarity import generate_name_variants, _name_word_variants
+from .similarity import (
+    generate_name_variants, _name_word_variants,
+    transliterate_ru_to_en, transliterate_en_to_ru,
+)
+
+# Доступно ли расширение pg_trgm (нужно для оператора %> и word_similarity).
+# None — ещё не проверяли; True/False — установлено ли. На managed-Postgres без
+# superuser расширение может не встать (см. start.sh best-effort) — тогда поиск
+# ДЕГРАДИРУЕТ до старого ILIKE, а не падает 500 на несуществующем операторе.
+_pg_trgm_available: Optional[bool] = None
+
+
+async def ensure_pg_trgm_checked(db) -> bool:
+    """Один раз (с кэшем) проверяет наличие pg_trgm по переданной сессии. Вызывать
+    в поисковых эндпоинтах ДО построения запроса, чтобы smart_*-матчер знал, можно
+    ли использовать триграммы."""
+    global _pg_trgm_available
+    if _pg_trgm_available is None:
+        try:
+            r = await db.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'"))
+            _pg_trgm_available = r.first() is not None
+        except Exception:
+            _pg_trgm_available = False
+    return _pg_trgm_available
+
+
+def set_pg_trgm_available(value: bool) -> None:
+    """Явно выставить флаг (для тестов/скриптов без ensure-проверки)."""
+    global _pg_trgm_available
+    _pg_trgm_available = value
 
 
 def build_search_name(
@@ -84,7 +113,9 @@ def query_tokens(q: str) -> List[str]:
 def smart_name_filter(q: str) -> Optional[ColumnElement]:
     """SQL-условие: КАЖДОЕ слово запроса (в любом алфавите, с опечатками)
     триграммно присутствует в search_name. Порядок слов не важен (AND по словам,
-    OR по вариантам). None — если значимых токенов нет."""
+    OR по вариантам). None — если pg_trgm недоступен или нет значимых токенов."""
+    if not _pg_trgm_available:
+        return None
     tokens = query_tokens(q)
     if not tokens:
         return None
@@ -97,7 +128,10 @@ def smart_name_filter(q: str) -> Optional[ColumnElement]:
 
 
 def smart_name_score(q: str) -> Optional[ColumnElement]:
-    """Ранг: сумма лучших пословных word_similarity (точнее совпал — выше)."""
+    """Ранг: сумма лучших пословных word_similarity (точнее совпал — выше).
+    None — если pg_trgm недоступен (тогда сортировка остаётся прежней)."""
+    if not _pg_trgm_available:
+        return None
     tokens = query_tokens(q)
     if not tokens:
         return None
@@ -109,6 +143,31 @@ def smart_name_score(q: str) -> Optional[ColumnElement]:
     for t in terms[1:]:
         expr = expr + t
     return expr
+
+
+def _translit_ilike_patterns(q: str) -> List[str]:
+    """ILIKE-паттерны имени с транслитерацией RU<->EN (fallback, работает без pg_trgm)."""
+    q = (q or "").strip()
+    terms = {q}
+    if re.search(r"[а-яёА-ЯЁ]", q):
+        terms.add(transliterate_ru_to_en(q))
+    if re.search(r"[a-zA-Z]", q):
+        terms.add(transliterate_en_to_ru(q))
+    return [f"%{t}%" for t in terms if t]
+
+
+def name_search_conditions(q: str) -> List:
+    """OR-условия поиска кандидата по ИМЕНИ для ЛЮБОГО окна поиска: умный
+    pg_trgm-матч (транслит + любой порядок слов + опечатки, если pg_trgm доступен)
+    + транслит-ILIKE как fallback. Вызывать ПОСЛЕ ensure_pg_trgm_checked(db).
+    Использование: base.where(or_(*name_search_conditions(q), <прочие поля>))."""
+    conds: List = []
+    snf = smart_name_filter(q)
+    if snf is not None:
+        conds.append(snf)
+    for t in _translit_ilike_patterns(q):
+        conds.append(Entity.name.ilike(t))
+    return conds
 
 
 # Регистрируем автосинк при импорте модуля (роуты поиска импортируют его на

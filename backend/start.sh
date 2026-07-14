@@ -343,6 +343,12 @@ async def ensure_shadow_columns():
         # form_templates падает 500 (модель ссылается на отсутствующую колонку).
         await conn.execute(text('ALTER TABLE form_templates ADD COLUMN IF NOT EXISTS is_template BOOLEAN NOT NULL DEFAULT false'))
 
+        # Умный поиск: колонка search_name — plain TEXT, БЕЗ зависимостей и БЕЗ
+        # superuser. Расширение pg_trgm + индекс ставятся best-effort ниже (могут
+        # не встать без прав), но КОЛОНКА нужна модели ВСЕГДА, иначе любой SELECT
+        # entities падает 500 (модель ссылается на неё).
+        await conn.execute(text('ALTER TABLE entities ADD COLUMN IF NOT EXISTS search_name TEXT'))
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection
@@ -444,13 +450,21 @@ async def ensure_shadow_columns():
         await raw_conn.execute(text(\"CREATE INDEX IF NOT EXISTS ix_entities_is_archived ON entities (is_archived)\"))
         print('Ensured entities.is_archived column + index')
 
-        # Умный поиск кандидатов (транслит + любой порядок слов + опечатки):
-        # pg_trgm/unaccent, денормализованное search_name, GIN-триграммный индекс.
-        await raw_conn.execute(text(\"CREATE EXTENSION IF NOT EXISTS pg_trgm\"))
-        await raw_conn.execute(text(\"CREATE EXTENSION IF NOT EXISTS unaccent\"))
-        await raw_conn.execute(text(\"ALTER TABLE entities ADD COLUMN IF NOT EXISTS search_name TEXT\"))
-        await raw_conn.execute(text(\"CREATE INDEX IF NOT EXISTS ix_entities_search_name_trgm ON entities USING gin (search_name gin_trgm_ops)\"))
-        print('Ensured pg_trgm/unaccent + entities.search_name + trigram index')
+        # Умный поиск: pg_trgm/unaccent + GIN-триграммный индекс. BEST-EFFORT —
+        # CREATE EXTENSION требует superuser, которого на managed-Postgres может не
+        # быть. Ошибку глотаем, чтобы не сорвать старт: без pg_trgm поиск сам
+        # деградирует до старого ILIKE (search_index.ensure_pg_trgm_checked). Колонка
+        # search_name уже добавлена выше (не требует прав), модель не ломается.
+        for _stmt in (
+            \"CREATE EXTENSION IF NOT EXISTS pg_trgm\",
+            \"CREATE EXTENSION IF NOT EXISTS unaccent\",
+            \"CREATE INDEX IF NOT EXISTS ix_entities_search_name_trgm ON entities USING gin (search_name gin_trgm_ops)\",
+        ):
+            try:
+                await raw_conn.execute(text(_stmt))
+            except Exception as _e:
+                print(f'Smart-search setup skipped (no rights?): {_e}')
+        print('Smart-search extensions/index ensured (best-effort)')
     await raw_engine.dispose()
 
     # One-time data migration: legacy draft → pending_review

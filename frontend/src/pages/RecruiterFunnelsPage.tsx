@@ -44,6 +44,7 @@ import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } fro
 import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import { getVacancies } from '@/services/api/vacancies';
+import { smartNameMatch } from '@/utils/translit';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
@@ -618,13 +619,15 @@ export default function RecruiterFunnelsPage() {
     return () => clearInterval(id);
   }, [selectedVacancyId, loadCandidates, fetchVacancies]);
 
-  // Filter candidates by search
+  // Filter candidates by search — умный матч по ИМЕНИ (транслит RU↔EN + любой
+  // порядок слов + опечатки, как серверный pg_trgm в «Все кандидаты»); по
+  // email/телефону — обычная подстрока.
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return candidates;
     const q = candidateSearch.toLowerCase();
     return candidates.filter(
       (c) =>
-        c.entity_name?.toLowerCase().includes(q) ||
+        smartNameMatch(c.entity_name || '', candidateSearch) ||
         c.entity_email?.toLowerCase().includes(q) ||
         c.entity_phone?.includes(q),
     );

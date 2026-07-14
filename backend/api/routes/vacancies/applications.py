@@ -78,6 +78,7 @@ async def list_applications(
     vacancy_id: int,
     stage: Optional[ApplicationStage] = None,
     created_by: Optional[int] = Query(None, description="Filter by recruiter (who added the candidate)"),
+    search: Optional[str] = Query(None, description="Умный поиск кандидата по имени (транслит+порядок+опечатки)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
@@ -122,6 +123,20 @@ async def list_applications(
 
     if stage:
         query = query.where(VacancyApplication.stage == stage)
+
+    # Умный поиск кандидата в воронке по имени (транслит + любой порядок слов +
+    # опечатки через pg_trgm; при отсутствии pg_trgm — транслит-ILIKE).
+    if search and search.strip():
+        from ...services.search_index import name_search_conditions, ensure_pg_trgm_checked
+        await ensure_pg_trgm_checked(db)
+        _term = f"%{search.strip()}%"
+        query = query.join(Entity, Entity.id == VacancyApplication.entity_id).where(
+            or_(
+                *name_search_conditions(search),
+                Entity.email.ilike(_term),
+                Entity.phone.ilike(_term),
+            )
+        )
 
     result = await db.execute(query)
     applications = result.scalars().all()

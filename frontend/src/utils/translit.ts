@@ -68,3 +68,73 @@ export function matchesTranslit(haystack: string, needle: string): boolean {
   if (hCyr.includes(nCyr)) return true;
   return false;
 }
+
+/** Расстояние Левенштейна (итеративно, две строки-буфера). Строки короткие (слова
+ *  ФИО), поэтому O(n·m) дёшев. */
+export function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = new Array<number>(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    const cur = new Array<number>(n + 1);
+    cur[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+// Порог опечаток по длине слова: короткие слова не прощаем (иначе шум).
+function typoThreshold(len: number): number {
+  if (len <= 3) return 0;
+  if (len <= 5) return 1;
+  return 2;
+}
+
+// Слово во всех формах (как есть + латиница + кириллица) — для fuzzy-сравнения.
+function wordForms(w: string): string[] {
+  const set = new Set([w, toLatin(w), toCyrillic(w)]);
+  set.delete('');
+  return [...set];
+}
+
+/**
+ * Умный матч имени для КЛИЕНТСКОГО поиска (воронка и т.п.), где список уже
+ * загружен и невелик: транслитерация RU↔EN + независимость от порядка слов
+ * (каждое слово запроса ищется где угодно) + терпимость к опечаткам (Левенштейн).
+ * Функциональный аналог серверного pg_trgm-поиска (search_index.py), но в JS.
+ */
+export function smartNameMatch(haystack: string, query: string): boolean {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return true;
+  const hay = (haystack || '').toLowerCase();
+  if (!hay) return false;
+
+  const tokens = q
+    .split(/\s+/)
+    .map((t) => t.replace(/^[-_.,]+|[-_.,]+$/g, ''))
+    .filter((t) => t.length >= 2);
+  if (tokens.length === 0) return matchesTranslit(hay, q);
+
+  // Слова стога сена во всех формах — для fuzzy-сравнения по опечаткам.
+  const hayWordForms = hay.split(/\s+/).filter(Boolean).flatMap(wordForms);
+
+  // Каждое слово запроса должно найтись (AND по словам) — порядок не важен.
+  return tokens.every((tok) => {
+    if (matchesTranslit(hay, tok)) return true; // прямое/транслит вхождение
+    const thr = typoThreshold(tok.length);
+    if (thr === 0) return false;
+    const tokForms = wordForms(tok);
+    return tokForms.some((tf) =>
+      hayWordForms.some(
+        (hf) => Math.abs(hf.length - tf.length) <= thr && editDistance(tf, hf) <= thr,
+      ),
+    );
+  });
+}

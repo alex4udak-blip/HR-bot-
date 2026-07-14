@@ -342,9 +342,11 @@ async def get_workspace_candidates(
     # Filters
     if search:
         term = f"%{search}%"
+        from ..services.search_index import name_search_conditions, ensure_pg_trgm_checked
+        await ensure_pg_trgm_checked(db)
         query = query.where(
             or_(
-                Entity.name.ilike(term),
+                *name_search_conditions(search),  # умный поиск по имени (транслит+порядок+опечатки)
                 Entity.email.ilike(term),
                 Entity.phone.ilike(term),
             )

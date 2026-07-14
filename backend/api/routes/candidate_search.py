@@ -229,7 +229,8 @@ async def search_candidates(
     if q and q.strip():
         term = f"%{q.strip()}%"
         name_terms = _name_search_terms(q)
-        from ..services.search_index import smart_name_filter
+        from ..services.search_index import smart_name_filter, ensure_pg_trgm_checked
+        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
         _snf = smart_name_filter(q)  # транслит + любой порядок слов + опечатки (pg_trgm)
         base = base.where(
             or_(
@@ -822,7 +823,8 @@ async def get_candidates_kanban(
     if q and q.strip():
         search_term = f"%{q.strip().lower()}%"
         name_terms = _name_search_terms(q)
-        from ..services.search_index import smart_name_filter
+        from ..services.search_index import smart_name_filter, ensure_pg_trgm_checked
+        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
         _snf = smart_name_filter(q)  # транслит + любой порядок слов + опечатки (pg_trgm)
         base_q = base_q.where(
             or_(
@@ -1049,7 +1051,8 @@ async def get_candidate_ids(
     if q and q.strip():
         term = f"%{q.strip().lower()}%"
         name_terms = _name_search_terms(q)
-        from ..services.search_index import smart_name_filter
+        from ..services.search_index import smart_name_filter, ensure_pg_trgm_checked
+        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
         _snf = smart_name_filter(q)  # транслит + любой порядок слов + опечатки (pg_trgm)
         base_q = base_q.where(or_(
             *([_snf] if _snf is not None else []),

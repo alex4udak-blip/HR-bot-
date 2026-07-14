@@ -147,9 +147,11 @@ async def list_entities(
         query = query.where(Entity.status == status)
     if search:
         search_term = f"%{search}%"
+        from ...services.search_index import name_search_conditions, ensure_pg_trgm_checked
+        await ensure_pg_trgm_checked(db)
         query = query.where(
             or_(
-                Entity.name.ilike(search_term),
+                *name_search_conditions(search),  # умный поиск по имени (транслит+порядок+опечатки)
                 Entity.email.ilike(search_term),
                 Entity.phone.ilike(search_term),
                 Entity.company.ilike(search_term)
@@ -1474,8 +1476,10 @@ async def list_archived_candidates(
     )
     if q and q.strip():
         like = f"%{q.strip()}%"
+        from ...services.search_index import name_search_conditions, ensure_pg_trgm_checked
+        await ensure_pg_trgm_checked(db)
         base = base.where(or_(
-            Entity.name.ilike(like),
+            *name_search_conditions(q),  # умный поиск по имени (транслит+порядок+опечатки)
             Entity.email.ilike(like),
             Entity.phone.ilike(like),
             Entity.position.ilike(like),

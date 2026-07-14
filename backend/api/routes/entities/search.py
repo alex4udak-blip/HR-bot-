@@ -81,8 +81,10 @@ async def smart_search(
     Returns ranked results based on relevance to the query.
     """
     from ...services.smart_search import smart_search_service
+    from ...services.search_index import ensure_pg_trgm_checked
 
     current_user = await db.merge(current_user)
+    await ensure_pg_trgm_checked(db)  # включить умный матч по имени в build_search_filters
 
     # SUPERADMIN sees everything
     org_id = None
