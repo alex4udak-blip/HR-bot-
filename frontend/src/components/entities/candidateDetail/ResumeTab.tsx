@@ -6,7 +6,7 @@
 // один источник истины, идентичное поведение. Экспортирует также
 // useResumeSources (хук для подсчёта вкладок «Резюме» родителем).
 // ================================================================
-import { useState, useEffect, memo, Fragment } from "react";
+import { useState, useEffect, memo } from "react";
 import type { ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -32,6 +32,9 @@ import {
   type ResumeSource,
   type ResumeDemoData,
 } from "./model";
+// Единый рендер ответа анкеты: ClickUp-вложение (JSON) → кликабельная ссылка,
+// гео-JSON → адрес. Иначе объединённая анкета вываливает сырой JSON.
+import { renderAnswer } from "./ImportedParticipations";
 
 // ---------- helpers (приватные копии — изоляция модуля) ----------
 
@@ -92,25 +95,6 @@ function HfSkeletonBlock({ className }: { className: string }) {
 const IMPORT_QUESTIONNAIRE_EXTRA_LABELS: Record<string, string> = {
   location: "Местонахождение",
 };
-
-function linkifyText(text: string) {
-  const parts = text.split(/(https?:\/\/[^\s]+)/g);
-  return parts.map((part, i) =>
-    /^https?:\/\//.test(part) ? (
-      <a
-        key={i}
-        href={part}
-        target="_blank"
-        rel="noreferrer"
-        className="text-[var(--hf-cyan-700)] underline break-all hf-dark-disabled:text-[var(--hf-cyan-400)]"
-      >
-        {part}
-      </a>
-    ) : (
-      <Fragment key={i}>{part}</Fragment>
-    ),
-  );
-}
 
 function normalizeImportedValue(v: unknown): string {
   if (v == null) return "";
@@ -295,7 +279,7 @@ const ImportedQuestionnaire = memo(function ImportedQuestionnaire({
                 {r.label}
               </div>
               <div className="whitespace-pre-wrap break-words text-sm text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
-                {linkifyText(r.value)}
+                {renderAnswer(r.value)}
               </div>
             </div>
           ))}

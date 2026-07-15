@@ -30,6 +30,7 @@ interface ImportResult {
   imported: number;
   skipped: number;
   replaced?: number;
+  auto_merged?: number;
   skipped_details?: { row: number; name: string; reason: string }[];
   errors: { row: number; reason: string }[];
 }
@@ -653,6 +654,17 @@ export default function CsvImportPage() {
                       <span className="text-sm text-amber-400 font-medium">Перезаписано</span>
                     </div>
                     <p className="text-3xl font-bold text-amber-300">{result.replaced}</p>
+                  </div>
+                )}
+                {/* Авто-склейка «разъехавшихся»: сработала прямо при заливке,
+                    руками ничего нажимать не нужно. */}
+                {!!result.auto_merged && (
+                  <div className="p-5 rounded-2xl bg-violet-500/10 border border-violet-500/20">
+                    <div className="flex items-center gap-3 mb-2">
+                      <CheckCircle2 className="w-5 h-5 text-violet-400" />
+                      <span className="text-sm text-violet-400 font-medium">Склеено дублей</span>
+                    </div>
+                    <p className="text-3xl font-bold text-violet-300">{result.auto_merged}</p>
                   </div>
                 )}
                 <div className="p-5 rounded-2xl bg-yellow-500/10 border border-yellow-500/20">

@@ -113,6 +113,9 @@ class ImportResult(BaseModel):
     imported: int
     skipped: int
     replaced: int = 0  # перезаписано начисто (режим replace_existing)
+    # Авто-склейка: сколько «разъехавшихся» карточек одного человека влито в его
+    # основную прямо во время заливки (без ручной кнопки «Найти дубликаты»).
+    auto_merged: int = 0
     skipped_details: List[SkippedRowDetail] = []
     errors_count: int
     errors: List[ImportErrorDetail]
@@ -368,6 +371,7 @@ async def import_execute(
     imported = 0
     skipped = 0
     replaced = 0
+    auto_merged = 0
     skipped_details: List[SkippedRowDetail] = []
     errors: List[ImportErrorDetail] = []
     batch: List[Entity] = []
@@ -436,12 +440,16 @@ async def import_execute(
                 telegram=_groupable_tg(r),
             )
 
-        # Индекс существующего архива: сильный-ключ → Entity (для идемпотентности).
+        # Индекс существующего архива: сильный-ключ → СПИСОК Entity. Именно список,
+        # а не одна карточка: «разъехавшийся» человек из старых импортов лежит в
+        # НЕСКОЛЬКИХ карточках с ОДНИМ ключом (напр. один @хэндл на 13 карточек).
+        # Со словарём «ключ→одна карточка» мы бы увидели только первую и не смогли
+        # склеить остальные.
         existing_res = await db.execute(
             select(Entity).where(Entity.org_id == org.id, Entity.is_archived.is_(True))
         )
-        key_index: Dict[str, Entity] = {}
-        task_index: Dict[str, Entity] = {}
+        key_index: Dict[str, List[Entity]] = {}
+        task_index: Dict[str, List[Entity]] = {}
         for ent in existing_res.scalars().all():
             ident = _cu_keys(ent.email or "", ent.phone or "", None)
             for _tg in (ent.telegram_usernames or []):
@@ -449,10 +457,17 @@ async def import_execute(
             for ph in (ent.phones or []):
                 ident |= _cu_keys("", ph, None)
             for k in ident:
-                key_index.setdefault(k, ent)
+                key_index.setdefault(k, []).append(ent)
             for tid in ((ent.extra_data or {}).get("clickup_task_ids") or []):
                 if tid:
-                    task_index.setdefault(tid, ent)
+                    task_index.setdefault(tid, []).append(ent)
+
+        def _idx_add(idx: Dict[str, List[Entity]], k: str, ent: Entity) -> None:
+            """Привязать ключ к карточке (индекс — список: один ключ может вести
+            на несколько разъехавшихся карточек одного человека)."""
+            lst = idx.setdefault(k, [])
+            if not any(e is ent for e in lst):
+                lst.append(ent)
 
         for group in _cu_group(all_rows, _key_fn):
             try:
@@ -468,12 +483,52 @@ async def import_execute(
                     for r in group
                     if (r.get("task_id") or "").strip()
                 }
-                # Матч с существующим: сначала по сильному ключу, затем по task_id
-                # (последнее ловит людей без телефона/почты — только hh или только ФИО,
-                # которые иначе дублировались бы при каждом переимпорте).
-                match = next((key_index[k] for k in group_keys if k in key_index), None)
-                if match is None:
-                    match = next((task_index[t] for t in group_task_ids if t in task_index), None)
+                # Все существующие карточки, совпавшие с этим человеком (сильный ключ,
+                # затем task_id — последнее ловит людей без телефона/почты/hh).
+                # Их может быть НЕСКОЛЬКО: «разъехавшийся» человек из старых импортов,
+                # когда telegram ещё не был ключом и каждая заливка плодила карточку.
+                matched: List[Entity] = []
+                _seen_ent: set = set()
+                for _k in group_keys:
+                    for _e in key_index.get(_k, []):
+                        if id(_e) not in _seen_ent:
+                            _seen_ent.add(id(_e))
+                            matched.append(_e)
+                for _t in group_task_ids:
+                    for _e in task_index.get(_t, []):
+                        if id(_e) not in _seen_ent:
+                            _seen_ent.add(id(_e))
+                            matched.append(_e)
+                match = matched[0] if matched else None
+
+                # АВТО-СКЛЕЙКА разъехавшихся — прямо во время заливки, без ручной
+                # кнопки «Найти дубликаты». Лишние карточки того же человека вливаем
+                # в первую совпавшую (их анкеты/контакты собираются в неё). Активных
+                # (не архив) НЕ трогаем — там идёт живая работа.
+                if match is not None and len(matched) > 1 and match.is_archived:
+                    from ..services.similarity import similarity_service
+                    _absorbed = [
+                        d for d in matched[1:]
+                        if d.is_archived and d.id is not None and d.id != match.id
+                    ]
+                    for _dup in _absorbed:
+                        await similarity_service.merge_entities(
+                            db=db, source_entity=_dup, target_entity=match
+                        )
+                        auto_merged += 1
+                    if _absorbed:
+                        await db.flush()
+                        # Съеденные карточки удалены — вычищаем их из индекса и
+                        # оставляем вместо них выжившего, иначе индекс держал бы
+                        # удалённые объекты и следующая группа упала бы на них.
+                        _dead = {id(d) for d in _absorbed}
+                        for _idx in (key_index, task_index):
+                            for _k in list(_idx.keys()):
+                                _alive = [e for e in _idx[_k] if id(e) not in _dead]
+                                if len(_alive) != len(_idx[_k]):
+                                    if match not in _alive:
+                                        _alive.append(match)
+                                    _idx[_k] = _alive
                 if match is not None and replace_existing and match.is_archived:
                     # «Перезалить начисто»: совпавшую АРХИВНУЮ карточку полностью
                     # перезаписываем данными из файла (id сохраняется, ссылки/файлы
@@ -488,9 +543,9 @@ async def import_execute(
                     match.status = EntityStatus.reserve
                     match.extra_data = payload["extra_data"]  # полная замена
                     for k in group_keys:
-                        key_index.setdefault(k, match)
+                        _idx_add(key_index, k, match)
                     for t in group_task_ids:
-                        task_index.setdefault(t, match)
+                        _idx_add(task_index, t, match)
                     replaced += 1
                     continue
                 if match is not None:
@@ -510,9 +565,9 @@ async def import_execute(
                             ed[_fld] = payload["extra_data"][_fld]
                     match.extra_data = ed
                     for k in group_keys:
-                        key_index.setdefault(k, match)
+                        _idx_add(key_index, k, match)
                     for t in group_task_ids:
-                        task_index.setdefault(t, match)
+                        _idx_add(task_index, t, match)
                     skipped += 1
                     continue
                 entity = Entity(
@@ -532,15 +587,16 @@ async def import_execute(
                 )
                 db.add(entity)
                 for k in group_keys:
-                    key_index[k] = entity
+                    _idx_add(key_index, k, entity)
                 for t in group_task_ids:
-                    task_index[t] = entity
+                    _idx_add(task_index, t, entity)
                 imported += 1
             except Exception as exc:  # noqa: BLE001
                 errors.append(ImportErrorDetail(row=0, reason=str(exc)))
         await db.commit()
         return ImportResult(
             total=total, imported=imported, skipped=skipped, replaced=replaced,
+            auto_merged=auto_merged,
             skipped_details=skipped_details, errors_count=len(errors), errors=errors,
         )
     # ── /ClickUp combine ── (ниже — прежний построчный путь для не-ClickUp CSV)

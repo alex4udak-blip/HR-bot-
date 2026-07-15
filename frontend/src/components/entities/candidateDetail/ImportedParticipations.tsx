@@ -44,7 +44,9 @@ function linkify(text: string): ReactNode {
 
 // ClickUp-поле «вложение» в CSV = JSON-массив [{title,url,mimetype,...}].
 // Показываем вложения кликабельными ссылками, а не сырым JSON-текстом.
-function renderAnswer(answer: string): ReactNode {
+// Экспортируется: тот же рендер нужен и в объединённой анкете (ResumeTab),
+// иначе там ClickUp-вложение вываливается сырым JSON.
+export function renderAnswer(answer: string): ReactNode {
   const t = (answer || "").trim();
   // ClickUp «Местонахождение» = geo-JSON {location, place_id, formatted_address} —
   // показываем читаемый адрес, а не сырой JSON.

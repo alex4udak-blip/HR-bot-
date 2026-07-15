@@ -30,6 +30,57 @@ def _h(token: str) -> dict:
 
 
 # ============================================================
+# Авто-склейка «разъехавшегося» человека прямо во время импорта
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_import_auto_merges_split_person(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    """Кейс Пройдакова: человек без телефона/почты, только @хэндл, из-за старых
+    заливок разъехался на 3 архивные карточки. Новый импорт должен склеить их
+    в ОДНУ автоматически — без ручной кнопки «Найти дубликаты»."""
+    for f in ("Android dev", "Unity", "Unity dev"):
+        await _mk(
+            db_session, organization.id, "Разъехался Тест Иванович",
+            telegram_usernames=["splituser"], is_archived=True,
+            extra_data={
+                "import_source": "clickup",
+                "clickup_task_ids": [f"T-{f}"],
+                "participations": [{
+                    "vacancy_title": f, "recruiter": "Мария",
+                    "status": "собес", "anketa": [],
+                }],
+            },
+        )
+    await db_session.commit()
+
+    csv_text = (
+        "task_id,funnel_list,funnel_folder,status,name,cf:Telegram\n"
+        "N1,Android dev,Sandbox - Мария,собес,Разъехался Тест Иванович,@splituser\n"
+    )
+    r = await client.post(
+        "/api/import/execute",
+        files={"file": ("clickup.csv", csv_text.encode("utf-8"), "text/csv")},
+        data={"column_mapping": '{"name":"name"}', "skip_duplicates": "true"},
+        headers=_h(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # две лишние карточки влиты в первую
+    assert body["auto_merged"] == 2, body
+
+    db_session.expire_all()
+    rows = (await db_session.execute(
+        select(Entity).where(Entity.name == "Разъехался Тест Иванович")
+    )).scalars().all()
+    assert len(rows) == 1, [(e.id, e.name) for e in rows]
+    # все прохождения собрались в выжившую карточку
+    parts = (rows[0].extra_data or {}).get("participations") or []
+    assert {p["vacancy_title"] for p in parts} == {"Android dev", "Unity", "Unity dev"}, parts
+
+
+# ============================================================
 # detect_archived_duplicate (unit)
 # ============================================================
 
