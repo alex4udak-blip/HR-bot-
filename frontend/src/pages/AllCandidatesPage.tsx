@@ -1291,10 +1291,21 @@ export default function AllCandidatesPage() {
                           </div>
                           {/* Text column (RIGHT) — name, position, company/date */}
                           <div className="hf-candidate-row-copy">
-                            <div className="flex items-center min-w-0">
+                            <div className="flex items-center gap-1.5 min-w-0">
                               <div className="hf-candidate-row-name">
                                 {card.name}
                               </div>
+                              {/* Из теневой базы: попадает в список ТОЛЬКО при поиске.
+                                  Метим явно, чтобы не путать с активными. */}
+                              {card.is_archived && (
+                                <span
+                                  className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[10px] font-medium leading-[14px] bg-[color:var(--hf-main-200)] text-[var(--hf-main-700)] hf-dark-disabled:bg-[color:var(--hf-white-alpha-12)] hf-dark-disabled:text-[color:var(--hf-white-alpha-70)]"
+                                  title="Кандидат из архива (теневая база) — найден поиском"
+                                >
+                                  <Archive className="w-[9px] h-[9px]" />
+                                  Архив
+                                </span>
+                              )}
                             </div>
                             {listSettings.fields.lastPosition && card.position && (
                               <div className="hf-candidate-row-subtitle">

@@ -159,6 +159,8 @@ export interface KanbanCard {
   total_experience?: string;
   vacancy_name?: string;
   rejection_reason?: string;
+  /** Карточка из теневой базы — приходит в выдачу ТОЛЬКО при поиске, метится «Архив». */
+  is_archived?: boolean;
   extra_data?: Record<string, any>;
 }
 

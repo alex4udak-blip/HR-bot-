@@ -66,6 +66,8 @@ class CandidateItem(BaseModel):
     company: Optional[str] = None
     vacancy_count: int = 0
     is_duplicate: bool = False
+    # Из теневой базы (попадает в выдачу только при поиске) — фронт метит «Архив».
+    is_archived: bool = False
 
     class Config:
         from_attributes = True
@@ -130,18 +132,31 @@ def _name_search_terms(q: str) -> List[str]:
     return [f"%{t}%" for t in terms if t]
 
 
-def _base_candidate_query(org_id: Optional[int], current_user: User, isolated_ids: list) -> Select:
+def _base_candidate_query(
+    org_id: Optional[int],
+    current_user: User,
+    isolated_ids: list,
+    include_archived: bool = False,
+) -> Select:
     """Return a base SELECT for Entity filtered to candidates + org scoping.
 
     Скрываем frozen-копии после трансфера (is_transferred=true) — это
     read-only артефакты с суффиксом '[Transferred -> ...]' в имени,
     они не должны загромождать активную доску HR.
+
+    include_archived — подмешать теневую базу. По умолчанию архив скрыт (пустая
+    доска/списки не должны тонуть в тысячах импортных карточек), но при ПОИСКЕ
+    его включаем: рекрутёр должен находить, что человек уже проходил у нас
+    (карточки помечаются флагом is_archived). Права не меняются: org-скоуп и
+    shadow-фильтр остаются, а сам раздел «Архив» — по-прежнему superadmin-only.
     """
-    q = select(Entity).where(
+    conds = [
         Entity.type == EntityType.candidate,
         Entity.is_transferred.is_not(True),
-        Entity.is_archived.is_not(True),  # теневая база скрыта из активного поиска/списков/канбана
-    )
+    ]
+    if not include_archived:
+        conds.append(Entity.is_archived.is_not(True))
+    q = select(Entity).where(*conds)
     if current_user.role == UserRole.superadmin:
         if isolated_ids:
             q = q.where(~Entity.created_by.in_(isolated_ids))
@@ -222,7 +237,10 @@ async def search_candidates(
 
     isolated_ids = await get_isolated_creator_ids(current_user, db) if current_user.role == UserRole.superadmin else []
 
-    base = _base_candidate_query(org_id, current_user, isolated_ids)
+    # Как и на доске: архив подмешиваем только когда реально ищут.
+    base = _base_candidate_query(
+        org_id, current_user, isolated_ids, include_archived=bool(q and q.strip())
+    )
 
     # --- filters ---
     if status:
@@ -403,6 +421,7 @@ async def search_candidates(
             company=e.company,
             vacancy_count=vacancy_count_map.get(e.id, 0),
             is_duplicate=e.id in duplicate_ids,
+            is_archived=bool(getattr(e, "is_archived", False)),
         ))
 
     return CandidateSearchResponse(
@@ -811,6 +830,9 @@ class KanbanCard(BaseModel):
     total_experience: Optional[str] = None
     vacancy_name: Optional[str] = None
     rejection_reason: Optional[str] = None
+    # Карточка из теневой базы: попадает в выдачу ТОЛЬКО при поиске, помечается
+    # на фронте плашкой «Архив», чтобы не путать с активными.
+    is_archived: bool = False
     extra_data: Optional[dict] = None
 
     class Config:
@@ -843,7 +865,12 @@ async def get_candidates_kanban(
     org_id = await _get_org_id(current_user, db)
     isolated_ids = await get_isolated_creator_ids(current_user, db) if org_id else []
 
-    base_q = _base_candidate_query(org_id, current_user, isolated_ids)
+    # При ПОИСКЕ подмешиваем теневую базу: человека, который уже проходил у нас,
+    # надо находить прямо здесь, а не в отдельном разделе. Без запроса архив
+    # скрыт — иначе доска утонет в тысячах импортных карточек.
+    base_q = _base_candidate_query(
+        org_id, current_user, isolated_ids, include_archived=bool(q and q.strip())
+    )
 
     # Optional text search
     if q and q.strip():
@@ -1018,6 +1045,7 @@ async def get_candidates_kanban(
                 total_experience=_as_str(ed.get("total_experience")),
                 vacancy_name=vacancy_map.get(e.id),
                 rejection_reason=rejection_map.get(e.id),
+                is_archived=bool(getattr(e, "is_archived", False)),
                 extra_data=ed if ed else None,
             ))
         except Exception as exc:
@@ -1073,7 +1101,11 @@ async def get_candidate_ids(
     org_id = await _get_org_id(current_user, db)
     isolated_ids = await get_isolated_creator_ids(current_user, db) if org_id else []
 
-    base_q = _base_candidate_query(org_id, current_user, isolated_ids)
+    # Набор ДОЛЖЕН совпадать с доской (иначе «Выбрать всех» выделит не то):
+    # там при поиске архив подмешивается — значит и здесь.
+    base_q = _base_candidate_query(
+        org_id, current_user, isolated_ids, include_archived=bool(q and q.strip())
+    )
 
     if q and q.strip():
         term = f"%{q.strip().lower()}%"

@@ -30,6 +30,49 @@ def _h(token: str) -> dict:
 
 
 # ============================================================
+# Архив в поиске «Все кандидаты» (найти можно, листать — нет)
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_search_finds_archived_only_with_query(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    """Архивный НЕ виден в пустой выдаче (доска не тонет в теневой базе),
+    но находится ПОИСКОМ и помечен флагом is_archived."""
+    await _mk(db_session, organization.id, "Архивный Пётр Сергеевич", is_archived=True)
+    await _mk(db_session, organization.id, "Активный Иван Петрович")
+    await db_session.commit()
+
+    # без запроса — архива нет
+    r = await client.get("/api/candidates/search", headers=_h(admin_token))
+    assert r.status_code == 200, r.text
+    names = [i["name"] for i in r.json()["items"]]
+    assert "Архивный Пётр Сергеевич" not in names, names
+
+    # с запросом — находится и помечен
+    r = await client.get("/api/candidates/search?q=Архивный", headers=_h(admin_token))
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    found = [i for i in items if i["name"] == "Архивный Пётр Сергеевич"]
+    assert len(found) == 1, items
+    assert found[0]["is_archived"] is True, found[0]
+
+
+@pytest.mark.asyncio
+async def test_search_archived_does_not_leak_across_orgs(
+    client, db_session, organization, second_organization, admin_user, org_owner, admin_token,
+):
+    """Поиск с архивом НЕ должен пробивать границу организации."""
+    await _mk(db_session, second_organization.id, "Чужой Архивный Пётр", is_archived=True)
+    await db_session.commit()
+
+    r = await client.get("/api/candidates/search?q=Чужой", headers=_h(admin_token))
+    assert r.status_code == 200, r.text
+    names = [i["name"] for i in r.json()["items"]]
+    assert "Чужой Архивный Пётр" not in names, names
+
+
+# ============================================================
 # Авто-склейка «разъехавшегося» человека прямо во время импорта
 # ============================================================
 
