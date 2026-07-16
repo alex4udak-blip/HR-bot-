@@ -2758,6 +2758,19 @@ export default function RecruiterFunnelsPage() {
                                     </HuntflowInfoRow>
                                   );
                                 })()}
+                                {/* «О себе» — краткое описание кандидата
+                                    (extra_data.summary); паритет с «Все кандидаты». */}
+                                {(() => {
+                                  const s = (funnelCard?.extra_data as Record<string, unknown> | undefined)?.summary;
+                                  if (typeof s !== 'string' || !s.trim()) return null;
+                                  return (
+                                    <HuntflowInfoRow label="О себе">
+                                      <span className="whitespace-pre-wrap break-words text-[var(--hf-main-900)]">
+                                        {s.trim()}
+                                      </span>
+                                    </HuntflowInfoRow>
+                                  );
+                                })()}
                               </div>
 
 

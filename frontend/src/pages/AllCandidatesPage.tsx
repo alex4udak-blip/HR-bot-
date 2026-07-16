@@ -2656,6 +2656,17 @@ const InfoTab = memo(function InfoTab({
               )}
             </InfoRow>
           )}
+          {/* «О себе» — краткое описание кандидата (extra_data.summary), которое
+              достаёт парсер резюме или пишет рекрутёр в модалке «Парсинг резюме».
+              Раньше сохранялось «в никуда» (на карточке не показывалось). */}
+          {typeof card.extra_data?.summary === "string" &&
+            card.extra_data.summary.trim() && (
+              <InfoRow label="О себе">
+                <span className="whitespace-pre-wrap break-words text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)]">
+                  {card.extra_data.summary.trim()}
+                </span>
+              </InfoRow>
+            )}
 
           {/* Tags row */}
           <InfoRow label="Метки">
