@@ -10,7 +10,11 @@ from ..models.database import (
     EntityTransfer, CallRecording, Invitation, CriteriaPreset, ReportSubscription
 )
 from ..models.schemas import UserCreate, UserUpdate, UserProfileUpdate, UserResponse
-from ..services.auth import get_superadmin, get_current_user, get_current_user_dependency, hash_password
+from ..services.auth import (
+    get_superadmin, get_current_user, get_current_user_dependency, hash_password,
+    has_full_database_access,
+)
+from pydantic import BaseModel
 from ..services.password_policy import validate_password
 from ..utils.roles import map_role_string_to_user_role, map_user_role_to_dept_role, map_user_role_to_org_role
 
@@ -495,6 +499,59 @@ async def update_user(
         is_active=user.is_active, created_at=user.created_at,
         chats_count=chats_count
     )
+
+
+class ReassignOwnershipRequest(BaseModel):
+    from_user_id: int   # уходящий рекрутёр
+    to_user_id: int     # кому передаём
+
+
+@router.post("/reassign-ownership")
+async def reassign_ownership(
+    data: ReassignOwnershipRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """«Передать всё от X к Y»: воронки + кандидаты уходящего рекрутёра → живому.
+
+    Готовит увольнение: после переноса аккаунт X можно удалять, ничего не
+    осиротеет. Доступно админам/владельцам/суперадмину. Строго в рамках орга
+    уходящего рекрутёра.
+    """
+    current_user = await db.merge(current_user)
+    if data.from_user_id == data.to_user_id:
+        raise HTTPException(status_code=400, detail="Нельзя передать самому себе")
+
+    # Орг определяем по уходящему рекрутёру — так работает и для админа, и для СА.
+    from_org_id = (await db.execute(
+        select(OrgMember.org_id).where(OrgMember.user_id == data.from_user_id)
+    )).scalars().first()
+    if from_org_id is None:
+        raise HTTPException(status_code=404, detail="Уходящий рекрутёр не найден в организации")
+
+    # Права: суперадмин ИЛИ owner/admin этой организации.
+    if current_user.role != UserRole.superadmin and not await has_full_database_access(
+        current_user, from_org_id, db
+    ):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    # Принимающий — тоже участник ЭТОЙ организации (без утечки между орг).
+    to_ok = (await db.execute(
+        select(OrgMember.user_id).where(
+            OrgMember.org_id == from_org_id, OrgMember.user_id == data.to_user_id
+        )
+    )).scalars().first()
+    if to_ok is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Принимающий рекрутёр должен быть в той же организации",
+        )
+
+    from ..services.recruiter_transfer import reassign_recruiter_ownership
+    counts = await reassign_recruiter_ownership(
+        db, from_org_id, data.from_user_id, data.to_user_id
+    )
+    return {"success": True, **counts}
 
 
 @router.delete("/{user_id}", status_code=204)

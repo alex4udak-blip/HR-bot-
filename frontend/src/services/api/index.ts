@@ -26,6 +26,7 @@ export {
   getUsers,
   createUser,
   deleteUser,
+  reassignOwnership,
   adminResetPassword,
   adminUpdateUser,
   updateUserProfile,

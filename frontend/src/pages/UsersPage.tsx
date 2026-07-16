@@ -22,9 +22,10 @@ import {
   Key,
   Database,
   Pencil,
-  MessageCircle
+  MessageCircle,
+  ArrowRightLeft
 } from 'lucide-react';
-import { getUsers, createUser, deleteUser, adminResetPassword, adminUpdateUser, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, getMyManagedUserIds, createInvitation, getInvitations, revokeInvitation, addDepartmentMember, type Department, type DeptRole, type Invitation } from '@/services/api';
+import { getUsers, createUser, deleteUser, adminResetPassword, adminUpdateUser, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, getMyManagedUserIds, createInvitation, getInvitations, revokeInvitation, addDepartmentMember, reassignOwnership, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import type { User } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
@@ -114,6 +115,8 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
   const [loading, setLoading] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showInvitationsTab, setShowInvitationsTab] = useState(false);
+  // «Передать всё от X к Y» — уходящий рекрутёр, чьи воронки/кандидаты передаём.
+  const [transferFrom, setTransferFrom] = useState<OrgMember | null>(null);
 
   // Check if current user's department has candidate_database feature
   const canManageFullAccess = hasFeature('candidate_database');
@@ -372,6 +375,17 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
                       </button>
                     )}
 
+                    {/* «Передать всё» — воронки+кандидаты этого рекрутёра →
+                        другому (перед увольнением, чтобы работа не осиротела). */}
+                    {canManageUsers && !isMe && (
+                      <button
+                        onClick={() => setTransferFrom(member)}
+                        className="p-2 rounded-lg hover:bg-cyan-500/20 text-cyan-400 transition-colors"
+                        title={`Передать все воронки и кандидаты ${member.user_name} другому рекрутёру`}
+                      >
+                        <ArrowRightLeft size={16} />
+                      </button>
+                    )}
                     {canManageUsers && !isMe && (() => {
                       // Permission logic for delete button:
                       // - Superadmin: can delete anyone
@@ -458,7 +472,111 @@ function OrganizationMembers({ currentUser }: { currentUser: any }) {
           />
         )}
       </AnimatePresence>
+
+      {/* «Передать всё от X к Y» */}
+      <AnimatePresence>
+        {transferFrom && (
+          <TransferOwnershipModal
+            from={transferFrom}
+            members={members.filter((m) => m.user_id !== transferFrom.user_id)}
+            onClose={() => setTransferFrom(null)}
+            onDone={() => {
+              setTransferFrom(null);
+              loadData();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
+  );
+}
+
+// «Передать всё от X к Y»: воронки + кандидаты уходящего рекрутёра → другому.
+function TransferOwnershipModal({
+  from,
+  members,
+  onClose,
+  onDone,
+}: {
+  from: OrgMember;
+  members: OrgMember[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [toId, setToId] = useState<number | ''>('');
+  const [busy, setBusy] = useState(false);
+
+  const handleSubmit = async () => {
+    if (toId === '') return;
+    const toName = members.find((m) => m.user_id === toId)?.user_name || 'рекрутёру';
+    if (!confirm(
+      `Передать ВСЕ воронки и кандидатов «${from.user_name}» → «${toName}»?\n\n` +
+      `После этого аккаунт «${from.user_name}» можно безопасно удалять. Действие необратимо.`
+    )) return;
+    setBusy(true);
+    try {
+      const r = await reassignOwnership(from.user_id, Number(toId));
+      toast.success(
+        `Передано «${toName}»: воронок ${r.vacancies}, кандидатов ${r.candidates}, заявок ${r.applications}`,
+      );
+      onDone();
+    } catch (e) {
+      console.error('reassign ownership failed', e);
+      toast.error('Не удалось передать — попробуйте ещё раз');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/60 z-50" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[440px] max-w-[92vw] rounded-2xl bg-[var(--hf-bg-panel)] border border-white/10 p-6 shadow-xl">
+          <div className="flex items-center gap-3 mb-1">
+            <ArrowRightLeft className="w-5 h-5 text-cyan-400" />
+            <Dialog.Title className="text-white text-base font-semibold">
+              Передать всё
+            </Dialog.Title>
+          </div>
+          <Dialog.Description className="text-sm text-white/50 mb-4">
+            Все воронки и кандидаты <span className="text-white/80">{from.user_name}</span> перейдут
+            выбранному рекрутёру (владение и HR-метки). Нужно перед удалением аккаунта.
+          </Dialog.Description>
+
+          <label className="block text-xs text-white/60 mb-1.5">Кому передать</label>
+          <select
+            value={toId}
+            onChange={(e) => setToId(e.target.value ? Number(e.target.value) : '')}
+            disabled={busy}
+            className="w-full px-3 py-2.5 bg-white/[0.04] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-cyan-500/50 mb-5"
+          >
+            <option value="">— выберите рекрутёра —</option>
+            {members.map((m) => (
+              <option key={m.user_id} value={m.user_id}>{m.user_name}</option>
+            ))}
+          </select>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              disabled={busy}
+              className="px-4 py-2 rounded-lg text-sm text-white/70 hover:bg-white/5 transition-colors"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={busy || toId === ''}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-40 transition-colors inline-flex items-center gap-2"
+            >
+              {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+              Передать
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

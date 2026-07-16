@@ -108,6 +108,27 @@ export const deleteUser = async (id: number): Promise<void> => {
   await debouncedMutation<void>('delete', `/users/${id}`);
 };
 
+export interface ReassignOwnershipResult {
+  success: boolean;
+  applications: number;
+  vacancies: number;
+  candidates: number;
+  funnels_participation: number;
+}
+
+/** «Передать всё от X к Y»: воронки + кандидаты уходящего рекрутёра → живому. */
+export const reassignOwnership = async (
+  fromUserId: number,
+  toUserId: number,
+): Promise<ReassignOwnershipResult> => {
+  const { data } = await debouncedMutation<ReassignOwnershipResult>(
+    'post',
+    '/users/reassign-ownership',
+    { from_user_id: fromUserId, to_user_id: toUserId },
+  );
+  return data as ReassignOwnershipResult;
+};
+
 export interface AdminUserUpdate {
   name?: string;
   email?: string;
