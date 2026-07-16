@@ -331,6 +331,12 @@ async def _run_clickup_combine(
         if not any(e is ent for e in lst):
             lst.append(ent)
 
+    # Поглощённые авто-склейкой карточки помечаем «мёртвыми» и пропускаем при
+    # матчинге — вместо дорогой чистки всего индекса на каждом слиянии. В одном
+    # проходе combine каждый человек = одна группа, поэтому устаревшие ключи
+    # поглощённых карточек другими группами не переиспользуются.
+    dead_ids: set = set()
+
     for group in _cu_group(all_rows, _key_fn):
         try:
             payload = _cu_assemble(group, cf_headers)
@@ -349,12 +355,12 @@ async def _run_clickup_combine(
             _seen_ent: set = set()
             for _k in group_keys:
                 for _e in key_index.get(_k, []):
-                    if id(_e) not in _seen_ent:
+                    if id(_e) not in _seen_ent and id(_e) not in dead_ids:
                         _seen_ent.add(id(_e))
                         matched.append(_e)
             for _t in group_task_ids:
                 for _e in task_index.get(_t, []):
-                    if id(_e) not in _seen_ent:
+                    if id(_e) not in _seen_ent and id(_e) not in dead_ids:
                         _seen_ent.add(id(_e))
                         matched.append(_e)
             match = matched[0] if matched else None
@@ -374,14 +380,9 @@ async def _run_clickup_combine(
                     auto_merged += 1
                 if _absorbed:
                     await db.flush()
-                    _dead = {id(d) for d in _absorbed}
-                    for _idx in (key_index, task_index):
-                        for _k in list(_idx.keys()):
-                            _alive = [e for e in _idx[_k] if id(e) not in _dead]
-                            if len(_alive) != len(_idx[_k]):
-                                if match not in _alive:
-                                    _alive.append(match)
-                                _idx[_k] = _alive
+                    # Помечаем поглощённые «мёртвыми» — матчинг их пропустит
+                    # (O(поглощённых) вместо обхода всего индекса на каждом слиянии).
+                    dead_ids.update(id(d) for d in _absorbed)
             if match is not None and replace_existing and match.is_archived:
                 # «Перезалить начисто»: архивную карточку полностью пересобираем.
                 match.name = payload["name"] or match.name

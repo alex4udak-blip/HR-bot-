@@ -93,6 +93,10 @@ export default function CsvImportPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const isBulk = files.length > 1;
+  const fileKey = (f: File) => `${f.name}:${f.size}`;
+  // Статус каждого файла во время пачки: ждёт → грузится → готов/пропущен/ошибка.
+  type FileStat = 'pending' | 'loading' | 'done' | 'skipped' | 'error';
+  const [fileStatus, setFileStatus] = useState<Record<string, FileStat>>({});
 
   // Step 2: preview + mapping
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
@@ -121,6 +125,8 @@ export default function CsvImportPage() {
 
   // Step 3: results
   const [importing, setImporting] = useState(false);
+  // Прогресс пакетной заливки (батчи по размеру): сколько файлов уже обработано.
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState('');
   const [errorsExpanded, setErrorsExpanded] = useState(false);
@@ -257,39 +263,114 @@ export default function CsvImportPage() {
     }
   };
 
-  // Пакетная заливка: все файлы одним запросом (бэкенд авто-определяет маппинг,
-  // склеивает людей между файлами, один коммит).
+  // Пакетная заливка батчами по РАЗМЕРУ: один запрос на пачку ≤ MAX_BATCH_BYTES
+  // (под лимитом nginx client_max_body_size и proxy_read_timeout — иначе большой
+  // одиночный запрос отваливается по таймауту/размеру). Между запросами дедуп
+  // сохраняется: каждый следующий видит уже созданные карточки. Прогресс — по
+  // файлам; результаты агрегируются.
+  const MAX_BATCH_BYTES = 40 * 1024 * 1024; // 40 МБ
+
   const executeBulkImport = async () => {
     if (!files.length) return;
     setImporting(true);
     setImportError('');
     setResult(null);
+    setBulkProgress({ done: 0, total: files.length });
+    // Все файлы стартуют как «ждёт».
+    setFileStatus(Object.fromEntries(files.map((f) => [fileKey(f), 'pending' as FileStat])));
 
-    try {
-      const formData = new FormData();
-      files.forEach((f) => formData.append('files', f));
-      formData.append('skip_duplicates', String(skipDuplicates));
-      formData.append('replace_existing', String(replaceExisting));
-      if (vacancyId) formData.append('vacancy_id', vacancyId);
-
-      const res = await fetch('/api/import/execute-bulk', { method: 'POST', body: formData });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Server error' }));
-        throw new Error(err.detail || `HTTP ${res.status}`);
+    // Режем на батчи по кумулятивному размеру (в каждом ≥ 1 файл).
+    const batches: File[][] = [];
+    let cur: File[] = [];
+    let curBytes = 0;
+    for (const f of files) {
+      if (cur.length && curBytes + f.size > MAX_BATCH_BYTES) {
+        batches.push(cur);
+        cur = [];
+        curBytes = 0;
       }
-      const data: ImportResult = await res.json();
-      setResult(data);
+      cur.push(f);
+      curBytes += f.size;
+    }
+    if (cur.length) batches.push(cur);
+
+    const agg: ImportResult = {
+      imported: 0, skipped: 0, replaced: 0, auto_merged: 0, errors: [], files: [],
+    };
+    let done = 0;
+    let anyOk = false;
+
+    // Падение одного батча (напр. слишком большой файл) не должно рушить всю
+    // заливку — записываем ошибку и продолжаем с остальными.
+    for (const batch of batches) {
+      // Файлы этого батча — «грузятся».
+      setFileStatus((prev) => {
+        const n = { ...prev };
+        batch.forEach((f) => { n[fileKey(f)] = 'loading'; });
+        return n;
+      });
+      try {
+        const formData = new FormData();
+        batch.forEach((f) => formData.append('files', f));
+        formData.append('skip_duplicates', String(skipDuplicates));
+        // Пачка шлётся батчами (несколько запросов), поэтому «перезаписать
+        // начисто» здесь НЕ поддерживается: один человек может попасть в разные
+        // батчи, и replace во втором стёр бы прохождения из первого. Идемпотентное
+        // дополнение безопасно накапливает людей/прохождения/комментарии.
+        formData.append('replace_existing', 'false');
+        if (vacancyId) formData.append('vacancy_id', vacancyId);
+
+        const res = await fetch('/api/import/execute-bulk', { method: 'POST', body: formData });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: 'Server error' }));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const data: ImportResult = await res.json();
+        agg.imported += data.imported || 0;
+        agg.skipped += data.skipped || 0;
+        agg.replaced = (agg.replaced || 0) + (data.replaced || 0);
+        agg.auto_merged = (agg.auto_merged || 0) + (data.auto_merged || 0);
+        agg.errors.push(...(data.errors || []));
+        agg.files!.push(...(data.files || []));
+        anyOk = true;
+        // По ответу помечаем каждый файл готовым/пропущенным.
+        const byName = new Map((data.files || []).map((s) => [s.name, s]));
+        setFileStatus((prev) => {
+          const n = { ...prev };
+          batch.forEach((f) => {
+            const s = byName.get(f.name);
+            n[fileKey(f)] = s && !s.accepted ? 'skipped' : 'done';
+          });
+          return n;
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'ошибка';
+        const label = batch.map((f) => f.name).join(', ');
+        agg.errors.push({ row: 0, reason: `Пачка [${label.slice(0, 80)}]: ${msg}` });
+        setFileStatus((prev) => {
+          const n = { ...prev };
+          batch.forEach((f) => { n[fileKey(f)] = 'error'; });
+          return n;
+        });
+      }
+      done += batch.length;
+      setBulkProgress({ done, total: files.length });
+    }
+
+    setImporting(false);
+    setBulkProgress(null);
+    if (!anyOk) {
+      setImportError(agg.errors[0]?.reason || 'Не удалось загрузить ни одной пачки');
+    } else {
+      setResult(agg);
       setStep(3);
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Import failed');
-    } finally {
-      setImporting(false);
     }
   };
 
   const restart = () => {
     setStep(1);
     setFiles([]);
+    setFileStatus({});
     setPreview(null);
     setColumnMapping({});
     setVacancyId('');
@@ -748,6 +829,53 @@ export default function CsvImportPage() {
                 </p>
               </div>
 
+              {/* Список файлов со статусом заливки */}
+              <div className="rounded-xl border border-white/[0.06] divide-y divide-white/[0.04] max-h-64 overflow-y-auto">
+                {files.map((f, i) => {
+                  const st = fileStatus[fileKey(f)];
+                  return (
+                    <div key={`${fileKey(f)}:${i}`} className="flex items-center gap-3 px-4 py-2.5">
+                      <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center">
+                        {st === 'loading' ? (
+                          <Loader2 className="w-4 h-4 text-accent-400 animate-spin" />
+                        ) : st === 'done' ? (
+                          <CheckCircle2 className="w-4 h-4 text-green-400" />
+                        ) : st === 'skipped' ? (
+                          <AlertTriangle className="w-4 h-4 text-yellow-400" />
+                        ) : st === 'error' ? (
+                          <XCircle className="w-4 h-4 text-red-400" />
+                        ) : (
+                          <FileSpreadsheet className="w-4 h-4 text-white/30" />
+                        )}
+                      </span>
+                      <span className={clsx(
+                        'flex-1 min-w-0 truncate text-sm',
+                        st === 'done' ? 'text-white/50' : 'text-white/80',
+                      )}>
+                        {f.name}
+                      </span>
+                      <span className="text-xs text-dark-400 flex-shrink-0 w-20 text-right">
+                        {st === 'loading' ? 'грузится…'
+                          : st === 'done' ? 'готово'
+                          : st === 'skipped' ? 'пропущен'
+                          : st === 'error' ? 'ошибка'
+                          : formatFileSize(f.size)}
+                      </span>
+                      {!importing && (
+                        <button
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          className="text-white/30 hover:text-red-400 transition-colors flex-shrink-0"
+                          title="Убрать файл"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 sm:col-span-2">
                   <p className="text-xs text-amber-900 leading-relaxed">
@@ -788,21 +916,14 @@ export default function CsvImportPage() {
                   </label>
                 </div>
 
-                <div className="p-4 rounded-xl bg-amber-500/[0.06] border border-amber-500/20 sm:col-span-2">
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={replaceExisting}
-                      onChange={(e) => setReplaceExisting(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 rounded border-white/20 bg-white/[0.04] text-amber-500 focus:ring-amber-500 focus:ring-offset-0"
-                    />
-                    <span className="text-sm text-white/70">
-                      <span className="font-medium text-amber-300">Перезаписать существующих начисто</span>
-                      <br />
-                      Кто уже есть в архиве и присутствует в файлах — их карточки полностью
-                      пересобираются. Активных кандидатов в воронках не трогает.
-                    </span>
-                  </label>
+                <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] sm:col-span-2">
+                  <p className="text-xs text-white/50 leading-relaxed">
+                    Повторная заливка безопасно <b className="text-white/70">дополняет</b>:
+                    добавляет новых людей, недостающие прохождения и комментарии — ничего
+                    не теряется. «Перезаписать начисто» в пачке недоступно (файлы льются
+                    батчами) — для полной пересборки одной карточки используйте импорт
+                    одиночного файла.
+                  </p>
                 </div>
               </div>
 
@@ -834,7 +955,9 @@ export default function CsvImportPage() {
                   {importing ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Импортируется...
+                      {bulkProgress
+                        ? `Импортируется… ${bulkProgress.done} из ${bulkProgress.total}`
+                        : 'Импортируется…'}
                     </>
                   ) : (
                     <>
