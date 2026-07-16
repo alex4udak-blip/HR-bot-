@@ -401,3 +401,21 @@ def test_merge_participations_backfills_notes_idempotently():
     # повторный прогон с тем же id — без дублей
     merged2 = merge_participations(merged, incoming)
     assert len(merged2[0]["notes"]) == 1
+
+
+def test_merge_participations_upserts_edited_note_text():
+    # Тот же комментарий (тот же id), но текст отредактирован → мердж обновляет
+    # содержимое на актуальное, не задваивая заметку.
+    existing = [{"vacancy_title": "CMO", "recruiter": "Инна", "status": "собес",
+                 "notes": [{"id": "clickup:X:0", "text": "старый текст", "author_name": "Инна HR"}]}]
+    incoming = [{"vacancy_title": "CMO", "recruiter": "Инна", "status": "собес",
+                 "notes": [
+                     {"id": "clickup:X:0", "text": "исправленный текст", "author_name": "Инна HR"},
+                     {"id": "clickup:X:1", "text": "новый комментарий", "author_name": "Инна HR"},
+                 ]}]
+    merged = merge_participations(existing, incoming)
+    notes = merged[0]["notes"]
+    assert len(notes) == 2, notes
+    by_id = {n["id"]: n for n in notes}
+    assert by_id["clickup:X:0"]["text"] == "исправленный текст"   # обновился
+    assert by_id["clickup:X:1"]["text"] == "новый комментарий"    # добавился

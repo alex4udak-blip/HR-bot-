@@ -34,7 +34,7 @@ import {
 } from "./model";
 // Единый рендер ответа анкеты: ClickUp-вложение (JSON) → кликабельная ссылка,
 // гео-JSON → адрес. Иначе объединённая анкета вываливает сырой JSON.
-import { renderAnswer } from "./ImportedParticipations";
+import { renderAnswer, isBlankAnswer } from "./ImportedParticipations";
 
 // ---------- helpers (приватные копии — изоляция модуля) ----------
 
@@ -165,14 +165,14 @@ function getImportedQuestionnaire(card: KanbanCard): {
             value: normalizeImportedValue(o.answer ?? o.a),
           };
         })
-        .filter((r) => r.label && r.value);
+        .filter((r) => r.label && r.value && !isBlankAnswer(r.value));
     }
 
     // 2) Иначе парсим текст формы из description — достоверные пары Q→A.
     if (rows.length === 0) {
       rows = parseFormSubmission(normalizeImportedValue(ed.description))
         .map((p) => ({ label: p.question, value: p.answer }))
-        .filter((r) => r.label && r.value);
+        .filter((r) => r.label && r.value && !isBlankAnswer(r.value));
     }
 
     // 3) Фолбэк (списки без формы): сырые cf:* поля как есть.

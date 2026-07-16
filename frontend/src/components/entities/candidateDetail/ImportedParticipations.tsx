@@ -46,8 +46,36 @@ function linkify(text: string): ReactNode {
 // Показываем вложения кликабельными ссылками, а не сырым JSON-текстом.
 // Экспортируется: тот же рендер нужен и в объединённой анкете (ResumeTab),
 // иначе там ClickUp-вложение вываливается сырым JSON.
+// ClickUp поле «прогресс/оценка» = {"current": N, "percent_completed": M}
+// (напр. HR-рейтинги «Техническая экспертиза»). Разбираем, чтобы не показывать
+// сырой JSON.
+function parseProgress(answer: string): { current: number; percent: number } | null {
+  const t = (answer || "").trim();
+  if (!t.startsWith("{") || !t.includes("percent_completed")) return null;
+  try {
+    const o = JSON.parse(t) as Record<string, unknown>;
+    if (o && typeof o === "object" && "percent_completed" in o) {
+      return { current: Number(o.current) || 0, percent: Number(o.percent_completed) || 0 };
+    }
+  } catch {
+    /* не JSON */
+  }
+  return null;
+}
+
+// Пустая оценка (0/0) — поле никто не заполнял; строку из анкеты скрываем.
+export function isBlankAnswer(answer: string): boolean {
+  const t = (answer || "").trim();
+  if (!t) return true;
+  const p = parseProgress(t);
+  return !!p && p.current === 0 && p.percent === 0;
+}
+
 export function renderAnswer(answer: string): ReactNode {
   const t = (answer || "").trim();
+  // Поле-оценка {current, percent_completed} → «M%», а не сырой JSON.
+  const prog = parseProgress(t);
+  if (prog) return `${prog.percent}%`;
   // ClickUp «Местонахождение» = geo-JSON {location, place_id, formatted_address} —
   // показываем читаемый адрес, а не сырой JSON.
   if (t.startsWith("{") && t.includes("formatted_address")) {
@@ -115,7 +143,7 @@ export default function ImportedParticipations({
       {list.map((p, i) => {
         const label = [p.vacancy_title, p.recruiter].filter(Boolean).join(" · ");
         const qa = (p.anketa || []).filter(
-          (r) => (r.question || "").trim() && (r.answer || "").trim(),
+          (r) => (r.question || "").trim() && !isBlankAnswer(r.answer || ""),
         );
         return (
           <div key={i}>

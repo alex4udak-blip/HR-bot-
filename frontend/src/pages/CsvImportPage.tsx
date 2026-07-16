@@ -1010,13 +1010,29 @@ export default function CsvImportPage() {
                     <p className="text-3xl font-bold text-violet-300">{result.auto_merged}</p>
                   </div>
                 )}
-                <div className="p-5 rounded-2xl bg-yellow-500/10 border border-yellow-500/20">
-                  <div className="flex items-center gap-3 mb-2">
-                    <AlertTriangle className="w-5 h-5 text-yellow-400" />
-                    <span className="text-sm text-yellow-400 font-medium">Пропущено</span>
+                {/* ClickUp-импорт (пачка или одиночный): «skipped» — это НЕ
+                    проигнорировано, а «уже был в архиве → дополнен прохождениями
+                    и комментариями». Показываем как «Обновлено» (не тревожно). */}
+                {isBulk || isClickupFile ? (
+                  <div className="p-5 rounded-2xl bg-blue-500/10 border border-blue-500/20">
+                    <div className="flex items-center gap-3 mb-2">
+                      <RotateCcw className="w-5 h-5 text-blue-400" />
+                      <span className="text-sm text-blue-400 font-medium">Обновлено</span>
+                    </div>
+                    <p className="text-3xl font-bold text-blue-300">{result.skipped}</p>
+                    <p className="text-[11px] text-blue-300/60 mt-1 leading-snug">
+                      уже были в архиве — дополнены прохождениями и комментариями
+                    </p>
                   </div>
-                  <p className="text-3xl font-bold text-yellow-300">{result.skipped}</p>
-                </div>
+                ) : (
+                  <div className="p-5 rounded-2xl bg-yellow-500/10 border border-yellow-500/20">
+                    <div className="flex items-center gap-3 mb-2">
+                      <AlertTriangle className="w-5 h-5 text-yellow-400" />
+                      <span className="text-sm text-yellow-400 font-medium">Пропущено</span>
+                    </div>
+                    <p className="text-3xl font-bold text-yellow-300">{result.skipped}</p>
+                  </div>
+                )}
                 <div className="p-5 rounded-2xl bg-red-500/10 border border-red-500/20">
                   <div className="flex items-center gap-3 mb-2">
                     <XCircle className="w-5 h-5 text-red-400" />

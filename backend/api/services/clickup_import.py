@@ -260,12 +260,20 @@ def parse_comments(raw: str, task_id: str = "") -> List[Dict[str, Any]]:
 
 
 def _merge_notes(target: List[Dict[str, Any]], incoming: List[Dict[str, Any]]) -> None:
-    """До-кладывает заметки в target, дедуп по id (стабильному на переимпорте)."""
-    seen = {n.get("id") for n in target}
+    """Upsert заметок по id (стабильному на переимпорте): тот же id → обновляем
+    содержимое (текст/дата/автор) на актуальное из файла, новый id → добавляем.
+
+    Так повторная заливка свежего экспорта приводит комментарии к актуальному
+    состоянию (в т.ч. отредактированные), не задваивая и ничего не теряя.
+    Заметки, которых больше нет в файле (удалённые в ClickUp), не трогаем."""
+    pos_by_id = {n.get("id"): i for i, n in enumerate(target)}
     for n in incoming or []:
-        if n.get("id") not in seen:
+        nid = n.get("id")
+        if nid in pos_by_id:
+            target[pos_by_id[nid]] = n   # актуальная версия побеждает
+        else:
+            pos_by_id[nid] = len(target)
             target.append(n)
-            seen.add(n.get("id"))
 
 
 def build_participation(row: Dict[str, Any], cf_headers: List[str]) -> Dict[str, Any]:
