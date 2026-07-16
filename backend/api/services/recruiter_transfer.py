@@ -148,8 +148,13 @@ async def get_handover_summary(
 ) -> Dict[str, object]:
     """Что можно передать от уходящего: его воронки (с числом ЕГО кандидатов) +
     кандидаты ВНЕ воронок. Для UI раздельной передачи."""
+    # Только живые воронки: мягко удалённые (deleted_at) не показываем.
     vacs = (
-        await db.execute(select(Vacancy).where(Vacancy.org_id == org_id))
+        await db.execute(
+            select(Vacancy).where(
+                Vacancy.org_id == org_id, Vacancy.deleted_at.is_(None)
+            )
+        )
     ).scalars().all()
 
     # Число кандидатов уходящего (created_by) в каждой вакансии — то, что уедет.
@@ -275,7 +280,7 @@ async def reassign_recruiter_split(
         if not vid or not to or to == from_user_id:
             continue
         v = await db.get(Vacancy, vid)
-        if v is None or v.org_id != org_id:
+        if v is None or v.org_id != org_id or v.deleted_at is not None:
             continue
         await _reassign_one_vacancy(db, org_id, from_user_id, to, v, counts, affected)
 

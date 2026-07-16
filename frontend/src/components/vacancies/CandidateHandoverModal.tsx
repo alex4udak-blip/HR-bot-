@@ -9,7 +9,7 @@
 // ================================================================
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowRightLeft, Loader2, X, Briefcase, UserX } from 'lucide-react';
+import { ArrowRightLeft, Loader2, X, Briefcase } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getOrgMembers, getHandoverSummary, reassignSplit } from '@/services/api';
 import type { HandoverSummary } from '@/services/api/auth';
@@ -80,23 +80,19 @@ export default function CandidateHandoverModal({
     const assignments = summary.funnels
       .filter((f) => assign[String(f.vacancy_id)])
       .map((f) => ({ vacancy_id: f.vacancy_id, to_user_id: Number(assign[String(f.vacancy_id)]) }));
-    const poolTo = assign['pool'] ? Number(assign['pool']) : null;
 
     const nameOf = (id: number) => recipients.find((r) => r.id === id)?.name || 'рекрутёру';
-    const lines = [
-      ...assignments.map((a) => {
-        const f = summary.funnels.find((x) => x.vacancy_id === a.vacancy_id);
-        return `• «${f?.title}» → ${nameOf(a.to_user_id)}`;
-      }),
-      ...(poolTo ? [`• Кандидаты вне воронок → ${nameOf(poolTo)}`] : []),
-    ];
+    const lines = assignments.map((a) => {
+      const f = summary.funnels.find((x) => x.vacancy_id === a.vacancy_id);
+      return `• «${f?.title}» → ${nameOf(a.to_user_id)}`;
+    });
     if (!confirm(
       `Передать от «${fromName}»:\n\n${lines.join('\n')}\n\nДействие необратимо.`,
     )) return;
 
     setBusy(true);
     try {
-      const r = await reassignSplit(Number(fromId), assignments, poolTo);
+      const r = await reassignSplit(Number(fromId), assignments);
       toast.success(`Передано: воронок ${r.vacancies}, кандидатов ${r.candidates}, заявок ${r.applications}`);
       onDone?.();
       onClose();
@@ -177,7 +173,7 @@ export default function CandidateHandoverModal({
             <div className="flex items-center gap-2 text-[var(--hf-main-500)] py-4">
               <Loader2 className="w-4 h-4 animate-spin" /> Загрузка воронок…
             </div>
-          ) : summary && (summary.funnels.length > 0 || summary.pool_candidates > 0) ? (
+          ) : summary && summary.funnels.length > 0 ? (
             <div className="space-y-2">
               {summary.funnels.map((f) => (
                 <div
@@ -192,16 +188,6 @@ export default function CandidateHandoverModal({
                   {recipientSelect(String(f.vacancy_id))}
                 </div>
               ))}
-              {summary.pool_candidates > 0 && (
-                <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-[color:var(--hf-main-200)]">
-                  <UserX className="w-4 h-4 text-[var(--hf-main-400)] shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-[var(--hf-main-900)]">Кандидаты вне воронок</div>
-                    <div className="text-xs text-[var(--hf-main-500)]">{summary.pool_candidates} канд. без воронки</div>
-                  </div>
-                  {recipientSelect('pool')}
-                </div>
-              )}
             </div>
           ) : (
             <div className="text-sm text-[var(--hf-main-400)] py-6 text-center">
