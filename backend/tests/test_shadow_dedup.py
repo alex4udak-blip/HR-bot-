@@ -786,3 +786,49 @@ async def test_bulk_import_idempotent(
         select(Entity).where(Entity.name == "Идемпотент Тестов")
     )).scalars().all()
     assert len(rows) == 1, [(e.id, e.name) for e in rows]
+
+
+@pytest.mark.asyncio
+async def test_bulk_backfills_comments_into_existing_card(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    """Регресс: комментарии должны домерживаться в УЖЕ существующую карточку
+    (совпал → merge). Раньше терялись — shallow copy + мутация общих dict'ов
+    делали значение равным старому, и SQLAlchemy не сохранял JSON-колонку."""
+    await _mk(
+        db_session, organization.id, "Якубов Тест",
+        email="yak@x.io", telegram_usernames=["yaktest"], is_archived=True,
+        extra_data={
+            "import_source": "clickup",
+            "clickup_task_ids": ["T-mb"],
+            "participations": [{
+                "vacancy_title": "Media Buyer", "recruiter": "Эльвира",
+                "status": "анкета: нет", "anketa": [], "notes": [],
+            }],
+        },
+    )
+    await db_session.commit()
+
+    csv_text = (
+        "task_id,funnel_list,funnel_folder,status,name,cf:Telegram,comments\n"
+        'T-mb,Media Buyer,Sandbox - Эльвира,анкета: нет,Якубов Тест,@yaktest,'
+        '"[2026-07-07 15:01:42 · Эльвира HR] ответы копипастом и с ошибками"\n'
+    )
+    r = await client.post(
+        "/api/import/execute-bulk",
+        files=[("files", ("mb.csv", csv_text.encode("utf-8"), "text/csv"))],
+        data={"replace_existing": "false"},
+        headers=_h(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["skipped"] == 1, r.json()  # совпал с существующей → merge
+
+    db_session.expire_all()
+    ents = (await db_session.execute(
+        select(Entity).where(Entity.name == "Якубов Тест")
+    )).scalars().all()
+    assert len(ents) == 1
+    parts = (ents[0].extra_data or {}).get("participations") or []
+    notes = parts[0].get("notes") or []
+    assert len(notes) == 1, f"комментарий не домержился: {parts}"
+    assert "копипастом" in notes[0]["text"]

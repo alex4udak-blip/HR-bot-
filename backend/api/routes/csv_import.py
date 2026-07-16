@@ -1,6 +1,7 @@
 """
 API routes for CSV import of candidates (ClickUp, HH.ru, etc.).
 """
+import copy
 import csv
 import io
 import json
@@ -11,6 +12,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 from pydantic import BaseModel
 
 from ..database import get_db
@@ -402,7 +404,12 @@ async def _run_clickup_combine(
                 continue
             if match is not None:
                 # Идемпотентно до-кладываем участия в существующую карточку.
-                ed = dict(match.extra_data or {})
+                # ВАЖНО: deepcopy — иначе _cu_merge мутирует те же dict'ы прохождений,
+                # что и в match.extra_data (shallow copy), старое значение становится
+                # равно новому, и SQLAlchemy не видит изменения → комментарии в
+                # совпавших карточках не сохранялись. Плюс flag_modified — страховка
+                # для JSON-колонки (не MutableDict).
+                ed = copy.deepcopy(dict(match.extra_data or {}))
                 ed["participations"] = _cu_merge(
                     ed.get("participations", []),
                     payload["extra_data"]["participations"],
@@ -414,6 +421,7 @@ async def _run_clickup_combine(
                     if not ed.get(_fld) and payload["extra_data"].get(_fld):
                         ed[_fld] = payload["extra_data"][_fld]
                 match.extra_data = ed
+                flag_modified(match, "extra_data")
                 for k in group_keys:
                     _idx_add(key_index, k, match)
                 for t in group_task_ids:
