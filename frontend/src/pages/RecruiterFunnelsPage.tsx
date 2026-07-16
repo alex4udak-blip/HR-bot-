@@ -5,6 +5,7 @@ import {
   Plus,
   Briefcase,
   Users,
+  ArrowRightLeft,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -43,6 +44,7 @@ import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
 import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
+import CandidateHandoverModal from '@/components/vacancies/CandidateHandoverModal';
 import { getVacancies } from '@/services/api/vacancies';
 import { smartNameMatch, contactMatch } from '@/utils/translit';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
@@ -250,6 +252,7 @@ export default function RecruiterFunnelsPage() {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showRecruiterMenu, setShowRecruiterMenu] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showHandover, setShowHandover] = useState(false);
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -2036,6 +2039,21 @@ export default function RecruiterFunnelsPage() {
                       )}
                     </div>
                   )}
+
+                  {/* «Перенос кандидатов» — справа от фильтра рекрутёров. Уходит
+                      сотрудник → передать его воронки и кандидатов другому. Только
+                      админ/суперадмин (isHrAdmin). */}
+                  {isHrAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setShowHandover(true)}
+                      className="hf-funnels-filter"
+                      title="Передать все воронки и кандидатов уходящего рекрутёра другому"
+                    >
+                      <ArrowRightLeft className="hf-funnels-filter-leading-icon" />
+                      <span>Перенос кандидатов</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Создание доступно всем, включая рекрутёров (гейт снят 2026-07-02). */}
@@ -3035,6 +3053,14 @@ export default function RecruiterFunnelsPage() {
           </div>
         )}
       </main>
+
+      {/* «Перенос кандидатов» — уходящий рекрутёр X → живой Y (админ/суперадмин). */}
+      {showHandover && (
+        <CandidateHandoverModal
+          onClose={() => setShowHandover(false)}
+          onDone={() => fetchVacancies()}
+        />
+      )}
 
       {/* Create / Edit Vacancy Modal — единая VacancyForm */}
       {showCreateModal && (

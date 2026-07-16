@@ -129,6 +129,38 @@ export const reassignOwnership = async (
   return data as ReassignOwnershipResult;
 };
 
+export interface HandoverSummary {
+  funnels: { vacancy_id: number; title: string; candidates: number }[];
+  pool_candidates: number;
+}
+
+/** Что можно передать от уходящего: его воронки + кандидаты вне воронок. */
+export const getHandoverSummary = async (fromUserId: number): Promise<HandoverSummary> => {
+  const { data } = await api.get<HandoverSummary>(`/users/${fromUserId}/handover-summary`);
+  return data;
+};
+
+export interface ReassignSplitResult {
+  success: boolean;
+  vacancies: number;
+  applications: number;
+  candidates: number;
+}
+
+/** Раздельная передача: каждой воронке — свой получатель, пул — отдельный. */
+export const reassignSplit = async (
+  fromUserId: number,
+  assignments: { vacancy_id: number; to_user_id: number }[],
+  poolToUserId?: number | null,
+): Promise<ReassignSplitResult> => {
+  const { data } = await debouncedMutation<ReassignSplitResult>(
+    'post',
+    '/users/reassign-split',
+    { from_user_id: fromUserId, assignments, pool_to_user_id: poolToUserId ?? null },
+  );
+  return data as ReassignSplitResult;
+};
+
 export interface AdminUserUpdate {
   name?: string;
   email?: string;

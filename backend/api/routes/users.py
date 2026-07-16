@@ -554,6 +554,85 @@ async def reassign_ownership(
     return {"success": True, **counts}
 
 
+async def _resolve_handover_org(current_user: User, from_user_id: int, db: AsyncSession) -> int:
+    """Орг уходящего рекрутёра + проверка прав (admin/owner/суперадмин). Общая
+    для сводки и раздельного переноса."""
+    from_org_id = (await db.execute(
+        select(OrgMember.org_id).where(OrgMember.user_id == from_user_id)
+    )).scalars().first()
+    if from_org_id is None:
+        raise HTTPException(status_code=404, detail="Уходящий рекрутёр не найден в организации")
+    if current_user.role != UserRole.superadmin and not await has_full_database_access(
+        current_user, from_org_id, db
+    ):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    return from_org_id
+
+
+@router.get("/{from_user_id}/handover-summary")
+async def handover_summary(
+    from_user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Что можно передать от уходящего: его воронки (с числом его кандидатов) +
+    кандидаты вне воронок. Для окна раздельной передачи."""
+    current_user = await db.merge(current_user)
+    from_org_id = await _resolve_handover_org(current_user, from_user_id, db)
+    from ..services.recruiter_transfer import get_handover_summary
+    return await get_handover_summary(db, from_org_id, from_user_id)
+
+
+class HandoverAssignment(BaseModel):
+    vacancy_id: int
+    to_user_id: int
+
+
+class ReassignSplitRequest(BaseModel):
+    from_user_id: int
+    assignments: List[HandoverAssignment] = []
+    pool_to_user_id: Optional[int] = None
+
+
+@router.post("/reassign-split")
+async def reassign_split(
+    data: ReassignSplitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Раздельная передача: каждую воронку уходящего — своему получателю,
+    кандидатов вне воронок — отдельному. Права/орг — как у «Передать всё»."""
+    current_user = await db.merge(current_user)
+    from_org_id = await _resolve_handover_org(current_user, data.from_user_id, db)
+
+    # Все получатели — участники ЭТОЙ орг (без утечки между орг).
+    recipient_ids = {a.to_user_id for a in data.assignments}
+    if data.pool_to_user_id:
+        recipient_ids.add(data.pool_to_user_id)
+    recipient_ids.discard(data.from_user_id)
+    if recipient_ids:
+        ok = set((await db.execute(
+            select(OrgMember.user_id).where(
+                OrgMember.org_id == from_org_id,
+                OrgMember.user_id.in_(recipient_ids),
+            )
+        )).scalars().all())
+        bad = recipient_ids - ok
+        if bad:
+            raise HTTPException(
+                status_code=400,
+                detail="Получатели должны быть в той же организации",
+            )
+
+    from ..services.recruiter_transfer import reassign_recruiter_split
+    counts = await reassign_recruiter_split(
+        db, from_org_id, data.from_user_id,
+        [{"vacancy_id": a.vacancy_id, "to_user_id": a.to_user_id} for a in data.assignments],
+        data.pool_to_user_id,
+    )
+    return {"success": True, **counts}
+
+
 @router.delete("/{user_id}", status_code=204)
 async def delete_user(
     user_id: int,
