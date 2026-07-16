@@ -398,25 +398,33 @@ async def check_entity_access(
     if entity.created_by == user.id:
         return True
 
-    # 3.5 Модель A («общий пул HR»): любой член организации ВИДИТ (read) всех
-    # КАНДИДАТОВ своей орг. Без этого доска показывала всех (запрос только по
-    # org_id), а детали/файлы/дедуп чужих кандидатов не открывались — рассинхрон.
-    # Скоуп: только кандидаты (клиенты/партнёры — по строгим правилам ниже) и
-    # строго в границах орга (entity в org_id И пользователь — член этого org_id;
-    # cross-org остаётся закрыт). Правки/удаление — по правилам ниже.
+    # 3.5 Модель A («общий пул HR»): кандидаты — ОБЩИЕ для орга, «не столбим».
+    #   • READ — любому члену организации (доска показывает всех по org_id;
+    #     детали/файлы/дедуп чужих кандидатов тоже должны открываться).
+    #   • EDIT (управление: взять в воронку, двигать, менять этап, коммент,
+    #     файлы, правка полей) — любому РЕКРУТЁРУ орга (hr/admin/owner). Раньше
+    #     edit был только у создателя → чужого кандидата нельзя было взять в свою
+    #     воронку («Не удалось добавить»). Требование: у всех рекрутёров равные
+    #     права на управление кандидатами.
+    #   • FULL (удаление/трансфер) — НЕ здесь, остаётся у создателя/админа.
+    # Строго в границах орга (cross-org закрыт).
     if (
-        required_level is None
+        required_level in (None, AccessLevel.edit)
         and getattr(entity, "type", None) == EntityType.candidate
         and getattr(entity, "org_id", None) == org_id
     ):
         om = await db.execute(
-            select(OrgMember.id).where(
+            select(OrgMember.role).where(
                 OrgMember.org_id == org_id,
                 OrgMember.user_id == user.id,
             ).limit(1)
         )
-        if om.scalar() is not None:
-            return True
+        role = om.scalar()
+        if role is not None:
+            if required_level is None:
+                return True  # read — любому члену орга
+            if role in (OrgRole.hr, OrgRole.admin, OrgRole.owner):
+                return True  # управление — любому рекрутёру
 
     # 4. Department-based access (ADMIN/SUB_ADMIN/MEMBER)
     if entity.department_id:
