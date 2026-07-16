@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Search, Upload, Loader2, AlertCircle, UserCheck, Plus, Briefcase } from 'lucide-react';
+import { X, Search, Upload, Loader2, AlertCircle, UserCheck, Plus, Briefcase, MessageSquare } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { ParsedResume, ParsedVacancy } from '@/services/api';
@@ -12,6 +12,7 @@ import {
   getVacancies,
   createApplication,
 } from '@/services/api';
+import { addEntityNote } from '@/services/api/entities';
 import ParsedDataPreview from './ParsedDataPreview';
 import type { Entity, Vacancy } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
@@ -52,6 +53,9 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
   // Vacancy attachment state — кандидата можно сразу добавить на воронку
   const [vacancyOptions, setVacancyOptions] = useState<Pick<Vacancy, 'id' | 'title'>[]>([]);
   const [selectedVacancyId, setSelectedVacancyId] = useState<number | ''>('');
+  // Комментарий рекрутёра при добавлении из файла → уходит в ленту карточки
+  // отдельной записью (как коммент из расширения). Это НЕ «Описание» (summary).
+  const [comment, setComment] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   // Подгружаем список своих воронок один раз — нужен только в режиме резюме.
@@ -299,6 +303,22 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         return;
       }
 
+      // Комментарий рекрутёра → запись в ленте карточки. Через штатный
+      // POST /entities/{id}/notes: автора/дату проставляет сервер, формат тот же,
+      // что у «Написать комментарий» и у коммента из расширения.
+      if (comment.trim()) {
+        try {
+          await addEntityNote(createdEntityId, {
+            text: comment.trim(),
+            stage: 'new',
+            stage_label: 'Новый',
+          });
+        } catch (e) {
+          console.error('save comment failed', e);
+          toast.error('Кандидат создан, но комментарий не сохранился');
+        }
+      }
+
       // Опционально цепляем на воронку.
       if (selectedVacancyId) {
         try {
@@ -450,6 +470,28 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                 data={parsedData}
                 onDataChange={handleDataChange}
               />
+
+              {/* Комментарий рекрутёра — ОТДЕЛЬНОЕ поле, не «Описание».
+                  «Описание» выше — это summary самого кандидата («Обо мне»),
+                  которое достаёт парсер; в ленту оно не идёт. Рекрутёры писали
+                  свой коммент туда и не находили его потом. Здесь — настоящий
+                  комментарий: уходит в ленту карточки, как из расширения. */}
+              {isResume && uploadedFile && (
+                <div className="border-t border-slate-200 pt-4">
+                  <label className="block text-sm font-medium text-slate-600 mb-2 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    Комментарий (опционально)
+                  </label>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    rows={2}
+                    disabled={isCreating}
+                    placeholder="Появится в ленте карточки — например, откуда кандидат"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm resize-none focus:outline-none focus:border-[color:var(--hf-cyan-500)]"
+                  />
+                </div>
+              )}
 
               {/* Vacancy attach picker — только для резюме с загруженным файлом.
                   Для URL-резюме сначала открывается форма редактирования карточки,
