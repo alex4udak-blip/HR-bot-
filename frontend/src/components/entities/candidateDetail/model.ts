@@ -303,7 +303,10 @@ export function buildStageContainers(params: {
     applicationId: -(mergedContainers.length + i + 1),
     status: typeof p.status === "string" && p.status ? p.status : "reserve",
     name: null,
-    notes: [],
+    // Комментарии рекрутёра/HR из импорта (parse_comments → participations[].notes):
+    // родными плашками таймлайна, как у merged-контейнеров. Без этой строки заметки
+    // прохождения выбрасывались бы и не показывались.
+    notes: Array.isArray(p.notes) ? (p.notes as ContainerNote[]) : [],
     resumeDemos: [],
     vacancyTitle: typeof p.vacancy_title === "string" ? p.vacancy_title : null,
     addedAt: typeof p.date === "string" ? p.date : undefined,

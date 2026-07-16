@@ -5,10 +5,12 @@
 сильному ключу: hh-URL / email / телефон / telegram) и собирают из каждой строки
 «прохождение». Без I/O и без БД — всё юнит-тестируется (tests/test_clickup_import.py).
 """
+import html as _html
 import json
 import re
 from datetime import date
 from typing import Optional, Set, List, Dict, Any
+from urllib.parse import unquote
 from collections import defaultdict
 
 # Telegram как идентификатор: нормализация + денилист источников/ярлыков —
@@ -193,6 +195,79 @@ def group_rows_by_person(rows: List[Dict[str, Any]], key_fn) -> List[List[Dict[s
     return list(groups.values())
 
 
+# Комментарий ClickUp в CSV-колонке `comments`: записи вида
+# `[YYYY-MM-DD HH:MM:SS · Автор] текст`, разделённые строкой `---`.
+_COMMENT_MARK_RE = re.compile(r"\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) · ([^\]]+)\]")
+_URL_RE = re.compile(r"https?://[^\s<]+")
+
+
+def _linkify_html(text: str) -> str:
+    """Текст комментария → безопасный HTML: URL'ы — кликабельными ссылками.
+
+    Родные комментарии в таймлайне и так хранятся как HTML (rich-редактор,
+    рендер через sanitizeHtml, где `<a href>` разрешён). Поэтому запись
+    собеседования (ссылка на .webm и т.п.) в импортированном комментарии тоже
+    делаем ссылкой — с читаемой подписью (имя файла), а не голым URL. Весь
+    текст экранируется: на выходе только наши `<a>` вокруг http(s)-ссылок.
+    """
+    out: List[str] = []
+    last = 0
+    for m in _URL_RE.finditer(text):
+        out.append(_html.escape(text[last:m.start()]))
+        url = m.group(0)
+        label = url
+        try:
+            fname = unquote(url.split("?")[0]).rstrip("/").split("/")[-1]
+            if fname:
+                label = fname
+        except Exception:  # noqa: BLE001 — подпись не критична, падать нельзя
+            pass
+        out.append(f'<a href="{_html.escape(url, quote=True)}">{_html.escape(label)}</a>')
+        last = m.end()
+    out.append(_html.escape(text[last:]))
+    return "".join(out)
+
+
+def parse_comments(raw: str, task_id: str = "") -> List[Dict[str, Any]]:
+    """Колонка `comments` → список заметок для родного таймлайна карточки.
+
+    Каждая запись → плашка комментария: {id, text, date, author_name}. Дата в
+    ISO (таймлайн сортирует через `new Date`). id детерминированный
+    (task_id + номер записи) — переимпорт не двоит существующие плашки.
+    Текст без разметки автор/дата сохраняем как один безымянный комментарий.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    marks = list(_COMMENT_MARK_RE.finditer(raw))
+    if not marks:
+        return [{"id": f"clickup:{task_id}:0", "text": _linkify_html(raw)}]
+    notes: List[Dict[str, Any]] = []
+    for i, m in enumerate(marks):
+        start = m.end()
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(raw)
+        body = raw[start:end].strip()
+        body = re.sub(r"\s*-{3,}\s*$", "", body).strip()  # хвостовой разделитель '---'
+        if not body:
+            continue
+        notes.append({
+            "id": f"clickup:{task_id}:{i}",
+            "text": _linkify_html(body),
+            "date": f"{m.group(1)}T{m.group(2)}",
+            "author_name": m.group(3).strip(),
+        })
+    return notes
+
+
+def _merge_notes(target: List[Dict[str, Any]], incoming: List[Dict[str, Any]]) -> None:
+    """До-кладывает заметки в target, дедуп по id (стабильному на переимпорте)."""
+    seen = {n.get("id") for n in target}
+    for n in incoming or []:
+        if n.get("id") not in seen:
+            target.append(n)
+            seen.add(n.get("id"))
+
+
 def build_participation(row: Dict[str, Any], cf_headers: List[str]) -> Dict[str, Any]:
     """Одна строка ClickUp → одно прохождение (вакансия/рекрутёр/статус/анкета)."""
     anketa: List[Dict[str, str]] = []
@@ -203,13 +278,17 @@ def build_participation(row: Dict[str, Any], cf_headers: List[str]) -> Dict[str,
         q = h[3:].strip() if h.lower().startswith("cf:") else h
         anketa.append({"question": q, "answer": val})
     recruiter = clean_recruiter(row.get("funnel_folder", "")) or (row.get("assignees", "") or "").strip()
+    task_id = (row.get("task_id", "") or "").strip()
     return {
         "vacancy_title": (row.get("funnel_list", "") or "").strip(),
         "recruiter": recruiter,
         "status": (row.get("status", "") or "").strip(),
         "anketa": anketa,
+        # Комментарии рекрутёра/HR (заметки собеседований, ссылки на записи) —
+        # родными плашками в таймлайне прохождения (см. model.ts participations).
+        "notes": parse_comments(row.get("comments", "") or "", task_id),
         "date": (row.get("date_created", "") or "").strip() or None,
-        "task_id": (row.get("task_id", "") or "").strip() or None,
+        "task_id": task_id or None,
         "url": (row.get("url", "") or "").strip() or None,
     }
 
@@ -229,7 +308,7 @@ def _dedup_twin_participations(parts: List[Dict[str, Any]]) -> List[Dict[str, An
             (p.get("status") or "").strip().lower(),
         )
         if key not in by_key:
-            by_key[key] = {**p, "anketa": list(p["anketa"])}
+            by_key[key] = {**p, "anketa": list(p["anketa"]), "notes": list(p.get("notes") or [])}
             continue
         existing = by_key[key]
         seen_q = {a["question"] for a in existing["anketa"]}
@@ -237,6 +316,9 @@ def _dedup_twin_participations(parts: List[Dict[str, Any]]) -> List[Dict[str, An
             if a["question"] not in seen_q:
                 existing["anketa"].append(a)
                 seen_q.add(a["question"])
+        # Строки-близнецы (зеркала в разных списках) несут свои комментарии —
+        # сливаем их заметки в одно прохождение (дедуп по id).
+        _merge_notes(existing["notes"], p.get("notes") or [])
     return list(by_key.values())
 
 
@@ -337,11 +419,18 @@ def merge_participations(
             (p.get("status") or "").strip().lower(),
         )
 
-    seen = {sig(p) for p in existing}
+    by_sig: Dict[tuple, Dict[str, Any]] = {sig(p): p for p in existing}
     out = list(existing)
     for p in incoming:
         s = sig(p)
-        if s not in seen:
+        if s not in by_sig:
             out.append(p)
-            seen.add(s)
+            by_sig[s] = p
+        else:
+            # Прохождение уже есть — но у него могли появиться новые комментарии
+            # (напр. старый импорт был без колонки comments). До-кладываем заметки,
+            # дедуп по id → повторный импорт идемпотентен.
+            tgt = by_sig[s]
+            tgt.setdefault("notes", [])
+            _merge_notes(tgt["notes"], p.get("notes") or [])
     return out

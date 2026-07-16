@@ -289,6 +289,33 @@ describe("buildStageContainers", () => {
     expect(out.every((c) => c.origin === "merged")).toBe(true);
   });
 
+  it("несёт комментарии прохождения (participations[].notes) в контейнер", () => {
+    const out = buildStageContainers({
+      ...base,
+      liveApplicationId: 0,
+      liveVacancyTitle: null,
+      card: card({
+        extra_data: {
+          participations: [
+            {
+              vacancy_title: "CMO",
+              recruiter: "Анастасия",
+              status: "собес",
+              anketa: [],
+              notes: [
+                { id: "clickup:T:0", text: "берём", author_name: "Инна HR", date: "2025-06-19T10:16:09" },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    const part = out.find((c) => c.recruiter);
+    expect(part?.notes).toEqual([
+      { id: "clickup:T:0", text: "берём", author_name: "Инна HR", date: "2025-06-19T10:16:09" },
+    ]);
+  });
+
   it("keeps the live container when a real application exists alongside participations", () => {
     const out = buildStageContainers({
       ...base, // liveApplicationId 100, liveVacancyTitle "Frontend"

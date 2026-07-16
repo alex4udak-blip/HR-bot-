@@ -309,3 +309,95 @@ def test_assemble_person_different_status_same_funnel_are_separate():
     parts = person["extra_data"]["participations"]
     assert len(parts) == 2
     assert {p["status"] for p in parts} == {"выполняет ТЗ", "вышел на ИС"}
+
+
+# ── Комментарии ClickUp → плашки таймлайна (extra_data.participations[].notes) ──
+
+def test_parse_comments_single():
+    from api.services.clickup_import import parse_comments
+    raw = "[2025-06-19 10:16:09 · Инна HR] по софтам не подходит"
+    notes = parse_comments(raw, task_id="86c41wx9n")
+    assert len(notes) == 1
+    assert notes[0]["author_name"] == "Инна HR"
+    assert notes[0]["date"] == "2025-06-19T10:16:09"
+    assert notes[0]["text"] == "по софтам не подходит"
+    assert notes[0]["id"] == "clickup:86c41wx9n:0"
+
+
+def test_parse_comments_multiple_split_by_dashes():
+    from api.services.clickup_import import parse_comments
+    raw = (
+        "[2025-06-17 12:41:00 · Инна HR] https://att.clickup.com/rec.webm\n"
+        "---\n"
+        "[2025-06-18 08:13:06 · Инна HR] фин собес 19.06 11:00 по мск"
+    )
+    notes = parse_comments(raw, task_id="T1")
+    assert len(notes) == 2
+    # URL записи собеседования → кликабельная ссылка с подписью-именем файла.
+    assert notes[0]["text"] == '<a href="https://att.clickup.com/rec.webm">rec.webm</a>'
+    assert notes[1]["text"] == "фин собес 19.06 11:00 по мск"
+    assert [n["id"] for n in notes] == ["clickup:T1:0", "clickup:T1:1"]
+
+
+def test_linkify_escapes_and_preserves_text():
+    from api.services.clickup_import import _linkify_html
+    # обычный текст со спецсимволами HTML — экранируется, тегов не появляется
+    assert _linkify_html("a < b & c") == "a &lt; b &amp; c"
+    # текст + ссылка: текст экранён, ссылка кликабельна
+    got = _linkify_html("смотри https://x.io/f.webm тут")
+    assert got == 'смотри <a href="https://x.io/f.webm">f.webm</a> тут'
+
+
+def test_parse_comments_empty_and_no_markers():
+    from api.services.clickup_import import parse_comments
+    assert parse_comments("", task_id="T") == []
+    assert parse_comments("   ", task_id="T") == []
+    # текст без разметки [дата · автор] → один безымянный комментарий
+    plain = parse_comments("просто заметка", task_id="T")
+    assert len(plain) == 1
+    assert plain[0]["text"] == "просто заметка"
+    assert "author_name" not in plain[0]
+
+
+def test_build_participation_carries_comments_as_notes():
+    row = {
+        "funnel_list": "CMO", "funnel_folder": "Найм - Анастасия",
+        "status": "собес 1: нет", "task_id": "86c41wx9n",
+        "comments": "[2025-06-19 10:16:09 · Инна HR] сильный кандидат",
+        "cf:Уровень ЗП": "от 3000$",
+    }
+    p = build_participation(row, cf_headers=["cf:Уровень ЗП"])
+    assert p["notes"][0]["text"] == "сильный кандидат"
+    assert p["notes"][0]["author_name"] == "Инна HR"
+
+
+def test_twin_participations_merge_notes_by_id():
+    # Один человек, одна воронка+рекрутёр+статус, но две строки-задачи с разными
+    # комментариями (зеркала в разных списках) → одно прохождение, заметки слиты.
+    group = [
+        {"name": "Марк", "phone": "+375259182441", "funnel_list": "Unity",
+         "funnel_folder": "Sandbox - Мария", "status": "собес", "task_id": "A",
+         "comments": "[2025-06-19 10:00:00 · Инна HR] запись есть"},
+        {"name": "Марк", "phone": "+375259182441", "funnel_list": "Unity",
+         "funnel_folder": "Sandbox - Мария", "status": "собес", "task_id": "B",
+         "comments": "[2025-06-20 11:00:00 · Мария HR] берём"},
+    ]
+    person = assemble_person(group, cf_headers=[])
+    parts = person["extra_data"]["participations"]
+    assert len(parts) == 1
+    texts = {n["text"] for n in parts[0]["notes"]}
+    assert texts == {"запись есть", "берём"}
+
+
+def test_merge_participations_backfills_notes_idempotently():
+    # Старое прохождение без комментариев + повторный импорт с комментариями →
+    # заметки додокладываются; ещё один такой же импорт ничего не двоит.
+    existing = [{"vacancy_title": "CMO", "recruiter": "Анастасия", "status": "собес", "notes": []}]
+    incoming = [{"vacancy_title": "CMO", "recruiter": "Анастасия", "status": "собес",
+                 "notes": [{"id": "clickup:X:0", "text": "берём", "author_name": "Инна HR"}]}]
+    merged = merge_participations(existing, incoming)
+    assert len(merged) == 1
+    assert len(merged[0]["notes"]) == 1
+    # повторный прогон с тем же id — без дублей
+    merged2 = merge_participations(merged, incoming)
+    assert len(merged2[0]["notes"]) == 1
