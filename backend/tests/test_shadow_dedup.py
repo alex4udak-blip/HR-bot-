@@ -707,3 +707,82 @@ async def test_rescan_flags_same_resume_url(
         fresh = await db_session.get(Entity, e.id)
         await db_session.refresh(fresh)
         assert (fresh.extra_data or {}).get("hidden_duplicate_id") is not None
+
+
+# ============================================================
+# Пакетный импорт CSV (/import/execute-bulk)
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_bulk_import_merges_person_across_files(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    """Пачка: человек в двух файлах (разные воронки) → ОДНА карточка со всеми
+    прохождениями. Не-ClickUp файл пропускается с причиной в files[]."""
+    file_a = (
+        "task_id,funnel_list,funnel_folder,status,name,cf:Telegram\n"
+        "A1,Android dev,Sandbox - Мария,собес,Пётр Тестов Иванович,@petrtest\n"
+    )
+    file_b = (
+        "task_id,funnel_list,funnel_folder,status,name,cf:Telegram\n"
+        "B1,Unity,Sandbox - Мария,собес,Пётр Тестов Иванович,@petrtest\n"
+    )
+    not_clickup = "name,email\nКто-то,x@y.z\n"
+    r = await client.post(
+        "/api/import/execute-bulk",
+        files=[
+            ("files", ("android.csv", file_a.encode("utf-8"), "text/csv")),
+            ("files", ("unity.csv", file_b.encode("utf-8"), "text/csv")),
+            ("files", ("other.csv", not_clickup.encode("utf-8"), "text/csv")),
+        ],
+        data={"replace_existing": "false"},
+        headers=_h(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["imported"] == 1, body      # один человек создан
+    assert body["total"] == 2, body         # 2 ClickUp-строки (не-ClickUp не в счёт)
+    accepted = [f for f in body["files"] if f["accepted"]]
+    skipped_files = [f for f in body["files"] if not f["accepted"]]
+    assert len(accepted) == 2, body["files"]
+    assert len(skipped_files) == 1, body["files"]
+    assert "ClickUp" in (skipped_files[0]["reason"] or ""), skipped_files
+
+    db_session.expire_all()
+    rows = (await db_session.execute(
+        select(Entity).where(Entity.name == "Пётр Тестов Иванович")
+    )).scalars().all()
+    assert len(rows) == 1, [(e.id, e.name) for e in rows]
+    parts = (rows[0].extra_data or {}).get("participations") or []
+    assert {p["vacancy_title"] for p in parts} == {"Android dev", "Unity"}, parts
+
+
+@pytest.mark.asyncio
+async def test_bulk_import_idempotent(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    """Повторная пачка тех же файлов не плодит карточки — до-кладывает (skipped)."""
+    file_a = (
+        "task_id,funnel_list,funnel_folder,status,name,cf:Telegram\n"
+        "A1,Android dev,Sandbox - Мария,собес,Идемпотент Тестов,@idemtest\n"
+    )
+    def _post():
+        return client.post(
+            "/api/import/execute-bulk",
+            files=[("files", ("a.csv", file_a.encode("utf-8"), "text/csv"))],
+            data={"replace_existing": "false"},
+            headers=_h(admin_token),
+        )
+    r1 = await _post()
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["imported"] == 1, r1.json()
+    r2 = await _post()
+    assert r2.status_code == 200, r2.text
+    b2 = r2.json()
+    assert b2["imported"] == 0 and b2["skipped"] == 1, b2
+
+    db_session.expire_all()
+    rows = (await db_session.execute(
+        select(Entity).where(Entity.name == "Идемпотент Тестов")
+    )).scalars().all()
+    assert len(rows) == 1, [(e.id, e.name) for e in rows]

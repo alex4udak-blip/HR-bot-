@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload,
@@ -13,6 +13,8 @@ import {
   ChevronUp,
   RotateCcw,
   Users,
+  X,
+  Files,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
@@ -26,6 +28,13 @@ interface PreviewResponse {
   row_count: number;
 }
 
+interface ImportedFileSummary {
+  name: string;
+  rows: number;
+  accepted: boolean;
+  reason?: string | null;
+}
+
 interface ImportResult {
   imported: number;
   skipped: number;
@@ -33,6 +42,7 @@ interface ImportResult {
   auto_merged?: number;
   skipped_details?: { row: number; name: string; reason: string }[];
   errors: { row: number; reason: string }[];
+  files?: ImportedFileSummary[];
 }
 
 interface Vacancy {
@@ -79,9 +89,10 @@ export default function CsvImportPage() {
   // Wizard step: 1=upload, 2=preview+mapping, 3=results
   const [step, setStep] = useState(1);
 
-  // Step 1: file
-  const [file, setFile] = useState<File | null>(null);
+  // Step 1: files (мультивыбор — можно залить сразу пачку)
+  const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const isBulk = files.length > 1;
 
   // Step 2: preview + mapping
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
@@ -91,8 +102,20 @@ export default function CsvImportPage() {
   const [showMapping, setShowMapping] = useState(false);
   const [vacancyId, setVacancyId] = useState<string>('');
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
-  const [skipDuplicates, setSkipDuplicates] = useState(true);
-  const [replaceExisting, setReplaceExisting] = useState(false);
+  // Выбор дублей запоминается между импортами/файлами/перезагрузками — иначе при
+  // заливке многих файлов приходилось переставлять галочки каждый раз.
+  const [skipDuplicates, setSkipDuplicates] = useState(
+    () => localStorage.getItem('csvImport.skipDuplicates') !== 'false',
+  );
+  const [replaceExisting, setReplaceExisting] = useState(
+    () => localStorage.getItem('csvImport.replaceExisting') === 'true',
+  );
+  useEffect(() => {
+    localStorage.setItem('csvImport.skipDuplicates', String(skipDuplicates));
+  }, [skipDuplicates]);
+  useEffect(() => {
+    localStorage.setItem('csvImport.replaceExisting', String(replaceExisting));
+  }, [replaceExisting]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
 
@@ -121,23 +144,45 @@ export default function CsvImportPage() {
     }
   }, []);
 
+  // Добавляем .csv к списку, дедупим по имени+размеру (повторный выбор не двоит).
+  const addFiles = useCallback((incoming: File[]) => {
+    const csv = incoming.filter((f) => f.name.toLowerCase().endsWith('.csv'));
+    if (!csv.length) return;
+    setFiles((prev) => {
+      const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
+      return [...prev, ...csv.filter((f) => !seen.has(`${f.name}:${f.size}`))];
+    });
+  }, []);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    const dropped = e.dataTransfer.files?.[0];
-    if (dropped && dropped.name.endsWith('.csv')) {
-      setFile(dropped);
-    }
-  }, []);
+    addFiles(Array.from(e.dataTransfer.files || []));
+  }, [addFiles]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (selected) setFile(selected);
+    addFiles(Array.from(e.target.files || []));
+    e.target.value = ''; // разрешаем повторный выбор тех же файлов
   };
 
+  const removeFile = (idx: number) =>
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
+
   // ---- step transitions ----
+  // Кнопка «Далее»: один файл → мастер с маппингом; несколько → сразу опции пачки.
+  const goNext = () => {
+    if (!files.length) return;
+    if (files.length === 1) {
+      void goToPreview();
+    } else {
+      setPreviewError('');
+      setStep(2);
+    }
+  };
+
   const goToPreview = async () => {
+    const file = files[0];
     if (!file) return;
     setPreviewLoading(true);
     setPreviewError('');
@@ -183,6 +228,7 @@ export default function CsvImportPage() {
   };
 
   const executeImport = async () => {
+    const file = files[0];
     if (!file) return;
     setImporting(true);
     setImportError('');
@@ -211,14 +257,44 @@ export default function CsvImportPage() {
     }
   };
 
+  // Пакетная заливка: все файлы одним запросом (бэкенд авто-определяет маппинг,
+  // склеивает людей между файлами, один коммит).
+  const executeBulkImport = async () => {
+    if (!files.length) return;
+    setImporting(true);
+    setImportError('');
+    setResult(null);
+
+    try {
+      const formData = new FormData();
+      files.forEach((f) => formData.append('files', f));
+      formData.append('skip_duplicates', String(skipDuplicates));
+      formData.append('replace_existing', String(replaceExisting));
+      if (vacancyId) formData.append('vacancy_id', vacancyId);
+
+      const res = await fetch('/api/import/execute-bulk', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Server error' }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      const data: ImportResult = await res.json();
+      setResult(data);
+      setStep(3);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const restart = () => {
     setStep(1);
-    setFile(null);
+    setFiles([]);
     setPreview(null);
     setColumnMapping({});
     setVacancyId('');
-    setSkipDuplicates(true);
-    setReplaceExisting(false);
+    // skipDuplicates / replaceExisting НЕ сбрасываем — они запоминаются между
+    // импортами (иначе при заливке многих файлов бесит переставлять галочки).
     setResult(null);
     setImportError('');
     setPreviewError('');
@@ -296,7 +372,7 @@ export default function CsvImportPage() {
                   'border-2 border-dashed rounded-2xl p-12 flex flex-col items-center gap-4 cursor-pointer transition-all duration-200',
                   dragActive
                     ? 'border-accent-500 bg-accent-500/10'
-                    : file
+                    : files.length
                       ? 'border-green-500/40 bg-green-500/5'
                       : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]'
                 )}
@@ -305,33 +381,59 @@ export default function CsvImportPage() {
                   ref={fileInputRef}
                   type="file"
                   accept=".csv"
+                  multiple
                   onChange={handleFileSelect}
                   className="hidden"
                 />
                 <div
                   className={clsx(
                     'w-16 h-16 rounded-2xl flex items-center justify-center',
-                    file ? 'bg-green-500/20' : 'bg-white/[0.06]'
+                    files.length ? 'bg-green-500/20' : 'bg-white/[0.06]'
                   )}
                 >
-                  <Upload className={clsx('w-8 h-8', file ? 'text-green-400' : 'text-white/40')} />
+                  {isBulk ? (
+                    <Files className={clsx('w-8 h-8', 'text-green-400')} />
+                  ) : (
+                    <Upload className={clsx('w-8 h-8', files.length ? 'text-green-400' : 'text-white/40')} />
+                  )}
                 </div>
-                {file ? (
-                  <div className="text-center">
-                    <p className="text-white font-medium">{file.name}</p>
-                    <p className="text-dark-400 text-sm">{formatFileSize(file.size)}</p>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <p className="text-white/60 font-medium">
-                      Перетащите CSV-файл сюда
-                    </p>
-                    <p className="text-dark-400 text-sm mt-1">
-                      или нажмите для выбора файла
-                    </p>
-                  </div>
-                )}
+                <div className="text-center">
+                  <p className="text-white/60 font-medium">
+                    {files.length
+                      ? 'Перетащите ещё или нажмите, чтобы добавить'
+                      : 'Перетащите CSV-файлы сюда'}
+                  </p>
+                  <p className="text-dark-400 text-sm mt-1">
+                    {files.length
+                      ? `Выбрано файлов: ${files.length}`
+                      : 'можно выбрать сразу несколько'}
+                  </p>
+                </div>
               </div>
+
+              {/* Список выбранных файлов */}
+              {files.length > 0 && (
+                <div className="rounded-xl border border-white/[0.06] divide-y divide-white/[0.04]">
+                  {files.map((f, i) => (
+                    <div key={`${f.name}:${f.size}:${i}`} className="flex items-center gap-3 px-4 py-2.5">
+                      <FileSpreadsheet className="w-4 h-4 text-white/40 flex-shrink-0" />
+                      <span className="flex-1 min-w-0 truncate text-sm text-white/80">{f.name}</span>
+                      <span className="text-xs text-dark-400 flex-shrink-0">{formatFileSize(f.size)}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFile(i);
+                        }}
+                        className="text-white/30 hover:text-red-400 transition-colors flex-shrink-0"
+                        title="Убрать файл"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {previewError && (
                 <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
@@ -342,11 +444,11 @@ export default function CsvImportPage() {
 
               <div className="flex justify-end">
                 <button
-                  onClick={goToPreview}
-                  disabled={!file || previewLoading}
+                  onClick={goNext}
+                  disabled={!files.length || previewLoading}
                   className={clsx(
                     'flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
-                    file && !previewLoading
+                    files.length && !previewLoading
                       ? 'bg-gradient-to-r from-accent-500 to-accent-600 text-white hover:from-accent-600 hover:to-accent-700 shadow-lg shadow-accent-500/20'
                       : 'bg-white/[0.06] text-white/30 cursor-not-allowed'
                   )}
@@ -365,7 +467,7 @@ export default function CsvImportPage() {
           )}
 
           {/* ===== STEP 2: Preview & Mapping ===== */}
-          {step === 2 && preview && (
+          {step === 2 && !isBulk && preview && (
             <motion.div
               key="step2"
               variants={stepVariants}
@@ -627,6 +729,124 @@ export default function CsvImportPage() {
             </motion.div>
           )}
 
+          {/* ===== STEP 2 (пачка): опции для нескольких файлов ===== */}
+          {step === 2 && isBulk && (
+            <motion.div
+              key="step2bulk"
+              variants={stepVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.25 }}
+              className="space-y-6"
+            >
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-accent-500/[0.06] border border-accent-500/20">
+                <Files className="w-5 h-5 text-accent-400 flex-shrink-0" />
+                <p className="text-sm text-white/70">
+                  К заливке <b className="text-white">{files.length}</b> файлов. Колонки
+                  определятся автоматически, люди из разных файлов/воронок склеятся в одну карточку.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 sm:col-span-2">
+                  <p className="text-xs text-amber-900 leading-relaxed">
+                    Кандидаты импортируются в <b>архив</b> со статусами из CSV. Не-ClickUp и
+                    пустые файлы будут пропущены (покажем в отчёте).
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                  <label className="block text-xs text-white/40 mb-2 font-medium">
+                    Привязать к вакансии (опционально)
+                  </label>
+                  <select
+                    value={vacancyId}
+                    onChange={(e) => setVacancyId(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-accent-500/50 transition-colors"
+                  >
+                    <option value="">Не привязывать</option>
+                    {vacancies.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="p-4 rounded-xl bg-white/[0.03] border border-white/[0.06] sm:col-span-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={skipDuplicates}
+                      onChange={(e) => setSkipDuplicates(e.target.checked)}
+                      className="w-4 h-4 rounded border-white/20 bg-white/[0.04] text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
+                    />
+                    <span className="text-sm text-white/70">
+                      Пропускать дубликаты (по телефону / Telegram / email)
+                    </span>
+                  </label>
+                </div>
+
+                <div className="p-4 rounded-xl bg-amber-500/[0.06] border border-amber-500/20 sm:col-span-2">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={replaceExisting}
+                      onChange={(e) => setReplaceExisting(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-white/20 bg-white/[0.04] text-amber-500 focus:ring-amber-500 focus:ring-offset-0"
+                    />
+                    <span className="text-sm text-white/70">
+                      <span className="font-medium text-amber-300">Перезаписать существующих начисто</span>
+                      <br />
+                      Кто уже есть в архиве и присутствует в файлах — их карточки полностью
+                      пересобираются. Активных кандидатов в воронках не трогает.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {importError && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                  <XCircle className="w-4 h-4 flex-shrink-0" />
+                  {importError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setStep(1)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:text-white/80 hover:bg-white/[0.04] transition-all duration-200"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Назад
+                </button>
+                <button
+                  onClick={executeBulkImport}
+                  disabled={importing}
+                  className={clsx(
+                    'flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
+                    !importing
+                      ? 'bg-gradient-to-r from-accent-500 to-accent-600 text-white hover:from-accent-600 hover:to-accent-700 shadow-lg shadow-accent-500/20'
+                      : 'bg-white/[0.06] text-white/30 cursor-not-allowed'
+                  )}
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Импортируется...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      Импортировать {files.length} файлов
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           {/* ===== STEP 3: Results ===== */}
           {step === 3 && result && (
             <motion.div
@@ -682,6 +902,30 @@ export default function CsvImportPage() {
                   <p className="text-3xl font-bold text-red-300">{result.errors.length}</p>
                 </div>
               </div>
+
+              {/* Разбивка по файлам (пакетная заливка) */}
+              {result.files && result.files.length > 0 && (
+                <div>
+                  <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">
+                    Файлы ({result.files.length})
+                  </h2>
+                  <div className="rounded-xl border border-white/[0.06] divide-y divide-white/[0.04]">
+                    {result.files.map((f, i) => (
+                      <div key={`${f.name}:${i}`} className="flex items-center gap-3 px-4 py-2.5">
+                        {f.accepted ? (
+                          <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                        )}
+                        <span className="flex-1 min-w-0 truncate text-sm text-white/80">{f.name}</span>
+                        <span className="text-xs text-dark-400 flex-shrink-0">
+                          {f.accepted ? `${f.rows} строк` : (f.reason || 'пропущен')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Error details (expandable) */}
               {result.errors.length > 0 && (
