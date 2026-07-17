@@ -416,6 +416,22 @@ export const mergeEntities = async (
 };
 
 /**
+ * Meta written by the backend's duplicate matcher (similarity.py) into
+ * `extra_data.hidden_duplicate_meta` on the newly-created/updated candidate.
+ * `strength` 'soft' is the Level-2 anti-evasion tier (fuzzy name/DOB/phone/email/
+ * city combo score); the other values are Level-1 exact-identifier matches.
+ * `extra_data` on Entity/SmartSearchResult stays loosely typed
+ * (Record<string, unknown>) — read this via
+ * `card.extra_data?.hidden_duplicate_meta as HiddenDuplicateMeta | undefined`.
+ */
+export interface HiddenDuplicateMeta {
+  strength: "source" | "email" | "telegram" | "name" | "phone" | "soft";
+  confidence: number;
+  reasons: string[];
+  matched_id: number;
+}
+
+/**
  * Shadow dedup «Объединить»: merge the archived (shadow) duplicate INTO the
  * active candidate. Survivor = active (entityId); the archived duplicate is
  * deleted, its whole history moved over, and the hidden_duplicate_id flag cleared.
