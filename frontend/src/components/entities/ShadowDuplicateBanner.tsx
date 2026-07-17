@@ -9,6 +9,7 @@ import {
   dismissDuplicate,
   getDuplicateCandidates,
   type DuplicateCandidateResult,
+  type HiddenDuplicateMeta,
 } from "@/services/api/entities";
 import {
   CandidateCompareCard,
@@ -35,6 +36,13 @@ interface ShadowDuplicateBannerProps {
 
 export default function ShadowDuplicateBanner({ card, status, onResolved }: ShadowDuplicateBannerProps) {
   const hiddenId = (card.extra_data?.hidden_duplicate_id as number | undefined) ?? null;
+  const meta = (card.extra_data?.hidden_duplicate_meta ?? null) as HiddenDuplicateMeta | null;
+  const isSoft = meta?.strength === "soft";
+  const bannerBg = isSoft ? "bg-amber-500" : "bg-red-600";
+  const bannerTitle = isSoft
+    ? `Возможно тот же человек · ${Math.round(meta?.confidence ?? 0)}%`
+    : "Точное совпадение — кандидат уже в базе";
+  const bannerReasons = isSoft ? (meta?.reasons ?? []) : [];
   const [resolved, setResolved] = useState(false);
   const [open, setOpen] = useState(false);
   // triggerEntity — профиль hiddenId, по которому решается ПОКАЗ баннера (стабилен,
@@ -205,17 +213,28 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   return (
     <>
       {/* Баннер над action-баром карточки */}
-      <div className="flex items-center justify-between gap-3  bg-amber-500 px-5 py-3 mb-4 shadow-sm">
-        <div className="flex items-center gap-3 text-white">
-          <AlertTriangle className="w-5 h-5 shrink-0" />
-          <span className="font-medium">Похожий кандидат есть в базе</span>
+      <div className={`flex flex-col gap-1.5 ${bannerBg} px-5 py-3 mb-4 shadow-sm`}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 text-white">
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <span className="font-medium">{bannerTitle}</span>
+          </div>
+          <button
+            onClick={openModal}
+            className="shrink-0 rounded-lg bg-white px-4 py-1.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition-colors"
+          >
+            Проверить
+          </button>
         </div>
-        <button
-          onClick={openModal}
-          className="shrink-0 rounded-lg bg-white px-4 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-colors"
-        >
-          Проверить
-        </button>
+        {bannerReasons.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pl-8">
+            {bannerReasons.map((r) => (
+              <span key={r} className="rounded-full bg-white/25 px-2 py-0.5 text-xs text-white">
+                {r}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Модальное окно сравнения */}
