@@ -124,11 +124,20 @@ class TestScoreSoftIdentity:
         assert r.confidence == 25
         assert r.is_flag is False
 
-    def test_phone7_plus_firstname_flags(self):
+    def test_phone7_plus_firstname_below_threshold(self):
+        # phone7(35)+first(25)=60 < SOFT_THRESHOLD(65) → не флажит (консервативный старт).
         a = _keys(first_names={"иван"}, phones7={"1234567"})
         b = _keys(first_names={"ivan"}, phones7={"1234567"})
         r = score_soft_identity(a, b)
         assert r.confidence == 60  # 35 + 25
+        assert r.is_flag is False
+
+    def test_phone7_plus_dob_flags(self):
+        # phone7(35)+dob(40)=75 >= 65 → флажит (телефон сменил код страны, ДР то же).
+        a = _keys(phones7={"1234567"}, birth_norm="1990-05-14")
+        b = _keys(phones7={"1234567"}, birth_norm="1990-05-14")
+        r = score_soft_identity(a, b)
+        assert r.confidence == 75  # 35 + 40
         assert r.is_flag is True
 
     def test_email_local_plus_dob_flags(self):
