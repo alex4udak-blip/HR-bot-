@@ -150,3 +150,34 @@ class TestScoreSoftIdentity:
                   email_locals={"ivan"}, cities={"минск"})
         r = score_soft_identity(a, a)  # identical keys both sides -> all signals hit
         assert r.confidence == 100  # 45+25+40+35+35+8 = 188, capped at 100
+
+
+from api.services.similarity import build_dup_keys
+
+
+class TestBuildDupKeysSoft:
+    def test_soft_keys_present(self):
+        keys = build_dup_keys(
+            name="Петров Александр",
+            email="ivan.petrov@gmail.com",
+            phone="+7 916 123-45-67",
+            extra_data={"birth_date": "14.05.1990", "location": "Минск"},
+        )
+        assert keys["last_names"] == {"петров"}
+        assert keys["first_names"] == {"александр"}
+        assert keys["birth_norm"] == "1990-05-14"
+        assert keys["age"] is not None
+        assert "1234567" in keys["phones7"]
+        assert "ivan.petrov" in keys["email_locals"]
+        assert "минск" in keys["cities"]
+
+    def test_single_word_name_goes_to_first_only(self):
+        keys = build_dup_keys(name="Саша")
+        assert keys["first_names"] == {"саша"}
+        assert keys["last_names"] == set()
+
+    def test_position_junk_name_excluded_from_soft(self):
+        # looks_like_person_name already gates name_ok; soft name keys must respect it.
+        keys = build_dup_keys(name="Flutter Developer, Минск")
+        assert keys["last_names"] == set()
+        assert keys["first_names"] == set()

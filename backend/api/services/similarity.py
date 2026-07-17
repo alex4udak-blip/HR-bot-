@@ -1567,6 +1567,53 @@ def build_dup_keys(
     ed = extra_data if isinstance(extra_data, dict) else {}
     skey = normalize_source_url(source_url or ed.get("source_url") or ed.get("source_key") or "")
 
+    # --- Level-2 мягкие ключи (anti-evasion) ---------------------------------
+    # Имя/фамилия раздельно, только если значение похоже на ФИО (та же защита от
+    # должностей/мусора, что и name_ok). Первое слово трактуем как фамилию, второе
+    # как имя (порядок в наших источниках чаще «Фамилия Имя»); скоринг всё равно
+    # сверяет наборами, так что перестановка не критична для флага.
+    first_names: Set[str] = set()
+    last_names: Set[str] = set()
+    if looks_like_person_name(name or ""):
+        parts = [w for w in (name or "").split() if len(w.strip("-_.,")) >= 1]
+        if len(parts) >= 2:
+            last_names.add(parts[0].strip("-_.,").lower())
+            first_names.add(parts[1].strip("-_.,").lower())
+    else:
+        # looks_like_person_name requires >=2 words, so a bare single-word name
+        # ("Саша") never passes it even though it's clearly a first-name-only
+        # value. Apply the same digit/comma/placeholder/position-hint guards
+        # without the word-count requirement for that one-word case only.
+        parts = (name or "").split()
+        if len(parts) == 1:
+            w = parts[0].strip("-_.,")
+            wl = w.lower()
+            if (w and not any(ch.isdigit() for ch in w) and "," not in w
+                    and not wl.startswith("кандидат") and not wl.startswith("candidate")
+                    and wl not in _POSITION_HINT_WORDS):
+                first_names.add(wl)
+    first_names.discard("")
+    last_names.discard("")
+
+    phones7: Set[str] = {p[-7:] for p in ph if len(p) >= 7}
+
+    email_locals: Set[str] = set()
+    for e in ek:
+        local = e.split("@", 1)[0] if "@" in e else ""
+        # Отсекаем слишком короткие/generic локали, чтобы 'hr'/'info' не слипались.
+        if len(local) >= 4 and local not in {"info", "mail", "test", "hello", "admin"}:
+            email_locals.add(local)
+
+    birth_norm = normalize_birth_date(ed.get("birth_date"))
+    age = ed.get("age")
+    if not isinstance(age, int):
+        age = age_from_birth(ed.get("birth_date")) if birth_norm else None
+
+    cities: Set[str] = set()
+    for cval in (ed.get("location"), ed.get("city")):
+        if isinstance(cval, str) and cval.strip():
+            cities.add(cval.strip().lower())
+
     return {
         "emails": ek,
         "phones10": ph,
@@ -1574,6 +1621,14 @@ def build_dup_keys(
         "name": " ".join((name or "").strip().lower().split()),
         "name_ok": looks_like_person_name(name or ""),
         "source_key": skey,
+        # Level-2 soft keys
+        "first_names": first_names,
+        "last_names": last_names,
+        "birth_norm": birth_norm,
+        "age": age,
+        "phones7": phones7,
+        "email_locals": email_locals,
+        "cities": cities,
     }
 
 
