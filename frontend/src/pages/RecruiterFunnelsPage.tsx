@@ -50,6 +50,7 @@ import { smartNameMatch, contactMatch } from '@/utils/translit';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
+import TextTwinBadge from '@/components/entities/TextTwinBadge';
 import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
 import { BulkSelectionBar } from '@/components/entities/BulkSelectionBar';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
@@ -2582,6 +2583,9 @@ export default function RecruiterFunnelsPage() {
                                   onResolved={() => setDupCard(null)}
                                 />
                               )}
+                              {/* Копипаст резюме: независим от hidden_duplicate_id — рендерится
+                                  рядом с баннером, а не внутри него (баннер может вернуть null). */}
+                              {dupCard && <TextTwinBadge card={dupCard} />}
                               {/* Top action buttons — Huntflow style */}
                               <div className="hf-profile-action-bar">
                                 {selectedCandidate.entity_id && (

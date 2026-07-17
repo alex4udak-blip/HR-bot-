@@ -432,6 +432,18 @@ export interface HiddenDuplicateMeta {
 }
 
 /**
+ * Meta written by the backend's resume-text-copy detector
+ * (resume_text_twin.py) into `extra_data.text_twin`. Independent of
+ * `hidden_duplicate_meta`/`hidden_duplicate_id` — a candidate can have a
+ * text_twin flag WITHOUT any identity-match duplicate, and vice versa.
+ * Read via `card.extra_data?.text_twin as TextTwinMeta | undefined`.
+ */
+export interface TextTwinMeta {
+  twin_id: number;
+  similarity: number; // 0..1
+}
+
+/**
  * Shadow dedup «Объединить»: merge the archived (shadow) duplicate INTO the
  * active candidate. Survivor = active (entityId); the archived duplicate is
  * deleted, its whole history moved over, and the hidden_duplicate_id flag cleared.
