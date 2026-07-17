@@ -511,10 +511,11 @@ export const getEntityActivity = async (
  */
 export const detectDuplicate = async (
   entityId: number
-): Promise<{ duplicate_id: number | null }> => {
-  const { data } = await debouncedMutation<{ duplicate_id: number | null }>(
-    'post', `/entities/${entityId}/detect-duplicate`, {}
-  );
+): Promise<{ duplicate_id: number | null; hidden_duplicate_meta?: HiddenDuplicateMeta | null }> => {
+  const { data } = await debouncedMutation<{
+    duplicate_id: number | null;
+    hidden_duplicate_meta?: HiddenDuplicateMeta | null;
+  }>('post', `/entities/${entityId}/detect-duplicate`, {});
   return data;
 };
 

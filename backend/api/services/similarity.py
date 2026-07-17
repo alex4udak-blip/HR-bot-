@@ -1815,7 +1815,10 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
     matches = await find_duplicate_matches(
         db, entity.org_id, keys, exclude_id=entity.id, dismissed=dismissed
     )
-    match_id = next((m.entity_id for m in matches if m.strength != "phone"), None)
+    _STRONG = ("source", "email", "telegram", "name")
+    match_id = next((m.entity_id for m in matches if m.strength in _STRONG), None)
+    if match_id is None:
+        match_id = next((m.entity_id for m in matches if m.strength == "soft"), None)
     if match_id is None:
         match_id = next((m.entity_id for m in matches if m.strength == "phone"), None)
 

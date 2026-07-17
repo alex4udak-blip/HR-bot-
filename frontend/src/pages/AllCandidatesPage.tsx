@@ -758,6 +758,9 @@ export default function AllCandidatesPage() {
                 extra_data: {
                   ...(prev.extra_data || {}),
                   hidden_duplicate_id: r.duplicate_id,
+                  ...(r.hidden_duplicate_meta
+                    ? { hidden_duplicate_meta: r.hidden_duplicate_meta }
+                    : {}),
                 },
               }
             : prev

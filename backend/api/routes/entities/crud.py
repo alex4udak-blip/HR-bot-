@@ -1903,4 +1903,7 @@ async def detect_duplicate_now(
             extra["hidden_duplicate_id"] = dup_id
             entity.extra_data = extra
         await db.commit()
-    return {"duplicate_id": dup_id}
+    return {
+        "duplicate_id": dup_id,
+        "hidden_duplicate_meta": (entity.extra_data or {}).get("hidden_duplicate_meta"),
+    }

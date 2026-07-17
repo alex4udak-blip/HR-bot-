@@ -485,6 +485,17 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             "shadow-dedup detect failed (non-critical)", exc_info=True
         )
 
+    # Детектор «копипаст текста резюме» (Feature B) — независим от детектора
+    # личности выше. Best-effort: ошибка не должна ломать создание кандидата.
+    try:
+        from ..services.resume_text_twin import detect_resume_text_twin
+        _twin_id, _sim = await detect_resume_text_twin(db, entity)
+    except Exception:
+        import logging
+        logging.getLogger("hr-analyzer.magic-button").warning(
+            "resume-text-twin detect failed (non-critical)", exc_info=True
+        )
+
     await db.commit()
 
     # --- Notification: new candidate from magic button ---

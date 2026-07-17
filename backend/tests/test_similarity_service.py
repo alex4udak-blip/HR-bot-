@@ -862,3 +862,54 @@ class TestDetectArchivedDuplicateMeta:
         assert meta["strength"] == "email"
         assert meta["confidence"] == 100
         assert meta["matched_id"] == old.id
+
+    @pytest.mark.asyncio
+    async def test_strong_match_outranks_newer_soft_match(self, db_session):
+        """FIX #1 regression: matches are ordered by Entity.id DESC, so a NEWER
+        coincidental soft match must not be picked over an OLDER strong exact
+        match just because it comes first in that list. old_email (older, exact
+        email match) must win over newer_soft (created later, only a DOB+first-name
+        soft match) — selection must be priority-based (strong > soft > phone), not
+        list-order-based."""
+        from api.services.similarity import detect_archived_duplicate
+        org = Organization(name="PriorityOrg", slug="priority-org")
+        db_session.add(org)
+        await db_session.flush()
+
+        # Older candidate — exact email match to the new entity below.
+        old_email = Entity(
+            org_id=org.id, type=EntityType.candidate, name="Иван Иванов",
+            email="dup-priority@gmail.com",
+        )
+        db_session.add(old_email)
+        await db_session.flush()
+
+        # Newer candidate (higher id, so it sorts FIRST in Entity.id DESC order) —
+        # only a soft match (DOB + translit/diminutive first name), distinct
+        # email/phone so it can't win on any strong tier.
+        newer_soft = Entity(
+            org_id=org.id, type=EntityType.candidate, name="Петров Александр",
+            email="a.petrov@gmail.com", phone="+7 916 000-11-22",
+            extra_data={"birth_date": "1990-05-14"},
+        )
+        db_session.add(newer_soft)
+        await db_session.flush()
+        assert newer_soft.id > old_email.id
+
+        # The entity being checked: same email as old_email (strong/exact) AND
+        # shares DOB + first name with newer_soft (soft) — surname-first order,
+        # per build_dup_keys' "Фамилия Имя" assumption (see test_meta_written_for_soft_match).
+        new = Entity(
+            org_id=org.id, type=EntityType.candidate, name="Petrov Sasha",
+            email="dup-priority@gmail.com",
+            extra_data={"birth_date": "14.05.1990"},
+        )
+        db_session.add(new)
+        await db_session.flush()
+
+        match_id = await detect_archived_duplicate(db_session, new)
+        assert match_id == old_email.id
+        meta = (new.extra_data or {}).get("hidden_duplicate_meta")
+        assert meta is not None
+        assert meta["strength"] == "email"
+        assert meta["matched_id"] == old_email.id

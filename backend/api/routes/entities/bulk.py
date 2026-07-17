@@ -314,6 +314,17 @@ async def create_entity_from_resume(
                 "shadow-dedup detect failed (non-critical)", exc_info=True
             )
 
+        # Детектор «копипаст текста резюме» (Feature B) — независим от детектора
+        # личности выше. Best-effort: ошибка не должна ломать создание кандидата.
+        try:
+            from ...services.resume_text_twin import detect_resume_text_twin
+            _twin_id, _sim = await detect_resume_text_twin(db, entity)
+        except Exception:
+            import logging
+            logging.getLogger("hr-analyzer.bulk").warning(
+                "resume-text-twin detect failed (non-critical)", exc_info=True
+            )
+
         await db.commit()
         await db.refresh(entity)
 
