@@ -348,6 +348,27 @@ def _any_part_match(set_a: Set[str], set_b: Set[str]) -> bool:
     return any(name_part_match(a, b) for a in set_a for b in set_b)
 
 
+def _score_name_parts(a: dict, b: dict) -> tuple:
+    """Совпадение имени/фамилии, УСТОЙЧИВОЕ к перестановке «Фамилия Имя» ↔ «Имя
+    Фамилия» (LinkedIn vs hh, осознанная смена порядка). Пробуем прямую и обратную
+    привязку ролей b и берём вариант с бОльшим баллом — веса ролей сохраняются.
+    Возвращает (last_hit: bool, first_hit: bool)."""
+    la, fa = a.get("last_names") or set(), a.get("first_names") or set()
+    lb, fb = b.get("last_names") or set(), b.get("first_names") or set()
+
+    def orient(lb_, fb_):
+        last_hit = _any_part_match(la, lb_)
+        first_hit = _any_part_match(fa, fb_)
+        s = (SOFT_WEIGHTS["last_name"] if last_hit else 0) + \
+            (SOFT_WEIGHTS["first_name"] if first_hit else 0)
+        return s, last_hit, first_hit
+
+    straight = orient(lb, fb)
+    swapped = orient(fb, lb)
+    _, last_hit, first_hit = straight if straight[0] >= swapped[0] else swapped
+    return last_hit, first_hit
+
+
 def score_soft_identity(a: dict, b: dict) -> SoftScore:
     """Взвешенный мягкий скоринг «тот же человек» между двумя наборами soft-ключей
     (см. build_dup_keys). НЕ использует места работы/образование (отвергнуто как
@@ -365,9 +386,10 @@ def score_soft_identity(a: dict, b: dict) -> SoftScore:
         reasons.append(reason)
         detail.append(f"{weight_key}(+{w})")
 
-    if _any_part_match(a.get("last_names") or set(), b.get("last_names") or set()):
+    last_hit, first_hit = _score_name_parts(a, b)
+    if last_hit:
         _hit("last_name", "Фамилия совпала")
-    if _any_part_match(a.get("first_names") or set(), b.get("first_names") or set()):
+    if first_hit:
         _hit("first_name", "Имя совпало")
 
     ba, bb = a.get("birth_norm"), b.get("birth_norm")

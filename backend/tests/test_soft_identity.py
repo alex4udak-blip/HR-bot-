@@ -181,3 +181,26 @@ class TestBuildDupKeysSoft:
         keys = build_dup_keys(name="Flutter Developer, Минск")
         assert keys["last_names"] == set()
         assert keys["first_names"] == set()
+
+
+class TestNameOrderIndependence:
+    def test_swapped_order_full_name_matches(self):
+        a = _keys(last_names={"петров"}, first_names={"александр"})
+        b = _keys(last_names={"sasha"}, first_names={"petrov"})  # western order
+        r = score_soft_identity(a, b)
+        assert r.confidence == 70
+        assert r.components >= 2
+        assert r.is_flag is True
+
+    def test_straight_order_still_weights_surname(self):
+        a = _keys(last_names={"петров"}, first_names={"дмитрий"}, birth_norm="1990-01-01")
+        b = _keys(last_names={"petrov"}, first_names={"сергей"}, birth_norm="1990-01-01")
+        r = score_soft_identity(a, b)
+        assert r.confidence == 85  # surname 45 + dob 40 (first names differ)
+        assert r.is_flag is True
+
+    def test_swap_does_not_invent_matches(self):
+        a = _keys(last_names={"иванов"}, first_names={"пётр"})
+        b = _keys(last_names={"сидоров"}, first_names={"павел"})
+        r = score_soft_identity(a, b)
+        assert r.components == 0
