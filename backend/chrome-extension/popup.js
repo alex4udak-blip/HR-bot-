@@ -437,6 +437,23 @@ async function checkDuplicatesOnLoad() {
     const archiveNote = hasArchive
       ? `<div class="dup-archive-note"${archiveUrl ? ` data-archive-url="${archiveUrl}" title="Открыть карточку архивного кандидата"` : ''}>📦 Похожий кандидат есть в архиве${archiveUrl ? ' <span class="dup-archive-open">— открыть ↗</span>' : ''}</div>`
       : '';
+    // Level-2 «мягкое» совпадение (возможно тот же человек под новой личиной):
+    // нет точного совпадения контакта, но сложилась комбинация имя/ДР/частичный
+    // контакт. Жёлтая плашка с % и причинами. Точный дубль (is_duplicate) главнее —
+    // при нём мягкую не показываем, чтобы не шуметь.
+    const softMatch = !!checkResp.data.soft_match;
+    const softId = checkResp.data.soft_match_id;
+    const softConf = Math.round(checkResp.data.soft_confidence || 0);
+    const softReasons = Array.isArray(checkResp.data.soft_reasons) ? checkResp.data.soft_reasons : [];
+    const softUrl = softId
+      ? `${serverUrl || document.getElementById('serverUrl').value}/all-candidates?entity=${softId}`
+      : '';
+    const softChips = softReasons.length
+      ? `<div style="margin-top:4px;">${softReasons.map(r => `<span style="display:inline-block;background:rgba(255,255,255,0.6);border-radius:10px;padding:1px 8px;margin:2px 4px 0 0;font-size:12px;">${r}</span>`).join('')}</div>`
+      : '';
+    const softNote = (softMatch && !checkResp.data.is_duplicate)
+      ? `<div class="dup-soft-note"${softUrl ? ` data-soft-url="${softUrl}" title="Открыть карточку возможного дубля"` : ''} style="margin-top:6px;padding:8px 10px;border-radius:8px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;${softUrl ? 'cursor:pointer;' : ''}">🤔 <b>Возможно тот же человек · ${softConf}%</b>${softChips}${softUrl ? '<div style="margin-top:4px;font-size:12px;">— открыть карточку ↗</div>' : ''}</div>`
+      : '';
     if (checkResp.data.is_duplicate) {
       const dups = checkResp.data.duplicates;
       dupStatus.className = 'dup-status found';
@@ -488,9 +505,9 @@ async function checkDuplicatesOnLoad() {
           });
         });
       }, 0);
-    } else if (hasArchive) {
+    } else if (softNote || hasArchive) {
       dupStatus.className = 'dup-status found';
-      dupStatus.innerHTML = archiveNote;
+      dupStatus.innerHTML = softNote + archiveNote;
     } else {
       dupStatus.className = 'dup-status clean';
       dupStatus.innerHTML = '✅ Новый кандидат — дубликатов нет';
@@ -501,6 +518,11 @@ async function checkDuplicatesOnLoad() {
     if (an) {
       an.style.cursor = 'pointer';
       an.addEventListener('click', () => chrome.tabs.create({ url: an.dataset.archiveUrl }));
+    }
+    // Клик по жёлтой плашке «возможно тот же человек» → открыть карточку дубля.
+    const sn = dupStatus.querySelector('.dup-soft-note[data-soft-url]');
+    if (sn) {
+      sn.addEventListener('click', () => chrome.tabs.create({ url: sn.dataset.softUrl }));
     }
   } catch (e) {
     console.error('Duplicate check failed:', e);
