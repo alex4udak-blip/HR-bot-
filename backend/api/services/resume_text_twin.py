@@ -25,11 +25,18 @@ def normalize_resume_text(text: str) -> str:
 
 
 def resume_text_blob(extra_data: Optional[dict]) -> str:
-    """Собрать сравниваемый текст из about + experience[].description/achievements."""
+    """Собрать сравниваемый текст резюме. Поддерживает ОБА формата хранения:
+    - парсер резюме (загрузка файла): about + experience[].description/achievements;
+    - расширение-парсер (magic_button): summary + experience_descriptions[] (плоский
+      список строк). Ключи разошлись между путями, поэтому читаем оба, иначе Feature B
+      не срабатывала бы на кандидатах из расширения (основной поток)."""
     ed = extra_data if isinstance(extra_data, dict) else {}
     parts = []
-    if isinstance(ed.get("about"), str):
-        parts.append(ed["about"])
+    # «Обо мне» — about (парсер файла) ИЛИ summary (расширение).
+    for key in ("about", "summary"):
+        if isinstance(ed.get(key), str):
+            parts.append(ed[key])
+    # Опыт — структурированный experience[] (парсер файла).
     for item in (ed.get("experience") or []):
         if not isinstance(item, dict):
             continue
@@ -38,6 +45,10 @@ def resume_text_blob(extra_data: Optional[dict]) -> str:
         for ach in (item.get("achievements") or []):
             if isinstance(ach, str):
                 parts.append(ach)
+    # Опыт — плоский список описаний (расширение: experience_descriptions).
+    for desc in (ed.get("experience_descriptions") or []):
+        if isinstance(desc, str):
+            parts.append(desc)
     return normalize_resume_text(" ".join(parts))
 
 

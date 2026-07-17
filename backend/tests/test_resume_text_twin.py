@@ -31,6 +31,17 @@ class TestBlob:
         assert "ускорил сборку" in blob
         assert "вёл команду" in blob
 
+    def test_blob_reads_extension_format(self):
+        # magic_button (расширение) хранит summary + experience_descriptions.
+        extra = {
+            "summary": "Senior бэкенд разработчик",
+            "experience_descriptions": ["Проектировал API", "Наставлял джунов"],
+        }
+        blob = resume_text_blob(extra)
+        assert "senior бэкенд разработчик" in blob
+        assert "проектировал api" in blob
+        assert "наставлял джунов" in blob
+
 
 class TestSimilarity:
     def test_identical_text_is_1(self):
