@@ -112,6 +112,19 @@ class DuplicateCandidate:
     matched_fields: Dict[str, Tuple[str, str]] = field(default_factory=dict)  # field: (value1, value2)
 
 
+@dataclass
+class SoftScore:
+    """Результат Level-2 мягкого скоринга личности между двумя наборами ключей."""
+    confidence: int          # 0-100
+    components: int          # сколько независимых сигналов сработало
+    reasons: List[str] = field(default_factory=list)   # причины словами (для UI)
+    detail: List[str] = field(default_factory=list)    # 'first_name(+25)' — для логов/dry-run
+
+    @property
+    def is_flag(self) -> bool:
+        return self.confidence >= SOFT_THRESHOLD and self.components >= SOFT_MIN_COMPONENTS
+
+
 def transliterate_ru_to_en(text: str) -> str:
     """Транслитерация русского текста в английский."""
     result = []
@@ -328,6 +341,52 @@ def name_part_match(a: str, b: str) -> bool:
         return True
     # Опечатка <=1 между любыми вариантами (ловит осознанную ошибку в написании).
     return any(_levenshtein_le1(x, y) for x in va for y in vb)
+
+
+def _any_part_match(set_a: Set[str], set_b: Set[str]) -> bool:
+    """Есть ли пара (a,b) из двух наборов, совпадающая по name_part_match."""
+    return any(name_part_match(a, b) for a in set_a for b in set_b)
+
+
+def score_soft_identity(a: dict, b: dict) -> SoftScore:
+    """Взвешенный мягкий скоринг «тот же человек» между двумя наборами soft-ключей
+    (см. build_dup_keys). НЕ использует места работы/образование (отвергнуто как
+    признак личности). ДР в одиночку не флажит (требуется >=2 компонента)."""
+    score = 0
+    components = 0
+    reasons: List[str] = []
+    detail: List[str] = []
+
+    def _hit(weight_key: str, reason: str):
+        nonlocal score, components
+        w = SOFT_WEIGHTS[weight_key]
+        score += w
+        components += 1
+        reasons.append(reason)
+        detail.append(f"{weight_key}(+{w})")
+
+    if _any_part_match(a.get("last_names") or set(), b.get("last_names") or set()):
+        _hit("last_name", "Фамилия совпала")
+    if _any_part_match(a.get("first_names") or set(), b.get("first_names") or set()):
+        _hit("first_name", "Имя совпало")
+
+    ba, bb = a.get("birth_norm"), b.get("birth_norm")
+    if ba and bb and ba == bb:
+        _hit("dob_exact", "Дата рождения совпала")
+    else:
+        aa, ab = a.get("age"), b.get("age")
+        if aa is not None and ab is not None and abs(aa - ab) <= 1:
+            _hit("age_pm1", "Возраст совпадает (±1 год)")
+
+    if (a.get("phones7") or set()) & (b.get("phones7") or set()):
+        _hit("phone7", "Последние 7 цифр телефона совпали")
+    if (a.get("email_locals") or set()) & (b.get("email_locals") or set()):
+        _hit("email_local", "Email до @ совпал")
+    if (a.get("cities") or set()) & (b.get("cities") or set()):
+        _hit("city", "Город совпал")
+
+    return SoftScore(confidence=min(score, 100), components=components,
+                     reasons=reasons, detail=detail)
 
 
 def names_match_surname_firstname(name1: str, name2: str) -> bool:

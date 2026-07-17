@@ -78,3 +78,75 @@ class TestNamePartMatch:
     def test_empty_is_false(self):
         assert name_part_match("", "Александр") is False
         assert name_part_match("Александр", "") is False
+
+
+from api.services.similarity import score_soft_identity, SoftScore
+
+
+def _keys(**kw):
+    """Build a soft-key dict matching build_dup_keys' soft-key contract."""
+    base = {
+        "first_names": set(), "last_names": set(),
+        "birth_norm": None, "age": None,
+        "phones7": set(), "email_locals": set(), "cities": set(),
+    }
+    base.update(kw)
+    return base
+
+
+class TestScoreSoftIdentity:
+    def test_lastname_plus_firstname_flags(self):
+        a = _keys(first_names={"александр"}, last_names={"петров"})
+        b = _keys(first_names={"саша"}, last_names={"petrov"})
+        r = score_soft_identity(a, b)
+        assert r.confidence == 70  # 45 + 25
+        assert r.components >= 2
+        assert r.is_flag is True
+
+    def test_firstname_plus_dob_flags(self):
+        a = _keys(first_names={"александр"}, birth_norm="1990-05-14")
+        b = _keys(first_names={"aleksandr"}, birth_norm="1990-05-14")
+        r = score_soft_identity(a, b)
+        assert r.confidence == 65  # 25 + 40
+        assert r.is_flag is True
+
+    def test_dob_alone_never_flags(self):
+        a = _keys(birth_norm="1990-05-14")
+        b = _keys(birth_norm="1990-05-14")
+        r = score_soft_identity(a, b)
+        assert r.components == 1
+        assert r.is_flag is False  # single component, below min-components
+
+    def test_common_first_name_alone_never_flags(self):
+        a = _keys(first_names={"александр"})
+        b = _keys(first_names={"александр"})
+        r = score_soft_identity(a, b)
+        assert r.confidence == 25
+        assert r.is_flag is False
+
+    def test_phone7_plus_firstname_flags(self):
+        a = _keys(first_names={"иван"}, phones7={"1234567"})
+        b = _keys(first_names={"ivan"}, phones7={"1234567"})
+        r = score_soft_identity(a, b)
+        assert r.confidence == 60  # 35 + 25
+        assert r.is_flag is True
+
+    def test_email_local_plus_dob_flags(self):
+        a = _keys(email_locals={"ivan.petrov"}, birth_norm="1988-01-02")
+        b = _keys(email_locals={"ivan.petrov"}, birth_norm="1988-01-02")
+        r = score_soft_identity(a, b)
+        assert r.confidence == 75  # 35 + 40
+        assert r.is_flag is True
+
+    def test_reasons_are_human_readable(self):
+        a = _keys(first_names={"александр"}, last_names={"петров"})
+        b = _keys(first_names={"саша"}, last_names={"petrov"})
+        r = score_soft_identity(a, b)
+        assert any("амили" in reason.lower() for reason in r.reasons)  # «Фамилия ...»
+
+    def test_confidence_capped_at_100(self):
+        a = _keys(first_names={"иван"}, last_names={"петров"},
+                  birth_norm="1990-05-14", phones7={"1234567"},
+                  email_locals={"ivan"}, cities={"минск"})
+        r = score_soft_identity(a, a)  # identical keys both sides -> all signals hit
+        assert r.confidence == 100  # 45+25+40+35+35+8 = 188, capped at 100
