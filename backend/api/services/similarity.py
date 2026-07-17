@@ -1797,6 +1797,18 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
     if match_id is None:
         match_id = next((m.entity_id for m in matches if m.strength == "phone"), None)
 
+    # Выбранный матч (тот же приоритет, что match_id): строгий > soft, иначе phone.
+    chosen = next((mm for mm in matches if mm.entity_id == match_id), None)
+    if chosen is not None and getattr(entity, "id", None):
+        ne = dict(entity.extra_data) if isinstance(entity.extra_data, dict) else {}
+        ne["hidden_duplicate_meta"] = {
+            "strength": chosen.strength,
+            "confidence": chosen.confidence,
+            "reasons": chosen.reasons,
+            "matched_id": chosen.entity_id,
+        }
+        entity.extra_data = ne
+
     # Помечаем найденного дубля ОБРАТНОЙ ссылкой (его hidden_duplicate_id → наш id),
     # чтобы баннер «Похожий кандидат» появлялся у ОБОИХ профилей пары.
     if match_id is not None and getattr(entity, "id", None):

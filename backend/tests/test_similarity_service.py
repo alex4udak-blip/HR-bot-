@@ -802,3 +802,63 @@ class TestSoftTierMatching:
         matches = await find_duplicate_matches(db_session, org.id, keys)
         assert matches[0].strength == "email"
         assert matches[0].confidence == 100
+
+
+class TestDetectArchivedDuplicateMeta:
+    """detect_archived_duplicate persists the winning match's tier/confidence/reasons
+    onto the NEW entity's extra_data.hidden_duplicate_meta (anti-evasion, Task 7)."""
+
+    @pytest.mark.asyncio
+    async def test_meta_written_for_soft_match(self, db_session):
+        from api.services.similarity import detect_archived_duplicate
+        org = Organization(name="MetaOrg", slug="meta-org")
+        db_session.add(org)
+        await db_session.flush()
+        old = Entity(org_id=org.id, type=EntityType.candidate, name="Петров Александр",
+                     extra_data={"birth_date": "1990-05-14"})
+        db_session.add(old)
+        await db_session.flush()
+        # NOTE: plan's example used "Sasha Petroff" (Western first-last word order),
+        # but build_dup_keys (Task 4) assumes surname-first order for ALL names
+        # ("порядок в наших источниках чаще «Фамилия Имя»" — see its docstring), so
+        # that spelling puts the transliterated surname into first_names and the
+        # nickname into last_names, and neither half then matches — 0 name
+        # components, so it never reaches soft-match at all (independent of this
+        # task's change). Kept the surname-first order here ("Petrov Sasha":
+        # translit surname + diminutive first name + reformatted DOB) so this test
+        # actually exercises the soft-match meta-persistence path Task 7 adds.
+        new = Entity(org_id=org.id, type=EntityType.candidate, name="Petrov Sasha",
+                     extra_data={"birth_date": "14.05.1990"})
+        db_session.add(new)
+        await db_session.flush()
+
+        match_id = await detect_archived_duplicate(db_session, new)
+        assert match_id == old.id
+        meta = (new.extra_data or {}).get("hidden_duplicate_meta")
+        assert meta is not None
+        assert meta["strength"] == "soft"
+        assert meta["confidence"] >= 60
+        assert isinstance(meta["reasons"], list) and meta["reasons"]
+
+    @pytest.mark.asyncio
+    async def test_meta_written_for_strong_match(self, db_session):
+        from api.services.similarity import detect_archived_duplicate
+        org = Organization(name="MetaOrg2", slug="meta-org-2")
+        db_session.add(org)
+        await db_session.flush()
+        old = Entity(org_id=org.id, type=EntityType.candidate,
+                     name="Иван Иванов", email="strong-dup@gmail.com")
+        db_session.add(old)
+        await db_session.flush()
+        new = Entity(org_id=org.id, type=EntityType.candidate,
+                     name="Другое Имя", email="strong-dup@gmail.com")
+        db_session.add(new)
+        await db_session.flush()
+
+        match_id = await detect_archived_duplicate(db_session, new)
+        assert match_id == old.id
+        meta = (new.extra_data or {}).get("hidden_duplicate_meta")
+        assert meta is not None
+        assert meta["strength"] == "email"
+        assert meta["confidence"] == 100
+        assert meta["matched_id"] == old.id
