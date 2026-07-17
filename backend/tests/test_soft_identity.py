@@ -46,3 +46,35 @@ class TestConstants:
             assert key in SOFT_WEIGHTS
     def test_threshold_is_int(self):
         assert isinstance(SOFT_THRESHOLD, int)
+
+
+from api.services.similarity import name_part_match
+
+
+class TestNamePartMatch:
+    def test_exact_ru(self):
+        assert name_part_match("Александр", "Александр") is True
+
+    def test_translit(self):
+        assert name_part_match("Александр", "Aleksandr") is True
+
+    def test_one_typo(self):
+        # Deliberate single-char typo still matches.
+        assert name_part_match("Петров", "Петорв") is True
+        assert name_part_match("Aleksandr", "Alexsandr") is True
+
+    def test_diminutive(self):
+        assert name_part_match("Александр", "Саша") is True
+        assert name_part_match("Aleksandr", "Sasha") is True
+
+    def test_initial_abbreviation(self):
+        # "А." abbreviates "Александр".
+        assert name_part_match("Александр", "А.") is True
+
+    def test_different_names_do_not_match(self):
+        assert name_part_match("Александр", "Дмитрий") is False
+        assert name_part_match("Петров", "Сидоров") is False
+
+    def test_empty_is_false(self):
+        assert name_part_match("", "Александр") is False
+        assert name_part_match("Александр", "") is False

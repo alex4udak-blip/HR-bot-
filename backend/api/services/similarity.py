@@ -234,6 +234,102 @@ def count_shared_name_words(name1: str, name2: str) -> int:
     return count
 
 
+# Уменьшительные <-> полные (минимальный практичный набор; расширяется по мере
+# калибровки). Ключи и значения — в нижнем регистре, без транслита (транслит
+# добавляется через _name_word_variants на этапе сравнения).
+_DIMINUTIVES = {
+    "александр": {"саша", "шура", "саня"},
+    "алексей": {"лёша", "леша", "алёша", "алеша"},
+    "дмитрий": {"дима", "митя"},
+    "евгений": {"женя"},
+    "екатерина": {"катя"},
+    "мария": {"маша"},
+    "михаил": {"миша"},
+    "владимир": {"вова", "володя"},
+    "анатолий": {"толя"},
+    "николай": {"коля"},
+    "сергей": {"серёжа", "сережа"},
+}
+
+
+def _levenshtein_le1(a: str, b: str) -> bool:
+    """Расстояние Левенштейна между a и b не больше 1 (равны / 1 замена / 1
+    вставка-удаление / соседняя перестановка двух букв — частая опечатка).
+    Дешёвая проверка без построения полной матрицы."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:  # одна замена или одна соседняя перестановка?
+        diff_idx = [i for i in range(la) if a[i] != b[i]]
+        if len(diff_idx) == 1:
+            return True
+        if len(diff_idx) == 2:
+            i, j = diff_idx
+            if j == i + 1 and a[i] == b[j] and a[j] == b[i]:
+                return True
+        return False
+    # разница длины 1 — одна вставка/удаление
+    short, long = (a, b) if la < lb else (b, a)
+    i = j = 0
+    edited = False
+    while i < len(short) and j < len(long):
+        if short[i] == long[j]:
+            i += 1
+            j += 1
+        elif edited:
+            return False
+        else:
+            edited = True
+            j += 1
+    return True
+
+
+def _diminutive_group(word: str) -> Set[str]:
+    """Все эквивалентные формы имени: полное + все уменьшительные обеих сторон.
+    Словарь хранит только кириллицу, поэтому ищем совпадение не только по
+    исходному слову, но и по его транслит-варианту (иначе 'Aleksandr' не
+    находит уменьшительные для 'Александр')."""
+    w = (word or "").strip("-_.,").lower()
+    candidates = _name_word_variants(w) | {w}
+    forms = {w}
+    for full, dims in _DIMINUTIVES.items():
+        if candidates & ({full} | dims):
+            forms.add(full)
+            forms.update(dims)
+    return forms
+
+
+def name_part_match(a: str, b: str) -> bool:
+    """Совпадает ли ОДНА часть имени (имя ИЛИ фамилия) с учётом: транслита RU<->EN,
+    опечатки <=1 символа, уменьшительных форм и инициала ('А.' == 'Александр').
+    Пустые -> False."""
+    wa = (a or "").strip("-_.,").lower()
+    wb = (b or "").strip("-_.,").lower()
+    if not wa or not wb:
+        return False
+
+    # Инициал: одна буква одной стороны == первая буква другой (с учётом транслита).
+    def _first_letters(w: str) -> Set[str]:
+        return {v[:1] for v in _name_word_variants(w) if v}
+    if len(wa) == 1 or len(wb) == 1:
+        return bool(_first_letters(wa) & _first_letters(wb))
+
+    # Полный набор вариантов каждой стороны: транслит (через _name_word_variants)
+    # для каждой уменьшительно-эквивалентной формы.
+    def _all_variants(w: str) -> Set[str]:
+        out: Set[str] = set()
+        for form in _diminutive_group(w):
+            out |= _name_word_variants(form)
+        return out
+    va, vb = _all_variants(wa), _all_variants(wb)
+    if va & vb:
+        return True
+    # Опечатка <=1 между любыми вариантами (ловит осознанную ошибку в написании).
+    return any(_levenshtein_le1(x, y) for x in va for y in vb)
+
+
 def names_match_surname_firstname(name1: str, name2: str) -> bool:
     """Совпадают ли ФИО по «Фамилия + Имя» (первые два слова, порядок МОЖЕТ быть
     обратным, каждое слово — с учётом транслитерации). Ловит «Векленко Кирилл»
