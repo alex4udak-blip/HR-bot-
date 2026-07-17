@@ -1519,7 +1519,9 @@ class DupMatch:
     """Одно совпадение единого матчера дублей."""
     entity_id: int
     is_archived: bool
-    strength: str  # 'source' | 'email' | 'telegram' | 'name' | 'phone'
+    strength: str  # 'source'|'email'|'telegram'|'name'|'phone'|'soft'
+    confidence: int = 100          # Level-1 = 100; Level-2 (soft) = вычисленный балл
+    reasons: List[str] = field(default_factory=list)  # причины словами (soft-тир, для UI)
 
 
 def build_dup_keys(
@@ -1656,14 +1658,21 @@ async def find_duplicate_matches(
     if not emails and not phones10 and not tg_names and not name_ok and not source_key:
         return []
 
-    # extra_data (полное резюме JSON) грузим ТОЛЬКО когда матчим по source_url —
-    # иначе на больших оргах тянули бы килобайты JSON на каждого кандидата зря.
+    # extra_data (полное резюме JSON) грузим когда матчим по source_url ИЛИ когда
+    # есть мягкие ключи (birth_date/city живут в extra_data) — иначе на больших
+    # оргах тянули бы килобайты JSON на каждого кандидата зря.
+    want_soft = bool(
+        keys.get("first_names") or keys.get("last_names") or keys.get("birth_norm")
+        or keys.get("age") is not None or keys.get("phones7") or keys.get("email_locals")
+    )
     cols = [
         Entity.id, Entity.name, Entity.email, Entity.phone,
         Entity.telegram_usernames, Entity.is_archived,
     ]
-    if source_key:
+    if source_key or want_soft:
         cols.append(Entity.extra_data)
+    if want_soft:
+        cols.extend([Entity.emails, Entity.phones])
     q = select(*cols).where(Entity.type == EntityType.candidate)
     if exclude_id is not None:
         q = q.where(Entity.id != exclude_id)
@@ -1678,8 +1687,9 @@ async def find_duplicate_matches(
     # («telegram», «hh_b2b») сидит у МНОГИХ РАЗНЫХ имён → не идентификатор.
     tg_name_freq: dict = {}
     for r in rows:
-        _nm = (r[1] or "").strip().lower()
-        for t in (r[4] or []):
+        m = r._mapping
+        _nm = (m[Entity.name] or "").strip().lower()
+        for t in (m[Entity.telegram_usernames] or []):
             k = normalize_telegram(t)
             if k:
                 tg_name_freq.setdefault(k, set()).add(_nm)
@@ -1692,9 +1702,14 @@ async def find_duplicate_matches(
 
     out: List[DupMatch] = []
     for r in rows:
-        # r: id, name, email, phone, telegram_usernames, is_archived [, extra_data]
-        cand_id, cand_name, cand_email, cand_phone, cand_tg, cand_arch = r[0], r[1], r[2], r[3], r[4], r[5]
-        cand_extra = r[6] if source_key and len(r) > 6 else None
+        m = r._mapping
+        cand_id = m[Entity.id]
+        cand_name = m[Entity.name]
+        cand_email = m[Entity.email]
+        cand_phone = m[Entity.phone]
+        cand_tg = m[Entity.telegram_usernames]
+        cand_arch = m[Entity.is_archived]
+        cand_extra = m.get(Entity.extra_data) if (source_key or want_soft) else None
         if cand_id in dismissed:
             continue
         strength: Optional[str] = None
@@ -1718,8 +1733,29 @@ async def find_duplicate_matches(
             d = normalize_phone(cand_phone or "")
             if len(d) >= 10 and d[-10:] in phones10:
                 strength = "phone"
+
+        soft_conf = 0
+        soft_reasons: List[str] = []
+        if strength is None and want_soft:
+            cand_keys = build_dup_keys(
+                name=cand_name, email=cand_email, phone=cand_phone,
+                emails=m.get(Entity.emails) if want_soft else None,
+                phones=m.get(Entity.phones) if want_soft else None,
+                telegram_usernames=cand_tg,
+                extra_data=cand_extra if isinstance(cand_extra, dict) else {},
+            )
+            sc = score_soft_identity(keys, cand_keys)
+            if sc.is_flag:
+                strength = "soft"
+                soft_conf = sc.confidence
+                soft_reasons = sc.reasons
+
         if strength is not None:
-            out.append(DupMatch(entity_id=cand_id, is_archived=bool(cand_arch), strength=strength))
+            out.append(DupMatch(
+                entity_id=cand_id, is_archived=bool(cand_arch), strength=strength,
+                confidence=soft_conf if strength == "soft" else 100,
+                reasons=soft_reasons,
+            ))
     return out
 
 

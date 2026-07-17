@@ -752,3 +752,53 @@ class TestMergeEntities:
             select(StageTransition).where(StageTransition.entity_id == merged.id)
         )).scalars().all()
         assert any(t.comment == "src-hist" for t in hist), "история перенесённой заявки потеряна"
+
+
+class TestSoftTierMatching:
+    """Level-2 soft-identity tier wired into find_duplicate_matches (anti-evasion)."""
+
+    @pytest.mark.asyncio
+    async def test_soft_match_on_dob_plus_firstname(self, db_session):
+        from api.services.similarity import build_dup_keys, find_duplicate_matches
+        org = Organization(name="SoftOrg", slug="soft-org")
+        db_session.add(org)
+        await db_session.flush()
+
+        existing = Entity(
+            org_id=org.id, type=EntityType.candidate, name="Петров Александр",
+            email="a.petrov@gmail.com", phone="+7 916 000-11-22",
+            extra_data={"birth_date": "1990-05-14"},
+        )
+        db_session.add(existing)
+        await db_session.flush()
+
+        # New candidate: different surname spelling dropped, different email/phone,
+        # only first name (translit) + DOB overlap.
+        keys = build_dup_keys(
+            name="Sasha",  # diminutive, no surname
+            email="totally-different@yandex.ru",
+            phone="+7 495 999-88-77",
+            extra_data={"birth_date": "14.05.1990"},
+        )
+        matches = await find_duplicate_matches(db_session, org.id, keys)
+        soft = [m for m in matches if m.strength == "soft"]
+        assert len(soft) == 1
+        assert soft[0].entity_id == existing.id
+        assert soft[0].confidence >= 60
+        assert any("рождения" in r.lower() for r in soft[0].reasons)
+
+    @pytest.mark.asyncio
+    async def test_exact_email_still_strength_email(self, db_session):
+        # Level-1 path must be unchanged: exact email => strength 'email', 100%.
+        from api.services.similarity import build_dup_keys, find_duplicate_matches
+        org = Organization(name="ExactOrg", slug="exact-org")
+        db_session.add(org)
+        await db_session.flush()
+        existing = Entity(org_id=org.id, type=EntityType.candidate,
+                          name="Иван Иванов", email="dup@gmail.com")
+        db_session.add(existing)
+        await db_session.flush()
+        keys = build_dup_keys(name="Пётр Петров", email="dup@gmail.com")
+        matches = await find_duplicate_matches(db_session, org.id, keys)
+        assert matches[0].strength == "email"
+        assert matches[0].confidence == 100
