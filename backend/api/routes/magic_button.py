@@ -108,6 +108,12 @@ class DuplicateCheckResponse(BaseModel):
     # любого кандидата, check_entity_access) — просмотреть, не листая архив.
     has_archive_match: bool = False
     archive_match_id: Optional[int] = None  # id архивного совпадения — открыть карточку
+    # Soft-tier совпадение (anti-evasion): не «точный» дубль, но похож достаточно,
+    # чтобы предупредить рекрутёра — «возможно тот же человек» (не блокирует добавление).
+    soft_match: bool = False
+    soft_confidence: int = 0
+    soft_reasons: list = []
+    soft_match_id: Optional[int] = None
 
 @router.post("/check-duplicate")
 async def check_duplicate(
@@ -140,11 +146,16 @@ async def check_duplicate(
     active_ids = [m.entity_id for m in matches if not m.is_archived][:5]
     archive_match_id = next((m.entity_id for m in matches if m.is_archived), None)
     has_archive_match = archive_match_id is not None
+    soft = next((m for m in matches if m.strength == "soft"), None)
 
     if not active_ids:
         return DuplicateCheckResponse(
             is_duplicate=False, duplicates=[],
             has_archive_match=has_archive_match, archive_match_id=archive_match_id,
+            soft_match=soft is not None,
+            soft_confidence=soft.confidence if soft else 0,
+            soft_reasons=soft.reasons if soft else [],
+            soft_match_id=soft.entity_id if soft else None,
         )
 
     dup_result = await db.execute(
@@ -205,6 +216,10 @@ async def check_duplicate(
         duplicates=result_list,
         has_archive_match=has_archive_match,
         archive_match_id=archive_match_id,
+        soft_match=soft is not None,
+        soft_confidence=soft.confidence if soft else 0,
+        soft_reasons=soft.reasons if soft else [],
+        soft_match_id=soft.entity_id if soft else None,
     )
 
 @router.post("/parse")
