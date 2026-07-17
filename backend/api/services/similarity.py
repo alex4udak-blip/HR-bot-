@@ -282,6 +282,42 @@ def normalize_telegram(value: str) -> str:
     return str(value or "").strip().lstrip("@").lower()
 
 
+def normalize_birth_date(value) -> Optional[str]:
+    """Канонизировать дату рождения в 'YYYY-MM-DD'. Принимает ISO, '14.05.1990',
+    '14/05/1990'. Возвращает None для неполных/мусорных значений (год-месяц без дня,
+    текст) — такие НЕ годятся как точный DOB-ключ."""
+    if not value:
+        return None
+    s = str(value).strip()
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", s)
+    if m:
+        y, mo, d = m.groups()
+    else:
+        m = re.match(r"^(\d{1,2})[./](\d{1,2})[./](\d{4})$", s)
+        if not m:
+            return None
+        d, mo, y = m.groups()
+    try:
+        from datetime import date
+        dt = date(int(y), int(mo), int(d))
+    except ValueError:
+        return None
+    return dt.isoformat()
+
+
+def age_from_birth(value, *, today: Optional[str] = None) -> Optional[int]:
+    """Возраст в полных годах из даты рождения. today (ISO) — для детерминизма в тестах;
+    по умолчанию сегодняшняя дата."""
+    norm = normalize_birth_date(value)
+    if not norm:
+        return None
+    from datetime import date
+    y, mo, d = (int(x) for x in norm.split("-"))
+    ref = date.fromisoformat(today) if today else date.today()
+    age = ref.year - y - ((ref.month, ref.day) < (mo, d))
+    return age
+
+
 # Значения, попадающие в telegram_usernames при импорте (HH/CSV), но НЕ являющиеся
 # личными хэндлами — это ярлыки источника/площадки. Матчить дубли по ним нельзя:
 # десятки разных людей с одним «telegram»/«hh_b2b» слипаются в один ложный кластер.
@@ -295,6 +331,23 @@ JUNK_TELEGRAM_USERNAMES = {
 # Если одно и то же telegram-значение встречается у стольких кандидатов и более —
 # это заведомо не личный хэндл (мусор/ярлык), а массовое совпадение. Не матчим.
 TG_COMMON_THRESHOLD = 3
+
+# --- Level-2 soft-identity scoring (anti-evasion) ------------------------------
+# Веса — СТАРТОВЫЕ значения-заглушки. Калибруются dryrun_duplicate_detection.py
+# на реальной активной+теневой базе ДО включения флага в проде. Меняются здесь,
+# в одном месте, без правки логики скоринга.
+SOFT_WEIGHTS = {
+    "last_name": 45,    # фамилия совпала (транслит + опечатка<=1)
+    "first_name": 25,   # имя совпало (транслит + опечатка<=1 + уменьшительные)
+    "dob_exact": 40,    # точная дата рождения YYYY-MM-DD
+    "age_pm1": 12,      # возраст +-1 год (когда точного ДР нет)
+    "phone7": 35,       # последние 7 цифр телефона совпали
+    "email_local": 35,  # локальная часть email (до @) совпала
+    "city": 8,          # город совпал (слабый — города меняют нарочно)
+}
+# Флаг мягкого совпадения ставим при score >= порога И >=2 независимых компонентах.
+SOFT_THRESHOLD = 60
+SOFT_MIN_COMPONENTS = 2
 
 
 def is_matchable_telegram(value: str, freq: Optional[dict] = None) -> bool:
