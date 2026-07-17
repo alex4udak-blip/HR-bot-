@@ -52,3 +52,47 @@ class TestSimilarity:
 
     def test_empty_shingles_is_0(self):
         assert jaccard_similarity(set(), set()) == 0.0
+
+
+import pytest
+from api.models.database import Entity, EntityType, Organization
+
+
+class TestDetectResumeTextTwin:
+    @pytest.mark.asyncio
+    async def test_flags_near_identical_resume(self, db_session):
+        from api.services.resume_text_twin import detect_resume_text_twin
+        org = Organization(name="TwinOrg", slug="twin-org")
+        db_session.add(org)
+        await db_session.flush()
+        text = {"about": "Разрабатывал микросервисы на python внедрял ci cd вёл код ревью команды разработки продукта"}
+        a = Entity(org_id=org.id, type=EntityType.candidate, name="Иван Иванов", extra_data=text)
+        db_session.add(a)
+        await db_session.flush()
+        b = Entity(org_id=org.id, type=EntityType.candidate, name="Пётр Петров",
+                   extra_data={"about": text["about"]})
+        db_session.add(b)
+        await db_session.flush()
+
+        twin_id, sim = await detect_resume_text_twin(db_session, b)
+        assert twin_id == a.id
+        assert sim >= 0.8
+        meta = (b.extra_data or {}).get("text_twin")
+        assert meta and meta["twin_id"] == a.id
+
+    @pytest.mark.asyncio
+    async def test_no_flag_for_unique_text(self, db_session):
+        from api.services.resume_text_twin import detect_resume_text_twin
+        org = Organization(name="UniqOrg", slug="uniq-org")
+        db_session.add(org)
+        await db_session.flush()
+        a = Entity(org_id=org.id, type=EntityType.candidate, name="A A",
+                   extra_data={"about": "совершенно уникальный текст про дизайн интерфейсов и типографику"})
+        db_session.add(a)
+        await db_session.flush()
+        b = Entity(org_id=org.id, type=EntityType.candidate, name="B B",
+                   extra_data={"about": "другой опыт в бухгалтерии налоговой отчётности и аудите предприятий"})
+        db_session.add(b)
+        await db_session.flush()
+        twin_id, sim = await detect_resume_text_twin(db_session, b)
+        assert twin_id is None

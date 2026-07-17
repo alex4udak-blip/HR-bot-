@@ -475,6 +475,17 @@ async def create_entity(
         except Exception as e:
             logger.warning(f"shadow-dedup detect failed for new entity {entity.id}: {e}")
 
+        # Детектор «копипаст текста резюме» (Feature B) — независим от детектора
+        # личности. Best-effort: ошибка не должна ломать создание кандидата.
+        try:
+            from ...services.resume_text_twin import detect_resume_text_twin
+            twin_id, _sim = await detect_resume_text_twin(db, entity)
+            if twin_id:
+                await db.commit()
+                await db.refresh(entity)
+        except Exception as e:
+            logger.warning(f"resume-text-twin detect failed for new entity {entity.id}: {e}")
+
     response_data = {
         "id": entity.id,
         "type": entity.type,
