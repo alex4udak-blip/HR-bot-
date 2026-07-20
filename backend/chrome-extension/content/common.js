@@ -53,8 +53,16 @@
     const d = s.replace(/\D/g, '');
     return d.length >= 7 && d.length <= 15;
   }
-  // Чистим телеграм: @user / t.me/user. Отсекаем служебные ники (habrcareer_bot).
-  const TG_BLOCK = ['habrcareer_bot', 'share', 'joinchat', 'telegram'];
+  // Чистим телеграм: @user / t.me/user. Отсекаем служебные ники ПЛОЩАДОК: в
+  // промо/футере hh.ru и др. есть ссылка t.me/<канал> (напр. t.me/hh_b2b), и у
+  // кандидата БЕЗ личного тг фолбэк-скан ссылок цеплял канал самой площадки как
+  // «телеграм человека». Зеркало backend JUNK_TELEGRAM_USERNAMES (similarity.py).
+  const TG_BLOCK = [
+    'habrcareer_bot', 'share', 'joinchat', 'telegram', 'tg', 'telega',
+    'hh', 'hh_b2b', 'hh_news', 'hh_news_hr', 'hhnews', 'hhbot', 'headhunter', 'hhru',
+    'superjob', 'superjob_ru', 'avito', 'avito_official',
+    'habr', 'habrcareer', 'linkedin', 'vk', 'vkontakte',
+  ];
   function normalizeTelegram(s) {
     if (typeof s !== 'string') return '';
     let v = s.trim();
