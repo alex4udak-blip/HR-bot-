@@ -60,6 +60,20 @@ async def test_hire_creates_user_employee_and_moves_to_transferred(
 
 
 @pytest.mark.asyncio
+async def test_recruiter_member_can_hire(
+    client: AsyncClient, db_session, organization, second_user, org_member
+):
+    # Рекрутёр (OrgRole.member), не админ, тоже может оформить в штат.
+    ent = await _make_candidate(db_session, organization, status=EntityStatus.hired)
+    resp = await client.post(
+        f"/api/entities/{ent.id}/hire",
+        json={"department_id": None, "email": "by.recruiter@staff.com"},
+        headers=_headers(second_user),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
 async def test_hire_rejects_wrong_stage(
     client: AsyncClient, db_session, organization, admin_user, org_owner
 ):

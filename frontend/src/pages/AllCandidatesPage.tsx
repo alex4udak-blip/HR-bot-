@@ -1741,10 +1741,8 @@ const InfoTab = memo(function InfoTab({
   onHired?: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
-  const canHire =
-    currentUser?.role === "superadmin" ||
-    currentUser?.org_role === "owner" ||
-    currentUser?.org_role === "admin";
+  // Оформлять в штат могут все участники орга — и админы, и рекрутёры (hr/member).
+  const canHire = currentUser?.role === "superadmin" || !!currentUser?.org_role;
   // Сохранён только сеттер: action-бар сбрасывает (закрывает) меню действий.
   const [, setShowActionMenu] = useState(false);
   const [uploading, setUploading] = useState(false);

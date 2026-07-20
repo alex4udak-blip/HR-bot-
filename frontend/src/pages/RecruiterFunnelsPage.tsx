@@ -2679,7 +2679,7 @@ export default function RecruiterFunnelsPage() {
                                       phone={selectedCandidate.entity_phone}
                                       telegram={selectedCandidate.entity_telegram}
                                       position={selectedCandidate.entity_position}
-                                      canHire={isHrAdmin || isSuperadmin}
+                                      canHire={!!user?.org_role || isSuperadmin}
                                       onHired={() => { if (selectedVacancyId) loadCandidates(selectedVacancyId, true); }}
                                     />
                                     <StaffStatusBadge entityId={selectedCandidate.entity_id} status={selectedCandidate.stage} />

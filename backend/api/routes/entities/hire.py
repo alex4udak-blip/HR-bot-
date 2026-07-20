@@ -38,15 +38,6 @@ class HireResponse(BaseModel):
     temporary_password: Optional[str] = None
 
 
-async def _is_admin_or_owner(user: User, org, db: AsyncSession) -> bool:
-    if user.role == UserRole.superadmin:
-        return True
-    r = await db.execute(
-        select(OrgMember.role).where(OrgMember.org_id == org.id, OrgMember.user_id == user.id)
-    )
-    return r.scalar_one_or_none() in (OrgRole.owner, OrgRole.admin)
-
-
 def _first_tg(ent: Entity) -> Optional[str]:
     tg = ent.telegram_usernames
     if isinstance(tg, list) and tg:
@@ -68,8 +59,8 @@ async def hire_entity(
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=403, detail="Нет организации")
-    if not await _is_admin_or_owner(current_user, org, db):
-        raise HTTPException(status_code=403, detail="Только для HR-админа")
+    # Оформлять в штат могут ВСЕ участники орга — и админы, и рекрутёры (hr/member).
+    # Достаточно членства в организации (get_user_org уже это гарантирует).
 
     ent = (await db.execute(
         select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
