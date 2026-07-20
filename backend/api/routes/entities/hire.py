@@ -107,6 +107,16 @@ async def hire_entity(
         select(Employee).where(Employee.user_id == user.id)
     )).scalar_one_or_none()
     if existing_emp and existing_emp.is_active:
+        # Активный сотрудник с этим email уже есть. Если он привязан к ДРУГОМУ
+        # кандидату — HR ошибся с почтой (дубль): называем, к кому она относится.
+        if existing_emp.entity_id and existing_emp.entity_id != ent.id:
+            other_name = (await db.execute(
+                select(Entity.name).where(Entity.id == existing_emp.entity_id)
+            )).scalar_one_or_none()
+            raise HTTPException(
+                status_code=409,
+                detail=f"Email {email} уже занят другим сотрудником ({other_name or 'другой кандидат'}). Проверьте почту.",
+            )
         raise HTTPException(status_code=409, detail="Этот человек уже оформлен в штат")
 
     from ..employees import _auto_calculate_dates

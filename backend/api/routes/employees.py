@@ -953,6 +953,8 @@ async def dismiss_employee(
     emp.is_active = False
     emp.dismissed_at = datetime.utcnow()
     emp.dismissal_reason = reason
+    # Кандидат ОСТАЁТСЯ на своём месте («Перешёл в отдел») — статус не трогаем.
+    # Кнопки «Взять в штат» там и так нет (она только для hired/probation).
     await db.commit()
 
     return {"ok": True, "detail": "Employee dismissed"}

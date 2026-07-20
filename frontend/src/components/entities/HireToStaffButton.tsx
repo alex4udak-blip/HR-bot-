@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { hireEntity, getDepartments } from '@/services/api';
 import type { Department } from '@/services/api';
 import { getErrorDetail } from '@/utils';
+import DatePickerFactorial from '@/factorial/components/DatePickerFactorial';
 
 const HIREABLE = new Set(['hired', 'probation']);
 
@@ -127,11 +128,12 @@ export default function HireToStaffButton(props: Props) {
                   <input value={pos} onChange={(e) => setPos(e.target.value)}
                     className="mt-1 w-full rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-white" />
                 </label>
-                <label className="block">
+                <div className="block">
                   <span className="text-xs text-dark-400">Дата выхода</span>
-                  <input value={date} onChange={(e) => setDate(e.target.value)} type="date"
-                    className="mt-1 w-full rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-white" />
-                </label>
+                  <div className="mt-1">
+                    <DatePickerFactorial value={date} onChange={setDate} placeholder="дд.мм.гггг" />
+                  </div>
+                </div>
                 <button onClick={submit} disabled={saving}
                   className="w-full mt-2 rounded-lg bg-green-500/20 text-green-400 border border-green-500/30 py-2 text-sm font-medium hover:bg-green-500/30 disabled:opacity-50">
                   {saving ? 'Оформляем…' : 'Подтвердить'}

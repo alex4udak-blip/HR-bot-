@@ -83,6 +83,31 @@ async def test_hire_duplicate_returns_409(
     ent2 = await _make_candidate(db_session, organization, status=EntityStatus.hired)
     r2 = await client.post(f"/api/entities/{ent2.id}/hire", json=payload, headers=_headers(admin_user))
     assert r2.status_code == 409
+    assert "занят" in r2.json()["detail"]  # понятная ошибка про дубль почты (другой человек)
+
+
+@pytest.mark.asyncio
+async def test_dismiss_keeps_candidate_in_place(
+    client: AsyncClient, db_session, organization, admin_user, org_owner
+):
+    ent = await _make_candidate(db_session, organization, status=EntityStatus.hired)
+    r1 = await client.post(
+        f"/api/entities/{ent.id}/hire",
+        json={"department_id": None, "email": "dismiss.sync@staff.com"},
+        headers=_headers(admin_user),
+    )
+    assert r1.status_code == 200, r1.text
+    emp_id = r1.json()["employee_id"]
+
+    await db_session.refresh(ent)
+    assert ent.status == EntityStatus.transferred  # оформлен → «Перешёл в отдел»
+
+    rd = await client.delete(f"/api/employees/{emp_id}", headers=_headers(admin_user))
+    assert rd.status_code == 200, rd.text
+
+    await db_session.refresh(ent)
+    # Уволен → кандидат ОСТАЁТСЯ на своём месте (transferred), не уезжает в «Оффер принят»
+    assert ent.status == EntityStatus.transferred
 
 
 @pytest.mark.asyncio
