@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Briefcase, X, Copy, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Briefcase, X, Copy, Check, ChevronDown } from 'lucide-react';
+import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { hireEntity, getDepartments } from '@/services/api';
 import type { Department } from '@/services/api';
@@ -30,12 +31,25 @@ export default function HireToStaffButton(props: Props) {
   const [saving, setSaving] = useState(false);
   const [password, setPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [deptOpen, setDeptOpen] = useState(false);
+  const deptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) getDepartments().then((d) => setDepts(d)).catch(() => setDepts([]));
   }, [open]);
 
+  useEffect(() => {
+    if (!deptOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (deptRef.current && !deptRef.current.contains(e.target as Node)) setDeptOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [deptOpen]);
+
   if (!canHire || !HIREABLE.has(status)) return null;
+
+  const selectedDept = depts.find((d) => d.id === deptId);
 
   const submit = async () => {
     if (!mail.trim()) { toast.error('Укажите email — это логин сотрудника'); return; }
@@ -80,14 +94,29 @@ export default function HireToStaffButton(props: Props) {
 
             {!password ? (
               <div className="space-y-3">
-                <label className="block">
+                <div className="block">
                   <span className="text-xs text-dark-400">Отдел</span>
-                  <select value={deptId} onChange={(e) => setDeptId(e.target.value ? Number(e.target.value) : '')}
-                    className="mt-1 w-full rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-white">
-                    <option value="">— выберите отдел —</option>
-                    {depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                </label>
+                  <div className="relative mt-1" ref={deptRef}>
+                    <button type="button" onClick={() => setDeptOpen((v) => !v)}
+                      className="w-full flex items-center justify-between rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-white hover:border-white/20">
+                      <span className={selectedDept ? '' : 'text-dark-400'}>{selectedDept ? selectedDept.name : '— выберите отдел —'}</span>
+                      <ChevronDown className={clsx('w-4 h-4 text-dark-400 transition-transform', deptOpen && 'rotate-180')} />
+                    </button>
+                    {deptOpen && (
+                      <div className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg bg-dark-700 border border-white/10 p-1 shadow-xl">
+                        {depts.length === 0 && <div className="px-3 py-2 text-xs text-dark-400">Нет отделов</div>}
+                        {depts.map((d) => (
+                          <button key={d.id} type="button"
+                            onClick={() => { setDeptId(d.id); setDeptOpen(false); }}
+                            className={clsx('w-full text-left px-3 py-2 text-sm rounded-md hover:bg-white/5',
+                              d.id === deptId ? 'bg-green-500/15 text-green-400' : 'text-white')}>
+                            {d.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <label className="block">
                   <span className="text-xs text-dark-400">Email (логин)</span>
                   <input value={mail} onChange={(e) => setMail(e.target.value)} type="email" placeholder="ivan@company.com"
