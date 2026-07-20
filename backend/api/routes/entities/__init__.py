@@ -13,6 +13,7 @@ from fastapi import APIRouter
 
 from .crud import router as crud_router
 from .transfers import router as transfers_router
+from .hire import router as hire_router
 from .files import router as files_router
 from .memory import router as memory_router
 from .search import router as search_router
@@ -60,6 +61,9 @@ router.include_router(crud_router, tags=["entities-crud"])
 
 # Transfer operations
 router.include_router(transfers_router, tags=["entities-transfers"])
+
+# Hire operations (кандидат → сотрудник Factorial)
+router.include_router(hire_router, tags=["entities-hire"])
 
 # File operations
 router.include_router(files_router, tags=["entities-files"])
