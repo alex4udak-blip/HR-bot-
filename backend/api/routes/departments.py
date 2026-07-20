@@ -197,16 +197,20 @@ async def list_departments(
     # Check if user is org owner or superadmin
     is_superadmin = current_user.role == UserRole.superadmin
     is_owner = False
+    is_org_admin = False
     if not is_superadmin:
-        # Use enum value for SQL comparison
-        owner_result = await db.execute(
-            select(OrgMember).where(
+        # Роль в организации. Owner И org-admin видят ВСЕ отделы — это нужно, напр.,
+        # для пикера отдела в «Взять в штат». Раньше org-admin без своего отдела
+        # получал [] (пустой селект у HR-админов в проде).
+        role_result = await db.execute(
+            select(OrgMember.role).where(
                 OrgMember.org_id == org.id,
                 OrgMember.user_id == current_user.id,
-                OrgMember.role == OrgRole.owner
             )
         )
-        is_owner = owner_result.scalar_one_or_none() is not None
+        _org_role = role_result.scalar_one_or_none()
+        is_owner = _org_role == OrgRole.owner
+        is_org_admin = _org_role == OrgRole.admin
 
     # Get user's department if they have one
     user_dept_id = None
@@ -234,8 +238,8 @@ async def list_departments(
     if not departments:
         return []
 
-    # SUPERADMIN/OWNER: return all departments with full details
-    if is_superadmin or is_owner:
+    # SUPERADMIN/OWNER/ORG-ADMIN: return all departments with full details
+    if is_superadmin or is_owner or is_org_admin:
         # Get all department IDs for batch queries
         dept_ids = [d.id for d in departments]
 
