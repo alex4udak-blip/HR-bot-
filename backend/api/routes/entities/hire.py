@@ -103,21 +103,37 @@ async def hire_entity(
     if not om:
         db.add(OrgMember(org_id=org.id, user_id=user.id, role=OrgRole.member))
 
-    if (await db.execute(
+    existing_emp = (await db.execute(
         select(Employee).where(Employee.user_id == user.id)
-    )).scalar_one_or_none():
+    )).scalar_one_or_none()
+    if existing_emp and existing_emp.is_active:
         raise HTTPException(status_code=409, detail="Этот человек уже оформлен в штат")
 
-    emp = Employee(
-        user_id=user.id, org_id=org.id, entity_id=ent.id,
-        department_id=data.department_id, position=data.position or ent.position,
-        phone=ent.phone, telegram_username=tg,
-        department_start_date=data.department_start_date or datetime.utcnow(),
-    )
     from ..employees import _auto_calculate_dates
-    _auto_calculate_dates(emp)
+    if existing_emp:
+        # Был уволен (soft-delete: is_active=False, dismissed_at). Переоформляем ту
+        # же запись — реактивация, а не 409 и не дубль-сотрудник.
+        emp = existing_emp
+        emp.is_active = True
+        emp.dismissed_at = None
+        emp.dismissal_reason = None
+        emp.entity_id = ent.id
+        emp.department_id = data.department_id
+        emp.position = data.position or ent.position
+        emp.phone = ent.phone
+        emp.telegram_username = tg
+        emp.department_start_date = data.department_start_date or datetime.utcnow()
+        _auto_calculate_dates(emp)
+    else:
+        emp = Employee(
+            user_id=user.id, org_id=org.id, entity_id=ent.id,
+            department_id=data.department_id, position=data.position or ent.position,
+            phone=ent.phone, telegram_username=tg,
+            department_start_date=data.department_start_date or datetime.utcnow(),
+        )
+        _auto_calculate_dates(emp)
+        db.add(emp)
 
-    db.add(emp)
     ent.status = EntityStatus.transferred
     await db.commit()
     await db.refresh(emp)

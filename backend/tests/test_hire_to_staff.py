@@ -83,3 +83,32 @@ async def test_hire_duplicate_returns_409(
     ent2 = await _make_candidate(db_session, organization, status=EntityStatus.hired)
     r2 = await client.post(f"/api/entities/{ent2.id}/hire", json=payload, headers=_headers(admin_user))
     assert r2.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_rehire_after_dismiss_reactivates(
+    client: AsyncClient, db_session, organization, admin_user, org_owner
+):
+    from datetime import datetime
+
+    ent = await _make_candidate(db_session, organization, status=EntityStatus.hired)
+    payload = {"department_id": None, "email": "rehire@staff.com", "position": "Разработчик"}
+    r1 = await client.post(f"/api/entities/{ent.id}/hire", json=payload, headers=_headers(admin_user))
+    assert r1.status_code == 200, r1.text
+    emp_id = r1.json()["employee_id"]
+
+    # Увольнение = soft-delete (как dismiss_employee)
+    emp = (await db_session.execute(select(Employee).where(Employee.id == emp_id))).scalar_one()
+    emp.is_active = False
+    emp.dismissed_at = datetime.utcnow()
+    await db_session.commit()
+
+    # Повторный приём того же человека (тот же email) — реактивация, НЕ 409 и не дубль
+    ent2 = await _make_candidate(db_session, organization, status=EntityStatus.hired)
+    r2 = await client.post(f"/api/entities/{ent2.id}/hire", json=payload, headers=_headers(admin_user))
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["employee_id"] == emp_id  # та же запись Employee
+
+    await db_session.refresh(emp)
+    assert emp.is_active is True
+    assert emp.dismissed_at is None
