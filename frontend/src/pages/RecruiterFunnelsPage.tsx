@@ -2681,6 +2681,11 @@ export default function RecruiterFunnelsPage() {
                                       canHire={isHrAdmin || isSuperadmin}
                                       onHired={() => { if (selectedVacancyId) loadCandidates(selectedVacancyId, true); }}
                                     />
+                                    {selectedCandidate.stage === 'transferred' && (
+                                      <a href="/factorial/employees" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-green-500/10 text-green-400 border border-green-500/20">
+                                        В штате — открыть в Factorial
+                                      </a>
+                                    )}
                                   </div>
                                   {(() => {
                                     // funnelCard обогащён полным Entity (dupCard) — берём оттуда с

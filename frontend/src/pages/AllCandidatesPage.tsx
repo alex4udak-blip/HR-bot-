@@ -2526,6 +2526,11 @@ const InfoTab = memo(function InfoTab({
               canHire={canHire}
               onHired={() => onHired?.()}
             />
+            {status === 'transferred' && (
+              <a href="/factorial/employees" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-green-500/10 text-green-400 border border-green-500/20">
+                В штате — открыть в Factorial
+              </a>
+            )}
           </div>
           {(card.position || card.company) && (
             <p className="hf-profile-subtitle">

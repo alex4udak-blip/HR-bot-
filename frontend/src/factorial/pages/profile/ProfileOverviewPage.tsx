@@ -110,6 +110,21 @@ export default function ProfileOverviewPage() {
             </div>
           ),
         },
+        // HR-вид карточки (byId) сотрудника, оформленного из кандидата (Task 5, «Взять в штат»).
+        // Скрыто в личном кабинете (byId=false) — /all-candidates недоступен обычному member.
+        ...(byId && me?.entity_id
+          ? [{
+              label: 'Кандидат',
+              value: (
+                <a
+                  href={`/all-candidates?entity=${me.entity_id}`}
+                  className="inline-flex items-center gap-1.5 text-primary hover:underline"
+                >
+                  Из кандидата
+                </a>
+              ),
+            }]
+          : []),
       ]}
     />
   );
