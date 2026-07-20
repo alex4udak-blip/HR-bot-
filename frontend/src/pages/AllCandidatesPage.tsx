@@ -83,6 +83,7 @@ import CandidateVacancyCard from "@/components/entities/CandidateVacancyCard";
 import { BulkSelectionBar } from "@/components/entities/BulkSelectionBar";
 import ResumeTab, { useResumeSources } from "@/components/entities/candidateDetail/ResumeTab";
 import ImportedParticipations, { readParticipations } from "@/components/entities/candidateDetail/ImportedParticipations";
+import HireToStaffButton from "@/components/entities/HireToStaffButton";
 const AnketaDrawer = lazy(() =>
   import("@/features/forms/AnketaDrawer").then((m) => ({ default: m.AnketaDrawer })),
 );
@@ -1432,6 +1433,7 @@ export default function AllCandidatesPage() {
                     setSelectedCard(null);
                     fetchBoard();
                   }}
+                  onHired={() => fetchBoard(true)}
                 />
               </div>
             ) : (
@@ -1719,6 +1721,7 @@ const InfoTab = memo(function InfoTab({
   onEdit,
   onMerged,
   onRemovedFromVacancy,
+  onHired,
 }: {
   card: KanbanCard;
   status: string;
@@ -1733,8 +1736,14 @@ const InfoTab = memo(function InfoTab({
   onMerged?: () => void;
   // Снятие кандидата с воронки → родитель обновляет доску и сбрасывает выбор.
   onRemovedFromVacancy?: () => void;
+  // Оформление в штат (HireToStaffButton) → родитель тихо перечитывает доску.
+  onHired?: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
+  const canHire =
+    currentUser?.role === "superadmin" ||
+    currentUser?.org_role === "owner" ||
+    currentUser?.org_role === "admin";
   // Сохранён только сеттер: action-бар сбрасывает (закрывает) меню действий.
   const [, setShowActionMenu] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -2502,9 +2511,22 @@ const InfoTab = memo(function InfoTab({
       {/* ---- Name + Contact info (left column) | Photo (right column) ---- */}
       <div className="hf-profile-summary">
         <div className="hf-profile-summary-copy">
-          <h2 className="hf-profile-title">
-            {card.name}
-          </h2>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="hf-profile-title">
+              {card.name}
+            </h2>
+            <HireToStaffButton
+              entityId={card.id}
+              entityName={card.name}
+              status={status}
+              email={card.email}
+              phone={card.phone}
+              telegram={card.telegram_username || (card.telegram_usernames || [])[0]}
+              position={card.position}
+              canHire={canHire}
+              onHired={() => onHired?.()}
+            />
+          </div>
           {(card.position || card.company) && (
             <p className="hf-profile-subtitle">
               {card.position}

@@ -55,6 +55,7 @@ import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
 import { BulkSelectionBar } from '@/components/entities/BulkSelectionBar';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
 import ResumeTab from '@/components/entities/candidateDetail/ResumeTab';
+import HireToStaffButton from '@/components/entities/HireToStaffButton';
 import { buildStageContainers, buildResumeSources, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
@@ -2665,9 +2666,22 @@ export default function RecruiterFunnelsPage() {
                               {/* Name + large photo (Huntflow / AllCandidatesPage style) */}
                               <div className="hf-profile-summary">
                                 <div className="hf-profile-summary-copy">
-                                  <h2 className="hf-profile-title">
-                                    {selectedCandidate.entity_name || 'Без имени'}
-                                  </h2>
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    <h2 className="hf-profile-title">
+                                      {selectedCandidate.entity_name || 'Без имени'}
+                                    </h2>
+                                    <HireToStaffButton
+                                      entityId={selectedCandidate.entity_id}
+                                      entityName={selectedCandidate.entity_name || ''}
+                                      status={selectedCandidate.stage}
+                                      email={selectedCandidate.entity_email}
+                                      phone={selectedCandidate.entity_phone}
+                                      telegram={selectedCandidate.entity_telegram}
+                                      position={selectedCandidate.entity_position}
+                                      canHire={isHrAdmin || isSuperadmin}
+                                      onHired={() => { if (selectedVacancyId) loadCandidates(selectedVacancyId, true); }}
+                                    />
+                                  </div>
                                   {(() => {
                                     // funnelCard обогащён полным Entity (dupCard) — берём оттуда с
                                     // fallback на «снэпшот»-поля заявки, пока dupCard ещё грузится.
