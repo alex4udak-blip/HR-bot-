@@ -56,6 +56,7 @@ import { BulkSelectionBar } from '@/components/entities/BulkSelectionBar';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
 import ResumeTab from '@/components/entities/candidateDetail/ResumeTab';
 import HireToStaffButton from '@/components/entities/HireToStaffButton';
+import StaffStatusBadge from '@/components/entities/StaffStatusBadge';
 import { buildStageContainers, buildResumeSources, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
@@ -2681,11 +2682,7 @@ export default function RecruiterFunnelsPage() {
                                       canHire={isHrAdmin || isSuperadmin}
                                       onHired={() => { if (selectedVacancyId) loadCandidates(selectedVacancyId, true); }}
                                     />
-                                    {selectedCandidate.stage === 'transferred' && (
-                                      <a href="/factorial/employees" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-green-500/10 text-green-400 border border-green-500/20">
-                                        В штате — открыть в Factorial
-                                      </a>
-                                    )}
+                                    <StaffStatusBadge entityId={selectedCandidate.entity_id} status={selectedCandidate.stage} />
                                   </div>
                                   {(() => {
                                     // funnelCard обогащён полным Entity (dupCard) — берём оттуда с

@@ -84,6 +84,7 @@ import { BulkSelectionBar } from "@/components/entities/BulkSelectionBar";
 import ResumeTab, { useResumeSources } from "@/components/entities/candidateDetail/ResumeTab";
 import ImportedParticipations, { readParticipations } from "@/components/entities/candidateDetail/ImportedParticipations";
 import HireToStaffButton from "@/components/entities/HireToStaffButton";
+import StaffStatusBadge from "@/components/entities/StaffStatusBadge";
 const AnketaDrawer = lazy(() =>
   import("@/features/forms/AnketaDrawer").then((m) => ({ default: m.AnketaDrawer })),
 );
@@ -2526,11 +2527,7 @@ const InfoTab = memo(function InfoTab({
               canHire={canHire}
               onHired={() => onHired?.()}
             />
-            {status === 'transferred' && (
-              <a href="/factorial/employees" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-green-500/10 text-green-400 border border-green-500/20">
-                В штате — открыть в Factorial
-              </a>
-            )}
+            <StaffStatusBadge entityId={card.id} status={status} />
           </div>
           {(card.position || card.company) && (
             <p className="hf-profile-subtitle">

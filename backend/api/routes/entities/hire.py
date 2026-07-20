@@ -149,3 +149,30 @@ async def hire_entity(
     await db.refresh(emp)
 
     return HireResponse(employee_id=emp.id, user_existed=user_existed, temporary_password=temp_password)
+
+
+class StaffStatusResponse(BaseModel):
+    employee_id: Optional[int] = None
+    is_active: Optional[bool] = None  # None — не оформлен; True — в штате; False — уволен
+
+
+@router.get("/{entity_id}/staff-status", response_model=StaffStatusResponse)
+async def entity_staff_status(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Статус оформления кандидата в штат — для бейджа на карточке: есть ли
+    связанный Employee и активен ли он («В штате» vs «Уволен»)."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        return StaffStatusResponse()
+    emp = (await db.execute(
+        select(Employee)
+        .where(Employee.entity_id == entity_id, Employee.org_id == org.id)
+        .order_by(Employee.id.desc())
+    )).scalars().first()
+    if not emp:
+        return StaffStatusResponse()
+    return StaffStatusResponse(employee_id=emp.id, is_active=emp.is_active)

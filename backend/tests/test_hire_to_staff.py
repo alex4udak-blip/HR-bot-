@@ -111,6 +111,31 @@ async def test_dismiss_keeps_candidate_in_place(
 
 
 @pytest.mark.asyncio
+async def test_staff_status_reflects_active_and_dismissed(
+    client: AsyncClient, db_session, organization, admin_user, org_owner
+):
+    ent = await _make_candidate(db_session, organization, status=EntityStatus.hired)
+    r1 = await client.post(
+        f"/api/entities/{ent.id}/hire",
+        json={"department_id": None, "email": "status.badge@staff.com"},
+        headers=_headers(admin_user),
+    )
+    assert r1.status_code == 200, r1.text
+    emp_id = r1.json()["employee_id"]
+
+    s1 = await client.get(f"/api/entities/{ent.id}/staff-status", headers=_headers(admin_user))
+    assert s1.status_code == 200
+    assert s1.json()["is_active"] is True  # в штате
+
+    emp = (await db_session.execute(select(Employee).where(Employee.id == emp_id))).scalar_one()
+    emp.is_active = False
+    await db_session.commit()
+
+    s2 = await client.get(f"/api/entities/{ent.id}/staff-status", headers=_headers(admin_user))
+    assert s2.json()["is_active"] is False  # уволен
+
+
+@pytest.mark.asyncio
 async def test_rehire_after_dismiss_reactivates(
     client: AsyncClient, db_session, organization, admin_user, org_owner
 ):
