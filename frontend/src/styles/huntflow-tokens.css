@@ -471,8 +471,8 @@
   --hf-candidates-stage-tooltip-left-late: 660px;
   --hf-candidates-stage-tooltip-shadow: 0 2px 6px var(--hf-black-alpha-30);
   --hf-candidates-stagebar-h:       52px;
-  --hf-candidates-search-toggle-w:  44px;
-  --hf-candidates-search-icon:      18px;
+  --hf-candidates-search-toggle-w:  60px;  /* шире зона нажатия лупы (была 44) */
+  --hf-candidates-search-icon:      22px;  /* крупнее иконка лупы (была 18) */
   --hf-candidates-search-clear-pr:  42px;
   --hf-candidates-search-action-right: 28px;
   --hf-candidates-all-gap:          6px;
