@@ -74,3 +74,24 @@ async def test_yo_works_on_any_name_word(db_session, organization, yo_candidates
 async def test_yo_folding_does_not_widen_search(db_session, organization, yo_candidates):
     """Свёртка не должна ловить лишнего: чужая фамилия по-прежнему не находится."""
     assert await _search(db_session, organization, "Иванов") == []
+
+
+# --- дедуп ---------------------------------------------------------------
+# Без свёртки «Дёмин Артём» и «Демин Артем» считались РАЗНЫМИ людьми (0 общих
+# слов): один человек заводился дублем, баннер о дубле не срабатывал.
+
+@pytest.mark.parametrize("other", [
+    "Демин Артем",    # оба кириллицей, различие только в Ё
+    "Dyomin Artyom",  # латиница «через Ё»
+    "Demin Artem",    # латиница «через Е» — другой транслит, но тот же человек
+])
+def test_yo_dedup_sees_one_person(other):
+    from api.services.similarity import count_shared_name_words
+    assert count_shared_name_words("Дёмин Артём", other) == 2, other
+
+
+def test_yo_dedup_keeps_different_people_apart():
+    """Свёртка убирает необязательный диакритик, а не склеивает разные буквы."""
+    from api.services.similarity import count_shared_name_words
+    assert count_shared_name_words("Дёмин Артём", "Иванов Пётр") == 0
+    assert count_shared_name_words("Королёв Пётр", "Кораблёв Пётр") == 1  # только имя

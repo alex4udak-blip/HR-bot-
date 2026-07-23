@@ -20,7 +20,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from ..models.database import Entity
 from .similarity import (
-    generate_name_variants, _name_word_variants,
+    generate_name_variants, _name_word_variants, fold_yo,
     transliterate_ru_to_en, transliterate_en_to_ru,
 )
 
@@ -51,15 +51,10 @@ def set_pg_trgm_available(value: bool) -> None:
     _pg_trgm_available = value
 
 
-def fold_yo(s: Optional[str]) -> str:
-    """Ё → Е. В русском письме точки над Ё факультативны: один и тот же человек в
-    базе «Дёмин», а ищут «Демин» (и наоборот) — и приходится гадать написание.
-    Для ПОИСКА это одна буква; фолдим обе стороны сравнения.
-
-    Триграммам это не по силам: «демин» vs «дёмин» дают word_similarity ≈0.5 при
-    пороге 0.6 — не находит. Поэтому свёрнутая форма кладётся в search_name, а не
-    вычисляется на лету (иначе GIN-индекс перестал бы использоваться)."""
-    return (s or "").replace("ё", "е").replace("Ё", "Е")
+# fold_yo (Ё→Е) живёт в similarity.py — один фолд на дедуп и на поиск. Здесь он
+# нужен потому, что триграммам разница в Ё не по силам: «демин» vs «дёмин» дают
+# word_similarity ≈0.5 при пороге 0.6. Поэтому свёрнутая форма КЛАДЁТСЯ в
+# search_name, а не вычисляется на лету — иначе GIN-индекс перестал бы работать.
 
 
 def build_search_name(

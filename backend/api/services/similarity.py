@@ -163,6 +163,16 @@ def transliterate_en_to_ru(text: str) -> str:
     return ''.join(result)
 
 
+def fold_yo(s: Optional[str]) -> str:
+    """Ё → Е. Точки над Ё в русском письме факультативны, поэтому один и тот же
+    человек попадает в базу и «Дёминым», и «Деминым». Для сравнения имён это одна
+    буква — иначе дедуп считает две записи РАЗНЫМИ людьми и не предлагает слияние.
+
+    Шире матч не становится: свёртка не склеивает разные буквы, а убирает разницу
+    в необязательном диакритике. Тот же фолд применяется в поиске (search_index)."""
+    return (s or "").replace("ё", "е").replace("Ё", "Е")
+
+
 def generate_name_variants(name: str) -> Set[str]:
     """
     Генерация вариантов написания имени для поиска дубликатов.
@@ -209,17 +219,25 @@ def generate_name_variants(name: str) -> Set[str]:
         variants.add(v.replace(' ', '-'))
         variants.add(v.replace(' ', '_'))
 
+    # Ё≡Е поверх готового набора: свёрнутая форма пересекается с вариантами
+    # человека, записанного через Е, — включая случай «Dyomin» vs «Демин»
+    # (латиница разворачивается в «дёмин», а он свернётся в «демин»).
+    variants |= {fold_yo(v) for v in variants}
+
     return variants
 
 
 def _name_word_variants(word: str) -> Set[str]:
-    """Варианты ОДНОГО слова имени (само + транслитерации rus<->eng)."""
+    """Варианты ОДНОГО слова имени (само + транслитерации rus<->eng + Ё≡Е)."""
     w = (word or "").strip("-_.,").lower()
     out = {w}
     if re.search(r'[а-яё]', w):
         out.add(transliterate_ru_to_en(w))
     if re.search(r'[a-z]', w):
         out.add(transliterate_en_to_ru(w))
+    # Свёртка поверх готового набора — так «дёмин»/«dyomin» и «демин»/«demin»
+    # пересекаются хотя бы по одной форме, как бы ни была записана пара.
+    out |= {fold_yo(v) for v in out}
     out.discard("")
     return out
 
