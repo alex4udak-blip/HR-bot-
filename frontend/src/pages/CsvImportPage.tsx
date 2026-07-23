@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
+import { splitCsvByPerson } from '@/utils/csvSplit';
 
 // ---------- types ----------
 
@@ -80,6 +81,21 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Один огромный файл (реальный кейс: 81 МБ / 8956 строк / 234 колонки) молча
+// умирает на прокси/таймауте/памяти — многофайловый путь уже безопасно бьёт на
+// пачки. Поэтому такой файл режем ПРЯМО В БРАУЗЕРЕ по границам людей
+// (splitCsvByPerson — union-find по сильным ключам, зеркало бэкенда) и отдаём
+// части в уже существующий мультифайловый путь.
+const AUTO_SPLIT_THRESHOLD_BYTES = 25 * 1024 * 1024; // 25 МБ
+const AUTO_SPLIT_TARGET_BYTES = 20 * 1024 * 1024; // целевой размер части ~20 МБ
+
+// Части, произведённые сплиттером, помечены суффиксом `_partN.csv` — по нему
+// отличаем «уже разрезанный файл» от «свежевыбранного большого файла», чтобы
+// эффект авто-сплита не пытался резать один и тот же файл повторно (в т.ч. на
+// редком крае, когда единственная огромная группа-человек сама больше цели и
+// сплиттер вернул всего 1 часть — она всё ещё может превышать порог).
+const isSplitPartFile = (name: string) => /_part\d+\.csv$/i.test(name);
+
 // ---------- component ----------
 
 export default function CsvImportPage() {
@@ -97,6 +113,59 @@ export default function CsvImportPage() {
   // Статус каждого файла во время пачки: ждёт → грузится → готов/пропущен/ошибка.
   type FileStat = 'pending' | 'loading' | 'done' | 'skipped' | 'error';
   const [fileStatus, setFileStatus] = useState<Record<string, FileStat>>({});
+
+  // Авто-сплит одного огромного файла на части по границам людей (см. константы
+  // выше). Busy-состояние + результат/ошибка — отдельно от остального импорта,
+  // т.к. происходит ДО перехода к шагу 2 (прямо в момент выбора файла).
+  const [splitBusy, setSplitBusy] = useState(false);
+  const [splitNotice, setSplitNotice] = useState<string | null>(null);
+  const [splitError, setSplitError] = useState('');
+
+  useEffect(() => {
+    if (files.length !== 1) return;
+    const file = files[0];
+    if (file.size <= AUTO_SPLIT_THRESHOLD_BYTES) return;
+    if (isSplitPartFile(file.name)) return; // уже результат сплита — не резать повторно
+
+    let cancelled = false;
+    (async () => {
+      setSplitBusy(true);
+      setSplitError('');
+      setSplitNotice(null);
+      try {
+        const text = await file.text();
+        const { parts, groups, records } = splitCsvByPerson(text, AUTO_SPLIT_TARGET_BYTES);
+        if (cancelled) return;
+        const baseName = file.name.replace(/\.csv$/i, '');
+        const partFiles = parts.map(
+          (part, i) =>
+            new File([part], `${baseName}_part${i + 1}.csv`, { type: 'text/csv' }),
+        );
+        setFiles(partFiles);
+        setSplitNotice(
+          `Файл ${formatFileSize(file.size)} разбит на ${partFiles.length} ` +
+            `${partFiles.length === 1 ? 'часть' : 'частей'} по границам кандидатов ` +
+            `(${groups} чел., ${records} строк) — строки одного человека не разъехались.`,
+        );
+      } catch (err) {
+        // Раньше большой файл падал МОЛЧА (прокси/таймаут/память) — здесь любая
+        // ошибка сплиттера обязана быть видимой, а не проглоченной.
+        if (!cancelled) {
+          setSplitError(
+            err instanceof Error
+              ? `Не удалось разбить файл: ${err.message}`
+              : 'Не удалось разбить файл на части',
+          );
+        }
+      } finally {
+        if (!cancelled) setSplitBusy(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [files]);
 
   // Step 2: preview + mapping
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
@@ -154,6 +223,8 @@ export default function CsvImportPage() {
   const addFiles = useCallback((incoming: File[]) => {
     const csv = incoming.filter((f) => f.name.toLowerCase().endsWith('.csv'));
     if (!csv.length) return;
+    setSplitNotice(null);
+    setSplitError('');
     setFiles((prev) => {
       const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
       return [...prev, ...csv.filter((f) => !seen.has(`${f.name}:${f.size}`))];
@@ -178,7 +249,7 @@ export default function CsvImportPage() {
   // ---- step transitions ----
   // Кнопка «Далее»: один файл → мастер с маппингом; несколько → сразу опции пачки.
   const goNext = () => {
-    if (!files.length) return;
+    if (!files.length || splitBusy) return;
     if (files.length === 1) {
       void goToPreview();
     } else {
@@ -371,6 +442,9 @@ export default function CsvImportPage() {
     setStep(1);
     setFiles([]);
     setFileStatus({});
+    setSplitBusy(false);
+    setSplitNotice(null);
+    setSplitError('');
     setPreview(null);
     setColumnMapping({});
     setVacancyId('');
@@ -516,6 +590,28 @@ export default function CsvImportPage() {
                 </div>
               )}
 
+              {splitBusy && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-accent-500/10 border border-accent-500/20 text-accent-400 text-sm">
+                  <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" />
+                  Готовим файл… режем на части по границам кандидатов, строки одного
+                  человека не разъедутся.
+                </div>
+              )}
+
+              {!splitBusy && splitNotice && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  {splitNotice}
+                </div>
+              )}
+
+              {splitError && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                  <XCircle className="w-4 h-4 flex-shrink-0" />
+                  {splitError}
+                </div>
+              )}
+
               {previewError && (
                 <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
                   <XCircle className="w-4 h-4 flex-shrink-0" />
@@ -526,15 +622,15 @@ export default function CsvImportPage() {
               <div className="flex justify-end">
                 <button
                   onClick={goNext}
-                  disabled={!files.length || previewLoading}
+                  disabled={!files.length || previewLoading || splitBusy}
                   className={clsx(
                     'flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
-                    files.length && !previewLoading
+                    files.length && !previewLoading && !splitBusy
                       ? 'bg-gradient-to-r from-accent-500 to-accent-600 text-white hover:from-accent-600 hover:to-accent-700 shadow-lg shadow-accent-500/20'
                       : 'bg-white/[0.06] text-white/30 cursor-not-allowed'
                   )}
                 >
-                  {previewLoading ? (
+                  {previewLoading || splitBusy ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
