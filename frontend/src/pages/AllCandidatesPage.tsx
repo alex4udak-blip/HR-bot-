@@ -597,6 +597,13 @@ export default function AllCandidatesPage() {
   // Предыдущий выбранный id ДЛЯ эффекта авто-селекта (отдельно от зеркала) — чтобы
   // отличать смену выбора (клик) от смены URL и не «бодаться» за фокус.
   const prevAutoSelIdRef = useRef<number | null>(null);
+  // Контекст выбора — то, что задаёт ПОЛЬЗОВАТЕЛЬ: вкладка / скоуп / поиск. По нему
+  // отличаем «человек сам сменил фильтр» от «прилетело фоновое обновление доски»
+  // (поллинг 15с, prod-WS ненадёжен). Во втором случае трогать открытый профиль
+  // нельзя: рекрутёра выкидывало из карточки прямо во время правки — правишь имя
+  // при активном поиске, кандидат перестаёт совпадать с запросом, список пустеет,
+  // и следующий тик поллинга закрывал карточку «сам по себе».
+  const prevSelectionCtxRef = useRef<string | null>(null);
   useEffect(() => {
     if (!board) return;
     // Гонка «клик vs URL»: клик ставит selectedCard напрямую (мгновенный UI), зеркало
@@ -653,18 +660,28 @@ export default function AllCandidatesPage() {
         return;
       }
     }
+    // activeTab/scope/debouncedSearch намеренно НЕ в deps: эффект должен просыпаться
+    // только на filteredCards/board. Иначе смена поиска запустит его дважды — до и
+    // после перезагрузки доски — и первый проход «съест» contextChanged.
+    const selectionCtx = `${activeTab}|${listSettings.scope}|${debouncedSearch}`;
+    const contextChanged = prevSelectionCtxRef.current !== selectionCtx;
+    prevSelectionCtxRef.current = selectionCtx;
+
     const selectedVisible = selectedCard
       ? filteredCards.some(({ card }) => card.id === selectedCard.id)
       : false;
     if (filteredCards.length === 0) {
-      if (selectedCard) {
+      // Закрываем профиль, только если фильтр сменил сам пользователь.
+      if (selectedCard && contextChanged) {
         setSelectedCard(null);
         setSelectedStatus("");
       }
       return;
     }
     // Fallback: auto-select first visible card for the current stage/search.
-    if (!selectedVisible) {
+    // Только на смене контекста или когда не открыто ничего (первая загрузка):
+    // фоновое обновление не имеет права перебросить фокус на чужую карточку.
+    if (!selectedVisible && (contextChanged || !selectedCard)) {
       const initial = filteredCards[0];
       setSelectedCard(initial.card);
       setSelectedStatus(initial.status);

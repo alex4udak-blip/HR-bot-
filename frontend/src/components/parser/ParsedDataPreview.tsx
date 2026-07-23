@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Check, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import type { ParsedResume, ParsedVacancy } from '@/services/api';
@@ -12,6 +12,17 @@ interface ParsedDataPreviewProps {
 
 const CURRENCY_DROPDOWN_OPTIONS = SALARY_INPUT_CURRENCIES;
 
+/**
+ * ФИО из одной строки в три позиции [фамилия, имя, отчество].
+ * Режем по одиночному пробелу (а не /\s+/), чтобы сохранить пустые слоты: парсер
+ * отдаёт «Byntar␣␣Никита», где имя пустое, а Никита — отчество. Схлопывание
+ * изменило бы то, что рекрутёр видит при открытии формы.
+ */
+function splitFullName(full?: string): [string, string, string] {
+  const p = (full || '').split(' ');
+  return [p[0] || '', p[1] || '', p[2] || ''];
+}
+
 export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDataPreviewProps) {
   const [localData, setLocalData] = useState<ParsedResume | ParsedVacancy>(data);
 
@@ -23,6 +34,36 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
     const newData = { ...localData, [field]: value };
     setLocalData(newData);
     onDataChange(newData);
+  };
+
+  // Фамилия/Имя/Отчество держим ТРЕМЯ отдельными значениями, а не кусками одной
+  // строки name. Раньше поля читались как name.split(' ')[i], а при вводе строка
+  // пересобиралась через filter(Boolean) — стоило очистить любое поле, пустая
+  // позиция схлопывалась и соседи съезжали (отчество прыгало в имя и т.д.).
+  // Теперь позиция поля ниоткуда не вычисляется, пустое поле никого не двигает.
+  const [nameParts, setNameParts] = useState<[string, string, string]>(() =>
+    splitFullName((data as ParsedResume).name),
+  );
+  // Родитель возвращает нам же отправленное name — это эхо собственной правки,
+  // пересобирать по нему поля нельзя, иначе схлопывание вернётся через круг.
+  const lastEmittedName = useRef<string | null>(null);
+  useEffect(() => {
+    const incoming = (data as ParsedResume).name || '';
+    if (incoming === lastEmittedName.current) return;
+    setNameParts(splitFullName(incoming));
+  }, [data]);
+
+  const setNamePart = (index: 0 | 1 | 2, value: string) => {
+    const next: [string, string, string] = [...nameParts] as [string, string, string];
+    next[index] = value;
+    setNameParts(next);
+    // Пустые убираем ТОЛЬКО на выходе — обратно эта строка на поля не раскладывается.
+    // trim, а не запрет пробелов: в одну ячейку осознанно вписывают два варианта
+    // фамилии («Byntar Бынтарь»), чтобы поиск находил и по русскому, и по латинице.
+    // Пробел внутри ячейки остаётся текстом и никуда не «перепрыгивает».
+    const joined = next.map((part) => part.trim()).filter(Boolean).join(' ');
+    lastEmittedName.current = joined;
+    handleChange('name', joined);
   };
 
   const handleNumberChange = (field: string, value: string) => {
@@ -50,12 +91,8 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             <label className="block text-sm text-slate-600 mb-1">Фамилия</label>
             <input
               type="text"
-              value={(resumeData.name || '').split(' ')[0] || ''}
-              onChange={(e) => {
-                const parts = (resumeData.name || '').split(' ');
-                parts[0] = e.target.value;
-                handleChange('name', parts.filter(Boolean).join(' '));
-              }}
+              value={nameParts[0]}
+              onChange={(e) => setNamePart(0, e.target.value)}
               className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
               placeholder="Фамилия"
             />
@@ -64,12 +101,8 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             <label className="block text-sm text-slate-600 mb-1">Имя</label>
             <input
               type="text"
-              value={(resumeData.name || '').split(' ')[1] || ''}
-              onChange={(e) => {
-                const parts = (resumeData.name || '').split(' ');
-                parts[1] = e.target.value;
-                handleChange('name', parts.filter(Boolean).join(' '));
-              }}
+              value={nameParts[1]}
+              onChange={(e) => setNamePart(1, e.target.value)}
               className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
               placeholder="Имя"
             />
@@ -78,12 +111,8 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
             <label className="block text-sm text-slate-600 mb-1">Отчество</label>
             <input
               type="text"
-              value={(resumeData.name || '').split(' ')[2] || ''}
-              onChange={(e) => {
-                const parts = (resumeData.name || '').split(' ');
-                parts[2] = e.target.value;
-                handleChange('name', parts.filter(Boolean).join(' '));
-              }}
+              value={nameParts[2]}
+              onChange={(e) => setNamePart(2, e.target.value)}
               className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
               placeholder="Отчество (опционально)"
             />
