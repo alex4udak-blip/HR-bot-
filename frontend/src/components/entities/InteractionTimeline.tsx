@@ -14,6 +14,7 @@ import {
   History as HistoryIcon
 } from 'lucide-react';
 import clsx from 'clsx';
+import { parseServerDate } from '@/utils/date';
 
 // Date formatting utilities
 const formatDate = (dateStr: string, formatStr: string): string => {
@@ -251,7 +252,11 @@ export default function InteractionTimeline({
     });
 
     // Sort by timestamp (newest first)
-    allEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    // parseServerDate, а НЕ new Date: лента склеивает 6 источников (сообщения,
+    // звонки, файлы, отклики, смены статуса) — часть дат приходит aware-UTC
+    // («…+00:00»), часть naive из БД. Сырой new Date() читает их в разных
+    // системах отсчёта, и записи встают вразброс.
+    allEvents.sort((a, b) => parseServerDate(b.timestamp).getTime() - parseServerDate(a.timestamp).getTime());
 
     return allEvents;
   }, [chats, calls, files, applications, statusChanges]);

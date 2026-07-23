@@ -366,8 +366,13 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       ];
     }
     return merged.sort((a, b) => {
-      const ta = a.date ? new Date(a.date).getTime() : 0;
-      const tb = b.date ? new Date(b.date).getTime() : 0;
+      // parseServerDate, а НЕ new Date: у заметок время aware-UTC («…+00:00»),
+      // а у событий этапа — naive из БД («…T14:34:00»). Сырой new Date() читает
+      // naive как ЛОКАЛЬНОЕ, а aware как UTC — записи из двух источников
+      // сравнивались в разных системах отсчёта, и лента шла вразброс
+      // (время на экране верное, т.к. вывод и так идёт через parseServerDate).
+      const ta = a.date ? parseServerDate(a.date).getTime() : 0;
+      const tb = b.date ? parseServerDate(b.date).getTime() : 0;
       return tb - ta;
     });
   }, [notes, events, readonly, getStageLabel, addedAt, card.created_at, card.recruiter_name]);
