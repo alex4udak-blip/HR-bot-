@@ -56,6 +56,24 @@ describe('smartNameMatch — умный поиск имени (клиент)', (
     expect(smartNameMatch('Иван', 'ivan')).toBe(true);
   });
 
+  it('Ё≡Е в обе стороны', () => {
+    // Жалоба из прода: «Дёмин» не находился без Ё — приходилось гадать написание.
+    expect(smartNameMatch('Дёмин Артём', 'демин')).toBe(true);
+    expect(smartNameMatch('Дёмин Артём', 'артем')).toBe(true);
+    expect(smartNameMatch('Демин Артем', 'дёмин')).toBe(true);
+    expect(smartNameMatch('Демин Артем', 'артём')).toBe(true);
+    expect(smartNameMatch('Королёв Пётр', 'королев петр')).toBe(true);
+    expect(smartNameMatch('Королев Петр', 'королёв пётр')).toBe(true);
+    // свёртка не расширяет поиск на чужих
+    expect(smartNameMatch('Дёмин Артём', 'иванов')).toBe(false);
+  });
+
+  it('Ё≡Е вместе с транслитерацией', () => {
+    // у «Дёмин» и «Демин» разный транслит (dyomin / demin) — ищем по обоим
+    expect(smartNameMatch('Дёмин', 'demin')).toBe(true);
+    expect(smartNameMatch('Дёмин', 'dyomin')).toBe(true);
+  });
+
   it('короткие токены не прощают опечаток (нет шума)', () => {
     // «оле» (3 буквы) не должно фаззи-матчить «оля» — только точное/транслит
     expect(smartNameMatch('Ольга', 'оль')).toBe(true); // подстрока

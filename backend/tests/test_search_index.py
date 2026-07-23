@@ -1,6 +1,8 @@
 """Юнит-тесты умного поиска: денормализованный блоб + токенизация запроса."""
 import re
-from api.services.search_index import build_search_name, query_tokens
+from api.services.search_index import (
+    build_search_name, query_tokens, fold_yo, _search_word_variants,
+)
 
 
 def test_build_search_name_cyrillic_both_scripts():
@@ -24,6 +26,27 @@ def test_build_search_name_latin_input_reverse_translit():
 def test_build_search_name_empty():
     assert build_search_name(None) == ""
     assert build_search_name("") == ""
+
+
+def test_fold_yo():
+    assert fold_yo("Дёмин Артём") == "Демин Артем"
+    assert fold_yo("Демин") == "Демин"  # идемпотентно
+    assert fold_yo(None) == ""
+
+
+def test_build_search_name_yo_folded_into_blob():
+    """«Дёмин» должен находиться по запросу «Демин»: свёрнутая форма лежит в блобе
+    рядом с исходной (триграммы сами разницу в Ё не прощают — ≈0.5 при пороге 0.6)."""
+    s = build_search_name("Дёмин Артём")
+    words = set(s.split())
+    assert "дёмин" in words and "артём" in words  # исходное написание сохранено
+    assert "демин" in words and "артем" in words  # + свёрнутое
+
+
+def test_search_word_variants_yo_both_directions():
+    """Свёртка нужна с обеих сторон: ищут и «Демин» по «Дёмину», и наоборот."""
+    assert "демин" in _search_word_variants("дёмин")
+    assert "демин" in _search_word_variants("демин")
 
 
 def test_query_tokens():

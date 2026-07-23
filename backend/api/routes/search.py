@@ -123,10 +123,8 @@ async def global_search(
 
     # Умный матч по имени — тот же, что в «Все кандидаты» (транслит + любой порядок
     # слов + опечатки через pg_trgm; при отсутствии pg_trgm — транслит-ILIKE).
-    from ..services.search_index import smart_name_filter, ensure_pg_trgm_checked, contact_search_conditions
-    from .candidate_search import _name_search_terms
+    from ..services.search_index import name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions
     await ensure_pg_trgm_checked(db)
-    _snf = smart_name_filter(query)
 
     candidates: List[GlobalSearchCandidate] = []
     vacancies: List[GlobalSearchVacancy] = []
@@ -139,8 +137,8 @@ async def global_search(
                 Entity.org_id == org.id,
                 Entity.type == EntityType.candidate,
                 or_(
-                    *([_snf] if _snf is not None else []),
-                    *[Entity.name.ilike(t) for t in _name_search_terms(query)],
+                    # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
+                    *name_search_conditions(query),
                     *contact_search_conditions(query),  # почта/телефон(норм.)/telegram + доп-списки
                     func.lower(Entity.position).contains(query_lower),
                     func.lower(Entity.company).contains(query_lower),

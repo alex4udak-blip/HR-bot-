@@ -40,7 +40,6 @@ from api.models.database import (
 )
 from api.services.auth import get_current_user, get_user_org, has_full_database_access
 from api.services.shadow_filter import get_isolated_creator_ids
-from api.services.similarity import transliterate_ru_to_en, transliterate_en_to_ru
 
 logger = logging.getLogger("hr-analyzer.candidate-search")
 
@@ -110,26 +109,11 @@ class RecruiterItem(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _name_search_terms(q: str) -> List[str]:
-    """ILIKE-паттерны для поиска по имени с учётом транслитерации RU<->EN.
-
-    Часть кандидатов заведена с латинским именем (импорт с hh.ru/LinkedIn),
-    часть — с русским; без этого поиск «Иванов» не находил «Ivanov» и
-    наоборот. Та же таблица транслитерации, что и в детекции дублей
-    (api/services/similarity.py) — только тут генерим варианты САМОГО
-    поискового запроса, а не сравниваем два уже известных имени.
-    """
-    q = q.strip()
-    terms = {q}
-    if re.search(r'[а-яёА-ЯЁ]', q):
-        terms.add(transliterate_ru_to_en(q))
-    if re.search(r'[a-zA-Z]', q):
-        terms.add(transliterate_en_to_ru(q))
-    from ..services.search_index import switch_layout
-    sw = switch_layout(q)  # раскладка клавиатуры: «bdfy» → «иван»
-    if sw and sw != q.lower():
-        terms.add(sw)
-    return [f"%{t}%" for t in terms if t]
+# Паттерны поиска по имени раньше строились локальным _name_search_terms — точной
+# копией search_index._translit_ilike_patterns. Копия предсказуемо отстала: фикс
+# «Ё≡Е» лёг в канонический хелпер, а сюда не доехал, и главные окна поиска не
+# находили «Дёмина» по запросу «Демин». Теперь все окна зовут
+# search_index.name_search_conditions(q) — один источник правды.
 
 
 def _base_candidate_query(
@@ -273,14 +257,12 @@ async def search_candidates(
     # --- full-text search ---
     if q and q.strip():
         term = f"%{q.strip()}%"
-        name_terms = _name_search_terms(q)
-        from ..services.search_index import smart_name_filter, ensure_pg_trgm_checked, contact_search_conditions
+        from ..services.search_index import name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions
         await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
-        _snf = smart_name_filter(q)  # транслит + любой порядок слов + опечатки (pg_trgm)
         base = base.where(
             or_(
-                *([_snf] if _snf is not None else []),
-                *[Entity.name.ilike(t) for t in name_terms],
+                # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
+                *name_search_conditions(q),
                 *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки emails[]/phones[]
                 Entity.position.ilike(term),
                 Entity.company.ilike(term),
@@ -875,14 +857,12 @@ async def get_candidates_kanban(
     # Optional text search
     if q and q.strip():
         search_term = f"%{q.strip().lower()}%"
-        name_terms = _name_search_terms(q)
-        from ..services.search_index import smart_name_filter, ensure_pg_trgm_checked, contact_search_conditions
+        from ..services.search_index import name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions
         await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
-        _snf = smart_name_filter(q)  # транслит + любой порядок слов + опечатки (pg_trgm)
         base_q = base_q.where(
             or_(
-                *([_snf] if _snf is not None else []),
-                *[Entity.name.ilike(t) for t in name_terms],
+                # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
+                *name_search_conditions(q),
                 *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки
                 Entity.position.ilike(search_term),
                 Entity.company.ilike(search_term),
@@ -1109,13 +1089,11 @@ async def get_candidate_ids(
 
     if q and q.strip():
         term = f"%{q.strip().lower()}%"
-        name_terms = _name_search_terms(q)
-        from ..services.search_index import smart_name_filter, ensure_pg_trgm_checked, contact_search_conditions
+        from ..services.search_index import name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions
         await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
-        _snf = smart_name_filter(q)  # транслит + любой порядок слов + опечатки (pg_trgm)
         base_q = base_q.where(or_(
-            *([_snf] if _snf is not None else []),
-            *[Entity.name.ilike(t) for t in name_terms],
+            # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
+            *name_search_conditions(q),
             *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки
             Entity.position.ilike(term),
             Entity.company.ilike(term),

@@ -54,17 +54,25 @@ export function toCyrillic(s: string): string {
   return out;
 }
 
+/** Ё → Е. Точки над Ё в русском письме факультативны: в базе «Дёмин», ищут
+ *  «Демин» — для поиска это одна буква. Зеркало серверного fold_yo
+ *  (search_index.py). Свернуть надо ОБЕ стороны сравнения. */
+export function foldYo(s: string): string {
+  return (s || '').replace(/ё/g, 'е').replace(/Ё/g, 'Е');
+}
+
 /** Одновременно проверяет haystack на подстроку needle с учётом обеих транслитераций. */
 export function matchesTranslit(haystack: string, needle: string): boolean {
   if (!needle) return true;
-  const h = haystack.toLowerCase();
-  const n = needle.toLowerCase();
+  const h = foldYo(haystack.toLowerCase());
+  const n = foldYo(needle.toLowerCase());
   if (h.includes(n)) return true;
   const hLat = toLatin(h);
   const nLat = toLatin(n);
   if (hLat.includes(nLat)) return true;
-  const hCyr = toCyrillic(h);
-  const nCyr = toCyrillic(n);
+  // toCyrillic умеет породить ё обратно («yo»→«ё») — сворачиваем ПОСЛЕ неё.
+  const hCyr = foldYo(toCyrillic(h));
+  const nCyr = foldYo(toCyrillic(n));
   if (hCyr.includes(nCyr)) return true;
   return false;
 }
@@ -99,7 +107,8 @@ function typoThreshold(len: number): number {
 
 // Слово во всех формах (как есть + латиница + кириллица) — для fuzzy-сравнения.
 function wordForms(w: string): string[] {
-  const set = new Set([w, toLatin(w), toCyrillic(w)]);
+  const f = foldYo(w); // Ё≡Е: иначе Левенштейн тратит бюджет опечаток на точки над Ё
+  const set = new Set([f, toLatin(f), foldYo(toCyrillic(f))]);
   set.delete('');
   return [...set];
 }

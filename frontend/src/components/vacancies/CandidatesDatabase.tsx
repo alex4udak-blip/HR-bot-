@@ -14,6 +14,7 @@ import {
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useEntityStore } from '@/stores/entityStore';
+import { smartNameMatch, contactMatch } from '@/utils/translit';
 import type { Entity, EntityStatus } from '@/types';
 import {
   STATUS_LABELS,
@@ -76,14 +77,15 @@ export default function CandidatesDatabase({ vacancies: _vacancies, onRefreshVac
   const filteredCandidates = useMemo(() => {
     let result = entities;
 
-    // Search: name, email, phone, telegram
+    // Search: name, email, phone, telegram. Тот же матчер, что в воронке и
+    // «Всех кандидатах» — транслит RU↔EN, любой порядок слов, опечатки, раскладка
+    // и Ё≡Е. Голый includes() тут не находил ни «Ivanov» по «Иванов», ни «Дёмина»
+    // по «Демин».
     if (searchQuery) {
-      const q = searchQuery.toLowerCase();
       result = result.filter(c =>
-        c.name?.toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q) ||
-        c.phone?.includes(q) ||
-        c.telegram_usernames?.some(t => t.toLowerCase().includes(q))
+        smartNameMatch(c.name || '', searchQuery) ||
+        contactMatch(searchQuery, { email: c.email, phone: c.phone }) ||
+        (c.telegram_usernames || []).some(t => contactMatch(searchQuery, { telegram: t }))
       );
     }
 

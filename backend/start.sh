@@ -679,10 +679,15 @@ async def ensure_shadow_columns():
 
     # Backfill search_name для существующих кандидатов (WHERE NULL — идемпотентно,
     # фактически один раз; новые получают search_name через event-листенер на insert).
+    # Плюс пересчёт строк с Ё: build_search_name теперь кладёт в блоб ещё и свёрнутую
+    # форму («дёмин»→«демин»), а у старых записей её нет. Пересчёт идемпотентен, а
+    # имён с Ё — единицы, так что гонять это на каждом старте дёшево.
     async with engine.begin() as sn_conn:
         from api.services.search_index import build_search_name as _bsn
         sn_rows = (await sn_conn.execute(text(
-            \"SELECT id, name, position, company, tags FROM entities WHERE search_name IS NULL\"
+            \"SELECT id, name, position, company, tags FROM entities \"
+            \"WHERE search_name IS NULL \"
+            \"   OR name ILIKE '%ё%' OR position ILIKE '%ё%' OR company ILIKE '%ё%'\"
         ))).fetchall()
         sn_params = [
             {'sv': _bsn(r.name, r.position, r.company, r.tags), 'id': r.id}

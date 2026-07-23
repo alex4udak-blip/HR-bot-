@@ -51,6 +51,17 @@ def set_pg_trgm_available(value: bool) -> None:
     _pg_trgm_available = value
 
 
+def fold_yo(s: Optional[str]) -> str:
+    """Ё → Е. В русском письме точки над Ё факультативны: один и тот же человек в
+    базе «Дёмин», а ищут «Демин» (и наоборот) — и приходится гадать написание.
+    Для ПОИСКА это одна буква; фолдим обе стороны сравнения.
+
+    Триграммам это не по силам: «демин» vs «дёмин» дают word_similarity ≈0.5 при
+    пороге 0.6 — не находит. Поэтому свёрнутая форма кладётся в search_name, а не
+    вычисляется на лету (иначе GIN-индекс перестал бы использоваться)."""
+    return (s or "").replace("ё", "е").replace("Ё", "Е")
+
+
 def build_search_name(
     name: Optional[str],
     position: Optional[str] = None,
@@ -74,6 +85,8 @@ def build_search_name(
     for t in (tags or []):
         if isinstance(t, str) and t.strip():
             parts.add(t.strip().lower())
+    # Ё≡Е: держим в блобе ОБЕ формы, чтобы «Демин» находил «Дёмина» по индексу.
+    parts |= {fold_yo(p) for p in parts}
     parts.discard("")
     return " ".join(sorted(parts))[:3000]
 
@@ -146,6 +159,8 @@ def _search_word_variants(tok: str) -> set:
     if sw and sw != tok:
         variants.add(sw)
         variants |= (_name_word_variants(sw) or set())
+    # Свёрнутый Ё — зеркало того, что лежит в search_name.
+    variants |= {fold_yo(v) for v in variants}
     return variants
 
 
@@ -188,10 +203,16 @@ def _translit_ilike_patterns(q: str) -> List[str]:
     """ILIKE-паттерны имени с транслитерацией RU<->EN (fallback, работает без pg_trgm)."""
     q = (q or "").strip()
     terms = {q}
-    if re.search(r"[а-яёА-ЯЁ]", q):
-        terms.add(transliterate_ru_to_en(q))
-    if re.search(r"[a-zA-Z]", q):
-        terms.add(transliterate_en_to_ru(q))
+    # Свёрнутый Ё транслитерируем ОТДЕЛЬНО: у «Дёмин» и «Демин» разный транслит
+    # («dyomin» vs «demin»), а в базе может лежать любой из двух.
+    folded = fold_yo(q)
+    if folded != q:
+        terms.add(folded)
+    for t in list(terms):
+        if re.search(r"[а-яёА-ЯЁ]", t):
+            terms.add(transliterate_ru_to_en(t))
+        if re.search(r"[a-zA-Z]", t):
+            terms.add(transliterate_en_to_ru(t))
     sw = switch_layout(q)  # раскладка: «bdfy» → «иван»
     if sw and sw != q.lower():
         terms.add(sw)
@@ -207,8 +228,18 @@ def name_search_conditions(q: str) -> List:
     snf = smart_name_filter(q)
     if snf is not None:
         conds.append(snf)
+    # Ё≡Е для ILIKE: сворачиваем и запрос, И колонку. Колонку — обязательно: в базе
+    # лежит «Дёмин», а ищут «Демин», и никакой бэкфилл этого не покроет (search_name
+    # тут не участвует). На проде pg_trgm недоступен и работает именно эта ветка,
+    # так что жалоба «не находит без Ё» чинится здесь.
+    yo_name = func.replace(func.replace(Entity.name, "ё", "е"), "Ё", "Е")
+    seen_folded = set()  # «Дёмин» и «Демин» сворачиваются в одно — не дублируем ветку OR
     for t in _translit_ilike_patterns(q):
         conds.append(Entity.name.ilike(t))
+        folded = fold_yo(t)
+        if re.search(r"[а-яА-Я]", folded) and folded not in seen_folded:  # латиницу сворачивать незачем
+            seen_folded.add(folded)
+            conds.append(yo_name.ilike(folded))
     return conds
 
 
