@@ -39,6 +39,18 @@ export default function HireToStaffButton(props: Props) {
     if (open) getDepartments().then((d) => setDepts(d)).catch(() => setDepts([]));
   }, [open]);
 
+  // Подставляем логин(email)/должность кандидата. useState-инициализатор срабатывает
+  // ОДИН раз при монтировании, а кнопка переиспользуется между кандидатами и профиль
+  // догружается асинхронно — без синхронизации поля «залипали» на прежнем кандидате
+  // (пустой email, чужая должность), хотя шапка уже показывала верное имя. Синкаем
+  // только пока модалка ЗАКРЫТА, чтобы не затирать то, что рекрутёр уже вписал.
+  useEffect(() => {
+    if (!open) {
+      setMail(email || '');
+      setPos(position || '');
+    }
+  }, [entityId, email, position, open]);
+
   useEffect(() => {
     if (!deptOpen) return;
     const onDown = (e: MouseEvent) => {
