@@ -38,11 +38,14 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   const hiddenId = (card.extra_data?.hidden_duplicate_id as number | undefined) ?? null;
   const meta = (card.extra_data?.hidden_duplicate_meta ?? null) as HiddenDuplicateMeta | null;
   const isSoft = meta?.strength === "soft";
-  const bannerBg = isSoft ? "bg-amber-500" : "bg-red-600";
+  const isText = meta?.strength === "text";
+  const bannerBg = isSoft || isText ? "bg-amber-500" : "bg-red-600";
   const bannerTitle = isSoft
     ? `Возможно тот же человек · ${Math.round(meta?.confidence ?? 0)}%`
-    : "Точное совпадение — кандидат уже в базе";
-  const bannerReasons = isSoft ? (meta?.reasons ?? []) : [];
+    : isText
+      ? `Текст резюме совпадает · ${Math.round(meta?.confidence ?? 0)}%`
+      : "Точное совпадение — кандидат уже в базе";
+  const bannerReasons = isSoft || isText ? (meta?.reasons ?? []) : [];
   const [resolved, setResolved] = useState(false);
   const [open, setOpen] = useState(false);
   // triggerEntity — профиль hiddenId, по которому решается ПОКАЗ баннера (стабилен,

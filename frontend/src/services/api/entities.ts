@@ -453,7 +453,7 @@ export const mergeEntities = async (
  * `card.extra_data?.hidden_duplicate_meta as HiddenDuplicateMeta | undefined`.
  */
 export interface HiddenDuplicateMeta {
-  strength: "source" | "email" | "telegram" | "name" | "phone" | "soft";
+  strength: "source" | "email" | "telegram" | "name" | "phone" | "soft" | "text";
   confidence: number;
   reasons: string[];
   matched_id: number;

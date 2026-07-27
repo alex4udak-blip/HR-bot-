@@ -964,7 +964,7 @@ async def get_duplicate_candidates(
         include_archived=include_archived
     )
 
-    return [
+    results = [
         DuplicateCandidateResponse(
             entity_id=d.entity_id,
             entity_name=d.entity_name,
@@ -974,6 +974,53 @@ async def get_duplicate_candidates(
         )
         for d in duplicates
     ]
+
+    # Feature B (копипаст текста резюме) — подмешиваем текст-твина в тот же список,
+    # чтобы карусель сравнения (единый баннер/модалка) показывала и его, а не только
+    # identity-дубли из detect_duplicates. detect_duplicates ничего не знает про
+    # extra_data.text_twin, поэтому добираем его вручную.
+    seen_ids = {r.entity_id for r in results}
+    ed = entity.extra_data if isinstance(entity.extra_data, dict) else {}
+    dismissed_ids: set = set()
+    for x in (ed.get("dismissed_duplicate_ids") or []):
+        try:
+            dismissed_ids.add(int(x))
+        except (TypeError, ValueError):
+            pass
+
+    async def _append_text_twin(other_id, confidence, reasons):
+        if not other_id or other_id in seen_ids or other_id in dismissed_ids or other_id == entity.id:
+            return
+        other = (await db.execute(
+            select(Entity).where(Entity.id == other_id, Entity.org_id == org.id)
+        )).scalar_one_or_none()
+        if not other:
+            return
+        if other.is_archived and not include_archived:
+            return
+        results.append(DuplicateCandidateResponse(
+            entity_id=other.id,
+            entity_name=other.name,
+            confidence=confidence,
+            match_reasons=reasons,
+            matched_fields={},
+        ))
+        seen_ids.add(other.id)
+
+    tw = ed.get("text_twin")
+    if isinstance(tw, dict) and tw.get("twin_id"):
+        pct = round((tw.get("similarity") or 0) * 100)
+        await _append_text_twin(tw.get("twin_id"), pct, [f"Текст резюме совпадает ({pct}%)"])
+
+    # Обратное направление: эта карточка — цель backreference от чужого text_twin
+    # (detect_resume_text_twin проставил ей hidden_duplicate_meta.strength == "text",
+    # но собственного extra_data.text_twin у неё нет — он есть только у инициатора).
+    meta = ed.get("hidden_duplicate_meta")
+    if isinstance(meta, dict) and meta.get("strength") == "text":
+        conf = meta.get("confidence") or 0
+        await _append_text_twin(meta.get("matched_id"), conf, list(meta.get("reasons") or []))
+
+    return results
 
 
 @router.post("/{entity_id}/merge", response_model=MergeEntitiesResponse)

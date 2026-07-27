@@ -67,7 +67,6 @@ import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
 import type { EntityFile } from "@/services/api/entities";
 import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
 import ShadowDuplicateBanner from "@/components/entities/ShadowDuplicateBanner";
-import TextTwinBadge from "@/components/entities/TextTwinBadge";
 import ParserModal from "@/components/parser/ParserModal";
 import { useAuthStore } from "@/stores/authStore";
 import { HuntflowComposer } from "@/components/hr/HuntflowComposer";
@@ -2462,11 +2461,10 @@ const InfoTab = memo(function InfoTab({
         </div>
       )}
 
-      {/* Теневой дубль: баннер «Похожий кандидат есть в базе» над action-баром */}
+      {/* Теневой дубль: баннер «Похожий кандидат есть в базе» над action-баром.
+          Копипаст резюме (Feature B) теперь тоже идёт через этот же баннер
+          (strength === "text") — отдельного серого бейджа больше нет. */}
       <ShadowDuplicateBanner card={card} status={status} onResolved={onMerged} />
-      {/* Копипаст резюме: серый информационный бейдж — независим от hidden_duplicate_id,
-          поэтому рендерится РЯДОМ с баннером, а не внутри него (баннер может вернуть null). */}
-      <TextTwinBadge card={card} />
 
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
       <div className="hf-profile-action-bar">

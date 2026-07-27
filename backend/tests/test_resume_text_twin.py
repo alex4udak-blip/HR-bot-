@@ -107,3 +107,122 @@ class TestDetectResumeTextTwin:
         await db_session.flush()
         twin_id, sim = await detect_resume_text_twin(db_session, b)
         assert twin_id is None
+
+    @pytest.mark.asyncio
+    async def test_drives_shared_banner_when_no_identity_match(self, db_session):
+        """Unified banner (Feature A/B merge): a text-twin with no pre-existing
+        identity dup must set hidden_duplicate_id/meta so ShadowDuplicateBanner
+        picks it up, with strength == "text"."""
+        from api.services.resume_text_twin import detect_resume_text_twin
+        org = Organization(name="BannerOrg", slug="banner-org")
+        db_session.add(org)
+        await db_session.flush()
+        text = {"about": "Разрабатывал микросервисы на python внедрял ci cd вёл код ревью команды разработки продукта"}
+        a = Entity(org_id=org.id, type=EntityType.candidate, name="Иван Иванов", extra_data=text)
+        db_session.add(a)
+        await db_session.flush()
+        b = Entity(org_id=org.id, type=EntityType.candidate, name="Пётр Петров",
+                   extra_data={"about": text["about"]})
+        db_session.add(b)
+        await db_session.flush()
+
+        twin_id, sim = await detect_resume_text_twin(db_session, b)
+        assert twin_id == a.id
+        be = b.extra_data or {}
+        assert be.get("hidden_duplicate_id") == a.id
+        meta = be.get("hidden_duplicate_meta") or {}
+        assert meta.get("strength") == "text"
+        assert meta.get("matched_id") == a.id
+        pct = round(sim * 100)
+        assert meta.get("confidence") == pct
+        assert meta.get("reasons") == [f"Текст резюме совпадает ({pct}%)"]
+
+    @pytest.mark.asyncio
+    async def test_does_not_clobber_existing_identity_match(self, db_session):
+        """If an identity match (detect_archived_duplicate) already flagged the
+        entity, the text-twin detector must NOT overwrite hidden_duplicate_id/meta —
+        identity always wins the banner slot; the twin still surfaces via the
+        /duplicates endpoint list, not by hijacking the banner."""
+        from api.services.resume_text_twin import detect_resume_text_twin
+        org = Organization(name="NoClobberOrg", slug="no-clobber-org")
+        db_session.add(org)
+        await db_session.flush()
+        text = {"about": "Разрабатывал микросервисы на python внедрял ci cd вёл код ревью команды разработки продукта"}
+        a = Entity(org_id=org.id, type=EntityType.candidate, name="Иван Иванов", extra_data=text)
+        db_session.add(a)
+        await db_session.flush()
+        # Seed a pre-existing identity match on b, as detect_archived_duplicate
+        # would have already done (it runs first on every intake path).
+        seeded_meta = {
+            "strength": "email", "confidence": 100,
+            "reasons": ["Совпадает email"], "matched_id": 999999,
+        }
+        b = Entity(org_id=org.id, type=EntityType.candidate, name="Пётр Петров",
+                   extra_data={
+                       "about": text["about"],
+                       "hidden_duplicate_id": 999999,
+                       "hidden_duplicate_meta": seeded_meta,
+                   })
+        db_session.add(b)
+        await db_session.flush()
+
+        twin_id, sim = await detect_resume_text_twin(db_session, b)
+        # Text-twin is still detected/returned...
+        assert twin_id == a.id
+        be = b.extra_data or {}
+        assert be.get("text_twin", {}).get("twin_id") == a.id
+        # ...but the identity flag on b is left untouched.
+        assert be.get("hidden_duplicate_id") == 999999
+        assert be.get("hidden_duplicate_meta") == seeded_meta
+
+    @pytest.mark.asyncio
+    async def test_sets_backreference_on_twin(self, db_session):
+        """The twin (a) should also get hidden_duplicate_id/meta pointing back at
+        the entity that triggered detection (b), so the banner shows on BOTH cards
+        — mirroring detect_archived_duplicate's backreference behavior."""
+        from api.services.resume_text_twin import detect_resume_text_twin
+        org = Organization(name="BackrefOrg", slug="backref-org")
+        db_session.add(org)
+        await db_session.flush()
+        text = {"about": "Разрабатывал микросервисы на python внедрял ci cd вёл код ревью команды разработки продукта"}
+        a = Entity(org_id=org.id, type=EntityType.candidate, name="Иван Иванов", extra_data=text)
+        db_session.add(a)
+        await db_session.flush()
+        b = Entity(org_id=org.id, type=EntityType.candidate, name="Пётр Петров",
+                   extra_data={"about": text["about"]})
+        db_session.add(b)
+        await db_session.flush()
+
+        await detect_resume_text_twin(db_session, b)
+        ae = a.extra_data or {}
+        assert ae.get("hidden_duplicate_id") == b.id
+        ameta = ae.get("hidden_duplicate_meta") or {}
+        assert ameta.get("strength") == "text"
+        assert ameta.get("matched_id") == b.id
+
+    @pytest.mark.asyncio
+    async def test_backreference_does_not_clobber_twins_identity_match(self, db_session):
+        """If the twin (a) already carries its OWN identity-match flag, the
+        backreference must not overwrite it."""
+        from api.services.resume_text_twin import detect_resume_text_twin
+        org = Organization(name="BackrefNoClobberOrg", slug="backref-no-clobber-org")
+        db_session.add(org)
+        await db_session.flush()
+        text = {"about": "Разрабатывал микросервисы на python внедрял ci cd вёл код ревью команды разработки продукта"}
+        seeded_meta = {
+            "strength": "phone", "confidence": 100,
+            "reasons": ["Совпадает телефон"], "matched_id": 555555,
+        }
+        a = Entity(org_id=org.id, type=EntityType.candidate, name="Иван Иванов",
+                   extra_data={**text, "hidden_duplicate_id": 555555, "hidden_duplicate_meta": seeded_meta})
+        db_session.add(a)
+        await db_session.flush()
+        b = Entity(org_id=org.id, type=EntityType.candidate, name="Пётр Петров",
+                   extra_data={"about": text["about"]})
+        db_session.add(b)
+        await db_session.flush()
+
+        await detect_resume_text_twin(db_session, b)
+        ae = a.extra_data or {}
+        assert ae.get("hidden_duplicate_id") == 555555
+        assert ae.get("hidden_duplicate_meta") == seeded_meta
