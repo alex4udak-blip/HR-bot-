@@ -679,5 +679,19 @@ class AIService:
 
         return result
 
+    async def complete(self, system: str, user: str, max_tokens: int = 2000) -> str:
+        """Generic single-shot completion: system + user prompt -> текст ответа.
+
+        Не привязан к Chat/Message (в отличие от chat_stream/generate_report) —
+        для произвольных задач вроде AI-дайджеста команды в Telegram-боте.
+        """
+        response = await self.client.messages.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return response.content[0].text
+
 
 ai_service = AIService()
