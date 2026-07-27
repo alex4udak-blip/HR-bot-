@@ -173,6 +173,32 @@ def fold_yo(s: Optional[str]) -> str:
     return (s or "").replace("ё", "е").replace("Ё", "Е")
 
 
+# Латинские буквы, ВИЗУАЛЬНО неотличимые от кириллических (Unicode confusables).
+# Приём ухода от дедупа: в русском имени одну-две буквы подменяют латинскими
+# двойниками — «Cоколов» (C латинская, U+0043) выглядит как «Соколов»
+# (U+0421), но для матчера это разные строки. Держим и прописные, и строчные:
+# подмена обычно копирует видимый текст, где регистр смешан, а fold применяем
+# ДО .lower(), чтобы 'B'→'В' не потерялось (строчные b/в уже не двойники).
+_HOMOGLYPH_LAT_TO_CYR = {
+    "A": "А", "B": "В", "C": "С", "E": "Е", "H": "Н", "K": "К", "M": "М",
+    "O": "О", "P": "Р", "T": "Т", "X": "Х", "Y": "У",
+    "a": "а", "c": "с", "e": "е", "o": "о", "p": "р", "x": "х", "y": "у", "k": "к",
+}
+
+
+def fold_homoglyphs(s: Optional[str]) -> str:
+    """Латинские буквы-двойники → кириллица, но ТОЛЬКО в словах, где кириллица уже
+    есть. Чисто латинское имя («Sokolov») не трогаем — это законная транслитерация,
+    её разбирает transliterate_en_to_ru; а вот смешанное «Cоколов» лечим в «Соколов».
+    Так подмена буквы перестаёт прятать дубль, а обычные латинские имена не портятся."""
+    if not s:
+        return s or ""
+    has_cyr = any(("а" <= ch <= "я") or ch in ("ё", "Ё") or ("А" <= ch <= "Я") for ch in s)
+    if not has_cyr:
+        return s
+    return "".join(_HOMOGLYPH_LAT_TO_CYR.get(ch, ch) for ch in s)
+
+
 def generate_name_variants(name: str) -> Set[str]:
     """
     Генерация вариантов написания имени для поиска дубликатов.
@@ -183,7 +209,9 @@ def generate_name_variants(name: str) -> Set[str]:
     - Альтернативных транслитераций
     """
     variants = set()
-    name_lower = name.lower().strip()
+    # Гомоглифы лечим до lower/транслита: «Cоколов» → «соколов», иначе латинская C
+    # осталась бы в блобе и поиск по «Соколов» не нашёл бы подменённую запись.
+    name_lower = fold_homoglyphs(name).lower().strip()
     variants.add(name_lower)
 
     # Определяем язык имени
@@ -228,8 +256,10 @@ def generate_name_variants(name: str) -> Set[str]:
 
 
 def _name_word_variants(word: str) -> Set[str]:
-    """Варианты ОДНОГО слова имени (само + транслитерации rus<->eng + Ё≡Е)."""
-    w = (word or "").strip("-_.,").lower()
+    """Варианты ОДНОГО слова имени (само + транслитерации rus<->eng + Ё≡Е).
+    Гомоглифы (латинские двойники кириллицы) лечим ПЕРВЫМ шагом — до .lower() и
+    транслита, иначе «Cоколов» ушёл бы в транслит как мусор."""
+    w = fold_homoglyphs(word or "").strip("-_.,").lower()
     out = {w}
     if re.search(r'[а-яё]', w):
         out.add(transliterate_ru_to_en(w))
@@ -357,8 +387,20 @@ def name_part_match(a: str, b: str) -> bool:
     va, vb = _all_variants(wa), _all_variants(wb)
     if va & vb:
         return True
-    # Опечатка <=1 между любыми вариантами (ловит осознанную ошибку в написании).
-    return any(_levenshtein_le1(x, y) for x in va for y in vb)
+    # Опечатка <=1 — меряем по КАНОНИЧНОЙ кириллической форме каждого слова, а НЕ
+    # по декартову произведению всех транслит-вариантов. Транслит в латиницу
+    # необратимо lossy: и 'й', и 'ы' дают 'y' (см. TRANSLIT_RU_EN), поэтому в
+    # латинице РАЗНЫЕ русские фамилии сходятся в один символ — «Бойков»→boykov и
+    # «Быков»→bykov отличаются на 1, и старый код давал ложную «Фамилию совпала»
+    # (жалоба Марии, 2026-07-23), хотя по-русски Бойков/Быков различаются на 2.
+    # Канон берём от ИСХОДНОГО слова (кириллицу как есть; латиницу — обратным
+    # транслитом ОДИН раз), не от va/vb: там уже лежат латинские производные
+    # кириллицы (bykov), которые вернули бы то же схлопывание.
+    def _canon(w: str) -> str:
+        return w if re.search(r"[а-яё]", w) else transliterate_en_to_ru(w)
+    ca = {_canon(f) for f in _diminutive_group(wa)}
+    cb = {_canon(f) for f in _diminutive_group(wb)}
+    return any(_levenshtein_le1(x, y) for x in ca for y in cb)
 
 
 def _any_part_match(set_a: Set[str], set_b: Set[str]) -> bool:
@@ -366,25 +408,22 @@ def _any_part_match(set_a: Set[str], set_b: Set[str]) -> bool:
     return any(name_part_match(a, b) for a in set_a for b in set_b)
 
 
-def _score_name_parts(a: dict, b: dict) -> tuple:
-    """Совпадение имени/фамилии, УСТОЙЧИВОЕ к перестановке «Фамилия Имя» ↔ «Имя
-    Фамилия» (LinkedIn vs hh, осознанная смена порядка). Пробуем прямую и обратную
-    привязку ролей b и берём вариант с бОльшим баллом — веса ролей сохраняются.
-    Возвращает (last_hit: bool, first_hit: bool)."""
+def _full_name_match(a: dict, b: dict) -> bool:
+    """Совпала ли СВЯЗКА Фамилия+Имя — оба слова, в любом порядке. Имя и фамилия
+    по ОТДЕЛЬНОСТИ дубль не поднимают (заказчик: тёзок и однофамильцев — тьма),
+    поэтому здесь единственный «именной» сигнал жёлтого скоринга.
+
+    Требуем, чтобы у обеих сторон были ОБЕ части (фамилия и имя): запись из одного
+    слова («Саша», «Хабибуллин») связку не образует и в жёлтый не идёт. Порядок не
+    важен (Фамилия Имя ↔ Имя Фамилия), каждое слово сверяется name_part_match'ем
+    (транслит, гомоглифы, Ё, опечатка ≤1)."""
     la, fa = a.get("last_names") or set(), a.get("first_names") or set()
     lb, fb = b.get("last_names") or set(), b.get("first_names") or set()
-
-    def orient(lb_, fb_):
-        last_hit = _any_part_match(la, lb_)
-        first_hit = _any_part_match(fa, fb_)
-        s = (SOFT_WEIGHTS["last_name"] if last_hit else 0) + \
-            (SOFT_WEIGHTS["first_name"] if first_hit else 0)
-        return s, last_hit, first_hit
-
-    straight = orient(lb, fb)
-    swapped = orient(fb, lb)
-    _, last_hit, first_hit = straight if straight[0] >= swapped[0] else swapped
-    return last_hit, first_hit
+    if not (la and fa and lb and fb):
+        return False
+    straight = _any_part_match(la, lb) and _any_part_match(fa, fb)
+    swapped = _any_part_match(la, fb) and _any_part_match(fa, lb)
+    return straight or swapped
 
 
 def score_soft_identity(a: dict, b: dict) -> SoftScore:
@@ -404,11 +443,8 @@ def score_soft_identity(a: dict, b: dict) -> SoftScore:
         reasons.append(reason)
         detail.append(f"{weight_key}(+{w})")
 
-    last_hit, first_hit = _score_name_parts(a, b)
-    if last_hit:
-        _hit("last_name", "Фамилия совпала")
-    if first_hit:
-        _hit("first_name", "Имя совпало")
+    if _full_name_match(a, b):
+        _hit("full_name", "Фамилия и имя совпали")
 
     ba, bb = a.get("birth_norm"), b.get("birth_norm")
     if ba and bb and ba == bb:
@@ -422,6 +458,13 @@ def score_soft_identity(a: dict, b: dict) -> SoftScore:
         _hit("phone7", "Последние 7 цифр телефона совпали")
     if (a.get("email_locals") or set()) & (b.get("email_locals") or set()):
         _hit("email_local", "Email до @ совпал")
+    # Telegram в жёлтом (раньше был только в красном): общий личный @хэндл — сильный
+    # сигнал «тот же человек». Мусорные ярлыки источника (hh_b2b, telegram) отсеяны
+    # is_matchable_telegram ещё в tg_names.
+    a_tg = {t for t in (a.get("tg_names") or set()) if is_matchable_telegram(t)}
+    b_tg = {t for t in (b.get("tg_names") or set()) if is_matchable_telegram(t)}
+    if a_tg & b_tg:
+        _hit("telegram", "Telegram совпал")
     if (a.get("cities") or set()) & (b.get("cities") or set()):
         _hit("city", "Город совпал")
 
@@ -439,15 +482,19 @@ def names_match_surname_firstname(name1: str, name2: str) -> bool:
     Кирилл Евгеньевич» — фамилии разные → НЕ дубль), т.к. требуем совпадения
     ОБОИХ слов по чёткому паросочетанию (каждое слово одного имени должно
     совпасть с РАЗНЫМ словом другого — прямая ИЛИ обратная пара, не одно и то
-    же слово дважды). Полное совпадение ФИО — частный случай (тоже совпадёт)."""
-    w1 = [_name_word_variants(w) for w in (name1 or "").split()
-          if len(w.strip("-_.,")) >= 2]
-    w2 = [_name_word_variants(w) for w in (name2 or "").split()
-          if len(w.strip("-_.,")) >= 2]
+    же слово дважды). Полное совпадение ФИО — частный случай (тоже совпадёт).
+
+    Каждое слово сверяется через name_part_match, поэтому связка терпит ВСЕ те же
+    нюансы, что и одна часть: транслит RU↔EN, смену алфавита целиком или по одной
+    части, гомоглифы (латинская C в «Cоколов»), Ё≡Е и опечатку ≤1. Раньше здесь
+    было ТОЧНОЕ пересечение вариантов — оно не прощало ни опечатку в связке
+    («Иваноф Иван»), ни подменённую букву."""
+    w1 = [w for w in (name1 or "").split() if len(w.strip("-_.,")) >= 2]
+    w2 = [w for w in (name2 or "").split() if len(w.strip("-_.,")) >= 2]
     if len(w1) < 2 or len(w2) < 2:
         return False
-    straight = bool(w1[0] & w2[0]) and bool(w1[1] & w2[1])
-    swapped = bool(w1[0] & w2[1]) and bool(w1[1] & w2[0])
+    straight = name_part_match(w1[0], w2[0]) and name_part_match(w1[1], w2[1])
+    swapped = name_part_match(w1[0], w2[1]) and name_part_match(w1[1], w2[0])
     return straight or swapped
 
 
@@ -470,6 +517,25 @@ def normalize_email(email: str) -> str:
     if not email:
         return ""
     return email.lower().strip()
+
+
+# Локальные части почты, которые НЕ идентифицируют человека: служебные ящики и
+# заглушки. По ним нельзя матчить — иначе «info@…» разных фирм слиплись бы.
+_GENERIC_EMAIL_LOCALS = {"info", "mail", "test", "hello", "admin", "hr", "job",
+                         "jobs", "work", "cv", "resume", "noreply", "no-reply"}
+
+
+def email_locals_of(emails) -> Set[str]:
+    """Локальные части (до «@») из набора нормализованных адресов — общий ключ
+    сравнения почты для КРАСНОГО и ЖЁЛТОГО (заказчик: «одинаковая система, до @»).
+    Смена домена (ivan.petrov@gmail → ivan.petrov@mail) больше не уводит от дубля.
+    Отсекаем generic и слишком короткие (<4) локали, чтобы не слипались чужие."""
+    out: Set[str] = set()
+    for e in (emails or ()):
+        local = e.split("@", 1)[0] if "@" in e else ""
+        if len(local) >= 4 and local not in _GENERIC_EMAIL_LOCALS:
+            out.add(local)
+    return out
 
 
 def normalize_telegram(value: str) -> str:
@@ -532,18 +598,21 @@ TG_COMMON_THRESHOLD = 3
 # на реальной активной+теневой базе ДО включения флага в проде. Меняются здесь,
 # в одном месте, без правки логики скоринга.
 SOFT_WEIGHTS = {
-    "last_name": 45,    # фамилия совпала (транслит + опечатка<=1)
-    "first_name": 25,   # имя совпало (транслит + опечатка<=1 + уменьшительные)
+    "full_name": 50,    # СВЯЗКА Фамилия+Имя (оба слова, любой порядок). ЕДИНСТВЕННЫЙ
+                        # способ учесть имя: порознь имя/фамилия НЕ считаются (заказчик:
+                        # «сколько Артёмов, сколько Хабибуллиных» — одна часть не дубль).
     "dob_exact": 40,    # точная дата рождения YYYY-MM-DD
     "age_pm1": 12,      # возраст +-1 год (когда точного ДР нет)
     "phone7": 35,       # последние 7 цифр телефона совпали
     "email_local": 35,  # локальная часть email (до @) совпала
+    "telegram": 35,     # общий личный @хэндл (не мусорный ярлык источника)
     "city": 8,          # город совпал (слабый — города меняют нарочно)
 }
-# Флаг мягкого совпадения ставим при score >= порога И >=2 независимых компонентах.
-# 65 — консервативный старт (некому откалибровать заранее): сохраняет ключевой кейс
-# «имя + точное ДР» (65) и «фамилия+имя» (70), но отсекает слабое «phone7+имя» (60).
-# Понижать к 60 / крутить веса — после dry-run на реальной базе.
+# Флаг ставим при score >= порога И >=2 независимых компонентах.
+# 65 подобран так, что СВЯЗКА ФИО сама (50) НЕ флажит — полные тёзки «Иванов Иван»
+# существуют, — но связка + любой сильный сигнал (ДР 90 / телефон 85 / email 85 /
+# telegram 85) флажит, как и два контакта без ФИО (email+phone=70) — это ловля
+# «сменил ФИО, но контакты те же». Слабые (возраст 12 / город 8) сами порог не берут.
 SOFT_THRESHOLD = 65
 SOFT_MIN_COMPONENTS = 2
 
@@ -1142,18 +1211,20 @@ class SimilarityService:
                 match_reasons.append("Совпадение имени (с учетом транслитерации)")
                 matched_fields['name'] = (entity.name, candidate.name)
 
-            # 2. Проверка email (30 баллов)
+            # 2. Проверка email (30 баллов) — по полному адресу И по локали до «@»
+            # (единая с жёлтым система: смена домена gmail→mail не уводит от дубля).
             candidate_email = normalize_email(candidate.email or "")
             candidate_emails = {normalize_email(e) for e in (candidate.emails or []) if e}
             candidate_emails.add(candidate_email)
             candidate_emails.discard("")
 
-            email_match = bool(all_emails & candidate_emails)
-            if email_match:
+            full_email_hit = all_emails & candidate_emails
+            local_email_hit = email_locals_of(all_emails) & email_locals_of(candidate_emails)
+            if full_email_hit or local_email_hit:
                 confidence += 30
                 match_reasons.append("Совпадение email")
-                common_email = list(all_emails & candidate_emails)[0]
-                matched_fields['email'] = (normalized_email or list(all_emails)[0], common_email)
+                common_email = list(full_email_hit or local_email_hit)[0]
+                matched_fields['email'] = (normalized_email or (list(all_emails)[0] if all_emails else common_email), common_email)
 
             # 3. Проверка телефона (30 баллов)
             candidate_phone = normalize_phone(candidate.phone or "")
@@ -1617,10 +1688,13 @@ def build_dup_keys(
     # должностей/мусора, что и name_ok). Первое слово трактуем как фамилию, второе
     # как имя (порядок в наших источниках чаще «Фамилия Имя»); скоринг всё равно
     # сверяет наборами, так что перестановка не критична для флага.
+    # Гомоглифы лечим до разбора на слова: «Cоколов Пётр» (латинская C) → кириллица,
+    # иначе first/last-ключи разъехались бы с честной записью.
+    folded_name = fold_homoglyphs(name or "")
     first_names: Set[str] = set()
     last_names: Set[str] = set()
-    if looks_like_person_name(name or ""):
-        parts = [w for w in (name or "").split() if len(w.strip("-_.,")) >= 1]
+    if looks_like_person_name(folded_name):
+        parts = [w for w in folded_name.split() if len(w.strip("-_.,")) >= 1]
         if len(parts) >= 2:
             last_names.add(parts[0].strip("-_.,").lower())
             first_names.add(parts[1].strip("-_.,").lower())
@@ -1629,7 +1703,7 @@ def build_dup_keys(
         # ("Саша") never passes it even though it's clearly a first-name-only
         # value. Apply the same digit/comma/placeholder/position-hint guards
         # without the word-count requirement for that one-word case only.
-        parts = (name or "").split()
+        parts = folded_name.split()
         if len(parts) == 1:
             w = parts[0].strip("-_.,")
             wl = w.lower()
@@ -1642,12 +1716,7 @@ def build_dup_keys(
 
     phones7: Set[str] = {p[-7:] for p in ph if len(p) >= 7}
 
-    email_locals: Set[str] = set()
-    for e in ek:
-        local = e.split("@", 1)[0] if "@" in e else ""
-        # Отсекаем слишком короткие/generic локали, чтобы 'hr'/'info' не слипались.
-        if len(local) >= 4 and local not in {"info", "mail", "test", "hello", "admin"}:
-            email_locals.add(local)
+    email_locals: Set[str] = email_locals_of(ek)
 
     birth_norm = normalize_birth_date(ed.get("birth_date"))
     age = ed.get("age")
@@ -1691,6 +1760,7 @@ async def find_duplicate_matches(
     расширения (check-duplicate, до добавления) и detect_archived_duplicate
     (веб/парсер, флаг после добавления) — раньше это были 3 разошедшихся копии."""
     emails: Set[str] = keys.get("emails") or set()
+    email_locals: Set[str] = keys.get("email_locals") or set()
     phones10: Set[str] = keys.get("phones10") or set()
     tg_names: Set[str] = set(keys.get("tg_names") or set())
     my_name: str = keys.get("name") or ""
@@ -1760,8 +1830,20 @@ async def find_duplicate_matches(
             ce = cand_extra if isinstance(cand_extra, dict) else {}
             if normalize_source_url(ce.get("source_url") or ce.get("source_key") or "") == source_key:
                 strength = "source"
-        if strength is None and emails and normalize_email(cand_email or "") in emails:
-            strength = "email"
+        if strength is None and (emails or email_locals):
+            # Почта сравнивается и по ПОЛНОМУ адресу (точный сильный сигнал), и по
+            # локали до «@» (заказчик: «одинаковая система, до @» — смена домена
+            # gmail→mail не уводит от дубля). Локали уже очищены от generic (info,
+            # hr, …) в email_locals_of, так что чужие служебные ящики не слипнутся.
+            cand_email_norm = normalize_email(cand_email or "")
+            cand_emails_all = {cand_email_norm} if cand_email_norm else set()
+            if want_soft:
+                cand_emails_all |= {normalize_email(e) for e in (m.get(Entity.emails) or []) if e}
+            cand_emails_all.discard("")
+            full_hit = bool(emails and cand_email_norm and cand_email_norm in emails)
+            local_hit = bool(email_locals and (email_locals & email_locals_of(cand_emails_all)))
+            if full_hit or local_hit:
+                strength = "email"
         if strength is None and tg_names and any(
             normalize_telegram(t) in tg_names for t in (cand_tg or [])
         ):

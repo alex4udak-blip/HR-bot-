@@ -758,7 +758,11 @@ class TestSoftTierMatching:
     """Level-2 soft-identity tier wired into find_duplicate_matches (anti-evasion)."""
 
     @pytest.mark.asyncio
-    async def test_soft_match_on_dob_plus_firstname(self, db_session):
+    async def test_soft_match_on_partial_phone_plus_dob(self, db_session):
+        # Новая модель (заказчик 2026-07-27): жёлтый ловит смену личины по КОНТАКТАМ,
+        # а не по имени. Совпадение ФИО / полного телефона / email-локали / telegram
+        # даёт СИЛЬНЫЙ красный strength раньше — поэтому soft остаётся для «частичный
+        # телефон (те же 7 цифр, другой код) + точная дата рождения» при РАЗНОМ ФИО.
         from api.services.similarity import build_dup_keys, find_duplicate_matches
         org = Organization(name="SoftOrg", slug="soft-org")
         db_session.add(org)
@@ -766,25 +770,22 @@ class TestSoftTierMatching:
 
         existing = Entity(
             org_id=org.id, type=EntityType.candidate, name="Петров Александр",
-            email="a.petrov@gmail.com", phone="+7 916 000-11-22",
+            phone="+7 916 000-11-22",  # last7 = 0001122
             extra_data={"birth_date": "1990-05-14"},
         )
         db_session.add(existing)
         await db_session.flush()
 
-        # New candidate: different surname spelling dropped, different email/phone,
-        # only first name (translit) + DOB overlap.
         keys = build_dup_keys(
-            name="Sasha",  # diminutive, no surname
-            email="totally-different@yandex.ru",
-            phone="+7 495 999-88-77",
+            name="Сидоров Иван",              # другое ФИО — связки нет
+            phone="+7 495 000-11-22",         # тот же last7, другой код → не phone10
             extra_data={"birth_date": "14.05.1990"},
         )
         matches = await find_duplicate_matches(db_session, org.id, keys)
         soft = [m for m in matches if m.strength == "soft"]
         assert len(soft) == 1
         assert soft[0].entity_id == existing.id
-        assert soft[0].confidence >= 60
+        assert soft[0].confidence >= 65   # phone7(35) + dob(40) = 75
         assert any("рождения" in r.lower() for r in soft[0].reasons)
 
     @pytest.mark.asyncio
@@ -815,19 +816,16 @@ class TestDetectArchivedDuplicateMeta:
         db_session.add(org)
         await db_session.flush()
         old = Entity(org_id=org.id, type=EntityType.candidate, name="Петров Александр",
+                     phone="+7 916 000-11-22",  # last7 = 0001122
                      extra_data={"birth_date": "1990-05-14"})
         db_session.add(old)
         await db_session.flush()
-        # NOTE: plan's example used "Sasha Petroff" (Western first-last word order),
-        # but build_dup_keys (Task 4) assumes surname-first order for ALL names
-        # ("порядок в наших источниках чаще «Фамилия Имя»" — see its docstring), so
-        # that spelling puts the transliterated surname into first_names and the
-        # nickname into last_names, and neither half then matches — 0 name
-        # components, so it never reaches soft-match at all (independent of this
-        # task's change). Kept the surname-first order here ("Petrov Sasha":
-        # translit surname + diminutive first name + reformatted DOB) so this test
-        # actually exercises the soft-match meta-persistence path Task 7 adds.
-        new = Entity(org_id=org.id, type=EntityType.candidate, name="Petrov Sasha",
+        # Soft-путь (заказчик 2026-07-27): полная ФИО-связка теперь СИЛЬНЫЙ красный
+        # name-матч, а не soft. Чтобы дойти именно до soft-меты, берём РАЗНОЕ ФИО +
+        # частичный телефон (тот же last7, другой код) + та же дата рождения:
+        # phone7(35)+dob(40)=75 ≥ порога, но красных сигналов нет.
+        new = Entity(org_id=org.id, type=EntityType.candidate, name="Сидоров Иван",
+                     phone="+7 495 000-11-22",
                      extra_data={"birth_date": "14.05.1990"})
         db_session.add(new)
         await db_session.flush()
@@ -837,7 +835,7 @@ class TestDetectArchivedDuplicateMeta:
         meta = (new.extra_data or {}).get("hidden_duplicate_meta")
         assert meta is not None
         assert meta["strength"] == "soft"
-        assert meta["confidence"] >= 60
+        assert meta["confidence"] >= 65
         assert isinstance(meta["reasons"], list) and meta["reasons"]
 
     @pytest.mark.asyncio
@@ -885,11 +883,11 @@ class TestDetectArchivedDuplicateMeta:
         await db_session.flush()
 
         # Newer candidate (higher id, so it sorts FIRST in Entity.id DESC order) —
-        # only a soft match (DOB + translit/diminutive first name), distinct
-        # email/phone so it can't win on any strong tier.
+        # only a soft match: РАЗНОЕ ФИО, частичный телефон (тот же last7, другой код)
+        # + та же дата рождения. Никаких красных сигналов, только phone7+dob.
         newer_soft = Entity(
-            org_id=org.id, type=EntityType.candidate, name="Петров Александр",
-            email="a.petrov@gmail.com", phone="+7 916 000-11-22",
+            org_id=org.id, type=EntityType.candidate, name="Сидоров Иван",
+            phone="+7 916 000-11-22",  # last7 = 0001122
             extra_data={"birth_date": "1990-05-14"},
         )
         db_session.add(newer_soft)
@@ -897,11 +895,11 @@ class TestDetectArchivedDuplicateMeta:
         assert newer_soft.id > old_email.id
 
         # The entity being checked: same email as old_email (strong/exact) AND
-        # shares DOB + first name with newer_soft (soft) — surname-first order,
-        # per build_dup_keys' "Фамилия Имя" assumption (see test_meta_written_for_soft_match).
+        # shares last7-phone + DOB with newer_soft (soft), but a THIRD distinct name
+        # so no ФИО-связка with either.
         new = Entity(
-            org_id=org.id, type=EntityType.candidate, name="Petrov Sasha",
-            email="dup-priority@gmail.com",
+            org_id=org.id, type=EntityType.candidate, name="Кузнецов Олег",
+            email="dup-priority@gmail.com", phone="+7 495 000-11-22",
             extra_data={"birth_date": "14.05.1990"},
         )
         db_session.add(new)
