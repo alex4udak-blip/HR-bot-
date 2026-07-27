@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Copy, User, Download } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { Copy, User, Download, KeyRound, Check } from 'lucide-react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from '@/factorial/components/ui/toast';
+import { getErrorDetail } from '@/utils';
 import ProfileTemplate from '@/factorial/templates/ProfileTemplate';
-import { getLeaveBalance, downloadEmployeeTemplate } from '@/factorial/api/employees';
+import { getLeaveBalance, downloadEmployeeTemplate, resetEmployeePassword } from '@/factorial/api/employees';
 import { myDocuments, employeeDocuments } from '@/factorial/api/documents';
 import { formatDateRu, formatTenure } from '@/factorial/lib/formatDate';
 import { buildProfileTabs } from '@/factorial/lib/routes';
@@ -33,6 +34,15 @@ export default function ProfileOverviewPage() {
     enabled: !!me,
   });
   const [requestOpen, setRequestOpen] = useState(false);
+  // Сгенерированный временный пароль (показывается один раз в модалке).
+  const [genPassword, setGenPassword] = useState<string | null>(null);
+  const [pwCopied, setPwCopied] = useState(false);
+
+  const resetPw = useMutation({
+    mutationFn: () => resetEmployeePassword(me!.id),
+    onSuccess: (r) => { setGenPassword(r.temporary_password); setPwCopied(false); },
+    onError: (e) => toast({ title: 'Ошибка', description: getErrorDetail(e, 'Не удалось сгенерировать пароль') }),
+  });
 
   const copy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -68,7 +78,21 @@ export default function ProfileOverviewPage() {
       subNav={buildProfileTabs(base)}
       leftColumn={
         <>
-          <div className="flex justify-end mb-2">
+          <div className="flex justify-end gap-2 mb-2">
+            {/* Выдача доступа: HR-вид чужого сотрудника (byId), не личный кабинет.
+                Пароль генерится ЗДЕСЬ, в момент выхода после ИС, — «Взять в штат»
+                в ATS его больше не выдаёт. */}
+            {byId && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-fx-xs font-medium border border-card-border-soft rounded-fx-lg hover:bg-sidebar-hover"
+                onClick={() => resetPw.mutate()}
+                disabled={!me || resetPw.isPending}
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                {resetPw.isPending ? 'Генерируем…' : 'Сгенерировать пароль'}
+              </button>
+            )}
             <button
               type="button"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-fx-xs font-medium border border-card-border-soft rounded-fx-lg hover:bg-sidebar-hover"
@@ -79,6 +103,31 @@ export default function ProfileOverviewPage() {
               Экспорт
             </button>
           </div>
+
+          {genPassword && (
+            <div className="fx-modal-overlay" onClick={() => setGenPassword(null)}>
+              <div className="fx-modal" onClick={(e) => e.stopPropagation()}>
+                <h3>Временный пароль для входа</h3>
+                <div className="fx-sub">
+                  Передайте пароль сотруднику — он показывается один раз. Логин — его email
+                  ({me?.user_email || '—'}). Прежний пароль (если был) больше не действует.
+                </div>
+                <div className="flex items-center gap-2" style={{ marginTop: 10 }}>
+                  <code className="fx-input" style={{ flex: 1, userSelect: 'all', fontSize: 15 }}>{genPassword}</code>
+                  <button
+                    type="button"
+                    className="fx-btn fx-btn--secondary"
+                    onClick={() => { navigator.clipboard?.writeText(genPassword); setPwCopied(true); }}
+                  >
+                    {pwCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="fx-modal-actions">
+                  <button type="button" className="fx-btn fx-btn--primary" onClick={() => setGenPassword(null)}>Готово</button>
+                </div>
+              </div>
+            </div>
+          )}
           <LeaveBalanceCard balance={balance} onRequest={() => setRequestOpen(true)} />
           <MyDocsMini docs={docs} />
           <EmployeeStatusCard

@@ -123,7 +123,6 @@ export interface HirePayload {
 export interface HireResult {
   employee_id: number;
   user_existed: boolean;
-  temporary_password: string | null;
 }
 
 export const hireEntity = async (entityId: number, payload: HirePayload): Promise<HireResult> => {

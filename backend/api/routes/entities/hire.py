@@ -1,9 +1,16 @@
 """«Взять в штат»: перевод кандидата (Entity) в сотрудника Factorial (Employee).
 
 Кандидат — Entity без аккаунта; Employee требует user_id. Эндпоинт провизионит
-User (переиспользует по email или создаёт с одноразовым паролем — как
-quick_add_member), гарантирует OrgMember, создаёт Employee(entity_id=кандидат) и
-переводит карточку кандидата в статус transferred («Перешёл в отдел»).
+User (переиспользует по email или создаёт заготовку), гарантирует OrgMember,
+создаёт Employee(entity_id=кандидат) и переводит карточку кандидата в статус
+transferred («Перешёл в отдел»).
+
+Пароль здесь НЕ выдаётся (решение с Марией, 2026-07-27): сотрудник начнёт
+пользоваться Factorial только после испытательного срока (~3 мес), а гонять
+временный пароль в момент оформления бессмысленно — он всё равно устареет. Новый
+User заводится с недоступным случайным паролем-заглушкой; реальный временный
+пароль генерируется ПОЗЖЕ, в Factorial, кнопкой на карточке сотрудника
+(POST /factorial/employees/{id}/reset-password), когда доступ действительно нужен.
 """
 import secrets
 from datetime import datetime
@@ -35,7 +42,6 @@ class HireRequest(BaseModel):
 class HireResponse(BaseModel):
     employee_id: int
     user_existed: bool
-    temporary_password: Optional[str] = None
 
 
 def _first_tg(ent: Entity) -> Optional[str]:
@@ -78,11 +84,13 @@ async def hire_entity(
 
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     user_existed = user is not None
-    temp_password: Optional[str] = None
     if not user:
-        temp_password = secrets.token_urlsafe(8)
+        # Пароль-заглушка: длинный случайный, НИКОМУ не показывается и нигде не
+        # сохраняется. Войти по нему нельзя — доступ выдаётся позже через
+        # reset-password в Factorial. Так аккаунт существует (Employee.user_id
+        # обязателен), но «мёртвый» логин не висит рабочим паролем.
         user = User(
-            name=ent.name, email=email, password_hash=hash_password(temp_password),
+            name=ent.name, email=email, password_hash=hash_password(secrets.token_urlsafe(32)),
             role=UserRole.member, is_active=True, telegram_username=tg,
         )
         db.add(user)
@@ -139,7 +147,7 @@ async def hire_entity(
     await db.commit()
     await db.refresh(emp)
 
-    return HireResponse(employee_id=emp.id, user_existed=user_existed, temporary_password=temp_password)
+    return HireResponse(employee_id=emp.id, user_existed=user_existed)
 
 
 class StaffStatusResponse(BaseModel):

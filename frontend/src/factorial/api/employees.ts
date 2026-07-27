@@ -20,6 +20,11 @@ export const updateEmployee = (id: number, body: Partial<Employee>) =>
 export const updateMyProfile = (body: Partial<Employee>) =>
   api.put<Employee>('/employees/me', body).then((r) => r.data);
 
+// Сгенерировать сотруднику новый временный пароль (показывается один раз). Доступ
+// выдаётся здесь, а не при «Взять в штат», — когда сотрудник реально выходит.
+export const resetEmployeePassword = (id: number) =>
+  api.post<{ temporary_password: string }>(`/employees/${id}/reset-password`).then((r) => r.data);
+
 export const dismissEmployee = (id: number, reason?: string) =>
   api
     .delete(`/employees/${id}${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`)

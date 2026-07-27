@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Briefcase, X, Copy, Check, ChevronDown } from 'lucide-react';
+import { Briefcase, X, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { hireEntity, getDepartments } from '@/services/api';
@@ -30,8 +30,6 @@ export default function HireToStaffButton(props: Props) {
   const [pos, setPos] = useState(position || '');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
-  const [password, setPassword] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [deptOpen, setDeptOpen] = useState(false);
   const deptRef = useRef<HTMLDivElement>(null);
 
@@ -73,18 +71,17 @@ export default function HireToStaffButton(props: Props) {
         department_id: Number(deptId), email: mail.trim(), position: pos.trim() || null,
         department_start_date: date || null,
       });
-      if (res.temporary_password) setPassword(res.temporary_password);
-      else { toast.success('Оформлен в штат (аккаунт уже был)'); setOpen(false); }
+      // Пароль здесь НЕ выдаём — сотрудник получит доступ в Factorial, когда выйдет
+      // после ИС (кнопка «Сгенерировать пароль» на его карточке). Тут только
+      // оформляем и переводим кандидата в «Перешёл в отдел».
+      toast.success('Кандидат оформлен в штат — перешёл в отдел');
+      setOpen(false);
       onHired(res.employee_id);
     } catch (e) {
       toast.error(getErrorDetail(e, 'Не удалось оформить в штат'));
     } finally {
       setSaving(false);
     }
-  };
-
-  const copy = () => {
-    if (password) { navigator.clipboard?.writeText(password); setCopied(true); setTimeout(() => setCopied(false), 1500); }
   };
 
   return (
@@ -105,8 +102,7 @@ export default function HireToStaffButton(props: Props) {
               <button onClick={() => !saving && setOpen(false)} aria-label="Закрыть"><X className="w-4 h-4 text-dark-400" /></button>
             </div>
 
-            {!password ? (
-              <div className="space-y-3">
+            <div className="space-y-3">
                 <div className="block">
                   <span className="text-xs text-dark-400">Отдел</span>
                   <div className="relative mt-1" ref={deptRef}>
@@ -150,19 +146,11 @@ export default function HireToStaffButton(props: Props) {
                   className="w-full mt-2 rounded-lg bg-green-500/20 text-green-400 border border-green-500/30 py-2 text-sm font-medium hover:bg-green-500/30 disabled:opacity-50">
                   {saving ? 'Оформляем…' : 'Подтвердить'}
                 </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-sm text-white">Аккаунт создан. Передайте пароль сотруднику — он показывается один раз:</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-green-400 select-all">{password}</code>
-                  <button onClick={copy} className="rounded-lg border border-white/10 p-2 text-dark-300 hover:text-white" aria-label="Копировать">
-                    {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                </div>
-                <button onClick={() => setOpen(false)} className="w-full rounded-lg bg-dark-700 border border-white/10 py-2 text-sm text-white">Готово</button>
-              </div>
-            )}
+                <p className="text-xs text-dark-400 leading-relaxed">
+                  Пароль для входа сгенерируете позже в Factorial, на карточке сотрудника —
+                  когда он выйдет после испытательного срока.
+                </p>
+            </div>
           </div>
         </div>
       )}

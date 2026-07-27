@@ -24,7 +24,7 @@ from api.models.database import (
     Employee, LeaveRequest, User, Organization, Department,
     DepartmentMember, OrgUnit, OrgMember, OrgRole, Notification, EmployeeDocument,
 )
-from api.services.auth import get_current_user, get_user_org
+from api.services.auth import get_current_user, get_user_org, hash_password
 
 logger = logging.getLogger("hr-analyzer.employees")
 
@@ -835,6 +835,43 @@ async def get_employee(
 
     emp.vacation_days_total = _calculate_vacation_days(emp.department_start_date)
     return _employee_to_response(emp)
+
+
+class ResetPasswordResponse(BaseModel):
+    temporary_password: str
+
+
+@router.post("/{employee_id}/reset-password", response_model=ResetPasswordResponse)
+async def reset_employee_password(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Сгенерировать сотруднику НОВЫЙ временный пароль и показать его один раз.
+
+    Так «Взять в штат» больше не выдаёт пароль в момент оформления (он не нужен до
+    конца ИС): доступ выдаётся здесь, когда сотрудник реально выходит. Каждое
+    нажатие ставит свежий пароль — прежний перестаёт действовать, так что «не
+    сохранил → сгенерируй заново» больше не требует повторного ввода данных.
+    Пароль виден ТОЛЬКО в этом ответе (в БД лежит лишь хэш)."""
+    import secrets
+    result = await db.execute(
+        select(Employee).options(selectinload(Employee.user)).where(Employee.id == employee_id)
+    )
+    emp = result.scalar_one_or_none()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    org = await get_user_org(current_user, db)
+    if not org or not await _is_admin_or_owner(current_user, emp.org_id, db):
+        raise HTTPException(status_code=403, detail="Только администратор может выдавать пароль")
+    if not emp.user_id or not emp.user:
+        raise HTTPException(status_code=400, detail="У сотрудника нет учётной записи")
+
+    temp_password = secrets.token_urlsafe(8)
+    emp.user.password_hash = hash_password(temp_password)
+    await db.commit()
+    return ResetPasswordResponse(temporary_password=temp_password)
 
 
 @router.post("", response_model=EmployeeResponse)
