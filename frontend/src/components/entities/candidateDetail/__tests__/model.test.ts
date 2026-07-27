@@ -209,7 +209,7 @@ describe("buildStageContainers", () => {
     expect(out[1].notes).toEqual([{ id: "shared", text: "dup" }]);
   });
 
-  it("dedups notes without id by text+date signature", () => {
+  it("dedups notes without id by author+text+date signature", () => {
     const out = buildStageContainers({
       ...base,
       card: card({
@@ -220,6 +220,22 @@ describe("buildStageContainers", () => {
       }),
     });
     expect(out[0].notes).toEqual([{ text: "keep", date: "d2" }]);
+  });
+
+  it("does NOT collapse distinct authors' notes with same text+date", () => {
+    // Регресс: без author_id две РАЗНЫЕ заметки с одинаковым текстом и датой
+    // схлопывались, и одна «пропадала». Теперь автор входит в сигнатуру.
+    const out = buildStageContainers({
+      ...base,
+      card: card({
+        extra_data: {
+          notes: [{ text: "ок", date: "d1", author_id: 1 }],
+          merged_from: [{ extra_data: { notes: [{ text: "ок", date: "d1", author_id: 2 }] } }],
+        },
+      }),
+    });
+    // заметка живого автора (1) уцелела — не вычтена сигнатурой merged-автора (2)
+    expect(out[0].notes).toEqual([{ text: "ок", date: "d1", author_id: 1 }]);
   });
 
   it("partitions files: merged gets its file_ids, live gets the rest, auto-files excluded", () => {

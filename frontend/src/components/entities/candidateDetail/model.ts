@@ -228,10 +228,12 @@ export function buildStageContainers(params: {
     };
   });
 
-  // Вычитаем из живого все заметки, уже показанные во влитых контейнерах
-  // (ключ — id, иначе text+date) — иначе flat-merge их задваивает на «Новом».
+  // Вычитаем из живого все заметки, уже показанные во влитых контейнерах — иначе
+  // flat-merge их задваивает на «Новом». Ключ — id; при его отсутствии (легаси/
+  // импорт ClickUp/CSV) добавляем author_id к text+date: без автора две РАЗНЫЕ
+  // заметки с одинаковым текстом и датой схлопывались как «дубль» и одна пропадала.
   const _noteSig = (n?: ContainerNote) =>
-    (n && n.id) || `${n?.text ?? ""}|${n?.date ?? ""}`;
+    (n && n.id) || `${n?.author_id ?? ""}|${n?.text ?? ""}|${n?.date ?? ""}`;
   const _mergedNoteSigs = new Set(
     mergedContainers.flatMap((c) => c.notes.map(_noteSig)),
   );

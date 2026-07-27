@@ -32,6 +32,17 @@ router = APIRouter()
 # что не могут дописать длинный комментарий при смене этапа; подняли с запасом.
 NOTE_TEXT_MAX_LENGTH = 20000
 
+# Ключи extra_data, которыми владеет ТОЛЬКО сервер (свои эндпоинты/сервисы). Клиент
+# их через PUT /entities слать не должен: формы и модалки нередко спредят весь
+# card.extra_data, включая устаревший notes, и его merge затёр бы свежие заметки/
+# теги/реакции (потеря данных). При апдейте эти ключи из присланного отбрасываем —
+# менять их можно лишь профильными ручками (/notes, /timeline-reaction, hr_tags и т.п.).
+_SERVER_OWNED_EXTRA_KEYS = frozenset({
+    "notes", "system_hr_tags", "timeline_reactions", "merged_from",
+    "participations", "hidden_duplicate_meta", "hidden_duplicate_id",
+    "dismissed_duplicate_ids",
+})
+
 
 @router.get("/")
 async def list_entities(
@@ -896,7 +907,12 @@ async def update_entity(
     # сохраняется.
     if 'extra_data' in update_data:
         _merged_extra = dict(entity.extra_data or {})
-        _merged_extra.update(update_data.pop('extra_data') or {})
+        _sent_extra = dict(update_data.pop('extra_data') or {})
+        # Серверные ключи не даём переопределить клиентским снимком — иначе
+        # устаревший notes из спреда card.extra_data затрёт свежие комментарии.
+        for _srv_key in _SERVER_OWNED_EXTRA_KEYS:
+            _sent_extra.pop(_srv_key, None)
+        _merged_extra.update(_sent_extra)
         entity.extra_data = _merged_extra
 
     for key, value in update_data.items():
@@ -1044,8 +1060,14 @@ async def add_entity_note(
     if not org and current_user.role != UserRole.superadmin:
         raise HTTPException(403, "No organization access")
 
+    # FOR UPDATE: заметки живут в общем блобе extra_data, который перезаписывается
+    # ЦЕЛИКОМ и здесь, и в hr_tags.sync_for_entity (self-heal при открытии карточки).
+    # Без блокировки строки два таких писателя, прочитавших один снимок, при коммите
+    # затирают заметки друг друга (lost update) — ровно «пропали НЕКОТОРЫЕ
+    # комментарии» у Марии при переводе кандидата в отдел, когда self-heal HR-тегов
+    # реально пишет устаревший snapshot. Лок сериализует писателей.
     result = await db.execute(
-        select(Entity).where(Entity.id == entity_id)
+        select(Entity).where(Entity.id == entity_id).with_for_update()
     )
     entity = result.scalar_one_or_none()
     if not entity:

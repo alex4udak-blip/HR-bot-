@@ -1009,6 +1009,36 @@ class TestUpdateEntity:
         assert data["tags"] == ["vip", "urgent"]
 
     @pytest.mark.asyncio
+    async def test_update_entity_client_extra_data_cannot_clobber_notes(
+        self, client, admin_user, admin_token, entity, get_auth_headers, org_owner, db_session
+    ):
+        """PUT /entities НЕ должен затирать серверные комментарии клиентским
+        extra_data. Регресс «пропали некоторые комментарии»: модалка спредит весь
+        card.extra_data (включая устаревший notes), и старый merge заменял им
+        свежие заметки. Серверные ключи (notes и пр.) теперь отбрасываются."""
+        from sqlalchemy import select as _select
+        from api.models.database import Entity as _Entity
+
+        entity.extra_data = {"notes": [{"id": "n1", "text": "серверный коммент"}]}
+        await db_session.commit()
+
+        # Клиент шлёт устаревший/пустой notes + легитимное поле в extra_data.
+        response = await client.put(
+            f"/api/entities/{entity.id}",
+            json={"extra_data": {"notes": [], "salary_expectation": "200k"}},
+            headers=get_auth_headers(admin_token),
+        )
+        assert response.status_code == 200
+
+        refreshed = (await db_session.execute(
+            _select(_Entity).where(_Entity.id == entity.id)
+        )).scalar_one()
+        await db_session.refresh(refreshed)
+        # серверный комментарий уцелел, а легитимное поле применилось
+        assert refreshed.extra_data.get("notes") == [{"id": "n1", "text": "серверный коммент"}]
+        assert refreshed.extra_data.get("salary_expectation") == "200k"
+
+    @pytest.mark.asyncio
     async def test_update_entity_not_found(
         self, client, admin_user, admin_token, get_auth_headers, org_owner
     ):

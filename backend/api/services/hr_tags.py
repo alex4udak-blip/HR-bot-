@@ -89,14 +89,30 @@ async def sync_for_entity(
     if current == new_tags:
         return False
 
+    # Дошли до реальной записи — БЕРЁМ строку под FOR UPDATE и перечитываем СВЕЖИЙ
+    # extra_data. Иначе reassign блоба затрёт заметки/правки, добавленные параллельно
+    # между нашим первым чтением и коммитом: это и есть первопричина «пропали
+    # некоторые комментарии» — self-heal HR-тегов запускается на каждом открытии
+    # карточки, а при переводе в отдел набор HR меняется, и он реально пишет старый
+    # snapshot поверх свежего. Diff-guard выше оставляет горячий путь read-only без
+    # лока; лок берём только когда действительно есть что писать.
+    locked = (await db.execute(
+        select(Entity).where(Entity.id == entity_id).with_for_update()
+    )).scalar_one_or_none()
+    if locked is None:
+        return False
+    # Пересчёт под локом — набор HR мог измениться, пока ждали блокировку.
+    new_tags = await compute_hr_tags(db, entity_id)
+    merged = dict(locked.extra_data or {})
+    if (merged.get(EXTRA_KEY) or []) == new_tags:
+        return False  # кто-то уже записал те же теги — второй проход не нужен
     # Reassign целиком (не in-place мутация) — только так SQLAlchemy замечает
     # изменение JSON-колонки (тот же приём, что crud.update_entity).
-    merged = dict(entity.extra_data or {})
     if new_tags:
         merged[EXTRA_KEY] = new_tags
     else:
         merged.pop(EXTRA_KEY, None)  # нет активных HR → убираем ключ совсем
-    entity.extra_data = merged
+    locked.extra_data = merged
 
     if commit:
         await db.commit()
