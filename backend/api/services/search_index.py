@@ -274,6 +274,22 @@ def contact_search_conditions(q: str) -> List:
     return conds
 
 
+def is_nick_query(q: str) -> bool:
+    """Запрос-ник telegram: начинается с «@». Для таких ищем СТРОГО по telegram,
+    без нечёткого матча имени/должности/тегов/extra_data — иначе ник цепляет кучу
+    чужих карточек (жалоба рекрутёров)."""
+    return (q or "").strip().startswith("@")
+
+
+def telegram_only_conditions(q: str) -> List:
+    """Строгий поиск ТОЛЬКО по telegram-нику (для запросов с «@»). Тот же матч,
+    что в contact_search_conditions, но без остальных полей."""
+    tg = (q or "").strip().lstrip("@").lower()
+    if not tg:
+        return []
+    return [cast(Entity.telegram_usernames, String).ilike(f"%{tg}%")]
+
+
 # Регистрируем автосинк при импорте модуля (роуты поиска импортируют его на
 # старте — раньше любого insert/update кандидата).
 register_search_events()

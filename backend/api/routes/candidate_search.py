@@ -257,19 +257,29 @@ async def search_candidates(
     # --- full-text search ---
     if q and q.strip():
         term = f"%{q.strip()}%"
-        from ..services.search_index import name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions
-        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
-        base = base.where(
-            or_(
-                # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
-                *name_search_conditions(q),
-                *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки emails[]/phones[]
-                Entity.position.ilike(term),
-                Entity.company.ilike(term),
-                cast(Entity.tags, String).ilike(term),
-                cast(Entity.extra_data, String).ilike(term),
-            )
+        from ..services.search_index import (
+            name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions,
+            is_nick_query, telegram_only_conditions,
         )
+        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
+        if is_nick_query(q):
+            # «@ник» — строго telegram, без имени/должности/тегов/extra_data
+            # (нечёткий матч по нику тащит кучу чужих карточек — жалоба рекрутёров).
+            base = base.where(or_(*telegram_only_conditions(q)))
+        else:
+            base = base.where(
+                or_(
+                    # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
+                    *name_search_conditions(q),
+                    *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки emails[]/phones[]
+                    Entity.position.ilike(term),
+                    Entity.company.ilike(term),
+                    cast(Entity.tags, String).ilike(term),
+                    # extra_data (весь JSON-блоб) НАМЕРЕННО убран — самый шумный
+                    # ложноположительный источник (матчит запрос где угодно внутри
+                    # чужого extra_data, включая ники в system_hr_tags и т.п.).
+                )
+            )
 
     # --- stats (on the filtered base, before pagination) ---
     stats_base = base.with_only_columns(
@@ -857,17 +867,24 @@ async def get_candidates_kanban(
     # Optional text search
     if q and q.strip():
         search_term = f"%{q.strip().lower()}%"
-        from ..services.search_index import name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions
-        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
-        base_q = base_q.where(
-            or_(
-                # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
-                *name_search_conditions(q),
-                *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки
-                Entity.position.ilike(search_term),
-                Entity.company.ilike(search_term),
-            )
+        from ..services.search_index import (
+            name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions,
+            is_nick_query, telegram_only_conditions,
         )
+        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
+        if is_nick_query(q):
+            # «@ник» — строго telegram, без имени/должности (см. /search).
+            base_q = base_q.where(or_(*telegram_only_conditions(q)))
+        else:
+            base_q = base_q.where(
+                or_(
+                    # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
+                    *name_search_conditions(q),
+                    *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки
+                    Entity.position.ilike(search_term),
+                    Entity.company.ilike(search_term),
+                )
+            )
 
     # Recruiter filter
     if recruiter_id:
@@ -1089,15 +1106,22 @@ async def get_candidate_ids(
 
     if q and q.strip():
         term = f"%{q.strip().lower()}%"
-        from ..services.search_index import name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions
+        from ..services.search_index import (
+            name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions,
+            is_nick_query, telegram_only_conditions,
+        )
         await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
-        base_q = base_q.where(or_(
-            # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
-            *name_search_conditions(q),
-            *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки
-            Entity.position.ilike(term),
-            Entity.company.ilike(term),
-        ))
+        if is_nick_query(q):
+            # «@ник» — строго telegram, без имени/должности (см. /search).
+            base_q = base_q.where(or_(*telegram_only_conditions(q)))
+        else:
+            base_q = base_q.where(or_(
+                # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
+                *name_search_conditions(q),
+                *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки
+                Entity.position.ilike(term),
+                Entity.company.ilike(term),
+            ))
     if recruiter_id:
         base_q = base_q.where(Entity.created_by == recruiter_id)
 
