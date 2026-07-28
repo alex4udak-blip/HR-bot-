@@ -7103,6 +7103,17 @@ body.performance-mode .glass-card:hover {
 .hf-rich-surface {
   white-space: pre-wrap;
   word-break: break-word;
+  /* Каретка ввода ЯВНО тёмная: у contenteditable свой color (порой белый), а
+     текст тёмный отдельно — из-за этого каретка была белой и невидимой на белом
+     фоне (жалоба Эльвиры про правку многострочных комментариев). currentColor тут
+     нельзя — он и есть тот белый. cursor:text — чтобы мышь над полем была I-beam. */
+  caret-color: var(--hf-main-900);
+  cursor: text;
+}
+/* Тёмная тема (если включат): каретка светлая, чтобы не пропадала на тёмном фоне. */
+.hf-dark .hf-rich-surface,
+[data-theme="dark"] .hf-rich-surface {
+  caret-color: var(--hf-white);
 }
 .hf-rich-surface:focus,
 .hf-rich-surface:focus-visible {
