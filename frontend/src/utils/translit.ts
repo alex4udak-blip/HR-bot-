@@ -201,3 +201,27 @@ export function contactMatch(
   if (qTg && telegram && telegram.toLowerCase().includes(qTg)) return true;
   return false;
 }
+
+/** Поиск кандидата в ВОРОНКЕ: имя (нечётко) + все контакты + все telegram + текст
+ *  комментариев. Запрос с «@» — СТРОГО по telegram/комментам, без нечёткого имени. */
+export function funnelSearchMatch(
+  query: string,
+  c: {
+    entity_name?: string | null; entity_email?: string | null; entity_phone?: string | null;
+    entity_telegram?: string | null; entity_telegrams?: string[] | null; entity_notes_text?: string | null;
+  },
+): boolean {
+  const raw = (query || '').trim().toLowerCase();
+  if (!raw) return true;
+  const tgQ = raw.replace(/^@+/, '');
+  const tgs = [c.entity_telegram, ...(c.entity_telegrams || [])].filter(Boolean).map(s => (s as string).toLowerCase());
+  const tgHit = !!tgQ && tgs.some(t => t.includes(tgQ));
+  const notesHit = !!tgQ && !!c.entity_notes_text && c.entity_notes_text.toLowerCase().includes(tgQ);
+  // Строгий режим: запрос-ник (с «@») — только telegram/комменты, без имени.
+  if (raw.startsWith('@')) return tgHit || notesHit;
+  return (
+    smartNameMatch(c.entity_name || '', query) ||
+    contactMatch(query, { email: c.entity_email, phone: c.entity_phone, telegram: c.entity_telegram }) ||
+    tgHit || notesHit
+  );
+}

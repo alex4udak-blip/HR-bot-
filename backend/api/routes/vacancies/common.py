@@ -671,6 +671,8 @@ class ApplicationResponse(BaseModel):
     entity_email: Optional[str] = None
     entity_phone: Optional[str] = None
     entity_telegram: Optional[str] = None
+    entity_telegrams: Optional[List[str]] = None   # ВСЕ ники (для поиска по не-первому тг)
+    entity_notes_text: Optional[str] = None         # текст комментариев карточки (для поиска ника/почты из комментов)
     entity_position: Optional[str] = None
     entity_photo: Optional[str] = None  # photo URL для аватара в списке
     stage: ApplicationStage

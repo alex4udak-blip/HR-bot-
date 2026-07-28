@@ -19,6 +19,30 @@ from ...services.auth import get_user_org
 router = APIRouter()
 
 
+def _notes_blob(entity) -> Optional[str]:
+    """Плоский текст всех комментариев карточки (для клиентского поиска в воронке):
+    extra_data.notes[].text + extra_data.participations[].notes[] (строки или dict с text)."""
+    ed = getattr(entity, "extra_data", None)
+    if not isinstance(ed, dict):
+        return None
+    parts = []
+    for n in (ed.get("notes") or []):
+        if isinstance(n, dict) and isinstance(n.get("text"), str):
+            parts.append(n["text"])
+        elif isinstance(n, str):
+            parts.append(n)
+    for p in (ed.get("participations") or []):
+        if not isinstance(p, dict):
+            continue
+        for n in (p.get("notes") or []):
+            if isinstance(n, dict) and isinstance(n.get("text"), str):
+                parts.append(n["text"])
+            elif isinstance(n, str):
+                parts.append(n)
+    blob = " ".join(parts).strip()
+    return blob or None
+
+
 async def _load_photo_file_map(db: AsyncSession, entity_ids: list[int]) -> dict:
     """Bulk-load EntityFile (image/*) для списка entity_ids.
     Возвращает {entity_id → /api/entities/.../files/.../download}.
@@ -182,6 +206,8 @@ async def list_applications(
             entity_email=entity.email if entity else None,
             entity_phone=entity.phone if entity else None,
             entity_telegram=(entity.telegram_usernames[0] if entity and entity.telegram_usernames else None),
+            entity_telegrams=(list(entity.telegram_usernames) if entity and entity.telegram_usernames else None),
+            entity_notes_text=_notes_blob(entity),
             entity_position=entity.position if entity else None,
             entity_photo=_entity_photo(entity, photo_file_map),
             stage=app.stage,

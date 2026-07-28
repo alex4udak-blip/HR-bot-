@@ -46,7 +46,7 @@ import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import CandidateHandoverModal from '@/components/vacancies/CandidateHandoverModal';
 import { getVacancies } from '@/services/api/vacancies';
-import { smartNameMatch, contactMatch } from '@/utils/translit';
+import { funnelSearchMatch } from '@/utils/translit';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
@@ -627,18 +627,11 @@ export default function RecruiterFunnelsPage() {
 
   // Filter candidates by search — умный матч по ИМЕНИ (транслит RU↔EN + любой
   // порядок слов + опечатки, как серверный pg_trgm в «Все кандидаты»); по
-  // email/телефону — обычная подстрока.
+  // email/телефону — обычная подстрока; по telegram — ВСЕ ники кандидата +
+  // текст комментариев карточки; запрос с «@» — строгий режим (только тг/комменты).
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return candidates;
-    return candidates.filter(
-      (c) =>
-        smartNameMatch(c.entity_name || '', candidateSearch) ||
-        contactMatch(candidateSearch, {
-          email: c.entity_email,
-          phone: c.entity_phone,
-          telegram: c.entity_telegram,
-        }),
-    );
+    return candidates.filter((c) => funnelSearchMatch(candidateSearch, c));
   }, [candidates, candidateSearch]);
 
   // Derive stages config from custom_stages or fallback to defaults

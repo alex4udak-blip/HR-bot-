@@ -624,6 +624,8 @@ export interface VacancyApplication {
   entity_email?: string;
   entity_phone?: string;
   entity_telegram?: string;
+  entity_telegrams?: string[] | null;
+  entity_notes_text?: string | null;
   entity_position?: string;
   entity_company?: string;
   stage: ApplicationStage;
