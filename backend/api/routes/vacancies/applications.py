@@ -107,7 +107,14 @@ async def list_applications(
     query = (
         select(VacancyApplication)
         .where(VacancyApplication.vacancy_id == vacancy_id)
-        .order_by(VacancyApplication.stage_order, VacancyApplication.applied_at.desc())
+        # Сортировка по ПОСЛЕДНЕМУ переносу статуса (недавно двинутые — вверху),
+        # фолбэк на дату отклика для тех, кого ещё не двигали. Это эндпоинт, который
+        # реально использует воронка (getApplications), — прошлый фикс ошибочно
+        # правил vacancies/kanban.py, который воронка не вызывает.
+        .order_by(
+            VacancyApplication.stage_order,
+            func.coalesce(VacancyApplication.last_stage_change_at, VacancyApplication.applied_at).desc(),
+        )
     )
 
     if not await sees_all_candidates(current_user, org, db):
