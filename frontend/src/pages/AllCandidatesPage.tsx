@@ -2988,9 +2988,15 @@ function AnketaTab({ card, activeIndex }: { card: KanbanCard; activeIndex: numbe
       {selected.length > 0 && (
         <ImportedParticipations participations={selected} />
       )}
-      {/* Нативные форм-анкеты и пустое состояние — только когда импортных
-          прохождений нет (у них своих чипов нет; для архива их обычно и не бывает). */}
-      {participations.length === 0 && <AnketaResponses dispatches={dispatches} />}
+      {/* Нативные форм-анкеты показываем ВСЕГДА, когда они есть (диспатчи), даже
+          если у кандидата есть импортные прохождения из ClickUp — раньше условие
+          `participations.length === 0` целиком прятало заполненную анкету у любого
+          импортированного кандидата (он прислал анкету, а рекрутёр её не видел).
+          Пустое состояние «Анкеты ещё не присылались» — только когда прохождений
+          нет, чтобы не дублировать «пусто» под чипами прохождений. */}
+      {(dispatches.length > 0 || participations.length === 0) && (
+        <AnketaResponses dispatches={dispatches} />
+      )}
     </>
   );
 }
