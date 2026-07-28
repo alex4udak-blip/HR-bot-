@@ -1765,6 +1765,7 @@ const InfoTab = memo(function InfoTab({
   const [anketaOpen, setAnketaOpen] = useState(false);
   const anketaCount = useFormBadgeStore((s) => s.counts[card.id] ?? 0);
   const setAnketaCount = useFormBadgeStore((s) => s.setCount);
+  const clearAnketaBadge = useFormBadgeStore((s) => s.clear);
   // Источники резюме: каждое резюме — отдельная вкладка верхнего уровня рядом
   // с «Личные заметки». resumeIndex — какая из них активна.
   // Бамп после загрузки файла → useResumeSources перечитывает файлы (вкладка
@@ -1786,6 +1787,44 @@ const InfoTab = memo(function InfoTab({
   useEffect(() => {
     setAnketaIndex(0);
   }, [card.id]);
+  // Нативные заполненные форм-анкеты (FormDispatch) — отдельная вкладка «Анкета»
+  // ПОСЛЕ вкладок импортных прохождений (индекс = participations.length), а не
+  // дублируются под каждым прохождением. Фетчим здесь (в родителе), т.к. вкладке
+  // нужно знать заранее, есть ли нативные анкеты, чтобы отрисовать саму вкладку.
+  const [nativeDispatches, setNativeDispatches] = useState<
+    (FormDispatchInfo & { source_entity_id?: number; source_name?: string | null })[]
+  >([]);
+  useEffect(() => {
+    let alive = true;
+    const fetchRows = async () => {
+      try {
+        const rows = await getEntityAllDispatches(card.id);
+        if (alive) setNativeDispatches(rows);
+      } catch {
+        /* пустой/ошибка — покажем пустое состояние */
+      }
+    };
+    fetchRows();
+    // Поллинг: realtime по WebSocket на проде может не доходить (прокси/доставка),
+    // поэтому раз в 15с подтягиваем ответы — заполненная анкета появляется без
+    // перезагрузки страницы.
+    const t = setInterval(fetchRows, 15000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [card.id]);
+  const hasNativeAnketa = nativeDispatches.length > 0;
+  const nativeTabIndex = participations.length;
+  // Открытие вкладки нативной анкеты — отмечаем прочитанной + сбрасываем бейдж
+  // (раньше это делалось при любом открытии «Анкеты», теперь — только когда
+  // видна именно нативная вкладка).
+  useEffect(() => {
+    if (detailSection === "anketa" && hasNativeAnketa && anketaIndex === nativeTabIndex) {
+      markEntityDispatchesSeen(card.id).catch(() => {});
+      clearAnketaBadge(card.id);
+    }
+  }, [detailSection, hasNativeAnketa, anketaIndex, nativeTabIndex, card.id, clearAnketaBadge]);
   // Доп. контакты после склейки: у человека из импорта могут быть РАЗНЫЕ
   // телефоны/телеграмы/почты из разных записей — показываем все, кроме уже
   // выведенного «основного» (дедуп по цифрам телефона / нижнему регистру).
@@ -2857,21 +2896,20 @@ const InfoTab = memo(function InfoTab({
 
       <div className="mt-[30px]">
         <div className="flex h-[49.333px] items-start gap-[var(--hf-space-xxl)] overflow-x-auto no-scrollbar border-b border-[var(--hf-main-300)] pb-[20px] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)]">
-          {/* Одна вкладка «Анкета» на каждое прохождение (ClickUp-архив). Если
-              прохождений нет — одна вкладка «Анкеты» под нативные форм-анкеты и
-              пустое состояние (с бейджем непрочитанных). Подсказка при наведении
-              — «воронка · этап», чтобы длинный ряд одинаковых «Анкета» различать. */}
-          {(participations.length > 0 ? participations : [null]).map((p, i) => {
-            const isFallback = p === null;
-            const active =
-              detailSection === "anketa" && (isFallback || anketaIndex === i);
-            const hint = isFallback
-              ? undefined
-              : [p!.vacancy_title, p!.status].filter(Boolean).join(" · ") ||
-                undefined;
+          {/* Одна вкладка «Анкета» на каждое прохождение (ClickUp-архив), затем —
+              ОТДЕЛЬНАЯ вкладка «Анкета» под нативную заполненную форм-анкету
+              (если она есть), а не дублирование нативной анкеты под каждым
+              прохождением. Если нет ни прохождений, ни нативных анкет — одна
+              вкладка-заглушка с пустым состоянием (с бейджем непрочитанных).
+              Подсказка при наведении — «воронка · этап», чтобы длинный ряд
+              одинаковых «Анкета» различать. */}
+          {participations.map((p, i) => {
+            const active = detailSection === "anketa" && anketaIndex === i;
+            const hint =
+              [p.vacancy_title, p.status].filter(Boolean).join(" · ") || undefined;
             return (
               <button
-                key={`anketa-${i}`}
+                key={`anketa-participation-${i}`}
                 type="button"
                 title={hint}
                 onClick={() => {
@@ -2886,14 +2924,56 @@ const InfoTab = memo(function InfoTab({
                 )}
               >
                 Анкета
-                {isFallback && anketaCount > 0 && (
-                  <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
-                    {anketaCount > 9 ? "9+" : anketaCount}
-                  </span>
-                )}
               </button>
             );
           })}
+          {hasNativeAnketa && (
+            <button
+              key="anketa-native"
+              type="button"
+              title="Заполненная анкета"
+              onClick={() => {
+                onDetailSectionChange("anketa");
+                setAnketaIndex(nativeTabIndex);
+              }}
+              className={clsx(
+                "relative h-[24px] shrink-0 border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+                detailSection === "anketa" && anketaIndex === nativeTabIndex
+                  ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
+                  : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
+              )}
+            >
+              Анкета
+              {anketaCount > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
+                  {anketaCount > 9 ? "9+" : anketaCount}
+                </span>
+              )}
+            </button>
+          )}
+          {participations.length === 0 && !hasNativeAnketa && (
+            <button
+              key="anketa-empty"
+              type="button"
+              onClick={() => {
+                onDetailSectionChange("anketa");
+                setAnketaIndex(0);
+              }}
+              className={clsx(
+                "relative h-[24px] shrink-0 border-b-[2px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-primary)] font-medium transition-colors",
+                detailSection === "anketa"
+                  ? "border-[var(--hf-main-900)] text-[var(--hf-main-900)] hf-dark-disabled:border-[color:var(--hf-white)] hf-dark-disabled:text-[var(--hf-white)]"
+                  : "border-transparent text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hover:text-[var(--hf-main-900)] hf-dark-disabled:hover:text-[var(--hf-white)]",
+              )}
+            >
+              Анкета
+              {anketaCount > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#e11d48] text-white text-[11px] leading-none align-middle">
+                  {anketaCount > 9 ? "9+" : anketaCount}
+                </span>
+              )}
+            </button>
+          )}
           {/* По одной вкладке «Резюме» на каждый источник резюме. Если у
               кандидата резюме нет вовсе — одна вкладка-заглушка ([null]),
               чтобы показать пустое состояние. Вкладка «Личные заметки» убрана —
@@ -2936,11 +3016,9 @@ const InfoTab = memo(function InfoTab({
         )}
         {detailSection === "anketa" && (
           <AnketaTab
-            card={card}
-            activeIndex={Math.min(
-              anketaIndex,
-              Math.max(0, participations.length - 1),
-            )}
+            activeIndex={anketaIndex}
+            participations={participations}
+            nativeDispatches={nativeDispatches}
           />
         )}
       </div>
@@ -2948,57 +3026,32 @@ const InfoTab = memo(function InfoTab({
   );
 });
 
-function AnketaTab({ card, activeIndex }: { card: KanbanCard; activeIndex: number }) {
-  const [dispatches, setDispatches] = useState<(FormDispatchInfo & { source_entity_id?: number; source_name?: string | null })[]>([]);
-  const clearBadge = useFormBadgeStore((s) => s.clear);
-  useEffect(() => {
-    let alive = true;
-    const fetchRows = async () => {
-      try {
-        // Получаем анкеты из текущего профиля + всех merged контейнеров
-        const rows = await getEntityAllDispatches(card.id);
-        if (alive) setDispatches(rows);
-      } catch {
-        /* пустой/ошибка — покажем пустое состояние */
-      }
-    };
-    (async () => {
-      await fetchRows();
-      try { await markEntityDispatchesSeen(card.id); clearBadge(card.id); } catch { /* ignore */ }
-    })();
-    // Поллинг: realtime по WebSocket на проде может не доходить (прокси/доставка),
-    // поэтому раз в 15с подтягиваем ответы — заполненная анкета появляется без
-    // перезагрузки страницы.
-    const t = setInterval(fetchRows, 15000);
-    return () => { alive = false; clearInterval(t); };
-  }, [card.id, clearBadge]);
-  // Импортированные прохождения (ClickUp-архив) показываем здесь, сгруппированные
-  // по метке «воронка · рекрутёр». Родные FormDispatch-анкеты — ниже; их пустое
-  // состояние показываем только если нет ни диспатчей, ни импортных прохождений.
-  const participations = readParticipations(card);
-  // Показываем ТОЛЬКО выбранную анкету-прохождение (по чипу), а не все простынёй.
-  const selected =
-    participations.length > 0
-      ? [participations[Math.min(activeIndex, participations.length - 1)]].filter(
-          Boolean,
-        )
-      : [];
-  return (
-    <>
-      {selected.length > 0 && (
-        <ImportedParticipations participations={selected} />
-      )}
-      {/* Нативные форм-анкеты показываем ВСЕГДА, когда они есть (диспатчи), даже
-          если у кандидата есть импортные прохождения из ClickUp — раньше условие
-          `participations.length === 0` целиком прятало заполненную анкету у любого
-          импортированного кандидата (он прислал анкету, а рекрутёр её не видел).
-          Пустое состояние «Анкеты ещё не присылались» — только когда прохождений
-          нет, чтобы не дублировать «пусто» под чипами прохождений. */}
-      {(dispatches.length > 0 || participations.length === 0) && (
-        <AnketaResponses dispatches={dispatches} />
-      )}
-    </>
-  );
+function AnketaTab({
+  activeIndex,
+  participations,
+  nativeDispatches,
+}: {
+  activeIndex: number;
+  participations: ReturnType<typeof readParticipations>;
+  nativeDispatches: (FormDispatchInfo & {
+    source_entity_id?: number;
+    source_name?: string | null;
+  })[];
+}) {
+  // Чистый рендерер: фетч диспатчей + отметка «просмотрено» теперь в родителе
+  // (там же, где строится ряд вкладок) — вкладке нужно только знать, какая
+  // именно вкладка активна (участие 0..P-1, нативная — P).
+  const hasNative = nativeDispatches.length > 0;
+  const nativeTabIndex = participations.length;
+  if (hasNative && activeIndex === nativeTabIndex) {
+    return <AnketaResponses dispatches={nativeDispatches} />;
+  }
+  if (participations.length > 0) {
+    const p = participations[Math.min(activeIndex, participations.length - 1)];
+    return p ? <ImportedParticipations participations={[p]} /> : null;
+  }
+  // Ни прохождений, ни нативных анкет — пустое состояние.
+  return <AnketaResponses dispatches={nativeDispatches} />;
 }
 
 const PersonalNotesTab = memo(function PersonalNotesTab({
