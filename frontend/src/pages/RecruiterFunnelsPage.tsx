@@ -822,8 +822,15 @@ export default function RecruiterFunnelsPage() {
     if (match) {
       adoptTriedEntityRef.current = null;
       // Делаем кандидата гарантированно видимым: вкладка «Все» показывает всех, поэтому
-      // эффект авто-первого (фильтрует по вкладке) не перебьёт наш выбор.
-      setSelectedTab('all');
+      // эффект авто-первого (фильтрует по вкладке) не перебьёт наш выбор. Исключение —
+      // валидный ?stage= из URL (F5 на конкретной вкладке): его не затираем, кандидат
+      // всё равно должен быть в этой вкладке, раз ссылка на него пришла с тем же ?stage=.
+      const urlStage = searchParams.get('stage');
+      const hasValidUrlStage =
+        !!urlStage && (urlStage === 'all' || stagesConfig.keys.includes(urlStage));
+      if (!hasValidUrlStage) {
+        setSelectedTab('all');
+      }
       setSelectedCandidateId(match.id);
       setDetailTab('resume');
       return;
@@ -853,6 +860,22 @@ export default function RecruiterFunnelsPage() {
       setSearchParams((prev) => computeEntityParamUpdate(prev, curEntityId, prevId) ?? prev, { replace: true });
     });
   }, [selectedCandidate?.entity_id, urlEntity, setSearchParams]);
+
+  // Зеркалим выбранную вкладку статуса воронки в URL (?stage=<key>) — чтобы F5
+  // оставлял рекрутёра на той же колонке (кандидат уже переживает F5 через ?entity=
+  // выше). 'all' — дефолт, поэтому его не пишем (просто чистим параметр). Функциональная
+  // форма setSearchParams(prev => …) сохраняет v/entity/status/recruiter; no-op guard
+  // возвращает prev без изменений, если значение не поменялось — защита от лишней
+  // записи в историю и от цикла с эффектом восстановления вкладки выше.
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (!selectedTab || selectedTab === 'all') next.delete('stage');
+      else next.set('stage', selectedTab);
+      if ((prev.get('stage') || '') === (next.get('stage') || '')) return prev;
+      return next;
+    }, { replace: true });
+  }, [selectedTab, setSearchParams]);
 
   // Бейдж непрочитанных анкет (entity-уровень) — как в «Все кандидаты».
   const anketaCount = useFormBadgeStore((s) => s.counts[selectedCandidate?.entity_id ?? 0] ?? 0);
@@ -903,12 +926,22 @@ export default function RecruiterFunnelsPage() {
     const vid = selectedVacancyId ?? null;
     if (autoTabVacancyRef.current !== vid) {
       autoTabVacancyRef.current = vid;
-      setSelectedTab(vacancyWorkflowKeys[0] || 'all');
+      // При (пере)открытии воронки — в т.ч. при перезагрузке страницы — пробуем
+      // восстановить вкладку из ?stage=, если она валидна для ТЕКУЩЕЙ вакансии.
+      // Иначе — прежнее поведение: первая рабочая вкладка.
+      const urlStage = searchParams.get('stage');
+      const restored =
+        urlStage && (urlStage === 'all' || stagesConfig.keys.includes(urlStage)) ? urlStage : null;
+      setSelectedTab(restored ?? (vacancyWorkflowKeys[0] || 'all'));
       return;
     }
     if (selectedTab !== 'all' && !stagesConfig.keys.includes(selectedTab)) {
       setSelectedTab(vacancyWorkflowKeys[0] || 'all');
     }
+    // searchParams намеренно НЕ в deps: читаем только в ветке смены вакансии
+    // (гейт по autoTabVacancyRef), чтобы правки URL от других вкладок этой же
+    // страницы (?status=, ?recruiter=) не перезапускали восстановление вкладки.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVacancyId, selectedTab, stagesConfig.keys, vacancyWorkflowKeys]);
 
   useEffect(() => {
