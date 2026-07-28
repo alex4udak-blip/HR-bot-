@@ -922,25 +922,45 @@ export default function RecruiterFunnelsPage() {
   // кандидатов) больше НЕ сбрасывают выбранную пользователем вкладку на «Новый».
   // Если этап-конфиг сменился и текущая вкладка стала невалидной — мягко чиним.
   const autoTabVacancyRef = useRef<number | null>(null);
+  // Кастомные этапы вакансии (custom_stages) могут подгрузиться ПОСЛЕ открытия
+  // воронки — на первом проходе stagesConfig.keys ещё дефолтный STAGE_ORDER, и
+  // ?stage= с кастомным ключом не проходит валидацию. stageRestoredRef помнит,
+  // удалось ли уже восстановить вкладку из URL для ТЕКУЩЕЙ вакансии, и разрешает
+  // один повторный ретрай, когда stagesConfig.keys обновится (уже есть в deps).
+  const stageRestoredRef = useRef(false);
   useEffect(() => {
     const vid = selectedVacancyId ?? null;
+    // Читаем ?stage= свежим значением при каждом проходе эффекта — НЕ через deps
+    // (см. комментарий у deps ниже), чтобы правки URL от ?status=/?recruiter=
+    // не перезапускали восстановление вкладки.
+    const urlStage = searchParams.get('stage');
+    const restored =
+      urlStage && (urlStage === 'all' || stagesConfig.keys.includes(urlStage)) ? urlStage : null;
+
     if (autoTabVacancyRef.current !== vid) {
       autoTabVacancyRef.current = vid;
       // При (пере)открытии воронки — в т.ч. при перезагрузке страницы — пробуем
       // восстановить вкладку из ?stage=, если она валидна для ТЕКУЩЕЙ вакансии.
       // Иначе — прежнее поведение: первая рабочая вкладка.
-      const urlStage = searchParams.get('stage');
-      const restored =
-        urlStage && (urlStage === 'all' || stagesConfig.keys.includes(urlStage)) ? urlStage : null;
+      stageRestoredRef.current = restored != null;
       setSelectedTab(restored ?? (vacancyWorkflowKeys[0] || 'all'));
+      return;
+    }
+    // Та же вакансия, но кастомные этапы могли подгрузиться ПОСЛЕ открытия —
+    // даём один ретрай восстановления из URL, если он ещё не сработал.
+    if (!stageRestoredRef.current && restored) {
+      stageRestoredRef.current = true;
+      setSelectedTab(restored);
       return;
     }
     if (selectedTab !== 'all' && !stagesConfig.keys.includes(selectedTab)) {
       setSelectedTab(vacancyWorkflowKeys[0] || 'all');
     }
-    // searchParams намеренно НЕ в deps: читаем только в ветке смены вакансии
-    // (гейт по autoTabVacancyRef), чтобы правки URL от других вкладок этой же
-    // страницы (?status=, ?recruiter=) не перезапускали восстановление вкладки.
+    // searchParams намеренно НЕ в deps: читаем только для восстановления/ретрая
+    // (гейт по autoTabVacancyRef/stageRestoredRef), чтобы правки URL от других
+    // частей этой же страницы (?status=, ?recruiter=) не перезапускали логику.
+    // Ретрай триггерится изменением stagesConfig.keys (уже в deps) при подгрузке
+    // кастомных этапов вакансии.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVacancyId, selectedTab, stagesConfig.keys, vacancyWorkflowKeys]);
 
