@@ -866,6 +866,9 @@ export default function RecruiterFunnelsPage() {
   }, [selectedCandidate?.entity_id, setAnketaCount]);
 
   const tabFilteredCandidates = useMemo(() => {
+    // При активном поиске игнорируем выбранную вкладку — ищем по ВСЕМ статусам
+    // воронки (рекрутёр не должен помнить, в какой колонке лежит кандидат).
+    if (candidateSearch.trim()) return filteredCandidates;
     if (selectedTab === 'all') return filteredCandidates;
     return filteredCandidates.filter(c => {
       const mapped = stagesConfig.enumToKeys[c.stage];
@@ -879,7 +882,7 @@ export default function RecruiterFunnelsPage() {
             : [];
       return candidateStageKeys.includes(selectedTab);
     });
-  }, [filteredCandidates, selectedTab, stagesConfig]);
+  }, [filteredCandidates, selectedTab, stagesConfig, candidateSearch]);
 
   // «В предыдущих сериях»: отклики старше последнего переоткрытия вакансии
   // (is_previous_series с бэка) уходят ВНИЗ списка под разделитель. Активные
@@ -2484,12 +2487,12 @@ export default function RecruiterFunnelsPage() {
                                     {listMetaPrimary}
                                   </span>
                                 )}
-                                {listMetaPrimary && candidate.applied_at && (
+                                {listMetaPrimary && (candidate.last_stage_change_at || candidate.applied_at) && (
                                   <span className="hf-candidate-row-meta-dot">·</span>
                                 )}
-                                {candidate.applied_at && (
-                                  <span className="hf-candidate-row-date">
-                                    {new Date(candidate.applied_at).toLocaleDateString('ru')}
+                                {(candidate.last_stage_change_at || candidate.applied_at) && (
+                                  <span className="hf-candidate-row-date" title="Дата последнего переноса статуса">
+                                    {new Date(candidate.last_stage_change_at || candidate.applied_at).toLocaleDateString('ru')}
                                   </span>
                                 )}
                               </div>
