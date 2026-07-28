@@ -912,8 +912,17 @@ export default function RecruiterFunnelsPage() {
   // сверху, порядок внутри групп сохраняется. У обычных (не переоткрытых)
   // вакансий previous всегда пуст → поведение не меняется.
   const orderedCandidates = useMemo(() => {
-    const active = tabFilteredCandidates.filter(c => !c.is_previous_series);
-    const previous = tabFilteredCandidates.filter(c => c.is_previous_series);
+    // Сортируем ВИДИМЫЙ список ЯВНО по дате последнего переноса (недавние вверху) —
+    // не полагаемся на порядок бэкенда, где первичный ключ stage_order (группировка
+    // по этапу), из-за чего в списке из разных этапов даты выглядели вразброс.
+    // Фолбэк на applied_at для тех, кого ещё не двигали.
+    const byRecency = (a: typeof tabFilteredCandidates[number], b: typeof tabFilteredCandidates[number]) => {
+      const ta = new Date(a.last_stage_change_at || a.applied_at || 0).getTime();
+      const tb = new Date(b.last_stage_change_at || b.applied_at || 0).getTime();
+      return tb - ta;
+    };
+    const active = tabFilteredCandidates.filter(c => !c.is_previous_series).slice().sort(byRecency);
+    const previous = tabFilteredCandidates.filter(c => c.is_previous_series).slice().sort(byRecency);
     return { list: [...active, ...previous], firstPreviousId: previous[0]?.id };
   }, [tabFilteredCandidates]);
 
