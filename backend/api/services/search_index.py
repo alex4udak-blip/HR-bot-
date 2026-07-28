@@ -281,13 +281,27 @@ def is_nick_query(q: str) -> bool:
     return (q or "").strip().startswith("@")
 
 
-def telegram_only_conditions(q: str) -> List:
-    """Строгий поиск ТОЛЬКО по telegram-нику (для запросов с «@»). Тот же матч,
-    что в contact_search_conditions, но без остальных полей."""
+def nick_search_conditions(q: str) -> List:
+    """Строгий поиск по telegram-нику: поле telegram_usernames + текст комментариев
+    (extra_data.notes), БЕЗ нечёткого матча имени/должности/блоба. Ник уникален, так
+    что имя не примешиваем; но ник, вписанный рекрутёром в комментарий, тоже находим."""
     tg = (q or "").strip().lstrip("@").lower()
     if not tg:
         return []
-    return [cast(Entity.telegram_usernames, String).ilike(f"%{tg}%")]
+    return [
+        cast(Entity.telegram_usernames, String).ilike(f"%{tg}%"),
+        cast(Entity.extra_data["notes"], String).ilike(f"%{tg}%"),
+    ]
+
+
+def notes_search_conditions(q: str) -> List:
+    """Поиск по тексту КОММЕНТАРИЕВ карточки (extra_data.notes) — прицельно, НЕ по
+    всему extra_data-блобу (там участия/анкеты/источники = шум). Рекрутёры пишут в
+    комментарии актуальный ник/почту кандидата, и это должно находиться поиском."""
+    q = (q or "").strip()
+    if not q:
+        return []
+    return [cast(Entity.extra_data["notes"], String).ilike(f"%{q}%")]
 
 
 # Регистрируем автосинк при импорте модуля (роуты поиска импортируют его на

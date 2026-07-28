@@ -1,14 +1,17 @@
-"""Юнит-тесты для строгого поиска по telegram-нику (is_nick_query / telegram_only_conditions).
+"""Юнит-тесты для строгого поиска по telegram-нику и поиска по комментариям
+(is_nick_query / nick_search_conditions / notes_search_conditions).
 
 Чисто функциональные — без БД. Проверяют:
 - «@»-запрос детектится как ник-запрос;
 - обычные запросы (в т.ч. email с «@» не в начале) — нет;
-- telegram_only_conditions даёт ровно одно условие для валидного ника и пусто
-  для пустого/бессмысленного запроса.
+- nick_search_conditions даёт ровно два условия (telegram + комментарии) для
+  валидного ника и пусто для пустого/бессмысленного запроса;
+- notes_search_conditions (прицельный поиск по extra_data.notes) даёт ровно
+  одно условие для непустого запроса и пусто для пустого.
 """
 import pytest
 
-from api.services.search_index import is_nick_query, telegram_only_conditions
+from api.services.search_index import is_nick_query, nick_search_conditions, notes_search_conditions
 
 
 @pytest.mark.parametrize(
@@ -25,14 +28,23 @@ def test_is_nick_query(q, expected):
     assert is_nick_query(q) is expected
 
 
-def test_telegram_only_conditions_valid_nick():
-    conds = telegram_only_conditions("@shblsn")
+def test_nick_search_conditions_valid_nick():
+    conds = nick_search_conditions("@shblsn")
+    assert len(conds) == 2
+
+
+def test_nick_search_conditions_bare_at():
+    assert nick_search_conditions("@") == []
+
+
+def test_nick_search_conditions_empty():
+    assert nick_search_conditions("") == []
+
+
+def test_notes_search_conditions_valid_query():
+    conds = notes_search_conditions("shblsn")
     assert len(conds) == 1
 
 
-def test_telegram_only_conditions_bare_at():
-    assert telegram_only_conditions("@") == []
-
-
-def test_telegram_only_conditions_empty():
-    assert telegram_only_conditions("") == []
+def test_notes_search_conditions_empty():
+    assert notes_search_conditions("") == []
