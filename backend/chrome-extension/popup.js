@@ -77,7 +77,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function detectTabState(tabUrl) {
   // 'wrong-site' | 'wrong-page' | 'resume-page'
-  const isHh = tabUrl.includes('hh.ru');
+  // rabota.by = HeadHunter Belarus, тот же DOM (data-qa атрибуты) и тот же
+  // парсер content/hh.js — обрабатываем как hh.
+  const isHh = tabUrl.includes('hh.ru') || tabUrl.includes('rabota.by');
   const isHabr = tabUrl.includes('career.habr.com');
   const isLinkedIn = tabUrl.includes('linkedin.com');
   if (!isHh && !isHabr && !isLinkedIn) return 'wrong-site';

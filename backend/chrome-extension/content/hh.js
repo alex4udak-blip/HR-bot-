@@ -5,6 +5,14 @@
   if (window.__hr_bot_hh_loaded__) return;
   window.__hr_bot_hh_loaded__ = true;
 
+  // rabota.by = HeadHunter Belarus — тот же DOM/data-qa, тот же парсер, но
+  // источник и фолбэк-имя должны отражать реальный хост (для dedup по
+  // source_url и понятной метки в карточке кандидата). Регистрируемый домен:
+  // берём последние 2 лейбла (vitebsk.rabota.by → rabota.by, saratov.hh.ru → hh.ru).
+  const SITE_HOST = window.location.hostname.replace(/^www\./, '').split('.').slice(-2).join('.') === 'rabota.by'
+    ? 'rabota.by'
+    : 'hh.ru';
+
   // Раньше тут был early-return если URL не /resume/* — но на страницах
   // работодателя hh.ru/employer/...?resumeId=... данные тоже есть, и нам
   // нужно их парсить. Если ничего не найдём — popup покажет nodata.
@@ -121,7 +129,7 @@
   // Parse resume data from DOM
   function parseHHResume() {
     const data = {
-      source: 'hh.ru',
+      source: SITE_HOST,
       source_url: window.location.href,
       full_name: '',
       email: '',
@@ -548,7 +556,7 @@
       } else {
         const match = window.location.pathname.match(/\/resume\/([a-f0-9]+)/i);
         const shortId = match ? match[1].slice(0, 8) : '';
-        data.full_name = shortId ? `Кандидат hh.ru/${shortId}` : 'Кандидат hh.ru';
+        data.full_name = shortId ? `Кандидат ${SITE_HOST}/${shortId}` : `Кандидат ${SITE_HOST}`;
       }
       data.name_is_placeholder = true;
     }
