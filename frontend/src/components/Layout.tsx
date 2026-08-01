@@ -31,6 +31,7 @@ import {
   Calendar,
   AlertTriangle,
   ClipboardList,
+  UserCheck,
   MessageSquare,
   Mail,
   Wand2,
@@ -1263,6 +1264,7 @@ export default function Layout() {
         icon: Users,
         label: "Все кандидаты",
       });
+      hrItems.push({ path: "/statuses", icon: UserCheck, label: "Статусы" });
       hrItems.push({ path: "/analytics", icon: BarChart3, label: "Аналитика" });
       hrItems.push({
         path: "/my-funnels",

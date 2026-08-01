@@ -89,6 +89,7 @@ const SaturnPage = lazyWithRetry(() => import('@/pages/SaturnPage'));
 const TeamPage = lazyWithRetry(() => import('@/pages/TeamPage'));
 const DeptManagerPage = lazyWithRetry(() => import('@/pages/DeptManagerPage'));
 const AllCandidatesPage = lazyWithRetry(() => import('@/pages/AllCandidatesPage'));
+const StatusesPage = lazyWithRetry(() => import('@/pages/StatusesPage'));
 const RecruiterFunnelsPage = lazyWithRetry(() => import('@/pages/RecruiterFunnelsPage'));
 const RecruiterWorkspacePage = lazyWithRetry(() => import('@/pages/RecruiterWorkspacePage'));
 const PracticeListPage = lazyWithRetry(() => import('@/pages/PracticeListPage'));
@@ -212,6 +213,7 @@ export default function App() {
           {/* HR routes — superadmin, owner, admin, hr (recruiter like Мария) */}
           {/* /candidates and /candidate-database removed — use /all-candidates */}
           <Route path="all-candidates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><AllCandidatesPage /></RoleRoute></Suspense>} />
+          <Route path="statuses" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><StatusesPage /></RoleRoute></Suspense>} />
           <Route path="vacancies" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><VacanciesPage /></RoleRoute></Suspense>} />
           <Route path="vacancies/:vacancyId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><VacanciesPage /></RoleRoute></Suspense>} />
           <Route path="contacts" element={<Navigate to="/all-candidates" replace />} />
