@@ -1169,16 +1169,20 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                         {declining ? 'Отказ...' : 'Отказаться'}
                       </button>
                     )}
-                    {user?.role === 'superadmin' && (
-                      <button
-                        type="button"
-                        onClick={handleDeleteVacancy}
-                        disabled={statusAction}
-                        className="w-full h-[36px] rounded-[8px] border border-[var(--hf-status-red-badge)] text-[13px] font-medium text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-status-red-badge)] disabled:opacity-50"
-                      >
-                        Удалить вакансию
-                      </button>
-                    )}
+                    {/* «Удалить вакансию» доступна ВСЕМ, включая рекрутёров-member
+                        (по запросу юзера 2026-08-04, разворот прежнего admin-only от
+                        3eab9bda). Удаление мягкое (deleted_at → «Удалённые»,
+                        восстановимо) и настоящее: в общей воронке сносит вакансию у
+                        ВСЕХ участников. «Отказаться» (уйти у себя) остаётся отдельной
+                        кнопкой рядом для тех, кому нужен именно выход. */}
+                    <button
+                      type="button"
+                      onClick={handleDeleteVacancy}
+                      disabled={statusAction}
+                      className="w-full h-[36px] rounded-[8px] border border-[var(--hf-status-red-badge)] text-[13px] font-medium text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-status-red-badge)] disabled:opacity-50"
+                    >
+                      Удалить вакансию
+                    </button>
                   </div>
                 )}
               </div>

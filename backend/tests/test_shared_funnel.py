@@ -307,3 +307,24 @@ async def test_assign_rejects_newly_added_phantom(
     )
     assert r.status_code == 400, r.text
     assert "not in org" in r.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_member_can_delete_vacancy(
+    client, db_session, organization, org_owner, second_user, org_member
+):
+    """По запросу юзера 2026-08-04 удаление доступно ВСЕМ, включая рекрутёра-
+    member (разворот прежнего admin-only). Раньше member ловил 403."""
+    v = Vacancy(
+        org_id=organization.id, title="Воронка", status=VacancyStatus.open,
+        created_by=org_owner.id, assigned_to=[second_user.id],
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v); await db_session.commit(); await db_session.refresh(v)
+    vid = v.id
+
+    r = await client.delete(f"/api/vacancies/{vid}", headers=_h(second_user))
+    assert r.status_code == 204, r.text
+    # Мягкое удаление: deleted_at проставлен.
+    await db_session.refresh(v)
+    assert v.deleted_at is not None
