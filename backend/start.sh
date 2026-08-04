@@ -450,6 +450,18 @@ async def ensure_shadow_columns():
         await raw_conn.execute(text(\"CREATE INDEX IF NOT EXISTS ix_entities_is_archived ON entities (is_archived)\"))
         print('Ensured entities.is_archived column + index')
 
+        # Бэкфилл: архивный кандидат, которого УЖЕ взяли на вакансию (есть живая
+        # заявка), должен быть виден в воронке/канбане. Раньше он оставался
+        # is_archived=true и «пропадал» из колонки этапа. Код теперь снимает архив
+        # при смене статуса/взятии на вакансию, а этот UPDATE лечит уже-существующие
+        # случаи на деплое. Идемпотентно: WHERE is_archived=true + есть заявка.
+        _unarch = await raw_conn.execute(text(
+            \"UPDATE entities SET is_archived = false \"
+            \"WHERE is_archived = true \"
+            \"AND id IN (SELECT DISTINCT entity_id FROM vacancy_applications WHERE entity_id IS NOT NULL)\"
+        ))
+        print(f'Unarchived {_unarch.rowcount} entities with live vacancy applications')
+
         # Умный поиск: pg_trgm/unaccent + GIN-триграммный индекс. BEST-EFFORT —
         # CREATE EXTENSION требует superuser, которого на managed-Postgres может не
         # быть. Ошибку глотаем, чтобы не сорвать старт: без pg_trgm поиск сам
