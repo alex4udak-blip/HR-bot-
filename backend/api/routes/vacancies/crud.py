@@ -862,7 +862,8 @@ async def assign_vacancy(
         vacancy.assigned_to_all = True
         vacancy.assigned_to = []
     else:
-        # Проверяем что все user_ids — валидные участники орга
+        # Проверяем что все user_ids — валидные участники орга.
+        valid_ids: set[int] = set()
         if data.user_ids:
             check = await db.execute(
                 select(User.id)
@@ -871,10 +872,19 @@ async def assign_vacancy(
             )
             valid_ids = {row[0] for row in check.all()}
             invalid = set(data.user_ids) - valid_ids
-            if invalid:
-                raise HTTPException(status_code=400, detail=f"Users not in org: {sorted(invalid)}")
+            # Ронять сейв ТОЛЬКО если НОВО добавляют невалидного юзера. Старые
+            # «фантомные» назначенцы (были в assigned_to, но потеряли членство в
+            # орге — вышли/удалены) молча вычищаются: иначе один устаревший id
+            # блокировал ЛЮБОЕ редактирование списка рекрутёров («Users not in
+            # org»), т.к. фронт шлёт весь assigned_to, а фантом в UI невидим
+            # (имя не резолвится в assignable-users → строка пропускается).
+            newly_invalid = invalid - old_assigned
+            if newly_invalid:
+                raise HTTPException(status_code=400, detail=f"Users not in org: {sorted(newly_invalid)}")
         vacancy.assigned_to_all = False
-        vacancy.assigned_to = list(dict.fromkeys(data.user_ids))  # unique, preserve order
+        # Итоговый список — только валидные участники орга (стряхиваем фантомов),
+        # с сохранением порядка и уникальности.
+        vacancy.assigned_to = [u for u in dict.fromkeys(data.user_ids) if u in valid_ids]
 
     # ЗАЯВКА vs ВОРОНКА (2026-07-13, по уточнению юзера — это РАЗНОЕ):
     #   • ЗАЯВКА (pending_review/draft) — ещё не в работе. Назначение = РАЗДАЧА:

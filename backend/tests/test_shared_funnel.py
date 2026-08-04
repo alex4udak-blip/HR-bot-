@@ -254,3 +254,56 @@ async def test_reassign_undismisses_added_recruiter(
     assert second_user.id not in (extra.get("dismissed_by") or [])
     assert 999999 in (extra.get("dismissed_by") or [])
     assert second_user.id in (r.json().get("assigned_to") or [])
+
+
+@pytest.mark.asyncio
+async def test_assign_drops_phantom_stale_assignee(
+    client, db_session, organization, org_owner, second_user, org_member, regular_user, org_admin
+):
+    """«Фантомный» назначенец (в assigned_to, но без OrgMember — вышел/удалён)
+    НЕ должен блокировать редактирование списка рекрутёров. Фронт шлёт весь
+    assigned_to (включая невидимый фантом), и раньше это роняло сейв с 400
+    «Users not in org». Теперь фантом молча вычищается, а нового валидного
+    рекрутёра можно добавить."""
+    PHANTOM = 999999  # нет OrgMember в орге
+    v = Vacancy(
+        org_id=organization.id, title="Воронка", status=VacancyStatus.open,
+        created_by=org_owner.id, assigned_to=[second_user.id, PHANTOM],
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v); await db_session.commit(); await db_session.refresh(v)
+    vid = v.id
+
+    # Фронт пере-шлёт весь список (second_user + фантом) + добавляет regular_user.
+    r = await client.post(
+        f"/api/vacancies/{vid}/assign", headers=_h(org_owner),
+        json={"user_ids": [second_user.id, PHANTOM, regular_user.id], "all": False},
+    )
+    assert r.status_code == 200, r.text
+    assigned = r.json().get("assigned_to") or []
+    assert PHANTOM not in assigned            # фантом вычищен
+    assert second_user.id in assigned          # существующий валидный сохранён
+    assert regular_user.id in assigned         # новый валидный добавлен
+
+
+@pytest.mark.asyncio
+async def test_assign_rejects_newly_added_phantom(
+    client, db_session, organization, org_owner, second_user, org_member
+):
+    """Ново добавляемый невалидный юзер (не в орге и не был назначен) по-прежнему
+    отвергается 400 — послабление касается только УЖЕ назначенных фантомов."""
+    PHANTOM = 999999
+    v = Vacancy(
+        org_id=organization.id, title="Воронка", status=VacancyStatus.open,
+        created_by=org_owner.id, assigned_to=[second_user.id],
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v); await db_session.commit(); await db_session.refresh(v)
+    vid = v.id
+
+    r = await client.post(
+        f"/api/vacancies/{vid}/assign", headers=_h(org_owner),
+        json={"user_ids": [second_user.id, PHANTOM], "all": False},
+    )
+    assert r.status_code == 400, r.text
+    assert "not in org" in r.text.lower()
