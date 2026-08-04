@@ -141,14 +141,21 @@ async def list_applications(
         )
     )
 
-    if not await sees_all_candidates(current_user, org, db):
-        # Обычный рекрутёр: только свои + legacy без автора. Клиентский
-        # created_by игнорируем — сервер жёстко ограничивает своими.
+    # «Видна коллегам» (visible_to_all): все, у кого есть доступ к вакансии,
+    # видят ВСЕХ кандидатов воронки, а не только своих (по запросу юзера
+    # 2026-08-04). Member попадает сюда только назначенным/создателем/лидом/шарой
+    # (см. can_access_vacancy — visible_to_all сам по себе доступ member НЕ даёт),
+    # так что «видят всех» получают именно те, кому воронку реально пошарили.
+    # «Скрыта от коллег» → прежняя приватность: каждый видит только своих.
+    is_admin_viewer = await sees_all_candidates(current_user, org, db)
+    if not is_admin_viewer and not vacancy.visible_to_all:
+        # Обычный рекрутёр на «скрытой» вакансии: только свои + legacy без автора.
+        # Клиентский created_by игнорируем — сервер жёстко ограничивает своими.
         query = query.where(or_(
             VacancyApplication.created_by == current_user.id,
             VacancyApplication.created_by.is_(None),
         ))
-    elif created_by is not None:
+    elif is_admin_viewer and created_by is not None:
         # Админ скоупит воронку по конкретному рекрутёру (сайдбар /my-funnels).
         query = query.where(VacancyApplication.created_by == created_by)
 
@@ -430,7 +437,11 @@ async def update_application(
 
     # Приватность воронки: не-админ меняет ТОЛЬКО своих кандидатов (кого сам
     # добавил). Чужих он не видит на доске — защита в глубину (как в bulk-move).
-    if not await sees_all_candidates(current_user, org, db):
+    # Исключение — «Видна коллегам» (visible_to_all): там он видит всех, значит и
+    # менять этап может у всех (иначе виден, но не двигается). По запросу юзера
+    # 2026-08-04.
+    vac_visible_to_all = bool(getattr(vacancy, "visible_to_all", False))
+    if not (await sees_all_candidates(current_user, org, db) or vac_visible_to_all):
         # Свои + legacy без автора (created_by=NULL) менять можно, чужие — нет.
         if application.created_by is not None and application.created_by != current_user.id:
             raise HTTPException(

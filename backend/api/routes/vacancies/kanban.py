@@ -116,7 +116,11 @@ async def get_kanban_board(
     # (created_by == self). Админ/овнер/суперадмин/полный доступ видят всех и
     # могут вручную фильтровать по рекрутёру. Клиентский created_by от не-админа
     # игнорируем — сервер жёстко ограничивает своими откликами.
-    see_all = await sees_all_candidates(current_user, org, db)
+    # «Видна коллегам» (visible_to_all): все, у кого есть доступ к вакансии,
+    # видят ВСЕХ кандидатов воронки (по запросу юзера 2026-08-04). «Скрыта» →
+    # прежняя приватность.
+    is_admin_viewer = await sees_all_candidates(current_user, org, db)
+    see_all = is_admin_viewer or bool(vacancy.visible_to_all)
 
     # Build base filter conditions
     base_filters = [VacancyApplication.vacancy_id == vacancy_id]
@@ -126,7 +130,7 @@ async def get_kanban_board(
             VacancyApplication.created_by == current_user.id,
             VacancyApplication.created_by.is_(None),
         ))
-    elif created_by is not None:
+    elif is_admin_viewer and created_by is not None:
         base_filters.append(VacancyApplication.created_by == created_by)
     if applied_after is not None:
         base_filters.append(VacancyApplication.applied_at >= datetime.combine(applied_after, datetime.min.time()))
@@ -276,7 +280,9 @@ async def get_kanban_column(
 
     # Приватность воронки (как в get_kanban_board): обычный рекрутёр видит в
     # колонке только своих кандидатов; иначе бесконечный скролл стал бы дырой.
-    see_all = await sees_all_candidates(current_user, org, db)
+    # «Видна коллегам» (visible_to_all) → видят всех (по запросу юзера 2026-08-04).
+    is_admin_viewer = await sees_all_candidates(current_user, org, db)
+    see_all = is_admin_viewer or bool(vacancy.visible_to_all)
     col_filters = [
         VacancyApplication.vacancy_id == vacancy_id,
         VacancyApplication.stage == stage,
@@ -286,7 +292,7 @@ async def get_kanban_column(
             VacancyApplication.created_by == current_user.id,
             VacancyApplication.created_by.is_(None),
         ))
-    elif created_by is not None:
+    elif is_admin_viewer and created_by is not None:
         col_filters.append(VacancyApplication.created_by == created_by)
 
     # Get total count for this stage
@@ -433,7 +439,10 @@ async def bulk_move_applications(
 
     # Приватность воронки: не-админ двигает ТОЛЬКО своих кандидатов (тех, кого
     # сам добавил). Чужих он даже не видит на доске — это защита в глубину.
-    if not await sees_all_candidates(current_user, org, db):
+    # Исключение — «Видна коллегам» (visible_to_all): там он видит всех, значит и
+    # двигать может всех (иначе drag чужого кандидата → 403, битый UX). По запросу
+    # юзера 2026-08-04.
+    if not (await sees_all_candidates(current_user, org, db) or bool(vacancy.visible_to_all)):
         for app in applications:
             # Свои + legacy без автора (created_by=NULL) двигать можно, чужие — нет.
             if app.created_by is not None and app.created_by != current_user.id:

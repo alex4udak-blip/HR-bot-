@@ -59,12 +59,38 @@ async def _mk_app(db, vacancy, entity, creator) -> VacancyApplication:
 async def shared_vacancy_with_two_apps(
     db_session, organization, admin_user, second_user
 ):
-    """Общая воронка (visible_to_all) с двумя откликами: один добавил admin,
-    другой — second_user (обычный рекрутёр)."""
+    """ПРИВАТНАЯ воронка («Скрыта от коллег», visible_to_all=False) с двумя
+    откликами: один добавил admin, другой — second_user (обычный рекрутёр).
+    Рекрутёр НАЗНАЧЕН (assigned_to) → имеет доступ к воронке, но по приватности
+    видит только своих кандидатов."""
     v = Vacancy(
-        org_id=organization.id, title="Общая воронка", status=VacancyStatus.open,
-        created_by=admin_user.id, visible_to_all=True,
+        org_id=organization.id, title="Приватная воронка", status=VacancyStatus.open,
+        created_by=admin_user.id, visible_to_all=False,
         assigned_to=[second_user.id],  # рекрутёр — участник воронки (даёт доступ)
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v)
+    await db_session.commit()
+    await db_session.refresh(v)
+
+    e_admin = await _mk_entity(db_session, organization, admin_user, "Кандидат Админа")
+    e_member = await _mk_entity(db_session, organization, second_user, "Кандидат Рекрутёра")
+    await _mk_app(db_session, v, e_admin, admin_user)
+    await _mk_app(db_session, v, e_member, second_user)
+    return v, e_admin.id, e_member.id
+
+
+@pytest_asyncio.fixture
+async def collegial_vacancy_with_two_apps(
+    db_session, organization, admin_user, second_user
+):
+    """КОЛЛЕГИАЛЬНАЯ воронка («Видна коллегам», visible_to_all=True) с двумя
+    откликами. Рекрутёр назначен → на такой воронке видит и МОЖЕТ двигать ВСЕХ
+    кандидатов (по запросу юзера 2026-08-04), а не только своих."""
+    v = Vacancy(
+        org_id=organization.id, title="Коллегиальная воронка", status=VacancyStatus.open,
+        created_by=admin_user.id, visible_to_all=True,
+        assigned_to=[second_user.id],
         created_at=datetime.utcnow(),
     )
     db_session.add(v)
@@ -231,3 +257,85 @@ async def test_recruiter_cannot_move_foreign_candidate(
         headers=_h(second_user), json={"stage": "screening"},
     )
     assert r.status_code == 403, r.text
+
+
+# ============================================================================
+# «Видна коллегам» (visible_to_all): рекрутёр видит и двигает ВСЕХ (2026-08-04)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_recruiter_sees_all_on_collegial_board(
+    client, db_session, organization, admin_user, org_owner,
+    second_user, org_member, collegial_vacancy_with_two_apps,
+):
+    """«Видна коллегам»: рекрутёр видит на доске ВСЕХ кандидатов воронки."""
+    v, e_admin_id, e_member_id = collegial_vacancy_with_two_apps
+
+    r = await client.get(f"/api/vacancies/{v.id}/kanban", headers=_h(second_user))
+    assert r.status_code == 200, r.text
+    assert _all_entity_ids(r.json()) == {e_admin_id, e_member_id}
+    assert r.json()["total_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_recruiter_sees_all_in_collegial_column(
+    client, db_session, organization, admin_user, org_owner,
+    second_user, org_member, collegial_vacancy_with_two_apps,
+):
+    """Догрузка колонки на «Видна коллегам» тоже отдаёт всех."""
+    v, e_admin_id, e_member_id = collegial_vacancy_with_two_apps
+
+    r = await client.get(
+        f"/api/vacancies/{v.id}/kanban/column/applied", headers=_h(second_user)
+    )
+    assert r.status_code == 200, r.text
+    ids = {a["entity_id"] for a in r.json()["applications"]}
+    assert ids == {e_admin_id, e_member_id}
+    assert r.json()["total_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_recruiter_sees_all_collegial_applications(
+    client, db_session, organization, admin_user, org_owner,
+    second_user, org_member, collegial_vacancy_with_two_apps,
+):
+    """GET /applications (страница /my-funnels) на «Видна коллегам» — все."""
+    v, e_admin_id, e_member_id = collegial_vacancy_with_two_apps
+
+    r = await client.get(f"/api/vacancies/{v.id}/applications", headers=_h(second_user))
+    assert r.status_code == 200, r.text
+    assert {a["entity_id"] for a in r.json()} == {e_admin_id, e_member_id}
+
+
+@pytest.mark.asyncio
+async def test_recruiter_can_move_foreign_on_collegial(
+    client, db_session, organization, admin_user, org_owner,
+    second_user, org_member, collegial_vacancy_with_two_apps,
+):
+    """«Видна коллегам»: рекрутёр может двигать и ЧУЖОГО кандидата (иначе виден,
+    но drag → 403). Проверяем и одиночный PUT, и bulk-move."""
+    from sqlalchemy import select
+    v, e_admin_id, e_member_id = collegial_vacancy_with_two_apps
+
+    app_id = (await db_session.execute(
+        select(VacancyApplication.id).where(
+            VacancyApplication.vacancy_id == v.id,
+            VacancyApplication.entity_id == e_admin_id,
+        )
+    )).scalar()
+
+    # Одиночный перенос чужого кандидата рекрутёром — теперь ok.
+    r = await client.put(
+        f"/api/vacancies/applications/{app_id}",
+        headers=_h(second_user), json={"stage": "screening"},
+    )
+    assert r.status_code == 200, r.text
+
+    # Массовый перенос чужого — тоже ok.
+    r_bulk = await client.post(
+        "/api/vacancies/applications/bulk-move",
+        headers=_h(second_user),
+        json={"application_ids": [app_id], "stage": "interview"},
+    )
+    assert r_bulk.status_code == 200, r_bulk.text
