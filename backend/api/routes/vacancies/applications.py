@@ -459,6 +459,15 @@ async def update_application(
         max_order = max_order_result.scalar() or 0
         application.stage_order = max_order + 1
 
+        # Активно работаемый кандидат не должен оставаться в теневом архиве
+        # дедупа — реальная смена этапа выводит его из архива (is_archived).
+        archived_entity_result = await db.execute(
+            select(Entity).where(Entity.id == application.entity_id)
+        )
+        archived_entity = archived_entity_result.scalar()
+        if archived_entity and archived_entity.is_archived:
+            archived_entity.is_archived = False
+
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
     # comment — не поле VacancyApplication, а коммент к переходу (пишется в историю).

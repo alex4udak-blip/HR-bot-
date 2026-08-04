@@ -1320,6 +1320,11 @@ async def update_entity_status(
     old_status = entity.status
     entity.status = data.status
 
+    # Активно работаемый кандидат не должен оставаться в теневом архиве
+    # дедупа — смена статуса (напр. drag&drop на канбане) выводит его из архива.
+    if entity.is_archived:
+        entity.is_archived = False
+
     # Synchronize Entity.status -> VacancyApplication.stage
     if data.status in STATUS_SYNC_MAP:
         new_stage = STATUS_SYNC_MAP[data.status]

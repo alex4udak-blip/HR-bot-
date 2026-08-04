@@ -612,6 +612,11 @@ async def apply_entity_to_vacancy(
         entity.updated_at = datetime.utcnow()
         logger.info(f"apply-to-vacancy: Synchronized entity {entity_id} status to {expected_entity_status}")
 
+    # Активно работаемый кандидат не должен оставаться в теневом архиве
+    # дедупа — взятие на вакансию выводит его из архива (is_archived).
+    if entity.is_archived:
+        entity.is_archived = False
+
     # Атомарно: снятие старых заявок + создание новой + начальный транзишн +
     # синк статуса — ОДНИМ коммитом. Раньше транзишн шёл во втором коммите →
     # окно, где заявка есть, а истории нет (лента пустая при сбое между коммитами).

@@ -523,6 +523,13 @@ async def bulk_move_applications(
                 entity.updated_at = now
                 logger.info(f"bulk-move: Synchronized application {app.id} stage {data.stage} -> entity {entity.id} status {new_entity_status}")
 
+        # Активно работаемый кандидат не должен оставаться в теневом архиве
+        # дедупа — реальное перемещение по этапам выводит его из архива.
+        # entities_map уже загружена одним запросом выше — без N+1.
+        moved_entity = entities_map.get(app.entity_id)
+        if moved_entity and moved_entity.is_archived:
+            moved_entity.is_archived = False
+
     # Record stage transitions in audit log
     from ...services.stage_transitions import record_transition
     for app in applications:
