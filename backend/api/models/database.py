@@ -1108,6 +1108,11 @@ class RefreshToken(Base):
     expires_at = Column(DateTime, nullable=False, index=True)
     created_at = Column(DateTime, default=func.now())
     revoked_at = Column(DateTime, nullable=True)  # NULL = not revoked, set = revoked
+    # Момент РОТАЦИИ (revoked именно из-за обновления, а не logout/security). Нужен,
+    # чтобы отличить доброкачественную гонку мультивкладок (один и тот же токен
+    # обновили секунду назад) от настоящего повторного использования украденного
+    # токена. NULL = ревокнут не ротацией (logout / revoke-all) или не ревокнут.
+    rotated_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         Index('ix_refresh_tokens_user_expires', 'user_id', 'expires_at'),

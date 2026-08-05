@@ -435,6 +435,11 @@ async def ensure_shadow_columns():
             await raw_conn.execute(text(\"ALTER TYPE entitystatus ADD VALUE 'transferred'\"))
             print('Added transferred to entitystatus enum')
 
+        # Refresh-токены: колонка rotated_at — момент ротации (отличаем гонку
+        # мультивкладок от кражи, чтобы не выкидывать юзера из системы). Идемпотентно.
+        await raw_conn.execute(text(\"ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS rotated_at TIMESTAMP\"))
+        print('Ensured refresh_tokens.rotated_at column')
+
         # Мягкое удаление вакансий: колонка deleted_at (идемпотентно)
         await raw_conn.execute(text(\"ALTER TABLE vacancies ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP\"))
         print('Ensured vacancies.deleted_at column')

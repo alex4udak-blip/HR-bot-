@@ -835,6 +835,11 @@ async def can_share_to(
 # Token configuration
 ACCESS_TOKEN_EXPIRE_MINUTES = 15  # Short-lived access tokens (15 minutes)
 REFRESH_TOKEN_EXPIRE_DAYS = 7     # Long-lived refresh tokens (7 days)
+# Окно терпимости к повторному предъявлению ТОЛЬКО ЧТО ротированного refresh-токена.
+# Покрывает гонку мультивкладок/пачки параллельных запросов (общая refresh-кука,
+# single-flight на фронте — на вкладку). В пределах окна выдаём новый токен, не
+# считая это кражей и не убивая остальные сессии. См. rotate_refresh_token.
+REFRESH_ROTATION_GRACE_SECONDS = 60
 
 
 def _hash_token(token: str) -> str:
@@ -1053,8 +1058,33 @@ async def rotate_refresh_token(
 
     if existing_token:
         if existing_token.revoked_at is not None:
-            # Token was already revoked! This is suspicious.
-            # Revoke ALL tokens for this user as a security measure
+            # Токен уже ревокнут. Две ситуации:
+            #  1) ДОБРОКАЧЕСТВЕННАЯ ГОНКА РОТАЦИИ (мультивкладка/пачка запросов):
+            #     несколько вкладок одного браузера делят одну refresh-куку, но
+            #     single-flight на фронте — на вкладку. Когда access истекает, они
+            #     параллельно бьют /refresh ОДНИМ токеном: первый ротирует и
+            #     ревокает его, остальные предъявляют уже-ревокнутый. Если он был
+            #     ротирован только что (rotated_at в пределах grace-окна) — это НЕ
+            #     кража: выдаём новый токен и НЕ трогаем остальные сессии. Иначе
+            #     раньше срабатывал revoke_all_user_tokens и выкидывал юзера из
+            #     системы каждые ~15 мин (истечение access) на всех вкладках.
+            #  2) Повторное использование токена, ревокнутого НЕ ротацией (logout/
+            #     revoke-all) — настоящий сигнал кражи: убиваем все сессии.
+            now = datetime.utcnow()
+            grace = timedelta(seconds=REFRESH_ROTATION_GRACE_SECONDS)
+            if existing_token.rotated_at is not None and existing_token.rotated_at >= now - grace:
+                new_token = await create_refresh_token(
+                    db,
+                    user_id=existing_token.user_id,
+                    device_name=device_name or existing_token.device_name,
+                    ip_address=ip_address,
+                )
+                return new_token, existing_token.user_id
+            if existing_token.rotated_at is not None:
+                # Ротирован, но давно (за пределами grace). Отставший клиент —
+                # просто отказываем ЕМУ (перелогинится), но остальные сессии живы.
+                return None
+            # Ревокнут не ротацией (logout/security) и предъявлен снова — кража.
             await revoke_all_user_tokens(db, existing_token.user_id)
             return None
 
@@ -1062,8 +1092,10 @@ async def rotate_refresh_token(
             # Token has expired
             return None
 
-        # Valid token - revoke it and create new one
-        existing_token.revoked_at = datetime.utcnow()
+        # Valid token - revoke it (пометив как РОТАЦИЮ) and create new one
+        now = datetime.utcnow()
+        existing_token.revoked_at = now
+        existing_token.rotated_at = now
         user_id = existing_token.user_id
 
         # Optionally preserve device info if not provided

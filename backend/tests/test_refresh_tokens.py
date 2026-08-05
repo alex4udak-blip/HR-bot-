@@ -885,6 +885,63 @@ class TestRefreshTokenServiceFunctions:
         assert await validate_token_service(db_session, token2) is None
 
     @pytest.mark.asyncio
+    async def test_rotate_recently_rotated_token_grace_reissues(
+        self, db_session: AsyncSession, admin_user: User
+    ):
+        """Гонка мультивкладок: тот же токен ротируют дважды подряд (в пределах
+        grace). Второй раз НЕ считаем кражей — выдаём новый токен и НЕ убиваем
+        остальные сессии. Иначе юзера выкидывало из системы каждые ~15 мин."""
+        from api.services.auth import create_refresh_token as create_token_service
+        from api.services.auth import rotate_refresh_token as rotate_token_service
+        from api.services.auth import validate_refresh_token as validate_token_service
+
+        other = await create_token_service(db_session, user_id=admin_user.id)  # вторая сессия
+        token1 = await create_token_service(db_session, user_id=admin_user.id)
+
+        # Первая вкладка ротировала token1
+        first = await rotate_token_service(db_session, token1)
+        assert first is not None
+
+        # Вторая вкладка предъявляет ТОТ ЖЕ token1 (уже ротирован секунду назад)
+        second = await rotate_token_service(db_session, token1)
+        assert second is not None, "в пределах grace-окна должен выдаться новый токен, а не None"
+        new_token2, uid = second
+        assert uid == admin_user.id
+        assert await validate_token_service(db_session, new_token2) == admin_user.id
+
+        # ГЛАВНОЕ: остальные сессии НЕ убиты (нет revoke_all)
+        assert await validate_token_service(db_session, other) == admin_user.id
+
+    @pytest.mark.asyncio
+    async def test_rotate_stale_rotated_token_denied_without_nuke(
+        self, db_session: AsyncSession, admin_user: User
+    ):
+        """Ротированный токен предъявлен СИЛЬНО позже grace (отставший клиент):
+        отказываем именно ему (None), но остальные сессии живы (без revoke_all)."""
+        from sqlalchemy import select
+        from api.models.database import RefreshToken
+        from api.services.auth import create_refresh_token as create_token_service
+        from api.services.auth import rotate_refresh_token as rotate_token_service
+        from api.services.auth import validate_refresh_token as validate_token_service
+        from api.services.auth import _hash_token
+
+        other = await create_token_service(db_session, user_id=admin_user.id)
+        token1 = await create_token_service(db_session, user_id=admin_user.id)
+        assert await rotate_token_service(db_session, token1) is not None
+
+        # Отматываем rotated_at далеко назад (за пределы grace)
+        rec = (await db_session.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == _hash_token(token1))
+        )).scalar_one()
+        rec.rotated_at = datetime.utcnow() - timedelta(hours=2)
+        await db_session.commit()
+
+        result = await rotate_token_service(db_session, token1)
+        assert result is None  # отставшему отказали
+        # но остальные сессии не тронуты
+        assert await validate_token_service(db_session, other) == admin_user.id
+
+    @pytest.mark.asyncio
     async def test_get_user_sessions_service(self, db_session: AsyncSession, admin_user: User):
         """Test getting user sessions via service function."""
         from api.services.auth import create_refresh_token as create_token_service
@@ -993,12 +1050,17 @@ class TestRefreshTokenEndpoints:
         # Tokens should be different
         assert old_refresh != new_refresh
 
-        # Old token should be revoked (second refresh should fail)
+        # Повторный refresh тем же (только что ротированным) токеном в пределах
+        # grace-окна — доброкачественная гонка мультивкладок: НЕ 401 и НЕ нук всех
+        # сессий, а выдача нового токена. Раньше здесь был 401 + revoke_all, из-за
+        # чего юзера постоянно выкидывало из системы (обратная связь 2026-08-05).
         second_refresh = await client.post(
             "/api/auth/refresh",
             cookies={"refresh_token": old_refresh}
         )
-        assert second_refresh.status_code == 401
+        assert second_refresh.status_code == 200
+        reissued = second_refresh.cookies.get("refresh_token")
+        assert reissued and reissued != old_refresh
 
     @pytest.mark.asyncio
     async def test_refresh_without_token_fails(self, client):
