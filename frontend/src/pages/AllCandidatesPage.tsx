@@ -410,7 +410,22 @@ export default function AllCandidatesPage() {
     scrollLeft: scrollTopStagesLeft,
     scrollRight: scrollTopStagesRight,
   } = useHorizontalScroll<HTMLDivElement>({ step: 520 });
-  const [activeTab, setActiveTab] = useState("all");
+  // Активная вкладка-этап живёт в URL (?stage=), чтобы браузерный «Назад»
+  // возвращал на предыдущую вкладку вместе с открытым кандидатом (обратная связь
+  // 2026-08-05: переключил вкладку — Back стал серым, к кандидату не вернуться).
+  // Клик по вкладке = push истории; программные сбросы — replace (push:false).
+  const activeTab = searchParams.get("stage") || "all";
+  const setActiveTab = useCallback(
+    (status: string, opts?: { push?: boolean }) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (!status || status === "all") next.delete("stage");
+        else next.set("stage", status);
+        return next;
+      }, { replace: opts?.push === false });
+    },
+    [setSearchParams],
+  );
 
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [selectedStatus, setSelectedStatus] = useState("");
@@ -645,7 +660,7 @@ export default function AllCandidatesPage() {
         getEntity(entityId)
           .then((entity) => {
             if (entity?.name) {
-              setActiveTab("all");
+              setActiveTab("all", { push: false });  // диплинк-резолв, не плодим историю
               setSearchText(entity.name);
             } else {
               toast.error("Кандидат не найден");
