@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useUrlTab } from "@/hooks/useUrlTab";
 import { Users, Search, Loader2, UserCheck, UserX } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -42,7 +43,8 @@ export default function StatusesPage() {
   const [employees, setEmployees] = useState<EmployeeData[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
-  const [folder, setFolder] = useState<Folder>("all");
+  // Папка-переключатель в URL (?folder=) — браузерный «Назад/Вперёд» между направлениями.
+  const [folder, setFolder] = useUrlTab<Folder>("folder", "all");
   const [savingId, setSavingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {

@@ -6,6 +6,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useUrlTab } from '@/hooks/useUrlTab';
 import {
   Users, Calendar, AlertTriangle, CheckCircle, XCircle,
   Clock, FileText, User, Building2, Briefcase, PenTool, X,
@@ -575,7 +576,7 @@ function AdminEmployeesView() {
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequestData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'list' | 'leave' | 'reminders'>('list');
+  const [tab, setTab] = useUrlTab<'list' | 'leave' | 'reminders'>("tab", "list");
 
   const load = useCallback(async () => {
     try {

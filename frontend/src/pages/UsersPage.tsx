@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useUrlTab } from '@/hooks/useUrlTab';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -42,7 +43,8 @@ const ORG_ROLE_CONFIG: Record<OrgRole, { label: string; icon: typeof Crown; colo
 export default function UsersPage() {
   const { user: currentUser } = useAuthStore();
   const isSuperadmin = currentUser?.role === 'superadmin';
-  const [activeTab, setActiveTab] = useState<'org' | 'system'>(isSuperadmin ? 'system' : 'org');
+  // Вкладка в URL (?tab=) — браузерный «Назад/Вперёд» между «Организация»/«Система».
+  const [activeTab, setActiveTab] = useUrlTab<'org' | 'system'>('tab', isSuperadmin ? 'system' : 'org');
 
   return (
     <div className="h-full w-full max-w-full overflow-y-auto overflow-x-hidden p-6">

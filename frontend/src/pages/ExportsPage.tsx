@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useUrlTab } from '@/hooks/useUrlTab';
 import {
   Download,
   Users,
@@ -42,7 +42,7 @@ const exportCards = [
 ];
 
 export default function ExportsPage() {
-  const [activeTab, setActiveTab] = useState<ExportTab>('overview');
+  const [activeTab, setActiveTab] = useUrlTab<ExportTab>('tab', 'overview');
 
   const activeCard = exportCards.find((c) => c.id === activeTab);
 

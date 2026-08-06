@@ -44,6 +44,7 @@ import {
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useProjectStore } from '@/stores/projectStore';
+import { useUrlTab } from '@/hooks/useUrlTab';
 import type {
   Project,
   ProjectStatus,
@@ -1479,7 +1480,7 @@ export default function ProjectDetailPage() {
     clearCurrentProject,
   } = useProjectStore();
 
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [activeTab, setActiveTab] = useUrlTab<Tab>("tab", "overview");
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [milestones, setMilestones] = useState<ProjectMilestone[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);

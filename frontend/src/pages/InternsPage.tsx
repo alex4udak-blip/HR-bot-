@@ -26,6 +26,7 @@ import { formatRelativeTime } from '@/utils';
 import { getPrometheusInterns, getInternLinkedContacts } from '@/services/api';
 import type { PrometheusIntern } from '@/services/api';
 import { usePrometheusBulkSync } from '@/hooks';
+import { useUrlTab } from '@/hooks/useUrlTab';
 import InternsAnalyticsTab from '@/components/interns/InternsAnalyticsTab';
 import InternsStagesTab from '@/components/interns/InternsStagesTab';
 import InternsCsvTab from '@/components/interns/InternsCsvTab';
@@ -100,7 +101,7 @@ function formatDaysSinceActive(daysSinceActive: number | null, lastActiveAt: str
 
 export default function InternsPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<InternTab>('interns');
+  const [activeTab, setActiveTab] = useUrlTab<InternTab>("tab", "interns");
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTrailFilter, setSelectedTrailFilter] = useState('all');
 

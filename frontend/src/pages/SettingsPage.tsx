@@ -38,6 +38,7 @@ import {
   type Department
 } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useUrlTab } from '@/hooks/useUrlTab';
 import type { Criterion, CriteriaPreset } from '@/types';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -71,7 +72,7 @@ const featureConfig: Record<string, { icon: typeof Briefcase; label: string; des
 };
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [activeTab, setActiveTab] = useUrlTab<SettingsTab>('tab', 'general');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(() =>
