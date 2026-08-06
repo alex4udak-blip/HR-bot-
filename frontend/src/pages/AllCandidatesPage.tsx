@@ -417,12 +417,24 @@ export default function AllCandidatesPage() {
   const activeTab = searchParams.get("stage") || "all";
   const setActiveTab = useCallback(
     (status: string, opts?: { push?: boolean }) => {
+      const push = opts?.push !== false;
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         if (!status || status === "all") next.delete("stage");
         else next.set("stage", status);
+        // Пользовательский клик по вкладке (push) снимает открытого кандидата из
+        // URL. Иначе ?entity= остаётся, и если кандидат не на новом этапе —
+        // эффект авто-селекта уходит в ветку «подтянуть по имени» и ОТБРАСЫВАЕТ
+        // вкладку обратно на «Все» (регресс: этапы не переключались). Программный
+        // резолв диплинка (push:false) entity сохраняет — он его и открывает.
+        if (push) {
+          next.delete("entity");
+          next.delete("edit");
+          next.delete("archived");
+          next.delete("tab");
+        }
         return next;
-      }, { replace: opts?.push === false });
+      }, { replace: !push });
     },
     [setSearchParams],
   );

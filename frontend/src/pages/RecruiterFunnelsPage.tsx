@@ -882,6 +882,12 @@ export default function RecruiterFunnelsPage() {
       const next = new URLSearchParams(prev);
       if (!key || key === 'all') next.delete('stage');
       else next.set('stage', key);
+      // Снимаем открытого кандидата из URL в том же push (он и так деселектится):
+      // иначе ?entity= off-tab кандидата может отскочить/переспорить адопт при
+      // смене вкладки. Предыдущая запись истории сохраняет entity — Back вернёт.
+      next.delete('entity');
+      next.delete('edit');
+      next.delete('tab');
       return next;
     }, { replace: false });
   }, [setSearchParams]);
