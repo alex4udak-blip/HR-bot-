@@ -870,6 +870,36 @@ export default function RecruiterFunnelsPage() {
     }, { replace: true });
   }, [selectedTab, setSearchParams]);
 
+  // Клик по вкладке-этапу: помимо смены стейта ПУШИМ ?stage= в историю, чтобы
+  // браузерный «Назад» вернул на предыдущую вкладку вместе с открытым кандидатом
+  // (?entity=). Эффект-зеркало выше — replace + no-op guard, так что второй записи
+  // не будет. Обратная связь 2026-08-05: из карточки кандидата переключил вкладку —
+  // Back стал серым, к кандидату не вернуться.
+  const selectStageTab = useCallback((key: string) => {
+    setSelectedTab(key);
+    setSelectedCandidateId(null);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (!key || key === 'all') next.delete('stage');
+      else next.set('stage', key);
+      return next;
+    }, { replace: false });
+  }, [setSearchParams]);
+
+  // Браузерный Назад/Вперёд меняет ЗНАЧЕНИЕ ?stage= — подхватываем его в
+  // selectedTab (иначе URL менялся, а видимая вкладка оставалась прежней).
+  // Зависимость — извлечённая строка stage, а НЕ весь searchParams: правки
+  // ?status=/?recruiter=/?entity= этот эффект не дёргают. Guard на равенство +
+  // валидация по этапам текущей вакансии — без циклов с зеркалом.
+  const urlStageParam = searchParams.get('stage') || 'all';
+  useEffect(() => {
+    if (urlStageParam === selectedTab) return;
+    if (urlStageParam === 'all' || stagesConfig.keys.includes(urlStageParam)) {
+      setSelectedTab(urlStageParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlStageParam]);
+
   // Бейдж непрочитанных анкет (entity-уровень) — как в «Все кандидаты».
   const anketaCount = useFormBadgeStore((s) => s.counts[selectedCandidate?.entity_id ?? 0] ?? 0);
   const setAnketaCount = useFormBadgeStore((s) => s.setCount);
@@ -2362,7 +2392,7 @@ export default function RecruiterFunnelsPage() {
                           return (
                             <button
                               key={key}
-                              onClick={() => { setSelectedTab(key); setSelectedCandidateId(null); }}
+                              onClick={() => selectStageTab(key)}
                               className={clsx(
                                 'hf-top-stage-item',
                                 isActive
