@@ -8,7 +8,7 @@ import { useNotificationStore } from '@/stores/notificationStore';
 import { logger } from '@/utils/logger';
 import { getNotifications } from '@/services/api/notifications';
 import type { FormSubmissionPayload } from '@/types/websocket';
-import { playAnketaChime, unlockAudio } from '@/utils/notificationSound';
+import { playAnketaChime, unlockAudio, showAnketaOsNotification } from '@/utils/notificationSound';
 
 /**
  * WebSocket Provider Component
@@ -114,10 +114,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         lastSeenNotifId.current = Math.max(prev, maxId);
         if (prev < 0) return; // первый прогон — не спамим существующими уведомлениями
         let anketaArrived = false;
+        let anketaNotif: (typeof list)[number] | null = null;
         for (const n of list.filter((n) => n.id > prev).sort((a, b) => a.id - b.id)) {
           const m = /entity=(\d+)/.exec(n.link || '');
           if (n.type === 'form_submitted' && m) bumpEntityBadge(parseInt(m[1], 10));
-          if (n.type === 'form_submitted') anketaArrived = true;
+          if (n.type === 'form_submitted') { anketaArrived = true; anketaNotif = n; }
           // Вместо верхнего тоста — анимированный peek над кнопкой «+» (NotifPeek).
           pushPeek({
             id: n.id,
@@ -129,7 +130,18 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         }
         // Звук ТОЛЬКО на новую анкету, максимум раз на батч поллинга (без двойного бипа).
         // Идёт исключительно поллингом — надёжно на проде, где WS теряет form.submission.
-        if (anketaArrived) playAnketaChime();
+        if (anketaArrived) {
+          playAnketaChime();  // активная вкладка: синтез-чайм
+          // Вкладка в фоне/свёрнута — Web Audio молчит; шлём системное уведомление
+          // (свой звук, работает вне фокуса). Только когда страница скрыта.
+          if (typeof document !== 'undefined' && document.hidden && anketaNotif) {
+            showAnketaOsNotification(
+              anketaNotif.title || 'Новая анкета',
+              anketaNotif.message || '',
+              anketaNotif.link || undefined,
+            );
+          }
+        }
       } catch { /* ignore */ }
     };
     poll();

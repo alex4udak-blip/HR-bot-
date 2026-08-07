@@ -51,11 +51,44 @@ export function unlockAudio(): void {
     const c = ensureCtx();
     if (c && c.state === 'suspended') { try { void c.resume(); } catch { /* ignore */ } }
   };
-  window.addEventListener('pointerdown', resume);
-  window.addEventListener('keydown', resume);
+  // На жесте пользователя: поднимаем аудио + разово просим разрешение на системные
+  // уведомления (нужны, когда вкладка в фоне — Web-звук там браузер блокирует).
+  const onGesture = () => { resume(); requestNotificationPermissionOnce(); };
+  window.addEventListener('pointerdown', onGesture);
+  window.addEventListener('keydown', onGesture);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') resume();
   });
+}
+
+/** Разово просим разрешение на системные уведомления (только если ещё не решали). */
+export function requestNotificationPermissionOnce(): void {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission !== 'default') return;
+  try { void Notification.requestPermission(); } catch { /* ignore */ }
+}
+
+/**
+ * Системное (OS) уведомление о новой анкете — со своим звуком, работает даже когда
+ * вкладка в фоне/свёрнута (там Web Audio молчит). Показываем ТОЛЬКО когда вкладка
+ * не активна (иначе хватает in-app peek + чайма). No-op без разрешения.
+ */
+export function showAnketaOsNotification(title: string, body: string, link?: string): void {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(title || 'Новая анкета', {
+      body: body || '',
+      tag: 'anketa',          // схлопывает пачку в одно, не спамит
+      icon: '/favicon.svg',
+    });
+    n.onclick = () => {
+      try {
+        window.focus();
+        if (link) window.location.assign(link);
+      } catch { /* ignore */ }
+      n.close();
+    };
+  } catch { /* ignore */ }
 }
 
 /** Soft two-note chime (A5 -> D6). No-op if muted or audio isn't available/unlocked. */
