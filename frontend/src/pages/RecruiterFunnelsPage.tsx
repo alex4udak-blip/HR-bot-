@@ -2506,7 +2506,22 @@ export default function RecruiterFunnelsPage() {
                             <div className="hf-prev-series-divider">В предыдущих сериях</div>
                           )}
                           <div
-                            onClick={() => { setSelectedCandidateId(candidate.id); setDetailTab('resume'); }}
+                            onClick={() => {
+                              setSelectedCandidateId(candidate.id);
+                              setDetailTab('resume');
+                              // ПУШ ?entity= в историю — браузерные «Назад/Вперёд»
+                              // листают кандидатов (иначе Back выкидывал из воронки).
+                              // Зеркало ?entity= (replace + guard) второй записи не даёт.
+                              const eid = candidate.entity_id;
+                              if (eid != null) {
+                                setSearchParams((prev) => {
+                                  if (prev.get('entity') === String(eid)) return prev;
+                                  const next = new URLSearchParams(prev);
+                                  next.set('entity', String(eid));
+                                  return next;
+                                }, { replace: false });
+                              }
+                            }}
                             className={clsx(
                               'hf-candidate-row',
                               candidate.is_previous_series && 'hf-candidate-row-prev-series',

@@ -454,6 +454,24 @@ export default function AllCandidatesPage() {
   // сами не перечитают файлы/резюме/активность. Ремоунт заставляет перечитать.
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [detailTab, setDetailTab] = useState<DetailSection>("resume");
+  // Клик по карточке кандидата: выбираем + ПУШИМ ?entity= в историю, чтобы
+  // браузерные «Назад/Вперёд» листали кандидатов (просили: Back выкидывал в
+  // дашборд). Зеркало ?entity= ниже (replace + no-op guard) второй записи не даёт;
+  // авто-селект/деплинк по-прежнему на replace (без спама историей).
+  const openCandidate = useCallback((card: KanbanCard, status: string) => {
+    setSelectedCard(card);
+    setSelectedStatus(status);
+    setDetailTab("resume");
+    setSearchParams((prev) => {
+      if (prev.get("entity") === String(card.id)) return prev;
+      const next = new URLSearchParams(prev);
+      next.set("entity", String(card.id));
+      next.delete("edit");
+      next.delete("archived");
+      next.delete("tab");
+      return next;
+    }, { replace: false });
+  }, [setSearchParams]);
   const [showListSettings, setShowListSettings] = useState(false);
   // F7-fix: настройки списка (scope + видимые поля) — persist + применяются к карточкам.
   const [listSettings, setListSettings] = useState<CandidateListSettings>(
@@ -1275,13 +1293,7 @@ export default function AllCandidatesPage() {
                       return (
                         <div
                           key={card.id}
-                          onClick={() => {
-                            setSelectedCard(card);
-                            setSelectedStatus(status);
-                            setDetailTab("resume");
-                            // URL дописывает зеркало (в startTransition) — клик мгновенный,
-                            // без лишнего clear→re-add ?entity= на каждый выбор.
-                          }}
+                          onClick={() => openCandidate(card, status)}
                           className={clsx(
                             "hf-candidate-row",
                             isChecked || isSelected
