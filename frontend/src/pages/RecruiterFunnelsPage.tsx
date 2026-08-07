@@ -560,19 +560,20 @@ export default function RecruiterFunnelsPage() {
   // загрузки ТОЛЬКО если это последний запрос; любая мутация бампает счётчик.
   const loadSeqRef = useRef(0);
   // Скоуп кандидатов по рекрутёру в общей воронке:
-  //  • обычный рекрутёр — сервер сам отдаёт только его кандидатов, тут ничего
-  //    не шлём (undefined);
-  //  • СУПЕРАДМИН по умолчанию видит ВСЕХ кандидатов в любой воронке (undefined).
-  //    Выбор конкретного рекрутёра в свитчере фильтрует на него (selectedRecruiterFilter).
-  //    (чекбокс «только мои» — следующим шагом.)
-  //  • АДМИН/ОВНЕР по умолчанию видит ТОЛЬКО СВОИХ (кого сам добавил) — как обычный
-  //    рекрутёр, а не всех. Через свитчер «Рекрутеры: <рекрутёр>» может выбрать
-  //    любого и посмотреть его кандидатов.
-  const candidateScopeRecruiterId = !isHrAdmin
-    ? undefined
-    : isSuperadmin
-      ? (superadminOnlyMine ? (user?.id ?? undefined) : (selectedRecruiterFilter ?? undefined))
-      : (selectedRecruiterFilter != null ? selectedRecruiterFilter : (user?.id ?? undefined));
+  //  • Чекбокс «Только мои» (onlyMine) — для ЛЮБОЙ роли форсит скоуп на СЕБЯ
+  //    (created_by == self), перекрывая всё остальное. Нужен на воронках «Видна
+  //    коллегам», где иначе рекрутёр видит и чужих (просили: «только мои»).
+  //  • Иначе обычный рекрутёр (hr/member) — сервер сам решает (undefined): на
+  //    «скрытой» воронке видит своих, на «Видна коллегам» — всех.
+  //  • СУПЕРАДМИН по умолчанию видит ВСЕХ; свитчер фильтрует на конкретного.
+  //  • АДМИН/ОВНЕР по умолчанию — только свои; через свитчер может выбрать любого.
+  const candidateScopeRecruiterId = superadminOnlyMine
+    ? (user?.id ?? undefined)
+    : !isHrAdmin
+      ? undefined
+      : isSuperadmin
+        ? (selectedRecruiterFilter ?? undefined)
+        : (selectedRecruiterFilter != null ? selectedRecruiterFilter : (user?.id ?? undefined));
   const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
     const seq = ++loadSeqRef.current;
     if (!silent) setCandidatesLoading(true);
@@ -2450,10 +2451,12 @@ export default function RecruiterFunnelsPage() {
                   ) : null}
                 </div>
 
-                {/* Суперадмин: «Только мои» — ПОСТОЯННАЯ полоса над контентом (а не в
-                    списке), чтобы фильтр можно было снять и когда этап пуст (включил →
-                    опустошил вкладку → иначе не вернуть всех без F5). */}
-                {isSuperadmin && (
+                {/* «Только мои» — ПОСТОЯННАЯ полоса над контентом (а не в списке),
+                    чтобы фильтр можно было снять и когда этап пуст (включил →
+                    опустошил вкладку → иначе не вернуть всех без F5). Доступна ВСЕМ
+                    ролям (не только суперадмину): рекрутёр на воронке «Видна
+                    коллегам» может оставить только своих кандидатов. */}
+                {(
                   <div className="flex items-center px-3 sm:px-5 py-2 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
                     <label
                       className="group inline-flex items-center cursor-pointer select-none"

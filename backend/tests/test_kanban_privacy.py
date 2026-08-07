@@ -309,6 +309,44 @@ async def test_recruiter_sees_all_collegial_applications(
 
 
 @pytest.mark.asyncio
+async def test_recruiter_only_mine_on_collegial(
+    client, db_session, organization, admin_user, org_owner,
+    second_user, org_member, collegial_vacancy_with_two_apps,
+):
+    """Чекбокс «Только мои» (?created_by=<self>): рекрутёр даже на «Видна коллегам»
+    может оставить ТОЛЬКО своих кандидатов (доска + applications)."""
+    v, e_admin_id, e_member_id = collegial_vacancy_with_two_apps
+
+    r = await client.get(
+        f"/api/vacancies/{v.id}/kanban?created_by={second_user.id}", headers=_h(second_user)
+    )
+    assert r.status_code == 200, r.text
+    assert _all_entity_ids(r.json()) == {e_member_id}
+
+    r2 = await client.get(
+        f"/api/vacancies/{v.id}/applications?created_by={second_user.id}", headers=_h(second_user)
+    )
+    assert r2.status_code == 200, r2.text
+    assert {a["entity_id"] for a in r2.json()} == {e_member_id}
+
+
+@pytest.mark.asyncio
+async def test_recruiter_cannot_scope_to_other_on_collegial(
+    client, db_session, organization, admin_user, org_owner,
+    second_user, org_member, collegial_vacancy_with_two_apps,
+):
+    """Не-админ может скоупить ТОЛЬКО на себя: ?created_by=<чужой> игнорируется —
+    на «Видна коллегам» он всё равно видит всех (нет утечки чужой приватности)."""
+    v, e_admin_id, e_member_id = collegial_vacancy_with_two_apps
+
+    r = await client.get(
+        f"/api/vacancies/{v.id}/kanban?created_by={admin_user.id}", headers=_h(second_user)
+    )
+    assert r.status_code == 200, r.text
+    assert _all_entity_ids(r.json()) == {e_admin_id, e_member_id}
+
+
+@pytest.mark.asyncio
 async def test_recruiter_can_move_foreign_on_collegial(
     client, db_session, organization, admin_user, org_owner,
     second_user, org_member, collegial_vacancy_with_two_apps,

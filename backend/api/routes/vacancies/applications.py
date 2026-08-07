@@ -148,16 +148,18 @@ async def list_applications(
     # так что «видят всех» получают именно те, кому воронку реально пошарили.
     # «Скрыта от коллег» → прежняя приватность: каждый видит только своих.
     is_admin_viewer = await sees_all_candidates(current_user, org, db)
-    if not is_admin_viewer and not vacancy.visible_to_all:
-        # Обычный рекрутёр на «скрытой» вакансии: только свои + legacy без автора.
-        # Клиентский created_by игнорируем — сервер жёстко ограничивает своими.
+    if created_by is not None and (is_admin_viewer or created_by == current_user.id):
+        # Явный скоуп по рекрутёру: админ — на ЛЮБОГО (сайдбар /my-funnels), а
+        # ЛЮБОЙ рекрутёр — на СЕБЯ (чекбокс «Только мои»). Себя можно фильтровать
+        # даже на «Видна коллегам», иначе рекрутёр не мог оставить только своих.
+        query = query.where(VacancyApplication.created_by == created_by)
+    elif not is_admin_viewer and not vacancy.visible_to_all:
+        # Обычный рекрутёр на «скрытой» вакансии без явного скоупа: только свои +
+        # legacy без автора. На «Видна коллегам» без скоупа — видит всех (выше).
         query = query.where(or_(
             VacancyApplication.created_by == current_user.id,
             VacancyApplication.created_by.is_(None),
         ))
-    elif is_admin_viewer and created_by is not None:
-        # Админ скоупит воронку по конкретному рекрутёру (сайдбар /my-funnels).
-        query = query.where(VacancyApplication.created_by == created_by)
 
     if stage:
         query = query.where(VacancyApplication.stage == stage)

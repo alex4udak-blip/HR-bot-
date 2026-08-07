@@ -120,18 +120,20 @@ async def get_kanban_board(
     # видят ВСЕХ кандидатов воронки (по запросу юзера 2026-08-04). «Скрыта» →
     # прежняя приватность.
     is_admin_viewer = await sees_all_candidates(current_user, org, db)
-    see_all = is_admin_viewer or bool(vacancy.visible_to_all)
 
     # Build base filter conditions
     base_filters = [VacancyApplication.vacancy_id == vacancy_id]
-    if not see_all:
-        # Свои + legacy без автора (created_by=NULL) — старые импорты видны всем.
+    if created_by is not None and (is_admin_viewer or created_by == current_user.id):
+        # Явный скоуп: админ — на любого рекрутёра, ЛЮБОЙ — на СЕБЯ («Только мои»),
+        # даже на «Видна коллегам».
+        base_filters.append(VacancyApplication.created_by == created_by)
+    elif not is_admin_viewer and not bool(vacancy.visible_to_all):
+        # Обычный рекрутёр на «скрытой» вакансии без скоупа: свои + legacy (NULL).
         base_filters.append(or_(
             VacancyApplication.created_by == current_user.id,
             VacancyApplication.created_by.is_(None),
         ))
-    elif is_admin_viewer and created_by is not None:
-        base_filters.append(VacancyApplication.created_by == created_by)
+    # else: админ без скоупа / «Видна коллегам» → видит всех
     if applied_after is not None:
         base_filters.append(VacancyApplication.applied_at >= datetime.combine(applied_after, datetime.min.time()))
     if applied_before is not None:
@@ -282,18 +284,18 @@ async def get_kanban_column(
     # колонке только своих кандидатов; иначе бесконечный скролл стал бы дырой.
     # «Видна коллегам» (visible_to_all) → видят всех (по запросу юзера 2026-08-04).
     is_admin_viewer = await sees_all_candidates(current_user, org, db)
-    see_all = is_admin_viewer or bool(vacancy.visible_to_all)
     col_filters = [
         VacancyApplication.vacancy_id == vacancy_id,
         VacancyApplication.stage == stage,
     ]
-    if not see_all:
+    if created_by is not None and (is_admin_viewer or created_by == current_user.id):
+        # Явный скоуп: админ — на любого, ЛЮБОЙ — на СЕБЯ («Только мои»).
+        col_filters.append(VacancyApplication.created_by == created_by)
+    elif not is_admin_viewer and not bool(vacancy.visible_to_all):
         col_filters.append(or_(
             VacancyApplication.created_by == current_user.id,
             VacancyApplication.created_by.is_(None),
         ))
-    elif is_admin_viewer and created_by is not None:
-        col_filters.append(VacancyApplication.created_by == created_by)
 
     # Get total count for this stage
     total_count_result = await db.execute(
