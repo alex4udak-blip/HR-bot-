@@ -1309,6 +1309,10 @@ export default function RecruiterFunnelsPage() {
       setCandidates((prev) =>
         prev.map((c) => c.id === applicationId ? { ...c, stage: newStage, is_previous_series: false } : c)
       );
+      // Инвалидируем in-flight поллинг (15с/focus-refresh): иначе его ответ со
+      // СТАРЫМ этапом пройдёт guard `seq === loadSeqRef` и откатит карточку назад
+      // на ~15с. Та же защита, что в handleRemoveFromVacancy (аудит 2026-08-07).
+      loadSeqRef.current++;
       // НЕ переключаем вкладку и НЕ «следуем» за кандидатом (требование Маши):
       // остаёмся на текущем этапе, карточка просто исчезает из текущего списка.
       // Дальше выбором управляет эффект [selectedCandidateId, tabFilteredCandidates]:

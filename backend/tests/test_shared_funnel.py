@@ -257,6 +257,31 @@ async def test_reassign_undismisses_added_recruiter(
 
 
 @pytest.mark.asyncio
+async def test_assign_all_clears_dismissed_by(
+    client, db_session, organization, org_owner, second_user, org_member
+):
+    """«Всем рекрутёрам» ПОЛНОСТЬЮ чистит dismissed_by — иначе ранее отказавшийся
+    рекрутёр не увидит вакансию, хотя ему придёт уведомление (аудит 2026-08-07)."""
+    v = Vacancy(
+        org_id=organization.id, title="Заявка", status=VacancyStatus.open,
+        created_by=org_owner.id, assigned_to=[],
+        extra_data={"dismissed_by": [second_user.id]},
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(v); await db_session.commit(); await db_session.refresh(v)
+    vid = v.id
+
+    r = await client.post(
+        f"/api/vacancies/{vid}/assign", headers=_h(org_owner),
+        json={"user_ids": [], "all": True},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["assigned_to_all"] is True
+    assert (body.get("extra_data") or {}).get("dismissed_by") in (None, [])
+
+
+@pytest.mark.asyncio
 async def test_assign_drops_phantom_stale_assignee(
     client, db_session, organization, org_owner, second_user, org_member, regular_user, org_admin
 ):

@@ -853,7 +853,13 @@ async def assign_vacancy(
     if not org:
         raise HTTPException(status_code=403, detail="Organization not found")
 
-    vacancy = await db.get(Vacancy, vacancy_id)
+    # FOR UPDATE: сериализует конкурентные assign vs take_vacancy/decline (все
+    # мутируют assigned_to/accepted_by/dismissed_by одной строки). Без лока
+    # read-modify-write assign не видел append из take → перезаписывал assigned_to
+    # и «терял» рекрутёра (рассинхрон assigned_to/accepted_by). Аудит 2026-08-07.
+    vacancy = (await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id).with_for_update()
+    )).scalar_one_or_none()
     if not vacancy or vacancy.org_id != org.id:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
@@ -867,6 +873,13 @@ async def assign_vacancy(
     if data.all:
         vacancy.assigned_to_all = True
         vacancy.assigned_to = []
+        # «Всем рекрутёрам» → снимаем dismissed_by: иначе ранее «отказавшиеся»
+        # рекрутёры не увидят вакансию (isVacancyParticipant проверяет dismissed_by
+        # первым), хотя уведомление «вам назначена» им придёт. Аудит 2026-08-07.
+        _extra = dict(vacancy.extra_data or {})
+        if _extra.get("dismissed_by"):
+            _extra["dismissed_by"] = []
+            vacancy.extra_data = _extra
     else:
         # Проверяем что все user_ids — валидные участники орга.
         valid_ids: set[int] = set()
