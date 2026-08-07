@@ -45,7 +45,7 @@ import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } fro
 import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import CandidateHandoverModal from '@/components/vacancies/CandidateHandoverModal';
-import { getVacancies } from '@/services/api/vacancies';
+import { getAllVacancies } from '@/services/api/vacancies';
 import { funnelSearchMatch } from '@/utils/translit';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
@@ -248,7 +248,7 @@ export default function RecruiterFunnelsPage() {
   const [deletedVacancies, setDeletedVacancies] = useState<Vacancy[]>([]);
   useEffect(() => {
     if (statusFilter === 'deleted') {
-      getVacancies({ deleted: true }).then(setDeletedVacancies).catch(() => setDeletedVacancies([]));
+      getAllVacancies({ deleted: true }).then(setDeletedVacancies).catch(() => setDeletedVacancies([]));
     }
   }, [statusFilter]);
   const [showStatusMenu, setShowStatusMenu] = useState(false);

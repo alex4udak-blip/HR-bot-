@@ -61,7 +61,7 @@ import {
 import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
 import type { ApplicationStage } from "@/types";
 import { STATUS_LABELS } from "@/types";
-import { getVacancies, createApplication, updateApplication, deleteApplication, deleteApplicationHistory } from "@/services/api/vacancies";
+import { getAllVacancies, createApplication, updateApplication, deleteApplication, deleteApplicationHistory } from "@/services/api/vacancies";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
 import type { EntityFile } from "@/services/api/entities";
@@ -3368,7 +3368,7 @@ export function NewCandidateModal({
     let cancelled = false;
     (async () => {
       try {
-        const all = await getVacancies({ status: 'open' });
+        const all = await getAllVacancies({ status: 'open' });
         if (cancelled) return;
         const seen = new Set<string>();
         const myOpen = all

@@ -233,7 +233,7 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
   useEffect(() => {
     // Load vacancies for multi-select
     import('@/services/api').then(api => {
-      api.getVacancies().then((vacs: { id: number; title: string; extra_data?: Record<string, unknown> }[]) => {
+      api.getAllVacancies().then((vacs: { id: number; title: string; extra_data?: Record<string, unknown> }[]) => {
         // Дедуп клонов: «Взять в работу» создаёт клон вакансии с тем же названием
         // (extra_data.cloned_from_request_id), а заявка-оригинал остаётся видимой.
         // Прячем заявку, если у неё есть клон — иначе «Привязанные воронки»

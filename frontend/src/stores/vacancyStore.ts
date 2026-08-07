@@ -84,7 +84,7 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
     if (!silent) set({ isLoading: true });
     set({ error: null });
     try {
-      const raw = await api.getVacancies(get().filters);
+      const raw = await api.getAllVacancies(get().filters);
       // Бэк может вернуть клоны одной вакансии (JOIN с откликами: N откликов →
       // N строк). Дедуплим по id, иначе списки/дропдауны («Переместить» и т.п.)
       // показывают «Mob dev ×2, Трафик ×2» вместо двух реальных вакансий.
@@ -103,8 +103,8 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
 
   fetchVacanciesForSelect: async () => {
     try {
-      // Fetch only open vacancies for dropdown selection
-      const vacancies = await api.getVacancies({ status: 'open' });
+      // Fetch only open vacancies for dropdown selection (все страницы, не первые 50).
+      const vacancies = await api.getAllVacancies({ status: 'open' });
       set({ vacanciesForSelect: vacancies });
     } catch (err) {
       console.error('Failed to fetch vacancies for select:', err);

@@ -5,7 +5,7 @@ import { X, Search, Briefcase, Plus, ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
 import { getErrorDetail } from "@/utils";
 import clsx from "clsx";
-import { getVacancies, applyEntityToVacancy, getEntityVacancies } from "@/services/api";
+import { getAllVacancies, applyEntityToVacancy, getEntityVacancies } from "@/services/api";
 import type { Vacancy } from "@/types";
 import { VACANCY_STATUS_LABELS, VACANCY_STATUS_COLORS } from "@/types";
 import { formatSalary } from "@/utils";
@@ -78,7 +78,7 @@ export default function AddToVacancyModal({
     const loadVacancies = async () => {
       setLoadingVacancies(true);
       try {
-        const data = await getVacancies({
+        const data = await getAllVacancies({
           status: "open",
         });
         // Заявка-оригинал после «Взять в работу» переходит в open и висит рядом

@@ -319,6 +319,7 @@ export type {
 // Vacancies
 export {
   getVacancies,
+  getAllVacancies,
   getVacancy,
   createVacancy,
   updateVacancy,

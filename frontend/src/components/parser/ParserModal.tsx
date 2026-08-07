@@ -9,7 +9,7 @@ import {
   getEntities,
   createEntity,
   uploadEntityFile,
-  getVacancies,
+  getAllVacancies,
   createApplication,
 } from '@/services/api';
 import { addEntityNote } from '@/services/api/entities';
@@ -64,7 +64,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     let cancelled = false;
     (async () => {
       try {
-        const all = await getVacancies({ status: 'open' });
+        const all = await getAllVacancies({ status: 'open' });
         if (cancelled) return;
         // Схлопываем «заявку + её клон»: если у воронки есть клон
         // (extra_data.cloned_from_request_id == X), оригинал X прячем — иначе одна

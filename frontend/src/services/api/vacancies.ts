@@ -95,6 +95,24 @@ export const getVacancies = async (filters?: VacancyFilters): Promise<Vacancy[]>
   return data;
 };
 
+/**
+ * Загрузить ВСЕ вакансии постранично. Бэк /vacancies отдаёт максимум 100 за
+ * запрос (limit le=100); один запрос без skip/limit молча обрезался на 50, и
+ * вакансии пропадали из сайдбара/модалок/дропдаунов, когда их стало >50
+ * (обратная связь: «пропал Трафик»). Используй там, где нужен ПОЛНЫЙ список.
+ */
+export const getAllVacancies = async (filters?: VacancyFilters): Promise<Vacancy[]> => {
+  const PAGE = 100;
+  const MAX_PAGES = 50; // предохранитель (до 5000 вакансий)
+  const all: Vacancy[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const chunk = await getVacancies({ ...(filters || {}), skip: page * PAGE, limit: PAGE });
+    all.push(...chunk);
+    if (chunk.length < PAGE) break;
+  }
+  return all;
+};
+
 export const getVacancy = async (id: number): Promise<Vacancy> => {
   const { data } = await deduplicatedGet<Vacancy>(`/vacancies/${id}`);
   return data;
