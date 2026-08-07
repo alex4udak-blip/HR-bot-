@@ -7,9 +7,14 @@ import type { Vacancy } from "@/types";
 
 // Mock dependencies
 vi.mock("@/services/api", () => ({
-  getVacancies: vi.fn(),
+  getAllVacancies: vi.fn(),
+  getEntityVacancies: vi.fn().mockResolvedValue([]),
   applyEntityToVacancy: vi.fn(),
 }));
+
+// Массовый перенос теперь требует подтверждения (window.confirm) — в тестах
+// подтверждаем автоматически, иначе гард отменяет батч.
+vi.spyOn(window, "confirm").mockReturnValue(true);
 
 vi.mock("@/stores/authStore", () => ({
   useAuthStore: () => ({
@@ -101,7 +106,7 @@ describe("AddToVacancyModal", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (api.getVacancies as ReturnType<typeof vi.fn>).mockResolvedValue(
+    (api.getAllVacancies as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockVacancies,
     );
   });
@@ -140,7 +145,7 @@ describe("AddToVacancyModal", () => {
       render(<AddToVacancyModal {...defaultProps} />);
 
       await waitFor(() => {
-        expect(api.getVacancies).toHaveBeenCalledWith({
+        expect(api.getAllVacancies).toHaveBeenCalledWith({
           status: "open",
           search: undefined,
         });
@@ -150,7 +155,7 @@ describe("AddToVacancyModal", () => {
     it("should display loading spinner while loading", async () => {
       // Delay the response to show loading state
       let resolvePromise: (value: Vacancy[]) => void;
-      (api.getVacancies as ReturnType<typeof vi.fn>).mockImplementation(
+      (api.getAllVacancies as ReturnType<typeof vi.fn>).mockImplementation(
         () =>
           new Promise((resolve) => {
             resolvePromise = resolve;
@@ -262,21 +267,23 @@ describe("AddToVacancyModal", () => {
       expect(searchInput).toBeInTheDocument();
     });
 
-    it("should filter vacancies when searching (debounced)", async () => {
+    it("should filter vacancies when searching (client-side)", async () => {
       render(<AddToVacancyModal {...defaultProps} />);
+
+      // Обе вакансии видны изначально (грузятся одним getAllVacancies, фильтр —
+      // на клиенте по title/location/department, не серверный re-fetch).
+      await screen.findByText("Senior Python Developer");
+      expect(screen.getByText("Frontend Developer")).toBeInTheDocument();
 
       const searchInput = screen.getByPlaceholderText(/поиск/i);
       await userEvent.type(searchInput, "Python");
 
-      // Wait for debounce
       await waitFor(
         () => {
-          expect(api.getVacancies).toHaveBeenCalledWith({
-            status: "open",
-            search: "Python",
-          });
+          expect(screen.getByText("Senior Python Developer")).toBeInTheDocument();
+          expect(screen.queryByText("Frontend Developer")).not.toBeInTheDocument();
         },
-        { timeout: 500 },
+        { timeout: 800 },
       );
     });
   });
@@ -380,7 +387,7 @@ describe("AddToVacancyModal", () => {
       const consoleError = vi
         .spyOn(console, "error")
         .mockImplementation(() => {});
-      (api.getVacancies as ReturnType<typeof vi.fn>).mockRejectedValue(
+      (api.getAllVacancies as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error("API Error"),
       );
 
@@ -429,7 +436,7 @@ describe("AddToVacancyModal", () => {
 
   describe("Empty State", () => {
     it("should show empty state when no vacancies available", async () => {
-      (api.getVacancies as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      (api.getAllVacancies as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
       render(<AddToVacancyModal {...defaultProps} />);
 
