@@ -439,6 +439,11 @@ async def bulk_action(
 ):
     current_user = await db.merge(current_user)
     org_id = await _get_org_id(current_user, db)
+    # org_id=None у не-суперадмина = юзер без OrgMember (напр. выбыл из орга, но с
+    # валидным токеном). Ниже org-фильтр стоит `if org_id:` → без гарда bulk-action
+    # (delete/export/status/tag) прошёлся бы по кандидатам ВСЕХ орг. Аудит 2026-08-07.
+    if org_id is None and current_user.role != UserRole.superadmin:
+        raise HTTPException(403, "No organization access")
 
     if not body.entity_ids:
         raise HTTPException(400, "entity_ids is required")
@@ -692,7 +697,9 @@ async def get_candidate_stage_history(
     entity = entity_result.scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Candidate not found")
-    if org_id and entity.org_id != org_id and current_user.role != UserRole.superadmin:
+    # Не-суперадмин: только своя орг. При org_id=None (юзер без OrgMember) прежнее
+    # `if org_id and ...` схлопывалось в false и отдавало историю ЧУЖОГО кандидата.
+    if current_user.role != UserRole.superadmin and (org_id is None or entity.org_id != org_id):
         raise HTTPException(404, "Candidate not found")
 
     rows = (await db.execute(
@@ -740,6 +747,8 @@ async def list_recruiters(
 ):
     current_user = await db.merge(current_user)
     org_id = await _get_org_id(current_user, db)
+    if org_id is None and current_user.role != UserRole.superadmin:
+        return []  # юзер без орга — не отдаём агрегаты по всем оргам (аудит 2026-08-07)
 
     q = (
         select(User.id, User.name)
@@ -765,6 +774,8 @@ async def list_tags(
 ):
     current_user = await db.merge(current_user)
     org_id = await _get_org_id(current_user, db)
+    if org_id is None and current_user.role != UserRole.superadmin:
+        return []  # юзер без орга — не отдаём теги по всем оргам (аудит 2026-08-07)
 
     q = select(Entity.tags).where(
         Entity.type == EntityType.candidate,

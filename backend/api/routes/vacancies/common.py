@@ -192,16 +192,19 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     - Member: can only access vacancies they created or where they are hiring manager
     - Member with SharedAccess: can access vacancies shared with them
     """
-    # Full database access (superadmin, owner, or member with has_full_access)
-    if await has_full_database_access(user, org, db):
+    # Суперадмин — глобальный доступ (видит все орги). Для ВСЕХ остальных org-
+    # граница идёт ДО проверки роли: иначе admin/owner своей орги проходит
+    # has_full_database_access и получает доступ к ЧУЖОЙ вакансии (cross-org IDOR
+    # на роутах, грузящих вакансию без org-фильтра: list_applications, kanban,
+    # get_vacancy, update/delete_application). Аудит 2026-08-07.
+    if getattr(user, 'role', None) == UserRole.superadmin:
         return True
-
-    # Org-граница (defense-in-depth): дальше доступ только в пределах СВОЕЙ орг.
-    # org — вызывающего; вакансия чужой орг → отказ даже при visible_to_all/
-    # assigned_to_all. Суперадмин/owner уже прошли выше. Закрывает cross-org IDOR
-    # на роутах, забывших фильтр по org_id.
     if org is None or getattr(vacancy, 'org_id', None) != org.id:
         return False
+
+    # Full database access (owner, или member с has_full_access — теперь в СВОЕЙ орг).
+    if await has_full_database_access(user, org, db):
+        return True
 
     # visible_to_all БОЛЬШЕ НЕ даёт member доступ (2026-07-07): рекрутёр видит
     # заявку только если реально назначен/создатель/наниматель/лид/шара, иначе
@@ -244,13 +247,16 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     - Hiring manager: can edit vacancies where they are hiring manager
     - User with SharedAccess (edit or full level): can edit vacancies shared with them
     """
-    # Org admin/owner can edit all
-    if await is_org_owner(user, org, db):
+    # Суперадмин — глобально. Остальные — org-граница ДО проверки роли (иначе owner
+    # своей орги правил бы чужую вакансию, cross-org IDOR). Аудит 2026-08-07.
+    if getattr(user, 'role', None) == UserRole.superadmin:
         return True
-
-    # Org-граница (defense-in-depth): редактировать можно только в своей орг.
     if org is None or getattr(vacancy, 'org_id', None) != org.id:
         return False
+
+    # Org owner can edit all (в СВОЕЙ орг).
+    if await is_org_owner(user, org, db):
+        return True
 
     # Vacancy marked as visible to all org members
     if getattr(vacancy, 'visible_to_all', False):
@@ -287,11 +293,14 @@ async def can_manage_applications(vacancy: Vacancy, user: User, org: Organizatio
     лид отдела, edit-шара. В отличие от can_access_vacancy НЕ даёт право мутации
     случайному члену орга только по visible_to_all (это видимость, а не работа).
     """
-    if await has_full_database_access(user, org, db):
+    # Суперадмин — глобально. Остальные — org-граница ДО проверки роли (иначе
+    # admin/owner своей орги двигал/удалял бы отклики чужой воронки). Аудит 2026-08-07.
+    if getattr(user, 'role', None) == UserRole.superadmin:
         return True
-    # Org-граница (defense-in-depth): мутировать отклики можно только в своей орг.
     if org is None or getattr(vacancy, 'org_id', None) != org.id:
         return False
+    if await has_full_database_access(user, org, db):
+        return True
     if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
         return True
     if getattr(vacancy, 'assigned_to_all', False):
