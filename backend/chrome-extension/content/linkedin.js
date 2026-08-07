@@ -198,6 +198,15 @@
       const isUsable = (s) =>
         s && !/^data:/i.test(s) && !/\.svg(?:[?#]|$)/i.test(s) && !/ghost/i.test(s);
       const norm = (s) => (s && s.startsWith('//')) ? 'https:' + s : s;
+      // ЧУЖИЕ фото: аватар самого рекрутёра в верхней навигации / «Me»-меню и фото
+      // «Похожих людей» в правом сайдбаре (aside). Если у кандидата фото НЕТ, прежний
+      // фолбэк по всем <img> хватал именно их (обратная связь: подтянуло моё фото с
+      // аккаунта). Берём фото ТОЛЬКО из основного контейнера профиля и режем эти зоны.
+      const isForeign = (im) => !!im.closest(
+        '.global-nav, #global-nav, header, [data-test-global-nav], ' +
+        '.scaffold-layout__aside, aside, .global-nav__me, .global-nav__me-photo'
+      );
+      const scope = document.querySelector('main.scaffold-layout__main, .scaffold-layout__main, main') || document;
 
       // 1) Идём от листа с именем вверх — берём ближайший подходящий <img>.
       const nameTxt = data.full_name || '';
@@ -214,15 +223,17 @@
           node = node.parentElement;
           if (!node) break;
           for (const im of node.querySelectorAll('img')) {
-            if (isLogoOrBg(im)) continue;
+            if (isLogoOrBg(im) || isForeign(im)) continue;
             const src = norm(im.src || im.getAttribute('src') || '');
             if (isUsable(src)) { data.photo_url = src; break; }
           }
         }
       }
-      // 2) Фолбэк: любой licdn-image, кроме баннера/лого.
+      // 2) Фолбэк: licdn-image ТОЛЬКО в контейнере профиля (не в навигации/сайдбаре),
+      // кроме баннера/лого. Нет фото у кандидата → фолбэк НИЧЕГО не берёт (а не чужое).
       if (!data.photo_url) {
-        for (const im of document.querySelectorAll('img')) {
+        for (const im of scope.querySelectorAll('img')) {
+          if (isForeign(im)) continue;
           const src = norm(im.src || '');
           if (!/licdn\.com\/dms\/image/.test(src)) continue;
           if (isLogoOrBg(im) || !isUsable(src)) continue;
