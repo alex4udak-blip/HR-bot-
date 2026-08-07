@@ -414,19 +414,20 @@ export default function AllCandidatesPage() {
   // возвращал на предыдущую вкладку вместе с открытым кандидатом (обратная связь
   // 2026-08-05: переключил вкладку — Back стал серым, к кандидату не вернуться).
   // Клик по вкладке = push истории; программные сбросы — replace (push:false).
-  const activeTab = searchParams.get("stage") || "all";
+  // Активная вкладка-этап — СТЕЙТ (переключается мгновенно по клику), синхронный с
+  // URL ?stage= (та же проверенная схема, что в воронке). Раньше был derived-от-URL
+  // — на проде вкладки не переключались, поэтому вернулись к стейту. Клик = стейт +
+  // push ?stage= + снятие открытого кандидата (иначе авто-селект по ?entity= off-tab
+  // отбрасывал вкладку обратно на «Все»). push:false — программный/деплинк-переход.
+  const [activeTab, setActiveTabState] = useState<string>(() => searchParams.get("stage") || "all");
   const setActiveTab = useCallback(
     (status: string, opts?: { push?: boolean }) => {
       const push = opts?.push !== false;
+      setActiveTabState(status || "all");
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         if (!status || status === "all") next.delete("stage");
         else next.set("stage", status);
-        // Пользовательский клик по вкладке (push) снимает открытого кандидата из
-        // URL. Иначе ?entity= остаётся, и если кандидат не на новом этапе —
-        // эффект авто-селекта уходит в ветку «подтянуть по имени» и ОТБРАСЫВАЕТ
-        // вкладку обратно на «Все» (регресс: этапы не переключались). Программный
-        // резолв диплинка (push:false) entity сохраняет — он его и открывает.
         if (push) {
           next.delete("entity");
           next.delete("edit");
@@ -438,6 +439,13 @@ export default function AllCandidatesPage() {
     },
     [setSearchParams],
   );
+  // Браузерный Назад/Вперёд меняет ?stage= — подхватываем в стейт (зависимость —
+  // извлечённая строка stage, а не весь searchParams, чтобы правки ?entity= и др.
+  // не дёргали). Guard на равенство — без циклов с сеттером выше.
+  const urlStageParam = searchParams.get("stage") || "all";
+  useEffect(() => {
+    setActiveTabState((cur) => (cur === urlStageParam ? cur : urlStageParam));
+  }, [urlStageParam]);
 
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [selectedStatus, setSelectedStatus] = useState("");
