@@ -29,32 +29,46 @@ function getAudioCtor(): typeof AudioContext | null {
   );
 }
 
-/** Resume/create the AudioContext on the user's first gesture, then self-remove. */
-export function unlockAudio(): void {
+function ensureCtx(): AudioContext | null {
   const AC = getAudioCtor();
-  if (!AC) return;
-  const unlock = () => {
-    try {
-      if (!ctx) ctx = new AC();
-      if (ctx.state === 'suspended') void ctx.resume();
-    } catch {
-      /* ignore */
-    }
-    window.removeEventListener('pointerdown', unlock);
-    window.removeEventListener('keydown', unlock);
+  if (!AC) return null;
+  if (!ctx) {
+    try { ctx = new AC(); } catch { return null; }
+  }
+  return ctx;
+}
+
+/**
+ * Держим AudioContext «живым»: браузер suspend'ит его при уходе со вкладки/простое,
+ * и чайм из таймера (поллинг уведомлений) молча не проигрывается. Поэтому НЕ
+ * снимаем слушатели после первого жеста (было: self-remove → после первого же
+ * suspend контекст больше не поднимался, звук «пропадал вообще») и дополнительно
+ * поднимаем контекст при возврате на вкладку (visibilitychange).
+ */
+export function unlockAudio(): void {
+  if (typeof window === 'undefined') return;
+  const resume = () => {
+    const c = ensureCtx();
+    if (c && c.state === 'suspended') { try { void c.resume(); } catch { /* ignore */ } }
   };
-  window.addEventListener('pointerdown', unlock);
-  window.addEventListener('keydown', unlock);
+  window.addEventListener('pointerdown', resume);
+  window.addEventListener('keydown', resume);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') resume();
+  });
 }
 
 /** Soft two-note chime (A5 -> D6). No-op if muted or audio isn't available/unlocked. */
-export function playAnketaChime(): void {
+export async function playAnketaChime(): Promise<void> {
   if (isAnketaSoundMuted()) return;
-  const AC = getAudioCtor();
-  if (!AC) return;
+  const audioCtx = ensureCtx();
+  if (!audioCtx) return;
   try {
-    if (!ctx) ctx = new AC();
-    if (ctx.state === 'suspended') void ctx.resume();
+    // ВАЖНО: дожидаемся resume ДО планирования нот. Раньше ноты планировались
+    // сразу против «замороженного» currentTime suspended-контекста и не звучали.
+    if (audioCtx.state === 'suspended') { try { await audioCtx.resume(); } catch { /* ignore */ } }
+    if (audioCtx.state !== 'running') return; // фон/заблокировано браузером — тихо выходим
+    const ctx = audioCtx;
     const now = ctx.currentTime;
     const notes = [
       { freq: 880, start: 0 }, // A5
