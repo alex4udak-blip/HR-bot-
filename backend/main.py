@@ -23,7 +23,7 @@ from api.routes import auth, users, chats, messages, criteria, ai, stats, entiti
 from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, org_units, magic_button, pen
 from api.routes import candidate_search, extension_download, prometheus_invite, csv_import
 from api.routes import candidate_database, recruiter_workspaces
-from api.routes import timeoff, blockers, tags, integrations
+from api.routes import timeoff, blockers, tags, integrations, staff_board
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -619,6 +619,7 @@ app.include_router(entity_ai.router, prefix="/api", tags=["entity-ai"])
 app.include_router(organizations.router, prefix="/api/organizations", tags=["organizations"])
 app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
 app.include_router(departments.router, prefix="/api/departments", tags=["departments"])
+app.include_router(staff_board.router, prefix="/api/staff-board", tags=["staff-board"])
 app.include_router(invitations.router, prefix="/api/invitations", tags=["invitations"])
 app.include_router(realtime.router, tags=["realtime"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])

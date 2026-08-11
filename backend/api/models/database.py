@@ -64,6 +64,10 @@ class EntityStatus(str, enum.Enum):
     hired = "hired"               # Принят - accepted and hired
     probation = "probation"       # Практика - пробный период после оффера
     transferred = "transferred"   # Перешёл в отдел - оформлен в штат
+    # Финал жизненного цикла в штате (доска «Статусы»). Раньше увольнение
+    # хранилось только на Employee.is_active, без разделения уволен/уволился.
+    dismissed = "dismissed"       # Уволен - по инициативе компании
+    quit = "quit"                 # Уволился - по собственному
     rejected = "rejected"         # Отказ - rejected
     withdrawn = "withdrawn"       # Отозван - кандидат отозвал отклик
     reserve = "reserve"           # Резерв - отложен в резерв
@@ -188,6 +192,7 @@ class EntityFileType(str, enum.Enum):
     test_assignment = "test_assignment"
     certificate = "certificate"
     portfolio = "portfolio"
+    offer = "offer"            # документ оффера (колонка «Оффер» на доске «Статусы»)
     other = "other"
 
 

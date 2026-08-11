@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { hireEntity, getDepartments } from '@/services/api';
 import type { Department } from '@/services/api';
+import { getBoardFolders, updateBoardRow, type BoardFolder } from '@/services/api/staffBoard';
 import { getErrorDetail } from '@/utils';
 import DatePickerFactorial from '@/factorial/components/DatePickerFactorial';
 
@@ -32,9 +33,15 @@ export default function HireToStaffButton(props: Props) {
   const [saving, setSaving] = useState(false);
   const [deptOpen, setDeptOpen] = useState(false);
   const deptRef = useRef<HTMLDivElement>(null);
+  // Направление на доске «Статусы» — отдельный от отдела список папок
+  const [folders, setFolders] = useState<BoardFolder[]>([]);
+  const [direction, setDirection] = useState<string>('');
 
   useEffect(() => {
-    if (open) getDepartments().then((d) => setDepts(d)).catch(() => setDepts([]));
+    if (open) {
+      getDepartments().then((d) => setDepts(d)).catch(() => setDepts([]));
+      getBoardFolders().then(setFolders).catch(() => setFolders([]));
+    }
   }, [open]);
 
   // Подставляем логин(email)/должность кандидата. useState-инициализатор срабатывает
@@ -71,6 +78,18 @@ export default function HireToStaffButton(props: Props) {
         department_id: Number(deptId), email: mail.trim(), position: pos.trim() || null,
         department_start_date: date || null,
       });
+      // Найм пишет дату выхода в запись сотрудника, а доска «Статусы» читает
+      // карточку кандидата — поэтому дублируем дату (и папку) в неё, иначе
+      // человек появится на доске с пустым «Выход в отдел». Не критично: если
+      // не получилось, найм уже прошёл — просто молча логируем.
+      try {
+        await updateBoardRow(entityId, {
+          direction: direction || null,
+          department_start_date: date || null,
+        });
+      } catch (boardErr) {
+        console.warn('Не удалось проставить направление на доске «Статусы»', boardErr);
+      }
       // Пароль здесь НЕ выдаём — сотрудник получит доступ в Factorial, когда выйдет
       // после ИС (кнопка «Сгенерировать пароль» на его карточке). Тут только
       // оформляем и переводим кандидата в «Перешёл в отдел».
@@ -126,6 +145,19 @@ export default function HireToStaffButton(props: Props) {
                     )}
                   </div>
                 </div>
+                <label className="block">
+                  <span className="text-xs text-dark-400">Направление (доска «Статусы»)</span>
+                  <select
+                    value={direction}
+                    onChange={(e) => setDirection(e.target.value)}
+                    className="mt-1 w-full rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="">— без направления —</option>
+                    {folders.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                </label>
                 <label className="block">
                   <span className="text-xs text-dark-400">Email (логин)</span>
                   <input value={mail} onChange={(e) => setMail(e.target.value)} type="email" placeholder="ivan@company.com"

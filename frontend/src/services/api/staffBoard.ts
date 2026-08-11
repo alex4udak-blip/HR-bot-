@@ -1,0 +1,83 @@
+/**
+ * Доска «Статусы» — жизненный цикл сотрудника внутри направления.
+ * Строки доски — карточки кандидатов; папки-направления хранятся в настройках организации.
+ */
+import api from './client';
+
+export interface BoardFolder {
+  id: string;
+  name: string;
+}
+
+export interface BoardRow {
+  entity_id: number;
+  name: string;
+  status: string;
+  direction: string | null;
+  position: string | null;
+  department_id: number | null;
+  department_name: string | null;
+  telegram: string | null;
+  practice_start_date: string | null;
+  department_start_date: string | null;
+  manager: string | null;
+  m1: string | null;
+  m3: string | null;
+  y1: string | null;
+  /** true = дата посчитана автоматически от «выход в отдел», false = вбита руками */
+  m1_auto: boolean;
+  m3_auto: boolean;
+  y1_auto: boolean;
+  offer_file_id: number | null;
+  offer_file_name: string | null;
+}
+
+export interface BoardRowUpdate {
+  status?: string;
+  direction?: string | null;
+  position?: string | null;
+  department_id?: number | null;
+  telegram?: string | null;
+  practice_start_date?: string | null;
+  department_start_date?: string | null;
+  manager?: string | null;
+  m1?: string | null;
+  m3?: string | null;
+  y1?: string | null;
+}
+
+// ─── Папки-направления ──────────────────────────────────────
+
+export async function getBoardFolders(): Promise<BoardFolder[]> {
+  const { data } = await api.get('/staff-board/folders');
+  return data;
+}
+
+export async function createBoardFolder(name: string): Promise<BoardFolder> {
+  const { data } = await api.post('/staff-board/folders', { name });
+  return data;
+}
+
+export async function renameBoardFolder(id: string, name: string): Promise<BoardFolder> {
+  const { data } = await api.patch(`/staff-board/folders/${id}`, { name });
+  return data;
+}
+
+export async function deleteBoardFolder(id: string): Promise<void> {
+  await api.delete(`/staff-board/folders/${id}`);
+}
+
+// ─── Строки ─────────────────────────────────────────────────
+
+export async function getBoardRows(): Promise<BoardRow[]> {
+  const { data } = await api.get('/staff-board/rows');
+  return data;
+}
+
+export async function updateBoardRow(
+  entityId: number,
+  patch: BoardRowUpdate
+): Promise<BoardRow> {
+  const { data } = await api.patch(`/staff-board/rows/${entityId}`, patch);
+  return data;
+}

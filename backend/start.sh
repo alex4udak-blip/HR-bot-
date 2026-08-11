@@ -7,6 +7,51 @@ echo "=== Starting HR-Bot Backend ==="
 echo "Running database migrations..."
 python -m alembic upgrade head || echo "Migrations completed or skipped"
 
+# Доска «Статусы»: новые значения enum-ов (Уволен/Уволился, тип файла «оффер»).
+# Отдельным блоком — намеренно: большой ensure-скрипт ниже длинный, и если он
+# упадёт на середине, эти ALTER-ы не должны пропасть вместе с ним.
+# ALTER TYPE ADD VALUE нельзя выполнять внутри транзакции → AUTOCOMMIT.
+echo "Ensuring lifecycle enum values..."
+python -c "
+import os, asyncio
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+async def ensure_enums():
+    db_url = os.environ.get('DATABASE_URL', '')
+    if not db_url:
+        print('No DATABASE_URL, skipping enum check')
+        return
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
+    elif db_url.startswith('postgresql://'):
+        db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+
+    engine = create_async_engine(db_url, isolation_level='AUTOCOMMIT')
+    async with engine.connect() as conn:
+        for type_name, value in (
+            ('entitystatus', 'dismissed'),
+            ('entitystatus', 'quit'),
+            ('entityfiletype', 'offer'),
+        ):
+            exists = await conn.execute(text(
+                'SELECT EXISTS (SELECT 1 FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid '
+                'WHERE t.typname = :t AND e.enumlabel = :v)'
+            ), {'t': type_name, 'v': value})
+            if exists.scalar():
+                continue
+            try:
+                await conn.execute(text(
+                    'ALTER TYPE ' + type_name + \" ADD VALUE IF NOT EXISTS '\" + value + \"'\"
+                ))
+                print('Added enum value ' + type_name + '.' + value)
+            except Exception as e:
+                print('enum ' + type_name + '.' + value + ': ' + str(e))
+    await engine.dispose()
+
+asyncio.run(ensure_enums())
+" || echo "Enum check completed or skipped"
+
 # Ensure critical columns exist (fallback for broken migration chain)
 echo "Ensuring shadow users columns exist..."
 python -c "
