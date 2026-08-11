@@ -312,15 +312,24 @@ async def delete_folder(
 
     _save_folders(org, rest)
 
-    # Снимаем направление у карточек этой папки
+    # Снимаем направление у карточек этой папки. Тянем только id + extra_data
+    # (а не ORM-объекты Entity целиком) — карточек в организации тысячи, полная
+    # загрузка ради редкого действия «удалить папку» была бы неоправданной.
     rows = (await db.execute(
-        select(Entity).where(Entity.org_id == org.id)
-    )).scalars().all()
+        select(Entity.id, Entity.extra_data).where(Entity.org_id == org.id)
+    )).all()
+    victim_ids = [
+        ent_id for ent_id, extra in rows
+        if isinstance(extra, dict) and extra.get(_K_DIRECTION) == folder_id
+    ]
+
     cleared = 0
-    for ent in rows:
-        ex = _extra(ent)
-        if ex.get(_K_DIRECTION) == folder_id:
-            ex = dict(ex)
+    if victim_ids:
+        entities = (await db.execute(
+            select(Entity).where(Entity.id.in_(victim_ids))
+        )).scalars().all()
+        for ent in entities:
+            ex = dict(_extra(ent))
             ex.pop(_K_DIRECTION, None)
             ent.extra_data = ex
             flag_modified(ent, "extra_data")
@@ -368,7 +377,9 @@ async def list_rows(
         select(EntityFile.id, EntityFile.entity_id, EntityFile.file_name)
         .where(
             EntityFile.entity_id.in_(ids),
-            EntityFile.file_type == EntityFileType.offer,
+            # как текст — чтобы запрос не падал, пока значение 'offer'
+            # не добавлено в pg-enum (см. start.sh)
+            cast(EntityFile.file_type, String) == EntityFileType.offer.value,
         )
         .order_by(EntityFile.id.desc())
     )).all()
@@ -464,13 +475,21 @@ async def update_row(
         flag_modified(entity, "extra_data")
 
     await db.commit()
-    await db.refresh(entity)
+
+    # НЕ db.refresh(): он сбрасывает уже загруженную связь department, и
+    # следующее обращение к entity.department.name ушло бы в ленивую подгрузку —
+    # в async-сессии это падает (MissingGreenlet). Перечитываем явно с selectinload.
+    entity = (await db.execute(
+        select(Entity)
+        .where(Entity.id == entity_id)
+        .options(selectinload(Entity.department))
+    )).scalar_one()
 
     offer = (await db.execute(
         select(EntityFile)
         .where(
             EntityFile.entity_id == entity.id,
-            EntityFile.file_type == EntityFileType.offer,
+            cast(EntityFile.file_type, String) == EntityFileType.offer.value,
         )
         .order_by(EntityFile.id.desc())
         .limit(1)
