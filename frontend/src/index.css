@@ -9226,3 +9226,336 @@ body.performance-mode .glass-card:hover {
     display: none;
   }
 }
+
+/* ============================================
+   Статусы — доска жизненного цикла сотрудника
+   Оформление по HR-дизайн-системе: токены --hf-*
+   для радиусов/отступов/типографики + семантические
+   --bg-*/--fg-*/--border-*, которые сами
+   переключаются между светлой и тёмной темой.
+   ============================================ */
+
+.hf-statuses-page {
+  padding: var(--hf-space-xxl);
+  color: var(--fg-body);
+}
+
+/* ── Шапка ───────────────────────────────── */
+.hf-statuses-header {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-l);
+  margin-bottom: var(--hf-space-xl);
+}
+.hf-statuses-title {
+  font-size: var(--hf-fs-l);
+  font-weight: var(--hf-fw-semibold, 600);
+  line-height: 1.2;
+  color: var(--fg-body);
+}
+.hf-statuses-subtitle {
+  margin-top: var(--hf-space-xxs);
+  font-size: var(--hf-fs-3xs);
+  color: var(--fg-dimmed);
+}
+.hf-statuses-search {
+  position: relative;
+  margin-left: auto;
+  flex: 0 0 280px;
+}
+.hf-statuses-search-icon {
+  position: absolute;
+  left: var(--hf-space-m);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--fg-dimmed);
+  pointer-events: none;
+}
+.hf-statuses-search-input {
+  width: 100%;
+  padding: var(--hf-space-s) var(--hf-space-m) var(--hf-space-s) 36px;
+  border: var(--hf-border-xs) solid var(--border-primary);
+  border-radius: var(--hf-radius-pill);
+  background: var(--bg-surface);
+  color: var(--fg-body);
+  font-size: var(--hf-fs-2xs);
+  outline: none;
+  transition: border-color var(--hf-transition-fast), box-shadow var(--hf-transition-fast);
+}
+.hf-statuses-search-input::placeholder { color: var(--fg-dimmed); }
+.hf-statuses-search-input:focus {
+  border-color: var(--hf-cyan-500);
+  box-shadow: 0 0 0 3px rgba(37, 207, 232, 0.15);
+}
+
+/* ── Раскладка ───────────────────────────── */
+.hf-statuses-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hf-space-xl);
+}
+.hf-statuses-sidebar {
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hf-space-xxs);
+}
+
+/* ── Папки ───────────────────────────────── */
+.hf-statuses-folder {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-s);
+  width: 100%;
+  padding: var(--hf-space-s) var(--hf-space-m);
+  border: var(--hf-border-xs) solid transparent;
+  border-radius: var(--hf-radius-s);
+  background: var(--bg-surface);
+  color: var(--fg-muted);
+  font-size: var(--hf-fs-2xs);
+  text-align: left;
+  transition: background var(--hf-transition-fast), color var(--hf-transition-fast);
+}
+.hf-statuses-folder:hover { background: var(--bg-surface-elevated); }
+.hf-statuses-folder-active {
+  background: rgba(122, 192, 22, 0.12);
+  border-color: rgba(122, 192, 22, 0.35);
+  color: var(--hf-green-700);
+  font-weight: var(--hf-fw-medium, 500);
+}
+[data-theme="dark"] .hf-statuses-folder-active { color: var(--hf-green-400); }
+.hf-statuses-folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hf-statuses-folder-count {
+  font-size: var(--hf-fs-4xs);
+  color: var(--fg-dimmed);
+}
+.hf-statuses-folder-actions {
+  position: absolute;
+  right: var(--hf-space-s);
+  display: none;
+  gap: var(--hf-space-xxs);
+}
+.hf-statuses-folder-row:hover .hf-statuses-folder-actions { display: flex; }
+.hf-statuses-folder-action {
+  padding: var(--hf-space-xxs);
+  border-radius: var(--hf-radius-xs);
+  color: var(--fg-dimmed);
+}
+.hf-statuses-folder-action:hover { color: var(--fg-body); background: var(--bg-surface-elevated); }
+.hf-statuses-folder-action-danger:hover { color: var(--hf-red-600); }
+.hf-statuses-folder-add {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-s);
+  width: 100%;
+  margin-top: var(--hf-space-xxs);
+  padding: var(--hf-space-s) var(--hf-space-m);
+  border: var(--hf-border-xs) dashed var(--border-primary);
+  border-radius: var(--hf-radius-s);
+  color: var(--fg-dimmed);
+  font-size: var(--hf-fs-2xs);
+}
+.hf-statuses-folder-add:hover { color: var(--fg-body); background: var(--bg-surface); }
+.hf-statuses-folder-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--hf-space-s) var(--hf-space-m);
+  border: var(--hf-border-xs) solid var(--border-primary);
+  border-radius: var(--hf-radius-s);
+  background: var(--bg-surface);
+  color: var(--fg-body);
+  font-size: var(--hf-fs-2xs);
+  outline: none;
+}
+.hf-statuses-folder-input:focus { border-color: var(--hf-cyan-500); }
+
+/* ── Таблица ─────────────────────────────── */
+.hf-statuses-table-wrap {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  border: var(--hf-border-xs) solid var(--border-subtle);
+  border-radius: var(--hf-radius-m);
+  background: var(--bg-surface);
+  box-shadow: var(--hf-shadow-card);
+}
+.hf-statuses-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--hf-fs-2xs);
+}
+.hf-statuses-th {
+  padding: var(--hf-space-m) var(--hf-space-m) var(--hf-space-s);
+  border-bottom: var(--hf-border-xs) solid var(--border-subtle);
+  color: var(--fg-dimmed);
+  font-size: var(--hf-fs-5xs);
+  font-weight: var(--hf-fw-medium, 500);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+.hf-statuses-th-filter {
+  padding: 0 var(--hf-space-s) var(--hf-space-s);
+  border-bottom: var(--hf-border-xs) solid var(--border-subtle);
+}
+.hf-statuses-filter-input {
+  width: 100%;
+  padding: var(--hf-space-xs) var(--hf-space-s);
+  border: var(--hf-border-xs) solid var(--border-subtle);
+  border-radius: var(--hf-radius-xs);
+  background: var(--bg-surface-elevated);
+  color: var(--fg-body);
+  font-size: var(--hf-fs-4xs);
+  font-weight: 400;
+  outline: none;
+}
+.hf-statuses-filter-input::placeholder { color: var(--fg-dimmed); opacity: 0.6; }
+.hf-statuses-filter-input:focus { border-color: var(--hf-cyan-500); background: var(--bg-surface); }
+
+/* Заголовок секции статуса */
+.hf-statuses-group {
+  cursor: pointer;
+  background: var(--bg-surface-elevated);
+}
+.hf-statuses-group:hover { filter: brightness(0.985); }
+.hf-statuses-group-cell {
+  padding: var(--hf-space-s) var(--hf-space-m);
+}
+.hf-statuses-group-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-s);
+}
+.hf-statuses-chip {
+  padding: 3px var(--hf-space-s);
+  border-radius: var(--hf-radius-xs);
+  font-size: var(--hf-fs-4xs);
+  font-weight: var(--hf-fw-semibold, 600);
+  letter-spacing: 0.02em;
+}
+.hf-statuses-chip-probation   { background: #fff3d6; color: #8a5a00; }
+.hf-statuses-chip-transferred { background: #e2f6d8; color: #3f6d0a; }
+.hf-statuses-chip-dismissed   { background: #ffe0dd; color: #b3241a; }
+.hf-statuses-chip-quit        { background: #dcf1fb; color: #0b6b8a; }
+[data-theme="dark"] .hf-statuses-chip-probation   { background: rgba(245, 164, 0, 0.16);  color: #ffd22e; }
+[data-theme="dark"] .hf-statuses-chip-transferred { background: rgba(122, 192, 22, 0.16); color: #b6df82; }
+[data-theme="dark"] .hf-statuses-chip-dismissed   { background: rgba(255, 83, 59, 0.16);  color: #ffb3af; }
+[data-theme="dark"] .hf-statuses-chip-quit        { background: rgba(37, 207, 232, 0.16); color: #97dff2; }
+.hf-statuses-group-count { font-size: var(--hf-fs-4xs); color: var(--fg-dimmed); }
+
+/* Строки */
+.hf-statuses-row { transition: background var(--hf-transition-fast); }
+.hf-statuses-row:hover { background: var(--bg-surface-elevated); }
+.hf-statuses-row-saving { opacity: 0.55; }
+.hf-statuses-td {
+  padding: var(--hf-space-s) var(--hf-space-m);
+  border-bottom: var(--hf-border-xs) solid var(--border-subtle);
+  vertical-align: middle;
+  color: var(--fg-muted);
+}
+.hf-statuses-name {
+  color: var(--fg-body);
+  font-weight: var(--hf-fw-medium, 500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hf-statuses-empty {
+  padding: var(--hf-space-l) var(--hf-space-m);
+  color: var(--fg-dimmed);
+  font-size: var(--hf-fs-4xs);
+}
+
+/* Редактируемые ячейки */
+.hf-statuses-cell-btn {
+  display: block;
+  width: 100%;
+  padding: var(--hf-space-xs) var(--hf-space-s);
+  margin: calc(var(--hf-space-xs) * -1) calc(var(--hf-space-s) * -1);
+  border-radius: var(--hf-radius-xs);
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--hf-transition-fast);
+}
+.hf-statuses-cell-btn:hover { background: var(--border-subtle); }
+.hf-statuses-cell-placeholder { color: var(--fg-dimmed); opacity: 0.5; }
+.hf-statuses-cell-auto { color: var(--fg-dimmed); font-style: italic; }
+.hf-statuses-cell-input {
+  width: 100%;
+  padding: var(--hf-space-xs) var(--hf-space-s);
+  border: var(--hf-border-xs) solid var(--hf-cyan-500);
+  border-radius: var(--hf-radius-xs);
+  background: var(--bg-surface);
+  color: var(--fg-body);
+  font-size: var(--hf-fs-2xs);
+  outline: none;
+}
+.hf-statuses-select {
+  width: 100%;
+  padding: var(--hf-space-xs) var(--hf-space-xs);
+  border: var(--hf-border-xs) solid transparent;
+  border-radius: var(--hf-radius-xs);
+  background: transparent;
+  color: inherit;
+  font-size: var(--hf-fs-2xs);
+  cursor: pointer;
+}
+.hf-statuses-select:hover { background: var(--border-subtle); }
+.hf-statuses-select-sub {
+  margin-top: 1px;
+  font-size: var(--hf-fs-5xs);
+  color: var(--fg-dimmed);
+}
+
+/* Оффер */
+.hf-statuses-offer {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-xs);
+}
+.hf-statuses-offer-link {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-xxs);
+  max-width: 96px;
+  color: var(--hf-cyan-700);
+  font-size: var(--hf-fs-4xs);
+}
+[data-theme="dark"] .hf-statuses-offer-link { color: var(--hf-cyan-400); }
+.hf-statuses-offer-link:hover { text-decoration: underline; }
+.hf-statuses-offer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hf-statuses-offer-upload {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-xxs);
+  color: var(--fg-dimmed);
+  font-size: var(--hf-fs-4xs);
+}
+.hf-statuses-offer-upload:hover { color: var(--hf-cyan-700); }
+.hf-statuses-offer-remove { color: var(--fg-dimmed); }
+.hf-statuses-offer-remove:hover { color: var(--hf-red-600); }
+
+.hf-statuses-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--hf-space-4xl) 0;
+  color: var(--hf-cyan-600);
+}
+
+.hf-statuses-folder-edit {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-xxs);
+}
