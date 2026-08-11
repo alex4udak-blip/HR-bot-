@@ -786,6 +786,7 @@ function getBlockForPath(path: string): string | null {
       "/factorial",
       "/dashboard",
       "/all-candidates",
+      "/statuses",
       "/candidate-archive",
       "/workspaces",
       "/my-funnels",
@@ -1322,6 +1323,7 @@ export default function Layout() {
   const hrMobileNavItems = useMemo(
     () => [
       { path: "/all-candidates", icon: Users, label: "Все кандидаты" },
+      { path: "/statuses", icon: UserCheck, label: "Статусы" },
       { path: "/analytics", icon: BarChart3, label: "Аналитика" },
       { path: "/vacancies", icon: GitBranch, label: "Заявки" },
       { path: "/my-funnels", icon: Briefcase, label: "Мои вакансии" },
@@ -1629,6 +1631,18 @@ export default function Layout() {
                   >
                     <HfSpriteIcon id="home-20" className="hf-hr-nav-icon" />
                     Все кандидаты
+                  </NavLink>
+                  <NavLink
+                    to="/statuses"
+                    className={({ isActive }) =>
+                      clsx(
+                        "hf-hr-nav-item",
+                        isActive && "hf-hr-nav-item-active",
+                      )
+                    }
+                  >
+                    <HfSpriteIcon id="calendar-20" className="hf-hr-nav-icon" />
+                    Статусы
                   </NavLink>
                   <NavLink
                     to="/analytics"

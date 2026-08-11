@@ -365,7 +365,7 @@ function FolderSidebar({
             </button>
           </div>
         ) : (
-          <div key={f.id} className="hf-statuses-folder-row" style={{ position: "relative" }}>
+          <div key={f.id} className="hf-statuses-folder-row">
             {plain(f.id, f.name)}
             <div className="hf-statuses-folder-actions">
               <button
