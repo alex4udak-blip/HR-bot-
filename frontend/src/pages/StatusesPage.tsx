@@ -38,7 +38,7 @@ const UNASSIGNED = "__none__";
 type FilterKey =
   | "name" | "position" | "department" | "telegram"
   | "practice_start_date" | "department_start_date" | "manager"
-  | "m1" | "m3" | "y1";
+  | "w2" | "m1" | "m3" | "y1";
 
 const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean }[] = [
   { key: "name",                  label: "Сотрудник",         filter: true },
@@ -49,6 +49,7 @@ const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean }[] = 
   { key: "department_start_date", label: "Выход в отдел",     filter: true },
   { key: "manager",               label: "Рук-ль",            filter: true },
   { key: "offer",                 label: "Оффер",             filter: false },
+  { key: "w2",                    label: "2 недели",          filter: true },
   { key: "m1",                    label: "1 мес",             filter: true },
   { key: "m3",                    label: "3 мес",             filter: true },
   { key: "y1",                    label: "1 год",             filter: true },
@@ -482,6 +483,9 @@ function Row({
         <OfferCell row={row} onReload={onReload} />
       </td>
 
+      <td className="hf-statuses-td">
+        <DateCell value={row.w2} auto={row.w2_auto} onSave={(v) => onPatch(row, { w2: v })} />
+      </td>
       <td className="hf-statuses-td">
         <DateCell value={row.m1} auto={row.m1_auto} onSave={(v) => onPatch(row, { m1: v })} />
       </td>

@@ -21,10 +21,13 @@ export interface BoardRow {
   practice_start_date: string | null;
   department_start_date: string | null;
   manager: string | null;
+  w2: string | null;
   m1: string | null;
   m3: string | null;
   y1: string | null;
-  /** true = дата посчитана автоматически от «выход в отдел», false = вбита руками */
+  /** true = дата посчитана автоматически от «выход в отдел»;
+   *  false = факт (вбит руками или импортирован из ClickUp) */
+  w2_auto: boolean;
   m1_auto: boolean;
   m3_auto: boolean;
   y1_auto: boolean;
@@ -41,6 +44,7 @@ export interface BoardRowUpdate {
   practice_start_date?: string | null;
   department_start_date?: string | null;
   manager?: string | null;
+  w2?: string | null;
   m1?: string | null;
   m3?: string | null;
   y1?: string | null;

@@ -22,7 +22,7 @@ PracticeListPage, так что уже введённые данные подх�
 """
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -59,9 +59,25 @@ _K_DIRECTION = "direction"
 _K_PRACTICE = "practice_start_date"
 _K_DEPT_START = "department_transfer_date"
 _K_MANAGER = "manager_name"
+_K_W2 = "w2_date"
 _K_M1 = "m1_date"
 _K_M3 = "m3_date"
 _K_Y1 = "y1_date"
+
+# Автозаполнение из данных, импортированных из ClickUp. Импорт кладёт кастомные
+# поля в extra_data как есть, с префиксом "cf:" — поэтому у уже залитых карточек
+# даты/должность/руководитель зачастую УЖЕ есть, просто под другими ключами.
+# Читаем их как запасной источник; при первой же ручной правке значение
+# сохраняется в наш собственный ключ и дальше берётся оттуда.
+_CF_PRACTICE = "cf:Выход на практику"
+_CF_DEPT_START = "cf:Выход в отдел"
+_CF_MANAGER = "cf:Рук-ль"
+_CF_W2 = "cf:2 недели"
+_CF_M3 = "cf:3 мес"
+_CF_Y1 = "cf:1 год"
+_CF_POSITION = "cf:Должность"
+_CF_DEPARTMENT = "cf:Отдел"
+_CF_TELEGRAM = "cf:Telegram"
 
 
 # --------------------------------------------------------------------------- #
@@ -93,9 +109,11 @@ class BoardRow(BaseModel):
     practice_start_date: Optional[str] = None
     department_start_date: Optional[str] = None
     manager: Optional[str] = None
+    w2: Optional[str] = None
     m1: Optional[str] = None
     m3: Optional[str] = None
     y1: Optional[str] = None
+    w2_auto: bool = True
     m1_auto: bool = True
     m3_auto: bool = True
     y1_auto: bool = True
@@ -117,6 +135,7 @@ class BoardRowUpdate(BaseModel):
     practice_start_date: Optional[str] = None
     department_start_date: Optional[str] = None
     manager: Optional[str] = None
+    w2: Optional[str] = None
     m1: Optional[str] = None
     m3: Optional[str] = None
     y1: Optional[str] = None
@@ -158,6 +177,15 @@ def _iso(d: Optional[date]) -> Optional[str]:
     return d.isoformat() if d else None
 
 
+def _pick(ex: Dict[str, Any], *keys: str) -> Any:
+    """Первое непустое значение по списку ключей (наш ключ → запасной из ClickUp)."""
+    for k in keys:
+        v = ex.get(k)
+        if v not in (None, ""):
+            return v
+    return None
+
+
 def _extra(entity: Entity) -> Dict[str, Any]:
     return entity.extra_data if isinstance(entity.extra_data, dict) else {}
 
@@ -188,37 +216,51 @@ def _first_telegram(entity: Entity) -> Optional[str]:
 
 def _row_from_entity(entity: Entity, offer: Optional[EntityFile]) -> BoardRow:
     ex = _extra(entity)
-    dept_start = _parse_date(ex.get(_K_DEPT_START))
+    dept_start = _parse_date(_pick(ex, _K_DEPT_START, _CF_DEPT_START))
 
-    # Вехи: ручное значение важнее авто-расчёта от даты выхода в отдел.
-    def milestone(key: str, months: int) -> tuple[Optional[str], bool]:
-        manual = _parse_date(ex.get(key))
+    def milestone(key: str, cf_key: Optional[str], days: int = 0, months: int = 0):
+        """Значение вехи + признак «посчитано автоматически».
+
+        Приоритет: наш ключ → импортированное из ClickUp → авто-расчёт от даты
+        выхода в отдел. Импортированное считаем ФАКТОМ (auto=False), а не
+        расчётом: это реальная дата из старой системы.
+        """
+        manual = _parse_date(_pick(ex, key, cf_key) if cf_key else ex.get(key))
         if manual:
             return _iso(manual), False
         if dept_start:
-            return _iso(_add_months(dept_start, months)), True
+            target = (dept_start + timedelta(days=days)) if days else _add_months(dept_start, months)
+            return _iso(target), True
         return None, True
 
-    m1, m1_auto = milestone(_K_M1, 1)
-    m3, m3_auto = milestone(_K_M3, 3)
-    y1, y1_auto = milestone(_K_Y1, 12)
+    w2, w2_auto = milestone(_K_W2, _CF_W2, days=14)
+    m1, m1_auto = milestone(_K_M1, None, months=1)
+    m3, m3_auto = milestone(_K_M3, _CF_M3, months=3)
+    y1, y1_auto = milestone(_K_Y1, _CF_Y1, months=12)
 
     status = entity.status.value if hasattr(entity.status, "value") else str(entity.status)
+
+    # Должность/отдел/telegram: своё поле карточки, иначе — импортированное.
+    # «Отдел» из ClickUp — просто текст (связи с нашим справочником нет),
+    # поэтому подставляем его только как подпись, department_id остаётся пустым.
+    position = entity.position or _pick(ex, _CF_POSITION)
+    dept_name = entity.department.name if entity.department else _pick(ex, _CF_DEPARTMENT)
+    telegram = _first_telegram(entity) or (str(_pick(ex, _CF_TELEGRAM) or "").lstrip("@") or None)
 
     return BoardRow(
         entity_id=entity.id,
         name=entity.name,
         status=status,
         direction=ex.get(_K_DIRECTION) or None,
-        position=entity.position,
+        position=position,
         department_id=entity.department_id,
-        department_name=entity.department.name if entity.department else None,
-        telegram=_first_telegram(entity),
-        practice_start_date=_iso(_parse_date(ex.get(_K_PRACTICE))),
+        department_name=dept_name,
+        telegram=telegram,
+        practice_start_date=_iso(_parse_date(_pick(ex, _K_PRACTICE, _CF_PRACTICE))),
         department_start_date=_iso(dept_start),
-        manager=ex.get(_K_MANAGER) or None,
-        m1=m1, m3=m3, y1=y1,
-        m1_auto=m1_auto, m3_auto=m3_auto, y1_auto=y1_auto,
+        manager=_pick(ex, _K_MANAGER, _CF_MANAGER),
+        w2=w2, m1=m1, m3=m3, y1=y1,
+        w2_auto=w2_auto, m1_auto=m1_auto, m3_auto=m3_auto, y1_auto=y1_auto,
         offer_file_id=offer.id if offer else None,
         offer_file_name=offer.file_name if offer else None,
     )
@@ -481,6 +523,7 @@ async def update_row(
         "practice_start_date": _K_PRACTICE,
         "department_start_date": _K_DEPT_START,
         "manager": _K_MANAGER,
+        "w2": _K_W2,
         "m1": _K_M1,
         "m3": _K_M3,
         "y1": _K_Y1,
@@ -495,7 +538,7 @@ async def update_row(
             ex.pop(key, None)
         else:
             # даты нормализуем к YYYY-MM-DD
-            if key in (_K_PRACTICE, _K_DEPT_START, _K_M1, _K_M3, _K_Y1):
+            if key in (_K_PRACTICE, _K_DEPT_START, _K_W2, _K_M1, _K_M3, _K_Y1):
                 parsed = _parse_date(value)
                 if not parsed:
                     raise HTTPException(400, f"Некорректная дата в поле {field}")
