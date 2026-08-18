@@ -143,7 +143,14 @@ async def hire_entity(
         _auto_calculate_dates(emp)
         db.add(emp)
 
+    # Отражаем оформление в САМОЙ карточке кандидата, а не только в записи
+    # сотрудника: доска «Статусы» и карточка читают Entity, поэтому без этого
+    # «Отдел» и «Должность» после найма оставались пустыми, хотя HR их указал.
     ent.status = EntityStatus.transferred
+    if data.department_id:
+        ent.department_id = data.department_id
+    if data.position:
+        ent.position = data.position
     await db.commit()
     await db.refresh(emp)
 

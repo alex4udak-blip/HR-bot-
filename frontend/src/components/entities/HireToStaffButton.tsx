@@ -39,6 +39,9 @@ export default function HireToStaffButton(props: Props) {
   // Отделов может быть много (в т.ч. вложенные) — нужен поиск внутри списка
   const [deptQuery, setDeptQuery] = useState('');
   const [positions, setPositions] = useState<string[]>([]);
+  // Заполняем сразу здесь, чтобы на доске «Статусы» не пришлось дозаполнять руками
+  const [practiceDate, setPracticeDate] = useState('');
+  const [manager, setManager] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -59,6 +62,8 @@ export default function HireToStaffButton(props: Props) {
     if (!open) {
       setMail(email || '');
       setPos(position || '');
+      setPracticeDate('');
+      setManager('');
     }
   }, [entityId, email, position, open]);
 
@@ -99,6 +104,8 @@ export default function HireToStaffButton(props: Props) {
         await updateBoardRow(entityId, {
           direction: direction || null,
           department_start_date: date || null,
+          practice_start_date: practiceDate || null,
+          manager: manager.trim() || null,
         });
       } catch (boardErr) {
         console.warn('Не удалось проставить направление на доске «Статусы»', boardErr);
@@ -200,16 +207,30 @@ export default function HireToStaffButton(props: Props) {
                   </datalist>
                 </label>
                 <div className="block">
-                  <span className="text-xs text-dark-400">Дата выхода</span>
+                  <span className="text-xs text-dark-400">Выход в отдел</span>
                   <div className="mt-1">
                     <DatePickerFactorial value={date} onChange={setDate} placeholder="дд.мм.гггг" />
                   </div>
                 </div>
+                <div className="block">
+                  <span className="text-xs text-dark-400">Выход на практику (необязательно)</span>
+                  <div className="mt-1">
+                    <DatePickerFactorial value={practiceDate} onChange={setPracticeDate} placeholder="дд.мм.гггг" />
+                  </div>
+                </div>
+                <label className="block">
+                  <span className="text-xs text-dark-400">Руководитель (необязательно)</span>
+                  <input value={manager} onChange={(e) => setManager(e.target.value)}
+                    placeholder="кто ведёт сотрудника"
+                    className="mt-1 w-full rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-white placeholder-dark-400" />
+                </label>
                 <button onClick={submit} disabled={saving}
                   className="w-full mt-2 rounded-lg bg-green-500/20 text-green-400 border border-green-500/30 py-2 text-sm font-medium hover:bg-green-500/30 disabled:opacity-50">
                   {saving ? 'Оформляем…' : 'Подтвердить'}
                 </button>
                 <p className="text-xs text-dark-400 leading-relaxed">
+                  Отдел, должность, Telegram и даты попадут на доску «Статусы» автоматически;
+                  вехи 2 недели / 1 / 3 мес / 1 год посчитаются от даты выхода в отдел.
                   Пароль для входа сгенерируете позже в Factorial, на карточке сотрудника —
                   когда он выйдет после испытательного срока.
                 </p>
