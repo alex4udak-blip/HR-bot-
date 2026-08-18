@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { hireEntity, getDepartments } from '@/services/api';
 import type { Department } from '@/services/api';
-import { getBoardFolders, updateBoardRow, type BoardFolder } from '@/services/api/staffBoard';
+import { getBoardFolders, updateBoardRow, getBoardPositions, type BoardFolder } from '@/services/api/staffBoard';
 import { getErrorDetail } from '@/utils';
 import DatePickerFactorial from '@/factorial/components/DatePickerFactorial';
 
@@ -36,11 +36,17 @@ export default function HireToStaffButton(props: Props) {
   // Направление на доске «Статусы» — отдельный от отдела список папок
   const [folders, setFolders] = useState<BoardFolder[]>([]);
   const [direction, setDirection] = useState<string>('');
+  // Отделов может быть много (в т.ч. вложенные) — нужен поиск внутри списка
+  const [deptQuery, setDeptQuery] = useState('');
+  const [positions, setPositions] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
-      getDepartments().then((d) => setDepts(d)).catch(() => setDepts([]));
+      // -1 = ВСЕ отделы, включая вложенные. Без аргумента бэкенд отдаёт только
+      // верхний уровень — из-за этого в диалоге не хватало отделов.
+      getDepartments(-1).then((d) => setDepts(d)).catch(() => setDepts([]));
       getBoardFolders().then(setFolders).catch(() => setFolders([]));
+      getBoardPositions().then(setPositions).catch(() => setPositions([]));
     }
   }, [open]);
 
@@ -59,7 +65,7 @@ export default function HireToStaffButton(props: Props) {
   useEffect(() => {
     if (!deptOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (deptRef.current && !deptRef.current.contains(e.target as Node)) setDeptOpen(false);
+      if (deptRef.current && !deptRef.current.contains(e.target as Node)) { setDeptOpen(false); setDeptQuery(''); }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
@@ -68,6 +74,13 @@ export default function HireToStaffButton(props: Props) {
   if (!canHire || !HIREABLE.has(status)) return null;
 
   const selectedDept = depts.find((d) => d.id === deptId);
+  // Вложенные отделы показываем с родителем: «Разработка → Android»,
+  // иначе одинаковые названия в разных ветках неразличимы.
+  const deptLabel = (d: Department) => (d.parent_name ? `${d.parent_name} → ${d.name}` : d.name);
+  const visibleDepts = depts.filter((d) => {
+    const needle = deptQuery.trim().toLowerCase();
+    return !needle || deptLabel(d).toLowerCase().includes(needle);
+  });
 
   const submit = async () => {
     if (!mail.trim()) { toast.error('Укажите email — это логин сотрудника'); return; }
@@ -127,20 +140,34 @@ export default function HireToStaffButton(props: Props) {
                   <div className="relative mt-1" ref={deptRef}>
                     <button type="button" onClick={() => setDeptOpen((v) => !v)}
                       className="w-full flex items-center justify-between rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-white hover:border-white/20">
-                      <span className={selectedDept ? '' : 'text-dark-400'}>{selectedDept ? selectedDept.name : '— выберите отдел —'}</span>
+                      <span className={selectedDept ? '' : 'text-dark-400'}>{selectedDept ? deptLabel(selectedDept) : '— выберите отдел —'}</span>
                       <ChevronDown className={clsx('w-4 h-4 text-dark-400 transition-transform', deptOpen && 'rotate-180')} />
                     </button>
                     {deptOpen && (
-                      <div className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-lg bg-dark-700 border border-white/10 p-1 shadow-xl">
-                        {depts.length === 0 && <div className="px-3 py-2 text-xs text-dark-400">Нет отделов</div>}
-                        {depts.map((d) => (
-                          <button key={d.id} type="button"
-                            onClick={() => { setDeptId(d.id); setDeptOpen(false); }}
-                            className={clsx('w-full text-left px-3 py-2 text-sm rounded-md hover:bg-white/5',
-                              d.id === deptId ? 'bg-green-500/15 text-green-400' : 'text-white')}>
-                            {d.name}
-                          </button>
-                        ))}
+                      <div className="absolute z-10 mt-1 w-full rounded-lg bg-dark-700 border border-white/10 shadow-xl">
+                        <div className="p-1 border-b border-white/10">
+                          <input
+                            autoFocus
+                            value={deptQuery}
+                            onChange={(e) => setDeptQuery(e.target.value)}
+                            placeholder="Поиск отдела…"
+                            className="w-full rounded-md bg-dark-800 border border-white/10 px-2 py-1.5 text-sm text-white placeholder-dark-400 focus:outline-none focus:border-white/25"
+                          />
+                        </div>
+                        <div className="max-h-56 overflow-auto p-1">
+                          {depts.length === 0 && <div className="px-3 py-2 text-xs text-dark-400">Нет отделов</div>}
+                          {depts.length > 0 && visibleDepts.length === 0 && (
+                            <div className="px-3 py-2 text-xs text-dark-400">Ничего не найдено</div>
+                          )}
+                          {visibleDepts.map((d) => (
+                            <button key={d.id} type="button"
+                              onClick={() => { setDeptId(d.id); setDeptOpen(false); setDeptQuery(''); }}
+                              className={clsx('w-full text-left px-3 py-2 text-sm rounded-md hover:bg-white/5',
+                                d.id === deptId ? 'bg-green-500/15 text-green-400' : 'text-white')}>
+                              {deptLabel(d)}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -166,7 +193,11 @@ export default function HireToStaffButton(props: Props) {
                 <label className="block">
                   <span className="text-xs text-dark-400">Должность</span>
                   <input value={pos} onChange={(e) => setPos(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-white" />
+                    list="hire-positions" placeholder="начните вводить или выберите"
+                    className="mt-1 w-full rounded-lg bg-dark-700 border border-white/10 px-3 py-2 text-sm text-white placeholder-dark-400" />
+                  <datalist id="hire-positions">
+                    {positions.map((p) => <option key={p} value={p} />)}
+                  </datalist>
                 </label>
                 <div className="block">
                   <span className="text-xs text-dark-400">Дата выхода</span>

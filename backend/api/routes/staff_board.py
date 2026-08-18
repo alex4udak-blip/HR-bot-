@@ -343,6 +343,40 @@ async def delete_folder(
 # Строки доски                                                                  #
 # --------------------------------------------------------------------------- #
 
+@router.get("/positions", response_model=List[str])
+async def list_positions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Справочник должностей организации — уже встречающиеся значения.
+
+    Живёт здесь, потому что это org-scoped справочник HR-раздела: его берут и
+    доска, и диалог «Взять в штат» (подсказки в поле «Должность»). Отдельной
+    таблицы должностей в системе нет, поэтому собираем distinct по карточкам.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    rows = (await db.execute(
+        select(Entity.position)
+        .where(
+            Entity.org_id == org.id,
+            Entity.position.is_not(None),
+            Entity.position != "",
+        )
+        .distinct()
+    )).scalars().all()
+
+    seen: Dict[str, str] = {}
+    for value in rows:
+        clean = (value or "").strip()
+        if clean and clean.lower() not in seen:
+            seen[clean.lower()] = clean
+    return sorted(seen.values(), key=str.lower)
+
+
 @router.get("/rows", response_model=List[BoardRow])
 async def list_rows(
     db: AsyncSession = Depends(get_db),

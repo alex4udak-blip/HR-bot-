@@ -81,3 +81,9 @@ export async function updateBoardRow(
   const { data } = await api.patch(`/staff-board/rows/${entityId}`, patch);
   return data;
 }
+
+/** Справочник должностей организации (подсказки в «Взять в штат» и на доске). */
+export async function getBoardPositions(): Promise<string[]> {
+  const { data } = await api.get('/staff-board/positions');
+  return data;
+}
