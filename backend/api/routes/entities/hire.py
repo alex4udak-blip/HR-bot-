@@ -24,8 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...database import get_db
 from ...models.database import (
     Entity, EntityStatus, Employee, User, UserRole, OrgMember, OrgRole,
+    VacancyApplication, STATUS_SYNC_MAP,
 )
 from ...services.auth import get_current_user, get_user_org, hash_password
+from ...services.stage_transitions import record_transition
 
 router = APIRouter()
 
@@ -151,6 +153,33 @@ async def hire_entity(
         ent.department_id = data.department_id
     if data.position:
         ent.position = data.position
+
+    # Синхронизируем воронку с новым статусом. Раньше «Взять в штат» меняло только
+    # entity.status → transferred, но НЕ трогало заявку — из-за этого «Все кандидаты»
+    # показывали «Перешёл в отдел», а канбан воронки держал человека на прежнем этапе
+    # (напр. «Практика»): рассинхрон entity.status ↔ vacancy_application.stage.
+    # Двигаем все заявки кандидата на transferred и пишем в историю — как обычная
+    # смена этапа (applications.py).
+    target_stage = STATUS_SYNC_MAP.get(EntityStatus.transferred)
+    if target_stage is not None:
+        apps = (await db.execute(
+            select(VacancyApplication).where(VacancyApplication.entity_id == ent.id)
+        )).scalars().all()
+        for app in apps:
+            if app.stage != target_stage:
+                old_stage = app.stage
+                app.stage = target_stage
+                app.last_stage_change_at = datetime.utcnow()
+                await record_transition(
+                    db=db,
+                    application_id=app.id,
+                    entity_id=ent.id,
+                    from_stage=old_stage.value if old_stage else None,
+                    to_stage=target_stage.value,
+                    changed_by_id=current_user.id,
+                    comment="Оформлен в штат — «Перешёл в отдел»",
+                )
+
     await db.commit()
     await db.refresh(emp)
 
