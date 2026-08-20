@@ -97,8 +97,8 @@ export default function PublicFormPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
     if (isPreview) return; // предпросмотр — ничего не отправляем
     if ((!slug && !token) || !validate()) return;
 
@@ -263,7 +263,19 @@ export default function PublicFormPage() {
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 space-y-6">
+        <form
+          onSubmit={handleSubmit}
+          onKeyDown={(e) => {
+            // Анкета отправляется ТОЛЬКО по клику на кнопку — Enter не сабмитит
+            // (жалоба HR: кандидаты по 3 раза случайно отправляли клавишей Enter).
+            // В многострочных полях (textarea) Enter = перенос строки; на самой
+            // кнопке Enter = её нажатие. В любом другом поле Enter гасим.
+            if (e.key !== 'Enter') return;
+            const tag = (e.target as HTMLElement).tagName;
+            if (tag === 'TEXTAREA' || tag === 'BUTTON') return;
+            e.preventDefault();
+          }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 space-y-6">
           {form.fields.map(field => (
             <FieldRenderer
               key={field.id}
@@ -304,7 +316,8 @@ export default function PublicFormPage() {
           ))}
 
           <button
-            type="submit"
+            type="button"
+            onClick={handleSubmit}
             disabled={submitting || isPreview}
             className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
