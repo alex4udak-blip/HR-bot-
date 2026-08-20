@@ -27,6 +27,8 @@ export interface CatalogResource {
   limit_per_month: number | null;
   limit_amount_month: number | null;
   currency: string | null;
+  /** доступен всем сотрудникам, без привязки к роли */
+  available_to_all: boolean;
   is_active: boolean;
   /** только в /available */
   locked: boolean;
@@ -98,6 +100,7 @@ export async function createResource(payload: {
   responsible_user_id?: number | null; params_schema?: ResourceParam[];
   unlock_condition?: string; limit_per_month?: number | null;
   limit_amount_month?: number | null; currency?: string | null;
+  available_to_all?: boolean;
 }): Promise<CatalogResource> {
   const { data } = await api.post('/access-hub/catalog', payload);
   return data;

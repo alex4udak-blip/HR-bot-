@@ -39,12 +39,12 @@ const UNLOCK: { value: string; label: string; hint: string }[] = [
 
 /** Типовой набор: чтобы хаб был рабочим сразу, а не пустым. */
 const STARTER: Array<Parameters<typeof createResource>[0]> = [
-  { key: "proxy", name: "Прокси", category: "proxy", description: "Резидентный прокси под задачу", unlock_condition: "always", limit_per_month: 5 },
-  { key: "tg_account", name: "Telegram-аккаунт", category: "tg_account", description: "Рабочий аккаунт для связи", unlock_condition: "always", limit_per_month: 3 },
-  { key: "service_account", name: "Аккаунт сервиса", category: "account", description: "Доступ к рабочему сервису", unlock_condition: "always" },
+  { key: "proxy", name: "Прокси", category: "proxy", description: "Резидентный прокси под задачу", unlock_condition: "always", limit_per_month: 5, available_to_all: true },
+  { key: "tg_account", name: "Telegram-аккаунт", category: "tg_account", description: "Рабочий аккаунт для связи", unlock_condition: "always", limit_per_month: 3, available_to_all: true },
+  { key: "service_account", name: "Аккаунт сервиса", category: "account", description: "Доступ к рабочему сервису", unlock_condition: "always", available_to_all: true },
   { key: "card_topup", name: "Пополнение платёжки", category: "payment_topup", description: "Пополнение рабочей карты", unlock_condition: "prometheus_accepted", limit_amount_month: 50000, currency: "RUB" },
   { key: "subscription", name: "Оплата подписки", category: "payment", description: "Оплата сервиса по счёту", unlock_condition: "prometheus_accepted", limit_amount_month: 30000, currency: "RUB" },
-  { key: "consumable", name: "Расходник", category: "consumable", description: "Расходные материалы", unlock_condition: "always", limit_per_month: 10 },
+  { key: "consumable", name: "Расходник", category: "consumable", description: "Расходные материалы", unlock_condition: "always", limit_per_month: 10, available_to_all: true },
 ];
 
 const RU2LAT: Record<string, string> = {
@@ -203,6 +203,7 @@ function ResourceRow({
           <span>{cat}</span>
           <span>· {res.responsible_name || "ответственный не назначен"}</span>
           {limits.length > 0 && <span>· {limits.join(", ")}</span>}
+          {res.available_to_all && <span>· всем</span>}
           {res.unlock_condition !== "always" && <span>· после зачисления</span>}
         </div>
       </div>
@@ -240,6 +241,7 @@ function ResourceForm({
     res?.limit_amount_month ? String(res.limit_amount_month) : ""
   );
   const [currency, setCurrency] = useState(res?.currency || "RUB");
+  const [forAll, setForAll] = useState<boolean>(res ? !!res.available_to_all : true);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -255,6 +257,7 @@ function ResourceForm({
         limit_per_month: perMonth ? Number(perMonth) : null,
         limit_amount_month: amountMonth ? Number(amountMonth) : null,
         currency: amountMonth ? currency : null,
+        available_to_all: forAll,
       };
       if (res) await updateResource(res.id, payload);
       else await createResource({ ...payload, key: slugify(name) });
@@ -311,6 +314,15 @@ function ResourceForm({
               {UNLOCK.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
             </select>
           </label>
+
+          <label className={clsx("hf-ah-adm-check", forAll && "hf-ah-adm-check-on")}>
+            <input type="checkbox" checked={forAll} onChange={() => setForAll((v) => !v)} />
+            <span className="hf-ah-adm-check-name">Доступен всем сотрудникам</span>
+          </label>
+          <div className="hf-ah-adm-hint">
+            Без этой галочки ресурс увидят только те, кому он открыт ролью. У большинства
+            сотрудников роли нет — для них ресурс останется невидимым.
+          </div>
 
           <div className="hf-ah-adm-two">
             <label className="hf-ah-field">

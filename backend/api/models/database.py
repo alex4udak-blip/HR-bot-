@@ -1957,6 +1957,15 @@ class ResourceCatalog(Base):
     limit_amount_month = Column(Integer, nullable=True)   # сумма в месяц на человека (в минорных единицах)
     currency = Column(String(8), nullable=True, default="RUB")
 
+    # Доступен всем сотрудникам, без привязки к роли.
+    #
+    # Без этого хаб был мёртв для большинства: видимость считалась ТОЛЬКО от
+    # кастомной роли, а у обычного сотрудника её обычно нет — он не увидел бы
+    # ничего даже при полном каталоге, и «настроить в конструкторе ролей» было
+    # нечего. Ресурсы вроде прокси нужны всем, и заводить ради них роль каждому
+    # человеку — лишний обряд.
+    available_to_all = Column(Boolean, default=False, nullable=False)
+
     is_active = Column(Boolean, default=True, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=func.now())

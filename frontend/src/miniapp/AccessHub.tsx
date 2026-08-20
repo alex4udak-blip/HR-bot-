@@ -143,6 +143,7 @@ export default function AccessHub({ me }: { me?: Me | null }) {
           fallbackEmail={user?.email || null}
           resources={resources}
           onPick={setPicked}
+          isAdmin={isAdmin}
         />
       ) : (
         <RequestList
@@ -202,13 +203,14 @@ function grantedSummary(r: CatalogResource): string {
 }
 
 function Cabinet({
-  profile, fallbackName, fallbackEmail, resources, onPick,
+  profile, fallbackName, fallbackEmail, resources, onPick, isAdmin,
 }: {
   profile: EmployeeData | null;
   fallbackName: string;
   fallbackEmail: string | null;
   resources: CatalogResource[];
   onPick: (r: CatalogResource) => void;
+  isAdmin: boolean;
 }) {
   const [cat, setCat] = useState<string>("all");
   const [q, setQ] = useState("");
@@ -281,8 +283,12 @@ function Cabinet({
       {resources.length === 0 ? (
         <div className="hf-ah-empty">
           <Lock size={28} />
-          <p>Для вашей роли пока не открыт ни один ресурс</p>
-          <span>Доступы настраивает администратор в конструкторе ролей</span>
+          <p>Пока нет доступных ресурсов</p>
+          <span>
+            {isAdmin
+              ? "Каталог пуст. Откройте вкладку «Настройка» и добавьте ресурсы — там же есть типовой набор одной кнопкой."
+              : "Администратор ещё не открыл доступы. Напишите ему — он добавит ресурсы в хабе."}
+          </span>
         </div>
       ) : (
         <>

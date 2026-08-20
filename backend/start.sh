@@ -133,6 +133,11 @@ async def ensure_shadow_columns():
         await conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_bind_expires TIMESTAMP'))
         await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_users_telegram_bind_token ON users (telegram_bind_token)'))
 
+        # Хаб доступов: ресурс, доступный всем сотрудникам без роли. Таблица
+        # уже существует, а create_all добавляет только недостающие ТАБЛИЦЫ —
+        # без этого ALTER любой запрос к каталогу падал бы с UndefinedColumn.
+        await conn.execute(text('ALTER TABLE resource_catalog ADD COLUMN IF NOT EXISTS available_to_all BOOLEAN NOT NULL DEFAULT FALSE'))
+
         # PII-долговечность: зашифрованные паспорта/документы сотрудников в БД (bytea),
         # иначе теряются на эфемерном диске прода при редеплое.
         await conn.execute(text('ALTER TABLE employees ADD COLUMN IF NOT EXISTS passport_data BYTEA'))

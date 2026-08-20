@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -67,6 +67,7 @@ class ResourceCreate(BaseModel):
     limit_per_month: Optional[int] = None
     limit_amount_month: Optional[int] = None
     currency: Optional[str] = "RUB"
+    available_to_all: bool = False
 
 
 class ResourceUpdate(BaseModel):
@@ -79,6 +80,7 @@ class ResourceUpdate(BaseModel):
     limit_per_month: Optional[int] = None
     limit_amount_month: Optional[int] = None
     currency: Optional[str] = None
+    available_to_all: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
@@ -95,6 +97,7 @@ class ResourceOut(BaseModel):
     limit_per_month: Optional[int] = None
     limit_amount_month: Optional[int] = None
     currency: Optional[str] = None
+    available_to_all: bool = False
     is_active: bool
     # для экрана «Создать заявку»
     locked: bool = False
@@ -428,7 +431,7 @@ async def list_catalog(
             unlock_condition=r.unlock_condition,
             limit_per_month=r.limit_per_month,
             limit_amount_month=r.limit_amount_month,
-            currency=r.currency, is_active=r.is_active,
+            currency=r.currency, available_to_all=bool(r.available_to_all), is_active=r.is_active,
         ) for r in rows
     ]
 
@@ -467,7 +470,8 @@ async def create_resource(
         unlock_condition=data.unlock_condition,
         limit_per_month=data.limit_per_month,
         limit_amount_month=data.limit_amount_month,
-        currency=data.currency, created_by=current_user.id,
+        currency=data.currency, available_to_all=bool(data.available_to_all),
+        created_by=current_user.id,
     )
     db.add(res)
     await db.commit()
@@ -480,7 +484,7 @@ async def create_resource(
         responsible_name=names.get(res.responsible_user_id),
         params_schema=res.params_schema or [], unlock_condition=res.unlock_condition,
         limit_per_month=res.limit_per_month, limit_amount_month=res.limit_amount_month,
-        currency=res.currency, is_active=res.is_active,
+        currency=res.currency, available_to_all=bool(res.available_to_all), is_active=res.is_active,
     )
 
 
@@ -529,7 +533,7 @@ async def update_resource(
         responsible_name=names.get(res.responsible_user_id),
         params_schema=res.params_schema or [], unlock_condition=res.unlock_condition,
         limit_per_month=res.limit_per_month, limit_amount_month=res.limit_amount_month,
-        currency=res.currency, is_active=res.is_active,
+        currency=res.currency, available_to_all=bool(res.available_to_all), is_active=res.is_active,
     )
 
 
@@ -625,16 +629,25 @@ async def available_resources(
     q = select(ResourceCatalog).where(
         ResourceCatalog.org_id == org.id, ResourceCatalog.is_active.is_(True)
     )
-    # Админ видит весь каталог; остальные — только разрешённое их ролью.
+    # Админ видит весь каталог; остальные — то, что открыто их ролью, ЛИБО
+    # помечено как доступное всем.
+    #
+    # Раньше здесь стоял ранний выход при отсутствии роли, и сотрудник без
+    # кастомной роли — а это большинство — не видел вообще ничего, сколько бы
+    # ресурсов ни завели.
     if not is_admin:
-        if not role_id:
-            return []
-        q = q.join(
-            RoleResourceGrant,
-            (RoleResourceGrant.resource_id == ResourceCatalog.id)
-            & (RoleResourceGrant.role_id == role_id)
-            & (RoleResourceGrant.can_request.is_(True)),
-        )
+        allowed_by_role = select(RoleResourceGrant.resource_id).where(
+            RoleResourceGrant.role_id == role_id,
+            RoleResourceGrant.can_request.is_(True),
+        ) if role_id else None
+
+        if allowed_by_role is not None:
+            q = q.where(or_(
+                ResourceCatalog.available_to_all.is_(True),
+                ResourceCatalog.id.in_(allowed_by_role),
+            ))
+        else:
+            q = q.where(ResourceCatalog.available_to_all.is_(True))
     rows = (await db.execute(q.order_by(ResourceCatalog.name))).scalars().all()
 
     unlock = await _unlock_state(current_user.id, org.id, db)
@@ -694,7 +707,7 @@ async def available_resources(
             unlock_condition=cond,
             limit_per_month=r.limit_per_month,
             limit_amount_month=r.limit_amount_month,
-            currency=r.currency, is_active=r.is_active,
+            currency=r.currency, available_to_all=bool(r.available_to_all), is_active=r.is_active,
             locked=locked, lock_reason=reason, used_this_month=used_cnt,
             **dict(zip(("state", "last_request_id", "granted_params"), state_of(r.id))),
         ))
