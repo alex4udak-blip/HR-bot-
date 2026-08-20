@@ -185,3 +185,35 @@ export async function getOffboardingChecklist(userId: number): Promise<Grant[]> 
   const { data } = await api.get(`/access-hub/offboarding/${userId}/checklist`);
   return data;
 }
+
+// ─── Справочники для конструктора ролей ─────────────────────
+//
+// Хаб не заводит свою ролевую модель: роли берутся те же, что уже есть в
+// Энцеладусе (CustomRole / UserCustomRole), — иначе появились бы две
+// несогласованные системы прав.
+
+export interface CustomRoleBrief {
+  id: number;
+  name: string;
+  description?: string | null;
+  base_role: string;
+  is_active?: boolean;
+}
+
+export interface OrgMemberBrief {
+  user_id: number;
+  user_name: string | null;
+  user_email: string | null;
+  custom_role_id: number | null;
+  custom_role_name: string | null;
+}
+
+export async function getCustomRoles(): Promise<CustomRoleBrief[]> {
+  const { data } = await api.get('/admin/custom-roles');
+  return (data || []).filter((r: CustomRoleBrief) => r.is_active !== false);
+}
+
+export async function getOrgMembers(): Promise<OrgMemberBrief[]> {
+  const { data } = await api.get('/organizations/current/members');
+  return data || [];
+}

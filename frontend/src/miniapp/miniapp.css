@@ -402,3 +402,67 @@ body { margin: 0; background: var(--bg-body, #0f0f15); }
 .hf-ma-body .hf-ah-stat { flex: 1; }
 .hf-ma-body .hf-ah-access-grid { grid-template-columns: 1fr; }
 .hf-ma-body .hf-ah-filters .hf-ah-access-search { margin-left: 0; width: 100%; }
+
+/* ============================================================
+   Настройка хаба: каталог ресурсов и конструктор ролей
+   ============================================================ */
+
+.hf-ah-adm { display: flex; flex-direction: column; gap: 12px; }
+
+.hf-ah-adm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.hf-ah-adm-list { display: flex; flex-direction: column; gap: 8px; }
+
+.hf-ah-adm-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-surface-elevated);
+  border: var(--hf-border-xs) solid var(--border-subtle);
+  border-radius: 12px;
+}
+/* Выключенный ресурс остаётся видимым, но явно приглушён: скрывать его
+   насовсем — значит потерять его из виду вместе с историей выдач. */
+.hf-ah-adm-row-off { opacity: .5; }
+
+.hf-ah-adm-row-main { flex: 1; min-width: 0; }
+.hf-ah-adm-row-name { font-size: var(--hf-fs-3xs); color: var(--fg-body); font-weight: 500; }
+.hf-ah-adm-row-meta {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 2px;
+  font-size: var(--hf-fs-5xs); color: var(--fg-dimmed);
+}
+
+.hf-ah-adm-icon {
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  width: 30px; height: 30px;
+  border: var(--hf-border-xs) solid var(--border-subtle);
+  border-radius: 9px;
+  background: transparent; color: var(--fg-muted);
+  cursor: pointer;
+}
+.hf-ah-adm-icon:hover { color: var(--hf-cyan-500); border-color: var(--hf-cyan-500); }
+
+.hf-ah-adm-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.hf-ah-adm-hint {
+  font-size: var(--hf-fs-5xs); color: var(--fg-dimmed);
+  line-height: 1.4;
+}
+
+.hf-ah-adm-roles { display: flex; flex-direction: column; gap: 12px; }
+
+.hf-ah-adm-check {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-surface-elevated);
+  border: var(--hf-border-xs) solid var(--border-subtle);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.hf-ah-adm-check-on { border-color: var(--hf-cyan-500); }
+.hf-ah-adm-check input { width: 16px; height: 16px; accent-color: var(--hf-cyan-500); }
+.hf-ah-adm-check-name { flex: 1; font-size: var(--hf-fs-3xs); color: var(--fg-body); }
+.hf-ah-adm-check-cat { font-size: var(--hf-fs-5xs); color: var(--fg-dimmed); }
+
+.hf-ah-adm-save { align-self: flex-start; }

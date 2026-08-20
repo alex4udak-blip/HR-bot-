@@ -12,6 +12,7 @@ import {
 } from "@/services/api/accessHub";
 import { useAuthStore } from "@/stores/authStore";
 import { getMyEmployeeProfile, type EmployeeData } from "@/services/api/employees";
+import AccessAdmin from "./AccessAdmin";
 
 /**
  * Хаб доступов — кабинет сотрудника.
@@ -49,7 +50,7 @@ const fmtDate = (iso: string | null) => {
   return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("ru-RU");
 };
 
-type Tab = "cabinet" | "my" | "assigned";
+type Tab = "cabinet" | "my" | "assigned" | "admin";
 
 export default function AccessHub() {
   const user = useAuthStore((s) => s.user);
@@ -119,9 +120,16 @@ export default function AccessHub() {
         <button className={clsx("hf-ah-tab", tab === "assigned" && "hf-ah-tab-active")} onClick={() => setTab("assigned")}>
           Мне на выдачу
         </button>
+        {isAdmin && (
+          <button className={clsx("hf-ah-tab", tab === "admin" && "hf-ah-tab-active")} onClick={() => setTab("admin")}>
+            Настройка
+          </button>
+        )}
       </div>
 
-      {loading ? (
+      {tab === "admin" ? (
+        <AccessAdmin onChanged={load} />
+      ) : loading ? (
         <div className="hf-ah-loading"><Loader2 className="animate-spin" size={26} /></div>
       ) : tab === "cabinet" ? (
         <Cabinet
