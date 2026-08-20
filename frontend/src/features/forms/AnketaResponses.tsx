@@ -41,14 +41,14 @@ export function AnketaResponses({ dispatches }: { dispatches: (FormDispatchInfo 
           </div>
           <div className="mt-1 flex items-center gap-3">
             <a
-              href={`${window.location.origin}/form/d/${d.token}`}
+              href={`${window.location.origin}/form/${d.token}`}
               target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
             >
               <ExternalLink className="w-3 h-3" /> Открыть анкету
             </a>
             <button
-              onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/form/d/${d.token}`); toast.success('Ссылка скопирована'); }}
+              onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/form/${d.token}`); toast.success('Ссылка скопирована'); }}
               className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
             >
               <Copy className="w-3 h-3" /> Скопировать ссылку

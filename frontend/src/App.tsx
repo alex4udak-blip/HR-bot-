@@ -180,8 +180,11 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/invite/:token" element={<InvitePage />} />
-        <Route path="/form/:slug" element={<Suspense fallback={<PageLoader />}><PublicFormPage /></Suspense>} />
+        {/* /form/:key — короткий путь и для персональных анкет (токен), и для общих
+            (slug): PublicFormPage сам определяет, что в ссылке. /form/d/:token —
+            алиас для уже разосланных персональных ссылок, не ломаем. */}
         <Route path="/form/d/:token" element={<Suspense fallback={<PageLoader />}><PublicFormPage /></Suspense>} />
+        <Route path="/form/:key" element={<Suspense fallback={<PageLoader />}><PublicFormPage /></Suspense>} />
         {/* Публичный предпросмотр кандидата для заказчика — вне Layout, без авторизации. */}
         <Route path="/candidate-preview/:token" element={<Suspense fallback={<PageLoader />}><CandidatePreviewPage /></Suspense>} />
         <Route

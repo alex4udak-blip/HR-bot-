@@ -841,17 +841,20 @@ async def create_dispatch(
         if not org or form.org_id != org.id or entity.org_id != org.id:
             raise HTTPException(status_code=403, detail="Access denied")
 
-    # Короткий аккуратный токен для ссылки (напр. /form/d/x3Kf9aBcDeQ) вместо
-    # 32-символьной uuid-«портянки». 9 байт → 12 URL-безопасных символов, ~72 бита
-    # энтропии — угадать так же нереально. Старые длинные токены продолжают работать.
-    token = secrets.token_urlsafe(9)
+    # Токен ссылки на анкету — единственная защита (кандидат не авторизован),
+    # поэтому берём криптослучайный secrets.token_urlsafe с ПОЛНОЙ стойкостью:
+    # 16 байт → 128 бит энтропии (крепче старого uuid4 — у него 122 бита), это
+    # 22 URL-безопасных символа. Перебрать 2^128 нереально, и токены не
+    # последовательны (никакого «порядка символов» подобрать нельзя). При этом
+    # строка всё равно короче прежней 32-символьной uuid-«портянки».
+    token = secrets.token_urlsafe(16)
     dispatch = FormDispatch(form_id=form.id, entity_id=entity.id, token=token, created_by=current_user.id)
     db.add(dispatch)
     await db.commit()
     await db.refresh(dispatch)
 
     return {
-        "id": dispatch.id, "token": token, "url": f"/form/d/{token}",
+        "id": dispatch.id, "token": token, "url": f"/form/{token}",
         "entity_id": entity.id, "form_id": form.id, "status": dispatch.status,
     }
 

@@ -35,7 +35,10 @@ function validatePickedFile(file: File): string | null {
  * This page is accessible WITHOUT authentication.
  */
 export default function PublicFormPage() {
-  const { slug, token } = useParams<{ slug?: string; token?: string }>();
+  // /form/d/:token — персональная ссылка (токен). /form/:key — единый короткий путь:
+  // это может быть и персональный токен, и slug общей анкеты; какой именно — решаем
+  // при загрузке (сначала пробуем как токен, при неудаче как slug).
+  const { token: dispatchToken, key } = useParams<{ token?: string; key?: string }>();
   const [searchParams] = useSearchParams();
   // Предпросмотр (из конструктора): форма как видит кандидат, но БЕЗ отправки.
   const isPreview = searchParams.get('preview') === '1';
@@ -48,12 +51,30 @@ export default function PublicFormPage() {
   const [skippedFiles, setSkippedFiles] = useState<SkippedFile[]>([]);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [fileUploads, setFileUploads] = useState<Record<string, File>>({});
+  // Разрешённый идентификатор ссылки: либо {token} (персональная), либо {slug} (общая).
+  const [resolved, setResolved] = useState<{ token?: string; slug?: string } | null>(null);
 
   useEffect(() => {
-    if (!slug && !token) return;
+    if (!dispatchToken && !key) return;
     (async () => {
       try {
-        const data = token ? await getPublicFormByToken(token) : await getPublicForm(slug!);
+        let data: PublicFormData;
+        let res: { token?: string; slug?: string };
+        if (dispatchToken) {
+          // Явный персональный роут /form/d/:token
+          data = await getPublicFormByToken(dispatchToken);
+          res = { token: dispatchToken };
+        } else {
+          // Единый /form/:key — сначала как персональный токен, при 404 как slug общей.
+          try {
+            data = await getPublicFormByToken(key!);
+            res = { token: key };
+          } catch {
+            data = await getPublicForm(key!);
+            res = { slug: key };
+          }
+        }
+        setResolved(res);
         setForm(data);
         // Initialize default values
         const defaults: Record<string, unknown> = {};
@@ -73,7 +94,7 @@ export default function PublicFormPage() {
         setLoading(false);
       }
     })();
-  }, [slug, token]);
+  }, [dispatchToken, key]);
 
   const validate = (): boolean => {
     if (!form) return false;
@@ -100,23 +121,25 @@ export default function PublicFormPage() {
   const handleSubmit = async (e?: React.SyntheticEvent) => {
     e?.preventDefault();
     if (isPreview) return; // предпросмотр — ничего не отправляем
-    if ((!slug && !token) || !validate()) return;
+    const rToken = resolved?.token;
+    const rSlug = resolved?.slug;
+    if ((!rToken && !rSlug) || !validate()) return;
 
     setSubmitting(true);
     try {
       const files = Object.values(fileUploads);
       let result: SubmitWithFilesResult | undefined;
-      if (token) {
+      if (rToken) {
         // Личная ссылка: с файлами — multipart, иначе JSON.
         if (files.length > 0) {
-          result = await submitPublicFormByTokenWithFiles(token, values, files);
+          result = await submitPublicFormByTokenWithFiles(rToken, values, files);
         } else {
-          await submitPublicFormByToken(token, values);
+          await submitPublicFormByToken(rToken, values);
         }
       } else if (files.length > 0) {
-        result = await submitPublicFormWithFiles(slug!, values, files);
+        result = await submitPublicFormWithFiles(rSlug!, values, files);
       } else {
-        await submitPublicForm(slug!, values);
+        await submitPublicForm(rSlug!, values);
       }
       // Пропущенные файлы (формат/размер/лимит) — показываем кандидату, чтобы он
       // знал, что часть вложений не доставлена, а не считал анкету полной.
