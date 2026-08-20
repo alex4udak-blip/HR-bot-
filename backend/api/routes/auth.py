@@ -630,3 +630,189 @@ async def link_telegram(
     user.telegram_username = request.telegram_username
     await db.commit()
     return {"message": "Telegram linked"}
+
+
+# ---------------------------------------------------------------------------
+# Telegram Mini App
+# ---------------------------------------------------------------------------
+
+class TelegramWebAppLogin(BaseModel):
+    init_data: str = Field(min_length=1, description="window.Telegram.WebApp.initData")
+
+
+@router.post("/telegram-webapp")
+@limiter.limit("20/minute")
+async def telegram_webapp_login(
+    request: Request,
+    response: Response,
+    data: TelegramWebAppLogin,
+    db: AsyncSession = Depends(get_db),
+):
+    """Вход в Telegram Mini App по подписанному initData.
+
+    Пароля здесь нет и быть не может: личность подтверждает Telegram своей
+    подписью. Мы её проверяем (HMAC на производном от токена бота ключе),
+    достаём telegram_id и находим уже существующего пользователя.
+
+    Аккаунты тут НЕ создаются: самозаписи в системе нет (см. ТЗ — онбординг
+    только админом или по инвайту). Непривязанный Telegram получает 403 с
+    понятной инструкцией, а не молчаливый отказ.
+    """
+    from ..services.telegram_webapp import (
+        parse_and_verify, extract_telegram_id, InitDataError,
+    )
+
+    try:
+        parsed = parse_and_verify(data.init_data, settings.telegram_bot_token or "")
+    except InitDataError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    telegram_id = extract_telegram_id(parsed)
+    if not telegram_id:
+        raise HTTPException(status_code=401, detail="В initData нет пользователя")
+
+    user = (await db.execute(
+        select(User).where(User.telegram_id == telegram_id)
+    )).scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=403,
+            detail="Этот Telegram не привязан к аккаунту. Напишите боту /bind ваш@email",
+        )
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Аккаунт отключён")
+
+    access_token = create_short_lived_access_token(
+        user_id=user.id, token_version=user.token_version,
+    )
+    refresh_token = await create_refresh_token(
+        db, user_id=user.id,
+        device_name="Telegram Mini App",
+        ip_address=_get_client_ip(request),
+    )
+    await db.commit()
+
+    use_secure = is_secure_context(request)
+    response.set_cookie(
+        key="access_token", value=access_token, httponly=True,
+        secure=use_secure, samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/",
+    )
+    response.set_cookie(
+        key="refresh_token", value=refresh_token, httponly=True,
+        secure=use_secure, samesite="lax",
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60, path="/api/auth",
+    )
+
+    org_role = (await db.execute(
+        select(OrgMember.role).where(OrgMember.user_id == user.id).limit(1)
+    )).scalar_one_or_none()
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id, "email": user.email, "name": user.name,
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+            "org_role": org_role.value if org_role is not None and hasattr(org_role, "value") else org_role,
+            "telegram_id": user.telegram_id,
+            "telegram_username": user.telegram_username,
+            "is_active": user.is_active,
+        },
+    }
+
+
+class BindLinkRequest(BaseModel):
+    # Для кого выпустить ссылку. Пусто — себе. Чужому можно только админу
+    # своей организации: сотрудник мог принять приглашение и не привязать
+    # Telegram, и без этого пути у него не осталось бы никакого способа.
+    user_id: Optional[int] = None
+
+
+@router.post("/telegram-bind-link")
+@limiter.limit("5/minute")
+async def create_telegram_bind_link(
+    request: Request,
+    payload: Optional[BindLinkRequest] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Одноразовая ссылка для привязки Telegram.
+
+    Единственный безопасный путь привязки: запросить её может только уже
+    авторизованный пользователь (себе) либо админ организации (сотруднику).
+    Ссылка гаснет после первого использования. Прежние способы (/bind по email
+    и /start bind_<id>) не требовали подтверждения вообще и позволяли забрать
+    чужой аккаунт.
+    """
+    import secrets as _secrets
+    from datetime import datetime as _dt, timedelta as _td
+
+    target_id = payload.user_id if payload else None
+
+    if target_id is None or target_id == current_user.id:
+        target = await db.merge(current_user)
+        ttl_minutes = 15
+    else:
+        # Выдача чужой ссылки — фактически передача доступа к аккаунту,
+        # поэтому проверяем и права, и общую организацию.
+        actor_org_ids = set((await db.execute(
+            select(OrgMember.org_id).where(OrgMember.user_id == current_user.id)
+        )).scalars().all())
+        is_admin = current_user.role == UserRole.superadmin or bool((await db.execute(
+            select(OrgMember.id).where(
+                OrgMember.user_id == current_user.id,
+                OrgMember.role.in_([OrgRole.owner, OrgRole.admin]),
+            ).limit(1)
+        )).scalar_one_or_none())
+        if not is_admin:
+            raise HTTPException(403, "Только администратор может выдать ссылку сотруднику")
+
+        target = (await db.execute(
+            select(User).where(User.id == target_id)
+        )).scalar_one_or_none()
+        if not target:
+            raise HTTPException(404, "Пользователь не найден")
+        if not target.is_active:
+            raise HTTPException(400, "Аккаунт отключён")
+
+        if current_user.role != UserRole.superadmin:
+            target_org_ids = set((await db.execute(
+                select(OrgMember.org_id).where(OrgMember.user_id == target_id)
+            )).scalars().all())
+            if not (actor_org_ids & target_org_ids):
+                raise HTTPException(403, "Сотрудник не из вашей организации")
+
+        # Сотрудник пойдёт по ссылке не сию секунду — её ещё надо переслать
+        ttl_minutes = 60 * 24
+
+    token = _secrets.token_urlsafe(32)
+    target.telegram_bind_token = token
+    target.telegram_bind_expires = _dt.utcnow() + _td(minutes=ttl_minutes)
+    await db.commit()
+
+    bot_username = (settings.telegram_bot_username or "").lstrip("@")
+    link = f"https://t.me/{bot_username}?start={token}" if bot_username else None
+
+    return {
+        "token": token,
+        "link": link,
+        "user_id": target.id,
+        "expires_in_minutes": ttl_minutes,
+        "hint": f"Ссылка одноразовая и действует {ttl_minutes} мин.",
+    }
+
+
+@router.delete("/telegram-bind")
+async def unbind_telegram(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Отвязать Telegram от своего аккаунта."""
+    current_user = await db.merge(current_user)
+    current_user.telegram_id = None
+    current_user.telegram_username = None
+    current_user.telegram_bind_token = None
+    current_user.telegram_bind_expires = None
+    await db.commit()
+    return {"ok": True}

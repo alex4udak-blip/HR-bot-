@@ -4,7 +4,10 @@ import re
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, ChatMemberUpdatedFilter, IS_NOT_MEMBER, IS_MEMBER
-from aiogram.types import ChatMemberUpdated, ContentType, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import (
+    ChatMemberUpdated, ContentType, InlineKeyboardMarkup, InlineKeyboardButton,
+    CallbackQuery, WebAppInfo,
+)
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
@@ -658,7 +661,7 @@ async def cmd_status(message: types.Message):
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access or not access['org_id']:
-            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
             return
 
         # Developer: no access
@@ -737,7 +740,7 @@ async def cmd_project(message: types.Message):
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access or not access['org_id']:
-            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
             return
 
         org_id = access['org_id']
@@ -838,7 +841,7 @@ async def cmd_my_tasks(message: types.Message):
     async with async_session() as session:
         user, org_id = await _get_user_org_id(session, message.from_user.id)
         if not user or not org_id:
-            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
             return
 
         # Get all active tasks assigned to this user
@@ -896,7 +899,7 @@ async def cmd_department(message: types.Message):
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access or not access['org_id']:
-            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
             return
 
         org_id = access['org_id']
@@ -996,9 +999,27 @@ async def cmd_department(message: types.Message):
 
 # ─── Inline button menu system ───────────────────────────────────────
 
+def _miniapp_button() -> InlineKeyboardButton | None:
+    """Кнопка запуска Mini App.
+
+    Telegram принимает только HTTPS-адрес, поэтому при пустом или локальном
+    MINIAPP_URL кнопку не показываем вовсе — иначе бот падал бы на отправке
+    клавиатуры, и вместе с ней ломалось бы всё меню.
+    """
+    url = (settings.miniapp_url or "").strip()
+    if not url.startswith("https://"):
+        return None
+    return InlineKeyboardButton(text="🔑 Открыть приложение", web_app=WebAppInfo(url=url))
+
+
 def main_menu_kb(access: dict | None = None) -> InlineKeyboardMarkup:
     """Build the main menu inline keyboard based on user access level."""
     buttons: list[list[InlineKeyboardButton]] = []
+
+    # Mini App — первым пунктом: это основная точка входа, команды бота вторичны
+    app_btn = _miniapp_button()
+    if app_btn:
+        buttons.append([app_btn])
 
     if access is None or access['is_admin']:
         # Admin / fallback: show everything
@@ -1045,7 +1066,7 @@ async def cmd_menu(message: types.Message):
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access:
-            await message.answer("Сначала привяжите аккаунт командой /bind <email>")
+            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
             return
         await message.answer("📱 Главное меню:", reply_markup=main_menu_kb(access))
 
@@ -1058,7 +1079,6 @@ async def cmd_help(message: types.Message):
         "🤖 *Команды бота Enceladus*\n\n"
         "*Базовое*\n"
         "/start — приветствие и привязка аккаунта (по deep-link)\n"
-        "/bind <email> — вручную привязать аккаунт к Telegram\n"
         "/menu — главное меню кнопок\n\n"
         "*Работа*\n"
         "/timeoff — оформить отгул / отпуск / больничный\n"
@@ -1088,7 +1108,7 @@ async def cb_main_menu(callback: CallbackQuery):
         access = await _get_user_access(session, callback.from_user.id)
         if not access:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт командой /bind <email>",
+                "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»",
                 reply_markup=_access_denied_kb(),
             )
             await callback.answer()
@@ -1104,7 +1124,7 @@ async def cb_status(callback: CallbackQuery):
         access = await _get_user_access(session, callback.from_user.id)
         if not access:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт командой /bind <email>",
+                "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»",
                 reply_markup=_access_denied_kb(),
             )
             await callback.answer()
@@ -1200,7 +1220,7 @@ async def cb_my_tasks(callback: CallbackQuery):
         access = await _get_user_access(session, callback.from_user.id)
         if not access:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт командой /bind <email>",
+                "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»",
                 reply_markup=_access_denied_kb(),
             )
             await callback.answer()
@@ -1300,7 +1320,7 @@ async def cb_departments(callback: CallbackQuery):
         access = await _get_user_access(session, callback.from_user.id)
         if not access or not access['org_id']:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт командой /bind <email>",
+                "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»",
                 reply_markup=_access_denied_kb(),
             )
             await callback.answer()
@@ -1365,7 +1385,7 @@ async def cb_department_detail(callback: CallbackQuery):
         access = await _get_user_access(session, callback.from_user.id)
         if not access:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт командой /bind <email>",
+                "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»",
                 reply_markup=_access_denied_kb(),
             )
             await callback.answer()
@@ -1445,7 +1465,7 @@ async def cb_projects_list(callback: CallbackQuery):
         access = await _get_user_access(session, callback.from_user.id)
         if not access or not access['org_id']:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт командой /bind <email>",
+                "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»",
                 reply_markup=_access_denied_kb(),
             )
             await callback.answer()
@@ -1508,7 +1528,7 @@ async def cb_project_detail(callback: CallbackQuery):
         access = await _get_user_access(session, callback.from_user.id)
         if not access:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт командой /bind <email>",
+                "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»",
                 reply_markup=_access_denied_kb(),
             )
             await callback.answer()
@@ -1671,7 +1691,14 @@ async def cb_change_priority(callback: CallbackQuery):
 
 # ─── Notification utility ────────────────────────────────────────────
 
-async def send_telegram_notification(user_id: int, text: str, parse_mode: str = "HTML"):
+def miniapp_keyboard() -> InlineKeyboardMarkup | None:
+    """Клавиатура из одной кнопки «Открыть приложение» — для уведомлений."""
+    btn = _miniapp_button()
+    return InlineKeyboardMarkup(inline_keyboard=[[btn]]) if btn else None
+
+
+async def send_telegram_notification(user_id: int, text: str, parse_mode: str = "HTML",
+                                     with_app_button: bool = False):
     """Send a Telegram message to a user by their DB user_id."""
     try:
         async with async_session() as session:
@@ -1685,6 +1712,7 @@ async def send_telegram_notification(user_id: int, text: str, parse_mode: str = 
                     chat_id=user.telegram_id,
                     text=text,
                     parse_mode=parse_mode,
+                    reply_markup=(miniapp_keyboard() if with_app_button else None),
                 )
                 return True
     except Exception as e:
@@ -1770,7 +1798,7 @@ async def cmd_timeoff(message: types.Message):
         async with async_session() as session:
             user = await find_user_by_telegram_id(session, message.from_user.id)
             if not user:
-                await message.answer("Вы не зарегистрированы в системе. Используйте /bind <email>")
+                await message.answer("Вы не зарегистрированы в системе. Откройте личный кабинет на сайте и нажмите «Привязать Telegram».")
                 return
 
             org_result = await session.execute(
@@ -1890,7 +1918,7 @@ async def cmd_blocker(message: types.Message):
                         user_id = chat_obj.owner_id
 
             if not org_id or not user_id:
-                await message.answer("Не удалось определить организацию. Используйте /bind <email>")
+                await message.answer("Не удалось определить организацию. Откройте личный кабинет на сайте и нажмите «Привязать Telegram».")
                 return
 
             # Parse description
@@ -2057,7 +2085,7 @@ async def cmd_vacancy(message: types.Message):
                         user_id = chat_obj.owner_id
 
             if not org_id or not user_id:
-                await message.answer("Не удалось определить организацию. Используйте /bind <email>")
+                await message.answer("Не удалось определить организацию. Откройте личный кабинет на сайте и нажмите «Привязать Telegram».")
                 return
 
             # Parse description
@@ -2490,16 +2518,25 @@ async def cmd_start(message: types.Message):
     if message.chat.type != "private":
         return
 
-    # Check for deep link parameter (e.g., /start bind_123)
+    # Привязка ТОЛЬКО по одноразовому секретному токену.
+    #
+    # Раньше здесь принимался `bind_<user_id>` — сырой идентификатор без всякой
+    # проверки. Любой человек мог написать боту «/start bind_1» и привязаться к
+    # аккаунту №1 (суперадмину), если тот ещё не привязан. Ссылку никому не надо
+    # было «сливать» — id просто перебирались. Поддержку этого формата убрал.
     args = message.text.split(maxsplit=1)
-    if len(args) > 1 and args[1].startswith("bind_"):
-        # Extract user_id from deep link
-        try:
-            user_id = int(args[1].replace("bind_", ""))
-            await handle_deep_link_bind(message, user_id)
+    if len(args) > 1:
+        payload = args[1].strip()
+        if payload.startswith("bind_"):
+            await message.answer(
+                "❌ Эта ссылка устарела и больше не работает.\n\n"
+                "Откройте личный кабинет на сайте и нажмите «Привязать Telegram» — "
+                "получите новую одноразовую ссылку."
+            )
             return
-        except ValueError:
-            pass
+        if payload:
+            await handle_bind_token(message, payload)
+            return
 
     # Build access-aware menu
     async with async_session() as session:
@@ -2510,64 +2547,72 @@ async def cmd_start(message: types.Message):
         "Добавьте меня в группу для анализа сообщений.\n"
         "Используйте веб-панель для просмотра аналитики.\n\n"
         "Выберите действие или используйте команды:\n"
-        "/bind <email> — привязать аккаунт\n"
         "/menu — главное меню",
         reply_markup=main_menu_kb(access),
     )
 
 
-async def handle_deep_link_bind(message: types.Message, user_id: int):
-    """Handle deep link binding from invitation."""
-    async with async_session() as session:
-        # Find user by ID
-        result = await session.execute(
-            select(User).where(User.id == user_id)
-        )
-        user = result.scalar_one_or_none()
+async def handle_bind_token(message: types.Message, token: str):
+    """Привязка Telegram по одноразовому токену из личного кабинета."""
+    from datetime import datetime as _dt
 
-        if not user:
+    # Токен длинный и случайный; заведомо мусорные строки отсекаем сразу,
+    # чтобы не ходить в БД на каждое случайное сообщение с /start.
+    if len(token) < 20 or len(token) > 64:
+        await message.answer("❌ Ссылка недействительна или устарела.")
+        return
+
+    async with async_session() as session:
+        user = (await session.execute(
+            select(User).where(User.telegram_bind_token == token)
+        )).scalar_one_or_none()
+
+        if (not user or not user.telegram_bind_expires
+                or user.telegram_bind_expires < _dt.utcnow()):
             await message.answer(
                 "❌ Ссылка недействительна или устарела.\n\n"
-                "Если у вас есть аккаунт, используйте /bind <email>"
+                "Получите новую в личном кабинете: «Привязать Telegram»."
             )
             return
 
-        # Check if this Telegram ID is already bound to another user
-        result = await session.execute(
+        if not user.is_active:
+            await message.answer("❌ Аккаунт отключён. Обратитесь к администратору.")
+            return
+
+        # Этот Telegram уже занят другим аккаунтом — не даём «переехать» молча
+        other = (await session.execute(
             select(User).where(
-                User.telegram_id == message.from_user.id,
-                User.id != user_id
+                User.telegram_id == message.from_user.id, User.id != user.id
             )
-        )
-        already_bound_user = result.scalar_one_or_none()
-
-        if already_bound_user:
+        )).scalar_one_or_none()
+        if other:
             await message.answer(
-                "❌ Ваш Telegram уже привязан к другому аккаунту.\n\n"
-                "Обратитесь к администратору для решения проблемы."
+                "❌ Ваш Telegram уже привязан к другому аккаунту.\n"
+                "Сначала отвяжите его в том аккаунте."
             )
             return
 
-        # Check if target user already has a different Telegram bound
-        if user.telegram_id and user.telegram_id != message.from_user.id:
-            await message.answer(
-                "❌ Этот аккаунт уже привязан к другому Telegram.\n\n"
-                "Обратитесь к администратору для решения проблемы."
-            )
-            return
-
-        # Bind
         user.telegram_id = message.from_user.id
         user.telegram_username = message.from_user.username
+        # Токен одноразовый — гасим сразу после использования
+        user.telegram_bind_token = None
+        user.telegram_bind_expires = None
         await session.commit()
 
+        logger.info(f"Telegram bound via token: user={user.id} tg={message.from_user.id}")
         await message.answer(
-            f"✅ Аккаунт успешно привязан!\n\n"
-            f"👤 {user.name}\n"
-            f"📧 {user.email}\n\n"
-            "Теперь при добавлении бота в группы, они автоматически будут привязаны к вашему аккаунту.\n\n"
-            "Добавьте меня в рабочую группу для начала работы!"
+            f"✅ Telegram привязан к аккаунту {user.email}.\n\n"
+            "Теперь вам доступны уведомления и мини-приложение."
         )
+
+
+async def _legacy_deep_link_bind_disabled(message: types.Message, user_id: int):
+    """УДАЛЕНО. Привязка по сырому user_id позволяла любому человеку написать
+    боту «/start bind_1» и забрать чужой аккаунт — проверок не было вообще.
+    Тело вырезано намеренно: оставлять рабочий код захвата аккаунта «на всякий
+    случай» опаснее, чем удалить. Актуальный путь — handle_bind_token().
+    """
+    raise RuntimeError("Привязка по user_id отключена: используйте handle_bind_token")
 
 
 @dp.message(Command("bind"))
@@ -2582,34 +2627,19 @@ async def cmd_bind(message: types.Message):
         await message.answer("Использование: /bind <email>")
         return
 
-    email = args[1].strip().lower()
-
-    async with async_session() as session:
-        # Find user by email
-        result = await session.execute(
-            select(User).where(User.email == email)
-        )
-        user = result.scalar_one_or_none()
-
-        if not user:
-            await message.answer("Пользователь с таким email не найден.")
-            return
-
-        # Check if already bound
-        if user.telegram_id and user.telegram_id != message.from_user.id:
-            await message.answer("Этот аккаунт уже привязан к другому Telegram.")
-            return
-
-        # Bind
-        user.telegram_id = message.from_user.id
-        user.telegram_username = message.from_user.username
-        await session.commit()
-
-        await message.answer(
-            f"Аккаунт успешно привязан!\n"
-            f"Email: {email}\n\n"
-            "Теперь при добавлении бота в группы, они автоматически будут привязаны к вашему аккаунту."
-        )
+    # ПРИВЯЗКА ПО EMAIL ОТКЛЮЧЕНА.
+    #
+    # Раньше эта команда привязывала Telegram к любому аккаунту, зная только его
+    # email, — без пароля, кода подтверждения и согласия владельца. Достаточно
+    # было угадать корпоративную почту, чтобы получить чужой аккаунт вместе с
+    # ботом и мини-приложением. Умышленно не чиним «частично»: единственный
+    # безопасный путь — одноразовая ссылка из личного кабинета.
+    await message.answer(
+        "🔒 Привязка по email отключена в целях безопасности.\n\n"
+        "Откройте личный кабинет на сайте → «Привязать Telegram» → "
+        "перейдите по одноразовой ссылке.\n\n"
+        "Если доступа к кабинету нет — попросите ссылку у администратора."
+    )
 
 
 @dp.message(Command("chats"))
@@ -2622,7 +2652,7 @@ async def cmd_chats(message: types.Message):
         user = await find_user_by_telegram_id(session, message.from_user.id)
 
         if not user:
-            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
             return
 
         result = await session.execute(
@@ -2727,7 +2757,7 @@ async def cmd_meets(message: types.Message):
     async with async_session() as session:
         user = await find_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
             return
 
         # Parse the message: remove /meets command, get lines
@@ -3412,7 +3442,7 @@ async def cmd_ai_digest(message: types.Message):
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access or not access.get('org_id'):
-            await message.answer("Сначала привяжите аккаунт: /bind <email>")
+            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
             return
         if not access.get('is_admin'):
             await message.answer(
@@ -3442,9 +3472,24 @@ async def cmd_ai_digest(message: types.Message):
 async def start_bot():
     """Start the bot polling."""
     try:
-        from aiogram.types import BotCommand, BotCommandScopeDefault
+        from aiogram.types import BotCommand, BotCommandScopeDefault, MenuButtonWebApp, MenuButtonCommands
 
         bot_instance = get_bot()
+
+        # Кнопка меню у поля ввода: открывает Mini App одним касанием.
+        # Если адрес не настроен — возвращаем обычное меню команд, чтобы не
+        # оставить пользователя с неработающей кнопкой.
+        try:
+            _url = (settings.miniapp_url or "").strip()
+            if _url.startswith("https://"):
+                await bot_instance.set_chat_menu_button(
+                    menu_button=MenuButtonWebApp(text="Приложение", web_app=WebAppInfo(url=_url))
+                )
+                logger.info(f"Mini App menu button set: {_url}")
+            else:
+                await bot_instance.set_chat_menu_button(menu_button=MenuButtonCommands())
+        except Exception as e:
+            logger.warning(f"Не удалось выставить кнопку Mini App: {e}")
 
         # Register commands so Telegram shows them in / menu
         commands = [

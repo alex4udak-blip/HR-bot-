@@ -302,6 +302,15 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> Opti
     if user:
         # User exists - verify actual password
         if verify_password(password, user.password_hash):
+            # Отключённый аккаунт войти не может. Проверка стоит ПОСЛЕ сверки
+            # пароля намеренно: иначе по времени ответа можно было бы отличить
+            # «отключён» от «неверный пароль» и перебирать существующие аккаунты.
+            #
+            # Раньше этой проверки не было вообще: уволенный (у него гасится
+            # is_active) спокойно логинился заново, поэтому отзыв сессий ничего
+            # не давал — он просто входил ещё раз.
+            if not user.is_active:
+                return None
             return user
     else:
         # User doesn't exist - perform dummy hash to maintain constant time

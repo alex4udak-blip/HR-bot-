@@ -425,15 +425,26 @@ async def accept_invitation(
         invitation.used_by_id = new_user.id
         await db.flush()
 
+    # Одноразовый токен привязки Telegram. Раньше ссылка была вида
+    # `?start=bind_<user_id>` — сырой идентификатор без всякой проверки, так что
+    # любой человек мог написать боту «/start bind_1» и забрать чужой аккаунт.
+    # Момент принятия приглашения — законный повод выдать токен: человек только
+    # что доказал, что владеет инвайтом.
+    import secrets as _secrets
+    _bind_token = _secrets.token_urlsafe(32)
+    new_user.telegram_bind_token = _bind_token
+    # Сутки, а не 15 минут: приглашение принимают с компьютера, а к боту идут
+    # потом с телефона — короткий срок ломал бы обычный сценарий найма.
+    new_user.telegram_bind_expires = datetime.utcnow() + timedelta(hours=24)
+
     await db.commit()
 
     # Generate JWT token
     access_token = create_access_token({"sub": str(new_user.id)})
 
-    # Generate Telegram bind URL (deep link)
-    # Format: t.me/bot_username?start=bind_USERID
-    telegram_bot_username = settings.telegram_bot_username or "enceladus_mst_bot"
-    telegram_bind_url = f"https://t.me/{telegram_bot_username}?start=bind_{new_user.id}"
+    # Deep link с одноразовым токеном (см. handle_bind_token в bot.py)
+    telegram_bot_username = (settings.telegram_bot_username or "enceladus_mst_bot").lstrip("@")
+    telegram_bind_url = f"https://t.me/{telegram_bot_username}?start={_bind_token}"
 
     return AcceptInvitationResponse(
         success=True,
