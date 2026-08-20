@@ -3,6 +3,7 @@ API routes for form constructor — create custom forms, public submission by ca
 """
 import os
 import re
+import secrets
 import uuid
 import json
 import mimetypes
@@ -840,7 +841,10 @@ async def create_dispatch(
         if not org or form.org_id != org.id or entity.org_id != org.id:
             raise HTTPException(status_code=403, detail="Access denied")
 
-    token = uuid.uuid4().hex
+    # Короткий аккуратный токен для ссылки (напр. /form/d/x3Kf9aBcDeQ) вместо
+    # 32-символьной uuid-«портянки». 9 байт → 12 URL-безопасных символов, ~72 бита
+    # энтропии — угадать так же нереально. Старые длинные токены продолжают работать.
+    token = secrets.token_urlsafe(9)
     dispatch = FormDispatch(form_id=form.id, entity_id=entity.id, token=token, created_by=current_user.id)
     db.add(dispatch)
     await db.commit()
