@@ -677,10 +677,113 @@ async def telegram_webapp_login(
     if not user:
         raise HTTPException(
             status_code=403,
-            detail="Этот Telegram не привязан к аккаунту. Напишите боту /bind ваш@email",
+            detail="Этот Telegram не привязан к аккаунту",
         )
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Аккаунт отключён")
+
+    access_token = create_short_lived_access_token(
+        user_id=user.id, token_version=user.token_version,
+    )
+    refresh_token = await create_refresh_token(
+        db, user_id=user.id,
+        device_name="Telegram Mini App",
+        ip_address=_get_client_ip(request),
+    )
+    await db.commit()
+
+    use_secure = is_secure_context(request)
+    response.set_cookie(
+        key="access_token", value=access_token, httponly=True,
+        secure=use_secure, samesite="lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/",
+    )
+    response.set_cookie(
+        key="refresh_token", value=refresh_token, httponly=True,
+        secure=use_secure, samesite="lax",
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60, path="/api/auth",
+    )
+
+    org_role = (await db.execute(
+        select(OrgMember.role).where(OrgMember.user_id == user.id).limit(1)
+    )).scalar_one_or_none()
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id, "email": user.email, "name": user.name,
+            "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+            "org_role": org_role.value if org_role is not None and hasattr(org_role, "value") else org_role,
+            "telegram_id": user.telegram_id,
+            "telegram_username": user.telegram_username,
+            "is_active": user.is_active,
+        },
+    }
+
+
+class TelegramWebAppBind(BaseModel):
+    init_data: str = Field(min_length=1, description="window.Telegram.WebApp.initData")
+    email: str = Field(min_length=3, max_length=200)
+    password: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/telegram-webapp-bind")
+@limiter.limit("5/minute")
+async def telegram_webapp_bind(
+    request: Request,
+    response: Response,
+    data: TelegramWebAppBind,
+    db: AsyncSession = Depends(get_db),
+):
+    """Привязать текущий Telegram к аккаунту прямо из Mini App.
+
+    Нужен тем, у кого привязки ещё нет: до этого единственным путём была
+    одноразовая ссылка из личного кабинета, а кнопки для неё в вебе нет —
+    человек оказывался в тупике.
+
+    Личность подтверждается ДВАЖДЫ: подписью Telegram (она даёт достоверный
+    telegram_id — подделать нельзя) и паролем от аккаунта. Это строго
+    надёжнее отключённой команды /bind, которая привязывала кого угодно к
+    любому аккаунту, зная только email.
+    """
+    from ..services.telegram_webapp import (
+        parse_and_verify, extract_telegram_id, InitDataError,
+    )
+
+    try:
+        parsed = parse_and_verify(data.init_data, settings.telegram_bot_token or "")
+    except InitDataError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    telegram_id = extract_telegram_id(parsed)
+    if not telegram_id:
+        raise HTTPException(status_code=401, detail="В initData нет пользователя")
+
+    # Пароль проверяем ПОСЛЕ подписи: без валидного initData сюда не пройти,
+    # поэтому эндпоинт нельзя использовать как площадку для перебора паролей.
+    user = await authenticate_user(db, data.email, data.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Неверная почта или пароль")
+
+    # Этот Telegram уже занят другим аккаунтом — молча «переезжать» нельзя,
+    # иначе один человек увёл бы у другого доступ к боту.
+    other = (await db.execute(
+        select(User).where(User.telegram_id == telegram_id, User.id != user.id)
+    )).scalar_one_or_none()
+    if other:
+        raise HTTPException(
+            status_code=409,
+            detail="Этот Telegram уже привязан к другому аккаунту. Отвяжите его там.",
+        )
+
+    user = await db.merge(user)
+    user.telegram_id = telegram_id
+    tg_username = (parsed.get("user") or {}).get("username") if isinstance(parsed.get("user"), dict) else None
+    if tg_username:
+        user.telegram_username = tg_username
+    user.telegram_bind_token = None
+    user.telegram_bind_expires = None
 
     access_token = create_short_lived_access_token(
         user_id=user.id, token_version=user.token_version,
