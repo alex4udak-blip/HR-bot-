@@ -14,7 +14,7 @@ import Notifications from "./Notifications";
  * что и обычный логин, поэтому весь остальной слой API работает без изменений.
  */
 
-type Me = { id: number; name: string; email: string; role: string; org_role?: string | null };
+export type Me = { id: number; name: string; email: string; role: string; org_role?: string | null };
 type Tab = "access" | "tasks" | "bell";
 
 export default function MiniApp() {
@@ -81,7 +81,7 @@ export default function MiniApp() {
   return (
     <div className="hf-ma">
       <div className="hf-ma-body">
-        {tab === "access" && <AccessHub />}
+        {tab === "access" && <AccessHub me={me} />}
         {tab === "tasks" && <MyTasks userId={me.id} />}
         {tab === "bell" && <Notifications />}
       </div>

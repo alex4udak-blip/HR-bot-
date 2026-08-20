@@ -75,10 +75,17 @@ const redirectToLogin = (): void => {
   // Clear any stored state before redirecting.
   // Public, no-auth pages (login, invite, candidate form links) must never be
   // bounced to /login by a background 401.
+  //
+  // Mini App — отдельный случай: он авторизуется подписью Telegram и живёт
+  // внутри мессенджера, где страницы входа сайта просто нет. Без этого
+  // исключения любой фоновый 401 подменял приложение формой «Войдите в
+  // систему» от веб-версии, и человек упирался в запрос пароля, которого у
+  // него в Telegram быть не должно.
   if (
     window.location.pathname !== '/login' &&
     !window.location.pathname.startsWith('/invite') &&
-    !window.location.pathname.startsWith('/form/')
+    !window.location.pathname.startsWith('/form/') &&
+    !window.location.pathname.startsWith('/miniapp')
   ) {
     window.location.href = '/login';
   }

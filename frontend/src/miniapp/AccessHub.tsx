@@ -13,6 +13,7 @@ import {
 import { useAuthStore } from "@/stores/authStore";
 import { getMyEmployeeProfile, type EmployeeData } from "@/services/api/employees";
 import AccessAdmin from "./AccessAdmin";
+import type { Me } from "./MiniApp";
 
 /**
  * Хаб доступов — кабинет сотрудника.
@@ -52,8 +53,12 @@ const fmtDate = (iso: string | null) => {
 
 type Tab = "cabinet" | "my" | "assigned" | "admin";
 
-export default function AccessHub() {
-  const user = useAuthStore((s) => s.user);
+export default function AccessHub({ me }: { me?: Me | null }) {
+  // В мини-аппе вход идёт по подписи Telegram, и глобальный стор авторизации
+  // не заполняется — пользователь приходит пропсом из оболочки. Без этого
+  // isAdmin всегда был false, и админ не видел вкладку «Настройка».
+  const storeUser = useAuthStore((s) => s.user) as any;
+  const user = (me ?? storeUser) as Me | null | undefined;
   const isAdmin = user?.role === "superadmin" || user?.org_role === "owner" || user?.org_role === "admin";
 
   const [tab, setTab] = useState<Tab>("cabinet");
