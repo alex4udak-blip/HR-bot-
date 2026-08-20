@@ -207,6 +207,8 @@ export interface OrgMemberBrief {
   user_id: number;
   user_name: string | null;
   user_email: string | null;
+  /** роль в организации: owner | admin | member */
+  role: string | null;
   custom_role_id: number | null;
   custom_role_name: string | null;
 }

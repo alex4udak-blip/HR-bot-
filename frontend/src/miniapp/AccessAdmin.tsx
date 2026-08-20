@@ -175,6 +175,7 @@ export default function AccessAdmin({ onChanged }: { onChanged?: () => void }) {
         <ResourceForm
           res={editing === "new" ? null : editing}
           members={members}
+          resources={resources}
           onClose={() => setEditing(null)}
           onSaved={async () => { setEditing(null); await load(); onChanged?.(); }}
         />
@@ -222,10 +223,11 @@ function ResourceRow({
 // ============================================================
 
 function ResourceForm({
-  res, members, onClose, onSaved,
+  res, members, resources, onClose, onSaved,
 }: {
   res: CatalogResource | null;
   members: OrgMemberBrief[];
+  resources: CatalogResource[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -243,6 +245,25 @@ function ResourceForm({
   const [currency, setCurrency] = useState(res?.currency || "RUB");
   const [forAll, setForAll] = useState<boolean>(res ? !!res.available_to_all : true);
   const [saving, setSaving] = useState(false);
+  const [allPeople, setAllPeople] = useState(false);
+
+  // Выдают доступы снабженцы и админы, а не весь штат. Полный список
+  // сотрудников в этом поле — источник ошибок: ответственным легко назначить
+  // случайного человека, и заявки уедут не туда.
+  //
+  // Уже назначенных ответственных оставляем всегда: иначе, открыв ресурс на
+  // редактирование, админ не увидел бы текущего владельца в списке.
+  const issuers = useMemo(() => {
+    const already = new Set(
+      resources.map((r) => r.responsible_user_id).filter(Boolean) as number[]
+    );
+    if (res?.responsible_user_id) already.add(res.responsible_user_id);
+    return members.filter(
+      (m) => m.role === "owner" || m.role === "admin" || already.has(m.user_id)
+    );
+  }, [members, resources, res]);
+
+  const shown = allPeople ? members : issuers;
 
   const save = async () => {
     if (!name.trim()) { toast.error("Укажите название"); return; }
@@ -300,13 +321,23 @@ function ResourceForm({
             <span>Кто выдаёт</span>
             <select value={responsible} onChange={(e) => setResponsible(e.target.value)}>
               <option value="">— не назначен (заявки пойдут админам) —</option>
-              {members.map((m) => (
+              {shown.map((m) => (
                 <option key={m.user_id} value={m.user_id}>
                   {m.user_name || m.user_email || `#${m.user_id}`}
+                  {m.role === "owner" || m.role === "admin" ? " · админ" : ""}
                 </option>
               ))}
             </select>
           </label>
+          <button
+            type="button"
+            className="hf-ah-adm-link"
+            onClick={() => setAllPeople((v) => !v)}
+          >
+            {allPeople
+              ? "Показывать только снабженцев и админов"
+              : `Показать весь штат (${members.length})`}
+          </button>
 
           <label className="hf-ah-field">
             <span>Когда доступен</span>

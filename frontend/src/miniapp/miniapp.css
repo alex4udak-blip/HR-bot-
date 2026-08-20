@@ -466,3 +466,16 @@ body { margin: 0; background: var(--bg-body, #0f0f15); }
 .hf-ah-adm-check-cat { font-size: var(--hf-fs-5xs); color: var(--fg-dimmed); }
 
 .hf-ah-adm-save { align-self: flex-start; }
+
+/* Ссылка-переключатель под полем (напр. «показать весь штат») */
+.hf-ah-adm-link {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--hf-cyan-500);
+  font-size: var(--hf-fs-5xs);
+  cursor: pointer;
+  text-align: left;
+}
+.hf-ah-adm-link:hover { text-decoration: underline; }
