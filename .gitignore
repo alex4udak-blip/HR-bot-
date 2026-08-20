@@ -109,3 +109,7 @@ backend/run_local.sh
 backend/requirements.win.txt
 backend/requirements.local.txt
 docs/superpowers/
+
+# Сборка Telegram Mini App — делается в Docker, в репозитории не нужна
+frontend/dist-miniapp/
+backend/static-miniapp/

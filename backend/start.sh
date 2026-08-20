@@ -125,6 +125,14 @@ async def ensure_shadow_columns():
         # Make file_path nullable (no longer required with DB storage)
         await conn.execute(text('ALTER TABLE entity_files ALTER COLUMN file_path DROP NOT NULL'))
 
+        # Одноразовый токен привязки Telegram (замена дырявых /bind по email и
+        # /start bind_<id>). create_all создаёт только недостающие ТАБЛИЦЫ и не
+        # добавляет колонки в существующие — без этих ALTER любой запрос к
+        # users на проде падал бы с UndefinedColumn.
+        await conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_bind_token VARCHAR(64)'))
+        await conn.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_bind_expires TIMESTAMP'))
+        await conn.execute(text('CREATE INDEX IF NOT EXISTS ix_users_telegram_bind_token ON users (telegram_bind_token)'))
+
         # PII-долговечность: зашифрованные паспорта/документы сотрудников в БД (bytea),
         # иначе теряются на эфемерном диске прода при редеплое.
         await conn.execute(text('ALTER TABLE employees ADD COLUMN IF NOT EXISTS passport_data BYTEA'))

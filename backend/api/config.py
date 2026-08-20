@@ -23,6 +23,12 @@ class Settings(BaseSettings):
         default="",
         alias="TELEGRAM_BOT_TOKEN"
     )
+    # Адрес Telegram Mini App. Telegram требует HTTPS, поэтому локально кнопка
+    # просто не показывается — вместо неё остаются обычные команды бота.
+    miniapp_url: str = Field(
+        default="",
+        alias="MINIAPP_URL"
+    )
     telegram_bot_username: str = Field(
         default="",
         alias="TELEGRAM_BOT_USERNAME",

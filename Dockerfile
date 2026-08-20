@@ -10,6 +10,10 @@ RUN npm install
 
 COPY frontend/ ./
 RUN npm run build
+# Telegram Mini App — отдельная сборка со своим конфигом и своим outDir.
+# Намеренно отдельной командой: сборка веб-версии выше не меняется, и если
+# мини-апп когда-то не соберётся, будет видно, что упало именно оно.
+RUN npm run build:miniapp
 
 # Stage 2: Final image
 FROM python:3.11-slim
@@ -55,6 +59,8 @@ RUN python -c "from playwright.sync_api import sync_playwright; print('Playwrigh
 
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /frontend/dist ./static
+# Мини-апп рядом, отдельным каталогом — main.py монтирует его на /miniapp
+COPY --from=frontend-builder /frontend/dist-miniapp ./static-miniapp
 
 # chrome-extension перенесён в backend/chrome-extension и уже попадает в образ
 # выше через `COPY backend/ .` — отдельный COPY больше не нужен (и сломал бы

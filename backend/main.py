@@ -14,7 +14,7 @@ from sqlalchemy import text
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -23,7 +23,7 @@ from api.routes import auth, users, chats, messages, criteria, ai, stats, entiti
 from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, org_units, magic_button, pen
 from api.routes import candidate_search, extension_download, prometheus_invite, csv_import
 from api.routes import candidate_database, recruiter_workspaces
-from api.routes import timeoff, blockers, tags, integrations, staff_board
+from api.routes import timeoff, blockers, tags, integrations, staff_board, access_hub
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -43,6 +43,10 @@ logger = get_logger("hr-analyzer")
 
 # Static files directory (built frontend)
 STATIC_DIR = Path(__file__).parent / "static"
+# Telegram Mini App — отдельная сборка, лежит рядом со статикой сайта.
+# Каталога может не быть (локальный запуск, старый образ) — тогда просто не
+# монтируем, веб-версия от этого не зависит.
+MINIAPP_DIR = Path(__file__).parent / "static-miniapp"
 
 
 async def cleanup_deleted_chats_task():
@@ -620,6 +624,7 @@ app.include_router(organizations.router, prefix="/api/organizations", tags=["org
 app.include_router(sharing.router, prefix="/api/sharing", tags=["sharing"])
 app.include_router(departments.router, prefix="/api/departments", tags=["departments"])
 app.include_router(staff_board.router, prefix="/api/staff-board", tags=["staff-board"])
+app.include_router(access_hub.router, prefix="/api/access-hub", tags=["access-hub"])
 app.include_router(invitations.router, prefix="/api/invitations", tags=["invitations"])
 app.include_router(realtime.router, tags=["realtime"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
@@ -1096,6 +1101,20 @@ async def autotasks_debug():
             }
     except Exception as e:
         return {"error": str(e)}
+
+
+# Mini App монтируем РАНЬШЕ SPA-роута ниже: тот ловит "/{full_path:path}" и
+# иначе отдал бы на /miniapp главную страницу сайта. html=True отдаёт
+# index.html по адресу каталога.
+if MINIAPP_DIR.exists():
+    # Без слэша Telegram получил бы 404 — адрес в MINIAPP_URL легко указать
+    # и так, и так, поэтому уводим на канонический путь сами.
+    @app.get("/miniapp", include_in_schema=False)
+    async def miniapp_root_redirect():
+        return RedirectResponse(url="/miniapp/")
+
+    app.mount("/miniapp", StaticFiles(directory=MINIAPP_DIR, html=True), name="miniapp")
+    logger.info(f"Mini App static mounted: {MINIAPP_DIR}")
 
 
 # Serve static files (frontend)

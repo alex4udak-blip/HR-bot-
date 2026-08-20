@@ -20,7 +20,9 @@
     "test:e2e:responsive": "playwright test tests/e2e/responsive.spec.ts",
     "test:e2e:mobile-pwa": "playwright test tests/e2e/mobile-pwa.spec.ts",
     "test:e2e:mobile": "playwright test tests/e2e/mobile-pwa.spec.ts --project='Mobile Safari' --project='Mobile Chrome'",
-    "test:all": "npm run test:run && npm run test:e2e"
+    "test:all": "npm run test:run && npm run test:e2e",
+    "dev:miniapp": "vite --config vite.miniapp.config.ts",
+    "build:miniapp": "tsc && vite build --config vite.miniapp.config.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
