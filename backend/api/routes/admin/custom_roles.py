@@ -88,7 +88,7 @@ async def create_custom_role(
 
     # Create audit log entry
     audit_log = PermissionAuditLog(
-        custom_role_id=custom_role.id,
+        role_id=custom_role.id,
         action="create_custom_role",
         changed_by_id=superadmin.id,
         details={
@@ -159,7 +159,7 @@ async def list_custom_roles(
         # Get permission overrides
         overrides_result = await db.execute(
             select(RolePermissionOverride)
-            .where(RolePermissionOverride.custom_role_id == role.id)
+            .where(RolePermissionOverride.role_id == role.id)
         )
         overrides = overrides_result.scalars().all()
 
@@ -215,7 +215,7 @@ async def get_custom_role(
     # Get permission overrides
     overrides_result = await db.execute(
         select(RolePermissionOverride)
-        .where(RolePermissionOverride.custom_role_id == role_id)
+        .where(RolePermissionOverride.role_id == role_id)
     )
     overrides = overrides_result.scalars().all()
 
@@ -291,7 +291,7 @@ async def update_custom_role(
 
     # Create audit log entry
     audit_log = PermissionAuditLog(
-        custom_role_id=role_id,
+        role_id=role_id,
         action="update_custom_role",
         changed_by_id=superadmin.id,
         details={"changes": changes}
@@ -303,7 +303,7 @@ async def update_custom_role(
     base_permissions = get_role_permissions(custom_role.base_role)
     overrides_result = await db.execute(
         select(RolePermissionOverride)
-        .where(RolePermissionOverride.custom_role_id == role_id)
+        .where(RolePermissionOverride.role_id == role_id)
     )
     overrides = overrides_result.scalars().all()
     merged_permissions = base_permissions.copy()
@@ -361,7 +361,7 @@ async def delete_custom_role(
 
     # Create audit log entry
     audit_log = PermissionAuditLog(
-        custom_role_id=role_id,
+        role_id=role_id,
         action="delete_custom_role",
         changed_by_id=superadmin.id,
         details={"role_name": custom_role.name}
@@ -423,7 +423,7 @@ async def add_permission_override(
     # Check if override already exists
     override_result = await db.execute(
         select(RolePermissionOverride)
-        .where(RolePermissionOverride.custom_role_id == role_id)
+        .where(RolePermissionOverride.role_id == role_id)
         .where(RolePermissionOverride.permission == request_body.permission)
     )
     existing_override = override_result.scalar_one_or_none()
@@ -436,7 +436,7 @@ async def add_permission_override(
     else:
         # Create new override
         new_override = RolePermissionOverride(
-            custom_role_id=role_id,
+            role_id=role_id,
             permission=request_body.permission,
             allowed=request_body.allowed
         )
@@ -446,7 +446,7 @@ async def add_permission_override(
 
     # Create audit log entry
     audit_log = PermissionAuditLog(
-        custom_role_id=role_id,
+        role_id=role_id,
         action=action,
         changed_by_id=superadmin.id,
         details={
@@ -503,7 +503,7 @@ async def remove_permission_override(
     # Get permission override
     override_result = await db.execute(
         select(RolePermissionOverride)
-        .where(RolePermissionOverride.custom_role_id == role_id)
+        .where(RolePermissionOverride.role_id == role_id)
         .where(RolePermissionOverride.permission == permission)
     )
     override = override_result.scalar_one_or_none()
@@ -529,7 +529,7 @@ async def remove_permission_override(
 
     # Create audit log entry
     audit_log = PermissionAuditLog(
-        custom_role_id=role_id,
+        role_id=role_id,
         action="remove_permission_override",
         changed_by_id=superadmin.id,
         details={
@@ -618,13 +618,13 @@ async def assign_custom_role_to_user(
     # Create assignment
     assignment = UserCustomRole(
         user_id=user_id,
-        custom_role_id=role_id
+        role_id=role_id
     )
     db.add(assignment)
 
     # Create audit log entry
     audit_log = PermissionAuditLog(
-        custom_role_id=role_id,
+        role_id=role_id,
         user_id=user_id,
         action="assign_custom_role",
         changed_by_id=superadmin.id,
@@ -713,7 +713,7 @@ async def remove_custom_role_from_user(
 
     # Create audit log entry
     audit_log = PermissionAuditLog(
-        custom_role_id=role_id,
+        role_id=role_id,
         user_id=user_id,
         action="remove_custom_role",
         changed_by_id=superadmin.id,
@@ -764,7 +764,7 @@ async def get_permission_audit_logs(
 
     # Apply filters
     if role_id is not None:
-        query = query.where(PermissionAuditLog.custom_role_id == role_id)
+        query = query.where(PermissionAuditLog.role_id == role_id)
     if changed_by is not None:
         query = query.where(PermissionAuditLog.changed_by_id == changed_by)
 
@@ -788,7 +788,7 @@ async def get_permission_audit_logs(
 
         response.append(PermissionAuditLogResponse(
             id=log.id,
-            custom_role_id=log.custom_role_id,
+            custom_role_id=log.role_id,
             user_id=log.user_id,
             action=log.action,
             changed_by_id=log.changed_by_id,
