@@ -172,8 +172,17 @@ async def invite_to_prometheus(
             )
         )
         app = app_result.scalar_one_or_none()
-        if app and app.stage not in (ApplicationStage.practice, ApplicationStage.accepted):
-            app.stage = ApplicationStage.practice
+        # ApplicationStage.practice и .accepted НЕ СУЩЕСТВУЮТ (см. закомментированный
+        # блок deprecated-значений в database.py) — обращение к ним роняло весь
+        # эндпоинт с AttributeError → 500, и откат транзакции стирал уже созданную
+        # запись EmailLog и отметку prometheus_invited. Приглашение не сохранялось
+        # НИКОГДА, сколько ни повторяй.
+        # «Практика» — это probation (так подписано и в APPLICATION_STAGE_LABELS,
+        # и в KANBAN_STATUS_LABELS). Не откатываем назад тех, кто уже дальше.
+        TERMINAL = (ApplicationStage.probation, ApplicationStage.hired,
+                    ApplicationStage.transferred)
+        if app and app.stage not in TERMINAL:
+            app.stage = ApplicationStage.probation
             app.last_stage_change_at = datetime.utcnow()
 
     await db.commit()

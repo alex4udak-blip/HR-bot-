@@ -338,6 +338,13 @@ class User(Base):
     name = Column(String(255), nullable=False, index=True)
     role = Column(SQLEnum(UserRole), default=UserRole.member)
     telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
+    # Одноразовый токен привязки Telegram. Раньше привязка шла по /bind <email>
+    # и по /start bind_<user_id> — без ЛЮБОЙ проверки: кто угадал email или
+    # перебрал id, тот и забирал аккаунт. Теперь бинд возможен только по
+    # секретному токену, который выдаётся уже авторизованному пользователю
+    # (или админом) и живёт ограниченное время.
+    telegram_bind_token = Column(String(64), nullable=True, index=True)
+    telegram_bind_expires = Column(DateTime, nullable=True)
     telegram_username = Column(String(255), nullable=True)
     # Additional contact identifiers for speaker matching
     additional_emails = Column(JSON, default=list)  # List of additional email addresses
@@ -1886,3 +1893,170 @@ class EntityTag(Base):
     )
 
     entities = relationship("Entity", secondary="entity_tags", back_populates="tag_objects")
+
+
+# ===========================================================================
+# ХАБ ДОСТУПОВ (модуль Enceladus)
+# ---------------------------------------------------------------------------
+# Вокруг сотрудника собирается единая экосистема ресурсов: он запрашивает по
+# своей роли прокси/аккаунты/пополнения, заявка уходит ответственному, выданное
+# копится в карточке — и при увольнении по этому же списку строится чек-лист
+# отзыва.
+#
+# ВАЖНО про секреты: система трекает только ФАКТ выдачи и статус. Реальные
+# креды (пароли, ключи, данные карт) здесь НЕ хранятся и не передаются —
+# осознанное решение, чтобы не брать на себя хранение чувствительных данных.
+# ===========================================================================
+
+
+class ResourceCategory(str, enum.Enum):
+    """Категория ресурса. Расширяется суперадмином через каталог."""
+    proxy = "proxy"                  # Прокси
+    payment_topup = "payment_topup"  # Пополнение платёжки
+    payment = "payment"              # Оплата
+    account = "account"              # Аккаунт
+    tg_account = "tg_account"        # Telegram-аккаунт
+    consumable = "consumable"        # Расходник
+    other = "other"
+
+
+class AccessRequestStatus(str, enum.Enum):
+    """Статус заявки. new/in_progress/granted/rejected — из ТЗ,
+    revoked добавлен для оффбординга (отзыв ранее выданного)."""
+    new = "new"                  # Новая
+    in_progress = "in_progress"  # В работе
+    granted = "granted"          # Выдано
+    rejected = "rejected"        # Отклонено
+    revoked = "revoked"          # Отозвано
+
+
+class ResourceCatalog(Base):
+    """Справочник типов ресурсов: что вообще можно запросить."""
+    __tablename__ = "resource_catalog"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    key = Column(String(64), nullable=False)          # машинный ключ (proxy_us)
+    name = Column(String(200), nullable=False)        # человеческое имя
+    category = Column(SQLEnum(ResourceCategory, name="resourcecategory",
+                              create_constraint=False, native_enum=False),
+                      nullable=False, default=ResourceCategory.other)
+    description = Column(Text, nullable=True)
+
+    # Кому летит заявка этого типа. Заявитель имени не видит — только «Снабжение».
+    responsible_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Параметры формы: [{key,label,type,required,options[]}] — например страна прокси
+    params_schema = Column(JSON, default=list)
+
+    # Условие разблокировки: always | prometheus_accepted | in_staff
+    unlock_condition = Column(String(40), nullable=False, default="always")
+
+    # Лимиты (в v1 по требованию бизнеса). NULL = без ограничения.
+    limit_per_month = Column(Integer, nullable=True)      # штук в месяц на человека
+    limit_amount_month = Column(Integer, nullable=True)   # сумма в месяц на человека (в минорных единицах)
+    currency = Column(String(8), nullable=True, default="RUB")
+
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "key", name="uq_resource_catalog_org_key"),
+        Index("ix_resource_catalog_org_active", "org_id", "is_active"),
+    )
+
+    responsible = relationship("User", foreign_keys=[responsible_user_id])
+    grants = relationship("RoleResourceGrant", back_populates="resource", cascade="all, delete-orphan")
+
+
+class RoleResourceGrant(Base):
+    """Какие типы ресурсов доступны роли — те самые галочки в конструкторе ролей."""
+    __tablename__ = "role_resource_grants"
+
+    id = Column(Integer, primary_key=True)
+    # role_id, а не custom_role_id — соответствует полю модели CustomRole
+    role_id = Column(Integer, ForeignKey("custom_roles.id", ondelete="CASCADE"), nullable=False, index=True)
+    resource_id = Column(Integer, ForeignKey("resource_catalog.id", ondelete="CASCADE"), nullable=False, index=True)
+    can_request = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("role_id", "resource_id", name="uq_role_resource_grant"),
+    )
+
+    resource = relationship("ResourceCatalog", back_populates="grants")
+
+
+class AccessRequest(Base):
+    """Заявка на ресурс: заявитель → ответственный → выдача/отказ."""
+    __tablename__ = "access_requests"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    requester_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Для кого ресурс (обычно = заявитель, но админ может завести за сотрудника)
+    target_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    resource_id = Column(Integer, ForeignKey("resource_catalog.id", ondelete="RESTRICT"), nullable=False, index=True)
+
+    # Компания холдинга (верхний уровень org_units) — чтобы сводить расходы
+    company_unit_id = Column(Integer, ForeignKey("org_units.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    params = Column(JSON, default=dict)      # значения по params_schema ресурса
+    comment = Column(Text, nullable=True)    # свободный текст от заявителя
+
+    status = Column(SQLEnum(AccessRequestStatus, name="accessrequeststatus",
+                            create_constraint=False, native_enum=False),
+                    nullable=False, default=AccessRequestStatus.new, index=True)
+    assignee_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Стоимость — для лимитов и сводки расходов (минорные единицы, напр. копейки)
+    amount = Column(Integer, nullable=True)
+    currency = Column(String(8), nullable=True)
+
+    decided_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    decision_comment = Column(Text, nullable=True)
+
+    granted_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    revoke_reason = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_access_request_org_status", "org_id", "status"),
+        Index("ix_access_request_assignee_status", "assignee_user_id", "status"),
+        Index("ix_access_request_target_status", "target_user_id", "status"),
+    )
+
+    resource = relationship("ResourceCatalog")
+    requester = relationship("User", foreign_keys=[requester_user_id])
+    target_user = relationship("User", foreign_keys=[target_user_id])
+    assignee = relationship("User", foreign_keys=[assignee_user_id])
+    audit = relationship("AccessRequestAudit", back_populates="request",
+                         cascade="all, delete-orphan", order_by="AccessRequestAudit.created_at")
+
+
+class AccessRequestAudit(Base):
+    """Append-only журнал переходов статусов заявки (по образцу StageTransition)."""
+    __tablename__ = "access_request_audit"
+
+    id = Column(Integer, primary_key=True)
+    request_id = Column(Integer, ForeignKey("access_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_status = Column(String(20), nullable=True)
+    to_status = Column(String(20), nullable=False)
+    action = Column(String(30), nullable=False)   # create | assign | grant | reject | revoke | comment
+    changed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    comment = Column(Text, nullable=True)
+    details = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        Index("ix_access_audit_request_created", "request_id", "created_at"),
+    )
+
+    request = relationship("AccessRequest", back_populates="audit")

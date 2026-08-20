@@ -662,6 +662,15 @@ async def get_my_profile(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee profile not found")
 
+    # Гейт кабинета. Раньше здесь не проверялось вообще ничего — уволенный
+    # сотрудник сохранял полный доступ к личному кабинету со всеми данными.
+    # Прометеевский гейт (ACCEPTED открывает кабинет) намеренно НЕ делаем
+    # жёстким: в системе уже есть штат, заведённый мимо Prometheus, и его
+    # блокировка была бы регрессом. Статус отдаётся полем ниже — интерфейс
+    # решает, что показывать.
+    if not emp.is_active:
+        raise HTTPException(status_code=403, detail="Доступ к кабинету закрыт: сотрудник уволен")
+
     emp.vacation_days_total = _calculate_vacation_days(emp.department_start_date)
     return _employee_to_response(emp)
 
@@ -992,9 +1001,23 @@ async def dismiss_employee(
     emp.dismissal_reason = reason
     # Кандидат ОСТАЁТСЯ на своём месте («Перешёл в отдел») — статус не трогаем.
     # Кнопки «Взять в штат» там и так нет (она только для hired/probation).
+
+    # Оффбординг: собираем чек-лист отзыва и рассылаем ответственным.
+    # Ничего не удаляет — только перечисляет и уведомляет (см. services/offboarding).
+    checklist = None
+    try:
+        from ..services.offboarding import run_offboarding
+        checklist = await run_offboarding(db, org.id, emp.user_id, current_user.id, reason)
+    except Exception:
+        logger.exception("Не удалось запустить оффбординг для employee=%s", emp.id)
+
     await db.commit()
 
-    return {"ok": True, "detail": "Employee dismissed"}
+    return {
+        "ok": True,
+        "detail": "Employee dismissed",
+        "offboarding": checklist,
+    }
 
 
 # ─── Leave balance & requests ────────────────────────────────

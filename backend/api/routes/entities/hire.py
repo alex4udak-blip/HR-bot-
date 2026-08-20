@@ -128,6 +128,10 @@ async def hire_entity(
         emp.is_active = True
         emp.dismissed_at = None
         emp.dismissal_reason = None
+        # Возвращаем вход: увольнение гасит сам аккаунт (см. services/offboarding.
+        # cut_off_access), поэтому без этой строки принятый обратно человек не
+        # смог бы войти вообще — ни на сайт, ни в мини-приложение.
+        user.is_active = True
         emp.entity_id = ent.id
         emp.department_id = data.department_id
         emp.position = data.position or ent.position

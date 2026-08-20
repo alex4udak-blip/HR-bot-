@@ -35,7 +35,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..database import get_db
 from ..models.database import (
     Entity, EntityStatus, EntityFile, EntityFileType,
-    Organization, User, Department,
+    Employee, Organization, User, Department,
 )
 from ..services.auth import get_current_user, get_user_org
 
@@ -490,12 +490,21 @@ async def update_row(
     payload = data.model_dump(exclude_unset=True)
 
     # --- Поля самой карточки ---
+    dismissal_triggered = False
     if "status" in payload:
         raw = payload["status"]
         try:
             new_status = EntityStatus(raw)
         except ValueError:
             raise HTTPException(400, f"Неизвестный статус: {raw}")
+        # Перевод в «Уволен»/«Уволился» — это ВТОРАЯ дверь увольнения (первая —
+        # DELETE /employees). Раньше доска меняла только статус карточки, а
+        # запись сотрудника оставалась активной: кабинет продолжал работать, а
+        # чек-лист отзыва не строился. Синхронизируем обе стороны.
+        dismissal_triggered = (
+            new_status in (EntityStatus.dismissed, EntityStatus.quit)
+            and entity.status not in (EntityStatus.dismissed, EntityStatus.quit)
+        )
         entity.status = new_status
 
     if "position" in payload:
@@ -550,6 +559,27 @@ async def update_row(
     if touched_extra:
         entity.extra_data = ex
         flag_modified(entity, "extra_data")
+
+    if dismissal_triggered:
+        # Закрываем запись сотрудника и запускаем тот же оркестратор, что и
+        # штатное увольнение — иначе доска была бы тихим обходом чек-листа.
+        try:
+            from ..services.offboarding import run_offboarding
+            emp = (await db.execute(
+                select(Employee)
+                .where(Employee.entity_id == entity.id, Employee.org_id == org.id)
+                .order_by(Employee.id.desc())
+                .limit(1)
+            )).scalar_one_or_none()
+            if emp and emp.is_active:
+                emp.is_active = False
+                emp.dismissed_at = datetime.utcnow()
+                emp.dismissal_reason = "Уволен через доску «Статусы»"
+            if emp:
+                await run_offboarding(db, org.id, emp.user_id, current_user.id,
+                                      "смена статуса на доске")
+        except Exception:
+            logger.exception("Не удалось выполнить оффбординг с доски для entity=%s", entity.id)
 
     await db.commit()
 
