@@ -166,14 +166,16 @@ async def login(
         path="/api/auth"  # Only sent to auth endpoints (reduces attack surface)
     )
 
-    # Get org membership and role
+    # Get org membership and role (+ is_readonly — «Наблюдатель»)
     org_role = None
+    is_readonly = False
     org_member_result = await db.execute(
-        select(OrgMember.role).where(OrgMember.user_id == authenticated_user.id)
+        select(OrgMember.role, OrgMember.is_readonly).where(OrgMember.user_id == authenticated_user.id)
     )
-    org_member = org_member_result.scalar_one_or_none()
+    org_member = org_member_result.first()
     if org_member:
-        org_role = org_member.value
+        org_role = org_member[0].value
+        is_readonly = bool(org_member[1])
 
     # Get department membership
     department_id = None
@@ -205,6 +207,7 @@ async def login(
             id=authenticated_user.id, email=authenticated_user.email, name=authenticated_user.name,
             role=authenticated_user.role.value,
             org_role=org_role,
+            is_readonly=is_readonly,
             department_id=department_id,
             department_name=department_name,
             department_role=department_role,
@@ -425,14 +428,16 @@ async def get_me(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # Get org membership and role
+    # Get org membership and role (+ is_readonly — «Наблюдатель»)
     org_role = None
+    is_readonly = False
     org_member_result = await db.execute(
-        select(OrgMember.role).where(OrgMember.user_id == user.id)
+        select(OrgMember.role, OrgMember.is_readonly).where(OrgMember.user_id == user.id)
     )
-    org_member = org_member_result.scalar_one_or_none()
+    org_member = org_member_result.first()
     if org_member:
-        org_role = org_member.value
+        org_role = org_member[0].value
+        is_readonly = bool(org_member[1])
 
     # Get department membership
     department_id = None
@@ -456,6 +461,7 @@ async def get_me(
         id=user.id, email=user.email, name=user.name,
         role=user.role.value,
         org_role=org_role,
+        is_readonly=is_readonly,
         department_id=department_id,
         department_name=department_name,
         department_role=department_role,

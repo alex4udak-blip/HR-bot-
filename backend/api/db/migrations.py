@@ -122,6 +122,10 @@ COLUMN_MIGRATIONS = [
     # стирается при редеплое → скрины в комментариях пропадали).
     ("ALTER TABLE task_attachments ADD COLUMN IF NOT EXISTS file_data BYTEA", "Add file_data to task_attachments"),
     ("ALTER TABLE task_attachments ALTER COLUMN storage_path DROP NOT NULL", "task_attachments.storage_path nullable"),
+
+    # «Наблюдатель» — read-only набор прав поверх роли (менторам): видит всё, но
+    # любые изменения запрещены (не-GET запросы → 403 в get_current_user).
+    ("ALTER TABLE org_members ADD COLUMN IF NOT EXISTS is_readonly BOOLEAN DEFAULT FALSE NOT NULL", "Add is_readonly to org_members"),
 ]
 
 # Entity AI conversations table

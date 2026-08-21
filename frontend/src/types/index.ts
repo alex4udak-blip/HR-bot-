@@ -8,6 +8,7 @@ export interface User {
   name: string;
   role: UserRole;
   org_role?: OrgRole;
+  is_readonly?: boolean; // «Наблюдатель»: видит всё, но ничего не может менять
   department_id?: number;
   department_name?: string;
   department_role?: DeptRole;

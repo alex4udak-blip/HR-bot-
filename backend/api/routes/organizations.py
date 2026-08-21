@@ -84,6 +84,7 @@ class InviteMemberRequest(BaseModel):
 
 class UpdateMemberRoleRequest(BaseModel):
     role: str  # owner, admin, member
+    is_readonly: Optional[bool] = None  # «Наблюдатель»: видит всё, ничего не меняет
 
 
 # Helper to check org access
@@ -480,9 +481,11 @@ async def update_member_role(
         raise HTTPException(status_code=403, detail="Only owner can manage owner roles")
 
     membership.role = new_role
+    if data.is_readonly is not None:
+        membership.is_readonly = bool(data.is_readonly)
     await db.commit()
 
-    return {"success": True, "role": new_role.value}
+    return {"success": True, "role": new_role.value, "is_readonly": membership.is_readonly}
 
 
 @router.put("/current/members/{user_id}/full-access")

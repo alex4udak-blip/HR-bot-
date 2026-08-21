@@ -161,6 +161,27 @@ async def get_current_user(
     if db_token_version != token_version:
         raise HTTPException(status_code=401, detail="Token has been invalidated")
 
+    # «Наблюдатель» (read-only набор прав, для менторов): ЛЮБОЙ изменяющий запрос
+    # запрещаем — даже если кнопка где-то осталась активной, клик даст 403. Единая
+    # точка = гарантия «ничего не может нажать/поменять». Проверяем только не-GET
+    # (на чтении лишний запрос не делаем). Auth-операции (logout/refresh/смена своего
+    # пароля) не режем — иначе read-only юзер не смог бы даже выйти. Суперадмин — мимо.
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        _path = request.url.path or ""
+        if user.role != UserRole.superadmin and not _path.startswith("/api/auth/"):
+            from ..models.database import OrgMember
+            try:
+                _ro = (await db.execute(
+                    select(OrgMember.is_readonly).where(OrgMember.user_id == user.id)
+                )).scalars().first()
+            except Exception:
+                _ro = None  # колонки ещё нет (миграция не прошла) → не блокируем
+            if _ro:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Режим «Наблюдатель»: только просмотр, изменения запрещены",
+                )
+
     return user
 
 

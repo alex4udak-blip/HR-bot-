@@ -278,6 +278,11 @@ class OrgMember(Base):
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(SQLEnum(OrgRole), default=OrgRole.member)
+    # «Наблюдатель»: read-only набор прав ПОВЕРХ роли. Роль даёт видимость (admin →
+    # видит всех кандидатов), а этот флаг ЖЁСТКО запрещает любые изменения (все
+    # не-GET запросы → 403 в get_current_user). Ортогонален роли: admin+readonly =
+    # видит всё, но ничего не меняет. Для менторов, которым нужен только просмотр.
+    is_readonly = Column(Boolean, default=False, nullable=False)
     invited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
 

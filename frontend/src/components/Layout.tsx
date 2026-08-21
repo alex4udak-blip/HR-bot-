@@ -1826,6 +1826,17 @@ export default function Layout() {
                                 </span>
                                 <span className="hf-hr-funnels-option-subtitle">
                                   {user?.email || "—"}
+                                  {user?.is_readonly && (
+                                    <span
+                                      style={{
+                                        marginLeft: 6, padding: "1px 6px", borderRadius: 6,
+                                        fontSize: 10, fontWeight: 600,
+                                        background: "#fde68a", color: "#92400e",
+                                      }}
+                                    >
+                                      только чтение
+                                    </span>
+                                  )}
                                 </span>
                               </span>
                             </button>

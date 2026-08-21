@@ -132,6 +132,7 @@ class UserResponse(BaseModel):
     name: str
     role: UserRole  # Use enum for consistency with database
     org_role: Optional[str] = None  # owner, admin, member
+    is_readonly: bool = False  # «Наблюдатель»: видит всё, но не может ничего менять
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     department_role: Optional[str] = None  # lead, sub_admin, member
