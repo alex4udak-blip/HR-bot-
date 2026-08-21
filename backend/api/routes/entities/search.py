@@ -1175,6 +1175,128 @@ async def merge_shadow_duplicate(
         raise HTTPException(500, f"Merge failed: {str(e)}")
 
 
+class UnmergeRequest(BaseModel):
+    source_entity_id: int  # id влитого профиля из extra_data.merged_from — вернуть отдельной карточкой
+
+
+@router.post("/{entity_id}/unmerge")
+async def unmerge_entity(
+    entity_id: int,
+    request: UnmergeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """«Разъединить»: вернуть один ОШИБОЧНО влитый профиль (из extra_data.merged_from)
+    отдельной карточкой. Пересоздаёт entity из снапшота контейнера (id переиспользуется —
+    он свободен после слияния), возвращает захваченные диспатчи/файлы и убирает контейнер
+    из merged_from. Только admin/owner/superadmin. Идемпотентно: если id уже существует — 409.
+    Восстановленная карточка — is_archived=True (как были влитые reserve-профили); при
+    необходимости разархивировать вручную."""
+    from sqlalchemy import update as _sql_update
+    from ...models.database import FormDispatch, EntityFile
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+    org_role = await get_user_org_role(current_user, org.id, db)
+    if current_user.role != UserRole.superadmin and org_role not in (OrgRole.admin, OrgRole.owner):
+        raise HTTPException(403, "Only administrators can unmerge")
+
+    target = (await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "Target entity not found")
+
+    mf = target.extra_data.get("merged_from") if isinstance(target.extra_data, dict) else None
+    if not isinstance(mf, list):
+        raise HTTPException(400, "У карточки нет объединённых профилей")
+    container = next(
+        (c for c in mf if isinstance(c, dict) and c.get("entity_id") == request.source_entity_id),
+        None,
+    )
+    if container is None:
+        raise HTTPException(404, "Такой объединённый профиль не найден в карточке")
+
+    exists = (await db.execute(
+        select(Entity.id).where(Entity.id == request.source_entity_id)
+    )).scalar_one_or_none()
+    if exists is not None:
+        raise HTTPException(409, "Профиль с таким id уже существует")
+
+    # Снапшот extra_data источника: убираем служебные флаги дедупа, чтобы
+    # восстановленная карточка не тянула баннер обратно на target.
+    src_extra = dict(container.get("extra_data") or {})
+    for _k in ("hidden_duplicate_id", "hidden_duplicate_meta", "text_twin", "merged_from"):
+        src_extra.pop(_k, None)
+
+    try:
+        status_val = EntityStatus(container.get("status")) if container.get("status") else EntityStatus.reserve
+    except ValueError:
+        status_val = EntityStatus.reserve
+
+    restored = Entity(
+        id=request.source_entity_id,
+        org_id=target.org_id,
+        type=EntityType.candidate,
+        name=container.get("name") or f"Профиль #{request.source_entity_id}",
+        status=status_val,
+        extra_data=src_extra,
+        is_archived=True,
+    )
+    _added = container.get("added_at")
+    if isinstance(_added, str):
+        try:
+            restored.created_at = datetime.fromisoformat(_added)
+        except ValueError:
+            pass
+    db.add(restored)
+    await db.flush()
+
+    # Возвращаем захваченные при слиянии диспатчи и файлы обратно на восстановленный профиль
+    def _ids(vals):
+        out = []
+        for x in (vals or []):
+            try:
+                out.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    disp_ids = _ids(container.get("form_dispatch_ids"))
+    if disp_ids:
+        await db.execute(
+            _sql_update(FormDispatch).where(FormDispatch.id.in_(disp_ids)).values(entity_id=restored.id)
+        )
+    file_ids = _ids(container.get("file_ids"))
+    if file_ids:
+        await db.execute(
+            _sql_update(EntityFile).where(EntityFile.id.in_(file_ids)).values(entity_id=restored.id)
+        )
+
+    # Убираем контейнер из merged_from у target
+    new_mf = [
+        c for c in mf
+        if not (isinstance(c, dict) and c.get("entity_id") == request.source_entity_id)
+    ]
+    ne = dict(target.extra_data)
+    if new_mf:
+        ne["merged_from"] = new_mf
+    else:
+        ne.pop("merged_from", None)
+    target.extra_data = ne
+
+    await db.commit()
+    return {
+        "success": True,
+        "restored_entity_id": restored.id,
+        "restored_name": restored.name,
+        "target_entity_id": target.id,
+        "remaining_merged": len(new_mf),
+    }
+
+
 @router.post("/{entity_id}/dismiss-duplicate")
 async def dismiss_shadow_duplicate(
     entity_id: int,

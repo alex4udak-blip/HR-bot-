@@ -859,6 +859,63 @@ async def create_dispatch(
     }
 
 
+class ReassignDispatchRequest(BaseModel):
+    entity_id: int  # кандидат, которому перепривязать анкету
+
+
+@router.post("/dispatch/{dispatch_id}/reassign")
+async def reassign_dispatch(
+    dispatch_id: int,
+    body: ReassignDispatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Перепривязать анкету (dispatch + её submission) к ДРУГОМУ кандидату — починка
+    ошибочно улетевших анкет. Только admin/owner/superadmin; оба кандидата в своём орге."""
+    from ..models.database import OrgRole
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+    om = (await db.execute(
+        select(OrgMember).where(OrgMember.org_id == org.id, OrgMember.user_id == current_user.id)
+    )).scalar_one_or_none()
+    is_admin = current_user.role == UserRole.superadmin or (
+        om is not None and om.role in (OrgRole.owner, OrgRole.admin)
+    )
+    if not is_admin:
+        raise HTTPException(403, "Only administrators can reassign anketa")
+
+    dispatch = (await db.execute(
+        select(FormDispatch).where(FormDispatch.id == dispatch_id)
+    )).scalar_one_or_none()
+    if not dispatch:
+        raise HTTPException(404, "Анкета (dispatch) не найдена")
+
+    target = (await db.execute(
+        select(Entity).where(Entity.id == body.entity_id, Entity.org_id == org.id)
+    )).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "Кандидат-получатель не найден в вашем орге")
+
+    src_ent = (await db.execute(
+        select(Entity).where(Entity.id == dispatch.entity_id, Entity.org_id == org.id)
+    )).scalar_one_or_none()
+    if not src_ent:
+        raise HTTPException(404, "Текущий кандидат анкеты не в вашем орге")
+
+    old_entity = dispatch.entity_id
+    dispatch.entity_id = body.entity_id
+    await db.execute(
+        update(FormSubmission).where(FormSubmission.dispatch_id == dispatch_id).values(entity_id=body.entity_id)
+    )
+    await db.commit()
+    return {
+        "success": True, "dispatch_id": dispatch_id,
+        "from_entity": old_entity, "to_entity": body.entity_id,
+    }
+
+
 # ============================================================
 # Entity-scoped dispatch endpoints
 # ============================================================
