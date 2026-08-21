@@ -100,7 +100,7 @@ def _get_client_ip(request: Request) -> str:
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")  # ослаблено с 5/мин: несколько HR за одним офисным IP
 async def login(
     request: Request,
     response: Response,
@@ -109,44 +109,15 @@ async def login(
 ):
     from datetime import datetime, timedelta
 
-    # First, get the user by email (to check lockout status)
-    result = await db.execute(select(User).where(User.email == login_request.email))
-    user = result.scalar_one_or_none()
-
-    # Check if account is locked
-    if user and user.locked_until:
-        if datetime.utcnow() < user.locked_until:
-            # Account is still locked
-            remaining_minutes = int((user.locked_until - datetime.utcnow()).total_seconds() / 60) + 1
-            raise HTTPException(
-                status_code=423,
-                detail=f"Account locked. Try again after {remaining_minutes} minutes"
-            )
-        else:
-            # Lockout expired, reset the lockout fields
-            user.locked_until = None
-            user.failed_login_attempts = 0
-            await db.commit()
-
-    # Authenticate user
+    # Блокировка аккаунта после неудачных попыток УБРАНА по требованию: она запирала
+    # HR-пользователей на 15 минут (частый кейс — забытый/автозаполненный пароль),
+    # что для внутреннего инструмента мешало больше, чем защищало. Проверка lockout и
+    # накрутка счётчика с локом после 5 попыток удалены. Колонки
+    # failed_login_attempts/locked_until в БД оставлены (просто не читаются на входе);
+    # успешный вход ниже их обнуляет, снимая любой ранее выставленный лок.
     authenticated_user = await authenticate_user(db, login_request.email, login_request.password)
 
     if not authenticated_user:
-        # Failed login - increment counter and potentially lock account
-        if user:
-            user.failed_login_attempts += 1
-
-            # Lock account after 5 failed attempts
-            if user.failed_login_attempts >= 5:
-                user.locked_until = datetime.utcnow() + timedelta(minutes=15)
-                await db.commit()
-                raise HTTPException(
-                    status_code=423,
-                    detail="Account locked due to too many failed login attempts. Try again after 15 minutes"
-                )
-
-            await db.commit()
-
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Successful login - reset failed attempts counter
