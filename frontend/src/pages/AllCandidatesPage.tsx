@@ -1804,6 +1804,10 @@ const InfoTab = memo(function InfoTab({
   onHired?: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
+  // «Наблюдатель» (read-only): все изменяющие действия карточки заблокированы.
+  // Просмотр (анкета/резюме, клики по тг/почте/ссылкам) и «Поделиться» — доступны.
+  const readonly = !!currentUser?.is_readonly;
+  const roStyle = readonly ? { opacity: 0.45, cursor: "not-allowed" as const } : undefined;
   // Оформлять в штат могут все участники орга — и админы, и рекрутёры (hr/member).
   const canHire = currentUser?.role === "superadmin" || !!currentUser?.org_role;
   // Сохранён только сеттер: action-бар сбрасывает (закрывает) меню действий.
@@ -2563,6 +2567,8 @@ const InfoTab = memo(function InfoTab({
             onAddToVacancy({ left: rect.left, bottom: rect.bottom });
           }}
           className="hf-profile-action-btn"
+          disabled={readonly}
+          style={roStyle}
         >
           <PlusCircle className="hf-profile-action-icon" /> Взять на вакансию
         </button>
@@ -2574,6 +2580,8 @@ const InfoTab = memo(function InfoTab({
           <button
             onClick={() => cardRemoveFromVacancy(primaryBlock.application_id)}
             className="hf-profile-action-btn"
+            disabled={readonly}
+            style={roStyle}
           >
             <X className="hf-profile-action-icon" /> Удалить с воронки
           </button>
@@ -2581,6 +2589,8 @@ const InfoTab = memo(function InfoTab({
         <button
           onClick={handleEmail}
           className="hf-profile-action-btn"
+          disabled={readonly}
+          style={roStyle}
         >
           <Send className="hf-profile-action-icon" /> Отправить
         </button>
@@ -2594,6 +2604,8 @@ const InfoTab = memo(function InfoTab({
         <button
           onClick={onEdit}
           className="hf-profile-action-btn"
+          disabled={readonly}
+          style={roStyle}
         >
           <PenSquare className="hf-profile-action-icon" /> Редактировать
         </button>
@@ -2857,6 +2869,8 @@ const InfoTab = memo(function InfoTab({
               ) : (
                 <button
                   onClick={() => setShowTagInput(true)}
+                  disabled={readonly}
+                  style={roStyle}
                   className="inline-flex h-[20px] items-center rounded-[var(--hf-radius-xs)] bg-[var(--hf-bg-panel)] px-[var(--hf-space-s)] text-[length:var(--hf-fs-xxs)] font-normal leading-[var(--hf-lh-secondary)] text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-main-200)] hover:text-[var(--hf-main-900)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:hover:text-[var(--hf-white)]"
                 >
                   Добавить
@@ -2920,7 +2934,7 @@ const InfoTab = memo(function InfoTab({
           events={c.events}
           addedAt={c.addedAt}
           recruiter={c.recruiter}
-          readonly={c.origin === "merged"}
+          readonly={c.origin === "merged" || readonly}
           stageOptions={stagePickerOptions}
           getStageLabel={getStackStageLabel}
           onChangeStage={cardChangeStage}

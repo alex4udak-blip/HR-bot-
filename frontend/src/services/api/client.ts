@@ -1,5 +1,4 @@
 import axios, { AxiosError, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import toast from 'react-hot-toast';
 
 // ============================================================
 // CSRF TOKEN MANAGEMENT
@@ -319,11 +318,11 @@ api.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean; _skipRefresh?: boolean };
 
     // «Наблюдатель» (read-only): сервер режет любой не-GET у такого юзера (403 с
-    // detail про «Наблюдатель»). Показываем понятный тост вместо непонятной ошибки.
+    // detail про «Наблюдатель»). Отклоняем ТИХО — у наблюдателя постоянный баннер
+    // сверху и отключённые кнопки, поэтому назойливый тост на каждое действие не нужен.
     if (error.response?.status === 403) {
       const detail = (error.response?.data as { detail?: string } | undefined)?.detail;
       if (typeof detail === 'string' && detail.includes('Наблюдатель')) {
-        try { toast.error('Режим просмотра: изменения недоступны'); } catch { /* no-op */ }
         return Promise.reject(error);
       }
     }

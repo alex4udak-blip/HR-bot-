@@ -2819,6 +2819,18 @@ export default function Layout() {
         role="main"
         aria-label="Main content"
       >
+        {/* Постоянный баннер режима наблюдателя (read-only). Заменяет назойливый
+            тост: висит сверху всегда, пока юзер is_readonly. */}
+        {user?.is_readonly && (
+          <div
+            className="px-4 py-2 flex items-center justify-center gap-2 text-[13px] font-semibold"
+            style={{ background: "#fde68a", color: "#92400e", borderBottom: "1px solid #f59e0b" }}
+            role="status"
+            aria-live="polite"
+          >
+            <span>👁️ Режим наблюдателя — вы видите всё, но ничего не можете менять</span>
+          </div>
+        )}
         {/* Telegram bot connect banner — показываем если у юзера не привязан tg */}
         <TelegramConnectBanner />
         {/* Impersonation Banner */}
