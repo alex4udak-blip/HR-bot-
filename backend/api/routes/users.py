@@ -406,13 +406,19 @@ async def update_user(
         if existing_dept_member:
             existing_dept_member.role = explicit_dept_role
 
-    # Determine org role to set
+    # Determine org role to set. Спец-значение "observer" = «Наблюдатель» (read-only
+    # набор прав): видит всё как admin, но ничего не меняет (is_readonly=True).
     target_org_role = None
-    if data.org_role:
+    set_readonly = None  # None → флаг is_readonly не трогаем
+    if data.org_role == "observer":
+        target_org_role = OrgRole.admin
+        set_readonly = True
+    elif data.org_role:
         try:
             target_org_role = OrgRole(data.org_role)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid org_role: {data.org_role}")
+        set_readonly = False  # обычная роль СНИМАЕТ read-only
     elif new_role is not None and not data.org_role:
         # Auto-sync org_role when system role changes but org_role not explicitly set
         target_org_role = map_user_role_to_org_role(new_role)
@@ -426,6 +432,8 @@ async def update_user(
 
         if org_member:
             org_member.role = target_org_role
+            if set_readonly is not None:
+                org_member.is_readonly = set_readonly
         else:
             # If no membership exists, try to find an org and create one
             from ..models.database import Organization
@@ -435,7 +443,8 @@ async def update_user(
                 new_member = OrgMember(
                     org_id=org.id,
                     user_id=user_id,
-                    role=target_org_role
+                    role=target_org_role,
+                    is_readonly=bool(set_readonly),
                 )
                 db.add(new_member)
 

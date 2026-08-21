@@ -1476,8 +1476,12 @@ function EditUserModal({
               <option value="admin">HR Админ</option>
               <option value="hr">HR Рекрутер</option>
               <option value="member">Сотрудник (не HR)</option>
+              <option value="observer">Наблюдатель (только чтение)</option>
             </select>
-            <p className="text-xs text-white/30 mt-1">Определяет доступ к HR-фичам (кандидаты/вакансии/созвоны)</p>
+            <p className="text-xs text-white/30 mt-1">
+              Определяет доступ к HR-фичам (кандидаты/вакансии/созвоны).
+              «Наблюдатель» — видит всё как админ, но ничего не может менять.
+            </p>
           </div>
 
           {departments.length > 0 && (
