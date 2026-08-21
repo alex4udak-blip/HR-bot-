@@ -1038,7 +1038,7 @@ async def merge_entities(
     """
     Merge two duplicates.
     """
-    from ...services.similarity import similarity_service
+    from ...services.similarity import similarity_service, MergeIdentityConflict
     from .common import broadcast_entity_updated, broadcast_entity_deleted
 
     current_user = await db.merge(current_user)
@@ -1091,6 +1091,13 @@ async def merge_entities(
             merged_entity_id=merged.id,
             deleted_entity_id=request.source_entity_id
         )
+    except MergeIdentityConflict as e:
+        raise HTTPException(
+            409,
+            f"Похоже, это РАЗНЫЕ люди: {e.reason}. Слияние отменено — проверьте телефон/дату рождения.",
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error merging entities: {e}")
         raise HTTPException(500, f"Error merging: {str(e)}")
@@ -1116,7 +1123,7 @@ async def merge_shadow_duplicate(
     hidden_duplicate_id снимается. Доступно тому, кто имеет доступ к карточке
     (а не только admin/owner) — баннер показывается добавившему кандидата HR.
     """
-    from ...services.similarity import similarity_service
+    from ...services.similarity import similarity_service, MergeIdentityConflict
     from .common import broadcast_entity_updated, broadcast_entity_deleted
 
     current_user = await db.merge(current_user)
@@ -1156,6 +1163,13 @@ async def merge_shadow_duplicate(
             "merged_entity_id": merged.id,
             "deleted_entity_id": request.duplicate_id,
         }
+    except MergeIdentityConflict as e:
+        raise HTTPException(
+            409,
+            f"Похоже, это РАЗНЫЕ люди: {e.reason}. Слияние отменено — проверьте телефон/дату рождения.",
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"shadow merge failed: {e}")
         raise HTTPException(500, f"Merge failed: {str(e)}")

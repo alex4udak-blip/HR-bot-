@@ -227,6 +227,11 @@ async def find_duplicates(
     email_map: Dict[str, List[int]] = {}      # email → entity indices
     telegram_map: Dict[str, List[int]] = {}   # telegram → entity indices
     birth_map: Dict[str, List[int]] = {}      # birth_date → entity indices
+    phone_map: Dict[str, List[int]] = {}      # последние 7 цифр телефона → indices
+
+    # Мусорные telegram-ярлыки источника (hh, hh_b2b, telegram…) НЕ идентифицируют
+    # человека — по ним десятки разных кандидатов слиплись бы в один ложный кластер.
+    from ..services.similarity import JUNK_TELEGRAM_USERNAMES, normalize_phone as _norm_phone
 
     def normalize_name(n: str) -> str:
         if not n:
@@ -257,16 +262,21 @@ async def find_duplicates(
         if email_key:
             email_map.setdefault(email_key, []).append(idx)
 
-        # Telegram
+        # Telegram — только НЕ мусорные ярлыки (junk-теги источника массово слепляют разных)
         tg_names = entity.telegram_usernames or []
         if isinstance(tg_names, str):
             tg_names = [tg_names]
         for tg in tg_names:
             tg_key = normalize_telegram(tg)
-            if tg_key:
+            if tg_key and len(tg_key) >= 3 and tg_key not in JUNK_TELEGRAM_USERNAMES:
                 telegram_map.setdefault(tg_key, []).append(idx)
 
-        # Birth date
+        # Телефон — последние 7 цифр (сильный ключ личности)
+        phone_key = _norm_phone(entity.phone or "")
+        if phone_key and len(phone_key) >= 7:
+            phone_map.setdefault(phone_key[-7:], []).append(idx)
+
+        # Birth date — индексируем для показа, но в группировку НЕ идёт (см. ниже)
         if entity.extra_data and isinstance(entity.extra_data, dict):
             bd = entity.extra_data.get("birth_date") or entity.extra_data.get("date_of_birth")
             if bd:
@@ -291,11 +301,13 @@ async def find_duplicates(
     # Track match reasons between pairs
     pair_matches: Dict[tuple, List[str]] = defaultdict(list)
 
+    # Группируем ТОЛЬКО по сильным идентификаторам (email / личный telegram / телефон).
+    # Имя и дата рождения В ОДИНОЧКУ дубль не образуют — иначе тёзки и «birthday-twins»
+    # слипались бы (реальный кейс: три разных «Никиты» слились по общему имени/тегу).
     for field_name, field_map in [
-        ("name", name_map),
         ("email", email_map),
         ("telegram", telegram_map),
-        ("birth_date", birth_map),
+        ("phone", phone_map),
     ]:
         for key, indices in field_map.items():
             if len(indices) > 1:
@@ -371,6 +383,7 @@ async def find_duplicates(
 async def merge_candidates(
     source_id: int = Query(..., description="Candidate to merge FROM (will be removed)"),
     target_id: int = Query(..., description="Candidate to merge INTO (will be kept)"),
+    force: bool = Query(False, description="Слить принудительно даже при конфликте сильных ключей"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -391,11 +404,19 @@ async def merge_candidates(
         raise HTTPException(status_code=404, detail="One or both candidates not found")
 
     try:
-        from ..services.similarity import similarity_service
-        merged = await similarity_service.merge_entities(
-            db=db, source_entity=source, target_entity=target
-        )
+        from ..services.similarity import similarity_service, MergeIdentityConflict
+        try:
+            merged = await similarity_service.merge_entities(
+                db=db, source_entity=source, target_entity=target, force=force
+            )
+        except MergeIdentityConflict as e:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Похоже, это РАЗНЫЕ люди: {e.reason}. Слияние отменено. Если точно дубль — повторите с force=true.",
+            )
         return {"success": True, "merged_into": target_id, "details": {"merged_entity_id": merged.id}}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Merge failed: {e}")
         raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")

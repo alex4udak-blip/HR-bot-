@@ -816,6 +816,33 @@ def calculate_location_similarity(loc1: Optional[str], loc2: Optional[str]) -> b
     return False
 
 
+class MergeIdentityConflict(Exception):
+    """Слияние заблокировано: у кандидатов КОНФЛИКТУЮТ сильные ключи — это заведомо
+    разные люди, а не дубли. Эндпоинты ловят и отдают 409 с причиной."""
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _entity_birth_norm(e) -> Optional[str]:
+    ex = e.extra_data if isinstance(getattr(e, "extra_data", None), dict) else {}
+    return normalize_birth_date(ex.get("birth_date") or ex.get("date_of_birth"))
+
+
+def hard_identity_conflict(a, b) -> Optional[str]:
+    """Причина, если a и b — ЗАВЕДОМО РАЗНЫЕ люди: у ОБОИХ есть телефон и он различается,
+    И у ОБОИХ есть дата рождения и она различается. Оба сильных ключа противоречат друг
+    другу → это ошибочная склейка (реальный кейс: три разных «Никиты»). Консервативно:
+    если хотя бы один ключ отсутствует или совпадает — НЕ блокируем (нормальный дубль)."""
+    pa, pb = normalize_phone(getattr(a, "phone", "") or ""), normalize_phone(getattr(b, "phone", "") or "")
+    phone_conflict = len(pa) >= 7 and len(pb) >= 7 and pa[-7:] != pb[-7:]
+    da, dbb = _entity_birth_norm(a), _entity_birth_norm(b)
+    dob_conflict = bool(da) and bool(dbb) and da != dbb
+    if phone_conflict and dob_conflict:
+        return f"разные телефоны (…{pa[-4:]} vs …{pb[-4:]}) и разные даты рождения ({da} vs {dbb})"
+    return None
+
+
 class SimilarityService:
     """Сервис поиска похожих кандидатов и детекции дубликатов."""
 
@@ -1289,6 +1316,7 @@ class SimilarityService:
         target_entity: Entity,
         keep_source_data: bool = False,
         merged_by_name=None,
+        force: bool = False,
     ) -> Entity:
         """
         Объединение двух сущностей (дубликатов).
@@ -1307,7 +1335,18 @@ class SimilarityService:
 
         Returns:
             Обновленная целевая сущность
+
+        Raises:
+            MergeIdentityConflict: если у кандидатов конфликтуют сильные ключи
+                (разные телефон И дата рождения) и force=False — защита от ошибочной
+                склейки разных людей (реальный кейс: три разных «Никиты»).
         """
+        # Страховка от ложного слияния: не даём слить заведомо РАЗНЫХ людей.
+        if not force:
+            conflict = hard_identity_conflict(source_entity, target_entity)
+            if conflict:
+                raise MergeIdentityConflict(conflict)
+
         # Объединяем телефоны
         all_phones = set(target_entity.phones or [])
         all_phones.update(source_entity.phones or [])

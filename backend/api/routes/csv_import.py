@@ -370,15 +370,28 @@ async def _run_clickup_combine(
             # АВТО-СКЛЕЙКА разъехавшихся — прямо во время заливки. Лишние карточки
             # того же человека вливаем в первую совпавшую. Активных не трогаем.
             if match is not None and len(matched) > 1 and match.is_archived:
-                from ..services.similarity import similarity_service
-                _absorbed = [
+                from ..services.similarity import similarity_service, MergeIdentityConflict
+                _candidates = [
                     d for d in matched[1:]
                     if d.is_archived and d.id is not None and d.id != match.id
                 ]
-                for _dup in _absorbed:
-                    await similarity_service.merge_entities(
-                        db=db, source_entity=_dup, target_entity=match
-                    )
+                _absorbed = []
+                for _dup in _candidates:
+                    try:
+                        await similarity_service.merge_entities(
+                            db=db, source_entity=_dup, target_entity=match
+                        )
+                    except MergeIdentityConflict as _mc:
+                        # Разные люди (конфликт телефон+ДР) — НЕ склеиваем при импорте,
+                        # оставляем отдельной карточкой. Реальный кейс: три разных «Никиты»,
+                        # которых union-find сцепил через грязную строку-мостик в выгрузке,
+                        # а авто-слияние молча сплавляло их в одного.
+                        logger.warning(
+                            "clickup-import: пропущено ложное авто-слияние %s→%s: %s",
+                            _dup.id, match.id, _mc.reason,
+                        )
+                        continue
+                    _absorbed.append(_dup)
                     auto_merged += 1
                 if _absorbed:
                     await db.flush()

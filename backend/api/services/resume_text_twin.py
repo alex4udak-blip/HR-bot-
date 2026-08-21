@@ -114,43 +114,16 @@ async def detect_resume_text_twin(db: AsyncSession, entity: Entity) -> Tuple[Opt
         pct = round(best_sim * 100)
         ne = dict(ed)
         ne["text_twin"] = {"twin_id": best_id, "similarity": round(best_sim, 3)}
-        # Единый баннер (Feature A): текст-твин тоже должен всплывать через
-        # ShadowDuplicateBanner, но НЕ должен затирать реальное identity-совпадение
-        # (detect_archived_duplicate уже отработал раньше на всех путях создания —
-        # crud.py/bulk.py/magic_button.py — и, если нашёл дубль, успел проставить
-        # hidden_duplicate_id ДО вызова этой функции). Identity всегда важнее.
-        if not ne.get("hidden_duplicate_id"):
-            ne["hidden_duplicate_id"] = best_id
-            ne["hidden_duplicate_meta"] = {
-                "strength": "text",
-                "confidence": pct,
-                "reasons": [f"Текст резюме совпадает ({pct}%)"],
-                "matched_id": best_id,
-            }
+        # ВАЖНО: текст-сходство — СЛАБЫЙ сигнал «возможно копипаст», а НЕ доказательство,
+        # что это один человек. У РАЗНЫХ людей анкеты по одному шаблону (маркетологи:
+        # Facebook Ads, трафик, одинаковые вопросы) дают высокий Жаккар. Раньше текст-твин
+        # поднимал merge-баннер (ставил hidden_duplicate_id) и ошибочно предлагал слить
+        # разных людей — реальный кейс: три разных «Никиты» с почти одинаковыми анкетами.
+        # Теперь по одному тексту merge НЕ предлагаем: оставляем только мягкую пометку
+        # text_twin (для инфо-чипа «текст похож, проверьте»). Настоящие дубли ловит
+        # identity-детектор (detect_archived_duplicate) по телефону/почте/telegram/ФИО,
+        # а merge_entities дополнительно блокирует слияние людей с разными телефон+ДР.
+        _ = pct  # оставлено для читаемости порога, в баннер больше не идёт
         entity.extra_data = ne
-
-        # Обратная ссылка на найденном твине — баннер должен показаться и у НЕГО,
-        # как это уже делает detect_archived_duplicate для identity-дублей. Не
-        # перетираем существующий флаг твина (identity или чужой text-twin) и не
-        # трогаем уже отклонённые им пары.
-        twin = (await db.execute(select(Entity).where(Entity.id == best_id))).scalar_one_or_none()
-        if twin is not None:
-            de = twin.extra_data if isinstance(twin.extra_data, dict) else {}
-            tdis = set()
-            for x in (de.get("dismissed_duplicate_ids") or []):
-                try:
-                    tdis.add(int(x))
-                except (TypeError, ValueError):
-                    pass
-            if entity.id not in tdis and not de.get("hidden_duplicate_id"):
-                nde = dict(de)
-                nde["hidden_duplicate_id"] = entity.id
-                nde["hidden_duplicate_meta"] = {
-                    "strength": "text",
-                    "confidence": pct,
-                    "reasons": [f"Текст резюме совпадает ({pct}%)"],
-                    "matched_id": entity.id,
-                }
-                twin.extra_data = nde
         return best_id, best_sim
     return None, 0.0
