@@ -64,8 +64,12 @@ export function isRequestVisibleTo(
   isAdmin: boolean,
 ): boolean {
   if (isAdmin) {
-    const assigned = (v.assigned_to || []).length > 0 || !!v.assigned_to_all;
-    return !assigned;
+    // Админ видит заявку, ПОКА её не взяли в работу (статус ещё pending_review/draft),
+    // независимо от того, назначена она кому-то или нет. Как только рекрутёр берёт её
+    // в работу (take_into_work: pending_review/draft → open), заявка уходит из сайдбара
+    // админа. Раньше здесь было `return !assigned` — заявка пропадала сразу после
+    // НАЗНАЧЕНИЯ, хотя в работу её ещё не взяли (жалоба Марии: назначаю → исчезает).
+    return v.status === "pending_review" || v.status === "draft";
   }
   return isVacancyParticipant(v, userId) && !isPersonallyActive(v, userId);
 }

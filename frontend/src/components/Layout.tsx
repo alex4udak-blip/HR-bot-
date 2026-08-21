@@ -1044,10 +1044,10 @@ export default function Layout() {
       user.org_role === "owner" ||
       user.org_role === "admin";
     if (isAdmin) {
+      // Все незанятые заявки (pending_review/draft), пока их не взяли в работу —
+      // ВКЛЮЧАЯ созданные самим админом (Мария: «создаю на рекрутёра, но не вижу»).
       return vacancies.filter(
-        (v) =>
-          (v.status === "pending_review" || v.status === "draft") &&
-          v.created_by !== user.id,
+        (v) => v.status === "pending_review" || v.status === "draft",
       ).length;
     }
     return vacancies.filter((v) => {
