@@ -36,7 +36,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Актуальный прод-сервер один и тот же для всех. У старых пользователей в
   // chrome.storage мог остаться прежний адрес и «залипал» в поле входа —
   // поэтому всегда подставляем канонический сервер, кроме локальной разработки.
-  const DEFAULT_SERVER_URL = 'https://enceladus-7oylzk.saturn.ac';
+  // Канонический домен — enceladus.site (тот же бэк, что старый saturn.ac-сабдомен;
+  // старый оставлен в host_permissions как фолбэк для уже залогиненных).
+  const DEFAULT_SERVER_URL = 'https://enceladus.site';
   const storedServer = stored.serverUrl || '';
   const isLocalDev = /localhost|127\.0\.0\.1/.test(storedServer);
   serverUrl = isLocalDev ? storedServer : DEFAULT_SERVER_URL;
