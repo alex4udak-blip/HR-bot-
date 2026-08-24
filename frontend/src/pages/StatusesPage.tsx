@@ -58,8 +58,9 @@ const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean }[] = 
 /** Колонки, по которым вообще можно фильтровать. */
 const FILTERABLE = COLUMNS.filter((c) => c.filter) as { key: FilterKey; label: string }[];
 
-/** По умолчанию — самое ходовое, остальное включается по кнопке «Фильтры». */
-const DEFAULT_FILTERS: FilterKey[] = ["name", "position", "department"];
+/** Изначально не выбрано ничего: таблица показывает всех, а любой
+ *  отмеченный фильтр сразу сужает выборку. */
+const DEFAULT_FILTERS: FilterKey[] = [];
 
 const FILTERS_STORAGE_KEY = "hf-statuses-filters";
 
@@ -122,7 +123,11 @@ export default function StatusesPage() {
     } catch { /* приватный режим — переживём без сохранения */ }
   }, [shownFilters]);
 
-  /** Скрытый фильтр не должен продолжать отбирать втихую — гасим его значение. */
+  /** Отметить колонку — это уже фильтр: показываем только тех, у кого она
+   *  заполнена. Иначе галочка ничего не меняла бы до выбора значения, и
+   *  человек видел бы прежний список, считая что фильтр не работает.
+   *
+   *  Снятая галочка гасит значение, а не оставляет его отбирать втихую. */
   const toggleFilter = (key: FilterKey) => {
     setShownFilters((cur) => {
       const next = new Set(cur);
@@ -131,6 +136,7 @@ export default function StatusesPage() {
         setFilters((f) => ({ ...f, [key]: "" }));
       } else {
         next.add(key);
+        setFilters((f) => ({ ...f, [key]: FILLED }));
       }
       return next;
     });
@@ -260,12 +266,11 @@ export default function StatusesPage() {
         .map(([value, count]) => ({ value, count }))
         .sort((a, b) => a.value.localeCompare(b.value, "ru"));
 
-      const head: { value: string; count: number }[] = [];
+      // «заполнено» — значение по умолчанию, поэтому в списке оно должно быть
+      // всегда, иначе select оказался бы с пустой подписью.
       const empty = base.length - filled;
-      if (filled && empty) {
-        head.push({ value: FILLED, count: filled });
-        head.push({ value: EMPTY, count: empty });
-      }
+      const head = [{ value: FILLED, count: filled }];
+      if (empty) head.push({ value: EMPTY, count: empty });
       return [...head, ...values];
     },
     [rows, folder, folders, q, filters, shownFilters]
@@ -321,9 +326,16 @@ export default function StatusesPage() {
                 <div className="hf-statuses-picker-backdrop" onClick={() => setPickerOpen(false)} />
                 <div className="hf-statuses-picker">
                   <div className="hf-statuses-picker-head">
-                    <span>Показывать фильтры</span>
+                    <span>Фильтровать по колонкам</span>
                     <div className="hf-statuses-picker-actions">
-                      <button onClick={() => setShownFilters(new Set(FILTERABLE.map((c) => c.key)))}>
+                      <button
+                        onClick={() => {
+                          setShownFilters(new Set(FILTERABLE.map((c) => c.key)));
+                          setFilters(Object.fromEntries(
+                            FILTERABLE.map((c) => [c.key, FILLED])
+                          ) as Partial<Record<FilterKey, string>>);
+                        }}
+                      >
                         все
                       </button>
                       <button
@@ -395,7 +407,7 @@ export default function StatusesPage() {
                                 value={cur}
                                 onChange={(e) => setFilters((f) => ({ ...f, [k]: e.target.value }))}
                               >
-                                <option value="">все</option>
+                                <option value="">все (без отбора)</option>
                                 {/* выбранное значение могло выпасть из вариантов
                                     из-за других фильтров — не теряем его */}
                                 {cur && !opts.some((o) => o.value === cur) && (
