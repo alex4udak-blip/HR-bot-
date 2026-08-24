@@ -26,6 +26,10 @@ export type ContainerNote = {
   author_id?: number;
   author_name?: string;
   edited_at?: string;
+  // Дописка коммента к прошлой статусной записи: reactionKey родителя +
+  // метка этапа на момент написания (плашка «оставлен на этапе X»).
+  parent_key?: string;
+  stage_at_write_label?: string;
 };
 
 /** Резюме-демо одного контейнера (минимально нужные поля). */

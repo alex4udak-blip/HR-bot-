@@ -1009,6 +1009,15 @@ class NoteCreate(BaseModel):
     text: str
     stage: Optional[str] = None
     stage_label: Optional[str] = None
+    # Дописка комментария к ПРОШЛОЙ статусной записи таймлайна (запрос Марии):
+    # parent_key = reactionKey статусной записи, под которую цепляем коммент
+    # (напр. "e:123" для перехода, "n:<uuid>" для стартовой заметки-этапа,
+    # "created" для синтетического «Кандидат добавлен»). stage_at_write_label —
+    # метка этапа, на котором кандидат был В МОМЕНТ написания коммента (для
+    # жёлтой плашки «оставлен на этапе X»). Дату НЕ принимаем — сервер ставит
+    # datetime.now(), чтобы дата всегда = момент написания.
+    parent_key: Optional[str] = None
+    stage_at_write_label: Optional[str] = None
 
 
 class NoteUpdate(BaseModel):
@@ -1091,6 +1100,12 @@ async def add_entity_note(
         "author_id": current_user.id,
         "author_name": current_user.name,
     }
+    # Привязка к статусной записи + этап-на-момент-написания — только если переданы,
+    # чтобы не засорять обычные комментарии пустыми ключами.
+    if data.parent_key:
+        note["parent_key"] = data.parent_key
+    if data.stage_at_write_label:
+        note["stage_at_write_label"] = data.stage_at_write_label
     notes.append(note)
     extra["notes"] = notes
     entity.extra_data = extra

@@ -800,11 +800,21 @@ export interface EntityNote {
   author_id?: number | null;
   author_name?: string | null;
   edited_at?: string | null;
+  parent_key?: string | null;
+  stage_at_write_label?: string | null;
 }
 
 export const addEntityNote = async (
   entityId: number,
-  payload: { text: string; stage?: string | null; stage_label?: string | null }
+  payload: {
+    text: string;
+    stage?: string | null;
+    stage_label?: string | null;
+    // Дописка коммента к прошлой статусной записи таймлайна: reactionKey родителя
+    // + метка этапа на момент написания (для плашки «оставлен на этапе X»).
+    parent_key?: string | null;
+    stage_at_write_label?: string | null;
+  }
 ): Promise<{ success: boolean; note: EntityNote; total_notes: number }> => {
   const { data } = await api.post(`/entities/${entityId}/notes`, payload);
   return data;

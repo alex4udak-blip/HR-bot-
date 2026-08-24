@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ClipboardList,
   PenLine,
+  MessageSquarePlus,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -199,6 +200,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     stage: string,
     stageLabel: string,
     text: string,
+    // Дописка коммента к прошлой статусной записи: parent_key = reactionKey
+    // родителя, stage_at_write_label = метка текущего этапа (плашка).
+    opts?: { parent_key?: string; stage_at_write_label?: string },
   ) => Promise<void> | void;
   onDeleteHistory: (
     applicationId: number,
@@ -253,6 +257,11 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState("");
   const [savingNoteEdit, setSavingNoteEdit] = useState(false);
+  // Дописка коммента к статусной записи: reactionKey записи, под которую сейчас
+  // открыт композер, + текст + флаг сохранения.
+  const [addCommentKey, setAddCommentKey] = useState<string | null>(null);
+  const [addCommentText, setAddCommentText] = useState("");
+  const [savingAddComment, setSavingAddComment] = useState(false);
   const [comment, setComment] = useState("");
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -288,30 +297,38 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   // Таймлайн контейнера = его СОБСТВЕННЫЕ notes (комментарии) как строки лога,
   // плюс — только для живого контейнера — реальная история переходов (events).
   // Merged-контейнеры показывают строго свои notes (read-only).
-  const timelineItems = useMemo<
-    Array<{
-      date?: string;
-      title?: string;
-      body?: string;
-      author?: string;
-      historyId?: number;
-      // Заметки (extra_data.notes) удаляются НЕ через историю переходов
-      // (StageTransition), а отдельным DELETE /entities/{id}/notes/{note_id}.
-      noteId?: string;
-      // Исходный текст заметки (без "Этап: X" префикса) — нужен только для
-      // предзаполнения инлайн-редактора, не для отображения.
-      rawText?: string;
-      // Автор заметки — для проверки прав редактирования/удаления на фронте
-      // (бэк и так это проверяет, но кнопки не должны показываться тем, кому
-      // всё равно откажут: правит/удаляет только автор либо admin/owner/superadmin).
-      authorId?: number;
-      // Когда заметка последний раз отредактирована (бэк проставляет сам).
-      editedAt?: string;
-      reactionKey: string;
-      // Тип записи для фильтра «Действия»: смена этапа vs свободный комментарий.
-      kind: "stage" | "comment";
-    }>
-  >(() => {
+  type TimelineRow = {
+    date?: string;
+    title?: string;
+    body?: string;
+    author?: string;
+    historyId?: number;
+    // Заметки (extra_data.notes) удаляются НЕ через историю переходов
+    // (StageTransition), а отдельным DELETE /entities/{id}/notes/{note_id}.
+    noteId?: string;
+    // Исходный текст заметки (без "Этап: X" префикса) — нужен только для
+    // предзаполнения инлайн-редактора, не для отображения.
+    rawText?: string;
+    // Автор заметки — для проверки прав редактирования/удаления на фронте
+    // (бэк и так это проверяет, но кнопки не должны показываться тем, кому
+    // всё равно откажут: правит/удаляет только автор либо admin/owner/superadmin).
+    authorId?: number;
+    // Когда заметка последний раз отредактирована (бэк проставляет сам).
+    editedAt?: string;
+    reactionKey: string;
+    // Тип записи для фильтра «Действия»: смена этапа vs свободный комментарий.
+    kind: "stage" | "comment";
+    // Статусная запись (переход или заметка-этап) — к ней можно дописывать
+    // комментарии (кнопка «+коммент»).
+    isStage?: boolean;
+    // Дописанный коммент, привязанный к родительской статусной записи:
+    // parentKey — reactionKey родителя, stageAtWrite — метка этапа на момент
+    // написания (жёлтая плашка), indented — рисуем с отступом под родителем.
+    parentKey?: string;
+    stageAtWrite?: string;
+    indented?: boolean;
+  };
+  const timelineItems = useMemo<TimelineRow[]>(() => {
     const noteRows = (Array.isArray(notes) ? notes : [])
       .filter((note) => note && (note.text || note.stage_label))
       .map((note) => ({
@@ -329,6 +346,11 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
         // Заметки (extra_data.notes) — это КОММЕНТАРИИ (даже если несут stage_label
         // текущего этапа). Смена этапа — отдельные события (eventRows, kind=stage).
         kind: "comment" as const,
+        // Заметка-этап (несёт stage_label) — тоже статусная запись, к ней можно
+        // дописывать комменты (напр. стартовое «Этап: Новый»).
+        isStage: !!note.stage_label,
+        parentKey: note.parent_key || undefined,
+        stageAtWrite: note.stage_at_write_label || undefined,
       }));
 
     const eventRows = (!readonly && Array.isArray(events) ? events : []).map(
@@ -343,17 +365,28 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           historyId: ev.id as number | undefined,
           reactionKey: `e:${ev.id}`,
           kind: "stage" as const,
+          isStage: true,
         };
       },
     );
 
-    const merged = [...eventRows, ...noteRows];
-    if (merged.length === 0) {
+    // Дописанные комменты (parentKey) НЕ идут в общий поток по дате — их
+    // вкладываем под родительскую статусную запись (см. группировку ниже).
+    const attachedNotes = noteRows.filter((n) => n.parentKey);
+    const topLevelNotes = noteRows.filter((n) => !n.parentKey);
+
+    const tsOf = (d?: string) => (d ? parseServerDate(d).getTime() : 0);
+    // parseServerDate, а НЕ new Date: у заметок время aware-UTC («…+00:00»), а у
+    // событий этапа — naive из БД («…T14:34:00»). Сырой new Date() читает naive как
+    // ЛОКАЛЬНОЕ, а aware как UTC — записи из двух источников сравнивались в разных
+    // системах отсчёта, и лента шла вразброс.
+    let base: TimelineRow[] = [...eventRows, ...topLevelNotes].sort(
+      (a, b) => tsOf(b.date) - tsOf(a.date),
+    );
+    if (base.length === 0 && attachedNotes.length === 0) {
       // Влитые (read-only) контейнеры без заметок/событий НЕ показывают
       // синтетическое «Кандидат добавлен»: иначе каждый объединённый дубль
-      // плодит свой зелёный «new», и лента засоряется N одинаковыми записями
-      // (видно после объединения; на F5 они возвращались из merged_from).
-      // Заглушку оставляем только живому контейнеру.
+      // плодит свой зелёный «new», и лента засоряется N одинаковыми записями.
       if (readonly) return [];
       return [
         {
@@ -362,19 +395,51 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           author: card.recruiter_name || undefined,
           reactionKey: "created",
           kind: "stage" as const,
+          isStage: true,
         },
       ];
     }
-    return merged.sort((a, b) => {
-      // parseServerDate, а НЕ new Date: у заметок время aware-UTC («…+00:00»),
-      // а у событий этапа — naive из БД («…T14:34:00»). Сырой new Date() читает
-      // naive как ЛОКАЛЬНОЕ, а aware как UTC — записи из двух источников
-      // сравнивались в разных системах отсчёта, и лента шла вразброс
-      // (время на экране верное, т.к. вывод и так идёт через parseServerDate).
-      const ta = a.date ? parseServerDate(a.date).getTime() : 0;
-      const tb = b.date ? parseServerDate(b.date).getTime() : 0;
-      return tb - ta;
-    });
+    if (base.length === 0 && !readonly) {
+      // Событий/верхнеуровневых комментов нет, но есть дописки — родитель для них
+      // = синтетическое «Кандидат добавлен».
+      base = [
+        {
+          date: addedAt || card.created_at,
+          title: "Кандидат добавлен",
+          author: card.recruiter_name || undefined,
+          reactionKey: "created",
+          kind: "stage" as const,
+          isStage: true,
+        },
+      ];
+    }
+
+    // Вкладываем дописанные комменты под их родительскую статусную запись
+    // (по reactionKey); внутри группы — по возрастанию даты (новые снизу,
+    // читается хронологически). Родитель не найден (напр. переход удалён) →
+    // коммент падает в конец как верхнеуровневый (без отступа), текст не теряется.
+    const childrenByParent = new Map<string, TimelineRow[]>();
+    for (const n of attachedNotes) {
+      const key = n.parentKey as string;
+      const arr = childrenByParent.get(key) || [];
+      arr.push({ ...n, indented: true });
+      childrenByParent.set(key, arr);
+    }
+    const out: TimelineRow[] = [];
+    for (const row of base) {
+      out.push(row);
+      const kids = childrenByParent.get(row.reactionKey);
+      if (kids) {
+        kids.sort((a, b) => tsOf(a.date) - tsOf(b.date));
+        out.push(...kids);
+        childrenByParent.delete(row.reactionKey);
+      }
+    }
+    for (const kids of childrenByParent.values()) {
+      kids.sort((a, b) => tsOf(a.date) - tsOf(b.date));
+      for (const k of kids) out.push({ ...k, indented: false });
+    }
+    return out;
   }, [notes, events, readonly, getStageLabel, addedAt, card.created_at, card.recruiter_name]);
 
   const filteredTimelineItems = useMemo(() => {
@@ -453,6 +518,34 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       cancelEditNote();
     } finally {
       setSavingNoteEdit(false);
+    }
+  };
+
+  // --- Дописка комментария к прошлой статусной записи (запрос Марии) ---
+  const startAddComment = (parentKey: string) => {
+    setAddCommentKey(parentKey);
+    setAddCommentText("");
+  };
+  const cancelAddComment = () => {
+    setAddCommentKey(null);
+    setAddCommentText("");
+  };
+  const submitAddComment = async () => {
+    const text = addCommentText.trim();
+    if (!addCommentKey || !text) return;
+    setSavingAddComment(true);
+    try {
+      // Дописка — НЕ статусная заметка: stage/stageLabel пустые, чтобы она
+      // рендерилась как обычный коммент (а не «Этап: X»). Привязка к родителю
+      // (parent_key) и этап-на-момент-написания (плашка) идут отдельными полями.
+      // Дату сервер ставит сам = момент написания.
+      await onComment(applicationId, "", "", text, {
+        parent_key: addCommentKey,
+        stage_at_write_label: statusLabel,
+      });
+      cancelAddComment();
+    } finally {
+      setSavingAddComment(false);
     }
   };
 
@@ -892,10 +985,18 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           {visibleTimelineItems.length > 0 ? (
             visibleTimelineItems.map((event, i) => (
               <div
-                key={`${event.historyId ?? event.date ?? card.created_at}-${i}`}
-                className="relative first:mt-0 mt-[20px] group/timeline"
+                key={`${event.historyId ?? event.noteId ?? event.date ?? card.created_at}-${i}`}
+                className={clsx(
+                  "relative group/timeline",
+                  // Дописка к статусу — с отступом под родителем и меньшим зазором.
+                  event.indented ? "mt-[12px] ml-[22px]" : "first:mt-0 mt-[20px]",
+                )}
               >
-                {i === 0 ? <TimelineUserGlyph /> : <TimelineDot />}
+                {i === 0 && !event.indented ? (
+                  <TimelineUserGlyph />
+                ) : (
+                  <TimelineDot />
+                )}
                 <div className="flex items-center gap-0 text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
                   {event.author && (
                     <span className="mr-[8px] min-w-[10px] font-medium text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
@@ -942,49 +1043,72 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                       </div>
                     </>
                   )}
-                  {!readonly && event.historyId ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onDeleteHistory(applicationId, event.historyId as number)
-                      }
-                      title="Удалить запись"
-                      className="ml-auto inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] opacity-0 transition-opacity hover:text-[var(--hf-status-red)] group-hover/timeline:opacity-100 focus:outline-none focus-visible:outline-none"
-                    >
-                      <Trash2 className="h-[14px] w-[14px]" />
-                    </button>
-                  ) : !readonly && event.noteId && canModifyNote(event.authorId) ? (
-                    // F-fix: комментарии (extra_data.notes, в т.ч. с @-упоминанием)
-                    // раньше вообще не имели кнопки удаления — historyId у них
-                    // никогда не бывает (это не StageTransition). Редактирование —
-                    // тем же путём, бэк уже умел PATCH .../notes/{id}, не хватало
-                    // только кнопки на фронте. Кнопки видны только автору либо
-                    // admin/owner/superadmin — иначе сервер всё равно ответит 403.
+                  {!readonly &&
+                  (event.isStage ||
+                    event.historyId ||
+                    (event.noteId && canModifyNote(event.authorId))) ? (
                     <div className="ml-auto flex items-center gap-[2px] opacity-0 transition-opacity group-hover/timeline:opacity-100">
-                      {onEditNote && (
+                      {/* «+коммент» — дописать комментарий к этой статусной записи
+                          (запрос Марии: вернуться к прошлому этапу и добавить коммент).
+                          Только на статусных записях и не на самих дописках. */}
+                      {event.isStage && !event.indented && (
                         <button
                           type="button"
-                          onClick={() =>
-                            startEditNote(event.noteId as string, event.rawText || "")
-                          }
-                          title="Редактировать комментарий"
+                          onClick={() => startAddComment(event.reactionKey)}
+                          title="Добавить комментарий к этапу"
                           className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:text-[var(--hf-main-900)] focus:outline-none focus-visible:outline-none"
                         >
-                          <PenLine className="h-[13px] w-[13px]" />
+                          <MessageSquarePlus className="h-[14px] w-[14px]" />
                         </button>
                       )}
-                      {onDeleteNote && (
+                      {event.historyId ? (
                         <button
                           type="button"
                           onClick={() =>
-                            onDeleteNote(card.id, event.noteId as string)
+                            onDeleteHistory(
+                              applicationId,
+                              event.historyId as number,
+                            )
                           }
-                          title="Удалить комментарий"
+                          title="Удалить запись"
                           className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:text-[var(--hf-status-red)] focus:outline-none focus-visible:outline-none"
                         >
                           <Trash2 className="h-[14px] w-[14px]" />
                         </button>
-                      )}
+                      ) : event.noteId && canModifyNote(event.authorId) ? (
+                        // Комментарии (extra_data.notes, в т.ч. дописки и @-упоминания):
+                        // правка/удаление — только автору либо admin/owner/superadmin,
+                        // иначе бэк всё равно ответит 403.
+                        <>
+                          {onEditNote && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                startEditNote(
+                                  event.noteId as string,
+                                  event.rawText || "",
+                                )
+                              }
+                              title="Редактировать комментарий"
+                              className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:text-[var(--hf-main-900)] focus:outline-none focus-visible:outline-none"
+                            >
+                              <PenLine className="h-[13px] w-[13px]" />
+                            </button>
+                          )}
+                          {onDeleteNote && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onDeleteNote(card.id, event.noteId as string)
+                              }
+                              title="Удалить комментарий"
+                              className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:text-[var(--hf-status-red)] focus:outline-none focus-visible:outline-none"
+                            >
+                              <Trash2 className="h-[14px] w-[14px]" />
+                            </button>
+                          )}
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -1017,6 +1141,18 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                   </div>
                 ) : (
                 <div className="text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)] whitespace-pre-wrap hf-rich-content">
+                  {/* Плашка: этап, на котором коммент был реально оставлен
+                      (для дописок к прошлым статусам). Родной коммент этапа
+                      плашки не несёт (stageAtWrite пустой). */}
+                  {event.stageAtWrite && (
+                    <div
+                      className="mb-[4px] inline-flex w-fit items-center gap-[4px] rounded-[6px] px-[7px] py-[1px] text-[length:var(--hf-fs-2xs)] font-medium"
+                      style={{ background: "#faedc9", color: "#6d5a1f" }}
+                    >
+                      <MessageSquarePlus className="h-[11px] w-[11px]" />
+                      оставлен на этапе «{event.stageAtWrite}»
+                    </div>
+                  )}
                   <div
                     dangerouslySetInnerHTML={{
                       __html: sanitizeHtml(event.title || "Событие"),
@@ -1038,6 +1174,37 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                     </span>
                   )}
                 </div>
+                )}
+                {addCommentKey === event.reactionKey && (
+                  <div className="mt-[8px]">
+                    <HuntflowRichInput
+                      value={addCommentText}
+                      onChange={setAddCommentText}
+                      placeholder="Комментарий к этому этапу"
+                      editableClassName="hf-stage-picker-textarea overflow-y-auto"
+                    />
+                    <div className="mt-[6px] flex items-center gap-[8px]">
+                      <button
+                        type="button"
+                        onClick={submitAddComment}
+                        disabled={savingAddComment || !addCommentText.trim()}
+                        className="inline-flex h-[28px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[10px] text-[length:var(--hf-fs-xxs)] font-medium !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] disabled:opacity-60"
+                      >
+                        Добавить
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelAddComment}
+                        disabled={savingAddComment}
+                        className="inline-flex h-[28px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[10px] text-[length:var(--hf-fs-xxs)] font-medium text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)]"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                    <div className="mt-[4px] text-[length:var(--hf-fs-2xs)] text-[var(--hf-main-500)]">
+                      Появится под этим этапом с пометкой «оставлен на этапе {statusLabel}».
+                    </div>
+                  </div>
                 )}
                 {(() => {
                   const rs = localReactions[event.reactionKey] || [];

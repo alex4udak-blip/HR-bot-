@@ -1719,6 +1719,9 @@ type ContainerNote = {
   author_id?: number;
   author_name?: string;
   edited_at?: string;
+  // Дописка коммента к прошлой статусной записи (см. model.ts ContainerNote).
+  parent_key?: string;
+  stage_at_write_label?: string;
 };
 
 // EntryReaction вынесён в candidateDetail/model (импортируется выше).
@@ -2011,7 +2014,13 @@ const InfoTab = memo(function InfoTab({
   );
 
   const cardComment = useCallback(
-    async (_appId: number, stage: string, stageLabel: string, text: string) => {
+    async (
+      _appId: number,
+      stage: string,
+      stageLabel: string,
+      text: string,
+      opts?: { parent_key?: string; stage_at_write_label?: string },
+    ) => {
       // Комментарий пишем на entity (тот же кандидат во всех заявках) через
       // POST /entities/{id}/notes — рекрутёру достаточно view-доступа.
       try {
@@ -2019,6 +2028,9 @@ const InfoTab = memo(function InfoTab({
           text: text.trim(),
           stage,
           stage_label: stageLabel,
+          // Дописка к прошлой статусной записи (parent_key) + этап-на-момент-написания.
+          parent_key: opts?.parent_key,
+          stage_at_write_label: opts?.stage_at_write_label,
         });
         if (!card.extra_data) card.extra_data = {};
         const existing: Array<Record<string, unknown>> = Array.isArray(
