@@ -176,9 +176,12 @@ export default function StatusesPage() {
     for (const [key, val] of Object.entries(filters)) {
       const k = key as FilterKey;
       if (!shownFilters.has(k)) continue;
-      const v = (val || "").trim().toLowerCase();
+      const v = (val || "").trim();
       if (!v) continue;
-      out = out.filter((r) => cellText(r, k).toLowerCase().includes(v));
+      // Точное совпадение: значение выбрано из списка, а не набрано руками,
+      // поэтому «подстрока» здесь только смешивала бы «Разработка» и
+      // «Разработка iOS».
+      out = out.filter((r) => cellText(r, k) === v);
     }
     return out;
   }, [rows, q, filters, shownFilters]);
@@ -201,6 +204,48 @@ export default function StatusesPage() {
     }
     return searched.filter((r) => r.direction === folder);
   }, [searched, folder, folders]);
+
+  /** Значения для выпадающих списков — ровно те, что есть в таблице.
+   *
+   *  Раньше здесь было поле свободного ввода: человек должен был угадать,
+   *  как записана должность или отдел, и опечатка молча давала пустой
+   *  список. Теперь выбираем из существующего, рядом — сколько строк под
+   *  каждым значением.
+   *
+   *  Считаем по строкам ТЕКУЩЕЙ папки и с учётом остальных фильтров, иначе
+   *  в списке предлагались бы значения, которые вместе ничего не находят. */
+  const optionsFor = useCallback(
+    (key: FilterKey): { value: string; count: number }[] => {
+      const needle = q.trim().toLowerCase();
+      const base = rows.filter((r) => {
+        if (folder !== "all") {
+          if (folder === UNASSIGNED) {
+            if (r.direction && folders.some((f) => f.id === r.direction)) return false;
+          } else if (r.direction !== folder) return false;
+        }
+        if (needle && ![r.name, r.position, r.department_name, r.telegram, r.manager]
+          .filter(Boolean).some((v) => String(v).toLowerCase().includes(needle))) return false;
+        // прочие активные фильтры сужают список вариантов, свой — нет
+        for (const [k, v] of Object.entries(filters)) {
+          const kk = k as FilterKey;
+          if (kk === key || !shownFilters.has(kk) || !v) continue;
+          if (cellText(r, kk) !== v) return false;
+        }
+        return true;
+      });
+
+      const map = new Map<string, number>();
+      for (const r of base) {
+        const v = cellText(r, key).trim();
+        if (!v || v === "—") continue;
+        map.set(v, (map.get(v) || 0) + 1);
+      }
+      return [...map.entries()]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => a.value.localeCompare(b.value, "ru"));
+    },
+    [rows, folder, folders, q, filters, shownFilters]
+  );
 
   /** Считаем именно ЗАПОЛНЕННЫЕ фильтры: показанное, но пустое поле ничего
    *  не отбирает, и badge на кнопке не должен вводить в заблуждение. */
@@ -314,14 +359,32 @@ export default function StatusesPage() {
                       const on = c.filter && shownFilters.has(k);
                       return (
                         <th key={c.key} className="hf-statuses-th-filter">
-                          {on && (
-                            <input
-                              className="hf-statuses-filter-input"
-                              value={filters[k] || ""}
-                              onChange={(e) => setFilters((f) => ({ ...f, [k]: e.target.value }))}
-                              placeholder="фильтр"
-                            />
-                          )}
+                          {on && (() => {
+                            const opts = optionsFor(k);
+                            const cur = filters[k] || "";
+                            return (
+                              <select
+                                className={clsx(
+                                  "hf-statuses-filter-select",
+                                  cur && "hf-statuses-filter-select-on"
+                                )}
+                                value={cur}
+                                onChange={(e) => setFilters((f) => ({ ...f, [k]: e.target.value }))}
+                              >
+                                <option value="">все</option>
+                                {/* выбранное значение могло выпасть из вариантов
+                                    из-за других фильтров — не теряем его */}
+                                {cur && !opts.some((o) => o.value === cur) && (
+                                  <option value={cur}>{cur}</option>
+                                )}
+                                {opts.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.value} ({o.count})
+                                  </option>
+                                ))}
+                              </select>
+                            );
+                          })()}
                         </th>
                       );
                     })}
