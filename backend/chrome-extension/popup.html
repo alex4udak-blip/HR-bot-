@@ -13,11 +13,19 @@
     .login-form.active, .parse-form.active, .result.active { display: block; }
 
     .field { margin-bottom: 12px; }
-    .field label { display: block; font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .field label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,0.95); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
+    /* «не распознан» — отдельный янтарный бейдж, а не бледный хвост метки:
+       читается как статус «заполни вручную», не сливается с названием поля. */
+    .hint-badge { text-transform: none; letter-spacing: 0; font-size: 10px; font-weight: 600; line-height: 1; color: #ffe0a8; background: rgba(245,185,90,0.24); border: 1px solid rgba(245,185,90,0.55); padding: 3px 7px; border-radius: 999px; white-space: nowrap; }
     .field input, .field select, .field textarea { width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; }
+    .field input::placeholder, .field textarea::placeholder { color: rgba(255,255,255,0.55); }
     .field input:focus, .field select:focus, .field textarea:focus { border-color: rgba(99,102,241,0.5); }
     .field textarea { resize: vertical; min-height: 60px; }
     .field select option { background: #1a1a2e; }
+    /* Нераспознанные поля (заполняются вручную) — тёплая подсветка, чтобы глаз
+       сразу видел, что тут нужно ввести данные. */
+    #nameField input, #emailField input, #phoneField input, #telegramField input { background: rgba(245,185,90,0.09); border-color: rgba(245,185,90,0.42); }
+    #nameField input:focus, #emailField input:focus, #phoneField input:focus, #telegramField input:focus { border-color: rgba(245,180,80,0.6); }
 
     .parsed-info { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 12px; margin-bottom: 16px; }
     .parsed-info .name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
@@ -147,22 +155,22 @@
       </div>
 
       <div class="field" id="nameField" style="display:none;">
-        <label>Имя кандидата (не распознано)</label>
+        <label>Имя кандидата <span class="hint-badge">не распознано</span></label>
         <input type="text" id="manualName" placeholder="Введите имя вручную" />
       </div>
 
       <div class="field" id="emailField" style="display:none;">
-        <label>Email (не распознан)</label>
+        <label>Email <span class="hint-badge">не распознан</span></label>
         <input type="email" id="manualEmail" placeholder="candidate@email.com" />
       </div>
 
       <div class="field" id="phoneField" style="display:none;">
-        <label>Телефон (не распознан)</label>
+        <label>Телефон <span class="hint-badge">не распознан</span></label>
         <input type="tel" id="manualPhone" placeholder="+7 999 123-45-67" />
       </div>
 
       <div class="field" id="telegramField" style="display:none;">
-        <label>Telegram (не распознан)</label>
+        <label>Telegram <span class="hint-badge">не распознан</span></label>
         <input type="text" id="manualTelegram" placeholder="@username" />
       </div>
 
