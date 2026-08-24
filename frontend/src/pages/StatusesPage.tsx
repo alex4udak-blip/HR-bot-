@@ -63,6 +63,15 @@ const DEFAULT_FILTERS: FilterKey[] = ["name", "position", "department"];
 
 const FILTERS_STORAGE_KEY = "hf-statuses-filters";
 
+/** Спец-варианты фильтра. Для колонок вроде Telegram или дат выбор
+ *  конкретного значения бесполезен — оно уникально; на деле нужно «у кого
+ *  заполнено» и «у кого пусто». */
+const FILLED = "__filled__";
+const EMPTY = "__empty__";
+
+/** Пустая ячейка рисуется как «—», поэтому прочерк тоже считаем пустотой. */
+const isBlank = (v: string) => !v.trim() || v.trim() === "—";
+
 const fmt = (iso: string | null) => {
   if (!iso) return "";
   const d = new Date(iso);
@@ -178,6 +187,8 @@ export default function StatusesPage() {
       if (!shownFilters.has(k)) continue;
       const v = (val || "").trim();
       if (!v) continue;
+      if (v === FILLED) { out = out.filter((r) => !isBlank(cellText(r, k))); continue; }
+      if (v === EMPTY)  { out = out.filter((r) => isBlank(cellText(r, k))); continue; }
       // Точное совпадение: значение выбрано из списка, а не набрано руками,
       // поэтому «подстрока» здесь только смешивала бы «Разработка» и
       // «Разработка iOS».
@@ -229,20 +240,33 @@ export default function StatusesPage() {
         for (const [k, v] of Object.entries(filters)) {
           const kk = k as FilterKey;
           if (kk === key || !shownFilters.has(kk) || !v) continue;
-          if (cellText(r, kk) !== v) return false;
+          const cell = cellText(r, kk);
+          if (v === FILLED) { if (isBlank(cell)) return false; continue; }
+          if (v === EMPTY)  { if (!isBlank(cell)) return false; continue; }
+          if (cell !== v) return false;
         }
         return true;
       });
 
       const map = new Map<string, number>();
+      let filled = 0;
       for (const r of base) {
         const v = cellText(r, key).trim();
-        if (!v || v === "—") continue;
+        if (isBlank(v)) continue;
+        filled += 1;
         map.set(v, (map.get(v) || 0) + 1);
       }
-      return [...map.entries()]
+      const values = [...map.entries()]
         .map(([value, count]) => ({ value, count }))
         .sort((a, b) => a.value.localeCompare(b.value, "ru"));
+
+      const head: { value: string; count: number }[] = [];
+      const empty = base.length - filled;
+      if (filled && empty) {
+        head.push({ value: FILLED, count: filled });
+        head.push({ value: EMPTY, count: empty });
+      }
+      return [...head, ...values];
     },
     [rows, folder, folders, q, filters, shownFilters]
   );
@@ -379,7 +403,11 @@ export default function StatusesPage() {
                                 )}
                                 {opts.map((o) => (
                                   <option key={o.value} value={o.value}>
-                                    {o.value} ({o.count})
+                                    {o.value === FILLED
+                                      ? `заполнено (${o.count})`
+                                      : o.value === EMPTY
+                                      ? `не заполнено (${o.count})`
+                                      : `${o.value} (${o.count})`}
                                   </option>
                                 ))}
                               </select>
