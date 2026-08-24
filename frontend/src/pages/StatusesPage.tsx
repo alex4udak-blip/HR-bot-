@@ -136,7 +136,10 @@ export default function StatusesPage() {
         setFilters((f) => ({ ...f, [key]: "" }));
       } else {
         next.add(key);
-        setFilters((f) => ({ ...f, [key]: FILLED }));
+        // Если пустых нет, отбор по заполненности вернул бы тот же список —
+        // не ставим его, чтобы фильтр не выглядел неработающим.
+        const hasEmpty = optionsFor(key).some((o) => o.value === EMPTY);
+        setFilters((f) => ({ ...f, [key]: hasEmpty ? FILLED : "" }));
       }
       return next;
     });
@@ -266,11 +269,13 @@ export default function StatusesPage() {
         .map(([value, count]) => ({ value, count }))
         .sort((a, b) => a.value.localeCompare(b.value, "ru"));
 
-      // «заполнено» — значение по умолчанию, поэтому в списке оно должно быть
-      // всегда, иначе select оказался бы с пустой подписью.
+      // «заполнено» имеет смысл, только когда есть и пустые: если колонка
+      // заполнена у всех, этот пункт никого не отсекает и лишь занимает
+      // место в шапке.
       const empty = base.length - filled;
-      const head = [{ value: FILLED, count: filled }];
-      if (empty) head.push({ value: EMPTY, count: empty });
+      const head = empty
+        ? [{ value: FILLED, count: filled }, { value: EMPTY, count: empty }]
+        : [];
       return [...head, ...values];
     },
     [rows, folder, folders, q, filters, shownFilters]
@@ -332,7 +337,10 @@ export default function StatusesPage() {
                         onClick={() => {
                           setShownFilters(new Set(FILTERABLE.map((c) => c.key)));
                           setFilters(Object.fromEntries(
-                            FILTERABLE.map((c) => [c.key, FILLED])
+                            FILTERABLE.map((c) => [
+                              c.key,
+                              optionsFor(c.key).some((o) => o.value === EMPTY) ? FILLED : "",
+                            ])
                           ) as Partial<Record<FilterKey, string>>);
                         }}
                       >
@@ -411,7 +419,13 @@ export default function StatusesPage() {
                                 {/* выбранное значение могло выпасть из вариантов
                                     из-за других фильтров — не теряем его */}
                                 {cur && !opts.some((o) => o.value === cur) && (
-                                  <option value={cur}>{cur}</option>
+                                  <option value={cur}>
+                                    {cur === FILLED
+                                      ? "заполнено"
+                                      : cur === EMPTY
+                                      ? "не заполнено"
+                                      : cur}
+                                  </option>
                                 )}
                                 {opts.map((o) => (
                                   <option key={o.value} value={o.value}>
