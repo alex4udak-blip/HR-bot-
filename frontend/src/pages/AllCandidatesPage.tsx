@@ -1364,6 +1364,17 @@ export default function AllCandidatesPage() {
                               <div className="hf-candidate-row-name">
                                 {card.name}
                               </div>
+                              {/* Яркие теги-ярлыки у имени (HR вписывает сам) —
+                                  read-only в списке, редактируются в карточке.
+                                  В списке показываем ТОЛЬКО первый тег (остальные
+                                  видны в карточке), иначе строка захламляется. */}
+                              {readHeadlineTags(card.extra_data)
+                                .slice(0, 1)
+                                .map((t, i) => (
+                                  <span key={i} className="shrink-0">
+                                    <HeadlineTagChip tag={t} small />
+                                  </span>
+                                ))}
                               {/* Из теневой базы: попадает в список ТОЛЬКО при поиске.
                                   Метим явно, чтобы не путать с активными. */}
                               {card.is_archived && (
@@ -1498,6 +1509,7 @@ export default function AllCandidatesPage() {
                     fetchBoard();
                   }}
                   onHired={() => fetchBoard(true)}
+                  onCardUpdated={handleCardUpdated}
                 />
               </div>
             ) : (
@@ -1724,6 +1736,70 @@ type ContainerNote = {
   stage_at_write_label?: string;
 };
 
+// ---- Яркие теги-ярлыки у имени кандидата (запрос Марии) ----
+// Отдельно от обычных «Меток» (card.tags): HR вписывает слово сам + выбирает цвет,
+// показываем крупно рядом с именем и в списке. Хранится в extra_data.headline_tags.
+type HeadlineTag = { text: string; color: string };
+const HEADLINE_TAG_COLORS: Record<
+  string,
+  { bg: string; text: string; border: string }
+> = {
+  pink: { bg: "#fbdced", text: "#be185d", border: "#f6b8d6" },
+  purple: { bg: "#ede9fe", text: "#6d28d9", border: "#ddd6fe" },
+  blue: { bg: "#dbeafe", text: "#1d4ed8", border: "#bfdbfe" },
+  teal: { bg: "#ccfbf1", text: "#0f766e", border: "#99f6e4" },
+  green: { bg: "#dcfce7", text: "#15803d", border: "#bbf7d0" },
+  amber: { bg: "#fef3c7", text: "#b45309", border: "#fde68a" },
+  red: { bg: "#fee2e2", text: "#b91c1c", border: "#fecaca" },
+};
+const HEADLINE_TAG_COLOR_KEYS = Object.keys(HEADLINE_TAG_COLORS);
+
+function readHeadlineTags(extra: unknown): HeadlineTag[] {
+  const raw = (extra as { headline_tags?: unknown } | null | undefined)
+    ?.headline_tags;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (t): t is HeadlineTag =>
+        !!t && typeof (t as HeadlineTag).text === "string",
+    )
+    .map((t) => ({ text: t.text, color: t.color || "pink" }));
+}
+
+function HeadlineTagChip({
+  tag,
+  small,
+  onRemove,
+}: {
+  tag: HeadlineTag;
+  small?: boolean;
+  onRemove?: () => void;
+}) {
+  const c = HEADLINE_TAG_COLORS[tag.color] || HEADLINE_TAG_COLORS.pink;
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap",
+        small ? "px-2 py-[1px] text-[11px]" : "px-2.5 py-[3px] text-[12px]",
+      )}
+      style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}
+    >
+      {tag.text}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          title="Убрать тег"
+          className="ml-0.5 inline-flex items-center opacity-60 hover:opacity-100"
+          style={{ color: c.text }}
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </span>
+  );
+}
+
 // EntryReaction вынесён в candidateDetail/model (импортируется выше).
 
 // Резюме-демо одного контейнера (минимально нужные поля).
@@ -1789,6 +1865,7 @@ const InfoTab = memo(function InfoTab({
   onMerged,
   onRemovedFromVacancy,
   onHired,
+  onCardUpdated,
 }: {
   card: KanbanCard;
   status: string;
@@ -1805,6 +1882,9 @@ const InfoTab = memo(function InfoTab({
   onRemovedFromVacancy?: () => void;
   // Оформление в штат (HireToStaffButton) → родитель тихо перечитывает доску.
   onHired?: () => void;
+  // Локальный патч карточки в стейте родителя (selectedCard + board) — чтобы
+  // изменения (напр. яркие теги у имени) сразу были видны в списке слева, без рефетча.
+  onCardUpdated?: (updated: Partial<KanbanCard>) => void;
 }) {
   const { user: currentUser } = useAuthStore();
   // «Наблюдатель» (read-only): все изменяющие действия карточки заблокированы.
@@ -1896,6 +1976,13 @@ const InfoTab = memo(function InfoTab({
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
+  // Яркие теги-ярлыки у имени (extra_data.headline_tags): HR вписывает слово + цвет.
+  const [headlineTags, setHeadlineTags] = useState<HeadlineTag[]>(() =>
+    readHeadlineTags(card.extra_data),
+  );
+  const [showHlInput, setShowHlInput] = useState(false);
+  const [hlText, setHlText] = useState("");
+  const [hlColor, setHlColor] = useState<string>("pink");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
   // Бейдж непрочитанных анкет (entity-уровень).
@@ -2351,6 +2438,56 @@ const InfoTab = memo(function InfoTab({
     }
   };
 
+  // ---- Яркие теги-ярлыки у имени ----
+  // Персист через тот же updateEntity, что и обычные метки: PUT /entities/{id}
+  // МЁРЖИТ extra_data (серверные ключи вроде notes не трогает), так что
+  // достаточно прислать только headline_tags.
+  const saveHeadlineTags = async (next: HeadlineTag[]) => {
+    const prev = headlineTags;
+    setHeadlineTags(next); // оптимистично
+    // Сразу патчим карточку в стейте родителя (selectedCard + board), чтобы тег
+    // мгновенно появился/исчез в списке слева — без ожидания рефетча.
+    onCardUpdated?.({
+      extra_data: {
+        ...((card.extra_data as Record<string, unknown>) || {}),
+        headline_tags: next,
+      },
+    } as Partial<KanbanCard>);
+    try {
+      await updateEntity(card.id, { extra_data: { headline_tags: next } });
+      if (card.extra_data) {
+        (card.extra_data as Record<string, unknown>).headline_tags = next;
+      }
+    } catch {
+      setHeadlineTags(prev); // откат
+      onCardUpdated?.({
+        extra_data: {
+          ...((card.extra_data as Record<string, unknown>) || {}),
+          headline_tags: prev,
+        },
+      } as Partial<KanbanCard>);
+      toast.error("Ошибка сохранения тега");
+    }
+  };
+
+  const handleAddHeadlineTag = async () => {
+    const text = hlText.trim();
+    if (!text) return;
+    if (
+      headlineTags.some((t) => t.text.toLowerCase() === text.toLowerCase())
+    ) {
+      toast.error("Такой тег уже есть");
+      return;
+    }
+    setShowHlInput(false);
+    setHlText("");
+    await saveHeadlineTags([...headlineTags, { text, color: hlColor }]);
+  };
+
+  const handleRemoveHeadlineTag = async (index: number) => {
+    await saveHeadlineTags(headlineTags.filter((_, i) => i !== index));
+  };
+
   return (
     <div className="p-[24px] max-w-[1200px]">
       {/* Hidden file input */}
@@ -2651,6 +2788,87 @@ const InfoTab = memo(function InfoTab({
               onHired={() => onHired?.()}
             />
             <StaffStatusBadge entityId={card.id} status={status} />
+            {/* Яркие теги-ярлыки у имени: HR вписывает слово + выбирает цвет.
+                Отдельно от обычных «Меток» (ниже). */}
+            {headlineTags.map((t, i) => (
+              <HeadlineTagChip
+                key={i}
+                tag={t}
+                onRemove={
+                  readonly ? undefined : () => handleRemoveHeadlineTag(i)
+                }
+              />
+            ))}
+            {!readonly && !showHlInput && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHlInput(true);
+                  setHlText("");
+                }}
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-[color:var(--hf-main-300)] px-2.5 py-[3px] text-[12px] font-medium text-[var(--hf-main-500)] transition-colors hover:border-[color:var(--hf-main-500)] hover:text-[var(--hf-main-800)] hf-dark-disabled:border-[color:var(--hf-white-alpha-15)] hf-dark-disabled:text-[color:var(--hf-white-alpha-55)]"
+              >
+                <span className="text-[14px] leading-none">+</span> тег
+              </button>
+            )}
+            {!readonly && showHlInput && (
+              <div className="inline-flex items-center gap-2 rounded-[10px] border border-[color:var(--hf-main-200)] bg-[var(--hf-white)] px-2 py-1.5 hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
+                <input
+                  autoFocus
+                  value={hlText}
+                  onChange={(e) => setHlText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddHeadlineTag();
+                    }
+                    if (e.key === "Escape") {
+                      setShowHlInput(false);
+                      setHlText("");
+                    }
+                  }}
+                  placeholder="Напр. перформер"
+                  maxLength={24}
+                  className="w-32 bg-transparent text-[13px] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-500)] hf-dark-disabled:text-[var(--hf-white)]"
+                />
+                <div className="flex items-center gap-1">
+                  {HEADLINE_TAG_COLOR_KEYS.map((ck) => (
+                    <button
+                      key={ck}
+                      type="button"
+                      onClick={() => setHlColor(ck)}
+                      title={ck}
+                      className={clsx(
+                        "h-4 w-4 rounded-full transition-transform",
+                        hlColor === ck
+                          ? "scale-110 ring-2 ring-[color:var(--hf-main-500)] ring-offset-1"
+                          : "hover:scale-110",
+                      )}
+                      style={{ background: HEADLINE_TAG_COLORS[ck].text }}
+                    />
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddHeadlineTag}
+                  disabled={!hlText.trim()}
+                  className="inline-flex h-[26px] items-center rounded-[6px] bg-[var(--hf-main-900)] px-2.5 text-[12px] font-medium !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] disabled:opacity-60"
+                >
+                  Добавить
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowHlInput(false);
+                    setHlText("");
+                  }}
+                  title="Отмена"
+                  className="inline-flex h-[26px] items-center rounded-[6px] px-1.5 text-[var(--hf-main-500)] hover:text-[var(--hf-main-800)]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
           {(card.position || card.company) && (
             <p className="hf-profile-subtitle">
