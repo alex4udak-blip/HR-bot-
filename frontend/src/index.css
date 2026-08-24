@@ -9259,9 +9259,14 @@ body.performance-mode .glass-card:hover {
   font-size: var(--hf-fs-3xs);
   color: var(--hf-main-600);
 }
+.hf-statuses-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-s);
+  margin-left: auto;
+}
 .hf-statuses-search {
   position: relative;
-  margin-left: auto;
   flex: 0 0 280px;
 }
 .hf-statuses-search-icon {
@@ -9555,4 +9560,99 @@ body.performance-mode .glass-card:hover {
   justify-content: center;
   padding: var(--hf-space-4xl) 0;
   color: var(--hf-cyan-600);
+}
+
+
+/* ── «Статусы»: выбор показываемых фильтров ──────────────────────────
+   Одиннадцать полей над таблицей превращались в шум: не видно, по чему
+   реально идёт отбор. Теперь набор выбирается и запоминается. */
+
+.hf-statuses-filters-picker { position: relative; flex-shrink: 0; }
+
+.hf-statuses-filters-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hf-space-xxs);
+  height: 36px;
+  padding: 0 var(--hf-space-s);
+  background: var(--hf-white);
+  border: var(--hf-border-xs) solid var(--hf-main-200);
+  border-radius: var(--hf-radius-s);
+  font-size: var(--hf-fs-3xs);
+  color: var(--hf-main-800);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hf-statuses-filters-btn:hover { border-color: var(--hf-cyan-500); color: var(--hf-cyan-700); }
+.hf-statuses-filters-btn-on { border-color: var(--hf-cyan-500); color: var(--hf-cyan-700); }
+
+.hf-statuses-filters-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px; height: 18px;
+  padding: 0 5px;
+  background: var(--hf-cyan-500);
+  border-radius: 9px;
+  font-size: var(--hf-fs-6xs);
+  color: var(--hf-white);
+}
+
+/* Подложка ловит клик мимо списка — иначе он не закрывается на тач-экранах */
+.hf-statuses-picker-backdrop { position: fixed; inset: 0; z-index: 40; }
+
+.hf-statuses-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 41;
+  min-width: 240px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: var(--hf-space-xs);
+  background: var(--hf-white);
+  border: var(--hf-border-xs) solid var(--hf-main-200);
+  border-radius: var(--hf-radius-s);
+  box-shadow: 0 12px 32px rgba(16, 24, 40, .14);
+}
+
+.hf-statuses-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hf-space-s);
+  padding: var(--hf-space-xxs) var(--hf-space-xs) var(--hf-space-xs);
+  font-size: var(--hf-fs-5xs);
+  color: var(--hf-main-600);
+}
+.hf-statuses-picker-actions { display: flex; gap: var(--hf-space-xs); }
+.hf-statuses-picker-actions button {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: var(--hf-fs-5xs);
+  color: var(--hf-cyan-600);
+  cursor: pointer;
+}
+.hf-statuses-picker-actions button:hover { text-decoration: underline; }
+
+.hf-statuses-picker-item {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-xs);
+  padding: var(--hf-space-xs);
+  border-radius: var(--hf-radius-xs);
+  font-size: var(--hf-fs-3xs);
+  color: var(--hf-main-900);
+  cursor: pointer;
+}
+.hf-statuses-picker-item:hover { background: var(--hf-main-50); }
+.hf-statuses-picker-item input { width: 15px; height: 15px; accent-color: var(--hf-cyan-500); }
+.hf-statuses-picker-item span { flex: 1; }
+
+/* Точка у пункта — фильтр показан И заполнен, то есть реально отбирает */
+.hf-statuses-picker-dot {
+  flex: 0 0 auto;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--hf-cyan-500);
 }

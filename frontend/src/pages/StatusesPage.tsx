@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search, Loader2, Plus, Pencil, Trash2, Check, X,
-  ChevronRight, ChevronDown, Paperclip, Upload,
+  ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -55,6 +55,14 @@ const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean }[] = 
   { key: "y1",                    label: "1 год",             filter: true },
 ];
 
+/** Колонки, по которым вообще можно фильтровать. */
+const FILTERABLE = COLUMNS.filter((c) => c.filter) as { key: FilterKey; label: string }[];
+
+/** По умолчанию — самое ходовое, остальное включается по кнопке «Фильтры». */
+const DEFAULT_FILTERS: FilterKey[] = ["name", "position", "department"];
+
+const FILTERS_STORAGE_KEY = "hf-statuses-filters";
+
 const fmt = (iso: string | null) => {
   if (!iso) return "";
   const d = new Date(iso);
@@ -81,6 +89,43 @@ export default function StatusesPage() {
   const [folder, setFolder] = useUrlTab<string>("folder", "all");
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<Partial<Record<FilterKey, string>>>({});
+
+  // Какие фильтры показаны. Раньше поле висело у каждой колонки — на широкой
+  // таблице это одиннадцать пустых полей, среди которых не видно, по чему
+  // реально идёт отбор. Набор запоминаем: у каждого HR свой рабочий срез.
+  const [shownFilters, setShownFilters] = useState<Set<FilterKey>>(() => {
+    try {
+      const raw = localStorage.getItem(FILTERS_STORAGE_KEY);
+      if (raw) {
+        const keys = (JSON.parse(raw) as string[]).filter(
+          (k): k is FilterKey => FILTERABLE.some((c) => c.key === k)
+        );
+        return new Set(keys);
+      }
+    } catch { /* повреждённое значение — просто берём набор по умолчанию */ }
+    return new Set(DEFAULT_FILTERS);
+  });
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify([...shownFilters]));
+    } catch { /* приватный режим — переживём без сохранения */ }
+  }, [shownFilters]);
+
+  /** Скрытый фильтр не должен продолжать отбирать втихую — гасим его значение. */
+  const toggleFilter = (key: FilterKey) => {
+    setShownFilters((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) {
+        next.delete(key);
+        setFilters((f) => ({ ...f, [key]: "" }));
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
 
@@ -127,13 +172,16 @@ export default function StatusesPage() {
           .filter(Boolean).some((v) => String(v).toLowerCase().includes(needle))
       );
     }
+    // Несколько фильтров сужают выборку вместе (И), один работает сам по себе.
     for (const [key, val] of Object.entries(filters)) {
+      const k = key as FilterKey;
+      if (!shownFilters.has(k)) continue;
       const v = (val || "").trim().toLowerCase();
       if (!v) continue;
-      out = out.filter((r) => cellText(r, key as FilterKey).toLowerCase().includes(v));
+      out = out.filter((r) => cellText(r, k).toLowerCase().includes(v));
     }
     return out;
-  }, [rows, q, filters]);
+  }, [rows, q, filters, shownFilters]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: searched.length, [UNASSIGNED]: 0 };
@@ -154,6 +202,13 @@ export default function StatusesPage() {
     return searched.filter((r) => r.direction === folder);
   }, [searched, folder, folders]);
 
+  /** Считаем именно ЗАПОЛНЕННЫЕ фильтры: показанное, но пустое поле ничего
+   *  не отбирает, и badge на кнопке не должен вводить в заблуждение. */
+  const activeCount = useMemo(
+    () => [...shownFilters].filter((k) => (filters[k] || "").trim()).length,
+    [shownFilters, filters]
+  );
+
   const grouped = useMemo(
     () => STATUSES.map((s) => ({ ...s, items: visible.filter((r) => r.status === s.key) })),
     [visible]
@@ -166,14 +221,66 @@ export default function StatusesPage() {
           <h1 className="hf-statuses-title">Статусы</h1>
           <p className="hf-statuses-subtitle">Жизненный цикл сотрудника по направлениям</p>
         </div>
-        <div className="hf-statuses-search">
-          <Search className="hf-statuses-search-icon" size={15} />
-          <input
-            className="hf-statuses-search-input"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Поиск по имени, должности, отделу…"
-          />
+        <div className="hf-statuses-tools">
+          <div className="hf-statuses-search">
+            <Search className="hf-statuses-search-icon" size={15} />
+            <input
+              className="hf-statuses-search-input"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Поиск по имени, должности, отделу…"
+            />
+          </div>
+
+          <div className="hf-statuses-filters-picker">
+            <button
+              className={clsx(
+                "hf-statuses-filters-btn",
+                activeCount > 0 && "hf-statuses-filters-btn-on"
+              )}
+              onClick={() => setPickerOpen((v) => !v)}
+            >
+              <SlidersHorizontal size={15} />
+              Фильтры
+              {activeCount > 0 && (
+                <span className="hf-statuses-filters-badge">{activeCount}</span>
+              )}
+            </button>
+
+            {pickerOpen && (
+              <>
+                <div className="hf-statuses-picker-backdrop" onClick={() => setPickerOpen(false)} />
+                <div className="hf-statuses-picker">
+                  <div className="hf-statuses-picker-head">
+                    <span>Показывать фильтры</span>
+                    <div className="hf-statuses-picker-actions">
+                      <button onClick={() => setShownFilters(new Set(FILTERABLE.map((c) => c.key)))}>
+                        все
+                      </button>
+                      <button
+                        onClick={() => { setShownFilters(new Set()); setFilters({}); }}
+                      >
+                        ни одного
+                      </button>
+                    </div>
+                  </div>
+                  {FILTERABLE.map((c) => (
+                    <label key={c.key} className="hf-statuses-picker-item">
+                      <input
+                        type="checkbox"
+                        checked={shownFilters.has(c.key)}
+                        onChange={() => toggleFilter(c.key)}
+                      />
+                      <span>{c.label}</span>
+                      {(filters[c.key] || "").trim() && (
+                        <span className="hf-statuses-picker-dot" title="фильтр заполнен" />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -200,20 +307,26 @@ export default function StatusesPage() {
                     <th key={c.key} className="hf-statuses-th">{c.label}</th>
                   ))}
                 </tr>
-                <tr>
-                  {COLUMNS.map((c) => (
-                    <th key={c.key} className="hf-statuses-th-filter">
-                      {c.filter && (
-                        <input
-                          className="hf-statuses-filter-input"
-                          value={filters[c.key as FilterKey] || ""}
-                          onChange={(e) => setFilters((f) => ({ ...f, [c.key]: e.target.value }))}
-                          placeholder="фильтр"
-                        />
-                      )}
-                    </th>
-                  ))}
-                </tr>
+                {shownFilters.size > 0 && (
+                  <tr>
+                    {COLUMNS.map((c) => {
+                      const k = c.key as FilterKey;
+                      const on = c.filter && shownFilters.has(k);
+                      return (
+                        <th key={c.key} className="hf-statuses-th-filter">
+                          {on && (
+                            <input
+                              className="hf-statuses-filter-input"
+                              value={filters[k] || ""}
+                              onChange={(e) => setFilters((f) => ({ ...f, [k]: e.target.value }))}
+                              placeholder="фильтр"
+                            />
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                )}
               </thead>
 
               <tbody>
