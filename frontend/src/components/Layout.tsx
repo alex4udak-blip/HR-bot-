@@ -1367,6 +1367,15 @@ export default function Layout() {
   const canManageFactorialPeople = isHrSidebarAdmin || user?.org_role === "hr";
   const sidebarSearchParams = new URLSearchParams(location.search);
   const sidebarSelectedVacancyId = sidebarSearchParams.get("v");
+  // Скоуп воронки по рекрутёру живёт в URL (?recruiter=), а pickerOwnerId — отдельный
+  // стейт сайдбара. Если смотришь чужую воронку через URL (шаринг/переход), pickerOwnerId
+  // может быть пуст — и ссылка вакансии роняла ?recruiter=, а на клике воронка грузила
+  // ВСЕХ кандидатов (не только этого рекрутёра). Берём recruiter как pickerOwnerId ИЛИ
+  // текущий ?recruiter= из URL, чтобы клик по вакансии сохранял скоуп.
+  const sidebarUrlRecruiter =
+    location.pathname === "/my-funnels"
+      ? sidebarSearchParams.get("recruiter")
+      : null;
   const isClosedFunnelsView =
     location.pathname === "/my-funnels" &&
     sidebarSearchParams.get("status") === "closed";
@@ -1899,9 +1908,15 @@ export default function Layout() {
                       {sidebarOpenVacancies.map((v) => (
                         <NavLink
                           key={v.id}
-                          to={pickerOwnerId != null
-                            ? `/my-funnels?v=${v.id}&recruiter=${pickerOwnerId}`
-                            : `/my-funnels?v=${v.id}`}
+                          to={(() => {
+                            const rec =
+                              pickerOwnerId != null
+                                ? String(pickerOwnerId)
+                                : sidebarUrlRecruiter;
+                            return rec
+                              ? `/my-funnels?v=${v.id}&recruiter=${rec}`
+                              : `/my-funnels?v=${v.id}`;
+                          })()}
                           className={() =>
                             clsx(
                               "hf-hr-subnav-link",

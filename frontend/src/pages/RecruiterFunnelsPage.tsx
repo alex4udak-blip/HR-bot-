@@ -898,8 +898,16 @@ export default function RecruiterFunnelsPage() {
   // Зависимость — извлечённая строка stage, а НЕ весь searchParams: правки
   // ?status=/?recruiter=/?entity= этот эффект не дёргают. Guard на равенство +
   // валидация по этапам текущей вакансии — без циклов с зеркалом.
-  const urlStageParam = searchParams.get('stage') || 'all';
+  // ВАЖНО: raw (может быть null) — ОТСУТСТВИЕ ?stage= это НЕ то же, что ?stage=all.
+  // Клик по ссылке вакансии в сайдбаре ведёт на ?v=&recruiter= БЕЗ stage; если бы
+  // мы трактовали «нет параметра» как 'all', воронка молча переключалась бы на
+  // вкладку «Все» (все этапы разом, активной вкладки нет, кандидаты из отказа и пр.).
+  // Поэтому синхроним вкладку из URL ТОЛЬКО при ЯВНОМ значении stage (Back/Forward
+  // между колонками); отсутствие параметра оставляет текущую вкладку — её тут же
+  // дописывает обратно эффект-зеркало ?stage=.
+  const urlStageParam = searchParams.get('stage');
   useEffect(() => {
+    if (urlStageParam == null) return;
     if (urlStageParam === selectedTab) return;
     if (urlStageParam === 'all' || stagesConfig.keys.includes(urlStageParam)) {
       setSelectedTab(urlStageParam);
