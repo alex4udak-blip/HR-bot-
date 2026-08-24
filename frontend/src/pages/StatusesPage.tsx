@@ -64,12 +64,6 @@ const DEFAULT_FILTERS: FilterKey[] = [];
 
 const FILTERS_STORAGE_KEY = "hf-statuses-filters";
 
-/** Спец-варианты фильтра. Для колонок вроде Telegram или дат выбор
- *  конкретного значения бесполезен — оно уникально; на деле нужно «у кого
- *  заполнено» и «у кого пусто». */
-const FILLED = "__filled__";
-const EMPTY = "__empty__";
-
 /** Пустая ячейка рисуется как «—», поэтому прочерк тоже считаем пустотой. */
 const isBlank = (v: string) => !v.trim() || v.trim() === "—";
 
@@ -98,7 +92,6 @@ export default function StatusesPage() {
   // Папка живёт в URL (?folder=) — работают браузерные «Назад/Вперёд».
   const [folder, setFolder] = useUrlTab<string>("folder", "all");
   const [q, setQ] = useState("");
-  const [filters, setFilters] = useState<Partial<Record<FilterKey, string>>>({});
 
   // Какие фильтры показаны. Раньше поле висело у каждой колонки — на широкой
   // таблице это одиннадцать пустых полей, среди которых не видно, по чему
@@ -123,24 +116,12 @@ export default function StatusesPage() {
     } catch { /* приватный режим — переживём без сохранения */ }
   }, [shownFilters]);
 
-  /** Отметить колонку — это уже фильтр: показываем только тех, у кого она
-   *  заполнена. Иначе галочка ничего не меняла бы до выбора значения, и
-   *  человек видел бы прежний список, считая что фильтр не работает.
-   *
-   *  Снятая галочка гасит значение, а не оставляет его отбирать втихую. */
+  /** Отметить колонку — показать только тех, у кого она заполнена. */
   const toggleFilter = (key: FilterKey) => {
     setShownFilters((cur) => {
       const next = new Set(cur);
-      if (next.has(key)) {
-        next.delete(key);
-        setFilters((f) => ({ ...f, [key]: "" }));
-      } else {
-        next.add(key);
-        // Если пустых нет, отбор по заполненности вернул бы тот же список —
-        // не ставим его, чтобы фильтр не выглядел неработающим.
-        const hasEmpty = optionsFor(key).some((o) => o.value === EMPTY);
-        setFilters((f) => ({ ...f, [key]: hasEmpty ? FILLED : "" }));
-      }
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
@@ -190,21 +171,13 @@ export default function StatusesPage() {
           .filter(Boolean).some((v) => String(v).toLowerCase().includes(needle))
       );
     }
-    // Несколько фильтров сужают выборку вместе (И), один работает сам по себе.
-    for (const [key, val] of Object.entries(filters)) {
-      const k = key as FilterKey;
-      if (!shownFilters.has(k)) continue;
-      const v = (val || "").trim();
-      if (!v) continue;
-      if (v === FILLED) { out = out.filter((r) => !isBlank(cellText(r, k))); continue; }
-      if (v === EMPTY)  { out = out.filter((r) => isBlank(cellText(r, k))); continue; }
-      // Точное совпадение: значение выбрано из списка, а не набрано руками,
-      // поэтому «подстрока» здесь только смешивала бы «Разработка» и
-      // «Разработка iOS».
-      out = out.filter((r) => cellText(r, k) === v);
+    // Отмеченная колонка = условие «у человека она заполнена». Несколько
+    // отмеченных требуют заполненности КАЖДОЙ.
+    for (const key of shownFilters) {
+      out = out.filter((r) => !isBlank(cellText(r, key)));
     }
     return out;
-  }, [rows, q, filters, shownFilters]);
+  }, [rows, q, shownFilters]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: searched.length, [UNASSIGNED]: 0 };
@@ -225,68 +198,7 @@ export default function StatusesPage() {
     return searched.filter((r) => r.direction === folder);
   }, [searched, folder, folders]);
 
-  /** Значения для выпадающих списков — ровно те, что есть в таблице.
-   *
-   *  Раньше здесь было поле свободного ввода: человек должен был угадать,
-   *  как записана должность или отдел, и опечатка молча давала пустой
-   *  список. Теперь выбираем из существующего, рядом — сколько строк под
-   *  каждым значением.
-   *
-   *  Считаем по строкам ТЕКУЩЕЙ папки и с учётом остальных фильтров, иначе
-   *  в списке предлагались бы значения, которые вместе ничего не находят. */
-  const optionsFor = useCallback(
-    (key: FilterKey): { value: string; count: number }[] => {
-      const needle = q.trim().toLowerCase();
-      const base = rows.filter((r) => {
-        if (folder !== "all") {
-          if (folder === UNASSIGNED) {
-            if (r.direction && folders.some((f) => f.id === r.direction)) return false;
-          } else if (r.direction !== folder) return false;
-        }
-        if (needle && ![r.name, r.position, r.department_name, r.telegram, r.manager]
-          .filter(Boolean).some((v) => String(v).toLowerCase().includes(needle))) return false;
-        // прочие активные фильтры сужают список вариантов, свой — нет
-        for (const [k, v] of Object.entries(filters)) {
-          const kk = k as FilterKey;
-          if (kk === key || !shownFilters.has(kk) || !v) continue;
-          const cell = cellText(r, kk);
-          if (v === FILLED) { if (isBlank(cell)) return false; continue; }
-          if (v === EMPTY)  { if (!isBlank(cell)) return false; continue; }
-          if (cell !== v) return false;
-        }
-        return true;
-      });
-
-      const map = new Map<string, number>();
-      let filled = 0;
-      for (const r of base) {
-        const v = cellText(r, key).trim();
-        if (isBlank(v)) continue;
-        filled += 1;
-        map.set(v, (map.get(v) || 0) + 1);
-      }
-      const values = [...map.entries()]
-        .map(([value, count]) => ({ value, count }))
-        .sort((a, b) => a.value.localeCompare(b.value, "ru"));
-
-      // «заполнено» имеет смысл, только когда есть и пустые: если колонка
-      // заполнена у всех, этот пункт никого не отсекает и лишь занимает
-      // место в шапке.
-      const empty = base.length - filled;
-      const head = empty
-        ? [{ value: FILLED, count: filled }, { value: EMPTY, count: empty }]
-        : [];
-      return [...head, ...values];
-    },
-    [rows, folder, folders, q, filters, shownFilters]
-  );
-
-  /** Считаем именно ЗАПОЛНЕННЫЕ фильтры: показанное, но пустое поле ничего
-   *  не отбирает, и badge на кнопке не должен вводить в заблуждение. */
-  const activeCount = useMemo(
-    () => [...shownFilters].filter((k) => (filters[k] || "").trim()).length,
-    [shownFilters, filters]
-  );
+  const activeCount = shownFilters.size;
 
   const grouped = useMemo(
     () => STATUSES.map((s) => ({ ...s, items: visible.filter((r) => r.status === s.key) })),
@@ -333,21 +245,11 @@ export default function StatusesPage() {
                   <div className="hf-statuses-picker-head">
                     <span>Фильтровать по колонкам</span>
                     <div className="hf-statuses-picker-actions">
-                      <button
-                        onClick={() => {
-                          setShownFilters(new Set(FILTERABLE.map((c) => c.key)));
-                          setFilters(Object.fromEntries(
-                            FILTERABLE.map((c) => [
-                              c.key,
-                              optionsFor(c.key).some((o) => o.value === EMPTY) ? FILLED : "",
-                            ])
-                          ) as Partial<Record<FilterKey, string>>);
-                        }}
-                      >
+                      <button onClick={() => setShownFilters(new Set(FILTERABLE.map((c) => c.key)))}>
                         все
                       </button>
                       <button
-                        onClick={() => { setShownFilters(new Set()); setFilters({}); }}
+                        onClick={() => setShownFilters(new Set())}
                       >
                         ни одного
                       </button>
@@ -361,9 +263,6 @@ export default function StatusesPage() {
                         onChange={() => toggleFilter(c.key)}
                       />
                       <span>{c.label}</span>
-                      {(filters[c.key] || "").trim() && (
-                        <span className="hf-statuses-picker-dot" title="фильтр заполнен" />
-                      )}
                     </label>
                   ))}
                 </div>
@@ -396,54 +295,6 @@ export default function StatusesPage() {
                     <th key={c.key} className="hf-statuses-th">{c.label}</th>
                   ))}
                 </tr>
-                {shownFilters.size > 0 && (
-                  <tr>
-                    {COLUMNS.map((c) => {
-                      const k = c.key as FilterKey;
-                      const on = c.filter && shownFilters.has(k);
-                      return (
-                        <th key={c.key} className="hf-statuses-th-filter">
-                          {on && (() => {
-                            const opts = optionsFor(k);
-                            const cur = filters[k] || "";
-                            return (
-                              <select
-                                className={clsx(
-                                  "hf-statuses-filter-select",
-                                  cur && "hf-statuses-filter-select-on"
-                                )}
-                                value={cur}
-                                onChange={(e) => setFilters((f) => ({ ...f, [k]: e.target.value }))}
-                              >
-                                <option value="">все (без отбора)</option>
-                                {/* выбранное значение могло выпасть из вариантов
-                                    из-за других фильтров — не теряем его */}
-                                {cur && !opts.some((o) => o.value === cur) && (
-                                  <option value={cur}>
-                                    {cur === FILLED
-                                      ? "заполнено"
-                                      : cur === EMPTY
-                                      ? "не заполнено"
-                                      : cur}
-                                  </option>
-                                )}
-                                {opts.map((o) => (
-                                  <option key={o.value} value={o.value}>
-                                    {o.value === FILLED
-                                      ? `заполнено (${o.count})`
-                                      : o.value === EMPTY
-                                      ? `не заполнено (${o.count})`
-                                      : `${o.value} (${o.count})`}
-                                  </option>
-                                ))}
-                              </select>
-                            );
-                          })()}
-                        </th>
-                      );
-                    })}
-                  </tr>
-                )}
               </thead>
 
               <tbody>
