@@ -832,6 +832,24 @@ export default function RecruiterFunnelsPage() {
       const urlStage = searchParams.get('stage');
       const hasValidUrlStage =
         !!urlStage && (urlStage === 'all' || stagesConfig.keys.includes(urlStage));
+      // УСТАРЕВШИЙ дип-линк: ?stage= указывает на КОНКРЕТНУЮ вкладку, а кандидат из
+      // ?entity= в ДРУГОМ этапе (юзер переключил вкладку, entity остался в URL). Тогда
+      // НЕ адоптим — чистим stale ?entity=; авто-первый откроет первого текущей вкладки.
+      // Иначе была пустая правая панель («перехожу на статус — пустое окно», баг Марии).
+      if (hasValidUrlStage && urlStage !== 'all') {
+        const matchKeys = stagesConfig.enumToKeys[match.stage] || [];
+        if (!matchKeys.includes(urlStage as string)) {
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.delete('entity');
+              return next;
+            },
+            { replace: true },
+          );
+          return;
+        }
+      }
       if (!hasValidUrlStage) {
         setSelectedTab('all');
       }
@@ -1026,9 +1044,16 @@ export default function RecruiterFunnelsPage() {
       if (selectedCandidateId !== null) setSelectedCandidateId(null);
       return;
     }
-    // Диплинк из URL побеждает авто-первого: пока ?entity= указывает на загруженного,
-    // но ещё не выбранного кандидата, не перехватываем выбор (адопт-эффект его поставит).
-    if (pendingDeepLinkEntity != null) return;
+    // Диплинк из URL побеждает авто-первого — НО только если дип-линк-кандидат есть в
+    // ТЕКУЩЕЙ вкладке (его и покажет адопт-эффект). Если ?entity= указывает на кандидата
+    // из ДРУГОЙ вкладки (юзер переключил этап, а stale ?entity= остался в URL) — НЕ
+    // блокируем: иначе правая панель пустая навсегда (адопт off-tab не показывает, а
+    // авто-первый заблокирован). Это и был баг Марии «перехожу на статус — пустое окно».
+    if (
+      pendingDeepLinkEntity != null &&
+      tabFilteredCandidates.some((c) => c.entity_id === pendingDeepLinkEntity)
+    )
+      return;
     // Мария (2026-08-25, уточнение): при открытии воронки/переключении этапа справа
     // ДОЛЖЕН сам открываться первый кандидат вкладки (его CV) — единая логика во всех
     // воронках. Если выбранного нет в текущей вкладке (переключили этап) — открываем
@@ -1207,8 +1232,13 @@ export default function RecruiterFunnelsPage() {
 
   // Авто-выбор первого кандидата при смене вкладки (страховка к эффекту выше):
   // справа всегда открыт первый кандидат вкладки, если ничего не выбрано.
+  // Блокируем только на дип-линк ТЕКУЩЕЙ вкладки (см. подробный комментарий выше).
   useEffect(() => {
-    if (pendingDeepLinkEntity != null) return;
+    if (
+      pendingDeepLinkEntity != null &&
+      tabFilteredCandidates.some((c) => c.entity_id === pendingDeepLinkEntity)
+    )
+      return;
     if (tabFilteredCandidates.length > 0 && !selectedCandidateId) {
       setSelectedCandidateId(tabFilteredCandidates[0].id);
     }
