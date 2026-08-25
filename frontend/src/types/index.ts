@@ -629,6 +629,9 @@ export interface VacancyApplication {
   entity_notes_text?: string | null;
   entity_position?: string;
   entity_company?: string;
+  entity_photo?: string | null;
+  // Яркие теги-ярлыки у имени (extra_data.headline_tags) — показываем в воронке.
+  entity_headline_tags?: { text: string; color: string }[] | null;
   stage: ApplicationStage;
   stage_order: number;
   rating?: number;

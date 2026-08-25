@@ -96,6 +96,19 @@ def _entity_photo(entity, photo_file_map: Optional[dict] = None):
     return photo if isinstance(photo, str) else None
 
 
+def _headline_tags(entity):
+    """Яркие теги-ярлыки у имени (extra_data.headline_tags=[{text,color}]) —
+    отдаём в воронку, чтобы показывать так же, как в «Все кандидаты»."""
+    if entity is None:
+        return None
+    ed = entity.extra_data if isinstance(entity.extra_data, dict) else {}
+    raw = ed.get("headline_tags")
+    if not isinstance(raw, list):
+        return None
+    out = [t for t in raw if isinstance(t, dict) and isinstance(t.get("text"), str)]
+    return out or None
+
+
 @router.get("/{vacancy_id}/applications", response_model=List[ApplicationResponse])
 
 async def list_applications(
@@ -219,6 +232,7 @@ async def list_applications(
             entity_notes_text=_notes_blob(entity),
             entity_position=entity.position if entity else None,
             entity_photo=_entity_photo(entity, photo_file_map),
+            entity_headline_tags=_headline_tags(entity),
             stage=app.stage,
             stage_order=app.stage_order or 0,
             rating=app.rating,
@@ -382,6 +396,7 @@ async def create_application(
         entity_telegram=(entity.telegram_usernames[0] if entity.telegram_usernames else None),
         entity_position=entity.position,
         entity_photo=_entity_photo(entity, photo_file_map),
+        entity_headline_tags=_headline_tags(entity),
         stage=application.stage,
         stage_order=application.stage_order or 0,
         rating=application.rating,

@@ -42,6 +42,7 @@ import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag 
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
+import { readHeadlineTags, HeadlineTagChip } from '@/components/entities/headlineTags';
 import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import CandidateHandoverModal from '@/components/vacancies/CandidateHandoverModal';
@@ -2589,10 +2590,19 @@ export default function RecruiterFunnelsPage() {
                               )}
                             </div>
                             <div className="hf-candidate-row-copy">
-                              <div className="flex items-center min-w-0">
+                              <div className="flex items-center gap-1.5 min-w-0">
                                 <div className="hf-candidate-row-name">
                                   {candidate.entity_name || 'Без имени'}
                                 </div>
+                                {/* Яркий тег у имени — в списке только первый (как в
+                                    «Все кандидаты»), остальные в карточке. */}
+                                {readHeadlineTags(candidate.entity_headline_tags)
+                                  .slice(0, 1)
+                                  .map((t, i) => (
+                                    <span key={i} className="shrink-0">
+                                      <HeadlineTagChip tag={t} small />
+                                    </span>
+                                  ))}
                               </div>
                               {candidate.entity_position && (
                                 <div className="hf-candidate-row-subtitle">

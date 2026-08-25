@@ -28,6 +28,13 @@ import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import { buildStageContainers, readSystemHrTags, type EntryReaction } from "@/components/entities/candidateDetail/model";
+import {
+  HEADLINE_TAG_COLORS,
+  HEADLINE_TAG_COLOR_KEYS,
+  readHeadlineTags,
+  HeadlineTagChip,
+  type HeadlineTag,
+} from "@/components/entities/headlineTags";
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from "@/utils/currency";
 import { parseServerDate, calculateAge } from "@/utils/date";
 import {
@@ -1736,69 +1743,8 @@ type ContainerNote = {
   stage_at_write_label?: string;
 };
 
-// ---- Яркие теги-ярлыки у имени кандидата (запрос Марии) ----
-// Отдельно от обычных «Меток» (card.tags): HR вписывает слово сам + выбирает цвет,
-// показываем крупно рядом с именем и в списке. Хранится в extra_data.headline_tags.
-type HeadlineTag = { text: string; color: string };
-const HEADLINE_TAG_COLORS: Record<
-  string,
-  { bg: string; text: string; border: string }
-> = {
-  pink: { bg: "#fbdced", text: "#be185d", border: "#f6b8d6" },
-  purple: { bg: "#ede9fe", text: "#6d28d9", border: "#ddd6fe" },
-  blue: { bg: "#dbeafe", text: "#1d4ed8", border: "#bfdbfe" },
-  teal: { bg: "#ccfbf1", text: "#0f766e", border: "#99f6e4" },
-  green: { bg: "#dcfce7", text: "#15803d", border: "#bbf7d0" },
-  amber: { bg: "#fef3c7", text: "#b45309", border: "#fde68a" },
-  red: { bg: "#fee2e2", text: "#b91c1c", border: "#fecaca" },
-};
-const HEADLINE_TAG_COLOR_KEYS = Object.keys(HEADLINE_TAG_COLORS);
-
-function readHeadlineTags(extra: unknown): HeadlineTag[] {
-  const raw = (extra as { headline_tags?: unknown } | null | undefined)
-    ?.headline_tags;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter(
-      (t): t is HeadlineTag =>
-        !!t && typeof (t as HeadlineTag).text === "string",
-    )
-    .map((t) => ({ text: t.text, color: t.color || "pink" }));
-}
-
-function HeadlineTagChip({
-  tag,
-  small,
-  onRemove,
-}: {
-  tag: HeadlineTag;
-  small?: boolean;
-  onRemove?: () => void;
-}) {
-  const c = HEADLINE_TAG_COLORS[tag.color] || HEADLINE_TAG_COLORS.pink;
-  return (
-    <span
-      className={clsx(
-        "inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap",
-        small ? "px-2 py-[1px] text-[11px]" : "px-2.5 py-[3px] text-[12px]",
-      )}
-      style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}
-    >
-      {tag.text}
-      {onRemove && (
-        <button
-          type="button"
-          onClick={onRemove}
-          title="Убрать тег"
-          className="ml-0.5 inline-flex items-center opacity-60 hover:opacity-100"
-          style={{ color: c.text }}
-        >
-          <X className="w-3 h-3" />
-        </button>
-      )}
-    </span>
-  );
-}
+// Яркие теги-ярлыки у имени вынесены в общий модуль (используются и в воронках):
+// см. импорт HeadlineTag/HEADLINE_TAG_COLORS/readHeadlineTags/HeadlineTagChip выше.
 
 // EntryReaction вынесён в candidateDetail/model (импортируется выше).
 

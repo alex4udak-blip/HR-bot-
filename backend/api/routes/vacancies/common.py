@@ -684,6 +684,9 @@ class ApplicationResponse(BaseModel):
     entity_notes_text: Optional[str] = None         # текст комментариев карточки (для поиска ника/почты из комментов)
     entity_position: Optional[str] = None
     entity_photo: Optional[str] = None  # photo URL для аватара в списке
+    # Яркие теги-ярлыки у имени (extra_data.headline_tags=[{text,color}]) — чтобы
+    # показывать их в воронке так же, как в «Все кандидаты».
+    entity_headline_tags: Optional[List[dict]] = None
     stage: ApplicationStage
     stage_order: int = 0
     rating: Optional[int] = None
