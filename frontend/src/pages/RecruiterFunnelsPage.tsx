@@ -1022,16 +1022,18 @@ export default function RecruiterFunnelsPage() {
   }, [selectedVacancyId, selectedTab, stagesConfig.keys, vacancyWorkflowKeys]);
 
   useEffect(() => {
-    if (tabFilteredCandidates.length === 0) {
-      if (selectedCandidateId !== null) setSelectedCandidateId(null);
-      return;
-    }
-    // Диплинк из URL побеждает авто-первого: пока ?entity= указывает на загруженного,
-    // но ещё не выбранного кандидата, не перехватываем выбор (адопт-эффект его поставит).
+    // Диплинк из URL побеждает: пока ?entity= указывает на загруженного, но ещё не
+    // выбранного кандидата, не трогаем выбор (адопт-эффект его поставит).
     if (pendingDeepLinkEntity != null) return;
-    if (!selectedCandidateId || !tabFilteredCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
-      setSelectedCandidateId(tabFilteredCandidates[0].id);
-      setDetailTab('resume');
+    // Мария (фидбек 2026-08-25): при переключении вкладки-этапа справа НЕ должен сам
+    // открываться первый кандидат — панель пустая, пока не кликнешь. Поэтому авто-выбор
+    // первого убран; здесь только СНИМАЕМ выбор, если выбранный кандидат не входит в
+    // текущую вкладку (переключили этап / список опустел). Явный клик и ?entity= работают.
+    if (
+      selectedCandidateId !== null &&
+      !tabFilteredCandidates.some((candidate) => candidate.id === selectedCandidateId)
+    ) {
+      setSelectedCandidateId(null);
     }
   }, [selectedCandidateId, tabFilteredCandidates, pendingDeepLinkEntity]);
 
@@ -1201,14 +1203,9 @@ export default function RecruiterFunnelsPage() {
     }
   }, [newTagName, newTagColor, selectedCandidate?.entity_id]);
 
-  // Auto-select first candidate when tab changes
-  useEffect(() => {
-    // Диплинк из URL побеждает авто-первого (см. выше) — пока он не разрешён, ждём.
-    if (pendingDeepLinkEntity != null) return;
-    if (tabFilteredCandidates.length > 0 && !selectedCandidateId) {
-      setSelectedCandidateId(tabFilteredCandidates[0].id);
-    }
-  }, [tabFilteredCandidates, pendingDeepLinkEntity]);
+  // Авто-выбор первого кандидата УБРАН (фидбек Марии 2026-08-25): справа панель
+  // пустая, пока пользователь сам не кликнет кандидата или не придёт по ?entity=.
+  // Снятие выбора при уходе из вкладки — в эффекте выше.
 
   // Handlers
   const toggleGroup = (userId: number) => {
