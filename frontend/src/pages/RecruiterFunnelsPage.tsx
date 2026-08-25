@@ -1059,10 +1059,14 @@ export default function RecruiterFunnelsPage() {
     // воронках. Если выбранного нет в текущей вкладке (переключили этап) — открываем
     // первого. Явный клик по кандидату и ?entity= работают как раньше.
     if (!selectedCandidateId || !tabFilteredCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
-      setSelectedCandidateId(tabFilteredCandidates[0].id);
+      // Берём ПЕРВОГО из ОТОБРАЖАЕМОГО (отсортированного по свежести) списка, а не из
+      // сырого tabFilteredCandidates — иначе выбирался не тот, кто визуально сверху
+      // (Мария: «открывает последнюю, а не первую»).
+      const first = orderedCandidates.list[0] || tabFilteredCandidates[0];
+      setSelectedCandidateId(first.id);
       setDetailTab('resume');
     }
-  }, [selectedCandidateId, tabFilteredCandidates, pendingDeepLinkEntity]);
+  }, [selectedCandidateId, tabFilteredCandidates, orderedCandidates, pendingDeepLinkEntity]);
 
 
   // Load cross-vacancy activity feed when entity changes
@@ -1240,9 +1244,11 @@ export default function RecruiterFunnelsPage() {
     )
       return;
     if (tabFilteredCandidates.length > 0 && !selectedCandidateId) {
-      setSelectedCandidateId(tabFilteredCandidates[0].id);
+      // Первый из ОТОБРАЖАЕМОГО списка (по свежести), а не из сырого массива.
+      const first = orderedCandidates.list[0] || tabFilteredCandidates[0];
+      setSelectedCandidateId(first.id);
     }
-  }, [tabFilteredCandidates, pendingDeepLinkEntity]);
+  }, [tabFilteredCandidates, orderedCandidates, pendingDeepLinkEntity]);
 
   // Handlers
   const toggleGroup = (userId: number) => {
