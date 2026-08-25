@@ -248,8 +248,8 @@ export default function StatusesPage() {
         switch (rule.op) {
           case "set": return !isBlank(cell);
           case "not_set": return isBlank(cell);
-          case "is": return cell === rule.value;
-          case "is_not": return cell !== rule.value;
+          case "is": return cell.toLowerCase() === rule.value.trim().toLowerCase();
+          case "is_not": return cell.toLowerCase() !== rule.value.trim().toLowerCase();
           case "contains": return cell.toLowerCase().includes(rule.value.toLowerCase());
           default: return true;
         }
@@ -388,27 +388,23 @@ export default function StatusesPage() {
                         </select>
 
                         {spec?.needsValue ? (
-                          rule.op === "contains" ? (
+                          <>
+                            {/* Обычное текстовое поле. Подсказки через datalist:
+                                значения из таблицы под рукой, но вписать можно
+                                что угодно, включая ещё не встречавшееся. */}
                             <input
                               className="hf-statuses-rule-value"
+                              list={`vals-${rule.id}`}
                               value={rule.value}
-                              placeholder="текст"
+                              placeholder="значение"
                               onChange={(e) => patchRule(rule.id, { value: e.target.value })}
                             />
-                          ) : (
-                            <select
-                              className="hf-statuses-rule-value"
-                              value={rule.value}
-                              onChange={(e) => patchRule(rule.id, { value: e.target.value })}
-                            >
-                              <option value="">выберите значение</option>
+                            <datalist id={`vals-${rule.id}`}>
                               {valuesFor(rule.key).map((v) => (
-                                <option key={v.value} value={v.value}>
-                                  {v.value} ({v.count})
-                                </option>
+                                <option key={v.value} value={v.value} />
                               ))}
-                            </select>
-                          )
+                            </datalist>
+                          </>
                         ) : (
                           <span className="hf-statuses-rule-value hf-statuses-rule-value-off" />
                         )}
