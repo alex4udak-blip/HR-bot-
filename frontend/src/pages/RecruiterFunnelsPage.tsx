@@ -419,7 +419,9 @@ export default function RecruiterFunnelsPage() {
     // (isPersonallyActive) — назначенный, ещё не нажавший «Взять в работу»,
     // видит её в «Заявки», а не здесь, даже если статус уже open (её взял
     // кто-то другой из назначенных).
-    if (!isHrAdmin && user) {
+    // Наблюдатель (is_readonly) — ментор: видит ВСЕ воронки, а не только личные,
+    // поэтому его этот фильтр не касается (бэк уже отдаёт ему все вакансии).
+    if (!isHrAdmin && !user?.is_readonly && user) {
       result = result.filter((v) => isPersonallyActive(v, user.id));
     }
     if (statusFilter !== 'all') {
@@ -571,12 +573,15 @@ export default function RecruiterFunnelsPage() {
   //  • Иначе обычный рекрутёр (hr/member) — сервер сам решает (undefined): на
   //    «скрытой» воронке видит своих, на «Видна коллегам» — всех.
   //  • СУПЕРАДМИН по умолчанию видит ВСЕХ; свитчер фильтрует на конкретного.
+  //  • НАБЛЮДАТЕЛЬ (is_readonly) — ментор, должен видеть ВСЕХ по умолчанию (как
+  //    суперадмин), иначе admin-наблюдатель скоупился на СВОЙ id и видел пустую
+  //    воронку («на этом этапе пока нет кандидатов»). Свитчер по-прежнему фильтрует.
   //  • АДМИН/ОВНЕР по умолчанию — только свои; через свитчер может выбрать любого.
   const candidateScopeRecruiterId = superadminOnlyMine
     ? (user?.id ?? undefined)
     : !isHrAdmin
       ? undefined
-      : isSuperadmin
+      : (isSuperadmin || user?.is_readonly)
         ? (selectedRecruiterFilter ?? undefined)
         : (selectedRecruiterFilter != null ? selectedRecruiterFilter : (user?.id ?? undefined));
   const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
