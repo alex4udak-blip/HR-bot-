@@ -36,13 +36,13 @@ import { useAuthStore } from '@/stores/authStore';
 import { useFunnelFilterStore } from '@/stores/funnelFilterStore';
 import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
-import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink } from '@/services/api/entities';
+import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink, updateEntity } from '@/services/api/entities';
 import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds } from '@/utils/vacancy';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
-import { readHeadlineTags, HeadlineTagChip } from '@/components/entities/headlineTags';
+import { readHeadlineTags, HeadlineTagChip, HEADLINE_TAG_COLORS, HEADLINE_TAG_COLOR_KEYS, type HeadlineTag } from '@/components/entities/headlineTags';
 import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import CandidateHandoverModal from '@/components/vacancies/CandidateHandoverModal';
@@ -308,6 +308,10 @@ export default function RecruiterFunnelsPage() {
   const [entityTags, setEntityTags] = useState<TagType[]>([]);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [newTagName, setNewTagName] = useState('');
+  // Яркие теги-ярлыки у имени (редактор в воронке).
+  const [showHlInput, setShowHlInput] = useState(false);
+  const [hlText, setHlText] = useState('');
+  const [hlColor, setHlColor] = useState('pink');
   const [newTagColor, setNewTagColor] = useState(TAG_PALETTE[0].color);
   const [creatingTag, setCreatingTag] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
@@ -1621,6 +1625,49 @@ export default function RecruiterFunnelsPage() {
     };
   }, [selectedCandidate, entityExtraData, dupCard]);
 
+  // ---- Яркие теги-ярлыки у имени: редактирование прямо в воронке ----
+  const hlTags = readHeadlineTags(entityExtraData);
+  const hlReadonly = !!user?.is_readonly;
+  const saveHeadlineTags = async (next: HeadlineTag[]) => {
+    const eid = selectedCandidate?.entity_id;
+    if (!eid) return;
+    const prevExtra = entityExtraData;
+    // Оптимистично: обновляем и extra_data (шапка), и элемент списка (чип у имени).
+    setEntityExtraData({ ...(entityExtraData || {}), headline_tags: next });
+    setCandidates((items) =>
+      items.map((c) =>
+        c.entity_id === eid ? { ...c, entity_headline_tags: next } : c,
+      ),
+    );
+    try {
+      await updateEntity(eid, { extra_data: { headline_tags: next } });
+    } catch {
+      setEntityExtraData(prevExtra);
+      setCandidates((items) =>
+        items.map((c) =>
+          c.entity_id === eid
+            ? { ...c, entity_headline_tags: readHeadlineTags(prevExtra) }
+            : c,
+        ),
+      );
+      toast.error('Ошибка сохранения тега');
+    }
+  };
+  const addHeadlineTag = async () => {
+    const text = hlText.trim();
+    if (!text) return;
+    if (hlTags.some((t) => t.text.toLowerCase() === text.toLowerCase())) {
+      toast.error('Такой тег уже есть');
+      return;
+    }
+    setShowHlInput(false);
+    setHlText('');
+    await saveHeadlineTags([...hlTags, { text, color: hlColor }]);
+  };
+  const removeHeadlineTag = async (index: number) => {
+    await saveHeadlineTags(hlTags.filter((_, i) => i !== index));
+  };
+
   // «Первичный» блок = заявка на текущую вакансию воронки (если определима),
   // иначе первый блок активности. Его applicationId/events/vacancyTitle уходят в
   // живой контейнер; статус живого = статус самого кандидата (его текущий этап).
@@ -2815,6 +2862,67 @@ export default function RecruiterFunnelsPage() {
                                       onHired={() => { if (selectedVacancyId) loadCandidates(selectedVacancyId, true); }}
                                     />
                                     <StaffStatusBadge entityId={selectedCandidate.entity_id} status={selectedCandidate.stage} />
+                                    {/* Яркие теги-ярлыки у имени — редактируются прямо в воронке. */}
+                                    {hlTags.map((t, i) => (
+                                      <HeadlineTagChip
+                                        key={i}
+                                        tag={t}
+                                        onRemove={hlReadonly ? undefined : () => removeHeadlineTag(i)}
+                                      />
+                                    ))}
+                                    {!hlReadonly && !showHlInput && (
+                                      <button
+                                        type="button"
+                                        onClick={() => { setShowHlInput(true); setHlText(''); }}
+                                        className="inline-flex items-center gap-1 rounded-full border border-dashed border-[color:var(--hf-main-300)] px-2.5 py-[3px] text-[12px] font-medium text-[var(--hf-main-500)] transition-colors hover:border-[color:var(--hf-main-500)] hover:text-[var(--hf-main-800)]"
+                                      >
+                                        <span className="text-[14px] leading-none">+</span> тег
+                                      </button>
+                                    )}
+                                    {!hlReadonly && showHlInput && (
+                                      <div className="inline-flex items-center gap-2 rounded-[10px] border border-[color:var(--hf-main-200)] bg-[var(--hf-white)] px-2 py-1.5">
+                                        <input
+                                          autoFocus
+                                          value={hlText}
+                                          onChange={(e) => setHlText(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') { e.preventDefault(); addHeadlineTag(); }
+                                            if (e.key === 'Escape') { setShowHlInput(false); setHlText(''); }
+                                          }}
+                                          placeholder="Напр. перформер"
+                                          maxLength={24}
+                                          className="w-32 bg-transparent text-[13px] text-[var(--hf-main-900)] outline-none placeholder:text-[var(--hf-main-500)]"
+                                        />
+                                        <div className="flex items-center gap-1">
+                                          {HEADLINE_TAG_COLOR_KEYS.map((ck) => (
+                                            <button
+                                              key={ck}
+                                              type="button"
+                                              onClick={() => setHlColor(ck)}
+                                              title={ck}
+                                              className={clsx('h-4 w-4 rounded-full transition-transform', hlColor === ck ? 'scale-110 ring-2 ring-[color:var(--hf-main-500)] ring-offset-1' : 'hover:scale-110')}
+                                              style={{ background: HEADLINE_TAG_COLORS[ck].text }}
+                                            />
+                                          ))}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={addHeadlineTag}
+                                          disabled={!hlText.trim()}
+                                          className="inline-flex h-[26px] items-center rounded-[6px] bg-[var(--hf-main-900)] px-2.5 text-[12px] font-medium !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] disabled:opacity-60"
+                                        >
+                                          Добавить
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => { setShowHlInput(false); setHlText(''); }}
+                                          title="Отмена"
+                                          className="inline-flex h-[26px] items-center rounded-[6px] px-1.5 text-[var(--hf-main-500)] hover:text-[var(--hf-main-800)]"
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
                                   {(() => {
                                     // funnelCard обогащён полным Entity (dupCard) — берём оттуда с
