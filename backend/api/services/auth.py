@@ -5,7 +5,7 @@ import hashlib
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, and_
+from sqlalchemy import select, update, and_, case
 from fastapi import Depends, HTTPException, status, Cookie, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -440,18 +440,45 @@ async def create_superadmin_if_not_exists(db: AsyncSession):
     logger.info("Data migration to default organization complete")
 
 
-async def get_user_org(user: User, db: AsyncSession) -> Optional[Organization]:
-    """Get user's current organization (first one for now).
+def org_membership_priority():
+    """Порядок выбора «основной» org-записи пользователя при НЕСКОЛЬКИХ членствах:
+    owner > admin > hr > member; при равенстве роли — самая НОВАЯ запись.
 
-    Superadmin может оказаться без OrgMember-записи (init не отработал,
-    запись удалена руками и т.д.) — в этом случае возвращаем самую старую
-    организацию, иначе org-scoped endpoint-ы (например /projects) падают 400.
+    ЗАЧЕМ: раньше get_user_org брал просто «самую старую» org-запись, а login/me —
+    ПРОИЗВОЛЬНУЮ (.first() без сортировки). У мульти-орг юзера (напр. старого юзера
+    с легаси-членством в пустой организации) это давало РАЗНЫЕ орги: фронт видел роль
+    из одной (admin+наблюдатель, баннер), а вакансии/кандидаты скоупились на другую
+    (пустую) → «0 вакансий, 0 рекрутеров» у наблюдателя-админа. Единый порядок во ВСЕХ
+    запросах (get_user_org + login/me/refresh) заставляет их сходиться на ОДНУ орг —
+    ту, где у юзера наибольшая роль (его рабочая), а не «самую старую».
+    """
+    return [
+        case(
+            (OrgMember.role == OrgRole.owner, 0),
+            (OrgMember.role == OrgRole.admin, 1),
+            (OrgMember.role == OrgRole.hr, 2),
+            else_=3,
+        ),
+        # При равной роли — САМАЯ НОВАЯ запись: текущий рабочий орг обычно добавлен
+        # позже легаси-членства, так фикс покрывает и случай «в обоих оргах admin».
+        OrgMember.created_at.desc(),
+    ]
+
+
+async def get_user_org(user: User, db: AsyncSession) -> Optional[Organization]:
+    """Get user's current organization.
+
+    Выбираем «основную» org-запись по приоритету роли (см. org_membership_priority),
+    а НЕ просто самую старую — иначе у мульти-орг юзера скоуп уезжал в легаси-орг.
+    Superadmin может оказаться без OrgMember-записи (init не отработал, запись удалена
+    руками) — в этом случае возвращаем самую старую организацию, иначе org-scoped
+    endpoint-ы (например /projects) падают 400.
     """
     result = await db.execute(
         select(Organization)
         .join(OrgMember, OrgMember.org_id == Organization.id)
         .where(OrgMember.user_id == user.id)
-        .order_by(OrgMember.created_at)
+        .order_by(*org_membership_priority())
         .limit(1)
     )
     org = result.scalar_one_or_none()

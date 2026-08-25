@@ -19,7 +19,8 @@ from ..services.auth import (
     create_refresh_token, validate_refresh_token, revoke_refresh_token,
     revoke_all_user_tokens, rotate_refresh_token, get_user_sessions,
     get_refresh_token_record, create_short_lived_access_token,
-    ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS, _hash_token
+    ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS, _hash_token,
+    org_membership_priority
 )
 from ..services.password_policy import validate_password
 from ..limiter import limiter
@@ -170,7 +171,7 @@ async def login(
     org_role = None
     is_readonly = False
     org_member_result = await db.execute(
-        select(OrgMember.role, OrgMember.is_readonly).where(OrgMember.user_id == authenticated_user.id)
+        select(OrgMember.role, OrgMember.is_readonly).where(OrgMember.user_id == authenticated_user.id).order_by(*org_membership_priority())
     )
     org_member = org_member_result.first()
     if org_member:
@@ -432,7 +433,7 @@ async def get_me(
     org_role = None
     is_readonly = False
     org_member_result = await db.execute(
-        select(OrgMember.role, OrgMember.is_readonly).where(OrgMember.user_id == user.id)
+        select(OrgMember.role, OrgMember.is_readonly).where(OrgMember.user_id == user.id).order_by(*org_membership_priority())
     )
     org_member = org_member_result.first()
     if org_member:
@@ -682,7 +683,7 @@ async def telegram_webapp_login(
     )
 
     org_role = (await db.execute(
-        select(OrgMember.role).where(OrgMember.user_id == user.id).limit(1)
+        select(OrgMember.role).where(OrgMember.user_id == user.id).order_by(*org_membership_priority()).limit(1)
     )).scalar_one_or_none()
 
     return {
@@ -785,7 +786,7 @@ async def telegram_webapp_bind(
     )
 
     org_role = (await db.execute(
-        select(OrgMember.role).where(OrgMember.user_id == user.id).limit(1)
+        select(OrgMember.role).where(OrgMember.user_id == user.id).order_by(*org_membership_priority()).limit(1)
     )).scalar_one_or_none()
 
     return {
