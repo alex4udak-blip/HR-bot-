@@ -495,15 +495,23 @@ async def has_full_database_access(user: User, org_id: int, db: AsyncSession) ->
     if user.role == UserRole.superadmin:
         return True
 
-    # Только org owner/admin (hr исключён — он ограниченный рекрутёр).
+    # Org owner/admin — полный доступ. ПЛЮС «Наблюдатель» (is_readonly=True): менторам
+    # нужно ВИДЕТЬ всё (все вакансии/воронки/кандидаты), поэтому read-only участник
+    # получает полный ЧИТАЮЩИЙ доступ независимо от org_role (даже если он member).
+    # Запись у него всё равно заблокирована в get_current_user (403 на любой не-GET),
+    # так что расширение видимости безопасно. Без этого наблюдатель по шаринг-ссылке
+    # видел пустую воронку («0 вакансий»). hr (рекрутёр) без read-only — НЕ полный доступ.
     result = await db.execute(
-        select(OrgMember.id, OrgMember.role).where(
+        select(OrgMember.role, OrgMember.is_readonly).where(
             OrgMember.org_id == org_id,
             OrgMember.user_id == user.id,
-            OrgMember.role.in_([OrgRole.owner, OrgRole.admin])
         )
     )
-    return result.first() is not None
+    row = result.first()
+    if row is None:
+        return False
+    member_role, member_readonly = row
+    return member_role in (OrgRole.owner, OrgRole.admin) or bool(member_readonly)
 
 
 # === Helper functions for role-based access control ===
