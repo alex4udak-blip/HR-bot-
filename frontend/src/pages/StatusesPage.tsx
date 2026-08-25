@@ -86,10 +86,28 @@ const fmt = (iso: string | null) => {
 /** Колонки, по которым можно фильтровать. */
 const FILTERABLE = COLUMNS.filter((c) => c.filter) as { key: FilterKey; label: string }[];
 
-/** Изначально не отмечено ничего: таблица показывает всех. */
-const DEFAULT_FILTERS: FilterKey[] = [];
+const FILTERS_STORAGE_KEY = "hf-statuses-rules";
 
-const FILTERS_STORAGE_KEY = "hf-statuses-filters";
+/** Операторы как в конструкторе фильтров ClickUp. */
+type FilterOp = "is" | "is_not" | "contains" | "set" | "not_set";
+
+const OPS: { value: FilterOp; label: string; needsValue: boolean }[] = [
+  { value: "is",       label: "равно",         needsValue: true },
+  { value: "is_not",   label: "не равно",      needsValue: true },
+  { value: "contains", label: "содержит",      needsValue: true },
+  { value: "set",      label: "заполнено",     needsValue: false },
+  { value: "not_set",  label: "не заполнено",  needsValue: false },
+];
+
+interface FilterRule {
+  id: string;
+  key: FilterKey;
+  op: FilterOp;
+  value: string;
+}
+
+let ruleSeq = 0;
+const newRuleId = () => `r${(ruleSeq += 1)}`;
 
 /** Пустая ячейка рисуется как «—», поэтому прочерк тоже считаем пустотой. */
 const isBlank = (v: string) => !v.trim() || v.trim() === "—";
@@ -127,38 +145,35 @@ export default function StatusesPage() {
   const [folder, setFolder] = useUrlTab<string>("folder", "all");
   const [q, setQ] = useState("");
 
-  // Какие фильтры показаны. Раньше поле висело у каждой колонки — на широкой
-  // таблице это одиннадцать пустых полей, среди которых не видно, по чему
-  // реально идёт отбор. Набор запоминаем: у каждого HR свой рабочий срез.
-  const [shownFilters, setShownFilters] = useState<Set<FilterKey>>(() => {
+  // Конструктор фильтров повторяет ClickUp: список правил
+  // «поле → оператор → значение», которые применяются вместе.
+  const [rules, setRules] = useState<FilterRule[]>(() => {
     try {
       const raw = localStorage.getItem(FILTERS_STORAGE_KEY);
       if (raw) {
-        const keys = (JSON.parse(raw) as string[]).filter(
-          (k): k is FilterKey => FILTERABLE.some((c) => c.key === k)
-        );
-        return new Set(keys);
+        return (JSON.parse(raw) as FilterRule[])
+          .filter((r) => FILTERABLE.some((c) => c.key === r.key) && OPS.some((o) => o.value === r.op))
+          .map((r) => ({ ...r, id: newRuleId() }));
       }
-    } catch { /* повреждённое значение — просто берём набор по умолчанию */ }
-    return new Set(DEFAULT_FILTERS);
+    } catch { /* повреждённое значение — начинаем без фильтров */ }
+    return [];
   });
   const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     try {
-      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify([...shownFilters]));
+      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(rules));
     } catch { /* приватный режим — переживём без сохранения */ }
-  }, [shownFilters]);
+  }, [rules]);
 
-  /** Отметить колонку — показать только тех, у кого она заполнена. */
-  const toggleFilter = (key: FilterKey) => {
-    setShownFilters((cur) => {
-      const next = new Set(cur);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+  const addRule = () =>
+    setRules((cur) => [...cur, { id: newRuleId(), key: "department", op: "is", value: "" }]);
+
+  const patchRule = (id: string, patch: Partial<FilterRule>) =>
+    setRules((cur) => cur.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  const dropRule = (id: string) => setRules((cur) => cur.filter((r) => r.id !== id));
+
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
 
@@ -222,11 +237,26 @@ export default function StatusesPage() {
     }
     // Отмеченная колонка = условие «у человека она заполнена». Несколько
     // отмеченных требуют заполненности КАЖДОЙ.
-    for (const key of shownFilters) {
-      out = out.filter((r) => !isBlank(cellText(r, key)));
+    // Правила применяются вместе (И) — как в ClickUp.
+    for (const rule of rules) {
+      const spec = OPS.find((o) => o.value === rule.op);
+      // Правило без выбранного значения ничего не отбирает: иначе только что
+      // добавленная строка мгновенно обнуляла бы таблицу.
+      if (spec?.needsValue && !rule.value) continue;
+      out = out.filter((r) => {
+        const cell = cellText(r, rule.key).trim();
+        switch (rule.op) {
+          case "set": return !isBlank(cell);
+          case "not_set": return isBlank(cell);
+          case "is": return cell === rule.value;
+          case "is_not": return cell !== rule.value;
+          case "contains": return cell.toLowerCase().includes(rule.value.toLowerCase());
+          default: return true;
+        }
+      });
     }
     return out;
-  }, [rows, q, shownFilters]);
+  }, [rows, q, rules]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: searched.length, [UNASSIGNED]: 0 };
@@ -247,7 +277,28 @@ export default function StatusesPage() {
     return searched.filter((r) => r.direction === folder);
   }, [searched, folder, folders]);
 
-  const activeCount = shownFilters.size;
+  /** Значения для выбора в правиле — те, что реально есть в таблице.
+   *  Считаем по строкам текущей папки и поиска, но БЕЗ учёта самих правил:
+   *  иначе, выбрав значение, человек терял бы возможность сменить его. */
+  const valuesFor = useCallback(
+    (key: FilterKey): { value: string; count: number }[] => {
+      const needle = q.trim().toLowerCase();
+      const map = new Map<string, number>();
+      for (const r of rows) {
+        if (needle && ![r.name, r.position, r.department_name, r.telegram, r.manager]
+          .filter(Boolean).some((v) => String(v).toLowerCase().includes(needle))) continue;
+        const v = cellText(r, key).trim();
+        if (isBlank(v)) continue;
+        map.set(v, (map.get(v) || 0) + 1);
+      }
+      return [...map.entries()]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => a.value.localeCompare(b.value, "ru"));
+    },
+    [rows, q]
+  );
+
+  const activeCount = rules.length;
 
   const grouped = useMemo(
     () => STATUSES.map((s) => ({ ...s, items: visible.filter((r) => r.status === s.key) })),
@@ -292,28 +343,90 @@ export default function StatusesPage() {
                 <div className="hf-statuses-picker-backdrop" onClick={() => setPickerOpen(false)} />
                 <div className="hf-statuses-picker">
                   <div className="hf-statuses-picker-head">
-                    <span>Фильтровать по колонкам</span>
-                    <div className="hf-statuses-picker-actions">
-                      <button onClick={() => setShownFilters(new Set(FILTERABLE.map((c) => c.key)))}>
-                        все
-                      </button>
-                      <button
-                        onClick={() => setShownFilters(new Set())}
-                      >
-                        ни одного
-                      </button>
-                    </div>
+                    <span>Фильтры</span>
+                    {rules.length > 0 && (
+                      <div className="hf-statuses-picker-actions">
+                        <button onClick={() => setRules([])}>очистить</button>
+                      </div>
+                    )}
                   </div>
-                  {FILTERABLE.map((c) => (
-                    <label key={c.key} className="hf-statuses-picker-item">
-                      <input
-                        type="checkbox"
-                        checked={shownFilters.has(c.key)}
-                        onChange={() => toggleFilter(c.key)}
-                      />
-                      <span>{FILTER_LABELS[c.key] || c.label}</span>
-                    </label>
-                  ))}
+
+                  {rules.length === 0 && (
+                    <div className="hf-statuses-rule-empty">
+                      Фильтров нет — показаны все сотрудники
+                    </div>
+                  )}
+
+                  {rules.map((rule) => {
+                    const spec = OPS.find((o) => o.value === rule.op);
+                    return (
+                      <div key={rule.id} className="hf-statuses-rule">
+                        <select
+                          className="hf-statuses-rule-field"
+                          value={rule.key}
+                          onChange={(e) =>
+                            patchRule(rule.id, { key: e.target.value as FilterKey, value: "" })
+                          }
+                        >
+                          {FILTERABLE.map((c) => (
+                            <option key={c.key} value={c.key}>
+                              {FILTER_LABELS[c.key] || c.label}
+                            </option>
+                          ))}
+                        </select>
+
+                        <select
+                          className="hf-statuses-rule-op"
+                          value={rule.op}
+                          onChange={(e) =>
+                            patchRule(rule.id, { op: e.target.value as FilterOp })
+                          }
+                        >
+                          {OPS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+
+                        {spec?.needsValue ? (
+                          rule.op === "contains" ? (
+                            <input
+                              className="hf-statuses-rule-value"
+                              value={rule.value}
+                              placeholder="текст"
+                              onChange={(e) => patchRule(rule.id, { value: e.target.value })}
+                            />
+                          ) : (
+                            <select
+                              className="hf-statuses-rule-value"
+                              value={rule.value}
+                              onChange={(e) => patchRule(rule.id, { value: e.target.value })}
+                            >
+                              <option value="">выберите значение</option>
+                              {valuesFor(rule.key).map((v) => (
+                                <option key={v.value} value={v.value}>
+                                  {v.value} ({v.count})
+                                </option>
+                              ))}
+                            </select>
+                          )
+                        ) : (
+                          <span className="hf-statuses-rule-value hf-statuses-rule-value-off" />
+                        )}
+
+                        <button
+                          className="hf-statuses-rule-drop"
+                          onClick={() => dropRule(rule.id)}
+                          title="Удалить фильтр"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  <button className="hf-statuses-rule-add" onClick={addRule}>
+                    <Plus size={14} /> Добавить фильтр
+                  </button>
                 </div>
               </>
             )}

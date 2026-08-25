@@ -9753,3 +9753,67 @@ body.performance-mode .glass-card:hover {
   border-color: var(--hf-cyan-500);
   color: var(--hf-white);
 }
+
+/* ── «Статусы»: конструктор фильтров (как в ClickUp) ─────────────────
+   Строка правила: поле → оператор → значение → удалить. */
+
+.hf-statuses-picker { min-width: 460px; }
+
+.hf-statuses-rule {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr 1.2fr 28px;
+  align-items: center;
+  gap: var(--hf-space-xxs);
+  padding: var(--hf-space-xxs) var(--hf-space-xs);
+}
+
+.hf-statuses-rule select,
+.hf-statuses-rule input {
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--hf-space-xxs);
+  background: var(--hf-white);
+  border: var(--hf-border-xs) solid var(--hf-main-200);
+  border-radius: var(--hf-radius-xs);
+  font-size: var(--hf-fs-4xs);
+  color: var(--hf-main-800);
+}
+.hf-statuses-rule select:focus,
+.hf-statuses-rule input:focus { outline: none; border-color: var(--hf-cyan-500); }
+
+/* «заполнено»/«не заполнено» значения не требуют — держим ширину сетки,
+   чтобы строки не прыгали при смене оператора */
+.hf-statuses-rule-value-off { display: block; }
+
+.hf-statuses-rule-drop {
+  display: grid;
+  place-items: center;
+  width: 26px; height: 26px;
+  border: none;
+  border-radius: var(--hf-radius-xs);
+  background: none;
+  color: var(--hf-main-400);
+  cursor: pointer;
+}
+.hf-statuses-rule-drop:hover { background: var(--hf-red-50, #fee2e2); color: #dc2626; }
+
+.hf-statuses-rule-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hf-space-xxs);
+  margin: var(--hf-space-xxs) var(--hf-space-xs) var(--hf-space-xs);
+  padding: var(--hf-space-xxs) var(--hf-space-xs);
+  border: var(--hf-border-xs) dashed var(--hf-main-300);
+  border-radius: var(--hf-radius-xs);
+  background: none;
+  font-size: var(--hf-fs-4xs);
+  color: var(--hf-main-700);
+  cursor: pointer;
+}
+.hf-statuses-rule-add:hover { border-color: var(--hf-cyan-500); color: var(--hf-cyan-700); }
+
+.hf-statuses-rule-empty {
+  padding: var(--hf-space-xs) var(--hf-space-xs) 0;
+  font-size: var(--hf-fs-5xs);
+  color: var(--hf-main-500);
+}
