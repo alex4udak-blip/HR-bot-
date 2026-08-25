@@ -180,8 +180,18 @@ export default function StatusesPage() {
     getDepartments(-1).then((d) => setDepartments(d as Department[])).catch(() => setDepartments([]));
     getBoardPositions().then(setPositions).catch(() => setPositions([]));
     getBoardManagers().then(setManagers).catch(() => setManagers([]));
+    // Вести сотрудника может только HR. В организации числятся все
+    // работники, и без фильтра в список попадали бы полсотни человек,
+    // среди которых нужного не найти.
     getOrgMembers()
-      .then((m) => setPeople(m.map((x) => ({ user_id: x.user_id, user_name: x.user_name }))))
+      .then((m) =>
+        setPeople(
+          m
+            .filter((x) => x.role === "owner" || x.role === "admin" || x.role === "hr")
+            .map((x) => ({ user_id: x.user_id, user_name: x.user_name }))
+            .sort((a, b) => (a.user_name || "").localeCompare(b.user_name || "", "ru"))
+        )
+      )
       .catch(() => setPeople([]));
   }, []);
 
@@ -911,6 +921,13 @@ function AssigneeCell({
         title={row.assignee_name || "не назначен"}
       >
         <option value="">—</option>
+        {/* назначенный ранее мог потерять роль HR — не теряем его из виду */}
+        {row.assignee_user_id != null &&
+          !people.some((p) => p.user_id === row.assignee_user_id) && (
+            <option value={row.assignee_user_id}>
+              {row.assignee_name || `#${row.assignee_user_id}`}
+            </option>
+          )}
         {people.map((p) => (
           <option key={p.user_id} value={p.user_id}>{p.user_name || `#${p.user_id}`}</option>
         ))}
