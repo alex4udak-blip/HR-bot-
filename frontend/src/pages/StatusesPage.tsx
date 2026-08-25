@@ -12,6 +12,8 @@ import {
 } from "@/services/api/staffBoard";
 import { uploadEntityFile, deleteEntityFile, downloadEntityFile } from "@/services/api/entities";
 import { getDepartments, type Department } from "@/services/api/auth";
+import { getBoardPositions, getBoardManagers } from "@/services/api/staffBoard";
+import { getOrgMembers } from "@/services/api/accessHub";
 import { useUrlTab } from "@/hooks/useUrlTab";
 
 /**
@@ -36,36 +38,44 @@ const STATUSES = [
 const UNASSIGNED = "__none__";
 
 type FilterKey =
-  | "name" | "position" | "department" | "telegram"
-  | "practice_start_date" | "department_start_date" | "manager"
-  | "w2" | "m1" | "m3" | "y1";
+  | "name" | "assignee" | "position" | "department" | "telegram"
+  | "practice_start_date" | "manager" | "department_start_date"
+  | "dept_done" | "w2" | "w2_done" | "m1" | "m1_done"
+  | "m3" | "m3_done" | "y1" | "y1_done" | "dismissal_date";
 
-const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean }[] = [
+/** Порядок и состав повторяют доску «Сотрудники» в ClickUp: после каждой
+ *  вехи идёт колонка-отметка «пройдено» (в ClickUp она называлась так же,
+ *  но в скобках). «2 недели» — наша дополнительная веха, в ClickUp её нет. */
+const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narrow?: boolean }[] = [
   { key: "name",                  label: "Сотрудник",         filter: true },
+  { key: "assignee",              label: "HR",                filter: true },
   { key: "position",              label: "Должность",         filter: true },
   { key: "department",            label: "Отдел",             filter: true },
   { key: "telegram",              label: "Telegram",          filter: true },
   { key: "practice_start_date",   label: "Выход на практику", filter: true },
-  { key: "department_start_date", label: "Выход в отдел",     filter: true },
   { key: "manager",               label: "Рук-ль",            filter: true },
-  { key: "offer",                 label: "Оффер",             filter: false },
+  { key: "offer",                 label: "Оффер",             filter: false, narrow: true },
+  { key: "department_start_date", label: "Выход в отдел",     filter: true },
+  { key: "dept_done",             label: "✓",                 filter: true, narrow: true },
   { key: "w2",                    label: "2 недели",          filter: true },
+  { key: "w2_done",               label: "✓",                 filter: true, narrow: true },
   { key: "m1",                    label: "1 мес",             filter: true },
+  { key: "m1_done",               label: "✓",                 filter: true, narrow: true },
   { key: "m3",                    label: "3 мес",             filter: true },
+  { key: "m3_done",               label: "✓",                 filter: true, narrow: true },
   { key: "y1",                    label: "1 год",             filter: true },
+  { key: "y1_done",               label: "✓",                 filter: true, narrow: true },
+  { key: "dismissal_date",        label: "Дата увольнения",   filter: true },
 ];
 
-/** Колонки, по которым вообще можно фильтровать. */
-const FILTERABLE = COLUMNS.filter((c) => c.filter) as { key: FilterKey; label: string }[];
-
-/** Изначально не выбрано ничего: таблица показывает всех, а любой
- *  отмеченный фильтр сразу сужает выборку. */
-const DEFAULT_FILTERS: FilterKey[] = [];
-
-const FILTERS_STORAGE_KEY = "hf-statuses-filters";
-
-/** Пустая ячейка рисуется как «—», поэтому прочерк тоже считаем пустотой. */
-const isBlank = (v: string) => !v.trim() || v.trim() === "—";
+/** Подписи для списка «Фильтры»: там «✓» ничего не сказало бы. */
+const FILTER_LABELS: Partial<Record<FilterKey, string>> = {
+  dept_done: "Выход в отдел ✓",
+  w2_done: "2 недели ✓",
+  m1_done: "1 мес ✓",
+  m3_done: "3 мес ✓",
+  y1_done: "1 год ✓",
+};
 
 const fmt = (iso: string | null) => {
   if (!iso) return "";
@@ -73,13 +83,32 @@ const fmt = (iso: string | null) => {
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("ru-RU");
 };
 
+/** Колонки, по которым можно фильтровать. */
+const FILTERABLE = COLUMNS.filter((c) => c.filter) as { key: FilterKey; label: string }[];
+
+/** Изначально не отмечено ничего: таблица показывает всех. */
+const DEFAULT_FILTERS: FilterKey[] = [];
+
+const FILTERS_STORAGE_KEY = "hf-statuses-filters";
+
+/** Пустая ячейка рисуется как «—», поэтому прочерк тоже считаем пустотой. */
+const isBlank = (v: string) => !v.trim() || v.trim() === "—";
+
 const cellText = (r: BoardRow, key: FilterKey): string => {
   switch (key) {
     case "name": return r.name || "";
+    case "assignee": return r.assignee_name || "";
     case "position": return r.position || "";
     case "department": return r.department_name || "";
     case "telegram": return r.telegram || "";
     case "manager": return r.manager || "";
+    // Отметки — «заполнено» значит «отмечено», чтобы фильтр по колонке
+    // отвечал на вопрос «у кого веха пройдена».
+    case "dept_done": return r.dept_done ? "✓" : "";
+    case "w2_done": return r.w2_done ? "✓" : "";
+    case "m1_done": return r.m1_done ? "✓" : "";
+    case "m3_done": return r.m3_done ? "✓" : "";
+    case "y1_done": return r.y1_done ? "✓" : "";
     default: return fmt(r[key] as string | null);
   }
 };
@@ -88,6 +117,11 @@ export default function StatusesPage() {
   const [rows, setRows] = useState<BoardRow[]>([]);
   const [folders, setFolders] = useState<BoardFolder[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  // Справочники для выпадающих списков: должности и руководители собираются
+  // из уже существующих значений, HR — из участников организации.
+  const [positions, setPositions] = useState<string[]>([]);
+  const [managers, setManagers] = useState<string[]>([]);
+  const [people, setPeople] = useState<{ user_id: number; user_name: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   // Папка живёт в URL (?folder=) — работают браузерные «Назад/Вперёд».
   const [folder, setFolder] = useUrlTab<string>("folder", "all");
@@ -144,6 +178,11 @@ export default function StatusesPage() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     getDepartments(-1).then((d) => setDepartments(d as Department[])).catch(() => setDepartments([]));
+    getBoardPositions().then(setPositions).catch(() => setPositions([]));
+    getBoardManagers().then(setManagers).catch(() => setManagers([]));
+    getOrgMembers()
+      .then((m) => setPeople(m.map((x) => ({ user_id: x.user_id, user_name: x.user_name }))))
+      .catch(() => setPeople([]));
   }, []);
 
   /** Патч строки: оптимистично + откат при ошибке. */
@@ -262,7 +301,7 @@ export default function StatusesPage() {
                         checked={shownFilters.has(c.key)}
                         onChange={() => toggleFilter(c.key)}
                       />
-                      <span>{c.label}</span>
+                      <span>{FILTER_LABELS[c.key] || c.label}</span>
                     </label>
                   ))}
                 </div>
@@ -323,6 +362,9 @@ export default function StatusesPage() {
                           row={r}
                           folders={folders}
                           departments={departments}
+                          positions={positions}
+                          managers={managers}
+                          people={people}
                           saving={savingId === r.entity_id}
                           onPatch={patch}
                           onReload={load}
@@ -502,11 +544,14 @@ function FolderSidebar({
 // ============================================================
 
 function Row({
-  row, folders, departments, saving, onPatch, onReload,
+  row, folders, departments, positions, managers, people, saving, onPatch, onReload,
 }: {
   row: BoardRow;
   folders: BoardFolder[];
   departments: Department[];
+  positions: string[];
+  managers: string[];
+  people: { user_id: number; user_name: string | null }[];
   saving: boolean;
   onPatch: (row: BoardRow, body: BoardRowUpdate) => Promise<void>;
   onReload: () => void;
@@ -527,8 +572,20 @@ function Row({
         </select>
       </td>
 
+      <td className="hf-statuses-td hf-statuses-td-narrow">
+        <AssigneeCell
+          row={row}
+          people={people}
+          onSave={(v) => onPatch(row, { assignee_user_id: v })}
+        />
+      </td>
+
       <td className="hf-statuses-td">
-        <TextCell value={row.position} onSave={(v) => onPatch(row, { position: v })} />
+        <PillCell
+          value={row.position}
+          options={positions}
+          onSave={(v) => onPatch(row, { position: v })}
+        />
       </td>
 
       <td className="hf-statuses-td">
@@ -553,28 +610,54 @@ function Row({
       </td>
 
       <td className="hf-statuses-td">
+        <PillCell
+          value={row.manager}
+          options={managers}
+          onSave={(v) => onPatch(row, { manager: v })}
+        />
+      </td>
+
+      <td className="hf-statuses-td hf-statuses-td-narrow">
+        <OfferCell row={row} onReload={onReload} />
+      </td>
+
+      <td className="hf-statuses-td">
         <DateCell value={row.department_start_date} onSave={(v) => onPatch(row, { department_start_date: v })} />
       </td>
-
-      <td className="hf-statuses-td">
-        <TextCell value={row.manager} onSave={(v) => onPatch(row, { manager: v })} />
-      </td>
-
-      <td className="hf-statuses-td">
-        <OfferCell row={row} onReload={onReload} />
+      <td className="hf-statuses-td hf-statuses-td-narrow">
+        <DoneCell on={row.dept_done} onToggle={(v) => onPatch(row, { dept_done: v })} />
       </td>
 
       <td className="hf-statuses-td">
         <DateCell value={row.w2} auto={row.w2_auto} onSave={(v) => onPatch(row, { w2: v })} />
       </td>
+      <td className="hf-statuses-td hf-statuses-td-narrow">
+        <DoneCell on={row.w2_done} onToggle={(v) => onPatch(row, { w2_done: v })} />
+      </td>
+
       <td className="hf-statuses-td">
         <DateCell value={row.m1} auto={row.m1_auto} onSave={(v) => onPatch(row, { m1: v })} />
       </td>
+      <td className="hf-statuses-td hf-statuses-td-narrow">
+        <DoneCell on={row.m1_done} onToggle={(v) => onPatch(row, { m1_done: v })} />
+      </td>
+
       <td className="hf-statuses-td">
         <DateCell value={row.m3} auto={row.m3_auto} onSave={(v) => onPatch(row, { m3: v })} />
       </td>
+      <td className="hf-statuses-td hf-statuses-td-narrow">
+        <DoneCell on={row.m3_done} onToggle={(v) => onPatch(row, { m3_done: v })} />
+      </td>
+
       <td className="hf-statuses-td">
         <DateCell value={row.y1} auto={row.y1_auto} onSave={(v) => onPatch(row, { y1: v })} />
+      </td>
+      <td className="hf-statuses-td hf-statuses-td-narrow">
+        <DoneCell on={row.y1_done} onToggle={(v) => onPatch(row, { y1_done: v })} />
+      </td>
+
+      <td className="hf-statuses-td">
+        <DateCell value={row.dismissal_date} onSave={(v) => onPatch(row, { dismissal_date: v })} />
       </td>
     </tr>
   );
@@ -728,5 +811,133 @@ function OfferCell({ row, onReload }: { row: BoardRow; onReload: () => void }) {
         </button>
       )}
     </div>
+  );
+}
+
+
+// ============================================================
+// Ячейки, перенесённые из ClickUp
+// ============================================================
+
+/** Цвет пилюли выводим из самого текста: одинаковое значение всегда одного
+ *  цвета, а новые должности/отделы получают свой без ручной настройки. */
+function pillHue(value: string): number {
+  let h = 0;
+  for (let i = 0; i < value.length; i += 1) h = (h * 31 + value.charCodeAt(i)) % 360;
+  return h;
+}
+
+/** Значение из списка с цветной пилюлей — как «Должность» и «Рук-ль» в ClickUp.
+ *
+ *  Ввод свободный намеренно: в ClickUp список пополняется на лету, и жёсткий
+ *  выбор не дал бы завести новую должность, не трогая справочник. */
+function PillCell({
+  value, options, onSave,
+}: { value: string | null; options: string[]; onSave: (v: string | null) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+  const listId = useRef(`pill-${Math.random().toString(36).slice(2)}`).current;
+
+  useEffect(() => { setDraft(value || ""); }, [value]);
+
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next !== (value || "")) onSave(next || null);
+  };
+
+  if (editing) {
+    return (
+      <>
+        <input
+          className="hf-statuses-input"
+          autoFocus
+          list={listId}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") { setDraft(value || ""); setEditing(false); }
+          }}
+        />
+        <datalist id={listId}>
+          {options.map((o) => <option key={o} value={o} />)}
+        </datalist>
+      </>
+    );
+  }
+
+  if (!value) {
+    return (
+      <button className="hf-statuses-empty-cell" onClick={() => setEditing(true)}>—</button>
+    );
+  }
+
+  const hue = pillHue(value);
+  return (
+    <button
+      className="hf-statuses-pill"
+      onClick={() => setEditing(true)}
+      style={{
+        background: `hsl(${hue} 70% 94%)`,
+        color: `hsl(${hue} 55% 32%)`,
+        borderColor: `hsl(${hue} 60% 84%)`,
+      }}
+      title={value}
+    >
+      {value}
+    </button>
+  );
+}
+
+/** HR, ведущий сотрудника. В ClickUp это Assignee с аватаром-инициалами. */
+function AssigneeCell({
+  row, people, onSave,
+}: {
+  row: BoardRow;
+  people: { user_id: number; user_name: string | null }[];
+  onSave: (v: number | null) => void;
+}) {
+  const initials = (row.assignee_name || "")
+    .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+
+  return (
+    <div className="hf-statuses-assignee">
+      <select
+        className="hf-statuses-assignee-select"
+        value={row.assignee_user_id ?? ""}
+        onChange={(e) => onSave(e.target.value ? Number(e.target.value) : null)}
+        title={row.assignee_name || "не назначен"}
+      >
+        <option value="">—</option>
+        {people.map((p) => (
+          <option key={p.user_id} value={p.user_id}>{p.user_name || `#${p.user_id}`}</option>
+        ))}
+      </select>
+      {initials ? (
+        <span
+          className="hf-statuses-avatar"
+          style={{ background: `hsl(${pillHue(row.assignee_name || "")} 60% 45%)` }}
+        >
+          {initials}
+        </span>
+      ) : (
+        <span className="hf-statuses-avatar hf-statuses-avatar-empty">—</span>
+      )}
+    </div>
+  );
+}
+
+/** Отметка «веха пройдена» — в ClickUp это колонки в скобках. */
+function DoneCell({ on, onToggle }: { on: boolean; onToggle: (v: boolean) => void }) {
+  return (
+    <button
+      className={clsx("hf-statuses-done", on && "hf-statuses-done-on")}
+      onClick={() => onToggle(!on)}
+      title={on ? "Пройдено" : "Не отмечено"}
+    >
+      {on ? "✓" : ""}
+    </button>
   );
 }

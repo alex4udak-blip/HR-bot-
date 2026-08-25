@@ -9677,3 +9677,79 @@ body.performance-mode .glass-card:hover {
   color: var(--hf-cyan-700);
   font-weight: var(--hf-fw-medium);
 }
+
+/* ── «Статусы»: колонки, перенесённые из ClickUp ─────────────────────
+   Пилюли, аватар ведущего HR и отметки вех повторяют вид доски
+   «Сотрудники», чтобы HR не переучивался при переходе. */
+
+/* Узкие колонки: отметки, оффер, аватар */
+.hf-statuses-td-narrow { width: 44px; text-align: center; }
+
+.hf-statuses-pill {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px var(--hf-space-xs);
+  border: var(--hf-border-xs) solid transparent;
+  border-radius: 999px;
+  font-size: var(--hf-fs-4xs);
+  font-weight: var(--hf-fw-medium);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.hf-statuses-pill:hover { filter: brightness(0.96); }
+
+.hf-statuses-empty-cell {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--hf-main-400);
+  font-size: var(--hf-fs-4xs);
+  cursor: pointer;
+}
+.hf-statuses-empty-cell:hover { color: var(--hf-cyan-600); }
+
+/* Ведущий HR: аватар с инициалами поверх невидимого select */
+.hf-statuses-assignee { position: relative; display: grid; place-items: center; }
+.hf-statuses-assignee-select {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.hf-statuses-avatar {
+  display: grid;
+  place-items: center;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  font-size: var(--hf-fs-6xs);
+  font-weight: var(--hf-fw-semibold);
+  color: var(--hf-white);
+  pointer-events: none;
+}
+.hf-statuses-avatar-empty {
+  background: var(--hf-main-100);
+  color: var(--hf-main-400);
+}
+
+/* Отметка «веха пройдена» */
+.hf-statuses-done {
+  display: grid;
+  place-items: center;
+  width: 20px; height: 20px;
+  margin: 0 auto;
+  border: var(--hf-border-xs) solid var(--hf-main-300);
+  border-radius: var(--hf-radius-xs);
+  background: var(--hf-white);
+  font-size: var(--hf-fs-5xs);
+  color: transparent;
+  cursor: pointer;
+}
+.hf-statuses-done:hover { border-color: var(--hf-cyan-500); }
+.hf-statuses-done-on {
+  background: var(--hf-cyan-500);
+  border-color: var(--hf-cyan-500);
+  color: var(--hf-white);
+}

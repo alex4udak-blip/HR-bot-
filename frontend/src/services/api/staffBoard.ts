@@ -31,6 +31,16 @@ export interface BoardRow {
   m1_auto: boolean;
   m3_auto: boolean;
   y1_auto: boolean;
+  /** HR, ведущий сотрудника (колонка Assignee в ClickUp) */
+  assignee_user_id: number | null;
+  assignee_name: string | null;
+  dismissal_date: string | null;
+  /** отметки «веха пройдена» — парные колонки в скобках из ClickUp */
+  dept_done: boolean;
+  w2_done: boolean;
+  m1_done: boolean;
+  m3_done: boolean;
+  y1_done: boolean;
   offer_file_id: number | null;
   offer_file_name: string | null;
 }
@@ -48,6 +58,13 @@ export interface BoardRowUpdate {
   m1?: string | null;
   m3?: string | null;
   y1?: string | null;
+  assignee_user_id?: number | null;
+  dismissal_date?: string | null;
+  dept_done?: boolean;
+  w2_done?: boolean;
+  m1_done?: boolean;
+  m3_done?: boolean;
+  y1_done?: boolean;
 }
 
 // ─── Папки-направления ──────────────────────────────────────
@@ -90,4 +107,10 @@ export async function updateBoardRow(
 export async function getBoardPositions(): Promise<string[]> {
   const { data } = await api.get('/staff-board/positions');
   return data;
+}
+
+/** Справочник руководителей — уже встречающиеся значения, как и должности. */
+export async function getBoardManagers(): Promise<string[]> {
+  const { data } = await api.get('/staff-board/managers');
+  return data || [];
 }

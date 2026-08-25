@@ -64,6 +64,18 @@ _K_M1 = "m1_date"
 _K_M3 = "m3_date"
 _K_Y1 = "y1_date"
 
+# Перенос из ClickUp: HR, ведущий сотрудника; дата увольнения; отметки
+# «веха пройдена» рядом с каждой датой (в ClickUp это колонки в скобках).
+_K_ASSIGNEE = "assignee_user_id"
+_K_DISMISSAL = "dismissal_date"
+_K_DONE = {
+    "dept_done": "department_start_done",
+    "w2_done": "w2_done",
+    "m1_done": "m1_done",
+    "m3_done": "m3_done",
+    "y1_done": "y1_done",
+}
+
 # Автозаполнение из данных, импортированных из ClickUp. Импорт кладёт кастомные
 # поля в extra_data как есть, с префиксом "cf:" — поэтому у уже залитых карточек
 # даты/должность/руководитель зачастую УЖЕ есть, просто под другими ключами.
@@ -78,6 +90,13 @@ _CF_Y1 = "cf:1 год"
 _CF_POSITION = "cf:Должность"
 _CF_DEPARTMENT = "cf:Отдел"
 _CF_TELEGRAM = "cf:Telegram"
+_CF_DISMISSAL = "cf:Дата увольнения"
+_CF_DONE = {
+    "dept_done": "cf:(Выход в отдел)",
+    "m1_done": "cf:(1 мес)",
+    "m3_done": "cf:(3 мес)",
+    "y1_done": "cf:(1 год)",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -119,6 +138,16 @@ class BoardRow(BaseModel):
     y1_auto: bool = True
     offer_file_id: Optional[int] = None
     offer_file_name: Optional[str] = None
+    # HR, ведущий сотрудника (колонка Assignee в ClickUp)
+    assignee_user_id: Optional[int] = None
+    assignee_name: Optional[str] = None
+    dismissal_date: Optional[str] = None
+    # Отметки «пройдено» рядом с каждой вехой
+    dept_done: bool = False
+    w2_done: bool = False
+    m1_done: bool = False
+    m3_done: bool = False
+    y1_done: bool = False
 
 
 class BoardRowUpdate(BaseModel):
@@ -139,6 +168,13 @@ class BoardRowUpdate(BaseModel):
     m1: Optional[str] = None
     m3: Optional[str] = None
     y1: Optional[str] = None
+    assignee_user_id: Optional[int] = None
+    dismissal_date: Optional[str] = None
+    dept_done: Optional[bool] = None
+    w2_done: Optional[bool] = None
+    m1_done: Optional[bool] = None
+    m3_done: Optional[bool] = None
+    y1_done: Optional[bool] = None
 
     model_config = {"extra": "forbid"}
 
@@ -207,6 +243,33 @@ def _save_folders(org: Organization, folders: List[Dict[str, str]]) -> None:
     flag_modified(org, "settings")
 
 
+def _as_int(v) -> Optional[int]:
+    try:
+        return int(v) if v is not None and str(v).strip() != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_done(ex: dict, key: str) -> bool:
+    """Отметка «веха пройдена».
+
+    Наш ключ — булев. Импортированное из ClickUp приходит текстом: там в
+    колонке стояла галочка или название месяца, и любое непустое значение
+    означало «пройдено».
+    """
+    own = ex.get(_K_DONE[key])
+    if isinstance(own, bool):
+        return own
+    if own is not None:
+        return str(own).strip().lower() not in ("", "false", "0", "нет", "-", "—")
+    cf = _CF_DONE.get(key)
+    if cf:
+        raw = ex.get(cf)
+        if raw is not None:
+            return str(raw).strip().lower() not in ("", "false", "0", "нет", "-", "—")
+    return False
+
+
 def _first_telegram(entity: Entity) -> Optional[str]:
     handles = entity.telegram_usernames
     if isinstance(handles, list) and handles:
@@ -214,7 +277,11 @@ def _first_telegram(entity: Entity) -> Optional[str]:
     return None
 
 
-def _row_from_entity(entity: Entity, offer: Optional[EntityFile]) -> BoardRow:
+def _row_from_entity(
+    entity: Entity,
+    offer: Optional[EntityFile],
+    assignee_names: Optional[Dict[int, str]] = None,
+) -> BoardRow:
     ex = _extra(entity)
     dept_start = _parse_date(_pick(ex, _K_DEPT_START, _CF_DEPT_START))
 
@@ -261,6 +328,14 @@ def _row_from_entity(entity: Entity, offer: Optional[EntityFile]) -> BoardRow:
         manager=_pick(ex, _K_MANAGER, _CF_MANAGER),
         w2=w2, m1=m1, m3=m3, y1=y1,
         w2_auto=w2_auto, m1_auto=m1_auto, m3_auto=m3_auto, y1_auto=y1_auto,
+        assignee_user_id=_as_int(ex.get(_K_ASSIGNEE)),
+        assignee_name=assignee_names.get(_as_int(ex.get(_K_ASSIGNEE))) if assignee_names else None,
+        dismissal_date=_iso(_parse_date(_pick(ex, _K_DISMISSAL, _CF_DISMISSAL))),
+        dept_done=_as_done(ex, "dept_done"),
+        w2_done=_as_done(ex, "w2_done"),
+        m1_done=_as_done(ex, "m1_done"),
+        m3_done=_as_done(ex, "m3_done"),
+        y1_done=_as_done(ex, "y1_done"),
         offer_file_id=offer.id if offer else None,
         offer_file_name=offer.file_name if offer else None,
     )
@@ -419,6 +494,38 @@ async def list_positions(
     return sorted(seen.values(), key=str.lower)
 
 
+@router.get("/managers", response_model=List[str])
+async def list_managers(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Справочник руководителей — уже встречающиеся значения.
+
+    Отдельной таблицы руководителей нет: в ClickUp это был выпадающий список
+    со свободным набором имён. Собираем distinct по карточкам, включая
+    импортированное значение, чтобы список не оказался пустым на старте.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    rows = (await db.execute(
+        select(Entity.extra_data).where(
+            Entity.org_id == org.id, Entity.extra_data.is_not(None)
+        )
+    )).scalars().all()
+
+    seen: set = set()
+    for ex in rows:
+        if not isinstance(ex, dict):
+            continue
+        val = _pick(ex, _K_MANAGER, _CF_MANAGER)
+        if val:
+            seen.add(str(val).strip())
+    return sorted(seen, key=lambda v: v.lower())
+
+
 @router.get("/rows", response_model=List[BoardRow])
 async def list_rows(
     db: AsyncSession = Depends(get_db),
@@ -463,7 +570,22 @@ async def list_rows(
     for f_id, ent_id, f_name in offer_rows:
         offers.setdefault(ent_id, type("F", (), {"id": f_id, "file_name": f_name})())
 
-    return [_row_from_entity(e, offers.get(e.id)) for e in entities]
+    # Имена ведущих HR — одним запросом, чтобы не ходить в БД на каждую строку
+    assignee_ids = {
+        _as_int((e.extra_data or {}).get(_K_ASSIGNEE))
+        for e in entities
+        if isinstance(e.extra_data, dict)
+    }
+    assignee_ids.discard(None)
+    assignee_names: Dict[int, str] = {}
+    if assignee_ids:
+        assignee_names = {
+            uid: nm for uid, nm in (await db.execute(
+                select(User.id, User.name).where(User.id.in_(assignee_ids))
+            )).all()
+        }
+
+    return [_row_from_entity(e, offers.get(e.id), assignee_names) for e in entities]
 
 
 @router.patch("/rows/{entity_id}", response_model=BoardRow)
@@ -536,6 +658,8 @@ async def update_row(
         "m1": _K_M1,
         "m3": _K_M3,
         "y1": _K_Y1,
+        "dismissal_date": _K_DISMISSAL,
+        "assignee_user_id": _K_ASSIGNEE,
     }
     touched_extra = False
     ex = dict(_extra(entity))
@@ -547,13 +671,29 @@ async def update_row(
             ex.pop(key, None)
         else:
             # даты нормализуем к YYYY-MM-DD
-            if key in (_K_PRACTICE, _K_DEPT_START, _K_W2, _K_M1, _K_M3, _K_Y1):
+            if key in (_K_PRACTICE, _K_DEPT_START, _K_W2, _K_M1, _K_M3, _K_Y1, _K_DISMISSAL):
                 parsed = _parse_date(value)
                 if not parsed:
                     raise HTTPException(400, f"Некорректная дата в поле {field}")
                 ex[key] = parsed.isoformat()
             else:
                 ex[key] = str(value).strip()
+        touched_extra = True
+
+    # Отметки «пройдено» — булевы, отдельно от дат: пустое значение здесь
+    # означает «снять галочку», а не «не трогать».
+    for field, key in _K_DONE.items():
+        if field not in payload:
+            continue
+        if payload[field]:
+            ex[key] = True
+        else:
+            ex.pop(key, None)
+            # Импортированное из ClickUp значение перебило бы снятую галочку —
+            # гасим и его, иначе отметку невозможно было бы убрать.
+            cf = _CF_DONE.get(field)
+            if cf and cf in ex:
+                ex[cf] = ""
         touched_extra = True
 
     if touched_extra:
@@ -602,5 +742,13 @@ async def update_row(
         .limit(1)
     )).scalar_one_or_none()
 
+    # Имя ведущего HR — иначе после сохранения в ячейке осталось бы пусто
+    names: Dict[int, str] = {}
+    a_id = _as_int(_extra(entity).get(_K_ASSIGNEE))
+    if a_id:
+        nm = (await db.execute(select(User.name).where(User.id == a_id))).scalar_one_or_none()
+        if nm:
+            names[a_id] = nm
+
     logger.info(f"Board row updated: entity {entity_id} by user {current_user.id}")
-    return _row_from_entity(entity, offer)
+    return _row_from_entity(entity, offer, names)
