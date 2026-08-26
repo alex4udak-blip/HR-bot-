@@ -15,6 +15,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if path.startswith("/api/") or path.startswith("/health"):
             response.headers["X-Content-Type-Options"] = "nosniff"
+            # НИКОГДА не кэшируем API-ответы. Они персональные и динамические.
+            # Без этого Safari/WebKit агрессивно кэширует same-origin GET /api/*
+            # и отдаёт УСТАРЕВШЕЕ тело даже после обычного reload — напр. пустой
+            # /api/vacancies, закэшированный ДО выдачи доступа наблюдателю, из-за
+            # чего юзер навсегда видел «0 вакансий» (Егор, Safari, 2026-08-26).
+            # no-store заставляет браузер всегда идти на сервер.
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
             return response
 
         response.headers["X-Content-Type-Options"] = "nosniff"
