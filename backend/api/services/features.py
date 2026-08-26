@@ -70,7 +70,7 @@ async def can_access_feature(
     # Check if user is owner in the organization
     # Only select specific columns to avoid issues if has_full_access column doesn't exist yet
     org_member_result = await db.execute(
-        select(OrgMember.id, OrgMember.role).where(
+        select(OrgMember.id, OrgMember.role, OrgMember.is_readonly).where(
             OrgMember.user_id == user_id,
             OrgMember.org_id == org_id
         )
@@ -79,6 +79,14 @@ async def can_access_feature(
     if org_member:
         org_role = org_member.role.value if hasattr(org_member.role, 'value') else str(org_member.role)
         if org_role == "owner" or org_member.role == OrgRole.owner:
+            return True
+        # Наблюдатель (is_readonly) — ментор: read-only доступ КО ВСЕМ фичам,
+        # независимо от отдела. Иначе department-based фиче-гейт (candidate_database
+        # выключен у «Практики») давал 403 на /api/vacancies и все HR-эндпоинты →
+        # практик-лид с флагом наблюдателя видел пустые воронки/кандидатов, хотя
+        # HR-раздел ему открыт. Запись всё равно режется в get_current_user (403 на
+        # не-GET по HR), поэтому bypass фиче-гейта безопасен — он открывает только чтение.
+        if getattr(org_member, 'is_readonly', False):
             return True
 
     # 2. Default features are always available
