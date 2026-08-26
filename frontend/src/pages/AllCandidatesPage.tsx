@@ -1953,6 +1953,14 @@ const InfoTab = memo(function InfoTab({
   const [activityBlocks, setActivityBlocks] = useState<VacancyActivityBlock[]>(
     [],
   );
+  // Тик для ГАРАНТИРОВАННОГО пересчёта containers после мутаций notes. Заметки
+  // мержатся в card.extra_data.notes НАПРЯМУЮ (мутация по ссылке, не setState),
+  // поэтому containers (useMemo по [primaryBlock, card, …]) сам по себе не
+  // пересчитывается — ссылка card не меняется. Раньше рассчитывали на побочный
+  // loadActivity→activityBlocks→primaryBlock, но он ненадёжен (добавленный
+  // коммент появлялся только после F5). Бампаем тик руками сразу после мутации.
+  const [notesVersion, setNotesVersion] = useState(0);
+  const bumpNotes = useCallback(() => setNotesVersion((v) => v + 1), []);
   const loadActivity = useCallback(async () => {
     if (!card.id) {
       setActivityBlocks([]);
@@ -2021,7 +2029,10 @@ const InfoTab = memo(function InfoTab({
         liveVacancyTitle: getVacancyStageLabel(card) ?? null,
         allEntityFiles: allEntityFiles || [],
       }),
-    [primaryBlock, status, card, allEntityFiles],
+    // notesVersion — форс-пересчёт после мутаций card.extra_data.notes (add/edit/delete),
+    // которые меняют данные in-place без смены ссылки card.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [primaryBlock, status, card, allEntityFiles, notesVersion],
   );
 
   // ── Тонкие обёртки для CandidateVacancyCard. Смену этапа делает ТОЛЬКО живой
@@ -2072,6 +2083,7 @@ const InfoTab = memo(function InfoTab({
           ? card.extra_data.notes
           : [];
         card.extra_data.notes = [...existing, resp.note];
+        bumpNotes(); // мгновенно показать коммент (мутация card не триггерит ре-рендер)
         toast.success("Комментарий сохранён");
       } catch (err) {
         console.error("Failed to save comment:", err);
@@ -2090,12 +2102,13 @@ const InfoTab = memo(function InfoTab({
       try {
         const fresh = await getEntity(card.id);
         if (fresh.extra_data) card.extra_data = fresh.extra_data;
+        bumpNotes(); // авторитетное состояние с сервера → форс-пересчёт таймлайна
       } catch {
         /* ignore */
       }
       await loadActivity();
     },
-    [card, loadActivity],
+    [card, loadActivity, bumpNotes],
   );
 
   const cardReact = useCallback(
@@ -2156,6 +2169,7 @@ const InfoTab = memo(function InfoTab({
       try {
         const fresh = await getEntity(entityId);
         if (fresh.extra_data) card.extra_data = fresh.extra_data;
+        bumpNotes(); // авторитетное состояние с сервера → форс-пересчёт таймлайна
       } catch {
         /* ignore */
       }
@@ -2166,7 +2180,7 @@ const InfoTab = memo(function InfoTab({
       // уже обновлённый card.extra_data.notes. Тот же приём, что и в cardComment.
       await loadActivity();
     },
-    [card, loadActivity],
+    [card, loadActivity, bumpNotes],
   );
 
   // Редактирование текста заметки — бэк (PATCH /entities/{id}/notes/{id}) уже
@@ -2179,6 +2193,7 @@ const InfoTab = memo(function InfoTab({
           card.extra_data.notes = (
             card.extra_data.notes as Array<Record<string, unknown>>
           ).map((n) => (String(n.id) === noteId ? note : n));
+          bumpNotes();
         }
         toast.success("Комментарий обновлён");
       } catch (err) {
@@ -2191,7 +2206,7 @@ const InfoTab = memo(function InfoTab({
       }
       await loadActivity();
     },
-    [card, loadActivity],
+    [card, loadActivity, bumpNotes],
   );
 
   const cardRemoveFromVacancy = useCallback(
