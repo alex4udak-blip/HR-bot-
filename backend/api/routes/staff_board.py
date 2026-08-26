@@ -53,6 +53,12 @@ BOARD_STATUSES: List[EntityStatus] = [
 
 _SETTINGS_KEY = "staff_directions"
 
+# Пока человек на практике, отдела и должности у него ещё нет — обе колонки
+# показывают «Сандбокс» и не редактируются. Значение вычисляем на бэкенде, а
+# не на фронте: иначе фильтр по должности искал бы по пустому полю, хотя в
+# таблице видно «Сандбокс».
+SANDBOX_LABEL = "Сандбокс"
+
 # Ключи в extra_data. practice_start_date / department_transfer_date —
 # унаследованы от PracticeListPage, не переименовывать.
 _K_DIRECTION = "direction"
@@ -312,6 +318,11 @@ def _row_from_entity(
     # поэтому подставляем его только как подпись, department_id остаётся пустым.
     position = entity.position or _pick(ex, _CF_POSITION)
     dept_name = entity.department.name if entity.department else _pick(ex, _CF_DEPARTMENT)
+
+    # На практике — всегда «Сандбокс», что бы ни лежало в карточке.
+    if status == EntityStatus.probation.value:
+        position = SANDBOX_LABEL
+        dept_name = SANDBOX_LABEL
     telegram = _first_telegram(entity) or (str(_pick(ex, _CF_TELEGRAM) or "").lstrip("@") or None)
 
     return BoardRow(
@@ -629,10 +640,14 @@ async def update_row(
         )
         entity.status = new_status
 
-    if "position" in payload:
+    # На практике должность и отдел зафиксированы как «Сандбокс» — правку
+    # молча игнорируем, чтобы значение нельзя было перебить в обход интерфейса.
+    locked_sandbox = entity.status == EntityStatus.probation
+
+    if "position" in payload and not locked_sandbox:
         entity.position = (payload["position"] or None)
 
-    if "department_id" in payload:
+    if "department_id" in payload and not locked_sandbox:
         dept_id = payload["department_id"]
         if dept_id is not None:
             dept = (await db.execute(

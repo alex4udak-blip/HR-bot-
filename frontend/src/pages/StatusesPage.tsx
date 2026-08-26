@@ -28,12 +28,18 @@ import { useUrlTab } from "@/hooks/useUrlTab";
  * Оформление — семейство .hf-statuses-* в index.css (HR-дизайн-система).
  */
 
+/** Порядок групп повторяет доску ClickUp: там сверху «Перевёлся», а
+ *  «Практика» замыкает список. */
 const STATUSES = [
-  { key: "probation",   label: "ПРАКТИКА"  },
   { key: "transferred", label: "ПЕРЕВЁЛСЯ" },
   { key: "dismissed",   label: "УВОЛЕН"    },
   { key: "quit",        label: "УВОЛИЛСЯ"  },
+  { key: "probation",   label: "ПРАКТИКА"  },
 ] as const;
+
+/** Пока человек на практике, отдела и должности нет — обе колонки
+ *  показывают «Сандбокс» и не редактируются. */
+const SANDBOX_LABEL = "Сандбокс";
 
 const UNASSIGNED = "__none__";
 
@@ -691,6 +697,8 @@ function Row({
   onStatus: (row: BoardRow, status: string) => Promise<void>;
   onReload: () => void;
 }) {
+  const sandbox = row.status === "probation";
+
   return (
     <tr className={clsx("hf-statuses-row", saving && "hf-statuses-row-saving")}>
       <td className="hf-statuses-td">
@@ -729,24 +737,36 @@ function Row({
       </td>
 
       <td className="hf-statuses-td">
-        <PillCell
-          value={row.position}
-          options={positions}
-          onSave={(v) => onPatch(row, { position: v })}
-        />
+        {sandbox ? (
+          <span className="hf-statuses-pill hf-statuses-pill-locked" title="Назначается автоматически на практике">
+            {SANDBOX_LABEL}
+          </span>
+        ) : (
+          <PillCell
+            value={row.position}
+            options={positions}
+            onSave={(v) => onPatch(row, { position: v })}
+          />
+        )}
       </td>
 
       <td className="hf-statuses-td">
-        <select
-          className="hf-statuses-select"
-          value={row.department_id ?? ""}
-          onChange={(e) => onPatch(row, { department_id: e.target.value ? Number(e.target.value) : null })}
-        >
-          <option value="">—</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
+        {sandbox ? (
+          <span className="hf-statuses-pill hf-statuses-pill-locked" title="Назначается автоматически на практике">
+            {SANDBOX_LABEL}
+          </span>
+        ) : (
+          <select
+            className="hf-statuses-select"
+            value={row.department_id ?? ""}
+            onChange={(e) => onPatch(row, { department_id: e.target.value ? Number(e.target.value) : null })}
+          >
+            <option value="">—</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        )}
       </td>
 
       <td className="hf-statuses-td">

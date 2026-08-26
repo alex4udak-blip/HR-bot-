@@ -9840,3 +9840,11 @@ body.performance-mode .glass-card:hover {
   margin-top: 2px;
   flex-wrap: wrap;
 }
+
+/* «Сандбокс» — значение назначено автоматически, менять нельзя */
+.hf-statuses-pill-locked {
+  background: var(--hf-main-100);
+  color: var(--hf-main-600);
+  border-color: var(--hf-main-200);
+  cursor: default;
+}
