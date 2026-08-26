@@ -267,6 +267,14 @@ export default function RecruiterFunnelsPage() {
 
   // ClickUp view: selected vacancy + candidates
   const selectedVacancyId = searchParams.get('v') ? Number(searchParams.get('v')) : null;
+  // Открыли по ШАРИНГ-ССЫЛКЕ на кандидата (в URL сразу есть и ?v=, и ?entity=).
+  // Реф фиксируется ОДИН раз на маунте (useRef игнорит повторные аргументы). В этом
+  // режиме грузим кандидатов БЕЗ скоупа по рекрутёру — иначе чужой кандидат (added
+  // другим рекрутёром) не попадает в список и окно пустое (баг Марии по ссылке).
+  // Обычную навигацию (зашёл на /my-funnels без ?entity=) это не трогает.
+  const arrivedViaSharedCandidateRef = useRef(
+    !!(searchParams.get('v') && searchParams.get('entity')),
+  );
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
@@ -534,6 +542,28 @@ export default function RecruiterFunnelsPage() {
     [vacancies, selectedVacancyId],
   );
 
+  // ШАРИНГ-ССЫЛКА без ?recruiter=: восстанавливаем «путь» воронки. Ссылка-дип-линк
+  // рекрутёра обычно вида ?v=176&entity=8913&stage=applied (БЕЗ recruiter) → сайдбар
+  // не знал владельца и показывал голое «Мои вакансии» вместо «Вакансии: Мария».
+  // Выводим владельца из самой вакансии (accepted_by/created_by) и подставляем в URL —
+  // дальше существующий механизм (?recruiter= → pickerOwnerId в Layout) поднимает
+  // контекст сайдбара. Только для шаринг-сессии, только когда вакансия уже загружена.
+  useEffect(() => {
+    if (!arrivedViaSharedCandidateRef.current) return;
+    if (searchParams.get('recruiter')) return;
+    if (!selectedVacancy) return;
+    const ownerId = getAcceptorIds(selectedVacancy)[0];
+    if (!ownerId) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('recruiter', String(ownerId));
+        return next;
+      },
+      { replace: true },
+    );
+  }, [selectedVacancy, searchParams, setSearchParams]);
+
   // Закрытая (архивная) вакансия открывается тем же полноценным окном, что и
   // активная (просмотр, резюме, история) — но любая попытка её изменить
   // (смена этапа, комментарий, файл, снятие с воронки) блокируется тостом.
@@ -577,7 +607,12 @@ export default function RecruiterFunnelsPage() {
   //    суперадмин), иначе admin-наблюдатель скоупился на СВОЙ id и видел пустую
   //    воронку («на этом этапе пока нет кандидатов»). Свитчер по-прежнему фильтрует.
   //  • АДМИН/ОВНЕР по умолчанию — только свои; через свитчер может выбрать любого.
-  const candidateScopeRecruiterId = superadminOnlyMine
+  //  • ШАРИНГ-ССЫЛКА (arrivedViaSharedCandidate): БЕЗ скоупа — показываем всю воронку
+  //    вакансии, чтобы кандидат из ссылки гарантированно был в списке (иначе у
+  //    админа/рекрутёра, скоупленного на себя, чужой кандидат не грузился → пусто).
+  const candidateScopeRecruiterId = arrivedViaSharedCandidateRef.current
+    ? undefined
+    : superadminOnlyMine
     ? (user?.id ?? undefined)
     : !isHrAdmin
       ? undefined
