@@ -177,6 +177,20 @@ export default function StatusesPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
 
+  /** Смена статуса. Перевод в «Уволен»/«Уволился» на бэкенде запускает
+   *  оффбординг: гасит аккаунт, отзывает сессии и отвязывает Telegram.
+   *  Молча это делать нельзя — сообщаем, что именно произошло. */
+  const changeStatus = async (row: BoardRow, status: string) => {
+    const label = STATUSES.find((s2) => s2.key === status)?.label || status;
+    await patch(row, { status });
+    if (status === "dismissed" || status === "quit") {
+      toast(
+        `${row.name} → ${label}. Аккаунт отключён, сессии сброшены, Telegram отвязан.`,
+        { icon: "⚠️", duration: 6000 }
+      );
+    }
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -486,6 +500,7 @@ export default function StatusesPage() {
                           people={people}
                           saving={savingId === r.entity_id}
                           onPatch={patch}
+                          onStatus={changeStatus}
                           onReload={load}
                         />
                       ))}
@@ -663,7 +678,7 @@ function FolderSidebar({
 // ============================================================
 
 function Row({
-  row, folders, departments, positions, managers, people, saving, onPatch, onReload,
+  row, folders, departments, positions, managers, people, saving, onPatch, onStatus, onReload,
 }: {
   row: BoardRow;
   folders: BoardFolder[];
@@ -673,22 +688,36 @@ function Row({
   people: { user_id: number; user_name: string | null }[];
   saving: boolean;
   onPatch: (row: BoardRow, body: BoardRowUpdate) => Promise<void>;
+  onStatus: (row: BoardRow, status: string) => Promise<void>;
   onReload: () => void;
 }) {
   return (
     <tr className={clsx("hf-statuses-row", saving && "hf-statuses-row-saving")}>
       <td className="hf-statuses-td">
         <div className="hf-statuses-name">{row.name}</div>
-        <select
-          className="hf-statuses-select hf-statuses-select-sub"
-          value={row.direction || ""}
-          onChange={(e) => onPatch(row, { direction: e.target.value || null })}
-        >
-          <option value="">— без направления —</option>
-          {folders.map((f) => (
-            <option key={f.id} value={f.id}>{f.name}</option>
-          ))}
-        </select>
+        <div className="hf-statuses-name-controls">
+          {/* Смена статуса прямо в строке: раньше перевести человека из
+              «Практики» в «Уволен» через интерфейс было нельзя вообще. */}
+          <select
+            className={clsx("hf-statuses-status", `hf-statuses-status-${row.status}`)}
+            value={row.status}
+            onChange={(e) => onStatus(row, e.target.value)}
+          >
+            {STATUSES.map((st) => (
+              <option key={st.key} value={st.key}>{st.label}</option>
+            ))}
+          </select>
+          <select
+            className="hf-statuses-select hf-statuses-select-sub"
+            value={row.direction || ""}
+            onChange={(e) => onPatch(row, { direction: e.target.value || null })}
+          >
+            <option value="">— без направления —</option>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+        </div>
       </td>
 
       <td className="hf-statuses-td hf-statuses-td-narrow">

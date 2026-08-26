@@ -9817,3 +9817,26 @@ body.performance-mode .glass-card:hover {
   font-size: var(--hf-fs-5xs);
   color: var(--hf-main-500);
 }
+
+/* Статус строки — цветная пилюля-селект, как заголовки групп */
+.hf-statuses-status {
+  padding: 1px var(--hf-space-xxs);
+  border: var(--hf-border-xs) solid transparent;
+  border-radius: 999px;
+  font-size: var(--hf-fs-6xs);
+  font-weight: var(--hf-fw-semibold);
+  letter-spacing: .02em;
+  cursor: pointer;
+}
+.hf-statuses-status-probation   { background: #fef3c7; color: #92400e; }
+.hf-statuses-status-transferred { background: #dcfce7; color: #166534; }
+.hf-statuses-status-dismissed   { background: #fee2e2; color: #991b1b; }
+.hf-statuses-status-quit        { background: #e0f2fe; color: #075985; }
+
+.hf-statuses-name-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-xxs);
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
