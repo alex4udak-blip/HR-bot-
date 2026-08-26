@@ -3111,6 +3111,7 @@ const InfoTab = memo(function InfoTab({
           addedAt={c.addedAt}
           recruiter={c.recruiter}
           readonly={c.origin === "merged" || readonly}
+          dimmed={c.origin === "merged"}
           stageOptions={stagePickerOptions}
           getStageLabel={getStackStageLabel}
           onChangeStage={cardChangeStage}

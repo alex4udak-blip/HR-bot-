@@ -158,6 +158,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   events,
   addedAt,
   readonly,
+  dimmed,
   stageOptions,
   getStageLabel,
   onChangeStage,
@@ -188,6 +189,12 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   addedAt?: string;
   // READ-ONLY (merged-контейнеры): без композера/чипов/смены этапа/удаления.
   readonly: boolean;
+  // ВИЗУАЛЬНОЕ приглушение (серая карточка) отдельно от readonly. Наблюдатель
+  // (is_readonly) блокирует действия (readonly=true), но карточка при этом должна
+  // оставаться ЦВЕТНОЙ/зелёной, а не серой — иначе всё сливается и не читается.
+  // Серым красим только реально неактивное: merged-снапшот/архив. Если не передан
+  // — падаем на readonly (старое поведение для воронок/архива не меняется).
+  dimmed?: boolean;
   stageOptions: Array<{ status: string; label: string }>;
   getStageLabel: (stage: string) => string;
   onChangeStage: (
@@ -289,7 +296,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   // (референс Huntflow: «Новые» серая → после взятия в работу зелёная).
   // + merged (readonly) — это исторический снапшот прошлого участия, не
   // текущая активность, поэтому всегда серая, а не зелёная.
-  const grayed = isRejectedStage(currentStage) || isPreviousSeries || readonly;
+  const grayed = isRejectedStage(currentStage) || isPreviousSeries || (dimmed ?? readonly);
   const stageCardStyle: CSSProperties = grayed
     ? GRAY_STAGE_CARD_STYLE
     : GREEN_STAGE_CARD_STYLE;
