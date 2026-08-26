@@ -12,7 +12,7 @@ import {
 } from "@/services/api/staffBoard";
 import { uploadEntityFile, deleteEntityFile, downloadEntityFile } from "@/services/api/entities";
 import { getDepartments, type Department } from "@/services/api/auth";
-import { getBoardPositions, getBoardManagers } from "@/services/api/staffBoard";
+import { getBoardPositions, getBoardManagers, importClickUpFolders } from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
 import { useUrlTab } from "@/hooks/useUrlTab";
 
@@ -543,6 +543,7 @@ function FolderSidebar({
   setFolders: (f: BoardFolder[]) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [newName, setNewName] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -671,9 +672,36 @@ function FolderSidebar({
           </button>
         </div>
       ) : (
-        <button className="hf-statuses-folder-add" onClick={() => setAdding(true)}>
-          <Plus size={14} /> Папка
-        </button>
+        <>
+          <button className="hf-statuses-folder-add" onClick={() => setAdding(true)}>
+            <Plus size={14} /> Папка
+          </button>
+          {/* Направлений обычно нет вовсе, а в ClickUp это готовый список
+              отделов — предлагаем завести их одним нажатием. Кнопку прячем,
+              как только направления появились, чтобы не мозолила глаза. */}
+          {folders.length === 0 && (
+            <button
+              className="hf-statuses-folder-add hf-statuses-folder-import"
+              disabled={importing}
+              onClick={async () => {
+                setImporting(true);
+                try {
+                  const fresh = await importClickUpFolders();
+                  setFolders(fresh);
+                  onChanged();
+                  toast.success("Направления заведены по отделам из ClickUp");
+                } catch (e: any) {
+                  toast.error(e?.response?.data?.detail || "Не удалось завести направления");
+                } finally {
+                  setImporting(false);
+                }
+              }}
+            >
+              {importing ? <Loader2 className="animate-spin" size={14} /> : <Plus size={14} />}
+              Отделы из ClickUp
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -702,8 +730,10 @@ function Row({
   return (
     <tr className={clsx("hf-statuses-row", saving && "hf-statuses-row-saving")}>
       <td className="hf-statuses-td">
-        <div className="hf-statuses-name">{row.name}</div>
+        {/* Всё в одну строку: раньше имя, статус и направление шли друг под
+            другом, строка вырастала втрое и таблицу «трясло» при листании. */}
         <div className="hf-statuses-name-controls">
+          <span className="hf-statuses-name">{row.name}</span>
           {/* Смена статуса прямо в строке: раньше перевести человека из
               «Практики» в «Уволен» через интерфейс было нельзя вообще. */}
           <select

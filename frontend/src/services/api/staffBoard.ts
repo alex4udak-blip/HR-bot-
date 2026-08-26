@@ -114,3 +114,10 @@ export async function getBoardManagers(): Promise<string[]> {
   const { data } = await api.get('/staff-board/managers');
   return data || [];
 }
+
+/** Завести направления по отделам из ClickUp. Идемпотентно: повторный
+ *  вызов не плодит дубликаты, уже существующие по названию пропускаются. */
+export async function importClickUpFolders(): Promise<BoardFolder[]> {
+  const { data } = await api.post('/staff-board/folders/import-clickup');
+  return data || [];
+}

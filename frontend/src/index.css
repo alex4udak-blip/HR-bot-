@@ -9837,9 +9837,28 @@ body.performance-mode .glass-card:hover {
   display: flex;
   align-items: center;
   gap: var(--hf-space-xxs);
-  margin-top: 2px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
+/* Имя не даём разгонять строку — длинное подрезаем многоточием */
+.hf-statuses-name-controls .hf-statuses-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Направление — приглушённый компактный селект, не тянет на себя внимание */
+.hf-statuses-name-controls .hf-statuses-select-sub {
+  flex: 0 0 auto;
+  max-width: 150px;
+  height: 22px;
+  padding: 0 2px;
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--hf-fs-6xs);
+  color: var(--hf-main-500);
+}
+.hf-statuses-name-controls .hf-statuses-select-sub:hover { border-color: var(--hf-main-200); }
 
 /* «Сандбокс» — значение назначено автоматически, менять нельзя */
 .hf-statuses-pill-locked {
@@ -9848,3 +9867,11 @@ body.performance-mode .glass-card:hover {
   border-color: var(--hf-main-200);
   cursor: default;
 }
+
+/* Разовая кнопка: завести направления по отделам из ClickUp */
+.hf-statuses-folder-import {
+  border-style: solid;
+  border-color: var(--hf-cyan-500);
+  color: var(--hf-cyan-700);
+}
+.hf-statuses-folder-import:disabled { opacity: .6; cursor: default; }

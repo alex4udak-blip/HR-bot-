@@ -59,6 +59,22 @@ _SETTINGS_KEY = "staff_directions"
 # таблице видно «Сандбокс».
 SANDBOX_LABEL = "Сандбокс"
 
+# Справочники, перенесённые с доски ClickUp «Сотрудники». Нужны, чтобы
+# выпадающие списки не были пустыми на старте: своих значений в базе ещё нет,
+# а набирать их заново вручную — лишняя работа для HR.
+CLICKUP_POSITIONS = [
+    "Abuse Manager", "ASA", "BizDev", "COO", "IMM", "SEO",
+    "Traffic Researcher", "UA", "Аналитик Google Play", "Байер",
+    "Вайбкодер", "Другой юнит", "Маркетолог", "Поиск аккаунтов",
+    "Тим лид", "УБТ", "Фармер",
+]
+
+CLICKUP_DEPARTMENTS = [
+    "ASA", "Facebook", "Google Ads", "iOS Product", "RND маркетинг",
+    "RND разработка", "SEO отдел", "Другой юнит", "Моб разработка",
+    "Операционный отдел", "Push отдел", "Фарм отдел",
+]
+
 # Ключи в extra_data. practice_start_date / department_transfer_date —
 # унаследованы от PracticeListPage, не переименовывать.
 _K_DIRECTION = "direction"
@@ -368,6 +384,38 @@ async def list_folders(
     return _get_folders(org)
 
 
+@router.post("/folders/import-clickup", response_model=List[Folder])
+async def import_clickup_folders(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Завести направления по отделам из ClickUp.
+
+    Идемпотентно: уже существующие по названию пропускаются, поэтому кнопку
+    можно нажать повторно без риска наплодить дубликаты.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    folders = _get_folders(org)
+    have = {f["name"].strip().lower() for f in folders}
+    added = 0
+    for name in CLICKUP_DEPARTMENTS:
+        if name.strip().lower() in have:
+            continue
+        folders.append({"id": uuid.uuid4().hex[:12], "name": name})
+        have.add(name.strip().lower())
+        added += 1
+
+    if added:
+        _save_folders(org, folders)
+        await db.commit()
+    logger.info(f"ClickUp folders imported: {added} by user {current_user.id}")
+    return [Folder(**f) for f in folders]
+
+
 @router.post("/folders", response_model=Folder, status_code=201)
 async def create_folder(
     data: FolderCreate,
@@ -498,10 +546,13 @@ async def list_positions(
     )).scalars().all()
 
     seen: Dict[str, str] = {}
+    # Сначала свои значения — они «главнее» при совпадении без учёта регистра
     for value in rows:
         clean = (value or "").strip()
         if clean and clean.lower() not in seen:
             seen[clean.lower()] = clean
+    for value in CLICKUP_POSITIONS:
+        seen.setdefault(value.lower(), value)
     return sorted(seen.values(), key=str.lower)
 
 
