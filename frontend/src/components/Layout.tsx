@@ -1254,11 +1254,16 @@ export default function Layout() {
       });
     }
 
-    // HR block — superadmin, owner, admin (HR Admin), hr (рекрутер)
-    // member (обычные сотрудники) и Practice-only НЕ видят HR блок
+    // HR block — superadmin, owner, admin (HR Admin), hr (рекрутер),
+    // а также НАБЛЮДАТЕЛЬ (is_readonly) — ментор с read-only доступом к HR.
+    // Наблюдатель видит HR-блок ДАЖЕ будучи practice-only (практик-лид, который
+    // одновременно ментор HR): иначе он застревал в интерн-продукте и не мог
+    // посмотреть кандидатов. Запись всё равно режется на бэке (403) и баннером.
+    // Обычный сотрудник (member без наблюдателя) и practice-only НЕ видят HR.
+    const isObserver = user?.is_readonly === true;
     const isHrRole =
-      isPlatformAdmin || user?.org_role === "admin" || user?.org_role === "hr";
-    if (isHrRole && !isPracticeOnly) {
+      isPlatformAdmin || user?.org_role === "admin" || user?.org_role === "hr" || isObserver;
+    if (isHrRole && (!isPracticeOnly || isObserver)) {
       const hrItems: { path: string; icon: LucideIcon; label: string }[] = [];
       hrItems.push({
         path: "/all-candidates",

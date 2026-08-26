@@ -67,6 +67,12 @@ export default function RoleRoute({ children, allow, feature }: RoleRouteProps) 
     (roles.has('admin') && (user.org_role === 'admin' || user.org_role === 'owner' || user.role === 'superadmin')) ||
     // Org hr = HR recruiter
     (roles.has('hr_role') && (user.org_role === 'hr' || user.org_role === 'admin' || user.org_role === 'owner' || user.role === 'superadmin')) ||
+    // Наблюдатель (is_readonly) — ментор с ЧИТАЮЩИМ доступом к HR. Пускаем на
+    // любой роут, открытый рекрутёрам ('hr'/'hr_all' → добавляет 'hr_role'):
+    // кандидаты/статусы/воронки/аналитика/заявки. Управленческие 'hr_admin'-роуты
+    // (экспорт/импорт/корзина) сюда НЕ входят — они не добавляют 'hr_role'. Любая
+    // запись всё равно блокируется на бэке (403) и баннером «Режим наблюдателя».
+    (user.is_readonly === true && roles.has('hr_role')) ||
     // Department-based: член депта 'Практика'
     (roles.has('practice') && isPracticeMember);
 
