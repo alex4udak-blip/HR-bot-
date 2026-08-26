@@ -2839,9 +2839,10 @@ export default function Layout() {
         role="main"
         aria-label="Main content"
       >
-        {/* Постоянный баннер режима наблюдателя (read-only). Заменяет назойливый
-            тост: висит сверху всегда, пока юзер is_readonly. */}
-        {user?.is_readonly && (
+        {/* Баннер режима наблюдателя (read-only) — ТОЛЬКО в HR/админ-разделах, где
+            он действительно только смотрит. В своём рабочем домене (Практика/проекты)
+            наблюдатель-практик-лид полноценно работает, поэтому там баннер не висит. */}
+        {user?.is_readonly && (routeBlock === "hr" || routeBlock === "admin") && (
           <div
             className="px-4 py-2 flex items-center justify-center gap-2 text-[13px] font-semibold"
             style={{ background: "#fde68a", color: "#92400e", borderBottom: "1px solid #f59e0b" }}
