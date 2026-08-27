@@ -571,16 +571,22 @@ export default function AllCandidatesPage() {
     // поэтому сравнение точное и список не обнуляется из-за расхождения форматов.
     const myName = (user?.name || "").trim();
     const scopeMine = listSettings.scope === "mine" && myName.length > 0;
+    // При активном ПОИСКЕ (лупа: ник/ФИО) игнорируем вкладку-статус и показываем
+    // совпадения из ВСЕХ колонок. Сервер уже отфильтровал board по q, поэтому все
+    // оставшиеся карточки — это совпадения, и их надо показать независимо от того,
+    // на каком статусе стоит юзер. Иначе поиск «находил» только на вкладке, где
+    // кандидат физически лежит (баг: на «Новый» не находит того, кто в «Практике»).
+    const searching = debouncedSearch.trim().length > 0;
     const items: { card: KanbanCard; status: string; label: string }[] = [];
     for (const col of board.columns) {
-      if (activeTab === "all" || col.status === activeTab) {
+      if (searching || activeTab === "all" || col.status === activeTab) {
         for (const c of col.cards) {
           if (scopeMine && (c.recruiter_name || "").trim() !== myName) continue;
           items.push({ card: c, status: col.status, label: col.label });
         }
       }
     }
-    if (activeTab === "all") {
+    if (searching || activeTab === "all") {
       return items.sort(
         (a, b) =>
           new Date(b.card.created_at).getTime() -
@@ -588,7 +594,7 @@ export default function AllCandidatesPage() {
       );
     }
     return items;
-  }, [board, activeTab, listSettings.scope, user?.name]);
+  }, [board, activeTab, listSettings.scope, user?.name, debouncedSearch]);
 
   const displayedCards = filteredCards;
 
