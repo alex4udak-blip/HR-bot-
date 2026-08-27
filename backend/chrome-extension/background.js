@@ -1,3 +1,203 @@
+const DEFAULT_SERVER_URL = 'https://enceladus.site';
+const REQUEST_TIMEOUT_MS = 25000;
+
+// Один и тот же бэк отвечает на двух доменах, и куки у них РАЗНЫЕ. Рабочий —
+// enceladus.site, но saturn.ac всё ещё живой: FRONTEND_URL в бэкенде по
+// умолчанию генерит ссылки уведомлений именно на него, так что веб-сессия
+// рекрутёра вполне может оказаться там. Для фолбэка по куке перебираем оба,
+// иначе он молча не найдёт живую сессию. JWT общий (один jwt_secret и одна
+// база), поэтому токен с любого из доменов валиден на другом.
+const SESSION_ORIGINS = [
+  'https://enceladus.site',
+  'https://enceladus-7oylzk.saturn.ac',
+];
+
+// ---- Авторизация: единственный владелец токенов ----
+// Токены живут в chrome.storage.local, и обновляет их ТОЛЬКО service worker.
+// Раньше рефреш делал popup, а его JS-контекст Chrome убивает в момент закрытия
+// попапа: ответ с новой парой токенов терялся, тогда как сервер уже сжёг старый
+// refresh ротацией (auth.py rotate_refresh_token) — следующее открытие давало
+// «Сессия истекла» на живой сессии. Worker переживает закрытие попапа, поэтому
+// ротация здесь атомарна: получили новую пару — сразу записали в storage.
+
+// Та же нормализация, что в popup.js: в chrome.storage у старых пользователей
+// мог остаться прежний адрес (railway и т.п.). Без этого будильник продления
+// сессии стучался бы в мёртвый домен у того, кто попап не открывает.
+function normalizeServerUrl(raw) {
+  const url = (raw || '').replace(/\/$/, '');
+  if (!url) return DEFAULT_SERVER_URL;
+  if (/localhost|127\.0\.0\.1/.test(url)) return url;
+  return SESSION_ORIGINS.includes(url) ? url : DEFAULT_SERVER_URL;
+}
+
+async function readAuth() {
+  const s = await chrome.storage.local.get(['serverUrl', 'authToken', 'refreshToken']);
+  return {
+    serverUrl: normalizeServerUrl(s.serverUrl),
+    authToken: s.authToken || '',
+    refreshToken: s.refreshToken || '',
+  };
+}
+
+// refreshToken не трогаем, если он не передан явно.
+async function writeAuth(authToken, refreshToken) {
+  const patch = { authToken };
+  if (refreshToken !== undefined) patch.refreshToken = refreshToken;
+  await chrome.storage.local.set(patch);
+}
+
+// Читаем куку веб-сессии напрямую из cookie store браузера.
+// fetch(credentials:'include') для этого не годится: сессионные куки выставлены
+// с SameSite=Lax (auth.py:154,165), а chrome-extension://<id> — кросс-сайтовый
+// origin, поэтому Lax-куки к такому запросу не прикрепляются никогда. Через
+// chrome.cookies они читаются, включая httpOnly.
+async function readSessionCookie(serverUrl, name, path) {
+  if (!chrome.cookies) return '';
+  try {
+    const c = await chrome.cookies.get({ url: serverUrl + (path || '/'), name });
+    return (c && c.value) || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+// 'refreshed' — новая пара получена; 'auth_failed' — сервер сказал, что токен
+// мёртв; 'transient' — сеть/таймаут, сессия скорее всего жива.
+async function postRefresh(serverUrl, token) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const r = await fetch(serverUrl + '/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: token }),
+      signal: controller.signal,
+    });
+    if (r.ok) {
+      const data = await r.json().catch(() => null);
+      if (data && data.access_token) return { outcome: 'refreshed', data };
+      return { outcome: 'auth_failed' };
+    }
+    if (r.status === 401 || r.status === 403) return { outcome: 'auth_failed' };
+    return { outcome: 'transient' };
+  } catch (_) {
+    return { outcome: 'transient' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+let _refreshing = null;
+
+// Пытается добыть рабочий access-токен. Single-flight: параллельные 401 не
+// должны рефрешить наперегонки и сжигать друг другу ротированный токен.
+async function ensureFreshToken() {
+  if (_refreshing) return _refreshing;
+  _refreshing = (async () => {
+    const auth = await readAuth();
+
+    if (auth.refreshToken) {
+      const r = await postRefresh(auth.serverUrl, auth.refreshToken);
+      if (r.outcome === 'refreshed') {
+        await writeAuth(r.data.access_token, r.data.refresh_token || auth.refreshToken);
+        return 'refreshed';
+      }
+      if (r.outcome === 'transient') return 'transient';
+    }
+
+    // Фолбэк — живая веб-сессия в браузере. Берём ТОЛЬКО access_token: он
+    // read-only и ничего не ломает. Refresh-куку веб-клиента трогать нельзя —
+    // ротация сожгла бы её и разлогинила пользователя на самом сайте.
+    // Текущий сервер проверяем первым, затем остальные известные домены.
+    const origins = [auth.serverUrl, ...SESSION_ORIGINS.filter((o) => o !== auth.serverUrl)];
+    for (const origin of origins) {
+      const cookieAccess = await readSessionCookie(origin, 'access_token', '/');
+      if (cookieAccess) {
+        // Свой refresh-токен сюда доводит только отказ сервера — чистим, чтобы
+        // не дёргать его впустую на каждом следующем обновлении.
+        await writeAuth(cookieAccess, '');
+        return 'refreshed';
+      }
+    }
+
+    return 'auth_failed';
+  })();
+  try {
+    return await _refreshing;
+  } finally {
+    _refreshing = null;
+  }
+}
+
+function apiFetch(url, method, body, token) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  return fetch(url, {
+    method: method || 'GET',
+    headers,
+    credentials: 'include',
+    body: body ? JSON.stringify(body) : undefined,
+    signal: controller.signal,
+  })
+    .then((r) => {
+      clearTimeout(timeoutId);
+      if (!r.ok) {
+        return r.text().then((text) => {
+          let detail = `HTTP ${r.status}`;
+          try {
+            const json = JSON.parse(text);
+            detail = json.detail || detail;
+          } catch (_) {}
+          return { success: false, error: detail, status: r.status };
+        });
+      }
+      const contentType = r.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        return r.json().then((data) => ({ success: true, data }));
+      }
+      return r.text().then((text) => ({
+        success: false,
+        error: 'Non-JSON response: ' + text.substring(0, 200),
+      }));
+    })
+    .catch((err) => {
+      clearTimeout(timeoutId);
+      const msg = err && err.name === 'AbortError'
+        ? 'Сервер не ответил за 25 сек. Проверь сеть и попробуй ещё раз.'
+        : (err && err.message ? err.message : 'Сетевая ошибка');
+      // transient: сеть/таймаут — это НЕ повод разлогинивать.
+      return { success: false, error: msg };
+    });
+}
+
+// Refresh-токен живёт 7 дней и продлевается только при обращении к серверу.
+// Тот, кто открывает расширение реже раза в неделю, раньше каждый раз попадал
+// на экран входа. Будим воркер раз в 6 часов и молча продлеваем сессию, чтобы
+// окно всегда откатывалось вперёд.
+const KEEPALIVE_ALARM = 'auth-keepalive';
+
+// Создаём и при пробуждении воркера: onInstalled/onStartup не сработают у тех,
+// у кого расширение уже стоит, а браузер не перезапускался.
+chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 360 });
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 360 });
+});
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 360 });
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== KEEPALIVE_ALARM) return;
+  const auth = await readAuth();
+  // Без своего refresh-токена продлевать нечего: не трогаем куку веб-сессии и
+  // не шлём лишних запросов.
+  if (auth.refreshToken) await ensureFreshToken();
+});
+
 // Handle messages from content scripts and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'PARSE_RESULT') {
@@ -82,55 +282,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+  // Восстановить авторизацию до открытия попапа: обновить свой токен либо
+  // подхватить живую веб-сессию из куки. Возвращает { authorized }.
+  if (message.type === 'ENSURE_AUTH') {
+    (async () => {
+      const auth = await readAuth();
+      if (auth.authToken) { sendResponse({ authorized: true }); return; }
+      const outcome = await ensureFreshToken();
+      // 'transient' — сеть подвела; не считаем сессию мёртвой, но и токена нет.
+      sendResponse({ authorized: outcome === 'refreshed', outcome });
+    })();
+    return true;
+  }
+
   if (message.type === 'API_REQUEST') {
-    // Make API request (background script has CORS bypass)
-    const { url, method, body, token } = message;
-    // 25-сек хард-таймаут — сервис-воркер MV3 может уснуть и потерять
-    // sendResponse, либо backend завис. Без AbortController попап
-    // зависнет с 'Добавляем...'.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    // Запрос идёт отсюда: у service worker нет CORS-ограничений попапа, и он
+    // переживает закрытие попапа, поэтому обновление токена не теряется.
+    (async () => {
+      const { url, method, body } = message;
+      let auth = await readAuth();
+      let resp = await apiFetch(url, method, body, auth.authToken);
 
-    const headers = { 'Content-Type': 'application/json' };
-    // 'session-sync' — наш фейковый маркер что юзер авторизован через
-    // cookie. Bearer заголовок только если есть настоящий JWT.
-    if (token && token !== 'session-sync') {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+      if (resp.status !== 401) { sendResponse(resp); return; }
 
-    fetch(url, {
-      method: method || 'GET',
-      headers,
-      // Для cookie-авторизации (session-sync) нужны credentials.
-      credentials: 'include',
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-    })
-    .then(r => {
-      clearTimeout(timeoutId);
-      if (!r.ok) {
-        return r.text().then(text => {
-          let detail = `HTTP ${r.status}`;
-          try {
-            const json = JSON.parse(text);
-            detail = json.detail || detail;
-          } catch (_) {}
-          sendResponse({ success: false, error: detail, status: r.status });
-        });
+      const outcome = await ensureFreshToken();
+      if (outcome === 'refreshed') {
+        auth = await readAuth();
+        resp = await apiFetch(url, method, body, auth.authToken);
+        // Свежий токен, и всё равно 401 → сессия действительно мертва.
+        if (resp.status === 401) {
+          await chrome.storage.local.remove(['authToken', 'refreshToken']);
+          resp.authExpired = true;
+        }
+      } else if (outcome === 'auth_failed') {
+        await chrome.storage.local.remove(['authToken', 'refreshToken']);
+        resp.authExpired = true;
       }
-      const contentType = r.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        return r.json().then(data => sendResponse({ success: true, data }));
-      }
-      return r.text().then(text => sendResponse({ success: false, error: 'Non-JSON response: ' + text.substring(0, 200) }));
-    })
-    .catch(err => {
-      clearTimeout(timeoutId);
-      const msg = err && err.name === 'AbortError'
-        ? 'Сервер не ответил за 25 сек. Проверь сеть и попробуй ещё раз.'
-        : (err && err.message ? err.message : 'Сетевая ошибка');
-      sendResponse({ success: false, error: msg });
-    });
+      // outcome === 'transient': рефреш сорвался на сети/таймауте/сне воркера.
+      // Сессия скорее всего жива — НЕ разлогиниваем, попап просто покажет
+      // ошибку запроса, а следующий вызов повторит попытку.
+      sendResponse(resp);
+    })();
     return true;
   }
 });

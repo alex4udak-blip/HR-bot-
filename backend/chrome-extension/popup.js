@@ -50,18 +50,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('serverUrl').value = serverUrl;
 
-  // Try to use existing browser session (cookie sync)
+  // Восстановление сессии живёт в background.js: он обновит свой токен либо
+  // подхватит веб-сессию через chrome.cookies. Прежний вариант — fetch с
+  // credentials:'include' прямо отсюда — не работал никогда: куки сессии стоят
+  // с SameSite=Lax и на кросс-сайтовый запрос из chrome-extension:// не уходят.
   if (!authToken) {
-    try {
-      const resp = await fetch(serverUrl + '/api/auth/me', { credentials: 'include' });
-      if (resp.ok) {
-        const user = await resp.json();
-        authToken = 'session-sync';
-        await chrome.storage.local.set({ serverUrl, authToken, userName: user.name });
-        console.log('Session synced from browser:', user.name);
-      }
-    } catch (e) {
-      // No active session, show login
+    const ensured = await new Promise((r) =>
+      chrome.runtime.sendMessage({ type: 'ENSURE_AUTH' }, (resp) => r(resp || {}))
+    );
+    if (ensured.authorized) {
+      const fresh = await chrome.storage.local.get(['authToken', 'refreshToken']);
+      authToken = fresh.authToken || '';
+      refreshToken = fresh.refreshToken || '';
     }
   }
 
@@ -411,15 +411,11 @@ async function checkDuplicatesOnLoad() {
       telegram: parsedData.telegram || null,
       source_url: parsedData.source_url || null,
     };
-    let checkResp = await rawApiRequest('POST', '/api/magic-button/check-duplicate', dupPayload, 12000);
-
-    // Access-токен живёт 15 мин. Если он протух — тихо обновим его по refresh-токену
-    // и повторим проверку ОДИН раз, БЕЗ редиректа на экран входа (это фоновая
-    // проверка). Раньше дубль-чек просто падал «⚠️ Не удалось проверить дубликаты»
-    // на любом протухшем токене, хотя «Добавить» (через apiRequest) рефрешил и работал.
-    if (isAuthError(checkResp) && (await tryRefresh()) === 'refreshed') {
-      checkResp = await rawApiRequest('POST', '/api/magic-button/check-duplicate', dupPayload, 12000);
-    }
+    // Протухший за 15 минут access-токен background.js обновит и повторит запрос
+    // сам, поэтому ретрая здесь больше нет. rawApiRequest (в отличие от
+    // apiRequest) не уводит на экран входа — это фоновая проверка, авторизацию
+    // разрулит уже сам «Добавить».
+    const checkResp = await rawApiRequest('POST', '/api/magic-button/check-duplicate', dupPayload, 20000);
 
     if (!checkResp.success) {
       // Проверка упала (сеть / нет refresh-токена) — НЕ выдаём ложное «дубликатов нет».
@@ -588,7 +584,10 @@ async function loadVacancies() {
 
 // Низкоуровневый запрос через фоновый процесс (CORS bypass).
 // Возвращает { success, data?, error?, status? }.
-async function rawApiRequest(method, path, body, timeoutMs = 30000) {
+// Токен сюда не передаём: им владеет background.js — он же при 401 обновит его
+// и повторит запрос сам. Поэтому запас по времени больше: худший случай —
+// запрос + рефреш + повтор.
+async function rawApiRequest(method, path, body, timeoutMs = 80000) {
   const url = (serverUrl || document.getElementById('serverUrl').value) + path;
 
   // MV3 service worker может заснуть посреди запроса и sendResponse теряется
@@ -599,7 +598,7 @@ async function rawApiRequest(method, path, body, timeoutMs = 30000) {
       if (done) return;
       done = true;
       console.warn('[HR-Bot] API_REQUEST timeout', { method, url });
-      resolve({ success: false, error: 'Таймаут запроса (30 сек). Попробуйте ещё раз.' });
+      resolve({ success: false, error: 'Сервер не ответил. Попробуйте ещё раз.' });
     }, timeoutMs);
 
     chrome.runtime.sendMessage({
@@ -607,7 +606,6 @@ async function rawApiRequest(method, path, body, timeoutMs = 30000) {
       url,
       method,
       body,
-      token: authToken,
     }, (response) => {
       if (done) return;
       done = true;
@@ -622,64 +620,11 @@ async function rawApiRequest(method, path, body, timeoutMs = 30000) {
   });
 }
 
-// Похоже ли на ошибку авторизации (истёк access-токен и т.п.).
-function isAuthError(resp) {
-  if (!resp || resp.success) return false;
-  if (resp.status === 401) return true;
-  const e = String(resp.error || '').toLowerCase();
-  return e.includes('not authenticated') || e.includes('invalid token') ||
-    e.includes('token has been invalidated') || e.includes('refresh token');
-}
-
-// Молчаливое обновление access-токена по refresh-токену (как в вебе).
-// Single-flight: параллельные 401-ы не должны рефрешить наперегонки.
-let _refreshing = null;
-// Возвращает: 'refreshed' — новый access получен; 'auth_failed' — refresh-токен
-// ТОЧНО невалиден (сервер ответил 401/revoked), пора на логин; 'transient' —
-// рефреш не удался из-за сети/таймаута/сна MV3 service worker, сессия скорее всего
-// жива → НЕ разлогиниваем (иначе любой сетевой блип выкидывал Марию на вход).
-async function tryRefresh() {
-  if (!refreshToken) return 'auth_failed';
-  if (_refreshing) return _refreshing;
-  _refreshing = (async () => {
-    const resp = await rawApiRequest('POST', '/api/auth/refresh', { refresh_token: refreshToken });
-    if (resp.success && resp.data && resp.data.access_token) {
-      authToken = resp.data.access_token;
-      if (resp.data.refresh_token) refreshToken = resp.data.refresh_token;
-      await chrome.storage.local.set({ authToken, refreshToken });
-      return 'refreshed';
-    }
-    // Отличаем настоящий отказ рефреша (401/«invalid token»/«refresh token») от
-    // транзиентного сбоя (таймаут/сеть/пустой ответ фонового процесса).
-    return isAuthError(resp) ? 'auth_failed' : 'transient';
-  })();
-  try {
-    return await _refreshing;
-  } finally {
-    _refreshing = null;
-  }
-}
-
-// Сессия окончательно истекла (нет/протух refresh) — чистим и на экран входа.
-// Подхватить ЖИВУЮ веб-сессию (enceladus.site) по httpOnly-куке, если свой
-// Bearer/refresh расширения умер. background.js при token==='session-sync' шлёт
-// запросы с credentials:'include' (куки), поэтому дальше всё работает на куке.
-// Возвращает true, если веб-сессия жива. Убирает «Сессия истекла», когда юзер на
-// самом деле залогинен в вебе (наблюдалось на v1.8.5: попап показывал вход, хотя
-// enceladus.site был авторизован).
-async function trySessionSync() {
-  try {
-    const resp = await fetch(serverUrl + '/api/auth/me', { credentials: 'include' });
-    if (resp.ok) {
-      const user = await resp.json().catch(() => ({}));
-      authToken = 'session-sync';
-      refreshToken = '';
-      await chrome.storage.local.set({ serverUrl, authToken, refreshToken: '', userName: user.name || '' });
-      return true;
-    }
-  } catch (_) { /* нет сети/куки — сессия действительно мертва */ }
-  return false;
-}
+// Обновление токена и откат на веб-сессию живут в background.js — попап их
+// больше не делает. Причина: Chrome убивает JS-контекст попапа в момент его
+// закрытия, и если рефреш был в полёте, новая пара токенов терялась, тогда как
+// сервер уже сжёг старый refresh ротацией. Это и давало «Сессия истекла» по
+// нескольку раз в день на совершенно живой сессии.
 
 async function handleAuthExpired() {
   authToken = '';
@@ -690,31 +635,13 @@ async function handleAuthExpired() {
   showView('login');
 }
 
-// Высокоуровневый запрос: при 401 один раз молча рефрешит токен и повторяет.
-// Не вышло обновить — чистый возврат на экран входа.
-async function apiRequest(method, path, body, timeoutMs = 30000) {
-  let resp = await rawApiRequest(method, path, body, timeoutMs);
-  if (isAuthError(resp)) {
-    const outcome = refreshToken ? await tryRefresh() : 'auth_failed';
-    if (outcome === 'refreshed') {
-      resp = await rawApiRequest(method, path, body, timeoutMs);
-      // Рефреш прошёл, но запрос всё равно 401 → сессия реально истекла.
-      if (isAuthError(resp)) await handleAuthExpired();
-    } else if (outcome === 'auth_failed') {
-      // Bearer/refresh мертвы — но веб-сессия (enceladus.site) может быть жива.
-      // Пробуем подхватить её по куке (session-sync) и повторить запрос. Только
-      // если и кука мертва — на логин. Убирает ложное «Сессия истекла».
-      if (await trySessionSync()) {
-        resp = await rawApiRequest(method, path, body, timeoutMs);
-        if (isAuthError(resp)) await handleAuthExpired();
-      } else {
-        await handleAuthExpired();
-      }
-    }
-    // outcome === 'transient': НЕ разлогиниваем. Сессия, скорее всего, жива —
-    // рефреш сорвался на сети/таймауте/сне воркера. Возвращаем ошибку, следующий
-    // вызов повторит. Это и убирает «выкидывает по нескольку раз в день».
-  }
+// Высокоуровневый запрос. Рефреш и откат на веб-сессию делает background.js;
+// сюда возвращается authExpired === true ТОЛЬКО когда обновиться не удалось и
+// сервер подтвердил, что сессия мертва. Сетевой сбой, таймаут или сон воркера
+// сюда не попадают — на них попап больше не разлогинивает.
+async function apiRequest(method, path, body, timeoutMs = 80000) {
+  const resp = await rawApiRequest(method, path, body, timeoutMs);
+  if (resp && resp.authExpired) await handleAuthExpired();
   return resp;
 }
 
@@ -751,17 +678,10 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
 
       document.getElementById('loginError').textContent = '';
 
-      // Reload to check for parsed data
-      chrome.runtime.sendMessage({ type: 'GET_PARSED_DATA' }, (pd) => {
-        if (pd && pd.full_name) {
-          parsedData = pd;
-          showParsedData();
-          loadVacancies();
-          showView('parse');
-        } else {
-          showView('nodata');
-        }
-      });
+      // Парсим активную вкладку, а не читаем кэш: после первого входа кэш пуст,
+      // и рекрутёру на живой странице резюме показывалось «страница не
+      // поддерживается», пока он вручную не жал «↻».
+      await loadFromActiveTab();
     } else {
       document.getElementById('loginError').textContent = 'Неверный email или пароль';
     }
