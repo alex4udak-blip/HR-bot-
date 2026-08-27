@@ -1,6 +1,6 @@
 import os
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 from functools import lru_cache
 
 
@@ -94,6 +94,19 @@ class Settings(BaseSettings):
         default="",
         alias="COMMUNICATION_API_KEY"
     )
+
+    @field_validator("prometheus_base_url")
+    @classmethod
+    def _ensure_prometheus_scheme(cls, v: str) -> str:
+        # Если PROMETHEUS_BASE_URL задан без схемы (напр. "host.example" вместо
+        # "https://host.example") — httpx падает «Request URL is missing an
+        # 'http://' or 'https://' protocol», и фоновый auto-export практикантов
+        # сыпал ERROR каждые 5 мин (прод 2026-08-27). Нормализуем один раз здесь,
+        # чтобы все консюмеры prometheus_base_url получали валидный URL.
+        v = (v or "").strip()
+        if v and not v.startswith(("http://", "https://")):
+            v = "https://" + v
+        return v
 
     # Call recordings settings
     upload_dir: str = Field(
