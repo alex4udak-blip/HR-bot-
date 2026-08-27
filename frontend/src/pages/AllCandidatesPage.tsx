@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense, startTransition } from "react";
 import type { ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -67,7 +67,7 @@ import {
 } from "@/services/api/entities";
 import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
 import type { ApplicationStage } from "@/types";
-import { STATUS_LABELS } from "@/types";
+import { STATUS_LABELS, APPLICATION_STAGE_LABELS } from "@/types";
 import { getAllVacancies, createApplication, updateApplication, deleteApplication, deleteApplicationHistory } from "@/services/api/vacancies";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
@@ -105,6 +105,24 @@ const AnketaDrawer = lazy(() =>
 const HUNTFLOW_STAGE_LAYOUT_TRANSITION = {
   duration: 0.42,
   ease: [0.22, 1, 0.36, 1] as const,
+};
+
+// Яркие чипы этапов для шапки «Этапы по воронкам» (мультиворонка). Сплошной
+// статус-цвет как фон + ТЁМНЫЙ текст той же гаммы (по гайдлайну — текст на
+// цветном фоне = самый тёмный оттенок семейства). Ярче бледных badge-вариантов.
+const STAGE_CHIP_BRIGHT: Record<string, string> = {
+  applied: "bg-[var(--hf-status-blue)] text-[#0b2a4a]",
+  screening: "bg-[var(--hf-status-cyan)] text-[#083344]",
+  phone_screen: "bg-[var(--hf-status-purple)] text-[#3b0764]",
+  interview: "bg-[var(--hf-status-indigo)] text-[#1e1b4b]",
+  assessment: "bg-[var(--hf-status-orange)] text-[#431407]",
+  offer: "bg-[var(--hf-status-yellow)] text-[#422006]",
+  hired: "bg-[var(--hf-status-green)] text-[#052e16]",
+  transferred: "bg-[var(--hf-status-green)] text-[#052e16]",
+  probation: "bg-[var(--hf-status-teal)] text-[#042f2e]",
+  rejected: "bg-[var(--hf-status-red)] text-[#450a0a]",
+  withdrawn: "bg-[var(--hf-status-gray)] text-[#111827]",
+  reserve: "bg-[var(--hf-status-gray)] text-[#111827]",
 };
 
 function HuntflowClose28Icon({ className }: { className?: string }) {
@@ -1747,6 +1765,8 @@ type ContainerNote = {
   // Дописка коммента к прошлой статусной записи (см. model.ts ContainerNote).
   parent_key?: string;
   stage_at_write_label?: string;
+  // Воронка (вакансия), в которой написан коммент; отсутствует = «Общий».
+  vacancy_id?: number | null;
 };
 
 // Яркие теги-ярлыки у имени вынесены в общий модуль (используются и в воронках):
@@ -1839,6 +1859,7 @@ const InfoTab = memo(function InfoTab({
   onCardUpdated?: (updated: Partial<KanbanCard>) => void;
 }) {
   const { user: currentUser } = useAuthStore();
+  const navigate = useNavigate();
   // «Наблюдатель» (read-only): все изменяющие действия карточки заблокированы.
   // Просмотр (анкета/резюме, клики по тг/почте/ссылкам) и «Поделиться» — доступны.
   const readonly = !!currentUser?.is_readonly;
@@ -1925,8 +1946,9 @@ const InfoTab = memo(function InfoTab({
   const extraTelegrams = Array.from(
     new Set((card.telegram_usernames || []).map((t) => (t || "").trim()).filter(Boolean)),
   ).filter((t) => _tgKey(t) !== _tgKey(card.telegram_username || ""));
-  const [showTagInput, setShowTagInput] = useState(false);
-  const [tagInput, setTagInput] = useState("");
+  // Ручное проставление меток убрано (метки «HR: … · воронка» ставит бэкенд
+  // автоматически по воронке). localTags остаётся только для показа/удаления
+  // уже существующих ручных меток — новые здесь не добавляются.
   const [localTags, setLocalTags] = useState<string[]>(card.tags || []);
   // Яркие теги-ярлыки у имени (extra_data.headline_tags): HR вписывает слово + цвет.
   const [headlineTags, setHeadlineTags] = useState<HeadlineTag[]>(() =>
@@ -1935,8 +1957,11 @@ const InfoTab = memo(function InfoTab({
   const [showHlInput, setShowHlInput] = useState(false);
   const [hlText, setHlText] = useState("");
   const [hlColor, setHlColor] = useState<string>("pink");
+  // Индекс перетаскиваемого яркого тега (drag-n-drop смены порядка без удаления)
+  // и индекс тега-цели под курсором (для аккуратной подсветки места вставки).
+  const [hlDragIdx, setHlDragIdx] = useState<number | null>(null);
+  const [hlOverIdx, setHlOverIdx] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const tagInputRef = useRef<HTMLInputElement>(null);
   // Бейдж непрочитанных анкет (entity-уровень).
   useEffect(() => {
     if (!card.id) return;
@@ -2039,6 +2064,46 @@ const InfoTab = memo(function InfoTab({
     // которые меняют данные in-place без смены ссылки card.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [primaryBlock, status, card, allEntityFiles, notesVersion],
+  );
+
+  // Карта vacancy_id → название воронки (все прохождения кандидата). Нужна, чтобы
+  // в объединённом логе «Все кандидаты» пометить каждый коммент своей воронкой
+  // (note.vacancy_id → бейдж «воронка «X»»). В самой воронке лог уже свой — там
+  // резолвер НЕ передаётся, бейджа нет.
+  const vacancyTitleById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const b of activityBlocks) {
+      if (b.vacancy_id && b.vacancy_title) m.set(b.vacancy_id, b.vacancy_title);
+    }
+    return m;
+  }, [activityBlocks]);
+  const resolveNoteVacancyLabel = useCallback(
+    (vacancyId?: number | null): string | null =>
+      vacancyId != null ? vacancyTitleById.get(vacancyId) ?? null : null,
+    [vacancyTitleById],
+  );
+
+  // Этапы по каждой воронке кандидата (для шапки живого контейнера, если он в
+  // ≥2 воронках): вместо одного «общего» этапа — список «этап → воронка» цветными
+  // чипами (цвет = как колонки воронки, APPLICATION_STAGE_COLORS).
+  const funnelStages = useMemo(
+    () =>
+      activityBlocks
+        .filter((b) => b.vacancy_id && b.vacancy_title)
+        .map((b) => {
+          const st = b.current_stage as ApplicationStage;
+          return {
+            vacancyId: b.vacancy_id,
+            title: b.vacancy_title,
+            stageLabel: APPLICATION_STAGE_LABELS[st] || b.current_stage,
+            // Яркие чипы: СПЛОШНОЙ статус-цвет + тёмный текст той же гаммы (не
+            // бледный badge-вариант APPLICATION_STAGE_COLORS).
+            colorClass:
+              STAGE_CHIP_BRIGHT[st] ||
+              "bg-[var(--hf-status-gray)] text-[#111827]",
+          };
+        }),
+    [activityBlocks],
   );
 
   // ── Тонкие обёртки для CandidateVacancyCard. Смену этапа делает ТОЛЬКО живой
@@ -2269,8 +2334,6 @@ const InfoTab = memo(function InfoTab({
 
   useEffect(() => {
     setLocalTags(card.tags || []);
-    setShowTagInput(false);
-    setTagInput("");
   }, [card.id, card.tags]);
 
   // --- Action handlers ---
@@ -2376,24 +2439,6 @@ const InfoTab = memo(function InfoTab({
     }
   };
 
-  const handleAddTag = async () => {
-    const tag = tagInput.trim();
-    if (!tag) return;
-    if (localTags.includes(tag)) {
-      toast.error("Метка уже существует");
-      return;
-    }
-    const newTags = [...localTags, tag];
-    try {
-      await updateEntity(card.id, { tags: newTags });
-      setLocalTags(newTags);
-      setTagInput("");
-      toast.success(`Метка "${tag}" добавлена`);
-    } catch {
-      toast.error("Ошибка добавления метки");
-    }
-  };
-
   const handleRemoveTag = async (tag: string) => {
     const newTags = localTags.filter((t) => t !== tag);
     try {
@@ -2453,6 +2498,16 @@ const InfoTab = memo(function InfoTab({
 
   const handleRemoveHeadlineTag = async (index: number) => {
     await saveHeadlineTags(headlineTags.filter((_, i) => i !== index));
+  };
+
+  // Перетаскивание тега на место другого: вынимаем из позиции from и вставляем
+  // перед to — порядок меняется без удаления/переписывания.
+  const handleReorderHeadlineTag = async (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return;
+    const next = [...headlineTags];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    await saveHeadlineTags(next);
   };
 
   return (
@@ -2756,15 +2811,67 @@ const InfoTab = memo(function InfoTab({
             />
             <StaffStatusBadge entityId={card.id} status={status} />
             {/* Яркие теги-ярлыки у имени: HR вписывает слово + выбирает цвет.
-                Отдельно от обычных «Меток» (ниже). */}
+                Отдельно от обычных «Меток» (ниже). Перетаскиванием меняем порядок
+                (тег на место другого) — без удаления и переписывания. */}
             {headlineTags.map((t, i) => (
-              <HeadlineTagChip
-                key={i}
-                tag={t}
-                onRemove={
-                  readonly ? undefined : () => handleRemoveHeadlineTag(i)
-                }
-              />
+              <span
+                key={t.text}
+                draggable={!readonly}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  // Firefox не начнёт drag без установленных данных.
+                  try {
+                    e.dataTransfer.setData("text/plain", t.text);
+                  } catch {
+                    /* noop */
+                  }
+                  // Чистый ghost = сам чип, отцентрованный под курсором (иначе
+                  // браузер рисует «квадрат» со снимком всего элемента сбоку).
+                  const el = e.currentTarget as HTMLElement;
+                  e.dataTransfer.setDragImage(
+                    el,
+                    el.offsetWidth / 2,
+                    el.offsetHeight / 2,
+                  );
+                  setHlDragIdx(i);
+                }}
+                onDragOver={(e) => {
+                  if (hlDragIdx === null || hlDragIdx === i) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move"; // курсор «переместить», не «+»
+                  if (hlOverIdx !== i) setHlOverIdx(i);
+                }}
+                onDragLeave={() => {
+                  if (hlOverIdx === i) setHlOverIdx(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (hlDragIdx !== null && hlDragIdx !== i) {
+                    handleReorderHeadlineTag(hlDragIdx, i);
+                  }
+                  setHlDragIdx(null);
+                  setHlOverIdx(null);
+                }}
+                onDragEnd={() => {
+                  setHlDragIdx(null);
+                  setHlOverIdx(null);
+                }}
+                title={readonly ? undefined : "Перетащите, чтобы поменять порядок"}
+                className={clsx(
+                  "inline-flex rounded-full transition-all",
+                  !readonly && "cursor-grab active:cursor-grabbing",
+                  hlDragIdx === i && "opacity-50",
+                  hlOverIdx === i &&
+                    "ring-2 ring-[var(--hf-accent)] ring-offset-1 ring-offset-[var(--hf-white)] hf-dark-disabled:ring-offset-[var(--hf-bg-dark)]",
+                )}
+              >
+                <HeadlineTagChip
+                  tag={t}
+                  onRemove={
+                    readonly ? undefined : () => handleRemoveHeadlineTag(i)
+                  }
+                />
+              </span>
             ))}
             {!readonly && !showHlInput && (
               <button
@@ -3010,19 +3117,51 @@ const InfoTab = memo(function InfoTab({
           {/* Tags row */}
           <InfoRow label="Метки">
             <div className="flex flex-wrap items-center gap-1.5">
-              {/* Авто-метки HR (read-only): кто забрал кандидата в воронку.
-                  Проставляются бэкендом (extra_data.system_hr_tags), без крестика
-                  — ручные метки ниже остаются полностью редактируемыми. */}
-              {readSystemHrTags(card.extra_data).map((hr) => (
-                <span
-                  key={`hr-${hr.hr_id}`}
-                  title="Закреплённый HR — проставляется автоматически по воронке"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--hf-bg-panel)] text-[var(--hf-main-900)] border border-[color:var(--hf-main-200)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]"
-                >
-                  <Lock className="w-3 h-3 opacity-50" />
-                  HR: {hr.name}{hr.vacancy_title ? ` · ${hr.vacancy_title}` : ""}
-                </span>
-              ))}
+              {/* Авто-метки HR: кто забрал кандидата в воронку. Проставляются
+                  бэкендом (extra_data.system_hr_tags). Клик по метке ведёт прямо
+                  в эту воронку конкретного рекрутёра (?v=…&recruiter=…&entity=…),
+                  как будто её выбрали в сайдбаре вручную. Ручное проставление
+                  меток здесь убрано — только авто HR + показ старых ручных. */}
+              {readSystemHrTags(card.extra_data).map((hr) => {
+                const label = `HR: ${hr.name}${hr.vacancy_title ? ` · ${hr.vacancy_title}` : ""}`;
+                const chipBase =
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--hf-bg-panel)] text-[var(--hf-main-900)] border border-[color:var(--hf-main-200)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-dark-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)]";
+                if (typeof hr.vacancy_id !== "number") {
+                  return (
+                    <span
+                      key={`hr-${hr.hr_id}`}
+                      title="Закреплённый HR — проставляется автоматически по воронке"
+                      className={chipBase}
+                    >
+                      <Lock className="w-3 h-3 opacity-50" />
+                      {label}
+                    </span>
+                  );
+                }
+                return (
+                  <button
+                    key={`hr-${hr.hr_id}`}
+                    type="button"
+                    title={`Открыть воронку «${hr.vacancy_title || ""}» — рекрутёр ${hr.name}`}
+                    onClick={() =>
+                      // stage=all — чтобы воронка показала ВСЕ этапы и подхватила
+                      // кандидата на любом его этапе (без stage вкладка встаёт на
+                      // первый этап, и кандидат с другого этапа не выбирается).
+                      navigate(
+                        `/my-funnels?v=${hr.vacancy_id}&recruiter=${hr.hr_id}&entity=${card.id}&stage=all`,
+                      )
+                    }
+                    className={clsx(
+                      chipBase,
+                      "cursor-pointer transition-colors hover:border-[color:var(--hf-main-400)] hover:bg-[var(--hf-main-100)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)]",
+                    )}
+                  >
+                    <Lock className="w-3 h-3 opacity-50" />
+                    {label}
+                    <ChevronRight className="w-3 h-3 opacity-60" />
+                  </button>
+                );
+              })}
               {localTags.map((t) => (
                 <span
                   key={t}
@@ -3037,42 +3176,6 @@ const InfoTab = memo(function InfoTab({
                   </button>
                 </span>
               ))}
-              {showTagInput ? (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleAddTag();
-                  }}
-                  className="inline-flex items-center gap-1"
-                >
-                  <input
-                    ref={tagInputRef}
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onBlur={() => {
-                      if (!tagInput.trim()) setShowTagInput(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        setShowTagInput(false);
-                        setTagInput("");
-                      }
-                    }}
-                    placeholder="Метка..."
-                    autoFocus
-                    className="w-24 px-2 py-0.5 rounded text-xs bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-white-alpha-05)] border border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-dark-200)] placeholder:text-[var(--hf-main-500)] hf-dark-disabled:placeholder:text-[var(--hf-dark-500)] focus:outline-none focus:border-[var(--hf-cyan-500)]"
-                  />
-                </form>
-              ) : (
-                <button
-                  onClick={() => setShowTagInput(true)}
-                  disabled={readonly}
-                  style={roStyle}
-                  className="inline-flex h-[20px] items-center rounded-[var(--hf-radius-xs)] bg-[var(--hf-bg-panel)] px-[var(--hf-space-s)] text-[length:var(--hf-fs-xxs)] font-normal leading-[var(--hf-lh-secondary)] text-[var(--hf-ui-text-soft)] transition-colors hover:bg-[var(--hf-main-200)] hover:text-[var(--hf-main-900)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)] hf-dark-disabled:hover:bg-[var(--hf-white-alpha-10)] hf-dark-disabled:hover:text-[var(--hf-white)]"
-                >
-                  Добавить
-                </button>
-              )}
             </div>
           </InfoRow>
         </div>
@@ -3145,6 +3248,8 @@ const InfoTab = memo(function InfoTab({
           onReact={c.origin === "live" ? cardReact : undefined}
           files={c.files}
           onDeleteFile={c.origin === "live" ? cardDeleteFile : undefined}
+          resolveNoteVacancyLabel={resolveNoteVacancyLabel}
+          funnelStages={c.origin === "live" ? funnelStages : undefined}
         />
       ))}
 

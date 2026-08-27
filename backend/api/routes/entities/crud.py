@@ -1018,6 +1018,10 @@ class NoteCreate(BaseModel):
     # datetime.now(), чтобы дата всегда = момент написания.
     parent_key: Optional[str] = None
     stage_at_write_label: Optional[str] = None
+    # Воронка (вакансия), в которой написан коммент. Один кандидат может быть в
+    # НЕСКОЛЬКИХ воронках — каждая показывает только свои комменты (по vacancy_id).
+    # None = «Общий» коммент (написан вне контекста конкретной воронки / легаси).
+    vacancy_id: Optional[int] = None
 
 
 class NoteUpdate(BaseModel):
@@ -1106,6 +1110,9 @@ async def add_entity_note(
         note["parent_key"] = data.parent_key
     if data.stage_at_write_label:
         note["stage_at_write_label"] = data.stage_at_write_label
+    # Метка воронки — чтобы в каждой вакансии показывать только её комменты.
+    if data.vacancy_id is not None:
+        note["vacancy_id"] = data.vacancy_id
     notes.append(note)
     extra["notes"] = notes
     entity.extra_data = extra

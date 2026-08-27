@@ -802,6 +802,8 @@ export interface EntityNote {
   edited_at?: string | null;
   parent_key?: string | null;
   stage_at_write_label?: string | null;
+  // Воронка (вакансия), в которой написан коммент; null/отсутствует = «Общий».
+  vacancy_id?: number | null;
 }
 
 export const addEntityNote = async (
@@ -814,6 +816,9 @@ export const addEntityNote = async (
     // + метка этапа на момент написания (для плашки «оставлен на этапе X»).
     parent_key?: string | null;
     stage_at_write_label?: string | null;
+    // Воронка (вакансия), в которой написан коммент — чтобы каждая воронка
+    // показывала только свои комменты. null/undefined = «Общий».
+    vacancy_id?: number | null;
   }
 ): Promise<{ success: boolean; note: EntityNote; total_notes: number }> => {
   const { data } = await api.post(`/entities/${entityId}/notes`, payload);

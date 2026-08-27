@@ -18,9 +18,11 @@ import {
   Check,
   Trash2,
   ChevronDown,
+  ChevronRight,
   ClipboardList,
   PenLine,
   MessageSquarePlus,
+  Briefcase,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -175,6 +177,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   onRemoveFromVacancy,
   isPreviousSeries = false,
   recruiter,
+  resolveNoteVacancyLabel,
+  funnelStages,
 }: {
   card: KanbanCard;
   applicationId: number;
@@ -245,6 +249,20 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   isPreviousSeries?: boolean;
   // Импортированное прохождение (ClickUp-архив): рекрутёр (чип «HR: Имя»), read-only.
   recruiter?: string;
+  // «Все кандидаты»: комменты со ВСЕХ воронок кандидата слиты в один лог, поэтому
+  // у каждого нужно показать бейдж воронки (по note.vacancy_id). В воронке проп
+  // НЕ передаётся — там лог уже отфильтрован по своей вакансии, бейдж лишний.
+  // Возвращает название воронки или null (нет привязки → «Общий», без бейджа).
+  resolveNoteVacancyLabel?: (vacancyId?: number | null) => string | null;
+  // «Все кандидаты», живой контейнер: этапы кандидата по КАЖДОЙ его воронке. Если
+  // воронок ≥2 — в шапке вместо одного «общего» этапа показываем список
+  // «этап → воронка» (кандидат реально на разных этапах в разных воронках).
+  funnelStages?: Array<{
+    vacancyId: number;
+    title: string;
+    stageLabel: string;
+    colorClass: string;
+  }>;
 }) {
   // --- per-instance UI state (раньше было singleton в InfoTab) ---
   const [showStageDD, setShowStageDD] = useState(false);
@@ -260,6 +278,18 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   const [timelineActionFilter, setTimelineActionFilter] = useState<
     string | null
   >(null);
+  // «Все кандидаты»: длинные комменты с бейджем воронки свёрнуты (виден только
+  // бейдж); клик по бейджу раскрывает текст. Множество раскрытых — по reactionKey.
+  const [expandedFunnelNotes, setExpandedFunnelNotes] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleFunnelNote = (key: string) =>
+    setExpandedFunnelNotes((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   // Инлайн-редактирование комментария: id заметки, которая сейчас редактируется.
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState("");
@@ -334,6 +364,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     parentKey?: string;
     stageAtWrite?: string;
     indented?: boolean;
+    // «Все кандидаты»: воронка, в которой оставлен коммент (бейдж + сворачивание
+    // длинного текста). null = нет привязки/не тот контекст → без бейджа.
+    vacancyLabel?: string | null;
   };
   const timelineItems = useMemo<TimelineRow[]>(() => {
     const noteRows = (Array.isArray(notes) ? notes : [])
@@ -358,6 +391,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
         isStage: !!note.stage_label,
         parentKey: note.parent_key || undefined,
         stageAtWrite: note.stage_at_write_label || undefined,
+        vacancyLabel: resolveNoteVacancyLabel
+          ? resolveNoteVacancyLabel(note.vacancy_id)
+          : null,
       }));
 
     const eventRows = (!readonly && Array.isArray(events) ? events : []).map(
@@ -447,7 +483,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       for (const k of kids) out.push({ ...k, indented: false });
     }
     return out;
-  }, [notes, events, readonly, getStageLabel, addedAt, card.created_at, card.recruiter_name]);
+  }, [notes, events, readonly, getStageLabel, addedAt, card.created_at, card.recruiter_name, resolveNoteVacancyLabel]);
 
   const filteredTimelineItems = useMemo(() => {
     if (!timelineActionFilter) return timelineItems;
@@ -715,9 +751,41 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       <div className="hf-stage-card-head">
         <div className="hf-stage-card-head-row">
           <div>
-            <div className="hf-stage-card-title">{stageTitle}</div>
-            {vacancyTitle && (
-              <div className="hf-stage-card-subtitle">{vacancyTitle}</div>
+            {funnelStages && funnelStages.length >= 2 ? (
+              // Кандидат в ≥2 воронках и реально на разных этапах — единый «общий»
+              // этап врёт. Показываем список «этап (цветной чип) → воронка».
+              <div>
+                <div className="mb-[4px] text-[length:var(--hf-fs-2xs)] text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+                  Этапы по воронкам
+                </div>
+                <div className="flex flex-col gap-[4px]">
+                  {funnelStages.map((f) => (
+                    <div
+                      key={f.vacancyId}
+                      className="flex items-center gap-[6px]"
+                    >
+                      <span
+                        className={clsx(
+                          "inline-flex w-fit shrink-0 items-center rounded-[20px] px-[8px] py-[2px] text-[length:var(--hf-fs-2xs)] font-semibold",
+                          f.colorClass,
+                        )}
+                      >
+                        {f.stageLabel}
+                      </span>
+                      <span className="truncate text-[length:var(--hf-fs-s)] font-medium text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+                        {f.title}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="hf-stage-card-title">{stageTitle}</div>
+                {vacancyTitle && (
+                  <div className="hf-stage-card-subtitle">{vacancyTitle}</div>
+                )}
+              </>
             )}
             {recruiter && (
               <div className="mt-[2px] text-[length:var(--hf-fs-xxs)] text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
@@ -1160,18 +1228,80 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                       оставлен на этапе «{event.stageAtWrite}»
                     </div>
                   )}
-                  <div
-                    dangerouslySetInnerHTML={{
-                      __html: sanitizeHtml(event.title || "Событие"),
-                    }}
-                  />
-                  {event.body && (
-                    <div
-                      dangerouslySetInnerHTML={{
-                        __html: sanitizeHtml(event.body),
-                      }}
-                    />
-                  )}
+                  {(() => {
+                    const funnelLabel = event.vacancyLabel;
+                    const titleNode = (
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: sanitizeHtml(event.title || "Событие"),
+                        }}
+                      />
+                    );
+                    const bodyNode = event.body ? (
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: sanitizeHtml(event.body),
+                        }}
+                      />
+                    ) : null;
+                    // Нет бейджа воронки (воронка/легаси-коммент/событие) — прежнее
+                    // поведение: заголовок + тело всегда видны.
+                    if (!funnelLabel) {
+                      return (
+                        <>
+                          {titleNode}
+                          {bodyNode}
+                        </>
+                      );
+                    }
+                    // «Все кандидаты»: коммент помечаем воронкой. Длинный (>~2 строк)
+                    // — сворачиваем до бейджа, клик по нему раскрывает текст.
+                    const plainLen = (event.rawText || "")
+                      .replace(/<[^>]+>/g, "")
+                      .trim().length;
+                    const collapsible = plainLen > 140;
+                    const collapsed =
+                      collapsible && !expandedFunnelNotes.has(event.reactionKey);
+                    // Заметка-этап несёт короткий заголовок «Этап: X» (event.body =
+                    // длинный текст) — заголовок оставляем, сворачиваем только тело.
+                    const hasHeader = !!bodyNode;
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          onClick={
+                            collapsible
+                              ? () => toggleFunnelNote(event.reactionKey)
+                              : undefined
+                          }
+                          className="mb-[4px] inline-flex w-fit items-center gap-[4px] rounded-[6px] px-[7px] py-[1px] text-[length:var(--hf-fs-2xs)] font-medium"
+                          style={{
+                            background: "#e8effb",
+                            color: "#28518f",
+                            cursor: collapsible ? "pointer" : "default",
+                          }}
+                          title={
+                            collapsible
+                              ? collapsed
+                                ? "Показать комментарий"
+                                : "Свернуть"
+                              : undefined
+                          }
+                        >
+                          <Briefcase className="h-[11px] w-[11px]" />
+                          воронка «{funnelLabel}»
+                          {collapsible &&
+                            (collapsed ? (
+                              <ChevronRight className="h-[11px] w-[11px]" />
+                            ) : (
+                              <ChevronDown className="h-[11px] w-[11px]" />
+                            ))}
+                        </button>
+                        {hasHeader && titleNode}
+                        {!collapsed && (hasHeader ? bodyNode : titleNode)}
+                      </>
+                    );
+                  })()}
                   {event.editedAt && (
                     <span
                       className="ml-[6px] text-[length:var(--hf-fs-2xs)] italic text-[var(--hf-main-500)] cursor-default"

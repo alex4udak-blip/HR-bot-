@@ -34,7 +34,7 @@ import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useFunnelFilterStore } from '@/stores/funnelFilterStore';
-import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, applyEntityToVacancy } from '@/services/api';
+import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink, updateEntity } from '@/services/api/entities';
 import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds } from '@/utils/vacancy';
@@ -46,7 +46,7 @@ import { readHeadlineTags, HeadlineTagChip, HEADLINE_TAG_COLORS, HEADLINE_TAG_CO
 import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import CandidateHandoverModal from '@/components/vacancies/CandidateHandoverModal';
-import { getAllVacancies, setApplicationRecruiters } from '@/services/api/vacancies';
+import { getAllVacancies, createApplication } from '@/services/api/vacancies';
 import { funnelSearchMatch } from '@/utils/translit';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
@@ -328,12 +328,6 @@ export default function RecruiterFunnelsPage() {
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
   const [addingToVacancy, setAddingToVacancy] = useState(false);
   const addToVacancyRef = useRef<HTMLDivElement>(null);
-  // Крепление кандидата на нескольких рекрутёров (кнопка «Рекрутёры» в карточке).
-  const [showRecruiters, setShowRecruiters] = useState(false);
-  const [savingRecruiters, setSavingRecruiters] = useState(false);
-  const recruitersRef = useRef<HTMLDivElement>(null);
-  const [recrSel, setRecrSel] = useState<Set<number>>(new Set());
-  const [recrOwner, setRecrOwner] = useState<number | null>(null);
   const [showVacancyTopSearch, setShowVacancyTopSearch] = useState(false);
   const vacancyTopSearchRef = useRef<HTMLInputElement>(null);
 
@@ -1524,10 +1518,13 @@ export default function RecruiterFunnelsPage() {
     setCommentSaving(true);
     try {
       // Через POST /entities/{id}/notes — рекрутёру достаточно view-доступа.
+      // vacancy_id — привязка коммента к ЭТОЙ воронке: один кандидат в нескольких
+      // воронках, каждая показывает только свои комменты.
       const resp = await addEntityNote(selectedCandidate.entity_id, {
         text: text.trim(),
         stage,
         stage_label: stageLabel,
+        vacancy_id: selectedVacancyId ?? undefined,
       });
       // Локально мерджим только что добавленный коммент в entity_data
       // — иначе пришлось бы ждать reload entity, и юзер думал бы что
@@ -1707,9 +1704,20 @@ export default function RecruiterFunnelsPage() {
       name: selectedCandidate.entity_name || '',
       created_at: selectedCandidate.applied_at,
       tags: dupCard?.tags || [],
-      extra_data: entityExtraData || {},
+      // Комменты СКОУПИМ по воронке: показываем только заметки ЭТОЙ вакансии
+      // (vacancy_id === selectedVacancyId) + «Общие» (без vacancy_id / легаси).
+      // Один кандидат в нескольких воронках — у каждой своя лента комментов.
+      extra_data: (() => {
+        const ed = (entityExtraData || {}) as Record<string, unknown>;
+        const allNotes = Array.isArray(ed.notes) ? (ed.notes as Array<Record<string, unknown>>) : null;
+        if (!allNotes) return ed;
+        const scoped = allNotes.filter(
+          (n) => n?.vacancy_id == null || n.vacancy_id === selectedVacancyId,
+        );
+        return { ...ed, notes: scoped };
+      })(),
     };
-  }, [selectedCandidate, entityExtraData, dupCard]);
+  }, [selectedCandidate, entityExtraData, dupCard, selectedVacancyId]);
 
   // ---- Яркие теги-ярлыки у имени: редактирование прямо в воронке ----
   const hlTags = readHeadlineTags(entityExtraData);
@@ -1878,56 +1886,6 @@ export default function RecruiterFunnelsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showAddToVacancy]);
 
-  // Close "recruiters" dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (recruitersRef.current && !recruitersRef.current.contains(e.target as Node)) {
-        setShowRecruiters(false);
-      }
-    };
-    if (showRecruiters) document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showRecruiters]);
-
-  // Открыть пикер «Рекрутёры»: инициализируем владельца и со-рекрутёров из заявки.
-  const openRecruiters = useCallback(() => {
-    setRecrOwner(selectedCandidate?.created_by ?? user?.id ?? null);
-    setRecrSel(new Set(selectedCandidate?.co_recruiter_ids || []));
-    setShowRecruiters((v) => !v);
-  }, [selectedCandidate?.created_by, selectedCandidate?.co_recruiter_ids, user?.id]);
-
-  const toggleRecr = useCallback((uid: number) => {
-    setRecrSel((prev) => {
-      const next = new Set(prev);
-      if (next.has(uid)) next.delete(uid); else next.add(uid);
-      return next;
-    });
-  }, []);
-
-  const saveRecruiters = useCallback(async () => {
-    if (!selectedCandidate) return;
-    setSavingRecruiters(true);
-    try {
-      const payload: { co_recruiter_ids: number[]; owner_id?: number } = {
-        // Владельца в со-рекрутёрах не держим (он и так видит кандидата).
-        co_recruiter_ids: [...recrSel].filter((id) => id !== recrOwner),
-      };
-      // Вариант «б» — смена владельца только у админа/суперадмина и только если менялся.
-      if (isHrAdmin && recrOwner != null && recrOwner !== selectedCandidate.created_by) {
-        payload.owner_id = recrOwner;
-      }
-      await setApplicationRecruiters(selectedCandidate.id, payload);
-      toast.success('Рекрутёры обновлены');
-      setShowRecruiters(false);
-      if (selectedVacancyId) loadCandidates(selectedVacancyId);
-      fetchVacancies();
-    } catch {
-      toast.error('Не удалось обновить рекрутёров');
-    } finally {
-      setSavingRecruiters(false);
-    }
-  }, [selectedCandidate, recrSel, recrOwner, isHrAdmin, selectedVacancyId, loadCandidates, fetchVacancies]);
-
   useEffect(() => {
     if (showVacancyTopSearch) {
       vacancyTopSearchRef.current?.focus();
@@ -2033,18 +1991,23 @@ export default function RecruiterFunnelsPage() {
     if (!selectedCandidate?.entity_id) return;
     setAddingToVacancy(true);
     try {
-      // MOVE: apply-to-vacancy переносит кандидата (снимает с текущей воронки),
-      // а не дублирует — один кандидат = одна воронка.
-      await applyEntityToVacancy(selectedCandidate.entity_id, targetVacancyId, 'manual_add');
+      // ADD (не MOVE): кандидат ДОБАВЛЯЕТСЯ в вакансию, НЕ снимаясь с других —
+      // один кандидат может быть в нескольких воронках сразу (по запросу HR).
+      // create_application аддитивен и сам не даёт дубля в той же вакансии (400).
+      await createApplication(targetVacancyId, { vacancy_id: targetVacancyId, entity_id: selectedCandidate.entity_id, source: 'manual_add' });
       const targetVacancy = vacancies.find(v => v.id === targetVacancyId);
-      toast.success(`Кандидат перемещён в «${targetVacancy?.title || targetVacancyId}»`);
-      setShowAddToVacancy(false);
-      setSelectedCandidateId(null); // ушёл из текущей воронки
+      toast.success(`Кандидат добавлен в «${targetVacancy?.title || targetVacancyId}»`);
+      // НЕ закрываем меню и НЕ снимаем выбор — можно докинуть в ещё вакансии.
       if (selectedVacancyId) loadCandidates(selectedVacancyId);
       fetchVacancies();
     } catch (err: any) {
-      const detail = err?.response?.data?.detail || 'Ошибка перемещения';
-      toast.error(detail);
+      const detail = err?.response?.data?.detail || '';
+      // Уже в этой вакансии — не ошибка, дружелюбная подсказка.
+      if (typeof detail === 'string' && detail.includes('уже добавлен')) {
+        toast('Кандидат уже в этой вакансии');
+      } else {
+        toast.error(detail || 'Не удалось добавить в вакансию');
+      }
     } finally {
       setAddingToVacancy(false);
     }
@@ -2843,7 +2806,7 @@ export default function RecruiterFunnelsPage() {
                       onClose={() => setSelectedIds(new Set())}
                       actions={[
                         {
-                          label: 'Переместить в воронку',
+                          label: 'Добавить в воронку',
                           icon: Plus,
                           variant: 'neutral',
                           onClick: () => setShowBulkMove(true),
@@ -2925,7 +2888,7 @@ export default function RecruiterFunnelsPage() {
                                       ) : (
                                         <Plus className="hf-profile-action-icon" />
                                       )}
-                                      Переместить
+                                      Добавить в вакансию
                                     </button>
                                     {showAddToVacancy && (
                                       <div className="hf-profile-vacancy-menu absolute top-full left-0 mt-1 w-72 max-h-64 overflow-y-auto z-50">
@@ -2944,60 +2907,6 @@ export default function RecruiterFunnelsPage() {
                                             </button>
                                           ))
                                         )}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                {selectedCandidate.id && (
-                                  <div className="relative" ref={recruitersRef}>
-                                    <button
-                                      onClick={openRecruiters}
-                                      className="hf-profile-action-btn"
-                                      title="Прикрепить кандидата к нескольким рекрутёрам"
-                                    >
-                                      <Users className="hf-profile-action-icon" /> Рекрутёры
-                                    </button>
-                                    {showRecruiters && (
-                                      <div className="hf-profile-vacancy-menu absolute top-full left-0 mt-1 w-72 max-h-80 overflow-y-auto z-50 p-2">
-                                        {isHrAdmin && (
-                                          <div className="px-1 pb-2 mb-2 border-b border-[var(--hf-dark-100)]">
-                                            <div className="text-[11px] text-[var(--hf-dark-600)] mb-1">Владелец</div>
-                                            <select
-                                              value={recrOwner ?? ''}
-                                              onChange={(e) => setRecrOwner(Number(e.target.value) || null)}
-                                              className="w-full text-sm rounded-hf-s border border-[var(--hf-dark-100)] bg-[var(--hf-white)] px-2 py-1"
-                                            >
-                                              {Object.entries(usersMap).map(([id, name]) => (
-                                                <option key={id} value={id}>{name}</option>
-                                              ))}
-                                            </select>
-                                          </div>
-                                        )}
-                                        <div className="text-[11px] text-[var(--hf-dark-600)] px-1 pb-1">
-                                          Со-рекрутёры (видят кандидата в своей воронке)
-                                        </div>
-                                        {Object.entries(usersMap)
-                                          .filter(([id]) => Number(id) !== recrOwner)
-                                          .map(([id, name]) => {
-                                            const uid = Number(id);
-                                            return (
-                                              <label key={id} className="flex items-center gap-2 px-1 py-1.5 cursor-pointer rounded-hf-s hover:bg-black/5">
-                                                <input type="checkbox" checked={recrSel.has(uid)} onChange={() => toggleRecr(uid)} />
-                                                <span className="truncate text-sm">{name}</span>
-                                              </label>
-                                            );
-                                          })}
-                                        {Object.keys(usersMap).length === 0 && (
-                                          <div className="hf-profile-vacancy-menu-empty">Нет рекрутёров</div>
-                                        )}
-                                        <button
-                                          onClick={saveRecruiters}
-                                          disabled={savingRecruiters}
-                                          className="mt-2 w-full text-sm font-semibold rounded-hf-s py-1.5 text-white disabled:opacity-50"
-                                          style={{ background: 'var(--hf-status-green)' }}
-                                        >
-                                          {savingRecruiters ? 'Сохраняю…' : 'Сохранить'}
-                                        </button>
                                       </div>
                                     )}
                                   </div>

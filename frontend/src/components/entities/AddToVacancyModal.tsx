@@ -5,7 +5,7 @@ import { X, Search, Briefcase, Plus, ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
 import { getErrorDetail } from "@/utils";
 import clsx from "clsx";
-import { getAllVacancies, applyEntityToVacancy, getEntityVacancies } from "@/services/api";
+import { getAllVacancies, createApplication, getEntityVacancies } from "@/services/api";
 import type { Vacancy } from "@/types";
 import { VACANCY_STATUS_LABELS, VACANCY_STATUS_COLORS } from "@/types";
 import { formatSalary } from "@/utils";
@@ -157,34 +157,25 @@ export default function AddToVacancyModal({
           ? bulkEntityIds.map((id) => ({ id, name: `#${id}` }))
           : [{ id: entityId, name: entityName }];
 
-    // ЗАЩИТА ОТ СЛУЧАЙНОГО МАССОВОГО ПЕРЕНОСА (инцидент 2026-08-07: массово
-    // перенесли 58 кандидатов на одну воронку — остальные воронки опустели, этапы
-    // и история сбросились, восстановить нельзя). «Переместить» = MOVE: снимает
-    // кандидата с ТЕКУЩИХ воронок. При >1 требуем явное подтверждение.
-    if (entities.length > 1) {
-      const ok = window.confirm(
-        `Переместить ${entities.length} кандидатов в «${selectedVacancy.title}»?\n\n` +
-        `ВНИМАНИЕ: каждый будет СНЯТ со своих текущих воронок, а этап сбросится на ` +
-        `«Новый». Действие необратимо.`,
-      );
-      if (!ok) {
-        setLoading(false);
-        return;
-      }
-    }
-
-    // Добавляем КАЖДОГО независимо: один «уже в вакансии» не должен срывать
-    // весь батч — остальные должны переместиться.
+    // ADD-семантика (не MOVE): кандидат ДОБАВЛЯЕТСЯ в выбранную вакансию, НЕ
+    // снимаясь с текущих — один кандидат может быть в нескольких воронках сразу
+    // (по запросу HR). Это также убирает риск инцидента 2026-08-07 (массовый
+    // перенос опустошал воронки): добавление неразрушительно и обратимо через
+    // «Удалить с воронки», поэтому подтверждение больше не нужно.
     let okCount = 0;
     const alreadyIn: string[] = [];
     const failed: string[] = [];
     for (const ent of entities) {
       try {
-        await applyEntityToVacancy(ent.id, selectedVacancy.id);
+        await createApplication(selectedVacancy.id, {
+          vacancy_id: selectedVacancy.id,
+          entity_id: ent.id,
+          source: "manual_add",
+        });
         okCount += 1;
       } catch (error) {
         const detail = getErrorDetail(error, "");
-        if (/already applied|уже .*ваканс/i.test(detail)) {
+        if (/already applied|уже .*(добавлен|ваканс)/i.test(detail)) {
           alreadyIn.push(ent.name);
         } else {
           failed.push(ent.name);
@@ -198,12 +189,12 @@ export default function AddToVacancyModal({
       toast.error(`Кандидат ${name} уже есть в вакансии`),
     );
     failed.forEach((name) => toast.error(`Не удалось добавить: ${name}`));
-    // Успех — один зелёный тост (с галочкой) с реальным числом перемещённых.
+    // Успех — один зелёный тост (с галочкой) с реальным числом добавленных.
     if (okCount > 0) {
       toast.success(
         okCount === 1
           ? "Кандидат добавлен в вакансию"
-          : `Перемещено кандидатов: ${okCount}`,
+          : `Добавлено кандидатов: ${okCount}`,
       );
     }
 

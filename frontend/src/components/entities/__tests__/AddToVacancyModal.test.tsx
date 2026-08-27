@@ -9,12 +9,8 @@ import type { Vacancy } from "@/types";
 vi.mock("@/services/api", () => ({
   getAllVacancies: vi.fn(),
   getEntityVacancies: vi.fn().mockResolvedValue([]),
-  applyEntityToVacancy: vi.fn(),
+  createApplication: vi.fn(),
 }));
-
-// Массовый перенос теперь требует подтверждения (window.confirm) — в тестах
-// подтверждаем автоматически, иначе гард отменяет батч.
-vi.spyOn(window, "confirm").mockReturnValue(true);
 
 vi.mock("@/stores/authStore", () => ({
   useAuthStore: () => ({
@@ -325,7 +321,7 @@ describe("AddToVacancyModal", () => {
     });
 
     it("should submit application and call onSuccess", async () => {
-      (api.applyEntityToVacancy as ReturnType<typeof vi.fn>).mockResolvedValue({
+      (api.createApplication as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 1,
         entity_id: 1,
         vacancy_id: 1,
@@ -351,13 +347,17 @@ describe("AddToVacancyModal", () => {
       await userEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(api.applyEntityToVacancy).toHaveBeenCalledWith(1, 1);
+        expect(api.createApplication).toHaveBeenCalledWith(1, {
+          vacancy_id: 1,
+          entity_id: 1,
+          source: "manual_add",
+        });
         expect(mockOnSuccess).toHaveBeenCalled();
       });
     });
 
     it("should show loading state during submission", async () => {
-      (api.applyEntityToVacancy as ReturnType<typeof vi.fn>).mockImplementation(
+      (api.createApplication as ReturnType<typeof vi.fn>).mockImplementation(
         () => new Promise((resolve) => setTimeout(() => resolve({}), 100)),
       );
 
@@ -402,7 +402,7 @@ describe("AddToVacancyModal", () => {
 
     it("should handle API error when submitting", async () => {
       const toast = await import("react-hot-toast");
-      (api.applyEntityToVacancy as ReturnType<typeof vi.fn>).mockRejectedValue({
+      (api.createApplication as ReturnType<typeof vi.fn>).mockRejectedValue({
         response: {
           data: { detail: "Entity already applied to this vacancy" },
         },
