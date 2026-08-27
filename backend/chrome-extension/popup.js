@@ -417,7 +417,7 @@ async function checkDuplicatesOnLoad() {
     // и повторим проверку ОДИН раз, БЕЗ редиректа на экран входа (это фоновая
     // проверка). Раньше дубль-чек просто падал «⚠️ Не удалось проверить дубликаты»
     // на любом протухшем токене, хотя «Добавить» (через apiRequest) рефрешил и работал.
-    if (isAuthError(checkResp) && await tryRefresh()) {
+    if (isAuthError(checkResp) && (await tryRefresh()) === 'refreshed') {
       checkResp = await rawApiRequest('POST', '/api/magic-button/check-duplicate', dupPayload, 12000);
     }
 
@@ -634,8 +634,12 @@ function isAuthError(resp) {
 // Молчаливое обновление access-токена по refresh-токену (как в вебе).
 // Single-flight: параллельные 401-ы не должны рефрешить наперегонки.
 let _refreshing = null;
+// Возвращает: 'refreshed' — новый access получен; 'auth_failed' — refresh-токен
+// ТОЧНО невалиден (сервер ответил 401/revoked), пора на логин; 'transient' —
+// рефреш не удался из-за сети/таймаута/сна MV3 service worker, сессия скорее всего
+// жива → НЕ разлогиниваем (иначе любой сетевой блип выкидывал Марию на вход).
 async function tryRefresh() {
-  if (!refreshToken) return false;
+  if (!refreshToken) return 'auth_failed';
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
     const resp = await rawApiRequest('POST', '/api/auth/refresh', { refresh_token: refreshToken });
@@ -643,9 +647,11 @@ async function tryRefresh() {
       authToken = resp.data.access_token;
       if (resp.data.refresh_token) refreshToken = resp.data.refresh_token;
       await chrome.storage.local.set({ authToken, refreshToken });
-      return true;
+      return 'refreshed';
     }
-    return false;
+    // Отличаем настоящий отказ рефреша (401/«invalid token»/«refresh token») от
+    // транзиентного сбоя (таймаут/сеть/пустой ответ фонового процесса).
+    return isAuthError(resp) ? 'auth_failed' : 'transient';
   })();
   try {
     return await _refreshing;
@@ -669,13 +675,17 @@ async function handleAuthExpired() {
 async function apiRequest(method, path, body, timeoutMs = 30000) {
   let resp = await rawApiRequest(method, path, body, timeoutMs);
   if (isAuthError(resp)) {
-    const refreshed = refreshToken ? await tryRefresh() : false;
-    if (refreshed) {
+    const outcome = refreshToken ? await tryRefresh() : 'auth_failed';
+    if (outcome === 'refreshed') {
       resp = await rawApiRequest(method, path, body, timeoutMs);
-    }
-    if (isAuthError(resp)) {
+      // Рефреш прошёл, но запрос всё равно 401 → сессия реально истекла.
+      if (isAuthError(resp)) await handleAuthExpired();
+    } else if (outcome === 'auth_failed') {
       await handleAuthExpired();
     }
+    // outcome === 'transient': НЕ разлогиниваем. Сессия, скорее всего, жива —
+    // рефреш сорвался на сети/таймауте/сне воркера. Возвращаем ошибку, следующий
+    // вызов повторит. Это и убирает «выкидывает по нескольку раз в день».
   }
   return resp;
 }
