@@ -145,12 +145,6 @@ async def ensure_shadow_columns():
         # Аудио загруженных звонков (до лимита) в БД — переживает редеплой
         await conn.execute(text('ALTER TABLE call_recordings ADD COLUMN IF NOT EXISTS audio_data BYTEA'))
 
-        # Крепление кандидата на НЕСКОЛЬКИХ рекрутёров (со-рекрутёры). В воронке
-        # кандидат показывается у каждого из co_recruiter_ids, помимо created_by.
-        # create_all добавляет только таблицы — без ALTER любой запрос к заявкам
-        # падал бы UndefinedColumn.
-        await conn.execute(text("ALTER TABLE vacancy_applications ADD COLUMN IF NOT EXISTS co_recruiter_ids JSONB DEFAULT '[]'::jsonb"))
-
         # Check and add file_data column to task_attachments (bytea for DB file storage)
         # Railway /tmp эфемерный — без этой колонки модель ломает любой запрос
         # к task_attachments (kanban 500).

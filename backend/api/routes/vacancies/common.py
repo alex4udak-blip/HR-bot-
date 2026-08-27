@@ -702,11 +702,8 @@ class ApplicationResponse(BaseModel):
     # (last_stage_change_at < vacancy.reopened_at). Дефолт False — страховка на
     # старых данных и для create/update-эндпоинтов, где не вычисляется.
     is_previous_series: bool = False
-    # Рекрутёр-владелец заявки (кто добавил) + со-рекрутёры, к которым кандидат
-    # тоже прикреплён (крепление на нескольких рекрутёров). Нужны фронту для
-    # управления назначением в карточке воронки.
+    # Рекрутёр-владелец заявки (кто добавил) — нужен фронту для авто-метки HR.
     created_by: Optional[int] = None
-    co_recruiter_ids: Optional[List[int]] = None
 
     class Config:
         from_attributes = True

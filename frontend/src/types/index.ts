@@ -645,10 +645,8 @@ export interface VacancyApplication {
   updated_at: string;
   // «В предыдущих сериях»: отклик старше последнего переоткрытия вакансии.
   is_previous_series?: boolean;
-  // Рекрутёр-владелец заявки (кто добавил) + со-рекрутёры, к которым кандидат тоже
-  // прикреплён (крепление на нескольких рекрутёров).
+  // Рекрутёр-владелец заявки (кто добавил) — для авто-метки HR.
   created_by?: number | null;
-  co_recruiter_ids?: number[] | null;
 }
 
 // === AI Compatibility Scoring ===

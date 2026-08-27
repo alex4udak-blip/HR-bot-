@@ -1004,9 +1004,6 @@ class VacancyApplication(Base):
     applied_at = Column(DateTime, default=func.now())
     last_stage_change_at = Column(DateTime, default=func.now())
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    # Со-рекрутёры: кандидат в воронке этой вакансии показывается у КАЖДОГО из этих
-    # рекрутёров, помимо created_by (крепление на нескольких рекрутёров, 2026-08).
-    co_recruiter_ids = Column(JSON, default=list)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     __table_args__ = (
