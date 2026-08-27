@@ -661,6 +661,26 @@ async function tryRefresh() {
 }
 
 // Сессия окончательно истекла (нет/протух refresh) — чистим и на экран входа.
+// Подхватить ЖИВУЮ веб-сессию (enceladus.site) по httpOnly-куке, если свой
+// Bearer/refresh расширения умер. background.js при token==='session-sync' шлёт
+// запросы с credentials:'include' (куки), поэтому дальше всё работает на куке.
+// Возвращает true, если веб-сессия жива. Убирает «Сессия истекла», когда юзер на
+// самом деле залогинен в вебе (наблюдалось на v1.8.5: попап показывал вход, хотя
+// enceladus.site был авторизован).
+async function trySessionSync() {
+  try {
+    const resp = await fetch(serverUrl + '/api/auth/me', { credentials: 'include' });
+    if (resp.ok) {
+      const user = await resp.json().catch(() => ({}));
+      authToken = 'session-sync';
+      refreshToken = '';
+      await chrome.storage.local.set({ serverUrl, authToken, refreshToken: '', userName: user.name || '' });
+      return true;
+    }
+  } catch (_) { /* нет сети/куки — сессия действительно мертва */ }
+  return false;
+}
+
 async function handleAuthExpired() {
   authToken = '';
   refreshToken = '';
@@ -681,7 +701,15 @@ async function apiRequest(method, path, body, timeoutMs = 30000) {
       // Рефреш прошёл, но запрос всё равно 401 → сессия реально истекла.
       if (isAuthError(resp)) await handleAuthExpired();
     } else if (outcome === 'auth_failed') {
-      await handleAuthExpired();
+      // Bearer/refresh мертвы — но веб-сессия (enceladus.site) может быть жива.
+      // Пробуем подхватить её по куке (session-sync) и повторить запрос. Только
+      // если и кука мертва — на логин. Убирает ложное «Сессия истекла».
+      if (await trySessionSync()) {
+        resp = await rawApiRequest(method, path, body, timeoutMs);
+        if (isAuthError(resp)) await handleAuthExpired();
+      } else {
+        await handleAuthExpired();
+      }
     }
     // outcome === 'transient': НЕ разлогиниваем. Сессия, скорее всего, жива —
     // рефреш сорвался на сети/таймауте/сне воркера. Возвращаем ошибку, следующий
