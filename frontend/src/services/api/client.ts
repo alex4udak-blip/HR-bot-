@@ -56,8 +56,12 @@ const processQueue = (error: Error | null): void => {
 /**
  * Silently attempt to refresh the access token
  * Returns true if successful, false otherwise
+ *
+ * Экспортируется для ПРОАКТИВНОГО рефреша (WebSocketProvider): access-токен живёт
+ * 15 мин, и без упреждающего обновления каждые ~15 мин наступало окно, где WS
+ * ловил 403, а API — 401 (до реактивного рефреша на поллинге), и юзера «выкидывало».
  */
-const attemptTokenRefresh = async (): Promise<boolean> => {
+export const attemptTokenRefresh = async (): Promise<boolean> => {
   try {
     const response = await axios.post('/api/auth/refresh', {}, {
       withCredentials: true, // Send cookies

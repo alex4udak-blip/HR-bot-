@@ -7,6 +7,7 @@ import { useFormBadgeStore } from '@/stores/formBadgeStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { logger } from '@/utils/logger';
 import { getNotifications } from '@/services/api/notifications';
+import { attemptTokenRefresh } from '@/services/api/client';
 import type { FormSubmissionPayload } from '@/types/websocket';
 import { playAnketaChime, unlockAudio, showAnketaOsNotification } from '@/utils/notificationSound';
 
@@ -91,6 +92,26 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     logger.log(`[WebSocketProvider] Status: ${status}, Connected: ${isConnected}`);
   }, [status, isConnected]);
+
+  // ПРОАКТИВНЫЙ РЕФРЕШ access-токена. Токен живёт 15 мин; без упреждающего обновления
+  // каждые ~15 мин наступало окно, где WebSocket ловил 403, а API — 401 (рефреш был
+  // ТОЛЬКО реактивный, на поллинге), и юзера «выкидывало» на минуту. Обновляем токен
+  // заранее: каждые 12 мин (запас 3 мин до истечения) + при возврате фокуса на вкладку
+  // (ноутбук проснулся — токен мог протухнуть во сне, чиним до первого 401/403).
+  // Провайдер смонтирован только у залогиненных (внутри ProtectedRoute), поэтому
+  // отдельного гейта по user не нужно.
+  useEffect(() => {
+    const REFRESH_EVERY_MS = 12 * 60 * 1000;
+    const id = setInterval(() => { void attemptTokenRefresh(); }, REFRESH_EVERY_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void attemptTokenRefresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   // Браузерная autoplay-политика блокирует звук до жеста пользователя — «разблокируем»
   // AudioContext на первый pointerdown/keydown, чтобы чайм потом мог проиграться.
