@@ -46,7 +46,7 @@ import { readHeadlineTags, HeadlineTagChip, HEADLINE_TAG_COLORS, HEADLINE_TAG_CO
 import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import CandidateHandoverModal from '@/components/vacancies/CandidateHandoverModal';
-import { getAllVacancies } from '@/services/api/vacancies';
+import { getAllVacancies, setApplicationRecruiters } from '@/services/api/vacancies';
 import { funnelSearchMatch } from '@/utils/translit';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
@@ -328,6 +328,12 @@ export default function RecruiterFunnelsPage() {
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
   const [addingToVacancy, setAddingToVacancy] = useState(false);
   const addToVacancyRef = useRef<HTMLDivElement>(null);
+  // Крепление кандидата на нескольких рекрутёров (кнопка «Рекрутёры» в карточке).
+  const [showRecruiters, setShowRecruiters] = useState(false);
+  const [savingRecruiters, setSavingRecruiters] = useState(false);
+  const recruitersRef = useRef<HTMLDivElement>(null);
+  const [recrSel, setRecrSel] = useState<Set<number>>(new Set());
+  const [recrOwner, setRecrOwner] = useState<number | null>(null);
   const [showVacancyTopSearch, setShowVacancyTopSearch] = useState(false);
   const vacancyTopSearchRef = useRef<HTMLInputElement>(null);
 
@@ -1872,6 +1878,56 @@ export default function RecruiterFunnelsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showAddToVacancy]);
 
+  // Close "recruiters" dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (recruitersRef.current && !recruitersRef.current.contains(e.target as Node)) {
+        setShowRecruiters(false);
+      }
+    };
+    if (showRecruiters) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showRecruiters]);
+
+  // Открыть пикер «Рекрутёры»: инициализируем владельца и со-рекрутёров из заявки.
+  const openRecruiters = useCallback(() => {
+    setRecrOwner(selectedCandidate?.created_by ?? user?.id ?? null);
+    setRecrSel(new Set(selectedCandidate?.co_recruiter_ids || []));
+    setShowRecruiters((v) => !v);
+  }, [selectedCandidate?.created_by, selectedCandidate?.co_recruiter_ids, user?.id]);
+
+  const toggleRecr = useCallback((uid: number) => {
+    setRecrSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid); else next.add(uid);
+      return next;
+    });
+  }, []);
+
+  const saveRecruiters = useCallback(async () => {
+    if (!selectedCandidate) return;
+    setSavingRecruiters(true);
+    try {
+      const payload: { co_recruiter_ids: number[]; owner_id?: number } = {
+        // Владельца в со-рекрутёрах не держим (он и так видит кандидата).
+        co_recruiter_ids: [...recrSel].filter((id) => id !== recrOwner),
+      };
+      // Вариант «б» — смена владельца только у админа/суперадмина и только если менялся.
+      if (isHrAdmin && recrOwner != null && recrOwner !== selectedCandidate.created_by) {
+        payload.owner_id = recrOwner;
+      }
+      await setApplicationRecruiters(selectedCandidate.id, payload);
+      toast.success('Рекрутёры обновлены');
+      setShowRecruiters(false);
+      if (selectedVacancyId) loadCandidates(selectedVacancyId);
+      fetchVacancies();
+    } catch {
+      toast.error('Не удалось обновить рекрутёров');
+    } finally {
+      setSavingRecruiters(false);
+    }
+  }, [selectedCandidate, recrSel, recrOwner, isHrAdmin, selectedVacancyId, loadCandidates, fetchVacancies]);
+
   useEffect(() => {
     if (showVacancyTopSearch) {
       vacancyTopSearchRef.current?.focus();
@@ -2888,6 +2944,60 @@ export default function RecruiterFunnelsPage() {
                                             </button>
                                           ))
                                         )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {selectedCandidate.id && (
+                                  <div className="relative" ref={recruitersRef}>
+                                    <button
+                                      onClick={openRecruiters}
+                                      className="hf-profile-action-btn"
+                                      title="Прикрепить кандидата к нескольким рекрутёрам"
+                                    >
+                                      <Users className="hf-profile-action-icon" /> Рекрутёры
+                                    </button>
+                                    {showRecruiters && (
+                                      <div className="hf-profile-vacancy-menu absolute top-full left-0 mt-1 w-72 max-h-80 overflow-y-auto z-50 p-2">
+                                        {isHrAdmin && (
+                                          <div className="px-1 pb-2 mb-2 border-b border-[var(--hf-dark-100)]">
+                                            <div className="text-[11px] text-[var(--hf-dark-600)] mb-1">Владелец</div>
+                                            <select
+                                              value={recrOwner ?? ''}
+                                              onChange={(e) => setRecrOwner(Number(e.target.value) || null)}
+                                              className="w-full text-sm rounded-hf-s border border-[var(--hf-dark-100)] bg-[var(--hf-white)] px-2 py-1"
+                                            >
+                                              {Object.entries(usersMap).map(([id, name]) => (
+                                                <option key={id} value={id}>{name}</option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        )}
+                                        <div className="text-[11px] text-[var(--hf-dark-600)] px-1 pb-1">
+                                          Со-рекрутёры (видят кандидата в своей воронке)
+                                        </div>
+                                        {Object.entries(usersMap)
+                                          .filter(([id]) => Number(id) !== recrOwner)
+                                          .map(([id, name]) => {
+                                            const uid = Number(id);
+                                            return (
+                                              <label key={id} className="flex items-center gap-2 px-1 py-1.5 cursor-pointer rounded-hf-s hover:bg-black/5">
+                                                <input type="checkbox" checked={recrSel.has(uid)} onChange={() => toggleRecr(uid)} />
+                                                <span className="truncate text-sm">{name}</span>
+                                              </label>
+                                            );
+                                          })}
+                                        {Object.keys(usersMap).length === 0 && (
+                                          <div className="hf-profile-vacancy-menu-empty">Нет рекрутёров</div>
+                                        )}
+                                        <button
+                                          onClick={saveRecruiters}
+                                          disabled={savingRecruiters}
+                                          className="mt-2 w-full text-sm font-semibold rounded-hf-s py-1.5 text-white disabled:opacity-50"
+                                          style={{ background: 'var(--hf-status-green)' }}
+                                        >
+                                          {savingRecruiters ? 'Сохраняю…' : 'Сохранить'}
+                                        </button>
                                       </div>
                                     )}
                                   </div>

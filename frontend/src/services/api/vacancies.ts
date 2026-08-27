@@ -186,6 +186,22 @@ export const deleteApplication = async (applicationId: number): Promise<void> =>
   await debouncedMutation<void>('delete', `/vacancies/applications/${applicationId}`);
 };
 
+// Крепление кандидата на нескольких рекрутёров:
+//  • co_recruiter_ids — со-рекрутёры (вариант «а», доступно всем): кандидат виден
+//    в воронке у каждого из них, помимо владельца.
+//  • owner_id — сменить владельца (вариант «б», только админ/суперадмин).
+export const setApplicationRecruiters = async (
+  applicationId: number,
+  payload: { co_recruiter_ids?: number[]; owner_id?: number },
+): Promise<VacancyApplication> => {
+  const { data } = await debouncedMutation<VacancyApplication>(
+    'put',
+    `/vacancies/applications/${applicationId}/recruiters`,
+    payload,
+  );
+  return data;
+};
+
 // ============================================================
 // RECRUITER STATS API
 // ============================================================

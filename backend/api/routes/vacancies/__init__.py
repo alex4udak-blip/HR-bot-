@@ -65,6 +65,7 @@ from .applications import (
     create_application,
     update_application,
     delete_application,
+    set_application_recruiters,
 )
 
 # Import kanban handlers
@@ -122,6 +123,7 @@ router.add_api_route("/applications/{application_id}/history", get_application_h
 router.add_api_route("/applications/{application_id}/history/{history_id}", delete_application_history, methods=["DELETE"], tags=["vacancy-applications"])
 
 # Applications update/delete by ID: /applications/{application_id}
+router.add_api_route("/applications/{application_id}/recruiters", set_application_recruiters, methods=["PUT"], tags=["vacancy-applications"])
 router.add_api_route("/applications/{application_id}", update_application, methods=["PUT"], tags=["vacancy-applications"])
 router.add_api_route("/applications/{application_id}", delete_application, methods=["DELETE"], tags=["vacancy-applications"])
 

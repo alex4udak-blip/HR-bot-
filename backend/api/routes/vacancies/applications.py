@@ -2,7 +2,7 @@
 Application management endpoints for vacancies.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from datetime import datetime
@@ -13,6 +13,7 @@ from .common import (
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
     check_vacancy_access, can_access_vacancy, can_manage_applications,
     is_org_admin_or_owner, sees_all_candidates,
+    BaseModel, OrgMember, OrgRole,
 )
 from ...services.auth import get_user_org
 
@@ -165,13 +166,20 @@ async def list_applications(
         # Явный скоуп по рекрутёру: админ — на ЛЮБОГО (сайдбар /my-funnels), а
         # ЛЮБОЙ рекрутёр — на СЕБЯ (чекбокс «Только мои»). Себя можно фильтровать
         # даже на «Видна коллегам», иначе рекрутёр не мог оставить только своих.
-        query = query.where(VacancyApplication.created_by == created_by)
+        # + СО-РЕКРУТЁРЫ: кандидат, прикреплённый к рекрутёру через co_recruiter_ids,
+        # тоже попадает в его скоуп (крепление на нескольких рекрутёров).
+        query = query.where(or_(
+            VacancyApplication.created_by == created_by,
+            text(f"vacancy_applications.co_recruiter_ids @> '[{int(created_by)}]'::jsonb"),
+        ))
     elif not is_admin_viewer and not vacancy.visible_to_all:
         # Обычный рекрутёр на «скрытой» вакансии без явного скоупа: только свои +
-        # legacy без автора. На «Видна коллегам» без скоупа — видит всех (выше).
+        # legacy без автора + прикреплённые к нему как со-рекрутёру. На «Видна
+        # коллегам» без скоупа — видит всех (выше).
         query = query.where(or_(
             VacancyApplication.created_by == current_user.id,
             VacancyApplication.created_by.is_(None),
+            text(f"vacancy_applications.co_recruiter_ids @> '[{int(current_user.id)}]'::jsonb"),
         ))
 
     if stage:
@@ -245,6 +253,8 @@ async def list_applications(
             last_stage_change_at=app.last_stage_change_at,
             updated_at=app.updated_at,
             is_previous_series=is_previous_series,
+            created_by=app.created_by,
+            co_recruiter_ids=list(app.co_recruiter_ids or []),
         ))
 
     return responses
@@ -602,6 +612,104 @@ async def update_application(
         applied_at=application.applied_at,
         last_stage_change_at=application.last_stage_change_at,
         updated_at=application.updated_at
+    )
+
+
+class ApplicationRecruitersUpdate(BaseModel):
+    # Вариант «а» (доступно ЛЮБОМУ с доступом к вакансии): со-рекрутёры — кандидат
+    # показывается в воронке у каждого из них, помимо владельца.
+    co_recruiter_ids: Optional[List[int]] = None
+    # Вариант «б» (ТОЛЬКО админ/овнер/суперадмин): сменить владельца (created_by),
+    # т.е. переназначить кандидата другому рекрутёру.
+    owner_id: Optional[int] = None
+
+
+@router.put("/applications/{application_id}/recruiters", response_model=ApplicationResponse)
+async def set_application_recruiters(
+    application_id: int,
+    data: ApplicationRecruitersUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access),
+):
+    """Крепление кандидата на нескольких рекрутёров (см. ApplicationRecruitersUpdate).
+
+    Видимость обеспечивается фильтром list_applications: заявка попадает в скоуп
+    рекрутёра, если он created_by ИЛИ входит в co_recruiter_ids.
+    """
+    org = await get_user_org(current_user, db)
+
+    # FOR UPDATE — сериализуем конкурентные правки одной заявки (как в update).
+    result = await db.execute(
+        select(VacancyApplication).where(VacancyApplication.id == application_id).with_for_update()
+    )
+    application = result.scalar()
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    vacancy = (await db.execute(
+        select(Vacancy).where(Vacancy.id == application.vacancy_id)
+    )).scalar()
+    if vacancy and not (
+        await is_org_admin_or_owner(current_user, org, db)
+        or await can_access_vacancy(vacancy, current_user, org, db)
+    ):
+        raise HTTPException(status_code=403, detail="Недостаточно прав для этой вакансии")
+
+    # Допустимый пул рекрутёров орга (надмножество фронтового «Назначить рекрутёрам»:
+    # owner/admin/hr). Валидация — защита в глубину, чтобы в co_recruiter_ids/owner
+    # не попали произвольные user_id.
+    valid_ids = {r[0] for r in (await db.execute(
+        select(OrgMember.user_id).where(
+            OrgMember.org_id == (org.id if org else -1),
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin, OrgRole.hr]),
+        )
+    )).all()}
+
+    is_admin = await is_org_admin_or_owner(current_user, org, db)
+
+    # Вариант «б»: смена владельца — только админ/овнер/суперадмин.
+    if data.owner_id is not None:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Сменить владельца может только администратор")
+        if data.owner_id not in valid_ids:
+            raise HTTPException(status_code=400, detail="Недопустимый рекрутёр для владельца")
+        application.created_by = data.owner_id
+
+    # Вариант «а»: со-рекрутёры (любому с доступом). Владельца в список не держим —
+    # он и так видит кандидата.
+    if data.co_recruiter_ids is not None:
+        cleaned = sorted({
+            int(uid) for uid in data.co_recruiter_ids
+            if int(uid) in valid_ids and int(uid) != application.created_by
+        })
+        application.co_recruiter_ids = cleaned
+    else:
+        # Если сменили владельца — вычищаем его из существующих со-рекрутёров.
+        application.co_recruiter_ids = [
+            uid for uid in (application.co_recruiter_ids or []) if uid != application.created_by
+        ]
+
+    application.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(application)
+
+    # Минимальный ответ: фронт после действия перезагружает список воронки (там
+    # полные данные кандидата). Здесь важны created_by + co_recruiter_ids.
+    return ApplicationResponse(
+        id=application.id,
+        vacancy_id=application.vacancy_id,
+        entity_id=application.entity_id,
+        stage=application.stage,
+        stage_order=application.stage_order or 0,
+        rating=application.rating,
+        notes=application.notes,
+        source=application.source,
+        next_interview_at=application.next_interview_at,
+        applied_at=application.applied_at,
+        last_stage_change_at=application.last_stage_change_at,
+        updated_at=application.updated_at,
+        created_by=application.created_by,
+        co_recruiter_ids=list(application.co_recruiter_ids or []),
     )
 
 
