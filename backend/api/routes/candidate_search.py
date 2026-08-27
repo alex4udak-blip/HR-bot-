@@ -641,7 +641,10 @@ async def change_candidate_status(
     if new_status in STATUS_SYNC_MAP:
         target_stage = STATUS_SYNC_MAP[new_status]
         apps_result = await db.execute(
-            select(VacancyApplication).where(VacancyApplication.entity_id == entity_id).with_for_update()
+            # order_by(id): единый порядок взятия row-locks со ВСЕМИ прочими FOR UPDATE
+            # по vacancy_applications (в частности rebalance_stage_orders канбана) —
+            # иначе гонка «синк статуса» ↔ «реордер колонки» ловила deadlock (прод 2026-08-27).
+            select(VacancyApplication).where(VacancyApplication.entity_id == entity_id).order_by(VacancyApplication.id).with_for_update()
         )
         for app in apps_result.scalars().all():
             if app.stage != target_stage:

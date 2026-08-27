@@ -373,6 +373,20 @@ async def rebalance_stage_orders(
     to all applications in a given stage, preserving their relative order.
     Uses a starting value of 1000 with gaps to leave room for future insertions.
     """
+    # DEADLOCK-SAFE: сначала берём row-locks на все строки колонки В ПОРЯДКЕ id —
+    # тем же порядком, что и прочие FOR UPDATE по vacancy_applications (статус-синк
+    # по entity_id и др.). Без этого гонка «реордер колонки» ↔ «синк статуса» ловила
+    # deadlock (прод 2026-08-27): стороны брали локи на пересекающиеся строки в разном
+    # порядке. Последующие UPDATE (flush) новых локов не берут — они уже held.
+    await db.execute(
+        select(VacancyApplication.id)
+        .where(
+            VacancyApplication.vacancy_id == vacancy_id,
+            VacancyApplication.stage == stage
+        )
+        .order_by(VacancyApplication.id)
+        .with_for_update()
+    )
     # Get all applications in this stage ordered by current stage_order
     result = await db.execute(
         select(VacancyApplication)
