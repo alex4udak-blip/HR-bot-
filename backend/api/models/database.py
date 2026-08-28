@@ -2076,6 +2076,32 @@ class AccessRequest(Base):
                          cascade="all, delete-orphan", order_by="AccessRequestAudit.created_at")
 
 
+class AccessRequestMessage(Base):
+    """Сообщение в анонимном чате по заявке (ТЗ п. 3.5).
+
+    Чат привязан к заявке, а не к паре людей: у одного человека может быть
+    несколько заявок к разным ответственным, и переписку нельзя смешивать.
+
+    Анонимность односторонняя: заявитель видит «Снабжение» вместо имени
+    ответственного — как и в самой заявке. Ответственный имя заявителя видит,
+    иначе не поймёт, кому и что выдаёт.
+    """
+    __tablename__ = "access_request_messages"
+
+    id = Column(Integer, primary_key=True)
+    request_id = Column(Integer, ForeignKey("access_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    text = Column(Text, nullable=False)
+    # Откуда пришло: miniapp | web | bot — видно, работает ли ответ из Telegram
+    source = Column(String(12), nullable=False, default="web")
+    created_at = Column(DateTime, default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("ix_ah_msg_request_created", "request_id", "created_at"),
+    )
+
+
 class AccessRequestAudit(Base):
     """Append-only журнал переходов статусов заявки (по образцу StageTransition)."""
     __tablename__ = "access_request_audit"

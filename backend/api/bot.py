@@ -1697,6 +1697,118 @@ def miniapp_keyboard() -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(inline_keyboard=[[btn]]) if btn else None
 
 
+# Кому какой заявке пишем: telegram_id -> request_id. Живёт в памяти, как и
+# остальные ожидания ввода в этом боте (_pending_broadcasts, _pending_cleanup).
+# После рестарта контекст теряется — человек просто нажмёт «Ответить» снова,
+# кнопка остаётся под сообщением.
+_pending_access_chat: dict[int, int] = {}
+
+
+async def send_access_chat_message(user_id: int, request_id: int, resource: str,
+                                   author: str, text: str) -> bool:
+    """Сообщение анонимного чата по заявке (ТЗ п. 3.5).
+
+    Под сообщением — кнопка «Ответить»: человек отвечает прямо в Telegram,
+    не открывая приложение. Имя автора приходит уже подготовленным: для
+    заявителя ответственный подписан «Снабжение», раскрывать его тут нельзя.
+    """
+    try:
+        async with async_session() as session:
+            user = (await session.execute(
+                select(User).where(User.id == user_id)
+            )).scalar_one_or_none()
+            if not (user and user.telegram_id):
+                return False
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Ответить", callback_data=f"ahchat:{request_id}")
+        ]])
+        await get_bot().send_message(
+            chat_id=user.telegram_id,
+            text=(f"<b>Заявка: {resource}</b>\n"
+                  f"<i>{author}</i>\n\n{text}"),
+            parse_mode="HTML",
+            reply_markup=kb,
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send access chat message to user {user_id}: {e}")
+    return False
+
+
+@dp.callback_query(F.data.startswith("ahchat:"))
+async def cb_access_chat_reply(callback: types.CallbackQuery):
+    """Нажали «Ответить» — ждём текст следующим сообщением."""
+    try:
+        request_id = int(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("Заявка не распознана")
+        return
+    _pending_access_chat[callback.from_user.id] = request_id
+    await callback.answer()
+    await callback.message.answer(
+        f"Напишите ответ по заявке #{request_id} одним сообщением.\n"
+        "Чтобы передумать — /cancel"
+    )
+
+
+async def _handle_access_chat_reply(message: types.Message) -> bool:
+    """Если человек отвечает в чат по заявке — записываем и уходим.
+
+    Возвращает True, когда сообщение обработано: иначе оно провалилось бы
+    в общий обработчик свободного текста и ушло бы в AI-сводку.
+    """
+    request_id = _pending_access_chat.get(message.from_user.id)
+    if not request_id:
+        return False
+
+    if (message.text or "").strip() == "/cancel":
+        _pending_access_chat.pop(message.from_user.id, None)
+        await message.answer("Отменено")
+        return True
+
+    async with async_session() as session:
+        user = (await session.execute(
+            select(User).where(User.telegram_id == message.from_user.id)
+        )).scalar_one_or_none()
+        if not user:
+            _pending_access_chat.pop(message.from_user.id, None)
+            await message.answer("Аккаунт не привязан")
+            return True
+
+        from .models.database import AccessRequest, AccessRequestMessage
+        req = (await session.execute(
+            select(AccessRequest)
+            .options(selectinload(AccessRequest.resource))
+            .where(AccessRequest.id == request_id)
+        )).scalar_one_or_none()
+        if not req:
+            _pending_access_chat.pop(message.from_user.id, None)
+            await message.answer("Заявка не найдена")
+            return True
+
+        # Право писать проверяем и здесь: кнопка могла быть переслана
+        if user.id not in {req.requester_user_id, req.target_user_id, req.assignee_user_id}:
+            _pending_access_chat.pop(message.from_user.id, None)
+            await message.answer("Вы не участник этой заявки")
+            return True
+
+        msg = AccessRequestMessage(
+            request_id=req.id, org_id=req.org_id, sender_user_id=user.id,
+            text=(message.text or "").strip(), source="bot",
+        )
+        session.add(msg)
+        await session.commit()
+        await session.refresh(msg)
+
+        from .routes.access_hub import _deliver_chat_message
+        await _deliver_chat_message(session, req, msg, user.id)
+
+    _pending_access_chat.pop(message.from_user.id, None)
+    await message.answer("Отправлено")
+    return True
+
+
 async def send_telegram_notification(user_id: int, text: str, parse_mode: str = "HTML",
                                      with_app_button: bool = False):
     """Send a Telegram message to a user by their DB user_id."""
@@ -3439,6 +3551,11 @@ async def cmd_ai_digest(message: types.Message):
 
     Доступно только владельцу/админу организации (сводка охватывает всю орг).
     """
+    # Ответ в чат по заявке перехватываем раньше: этот обработчик ловит любой
+    # текст в личке, и без проверки ответ ушёл бы в AI-сводку.
+    if await _handle_access_chat_reply(message):
+        return
+
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access or not access.get('org_id'):

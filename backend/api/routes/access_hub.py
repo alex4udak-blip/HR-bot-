@@ -28,7 +28,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..database import get_db
 from ..models.database import (
-    AccessRequest, AccessRequestAudit, AccessRequestStatus,
+    AccessRequest, AccessRequestAudit, AccessRequestMessage, AccessRequestStatus,
     ResourceCatalog, ResourceCategory, RoleResourceGrant,
     CustomRole, UserCustomRole, Employee, Entity, OrgUnit,
     User, OrgMember, OrgRole, UserRole,
@@ -327,6 +327,35 @@ def _audit(db: AsyncSession, req: AccessRequest, action: str,
         from_status=from_status, to_status=to_status,
         action=action, changed_by=user_id, comment=comment,
     ))
+
+
+async def _push(user_ids: List[Optional[int]], event: str, payload: Dict[str, Any]) -> None:
+    """Адресный WebSocket-пуш (ТЗ п. 5: live-обновление «доступ выдан»).
+
+    Шлём точечно участникам заявки, а не всей организации: заявки видны
+    только своим, и рассылка на org раскрыла бы факт чужих запросов.
+
+    Падение сокета не должно ронять саму операцию — статус уже сохранён.
+    """
+    targets = {u for u in user_ids if u}
+    if not targets:
+        return
+    try:
+        from .realtime import manager
+        await manager.broadcast_to_users(list(targets), event, payload)
+    except Exception:
+        logger.exception("access-hub: не удалось отправить событие в WebSocket")
+
+
+def _request_event(req: "AccessRequest") -> Dict[str, Any]:
+    """Полезная нагрузка события. Имя ответственного НЕ кладём: событие
+    прилетает и заявителю, для которого он анонимен."""
+    return {
+        "request_id": req.id,
+        "resource_id": req.resource_id,
+        "resource_name": req.resource.name if req.resource else None,
+        "status": req.status.value if hasattr(req.status, "value") else str(req.status),
+    }
 
 
 async def _notify(db: AsyncSession, user_id: Optional[int], ntype: str,
@@ -805,8 +834,10 @@ async def create_request(
     if data.target_user_id and data.target_user_id != current_user.id and not is_admin:
         raise HTTPException(403, "Заводить заявку за другого может только администратор")
 
-    # Право по роли
-    if not is_admin:
+    # Право по роли. Проверка обязана совпадать с тем, что показывает
+    # /available: там ресурс виден и по признаку «доступен всем», а здесь
+    # учитывалась только роль — человек видел кнопку, жал и получал отказ.
+    if not is_admin and not res.available_to_all:
         role_id = await _active_role_id(current_user.id, db)
         allowed = role_id and (await db.execute(
             select(RoleResourceGrant.id).where(
@@ -990,6 +1021,11 @@ async def grant_request(
     )
     await db.commit()
 
+    await _push(
+        [req.requester_user_id, req.target_user_id, req.assignee_user_id],
+        "access_request.updated", _request_event(req),
+    )
+
     names = await _names_for(db, [req.requester_user_id, req.target_user_id, req.assignee_user_id])
     return _serialize_request(req, viewer_id=current_user.id, is_admin=is_admin, names=names)
 
@@ -1019,6 +1055,11 @@ async def reject_request(
         f"/access-hub/requests/{req.id}",
     )
     await db.commit()
+
+    await _push(
+        [req.requester_user_id, req.target_user_id, req.assignee_user_id],
+        "access_request.updated", _request_event(req),
+    )
 
     names = await _names_for(db, [req.requester_user_id, req.target_user_id, req.assignee_user_id])
     return _serialize_request(req, viewer_id=current_user.id, is_admin=is_admin, names=names)
@@ -1051,8 +1092,149 @@ async def take_in_progress(
     )
     await db.commit()
 
+    await _push(
+        [req.requester_user_id, req.target_user_id, req.assignee_user_id],
+        "access_request.updated", _request_event(req),
+    )
+
     names = await _names_for(db, [req.requester_user_id, req.target_user_id, req.assignee_user_id])
     return _serialize_request(req, viewer_id=current_user.id, is_admin=is_admin, names=names)
+
+
+class MessageOut(BaseModel):
+    id: int
+    text: str
+    source: str
+    created_at: Optional[datetime] = None
+    # кто написал; для заявителя ответственный анонимен
+    author: str
+    mine: bool
+
+
+class MessageCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+async def _load_for_chat(request_id: int, user: User, db: AsyncSession):
+    """Заявка + права на чат. Писать могут только участники и админ."""
+    org = await get_user_org(user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+    is_admin = await _require_active_member(user, org, db)
+
+    req = (await db.execute(
+        select(AccessRequest)
+        .options(selectinload(AccessRequest.resource))
+        .where(AccessRequest.id == request_id, AccessRequest.org_id == org.id)
+    )).scalar_one_or_none()
+    if not req:
+        raise HTTPException(404, "Заявка не найдена")
+
+    participant = user.id in {req.requester_user_id, req.target_user_id, req.assignee_user_id}
+    if not (participant or is_admin):
+        raise HTTPException(403, "Чат доступен только участникам заявки")
+    return req, org, is_admin
+
+
+def _chat_author(msg: AccessRequestMessage, req: AccessRequest,
+                 viewer_id: int, is_admin: bool, names: Dict[int, str]) -> str:
+    """Подпись автора с учётом анонимности снабжения (ТЗ п. 3.5).
+
+    Заявитель видит «Снабжение» вместо имени ответственного — так же, как в
+    самой заявке. Раскрыть его здесь означало бы обойти анонимность через чат.
+    """
+    if msg.sender_user_id == viewer_id:
+        return "Вы"
+    reveal = is_admin or viewer_id == req.assignee_user_id
+    if msg.sender_user_id == req.assignee_user_id and not reveal:
+        return ANON_ASSIGNEE
+    return names.get(msg.sender_user_id) or "Участник"
+
+
+@router.get("/requests/{request_id}/messages", response_model=List[MessageOut])
+async def list_messages(
+    request_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Переписка по заявке."""
+    current_user = await db.merge(current_user)
+    req, org, is_admin = await _load_for_chat(request_id, current_user, db)
+
+    rows = (await db.execute(
+        select(AccessRequestMessage)
+        .where(AccessRequestMessage.request_id == req.id)
+        .order_by(AccessRequestMessage.created_at, AccessRequestMessage.id)
+    )).scalars().all()
+
+    names = await _names_for(db, [m.sender_user_id for m in rows])
+    return [
+        MessageOut(
+            id=m.id, text=m.text, source=m.source, created_at=m.created_at,
+            author=_chat_author(m, req, current_user.id, is_admin, names),
+            mine=m.sender_user_id == current_user.id,
+        )
+        for m in rows
+    ]
+
+
+@router.post("/requests/{request_id}/messages", response_model=MessageOut, status_code=201)
+async def post_message(
+    request_id: int,
+    data: MessageCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Написать в чат по заявке. Собеседнику уходит пуш и сообщение в бота."""
+    current_user = await db.merge(current_user)
+    req, org, is_admin = await _load_for_chat(request_id, current_user, db)
+
+    msg = AccessRequestMessage(
+        request_id=req.id, org_id=org.id, sender_user_id=current_user.id,
+        text=data.text.strip(), source="web",
+    )
+    db.add(msg)
+    await db.commit()
+    await db.refresh(msg)
+
+    await _deliver_chat_message(db, req, msg, current_user.id)
+
+    names = await _names_for(db, [msg.sender_user_id])
+    return MessageOut(
+        id=msg.id, text=msg.text, source=msg.source, created_at=msg.created_at,
+        author="Вы", mine=True,
+    )
+
+
+async def _deliver_chat_message(db: AsyncSession, req: AccessRequest,
+                                msg: AccessRequestMessage, sender_id: int) -> None:
+    """Доставка сообщения второй стороне: WebSocket + бот.
+
+    Собеседник вычисляется от отправителя: заявителю отвечает ответственный и
+    наоборот. Если ответственный не назначен, разговор ведут админы — иначе
+    сообщение ушло бы в никуда.
+    """
+    if sender_id == req.assignee_user_id:
+        recipients = [req.requester_user_id]
+        author = ANON_ASSIGNEE
+    else:
+        recipients = [req.assignee_user_id] if req.assignee_user_id else \
+            await _org_admin_ids(req.org_id, db)
+        names = await _names_for(db, [sender_id])
+        author = names.get(sender_id) or "Сотрудник"
+
+    resource = req.resource.name if req.resource else "заявке"
+    for uid in recipients:
+        if not uid or uid == sender_id:
+            continue
+        await _push([uid], "access_request.message", {
+            "request_id": req.id, "text": msg.text, "author": author,
+        })
+        try:
+            from ..bot import send_access_chat_message
+            await send_access_chat_message(uid, req.id, resource, author, msg.text)
+        except Exception:
+            logger.exception("access-hub: не удалось отправить сообщение чата в бота")
 
 
 @router.get("/requests/{request_id}/audit", response_model=List[AuditOut])
@@ -1177,6 +1359,22 @@ async def revoke_grant(
     req.revoke_reason = data.comment
     _audit(db, req, "revoke", prev, req.status.value, current_user.id, data.comment)
     await db.commit()
+
+    # Отзыв тоже гасит зелёную кнопку у человека — сообщаем сразу, а не
+    # ждём, пока он обновит страницу.
+    await _notify(
+        db, req.requester_user_id, "access_request_revoked",
+        "Доступ отозван",
+        f"{req.resource.name if req.resource else 'Ресурс'}"
+        + (f" — {data.comment}" if data.comment else ""),
+        f"/access-hub/requests/{req.id}",
+    )
+    await db.commit()
+
+    await _push(
+        [req.requester_user_id, req.target_user_id, req.assignee_user_id],
+        "access_request.updated", _request_event(req),
+    )
 
     names = await _names_for(db, [req.requester_user_id, req.target_user_id, req.assignee_user_id])
     return _serialize_request(req, viewer_id=current_user.id, is_admin=is_admin, names=names)
