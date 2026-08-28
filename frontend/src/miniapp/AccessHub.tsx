@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2, Plus, Check, X, Clock, ShieldCheck, Lock, RotateCcw,
-  Mail, Briefcase, Building2, Send, CalendarDays,
+  Mail, Briefcase, Building2, Send, CalendarDays, MessageSquare,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
 import {
   getAvailableResources, getRequests, createRequest,
   takeInProgress, grantRequest, rejectRequest, revokeGrant,
+  getMessages, sendMessage, type AccessMessage,
   type CatalogResource, type AccessRequest, type AccessStatus,
 } from "@/services/api/accessHub";
 import { useAuthStore } from "@/stores/authStore";
+import { useWebSocket } from "@/hooks/useWebSocket";
 import { getMyEmployeeProfile, type EmployeeData } from "@/services/api/employees";
 import AccessAdmin from "./AccessAdmin";
 import type { Me } from "./MiniApp";
@@ -68,6 +70,7 @@ export default function AccessHub({ me }: { me?: Me | null }) {
   const [picked, setPicked] = useState<CatalogResource | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [profile, setProfile] = useState<EmployeeData | null>(null);
+  const [chatId, setChatId] = useState<number | null>(null);
 
   // Карточка сотрудника. 404 (нет записи в штате) и 403 (уволен) — штатные
   // ситуации, а не ошибка: кабинет тогда показывает данные аккаунта.
@@ -93,6 +96,16 @@ export default function AccessHub({ me }: { me?: Me | null }) {
   }, [tab]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Live-обновления (ТЗ п. 5): статус меняет ответственный со своей стороны,
+  // и без пуша человек сидел бы перед устаревшим экраном до перезагрузки.
+  useWebSocket({
+    onEvent: (msg) => {
+      if (msg.type === "access_request.updated" || msg.type === "access_request.message") {
+        load();
+      }
+    },
+  });
 
   const act = async (id: number, fn: () => Promise<AccessRequest>) => {
     setBusyId(id);
@@ -163,7 +176,12 @@ export default function AccessHub({ me }: { me?: Me | null }) {
             if (c === null) return;
             act(id, () => revokeGrant(id, c || undefined));
           }}
+          onChat={setChatId}
         />
+      )}
+
+      {chatId != null && (
+        <RequestChat requestId={chatId} onClose={() => setChatId(null)} />
       )}
 
       {picked && (
@@ -372,7 +390,7 @@ function Cabinet({
 // ============================================================
 
 function RequestList({
-  requests, scope, isAdmin, busyId, onProgress, onGrant, onReject, onRevoke,
+  requests, scope, isAdmin, busyId, onProgress, onGrant, onReject, onRevoke, onChat,
 }: {
   requests: AccessRequest[];
   scope: Tab;
@@ -382,6 +400,7 @@ function RequestList({
   onGrant: (id: number) => void;
   onReject: (id: number) => void;
   onRevoke: (id: number) => void;
+  onChat: (id: number) => void;
 }) {
   if (requests.length === 0) {
     return (
@@ -443,6 +462,9 @@ function RequestList({
                   <RotateCcw size={13} /> Отозвать
                 </button>
               )}
+              <button className="hf-ah-btn" onClick={() => onChat(r.id)}>
+                <MessageSquare size={13} /> Чат
+              </button>
             </div>
           </div>
         );
@@ -532,6 +554,101 @@ function RequestModal({
           <button className="hf-ah-btn hf-ah-btn-primary" onClick={submit} disabled={saving}>
             {saving ? "Отправляю…" : "Отправить заявку"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// Анонимный чат по заявке (ТЗ п. 3.5)
+// ============================================================
+
+function RequestChat({ requestId, onClose }: { requestId: number; onClose: () => void }) {
+  const [items, setItems] = useState<AccessMessage[]>([]);
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setItems(await getMessages(requestId));
+    } catch {
+      toast.error("Не удалось загрузить переписку");
+    } finally {
+      setLoading(false);
+    }
+  }, [requestId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Новое сообщение прилетает пушем — подтягиваем, не заставляя обновлять
+  useWebSocket({
+    onEvent: (msg) => {
+      if (msg.type === "access_request.message" && msg.payload?.request_id === requestId) load();
+    },
+  });
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [items.length]);
+
+  const send = async () => {
+    const value = text.trim();
+    if (!value) return;
+    setSending(true);
+    try {
+      await sendMessage(requestId, value);
+      setText("");
+      await load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Не удалось отправить");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="hf-ah-overlay" onClick={onClose}>
+      <div className="hf-ah-modal hf-ah-chat" onClick={(e) => e.stopPropagation()}>
+        <div className="hf-ah-modal-head">Чат по заявке #{requestId}</div>
+
+        <div className="hf-ah-chat-body">
+          {loading ? (
+            <div className="hf-ah-loading"><Loader2 className="animate-spin" size={20} /></div>
+          ) : items.length === 0 ? (
+            <div className="hf-ah-chat-empty">
+              Сообщений пока нет. Здесь можно уточнить детали — собеседник
+              получит их в Telegram и сможет ответить прямо оттуда.
+            </div>
+          ) : (
+            items.map((m) => (
+              <div key={m.id} className={clsx("hf-ah-msg", m.mine && "hf-ah-msg-mine")}>
+                <div className="hf-ah-msg-author">{m.author}</div>
+                <div className="hf-ah-msg-text">{m.text}</div>
+                <div className="hf-ah-msg-time">{fmtDate(m.created_at)}</div>
+              </div>
+            ))
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        <div className="hf-ah-chat-input">
+          <input
+            value={text}
+            placeholder="Сообщение…"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+          />
+          <button className="hf-ah-btn hf-ah-btn-primary" onClick={send} disabled={sending || !text.trim()}>
+            {sending ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
+          </button>
+        </div>
+
+        <div className="hf-ah-modal-foot">
+          <button className="hf-ah-btn" onClick={onClose}>Закрыть</button>
         </div>
       </div>
     </div>

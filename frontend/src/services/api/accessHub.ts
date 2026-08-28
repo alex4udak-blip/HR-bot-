@@ -222,3 +222,25 @@ export async function getOrgMembers(): Promise<OrgMemberBrief[]> {
   const { data } = await api.get('/organizations/current/members');
   return data || [];
 }
+
+// ─── Анонимный чат по заявке (ТЗ п. 3.5) ────────────────────
+
+export interface AccessMessage {
+  id: number;
+  text: string;
+  source: string;
+  created_at: string | null;
+  /** подпись автора; для заявителя ответственный — «Снабжение» */
+  author: string;
+  mine: boolean;
+}
+
+export async function getMessages(requestId: number): Promise<AccessMessage[]> {
+  const { data } = await api.get(`/access-hub/requests/${requestId}/messages`);
+  return data || [];
+}
+
+export async function sendMessage(requestId: number, text: string): Promise<AccessMessage> {
+  const { data } = await api.post(`/access-hub/requests/${requestId}/messages`, { text });
+  return data;
+}

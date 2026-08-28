@@ -56,6 +56,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     onChatDeleted,
     onChatMessage,
     onFormSubmission,
+    onEvent,
     autoReconnect = true,
     reconnectInterval = 3000,  // Kept for backwards compatibility, but overridden by backoff
   } = options;
@@ -154,6 +155,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           if ('timestamp' in message && message.timestamp) {
             lastEventTimestampRef.current = message.timestamp as string;
           }
+
+          // Общий колбэк — до разбора по типам: модули с собственными
+          // событиями (хаб доступов) подписываются через него, не расширяя
+          // union и не заводя колбэк на каждое новое имя.
+          onEvent?.(message as unknown as { type: string; payload: Record<string, unknown> });
 
           // Handle different event types using discriminated union
           // TypeScript narrows payload type automatically based on message.type

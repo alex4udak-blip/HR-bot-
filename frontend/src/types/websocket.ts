@@ -235,6 +235,12 @@ export interface WebSocketEventHandlers {
   onChatDeleted?: (data: ChatDeletedPayload) => void;
   onChatMessage?: (data: ChatMessagePayload) => void;
   onFormSubmission?: (data: FormSubmissionPayload) => void;
+  /**
+   * Любое событие, включая те, для которых нет отдельного обработчика.
+   * Нужен модулям вроде хаба доступов: заводить типизированный колбэк на
+   * каждое новое событие — лишняя связанность, а ловить их как-то надо.
+   */
+  onEvent?: (message: { type: string; payload: Record<string, unknown> }) => void;
 }
 
 export interface WebSocketConnectionOptions {

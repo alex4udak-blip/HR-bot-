@@ -505,3 +505,81 @@ body { margin: 0; background: var(--bg-body, #0f0f15); }
   margin-top: 4px; max-width: 320px;
   font-size: var(--hf-fs-5xs); color: var(--fg-dimmed); line-height: 1.4;
 }
+
+/* ── Анонимный чат по заявке ─────────────────────────────────
+   Собеседник подписан «Снабжение», если он ответственный: имя
+   считается на сервере, фронт его не знает и раскрыть не может. */
+
+.hf-ah-chat { display: flex; flex-direction: column; max-height: 80vh; }
+
+.hf-ah-chat-body {
+  flex: 1;
+  min-height: 160px;
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.hf-ah-chat-empty {
+  padding: 18px 4px;
+  font-size: var(--hf-fs-5xs);
+  color: var(--fg-dimmed);
+  line-height: 1.45;
+  text-align: center;
+}
+
+.hf-ah-msg {
+  max-width: 82%;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: var(--bg-surface-elevated);
+  border: var(--hf-border-xs) solid var(--border-subtle);
+}
+/* Свои сообщения прижимаем вправо — привычная логика переписки */
+.hf-ah-msg-mine {
+  align-self: flex-end;
+  background: var(--hf-cyan-800, #0e7490);
+  border-color: transparent;
+}
+.hf-ah-msg-author {
+  font-size: var(--hf-fs-6xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin-bottom: 2px;
+}
+.hf-ah-msg-mine .hf-ah-msg-author { color: rgba(255,255,255,.75); }
+.hf-ah-msg-text {
+  font-size: var(--hf-fs-4xs);
+  color: var(--fg-body);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.hf-ah-msg-mine .hf-ah-msg-text { color: #fff; }
+.hf-ah-msg-time {
+  margin-top: 3px;
+  font-size: var(--hf-fs-6xs);
+  color: var(--fg-dimmed);
+}
+.hf-ah-msg-mine .hf-ah-msg-time { color: rgba(255,255,255,.6); }
+
+.hf-ah-chat-input {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: var(--hf-border-xs) solid var(--border-subtle);
+}
+.hf-ah-chat-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 11px;
+  background: var(--bg-surface-elevated);
+  border: var(--hf-border-xs) solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--fg-body);
+  font-size: var(--hf-fs-3xs);
+}
+.hf-ah-chat-input input:focus { outline: none; border-color: var(--hf-cyan-500); }
