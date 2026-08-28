@@ -37,7 +37,9 @@ const UNLOCK: { value: string; label: string; hint: string }[] = [
   },
 ];
 
-/** Типовой набор: чтобы хаб был рабочим сразу, а не пустым. */
+/** Базовый справочник типов из ТЗ, п. 3.3: «прокси, пополнение платёжки,
+ *  оплата, аккаунт, расходник, TG-аккаунт и другие». Заводится сам при
+ *  первом открытии, чтобы у сотрудника сразу были кнопки, а не пустой экран. */
 const STARTER: Array<Parameters<typeof createResource>[0]> = [
   { key: "proxy", name: "Прокси", category: "proxy", description: "Резидентный прокси под задачу", unlock_condition: "always", limit_per_month: 5, available_to_all: true },
   { key: "tg_account", name: "Telegram-аккаунт", category: "tg_account", description: "Рабочий аккаунт для связи", unlock_condition: "always", limit_per_month: 3, available_to_all: true },
@@ -91,20 +93,23 @@ export default function AccessAdmin({ onChanged }: { onChanged?: () => void }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const seed = async () => {
+  const seed = useCallback(async (silent = false) => {
     setSeeding(true);
     try {
       let created = 0;
       for (const r of STARTER) {
         try { await createResource(r); created += 1; } catch { /* уже есть — пропускаем */ }
       }
-      toast.success(created ? `Добавлено ресурсов: ${created}` : "Всё уже заведено");
+      if (!silent) {
+        toast.success(created ? `Добавлено ресурсов: ${created}` : "Всё уже заведено");
+      }
       await load();
       onChanged?.();
     } finally {
       setSeeding(false);
     }
-  };
+  }, [load, onChanged]);
+
 
   if (loading) {
     return <div className="hf-ah-loading"><Loader2 className="animate-spin" size={26} /></div>;
@@ -133,12 +138,12 @@ export default function AccessAdmin({ onChanged }: { onChanged?: () => void }) {
             <button className="hf-ah-btn hf-ah-btn-primary" onClick={() => setEditing("new")}>
               <Plus size={15} /> Добавить ресурс
             </button>
-            {resources.length === 0 && (
-              <button className="hf-ah-btn" onClick={seed} disabled={seeding}>
-                {seeding ? <Loader2 className="animate-spin" size={15} /> : <Sparkles size={15} />}
-                Типовой набор
-              </button>
-            )}
+            {/* Кнопка нужна и с непустым каталогом: типовой набор мог быть
+                удалён по одному или сюда добавили свой ресурс раньше. */}
+            <button className="hf-ah-btn" onClick={() => seed()} disabled={seeding} title="Завести типы из ТЗ, уже существующие пропускаются">
+              {seeding ? <Loader2 className="animate-spin" size={15} /> : <Sparkles size={15} />}
+              Типовой набор
+            </button>
           </div>
 
           {resources.length === 0 ? (

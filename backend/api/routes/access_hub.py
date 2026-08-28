@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from ..database import get_db
 from ..models.database import (
@@ -414,6 +415,8 @@ async def list_catalog(
     if not await _is_org_admin(current_user, org, db):
         raise HTTPException(403, "Каталог доступен только администраторам")
 
+    await _ensure_default_catalog(db, org)
+
     q = select(ResourceCatalog).where(ResourceCatalog.org_id == org.id)
     if not include_inactive:
         q = q.where(ResourceCatalog.is_active.is_(True))
@@ -611,6 +614,62 @@ async def set_role_resources(
 # Что я могу запросить                                                          #
 # --------------------------------------------------------------------------- #
 
+
+# Базовый справочник типов из ТЗ, п. 3.3: «прокси, пополнение платёжки,
+# оплата, аккаунт, расходник, TG-аккаунт и другие».
+_DEFAULT_CATALOG = [
+    dict(key="proxy", name="Прокси", category=ResourceCategory.proxy,
+         description="Резидентный прокси под задачу",
+         unlock_condition="always", limit_per_month=5, available_to_all=True),
+    dict(key="tg_account", name="Telegram-аккаунт", category=ResourceCategory.tg_account,
+         description="Рабочий аккаунт для связи",
+         unlock_condition="always", limit_per_month=3, available_to_all=True),
+    dict(key="service_account", name="Аккаунт сервиса", category=ResourceCategory.account,
+         description="Доступ к рабочему сервису",
+         unlock_condition="always", available_to_all=True),
+    dict(key="consumable", name="Расходник", category=ResourceCategory.consumable,
+         description="Расходные материалы",
+         unlock_condition="always", limit_per_month=10, available_to_all=True),
+    dict(key="card_topup", name="Пополнение платёжки", category=ResourceCategory.payment_topup,
+         description="Пополнение рабочей карты",
+         unlock_condition="prometheus_accepted", limit_amount_month=50000, currency="RUB"),
+    dict(key="subscription", name="Оплата подписки", category=ResourceCategory.payment,
+         description="Оплата сервиса по счёту",
+         unlock_condition="prometheus_accepted", limit_amount_month=30000, currency="RUB"),
+]
+
+_SEEDED_FLAG = "access_hub_seeded"
+
+
+async def _ensure_default_catalog(db: AsyncSession, org) -> None:
+    """Разово завести базовые типы ресурсов организации.
+
+    Без этого хаб открывается пустым экраном: заявок не создать, потому что
+    запрашивать нечего, — а заводить шесть типов руками должен был бы каждый
+    новый клиент.
+
+    Помечаем организацию флагом и больше не возвращаемся: иначе типы, которые
+    админ намеренно удалил, воскресали бы при каждом открытии.
+    """
+    settings = dict(org.settings) if isinstance(org.settings, dict) else {}
+    if settings.get(_SEEDED_FLAG):
+        return
+
+    existing = (await db.execute(
+        select(func.count(ResourceCatalog.id)).where(ResourceCatalog.org_id == org.id)
+    )).scalar() or 0
+
+    if existing == 0:
+        for item in _DEFAULT_CATALOG:
+            db.add(ResourceCatalog(org_id=org.id, params_schema=[], **item))
+
+    settings[_SEEDED_FLAG] = True
+    org.settings = settings
+    flag_modified(org, "settings")
+    await db.commit()
+    logger.info("Access hub: базовый каталог заведён для org=%s", org.id)
+
+
 @router.get("/available", response_model=List[ResourceOut])
 async def available_resources(
     db: AsyncSession = Depends(get_db),
@@ -622,6 +681,8 @@ async def available_resources(
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(403, "No organization access")
+
+    await _ensure_default_catalog(db, org)
 
     is_admin = await _require_active_member(current_user, org, db)
     role_id = await _active_role_id(current_user.id, db)
