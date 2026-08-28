@@ -177,6 +177,20 @@ export const createApplication = async (vacancyId: number, applicationData: Appl
   return data;
 };
 
+// «Забрать» кандидата в воронку на выбранного рекрутёра. Идемпотентно: если его
+// в воронке нет — создаёт заявку на recruiter_id; если есть — меняет владельца.
+export const takeApplication = async (
+  vacancyId: number,
+  payload: { entity_id: number; recruiter_id: number },
+): Promise<VacancyApplication> => {
+  const { data } = await debouncedMutation<VacancyApplication>(
+    'post',
+    `/vacancies/${vacancyId}/applications/take`,
+    payload,
+  );
+  return data;
+};
+
 export const updateApplication = async (applicationId: number, updates: ApplicationUpdate): Promise<VacancyApplication> => {
   const { data } = await debouncedMutation<VacancyApplication>('put', `/vacancies/applications/${applicationId}`, updates);
   return data;

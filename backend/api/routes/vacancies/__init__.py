@@ -63,6 +63,7 @@ from .crud import (
 from .applications import (
     list_applications,
     create_application,
+    take_application,
     update_application,
     delete_application,
 )
@@ -144,6 +145,8 @@ router.add_api_route("/{vacancy_id}/take", take_vacancy, methods=["POST"], tags=
 router.add_api_route("/{vacancy_id}/decline", decline_vacancy, methods=["POST"], tags=["vacancies"])
 
 # Vacancy applications
+# «Забрать» — более специфичный путь, регистрируем ДО generic /{vacancy_id}/applications.
+router.add_api_route("/{vacancy_id}/applications/take", take_application, methods=["POST"], tags=["vacancy-applications"])
 router.add_api_route("/{vacancy_id}/applications", list_applications, methods=["GET"], tags=["vacancy-applications"])
 router.add_api_route("/{vacancy_id}/applications", create_application, methods=["POST"], status_code=201, tags=["vacancy-applications"])
 

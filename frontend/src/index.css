@@ -7124,6 +7124,15 @@ body.performance-mode .glass-card:hover {
   color: var(--hf-main-500);
   pointer-events: none;
 }
+/* Длинная строка без пробелов в сохранённом комменте не должна «уезжать» за край
+   карточки (жалоба: большой коммент при смене этапа ломал верстку). Поле ввода
+   (.hf-rich-surface) уже переносит — здесь то же для РЕНДЕРА в ленте, включая
+   вложенные div'ы (заголовок/тело/дописки). */
+.hf-rich-content,
+.hf-rich-content * {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .hf-rich-surface ul,
 .hf-rich-content ul {
   margin: 2px 0;

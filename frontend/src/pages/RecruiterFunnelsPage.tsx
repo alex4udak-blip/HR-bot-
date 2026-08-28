@@ -37,6 +37,7 @@ import { useFunnelFilterStore } from '@/stores/funnelFilterStore';
 import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink, updateEntity } from '@/services/api/entities';
+import TakeCandidateButton from '@/components/entities/TakeCandidateButton';
 import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds } from '@/utils/vacancy';
 import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
@@ -1707,17 +1708,24 @@ export default function RecruiterFunnelsPage() {
       // Комменты СКОУПИМ по воронке: показываем только заметки ЭТОЙ вакансии
       // (vacancy_id === selectedVacancyId) + «Общие» (без vacancy_id / легаси).
       // Один кандидат в нескольких воронках — у каждой своя лента комментов.
+      // + ПО АВТОРУ: в ОБЩЕЙ воронке несколько со-рекрутёров на одном кандидате,
+      // поэтому «каждый видит только свои» — фильтруем по author_id (включая
+      // админов). Легаси без автора остаются видны всем (старая общая история).
       extra_data: (() => {
         const ed = (entityExtraData || {}) as Record<string, unknown>;
         const allNotes = Array.isArray(ed.notes) ? (ed.notes as Array<Record<string, unknown>>) : null;
         if (!allNotes) return ed;
-        const scoped = allNotes.filter(
-          (n) => n?.vacancy_id == null || n.vacancy_id === selectedVacancyId,
-        );
+        const uid = user?.id;
+        const scoped = allNotes.filter((n) => {
+          const inFunnel = n?.vacancy_id == null || n.vacancy_id === selectedVacancyId;
+          if (!inFunnel) return false;
+          const aid = (n as { author_id?: unknown })?.author_id;
+          return aid == null || String(aid) === String(uid);
+        });
         return { ...ed, notes: scoped };
       })(),
     };
-  }, [selectedCandidate, entityExtraData, dupCard, selectedVacancyId]);
+  }, [selectedCandidate, entityExtraData, dupCard, selectedVacancyId, user?.id]);
 
   // ---- Яркие теги-ярлыки у имени: редактирование прямо в воронке ----
   const hlTags = readHeadlineTags(entityExtraData);
@@ -2910,6 +2918,36 @@ export default function RecruiterFunnelsPage() {
                                       </div>
                                     )}
                                   </div>
+                                )}
+                                {selectedCandidate.entity_id && (
+                                  <TakeCandidateButton
+                                    entityId={selectedCandidate.entity_id}
+                                    onDone={({ vacancyId, recruiterId }) => {
+                                      // Кандидат сменил владельца → он выпадает из
+                                      // текущего фильтра рекрутёра и кажется «удалённым».
+                                      // Показываем его под НОВЫМ владельцем: если забрали
+                                      // в ЭТУ воронку — переключаем фильтр на нового
+                                      // (эффект candidateScopeRecruiterId сам перезагрузит).
+                                      if (
+                                        isHrAdmin &&
+                                        vacancyId === selectedVacancyId &&
+                                        selectedRecruiterFilter !== recruiterId
+                                      ) {
+                                        setSelectedRecruiterFilter(recruiterId);
+                                        // + синк в URL: иначе эффект URL→state на
+                                        // F5/навигации вернёт старый фильтр и
+                                        // кандидат снова «пропадёт».
+                                        setSearchParams((prev) => {
+                                          const next = new URLSearchParams(prev);
+                                          next.set('recruiter', String(recruiterId));
+                                          return next;
+                                        }, { replace: true });
+                                      } else if (selectedVacancyId) {
+                                        loadCandidates(selectedVacancyId, true);
+                                      }
+                                      fetchVacancies();
+                                    }}
+                                  />
                                 )}
                                 {selectedCandidate.entity_id && (
                                   <button

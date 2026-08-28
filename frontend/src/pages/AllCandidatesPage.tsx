@@ -73,6 +73,7 @@ import SendEmailModal from "@/components/entities/SendEmailModal";
 import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
 import type { EntityFile } from "@/services/api/entities";
 import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
+import TakeCandidateButton from "@/components/entities/TakeCandidateButton";
 import ShadowDuplicateBanner from "@/components/entities/ShadowDuplicateBanner";
 import ParserModal from "@/components/parser/ParserModal";
 import { useAuthStore } from "@/stores/authStore";
@@ -2743,6 +2744,15 @@ const InfoTab = memo(function InfoTab({
         >
           <PlusCircle className="hf-profile-action-icon" /> Взять на вакансию
         </button>
+        {/* «Забрать» — выбрать воронку + рекрутёра, кому отдать кандидата.
+            Показываем ТОЛЬКО если кандидат уже есть хотя бы в одной воронке
+            (иначе забирать неоткуда — используют «Взять на вакансию»). */}
+        {!readonly && activityBlocks.length > 0 && (
+          <TakeCandidateButton
+            entityId={card.id}
+            onDone={() => onMerged?.()}
+          />
+        )}
         {/* «Удалить с воронки» имеет смысл ТОЛЬКО когда кандидат реально в воронке
             (есть application). На «Все кандидаты» пул-кандидат в воронку не входит —
             раньше кнопка висела всегда и слала application_id=0 (no-op). Маша: в пуле

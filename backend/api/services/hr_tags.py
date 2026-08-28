@@ -18,7 +18,7 @@ import logging
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.database import Entity, User, VacancyApplication, ApplicationStage, Vacancy
+from ..models.database import Entity, User, VacancyApplication, ApplicationStage, Vacancy, ApplicationCoRecruiter
 
 logger = logging.getLogger("hr-analyzer.hr_tags")
 
@@ -58,12 +58,29 @@ async def compute_hr_tags(db: AsyncSession, entity_id: int) -> list[dict]:
             VacancyApplication.stage.not_in(INACTIVE_STAGES),
         )
         .distinct()
-        .order_by(effective_hr, Vacancy.id)
     )
-    return [
-        {"hr_id": hr_id, "name": name, "vacancy_id": vid, "vacancy_title": vtitle}
-        for hr_id, name, vid, vtitle in rows.all()
-    ]
+    # + СО-РЕКРУТЁРЫ: кандидат в ОБЩЕЙ воронке может быть у нескольких HR сразу.
+    # Каждый co-recruiter активной заявки даёт свою метку «HR: Имя · воронка».
+    co_rows = await db.execute(
+        select(ApplicationCoRecruiter.user_id, User.name, Vacancy.id, Vacancy.title)
+        .select_from(ApplicationCoRecruiter)
+        .join(VacancyApplication, VacancyApplication.id == ApplicationCoRecruiter.application_id)
+        .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
+        .join(User, User.id == ApplicationCoRecruiter.user_id)
+        .where(
+            VacancyApplication.entity_id == entity_id,
+            VacancyApplication.stage.not_in(INACTIVE_STAGES),
+        )
+        .distinct()
+    )
+    # Дедуп по (hr_id, vacancy_id) — co-recruiter может совпасть с владельцем;
+    # стабильный порядок (hr_id, vacancy_id) нужен для дешёвого diff в sync.
+    seen: dict[tuple[int, int], dict] = {}
+    for hr_id, name, vid, vtitle in [*rows.all(), *co_rows.all()]:
+        key = (hr_id, vid)
+        if key not in seen:
+            seen[key] = {"hr_id": hr_id, "name": name, "vacancy_id": vid, "vacancy_title": vtitle}
+    return [seen[k] for k in sorted(seen.keys())]
 
 
 async def sync_for_entity(

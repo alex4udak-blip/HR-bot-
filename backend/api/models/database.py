@@ -1021,6 +1021,28 @@ class VacancyApplication(Base):
     created_by_user = relationship("User", foreign_keys=[created_by])
 
 
+class ApplicationCoRecruiter(Base):
+    """Со-рекрутёры заявки: кандидат в ЭТОЙ воронке «принадлежит» также этим HR,
+    помимо created_by. Нужно для ОБЩЕЙ воронки — один кандидат может быть у
+    нескольких рекрутёров сразу (у каждого в его фильтре, свой чип «HR: Имя»).
+
+    ОТДЕЛЬНАЯ ТАБЛИЦА, а НЕ колонка на vacancy_applications: create_all создаёт
+    недостающие ТАБЛИЦЫ на старте (init_database), но НЕ добавляет колонки — новая
+    колонка на проде не появлялась и роняла все SELECT (инцидент co_recruiter_ids).
+    Таблица же появится сама, без ручной миграции.
+    """
+    __tablename__ = "application_co_recruiters"
+
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("vacancy_applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('application_id', 'user_id', name='uq_app_co_recruiter'),
+    )
+
+
 class DepartmentFeature(Base):
     """Controls which features are available to which departments.
 

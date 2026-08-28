@@ -16,6 +16,7 @@ from .common import (
     BaseModel, OrgMember, OrgRole,
 )
 from ...services.auth import get_user_org
+from ...models.database import ApplicationCoRecruiter
 
 router = APIRouter()
 
@@ -161,18 +162,31 @@ async def list_applications(
     # (см. can_access_vacancy — visible_to_all сам по себе доступ member НЕ даёт),
     # так что «видят всех» получают именно те, кому воронку реально пошарили.
     # «Скрыта от коллег» → прежняя приватность: каждый видит только своих.
+    # Скоуп «кандидаты рекрутёра R» = заявки, где R владелец (created_by) ИЛИ
+    # со-рекрутёр (общая воронка: один кандидат у нескольких HR сразу).
+    def _co_recruiter_of(uid: int):
+        return VacancyApplication.id.in_(
+            select(ApplicationCoRecruiter.application_id).where(
+                ApplicationCoRecruiter.user_id == uid
+            )
+        )
+
     is_admin_viewer = await sees_all_candidates(current_user, org, db)
     if created_by is not None and (is_admin_viewer or created_by == current_user.id):
         # Явный скоуп по рекрутёру: админ — на ЛЮБОГО (сайдбар /my-funnels), а
         # ЛЮБОЙ рекрутёр — на СЕБЯ (чекбокс «Только мои»). Себя можно фильтровать
         # даже на «Видна коллегам», иначе рекрутёр не мог оставить только своих.
-        query = query.where(VacancyApplication.created_by == created_by)
+        query = query.where(or_(
+            VacancyApplication.created_by == created_by,
+            _co_recruiter_of(created_by),
+        ))
     elif not is_admin_viewer and not vacancy.visible_to_all:
         # Обычный рекрутёр на «скрытой» вакансии без явного скоупа: только свои +
         # legacy без автора. На «Видна коллегам» без скоупа — видит всех (выше).
         query = query.where(or_(
             VacancyApplication.created_by == current_user.id,
             VacancyApplication.created_by.is_(None),
+            _co_recruiter_of(current_user.id),
         ))
 
     if stage:
@@ -410,6 +424,149 @@ async def create_application(
         applied_at=application.applied_at,
         last_stage_change_at=application.last_stage_change_at,
         updated_at=application.updated_at
+    )
+
+
+class ApplicationTake(BaseModel):
+    entity_id: int
+    recruiter_id: int
+
+
+@router.post("/{vacancy_id}/applications/take", response_model=ApplicationResponse)
+async def take_application(
+    vacancy_id: int,
+    data: ApplicationTake,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access),
+):
+    """«Забрать» кандидата в воронку на выбранного рекрутёра.
+
+    Идемпотентно: если кандидата в этой воронке ещё НЕТ — создаём заявку с
+    created_by = recruiter_id; если он УЖЕ там — просто меняем владельца
+    (created_by), т.е. переназначаем «HR: Имя». «Кому отдать» — любой любому
+    (в пределах пула рекрутёров орга).
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(status_code=403, detail="No organization access")
+
+    vacancy = (await db.execute(
+        select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
+    )).scalar()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
+
+    entity = (await db.execute(
+        select(Entity).where(Entity.id == data.entity_id, Entity.org_id == org.id)
+    )).scalar()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found in your organization")
+
+    # Новый владелец — из пула рекрутёров орга (owner/admin/hr). «Любой кому угодно»,
+    # но не произвольный user_id (защита от мусора / чужих орг).
+    valid_ids = {r[0] for r in (await db.execute(
+        select(OrgMember.user_id).where(
+            OrgMember.org_id == org.id,
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin, OrgRole.hr]),
+        )
+    )).all()}
+    if data.recruiter_id not in valid_ids:
+        raise HTTPException(status_code=400, detail="Недопустимый рекрутёр")
+
+    # Лочим кандидата — сериализуем конкурентные «Забрать» одного человека.
+    await db.execute(select(Entity.id).where(Entity.id == data.entity_id).with_for_update())
+
+    application = (await db.execute(
+        select(VacancyApplication).where(
+            VacancyApplication.entity_id == data.entity_id,
+            VacancyApplication.vacancy_id == vacancy_id,
+        ).with_for_update()
+    )).scalar()
+
+    created = False
+    if application:
+        # Уже в воронке — АДДИТИВНО: добавляем со-рекрутёра, НЕ снимая владельца.
+        # Кандидат в общей воронке может быть у нескольких HR сразу.
+        if application.created_by is None:
+            # Первый ответственный — становится владельцем (метка от created_by).
+            application.created_by = data.recruiter_id
+        elif application.created_by != data.recruiter_id:
+            # Идемпотентно: unique(application_id,user_id) не даст дубль.
+            already = (await db.execute(
+                select(ApplicationCoRecruiter).where(
+                    ApplicationCoRecruiter.application_id == application.id,
+                    ApplicationCoRecruiter.user_id == data.recruiter_id,
+                )
+            )).scalar()
+            if not already:
+                db.add(ApplicationCoRecruiter(
+                    application_id=application.id,
+                    user_id=data.recruiter_id,
+                ))
+        application.updated_at = datetime.utcnow()
+    else:
+        created = True
+        initial_stage = STATUS_SYNC_MAP.get(entity.status, ApplicationStage.applied)
+        min_order = (await db.execute(
+            select(func.min(VacancyApplication.stage_order)).where(
+                VacancyApplication.vacancy_id == vacancy_id,
+                VacancyApplication.stage == initial_stage,
+            )
+        )).scalar()
+        new_order = (min_order - 1000) if min_order is not None else 0
+        application = VacancyApplication(
+            vacancy_id=vacancy_id,
+            entity_id=data.entity_id,
+            stage=initial_stage,
+            stage_order=new_order,
+            source='taken',
+            created_by=data.recruiter_id,
+        )
+        db.add(application)
+        expected = STAGE_SYNC_MAP.get(initial_stage)
+        if expected and entity.status != expected:
+            entity.status = expected
+            entity.updated_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(application)
+
+    if created:
+        from ...services.stage_transitions import record_transition
+        await record_transition(
+            db=db,
+            application_id=application.id,
+            entity_id=data.entity_id,
+            from_stage=None,
+            to_stage=application.stage.value,
+            changed_by_id=current_user.id,
+            comment="Забрал в воронку",
+        )
+        await db.commit()
+
+    # HR-метки: владелец сменился → пересчитать закреплённых рекрутёров.
+    try:
+        from ...services.hr_tags import sync_for_entity
+        await sync_for_entity(db, data.entity_id)
+    except Exception:
+        logger.exception("HR-tags sync failed after take (non-critical)")
+
+    return ApplicationResponse(
+        id=application.id,
+        vacancy_id=application.vacancy_id,
+        entity_id=application.entity_id,
+        stage=application.stage,
+        stage_order=application.stage_order or 0,
+        rating=application.rating,
+        notes=application.notes,
+        source=application.source,
+        next_interview_at=application.next_interview_at,
+        applied_at=application.applied_at,
+        last_stage_change_at=application.last_stage_change_at,
+        updated_at=application.updated_at,
+        created_by=application.created_by,
     )
 
 
