@@ -65,6 +65,16 @@ export default function TakeCandidateButton({
     };
   }, [open, user?.id]);
 
+  // «Кому отдать»: assignable-users отдаёт только admin/hr из HR-отдела —
+  // владельца/себя-вне-HR-отдела там нет, и «передать себе» было невозможно.
+  // Гарантируем себя в списке (первым, с «(я)»); бэкенд «Забрать» пускает
+  // owner/admin/hr, так что передача себе валидна.
+  const recruiterOptions = useMemo<AssignableUser[]>(() => {
+    if (!user?.id) return recruiters;
+    if (recruiters.some((r) => r.id === user.id)) return recruiters;
+    return [{ id: user.id, name: user.name || user.email }, ...recruiters];
+  }, [recruiters, user?.id, user?.name, user?.email]);
+
   // Воронки ВЫБРАННОГО рекрутёра (где он участник: создатель/назначенный/общая).
   const funnelOptions = useMemo(() => {
     if (recruiterId === "") return [];
@@ -106,7 +116,7 @@ export default function TakeCandidateButton({
       });
       const vt = vacancies.find((v) => v.id === vacancyId)?.title || "воронку";
       const rn =
-        recruiters.find((r) => r.id === recruiterId)?.name || "рекрутёра";
+        recruiterOptions.find((r) => r.id === recruiterId)?.name || "рекрутёра";
       toast.success(`Забрали к ${rn} → «${vt}»`);
       setOpen(false);
       onDone?.({ vacancyId: Number(vacancyId), recruiterId: Number(recruiterId) });
@@ -117,7 +127,7 @@ export default function TakeCandidateButton({
     }
   };
 
-  const recruiterName = recruiters.find((r) => r.id === recruiterId)?.name;
+  const recruiterName = recruiterOptions.find((r) => r.id === recruiterId)?.name;
   const vacancyTitle = funnelOptions.find((v) => v.id === vacancyId)?.title;
 
   const triggerCls =
@@ -169,10 +179,10 @@ export default function TakeCandidateButton({
             </button>
             {openMenu === "rec" && (
               <div className={menuCls}>
-                {recruiters.length === 0 ? (
+                {recruiterOptions.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-[var(--hf-main-500)]">Нет рекрутёров</div>
                 ) : (
-                  recruiters.map((r) => (
+                  recruiterOptions.map((r) => (
                     <button
                       key={r.id}
                       type="button"
