@@ -668,6 +668,9 @@ _DEFAULT_CATALOG = [
 ]
 
 _SEEDED_FLAG = "access_hub_seeded"
+# Версия набора. Поднимается, когда прошлый проход отработал неверно и его
+# нужно повторить: организации с меньшим значением засеиваются ещё раз.
+_SEED_VERSION = 2
 
 
 async def _ensure_default_catalog(db: AsyncSession, org) -> None:
@@ -681,18 +684,27 @@ async def _ensure_default_catalog(db: AsyncSession, org) -> None:
     админ намеренно удалил, воскресали бы при каждом открытии.
     """
     settings = dict(org.settings) if isinstance(org.settings, dict) else {}
-    if settings.get(_SEEDED_FLAG):
+    try:
+        seeded = int(settings.get(_SEEDED_FLAG) or 0)
+    except (TypeError, ValueError):
+        seeded = 1 if settings.get(_SEEDED_FLAG) else 0
+    if seeded >= _SEED_VERSION:
         return
 
-    existing = (await db.execute(
-        select(func.count(ResourceCatalog.id)).where(ResourceCatalog.org_id == org.id)
-    )).scalar() or 0
+    # Заводим недостающие ПО КЛЮЧУ, а не «только если каталог пуст».
+    # Прошлая версия молча ничего не делала, если админ успел создать хотя бы
+    # один свой ресурс: базовых типов не появлялось, а флаг проставлялся — и
+    # второго шанса уже не было.
+    existing_keys = set((await db.execute(
+        select(ResourceCatalog.key).where(ResourceCatalog.org_id == org.id)
+    )).scalars().all())
 
-    if existing == 0:
-        for item in _DEFAULT_CATALOG:
-            db.add(ResourceCatalog(org_id=org.id, params_schema=[], **item))
+    for item in _DEFAULT_CATALOG:
+        if item["key"] in existing_keys:
+            continue
+        db.add(ResourceCatalog(org_id=org.id, params_schema=[], **item))
 
-    settings[_SEEDED_FLAG] = True
+    settings[_SEEDED_FLAG] = _SEED_VERSION
     org.settings = settings
     flag_modified(org, "settings")
     await db.commit()
