@@ -1711,21 +1711,29 @@ export default function RecruiterFunnelsPage() {
       // + ПО АВТОРУ: в ОБЩЕЙ воронке несколько со-рекрутёров на одном кандидате,
       // поэтому «каждый видит только свои» — фильтруем по author_id (включая
       // админов). Легаси без автора остаются видны всем (старая общая история).
+      // НАБЛЮДАТЕЛЬ (is_readonly) — своих комментов у него нет (он не пишет), но
+      // должен видеть переписку живого HR: показываем комменты ВЛАДЕЛЬЦА заявки
+      // («того человека, в чьей воронке он находится») — created_by заявки, а
+      // если не записан (bulk-добавление) — владелец вакансии, тот же fallback,
+      // что и бэкенд для HR-меток (services/hr_tags.compute_hr_tags).
       extra_data: (() => {
         const ed = (entityExtraData || {}) as Record<string, unknown>;
         const allNotes = Array.isArray(ed.notes) ? (ed.notes as Array<Record<string, unknown>>) : null;
         if (!allNotes) return ed;
-        const uid = user?.id;
+        const isObserver = !!user?.is_readonly;
+        const targetAuthorId = isObserver
+          ? (selectedCandidate?.created_by ?? selectedVacancy?.created_by ?? null)
+          : (user?.id ?? null);
         const scoped = allNotes.filter((n) => {
           const inFunnel = n?.vacancy_id == null || n.vacancy_id === selectedVacancyId;
           if (!inFunnel) return false;
           const aid = (n as { author_id?: unknown })?.author_id;
-          return aid == null || String(aid) === String(uid);
+          return aid == null || targetAuthorId == null || String(aid) === String(targetAuthorId);
         });
         return { ...ed, notes: scoped };
       })(),
     };
-  }, [selectedCandidate, entityExtraData, dupCard, selectedVacancyId, user?.id]);
+  }, [selectedCandidate, entityExtraData, dupCard, selectedVacancyId, user?.id, user?.is_readonly, selectedVacancy?.created_by]);
 
   // ---- Яркие теги-ярлыки у имени: редактирование прямо в воронке ----
   const hlTags = readHeadlineTags(entityExtraData);

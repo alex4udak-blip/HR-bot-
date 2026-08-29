@@ -20,6 +20,7 @@ function DefaultRedirect() {
 // Code splitting: Lazy load pages for better initial bundle size
 // Login and Invite are loaded eagerly since they're entry points
 import DevAccountSwitcher from '@/components/DevAccountSwitcher';
+import UpdateAvailableToast from '@/components/UpdateAvailableToast';
 import LoginPage from '@/pages/LoginPage';
 import InvitePage from '@/pages/InvitePage';
 
@@ -259,6 +260,7 @@ export default function App() {
           <Route path="*" element={<DefaultRedirect />} />
         </Route>
       </Routes>
+      <UpdateAvailableToast />
       <DevAccountSwitcher />
     </ErrorBoundary>
   );
