@@ -15,6 +15,7 @@ const DEV_ACCOUNTS: { email: string; label: string; pw: string }[] = [
   { email: 'maria@mstech.io', label: 'Мария (org admin)', pw: 'Demo1234!' },
   { email: 'recruiter.test@example.com', label: 'Тестовый Рекрутёр (hr)', pw: 'Demo1234!' },
   { email: 'recruiter2.test@example.com', label: 'Пётр (hr)', pw: 'Demo1234!' },
+  { email: 'observer.test@example.com', label: 'Наблюдатель (readonly)', pw: 'Demo1234!' },
 ];
 
 export default function DevAccountSwitcher() {

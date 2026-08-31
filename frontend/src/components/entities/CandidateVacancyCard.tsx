@@ -23,6 +23,7 @@ import {
   PenLine,
   MessageSquarePlus,
   Briefcase,
+  Copy,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -124,6 +125,24 @@ function formatTimelineDate(dateStr: string): string {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${day} ${month} ${year}, ${hours}:${minutes}`;
+}
+
+// Текст записи таймлайна для копирования в буфер: тот же sanitizeHtml, что и
+// рендер (event.title/body). НЕ innerText — на элементе, не прикреплённом к
+// документу (нет layout), innerText игнорирует <br>/блочные теги и склеивает
+// текст в одну строку. Поэтому переносы строк проставляем вручную ДО парсинга.
+function htmlToPlainText(html: string): string {
+  const withBreaks = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    // Перенос ПЕРЕД началом блока (список/абзац сразу после инлайн-текста без
+    // <br> между ними иначе слипается с предыдущей строкой, напр. «Контакт:
+    // t.me/ivan_petrov• Пункт А»). <li> не сюда — у него свой маркер ниже.
+    .replace(/<(p|div|ul|ol|h[1-6])[^>]*>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<\/(p|div|ul|ol|li|h[1-6])>/gi, "\n");
+  const div = document.createElement("div");
+  div.innerHTML = withBreaks;
+  return (div.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 const TIMELINE_EXPAND_DELAY_MS = 420;
@@ -565,6 +584,27 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   };
 
   // --- Дописка комментария к прошлой статусной записи (запрос Марии) ---
+  // Копировать текст записи таймлайна (статус/комментарий/отчёт после звонка)
+  // в буфер обмена — доступно ВСЕМ, включая наблюдателя (просмотр без права
+  // редактировать всё равно должен уметь забрать текст себе).
+  const copyTimelineEntry = async (row: {
+    title?: string;
+    body?: string;
+  }) => {
+    const parts = [
+      htmlToPlainText(sanitizeHtml(row.title || "")),
+      row.body ? htmlToPlainText(sanitizeHtml(row.body)) : "",
+    ].filter(Boolean);
+    const text = parts.join("\n\n");
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Скопировано");
+    } catch {
+      toast.error("Не удалось скопировать");
+    }
+  };
+
   const startAddComment = (parentKey: string) => {
     setAddCommentKey(parentKey);
     setAddCommentText("");
@@ -1118,11 +1158,20 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                       </div>
                     </>
                   )}
-                  {!readonly &&
-                  (event.isStage ||
-                    event.historyId ||
-                    (event.noteId && canModifyNote(event.authorId))) ? (
-                    <div className="ml-auto flex items-center gap-[2px] opacity-0 transition-opacity group-hover/timeline:opacity-100">
+                  <div className="ml-auto flex items-center gap-[2px] opacity-0 transition-opacity group-hover/timeline:opacity-100">
+                      <button
+                        type="button"
+                        onClick={() => copyTimelineEntry(event)}
+                        title="Скопировать текст"
+                        className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:text-[var(--hf-main-900)] focus:outline-none focus-visible:outline-none"
+                      >
+                        <Copy className="h-[13px] w-[13px]" />
+                      </button>
+                      {!readonly &&
+                      (event.isStage ||
+                        event.historyId ||
+                        (event.noteId && canModifyNote(event.authorId))) ? (
+                        <>
                       {/* «+коммент» — дописать комментарий к этой статусной записи
                           (запрос Марии: вернуться к прошлому этапу и добавить коммент).
                           Только на статусных записях и не на самих дописках. */}
@@ -1184,8 +1233,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                           )}
                         </>
                       ) : null}
-                    </div>
-                  ) : null}
+                      </>
+                    ) : null}
+                  </div>
                 </div>
                 {editingNoteId && editingNoteId === event.noteId ? (
                   <div className="mt-[4px]">
