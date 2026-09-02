@@ -1709,21 +1709,30 @@ export default function RecruiterFunnelsPage() {
       // (vacancy_id === selectedVacancyId) + «Общие» (без vacancy_id / легаси).
       // Один кандидат в нескольких воронках — у каждой своя лента комментов.
       // + ПО АВТОРУ: в ОБЩЕЙ воронке несколько со-рекрутёров на одном кандидате,
-      // поэтому «каждый видит только свои» — фильтруем по author_id (включая
-      // админов). Легаси без автора остаются видны всем (старая общая история).
-      // НАБЛЮДАТЕЛЬ (is_readonly) — своих комментов у него нет (он не пишет), но
-      // должен видеть переписку живого HR: показываем комменты ВЛАДЕЛЬЦА заявки
-      // («того человека, в чьей воронке он находится») — created_by заявки, а
-      // если не записан (bulk-добавление) — владелец вакансии, тот же fallback,
-      // что и бэкенд для HR-меток (services/hr_tags.compute_hr_tags).
+      // поэтому обычный рекрутёр (hr/member) видит только свои. Легаси без
+      // автора остаются видны всем (старая общая история).
+      // ИСКЛЮЧЕНИЯ (видят ВСЁ, без фильтра по автору):
+      //  • АДМИН/ОВНЕР/СУПЕРАДМИН (isHrAdmin) — та же семантика, что и
+      //    sees_all_candidates/isHrAdmin везде в приложении: полный доступ к
+      //    базе, фильтр по автору для них не применяется вообще.
+      //  • НАБЛЮДАТЕЛЬ (is_readonly) — своих комментов у него нет (не пишет),
+      //    показываем комменты ВЛАДЕЛЬЦА заявки («того человека, в чьей
+      //    воронке он находится») — created_by заявки, а если не записан
+      //    (bulk-добавление) — владелец вакансии (тот же fallback, что и
+      //    бэкенд для HR-меток, services/hr_tags.compute_hr_tags).
       extra_data: (() => {
         const ed = (entityExtraData || {}) as Record<string, unknown>;
         const allNotes = Array.isArray(ed.notes) ? (ed.notes as Array<Record<string, unknown>>) : null;
         if (!allNotes) return ed;
         const isObserver = !!user?.is_readonly;
-        const targetAuthorId = isObserver
-          ? (selectedCandidate?.created_by ?? selectedVacancy?.created_by ?? null)
-          : (user?.id ?? null);
+        // Админ/овнер/суперадмин видят ВСЁ в этой воронке (без фильтра по
+        // автору) — targetAuthorId=null отключает сравнение ниже, вакансийный
+        // скоуп (inFunnel) при этом остаётся: чужая воронка сюда не подмешивается.
+        const targetAuthorId = isHrAdmin
+          ? null
+          : isObserver
+            ? (selectedCandidate?.created_by ?? selectedVacancy?.created_by ?? null)
+            : (user?.id ?? null);
         const scoped = allNotes.filter((n) => {
           const inFunnel = n?.vacancy_id == null || n.vacancy_id === selectedVacancyId;
           if (!inFunnel) return false;
@@ -1733,7 +1742,7 @@ export default function RecruiterFunnelsPage() {
         return { ...ed, notes: scoped };
       })(),
     };
-  }, [selectedCandidate, entityExtraData, dupCard, selectedVacancyId, user?.id, user?.is_readonly, selectedVacancy?.created_by]);
+  }, [selectedCandidate, entityExtraData, dupCard, selectedVacancyId, isHrAdmin, user?.id, user?.is_readonly, selectedVacancy?.created_by]);
 
   // ---- Яркие теги-ярлыки у имени: редактирование прямо в воронке ----
   const hlTags = readHeadlineTags(entityExtraData);

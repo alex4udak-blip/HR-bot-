@@ -702,11 +702,24 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Сидим pendingStage/комментарий ТОЛЬКО в момент ОТКРЫТИЯ дропдауна (переход
+  // false→true), а не на каждый пересчёт resolvedCurrentStageStatus, пока он
+  // открыт. Раньше resolvedCurrentStageStatus был в зависимостях эффекта
+  // напрямую — если currentStage/stageOptions пересчитывались (напр. фоновый
+  // поллинг активности) ПОКА пользователь уже выбрал новый этап и вводит
+  // коммент, эффект тихо перезатирал выбор обратно на текущий этап. Юзер
+  // жал «Сохранить» — коммент с меткой уходил, а реальная смена этапа
+  // молча НЕ срабатывала (pendingStage===currentStage к моменту клика),
+  // хотя выглядело, будто всё прошло. Баг был интермиттентным — ловился не
+  // на каждой попытке, только если фоновое обновление успевало прилететь
+  // ровно в окно между выбором этапа и сохранением.
+  const stageDDWasOpenRef = useRef(false);
   useEffect(() => {
-    if (showStageDD) {
+    if (showStageDD && !stageDDWasOpenRef.current) {
       setPendingStage(resolvedCurrentStageStatus);
       setStageChangeComment("");
     }
+    stageDDWasOpenRef.current = showStageDD;
   }, [showStageDD, resolvedCurrentStageStatus]);
 
   useEffect(() => {
@@ -1238,14 +1251,19 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                   </div>
                 </div>
                 {editingNoteId && editingNoteId === event.noteId ? (
-                  <div className="mt-[4px]">
+                  <div className="mt-[4px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
+                    {/* Панель форматирования ЗАКРЕПЛЕНА сверху, текст скроллится
+                        ВНУТРИ (до 240px) — иначе у длинного коммента (напр. отчёт
+                        после звонка) панель и «Сохранить» разъезжались в разные
+                        концы страницы и приходилось листать, чтобы дотянуться. */}
                     <HuntflowRichInput
                       value={editingNoteText}
                       onChange={setEditingNoteText}
                       placeholder="Текст комментария"
-                      editableClassName="hf-stage-picker-textarea overflow-y-auto"
+                      toolbarClassName="flex h-[36px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[8px]"
+                      editableClassName="hf-stage-picker-textarea block max-h-[240px] w-full overflow-y-auto"
                     />
-                    <div className="mt-[6px] flex items-center gap-[8px]">
+                    <div className="flex items-center gap-[8px] border-t border-[var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] px-[10px] py-[8px]">
                       <button
                         type="button"
                         onClick={saveEditNote}

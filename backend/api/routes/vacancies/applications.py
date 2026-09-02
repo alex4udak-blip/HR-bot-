@@ -323,9 +323,21 @@ async def create_application(
             detail="Кандидат уже добавлен в эту вакансию"
         )
 
-    # Use candidate's current Entity.status as initial stage (converted via STATUS_SYNC_MAP)
+    # Use candidate's current Entity.status as initial stage (converted via
+    # STATUS_SYNC_MAP) — но ТОЛЬКО если это ПЕРВАЯ заявка кандидата вообще.
+    # Entity.status — ОДНО глобальное поле на кандидата, а не на воронку. Если
+    # у него уже есть другие заявки (мультивакансийность), entity.status может
+    # отражать СОВСЕМ ДРУГУЮ, не связанную воронку (напр. «Отказ» там, где его
+    # отклонили) — наследовать его в НОВУЮ воронку неверно: кандидат должен
+    # начинать с «Новый», как и любой другой. Инцидент: добавленный в свежую
+    # воронку кандидат, отклонённый ранее в другой, стартовал сразу «Отказ».
     initial_stage = data.stage
-    if entity.status in STATUS_SYNC_MAP:
+    has_other_applications = (await db.execute(
+        select(func.count(VacancyApplication.id)).where(
+            VacancyApplication.entity_id == data.entity_id
+        )
+    )).scalar() or 0
+    if not has_other_applications and entity.status in STATUS_SYNC_MAP:
         initial_stage = STATUS_SYNC_MAP[entity.status]
         logger.info(f"Using entity status {entity.status} -> stage {initial_stage} for new application")
 
