@@ -318,6 +318,16 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   const [addCommentKey, setAddCommentKey] = useState<string | null>(null);
   const [addCommentText, setAddCommentText] = useState("");
   const [savingAddComment, setSavingAddComment] = useState(false);
+  // Композер дописки открывается ПОД статусной записью, на которую нажали
+  // «+коммент» — она может быть далеко внизу длинной ленты, и открывшееся
+  // поле ввода оказывалось вне видимой области. Докручиваем к нему сразу
+  // после открытия.
+  const addCommentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (addCommentKey) {
+      addCommentRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [addCommentKey]);
   const [comment, setComment] = useState("");
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -1381,7 +1391,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                 </div>
                 )}
                 {addCommentKey === event.reactionKey && (
-                  <div className="mt-[8px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
+                  <div
+                    ref={addCommentRef}
+                    className="mt-[8px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
                     {/* Тот же паттерн, что у редактирования комментария: панель
                         закреплена сверху, текст скроллится внутри (до 240px), а
                         не растягивает страницу — иначе для длинной дописки панель
