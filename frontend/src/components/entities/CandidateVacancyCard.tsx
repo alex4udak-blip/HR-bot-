@@ -1381,14 +1381,19 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                 </div>
                 )}
                 {addCommentKey === event.reactionKey && (
-                  <div className="mt-[8px]">
+                  <div className="mt-[8px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
+                    {/* Тот же паттерн, что у редактирования комментария: панель
+                        закреплена сверху, текст скроллится внутри (до 240px), а
+                        не растягивает страницу — иначе для длинной дописки панель
+                        и «Добавить» разъезжались в разные концы. */}
                     <HuntflowRichInput
                       value={addCommentText}
                       onChange={setAddCommentText}
                       placeholder="Комментарий к этому этапу"
-                      editableClassName="hf-stage-picker-textarea overflow-y-auto"
+                      toolbarClassName="flex h-[36px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[8px]"
+                      editableClassName="hf-stage-picker-textarea block max-h-[240px] w-full overflow-y-auto"
                     />
-                    <div className="mt-[6px] flex items-center gap-[8px]">
+                    <div className="flex items-center gap-[8px] border-t border-[var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] px-[10px] py-[8px]">
                       <button
                         type="button"
                         onClick={submitAddComment}
@@ -1406,7 +1411,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                         Отмена
                       </button>
                     </div>
-                    <div className="mt-[4px] text-[length:var(--hf-fs-2xs)] text-[var(--hf-main-500)]">
+                    <div className="px-[10px] pb-[8px] text-[length:var(--hf-fs-2xs)] text-[var(--hf-main-500)]">
                       Появится под этим этапом с пометкой «оставлен на этапе {statusLabel}».
                     </div>
                   </div>
