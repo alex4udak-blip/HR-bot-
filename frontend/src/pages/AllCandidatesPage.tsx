@@ -1993,6 +1993,31 @@ const InfoTab = memo(function InfoTab({
   // коммент появлялся только после F5). Бампаем тик руками сразу после мутации.
   const [notesVersion, setNotesVersion] = useState(0);
   const bumpNotes = useCallback(() => setNotesVersion((v) => v + 1), []);
+  // Периодический рефреш extra_data (комментарии и т.п.): card — застывший снимок
+  // с момента выбора/последнего поллинга доски, сам по себе не обновляется, пока
+  // профиль открыт (авто-выбор карточки намеренно не перебивает открытый фокус
+  // фоновым тиком доски). Из-за этого коммент, оставленный на ТОМ ЖЕ кандидате в
+  // воронке, не появлялся здесь без ручного F5/переоткрытия карточки (Мария).
+  // Мутируем card.extra_data напрямую (как cardComment) + bumpNotes — тот же приём.
+  useEffect(() => {
+    if (!card.id) return;
+    let cancelled = false;
+    const poll = () => {
+      if (document.visibilityState !== "visible") return;
+      getEntity(card.id)
+        .then((fresh) => {
+          if (cancelled || !fresh.extra_data) return;
+          card.extra_data = fresh.extra_data;
+          bumpNotes();
+        })
+        .catch(() => {});
+    };
+    const id = setInterval(poll, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [card, bumpNotes]);
   const loadActivity = useCallback(async () => {
     if (!card.id) {
       setActivityBlocks([]);

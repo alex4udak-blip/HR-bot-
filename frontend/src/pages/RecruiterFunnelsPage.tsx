@@ -1151,12 +1151,12 @@ export default function RecruiterFunnelsPage() {
       .finally(() => setFilesLoading(false));
   }, [selectedCandidate?.entity_id]);
 
-  // Load entity extra_data for resume text view + дедуп-баннер в воронке
-  useEffect(() => {
-    setEntityExtraData(null);
-    setDupCard(null);
-    if (!selectedCandidate?.entity_id) return;
-    getEntity(selectedCandidate.entity_id)
+  // Load entity extra_data for resume text view + дедуп-баннер в воронке.
+  // silent=true (поллинг) не сбрасывает в null перед запросом — иначе фон
+  // мигал бы пустотой каждые 15с.
+  const loadEntityExtra = useCallback((entityId: number, silent = false) => {
+    if (!silent) { setEntityExtraData(null); setDupCard(null); }
+    return getEntity(entityId)
       .then(entity => {
         setEntityExtraData(entity.extra_data || null);
         // Карточка для ShadowDuplicateBanner — чтобы баннер «Похожий кандидат»
@@ -1181,8 +1181,29 @@ export default function RecruiterFunnelsPage() {
           extra_data: entity.extra_data || undefined,
         });
       })
-      .catch(() => { setEntityExtraData(null); setDupCard(null); });
-  }, [selectedCandidate?.entity_id]);
+      .catch(() => { if (!silent) { setEntityExtraData(null); setDupCard(null); } });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCandidate?.entity_id) {
+      setEntityExtraData(null);
+      setDupCard(null);
+      return;
+    }
+    loadEntityExtra(selectedCandidate.entity_id, false);
+  }, [selectedCandidate?.entity_id, loadEntityExtra]);
+
+  // Молчаливый поллинг entity_id — та же причина, что и у доски/анкет: WS на
+  // проде ненадёжен. Без этого коммент, оставленный на ЭТОМ ЖЕ кандидате в
+  // «Все кандидаты», не появлялся в воронке без переоткрытия карточки (Мария).
+  useEffect(() => {
+    const entityId = selectedCandidate?.entity_id;
+    if (!entityId) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') loadEntityExtra(entityId, true);
+    }, 15000);
+    return () => clearInterval(id);
+  }, [selectedCandidate?.entity_id, loadEntityExtra]);
 
   // Resume: original document (PDF or DOC/DOCX) + page images (JPEG renders from backend)
   const resumeOriginal = useMemo(
