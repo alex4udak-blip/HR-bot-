@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { Copy, ExternalLink } from 'lucide-react';
-import type { FormDispatchInfo } from '@/services/api/forms';
+import { Copy, ExternalLink, Trash2 } from 'lucide-react';
+import { deleteDispatch, type FormDispatchInfo } from '@/services/api/forms';
 
 // Бэкенд отдаёт наивный UTC ("2026-06-24T22:18:32" без зоны) — трактуем как UTC,
 // чтобы toLocaleString показал корректное локальное время.
@@ -14,7 +15,31 @@ function formatWhen(iso: string | null | undefined): string {
   });
 }
 
-export function AnketaResponses({ dispatches }: { dispatches: (FormDispatchInfo & { source_entity_id?: number; source_name?: string | null })[] }) {
+export function AnketaResponses({
+  dispatches,
+  onDeleted,
+}: {
+  dispatches: (FormDispatchInfo & { source_entity_id?: number; source_name?: string | null })[];
+  onDeleted?: (dispatchId: number) => void;
+}) {
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const handleDelete = async (d: FormDispatchInfo) => {
+    if (!window.confirm(`Удалить анкету «${d.form_title || 'Анкета'}»? Ответы кандидата будут стёрты без возможности восстановления.`)) {
+      return;
+    }
+    setDeletingId(d.id);
+    try {
+      await deleteDispatch(d.id);
+      toast.success('Анкета удалена');
+      onDeleted?.(d.id);
+    } catch {
+      toast.error('Не удалось удалить анкету');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (dispatches.length === 0) {
     return <div className="p-8 text-center text-gray-400 text-sm">Анкеты ещё не присылались</div>;
   }
@@ -52,6 +77,13 @@ export function AnketaResponses({ dispatches }: { dispatches: (FormDispatchInfo 
               className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
             >
               <Copy className="w-3 h-3" /> Скопировать ссылку
+            </button>
+            <button
+              onClick={() => handleDelete(d)}
+              disabled={deletingId === d.id}
+              className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-600 disabled:opacity-50"
+            >
+              <Trash2 className="w-3 h-3" /> {deletingId === d.id ? 'Удаляем…' : 'Удалить'}
             </button>
           </div>
           {d.answers && (

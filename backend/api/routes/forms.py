@@ -15,7 +15,7 @@ from pathlib import Path
 from anthropic import AsyncAnthropic
 import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, File, Form, UploadFile
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
@@ -24,11 +24,12 @@ from ..database import get_db
 from ..models.database import (
     FormTemplate, FormSubmission, FormVacancy, FormDispatch,
     Entity, EntityType, EntityStatus,
-    EntityFile, EntityFileType,
+    EntityFile, EntityFileType, AccessLevel,
     Vacancy, VacancyApplication, ApplicationStage,
     User, UserRole, Organization, OrgMember
 )
 from ..services.auth import get_current_user, get_user_org
+from .entities.common import check_entity_access
 
 # File upload settings for public forms
 ENTITY_FILES_DIR = Path(__file__).parent.parent.parent / "uploads" / "entity_files"
@@ -914,6 +915,41 @@ async def reassign_dispatch(
         "success": True, "dispatch_id": dispatch_id,
         "from_entity": old_entity, "to_entity": body.entity_id,
     }
+
+
+@router.delete("/dispatch/{dispatch_id}")
+async def delete_dispatch(
+    dispatch_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Удалить анкету (dispatch + её ответы), например, если она ошибочно
+    прилетела не на ту карточку и перепривязывать (reassign) некуда/не нужно.
+    Требует edit-доступ к кандидату, на котором висит анкета."""
+    current_user = await db.merge(current_user)
+    dispatch = (await db.execute(
+        select(FormDispatch).where(FormDispatch.id == dispatch_id)
+    )).scalar_one_or_none()
+    if not dispatch:
+        raise HTTPException(status_code=404, detail="Анкета не найдена")
+
+    entity = (await db.execute(select(Entity).where(Entity.id == dispatch.entity_id))).scalar_one_or_none()
+    if not entity:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+
+    if current_user.role != UserRole.superadmin:
+        org = await get_user_org(current_user, db)
+        if not org or entity.org_id != org.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        has_access = await check_entity_access(entity, current_user, org.id, db, required_level=AccessLevel.edit)
+        if not has_access:
+            raise HTTPException(status_code=403, detail="No edit permission for this entity")
+
+    if dispatch.submission_id:
+        await db.execute(delete(FormSubmission).where(FormSubmission.id == dispatch.submission_id))
+    await db.delete(dispatch)
+    await db.commit()
+    return {"ok": True}
 
 
 # ============================================================

@@ -3393,6 +3393,7 @@ const InfoTab = memo(function InfoTab({
             activeIndex={anketaIndex}
             participations={participations}
             nativeDispatches={nativeDispatches}
+            onDispatchDeleted={(id) => setNativeDispatches((prev) => prev.filter((d) => d.id !== id))}
           />
         )}
       </div>
@@ -3404,6 +3405,7 @@ function AnketaTab({
   activeIndex,
   participations,
   nativeDispatches,
+  onDispatchDeleted,
 }: {
   activeIndex: number;
   participations: ReturnType<typeof readParticipations>;
@@ -3411,6 +3413,7 @@ function AnketaTab({
     source_entity_id?: number;
     source_name?: string | null;
   })[];
+  onDispatchDeleted?: (dispatchId: number) => void;
 }) {
   // Чистый рендерер: фетч диспатчей + отметка «просмотрено» теперь в родителе
   // (там же, где строится ряд вкладок) — вкладке нужно только знать, какая
@@ -3418,14 +3421,14 @@ function AnketaTab({
   const hasNative = nativeDispatches.length > 0;
   const nativeTabIndex = participations.length;
   if (hasNative && activeIndex === nativeTabIndex) {
-    return <AnketaResponses dispatches={nativeDispatches} />;
+    return <AnketaResponses dispatches={nativeDispatches} onDeleted={onDispatchDeleted} />;
   }
   if (participations.length > 0) {
     const p = participations[Math.min(activeIndex, participations.length - 1)];
     return p ? <ImportedParticipations participations={[p]} /> : null;
   }
   // Ни прохождений, ни нативных анкет — пустое состояние.
-  return <AnketaResponses dispatches={nativeDispatches} />;
+  return <AnketaResponses dispatches={nativeDispatches} onDeleted={onDispatchDeleted} />;
 }
 
 const PersonalNotesTab = memo(function PersonalNotesTab({

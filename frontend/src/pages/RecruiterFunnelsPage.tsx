@@ -308,6 +308,15 @@ export default function RecruiterFunnelsPage() {
   const [detailTab, setDetailTab] = useState<'info' | 'resume' | 'anketa'>('resume');
   const [editingCandidateCard, setEditingCandidateCard] = useState<KanbanCard | null>(null);
   const [anketaOpen, setAnketaOpen] = useState(false);
+  // Кандидат, для которого открыт дровер «Анкета» — фиксируется в МОМЕНТ клика
+  // «Анкета», а не читается вживую из selectedCandidate. Раньше дровер был
+  // привязан к live selectedCandidate: пока рекрутёр держит дровер открытым
+  // (AI-диалог/конструктор — не мгновенно), несколько эффектов страницы могут
+  // молча переключить selectedCandidateId (авто-выбор первого в табе при смене
+  // этапа/вкладки, адопт ?entity= из URL) — и анкета уходила уже ДРУГОМУ
+  // кандидату, хотя дровер не закрывался. Причина жалобы «анкета прилетает не
+  // в ту карточку».
+  const [anketaTarget, setAnketaTarget] = useState<{ id: number; name: string } | null>(null);
   const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [entityExtraData, setEntityExtraData] = useState<Record<string, unknown> | null>(null);
@@ -3360,7 +3369,11 @@ export default function RecruiterFunnelsPage() {
                                       onDeleteNote={cardDeleteNote}
                                       onEditNote={cardEditNote}
                                       onUploadFile={cardUploadFile}
-                                      onAnketa={c.origin === 'live' && !vacancyArchived ? () => setAnketaOpen(true) : undefined}
+                                      onAnketa={c.origin === 'live' && !vacancyArchived ? () => {
+                                        if (!selectedCandidate.entity_id) return;
+                                        setAnketaTarget({ id: selectedCandidate.entity_id, name: selectedCandidate.entity_name || '' });
+                                        setAnketaOpen(true);
+                                      } : undefined}
                                       anketaCount={anketaCount}
                                       onReact={c.origin === 'live' ? cardReact : undefined}
                                       files={c.files}
@@ -3438,13 +3451,13 @@ export default function RecruiterFunnelsPage() {
 
                         {/* Дровер «Анкета» — отправка/привязка анкеты живому
                             контейнеру (открывается чипом на карточке). */}
-                        {anketaOpen && selectedCandidate.entity_id && (
+                        {anketaOpen && anketaTarget && (
                           <Suspense fallback={null}>
                             <AnketaDrawer
                               open={anketaOpen}
                               onOpenChange={setAnketaOpen}
-                              entityId={selectedCandidate.entity_id}
-                              entityName={selectedCandidate.entity_name || ''}
+                              entityId={anketaTarget.id}
+                              entityName={anketaTarget.name}
                               vacancyId={selectedVacancyId ?? undefined}
                               vacancyTitle={selectedVacancy?.title}
                             />
@@ -3678,5 +3691,10 @@ function FunnelAnketaTab({ entityId }: { entityId: number }) {
     const t = setInterval(fetchRows, 15000);
     return () => { alive = false; clearInterval(t); };
   }, [entityId, clearBadge]);
-  return <AnketaResponses dispatches={dispatches} />;
+  return (
+    <AnketaResponses
+      dispatches={dispatches}
+      onDeleted={(id) => setDispatches((prev) => prev.filter((d) => d.id !== id))}
+    />
+  );
 }

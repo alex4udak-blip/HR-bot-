@@ -192,6 +192,10 @@ export const markEntityDispatchesSeen = async (entityId: number): Promise<void> 
   await api.patch(`/forms/entity/${entityId}/dispatches/seen`);
 };
 
+export const deleteDispatch = async (dispatchId: number): Promise<void> => {
+  await api.delete(`/forms/dispatch/${dispatchId}`);
+};
+
 export const getPublicFormByToken = async (token: string): Promise<PublicFormData & { candidate_name: string | null; already_submitted: boolean }> => {
   const { data } = await api.get(`/forms/public/d/${token}`);
   return data;
