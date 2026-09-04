@@ -2139,6 +2139,7 @@ const InfoTab = memo(function InfoTab({
   const cardChangeStage = useCallback(
     async (appId: number, stage: string, comment?: string) => {
       onStatusChange(stage);
+      let ok = true;
       if (appId > 0) {
         try {
           await updateApplication(appId, {
@@ -2146,10 +2147,16 @@ const InfoTab = memo(function InfoTab({
             ...(comment ? { comment } : {}),
           });
         } catch {
-          /* стадия заявки не критична — entity-статус уже обновлён */
+          // Раньше ошибка тут проглатывалась молча («entity-статус уже
+          // обновлён» — но это ДРУГОЕ поле, VacancyApplication.stage мог не
+          // измениться). Возвращаем false, чтобы вызывающий пикер не писал
+          // комментарий-«обещание» поверх неприменённого перехода.
+          ok = false;
+          toast.error("Не удалось изменить этап заявки");
         }
       }
       await loadActivity();
+      return ok;
     },
     [onStatusChange, loadActivity],
   );

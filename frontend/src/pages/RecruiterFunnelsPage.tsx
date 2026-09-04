@@ -1423,7 +1423,7 @@ export default function RecruiterFunnelsPage() {
 
   // Change candidate stage
   const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage, comment?: string) => {
-    if (blockIfArchived()) return;
+    if (blockIfArchived()) return false;
     try {
       await updateApplication(applicationId, { stage: newStage, ...(comment ? { comment } : {}) });
       // Локально двигаем кандидата на новый этап + СРАЗУ снимаем «предыдущую
@@ -1445,8 +1445,10 @@ export default function RecruiterFunnelsPage() {
       toast.success(`Статус изменён → ${getVacancyStageLabel(newStage)}`);
       // Refresh vacancy store for updated counts
       fetchVacancies();
+      return true;
     } catch {
       toast.error('Ошибка смены статуса');
+      return false;
     }
   }, [fetchVacancies, getVacancyStageLabel, blockIfArchived]);
 
@@ -1610,8 +1612,9 @@ export default function RecruiterFunnelsPage() {
   // чтобы лента карточек и счётчики досок обновились. ───
   const cardChangeStage = useCallback(
     async (appId: number, stage: string, comment?: string) => {
-      await handleStageChange(appId, stage as ApplicationStage, comment);
+      const ok = await handleStageChange(appId, stage as ApplicationStage, comment);
       await refreshActivity();
+      return ok;
     },
     [handleStageChange, refreshActivity],
   );

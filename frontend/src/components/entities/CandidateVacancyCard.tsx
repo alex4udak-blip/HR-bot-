@@ -220,11 +220,14 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   dimmed?: boolean;
   stageOptions: Array<{ status: string; label: string }>;
   getStageLabel: (stage: string) => string;
+  // Возвращает false при неудачной смене этапа (или ничего/true — старые
+  // колл-сайты) — нужно кнопке «Сохранить» в пикере, чтобы НЕ писать
+  // комментарий-«обещание» («Этап: Отказ»), если сам перевод не применился.
   onChangeStage: (
     applicationId: number,
     stage: string,
     comment?: string,
-  ) => Promise<void> | void;
+  ) => Promise<boolean | void> | boolean | void;
   onComment: (
     applicationId: number,
     stage: string,
@@ -909,14 +912,28 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                           const selectedOption = stagePickerOptions.find(
                             (option) => option.status === pendingStage,
                           );
+                          const needsStageChange =
+                            pendingStage !== currentStage &&
+                            selectedOption?.isRealStage;
+                          // Сначала пробуем реально сменить этап — и только если
+                          // это удалось (или менять было нечего), пишем комментарий.
+                          // Раньше было наоборот (коммент → потом смена), и если
+                          // смена этапа падала (сеть/гонка), рекрутёр получал
+                          // висящий в старом этапе карточки комментарий вида
+                          // «Этап: Отказ», который выглядел как принятое решение,
+                          // хотя кандидат никуда не переехал.
+                          if (needsStageChange) {
+                            const result = await onChangeStage(applicationId, pendingStage);
+                            if (result === false) {
+                              toast.error(
+                                "Не удалось сменить этап — комментарий не сохранён. Попробуйте ещё раз.",
+                              );
+                              return; // дропдаун остаётся открытым, текст коммента не теряется
+                            }
+                          }
                           if (stageChangeComment.trim()) {
                             await saveStageChangeComment();
                           }
-                          if (
-                            pendingStage !== currentStage &&
-                            selectedOption?.isRealStage
-                          )
-                            await onChangeStage(applicationId, pendingStage);
                           setShowStageDD(false);
                         } finally {
                           setSavingStageChange(false);
