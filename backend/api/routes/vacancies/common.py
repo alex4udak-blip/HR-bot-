@@ -27,8 +27,7 @@ from ...database import get_db
 from ...models.database import (
     Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
     Entity, EntityType, User, Organization, Department, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
-    UserRole, OrgMember, OrgRole, DepartmentMember, DeptRole,
-    SharedAccess, ResourceType, AccessLevel
+    UserRole, OrgMember, OrgRole, DepartmentMember, DeptRole
 )
 from ...services.auth import get_current_user, get_user_org, has_full_database_access as auth_has_full_database_access
 from ...services.features import can_access_feature
@@ -80,6 +79,41 @@ async def has_full_database_access(user: User, org: Organization, db: AsyncSessi
     return await auth_has_full_database_access(user, org.id, db)
 
 
+async def has_hr_segment_access(user: User, org: Organization, db: AsyncSession) -> bool:
+    """Есть ли у пользователя HR-раздел — и, с 2026-09-07, ПРОСМОТР ВСЕХ воронок орга.
+
+    Раньше рекрутёр видел только «свои» воронки (создатель / назначенный /
+    принявший / лид отдела / шара). Из-за этого ссылка на кандидата в чужой
+    воронке молча вела в обзор СВОИХ вакансий, а в базе кандидатов метка
+    «HR: <коллега> · <вакансия>» была кликабельной, но никуда не открывалась
+    (обратная связь Эльвиры, 2026-09-07). По решению юзера воронки открыты всем,
+    у кого вообще есть HR-сегмент.
+
+    Это НЕ то же самое, что has_full_database_access: тот даёт ещё ПЭН, экспорт,
+    аналитику и обзор всех кандидатов внутри воронки (sees_all_candidates) —
+    его намеренно не трогаем. Здесь только видимость самих воронок.
+
+    Кто входит: superadmin, owner, admin (HR Админ), hr (HR Рекрутер) и
+    «Наблюдатель» (is_readonly, любой org_role). Обычный member HR-раздела не
+    имеет (сайдбар и RoleRoute его туда не пускают) — сюда он тоже не попадает.
+    """
+    if getattr(user, 'role', None) == UserRole.superadmin:
+        return True
+    if org is None:
+        return False
+    result = await db.execute(
+        select(OrgMember.role, OrgMember.is_readonly).where(
+            OrgMember.org_id == org.id,
+            OrgMember.user_id == user.id,
+        )
+    )
+    row = result.first()
+    if row is None:
+        return False
+    member_role, member_readonly = row
+    return member_role in (OrgRole.owner, OrgRole.admin, OrgRole.hr) or bool(member_readonly)
+
+
 async def sees_all_candidates(user: User, org: Organization, db: AsyncSession) -> bool:
     """Видит ли пользователь ВСЕ отклики в воронке (не только свои).
 
@@ -122,64 +156,6 @@ async def is_dept_lead_or_admin(user_id: int, department_id: int, db: AsyncSessi
     return result.scalar_one_or_none() is not None
 
 
-async def has_shared_vacancy_access(vacancy_id: int, user_id: int, db: AsyncSession, required_level: AccessLevel = AccessLevel.view) -> bool:
-    """
-    Check if user has shared access to a vacancy.
-
-    Args:
-        vacancy_id: ID of the vacancy
-        user_id: ID of the user
-        db: Database session
-        required_level: Minimum access level required (view, edit, full)
-
-    Returns:
-        True if user has sufficient shared access, False otherwise
-    """
-    # Access level hierarchy: view < edit < full
-    access_levels = [AccessLevel.view, AccessLevel.edit, AccessLevel.full]
-    required_idx = access_levels.index(required_level)
-    allowed_levels = access_levels[required_idx:]
-
-    result = await db.execute(
-        select(SharedAccess).where(
-            SharedAccess.resource_type == ResourceType.vacancy,
-            SharedAccess.resource_id == vacancy_id,
-            SharedAccess.shared_with_id == user_id,
-            SharedAccess.access_level.in_(allowed_levels),
-            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-        )
-    )
-    return result.scalar_one_or_none() is not None
-
-
-async def get_shared_vacancy_ids(user_id: int, db: AsyncSession, required_level: AccessLevel = AccessLevel.view) -> List[int]:
-    """
-    Get all vacancy IDs the user has shared access to.
-
-    Args:
-        user_id: ID of the user
-        db: Database session
-        required_level: Minimum access level required
-
-    Returns:
-        List of vacancy IDs
-    """
-    # Access level hierarchy: view < edit < full
-    access_levels = [AccessLevel.view, AccessLevel.edit, AccessLevel.full]
-    required_idx = access_levels.index(required_level)
-    allowed_levels = access_levels[required_idx:]
-
-    result = await db.execute(
-        select(SharedAccess.resource_id).where(
-            SharedAccess.resource_type == ResourceType.vacancy,
-            SharedAccess.shared_with_id == user_id,
-            SharedAccess.access_level.in_(allowed_levels),
-            or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-        )
-    )
-    return [row[0] for row in result.all()]
-
-
 async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
     """
     Check if user can access (view) a specific vacancy.
@@ -190,7 +166,6 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     - visible_to_all flag: any org member can access
     - Lead/Sub_admin of department: can access all vacancies in their department
     - Member: can only access vacancies they created or where they are hiring manager
-    - Member with SharedAccess: can access vacancies shared with them
     """
     # Суперадмин — глобальный доступ (видит все орги). Для ВСЕХ остальных org-
     # граница идёт ДО проверки роли: иначе admin/owner своей орги проходит
@@ -204,6 +179,12 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
 
     # Full database access (owner, или member с has_full_access — теперь в СВОЕЙ орг).
     if await has_full_database_access(user, org, db):
+        return True
+
+    # ПРОСМОТР ВОРОНОК ОТКРЫТ ВСЕМУ HR-СЕГМЕНТУ (2026-09-07, решение юзера):
+    # рекрутёр видит воронки коллег, а не только свои. Org-граница уже проверена
+    # выше, так что это видимость строго внутри своей организации.
+    if await has_hr_segment_access(user, org, db):
         return True
 
     # visible_to_all БОЛЬШЕ НЕ даёт member доступ (2026-07-07): рекрутёр видит
@@ -228,10 +209,6 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
         if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
             return True
 
-    # Check if user has shared access to this vacancy
-    if await has_shared_vacancy_access(vacancy.id, user.id, db):
-        return True
-
     return False
 
 
@@ -245,7 +222,6 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     - Lead/Sub_admin of department: can edit vacancies in their department
     - Creator: can edit their own vacancies
     - Hiring manager: can edit vacancies where they are hiring manager
-    - User with SharedAccess (edit or full level): can edit vacancies shared with them
     """
     # Суперадмин — глобально. Остальные — org-граница ДО проверки роли (иначе owner
     # своей орги правил бы чужую вакансию, cross-org IDOR). Аудит 2026-08-07.
@@ -278,10 +254,6 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
         if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
             return True
 
-    # Check if user has shared access with edit level
-    if await has_shared_vacancy_access(vacancy.id, user.id, db, AccessLevel.edit):
-        return True
-
     return False
 
 
@@ -309,38 +281,41 @@ async def can_manage_applications(vacancy: Vacancy, user: User, org: Organizatio
         return True
     if vacancy.department_id and await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
         return True
-    if await has_shared_vacancy_access(vacancy.id, user.id, db, AccessLevel.edit):
-        return True
     return False
 
 
-async def can_share_vacancy(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
+async def can_delete_vacancy(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
+    """Кто может УДАЛИТЬ воронку.
+
+    Отдельной проверки тут не было: delete_vacancy полагался на то, что сам
+    доступ к вакансии уже означает участие в ней (создатель / назначенный /
+    лид отдела / админ орга). Когда просмотр воронок открыли всему HR-сегменту
+    (см. has_hr_segment_access, 2026-09-07), это молча превратилось в «любой
+    рекрутёр может снести чужую воронку» — а удаление в общей воронке убирает
+    её у ВСЕХ участников. Возвращаем прежний смысл явным правилом: удаляет тот,
+    кто вакансию реально ведёт.
+
+    Намеренно НЕ используем can_edit_vacancy: та отдаёт True любому члену орга
+    на вакансии с visible_to_all («Видна коллегам»), а этот флаг стоит по
+    умолчанию — как гейт на удаление она бесполезна.
+
+    Кому нужен только выход из общей воронки, а не снос у всех, — есть
+    decline_vacancy («Отказаться»), отдельная кнопка.
     """
-    Check if user can share a specific vacancy with others.
-
-    Share rules:
-    - Superadmin/Owner: can share all vacancies in org
-    - Lead/Sub_admin of department: can share vacancies in their department
-    - Creator: can share their own vacancies
-    - User with SharedAccess (full level): can share vacancies shared with them
-    """
-    # Org admin/owner can share all
-    if await is_org_owner(user, org, db):
+    if getattr(user, 'role', None) == UserRole.superadmin:
         return True
-
-    # User is the creator
-    if vacancy.created_by == user.id:
+    if org is None or getattr(vacancy, 'org_id', None) != org.id:
+        return False
+    # Админ/владелец орга ведут подбор во всех воронках.
+    if await is_org_admin_or_owner(user, org, db):
         return True
-
-    # If vacancy has a department, check if user is lead/sub_admin of that dept
-    if vacancy.department_id:
-        if await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
-            return True
-
-    # Check if user has shared access with full level
-    if await has_shared_vacancy_access(vacancy.id, user.id, db, AccessLevel.full):
+    if vacancy.created_by == user.id or vacancy.hiring_manager_id == user.id:
         return True
-
+    # Участник общей воронки: назначенный лично или «всем рекрутёрам».
+    if user.id in (vacancy.assigned_to or []) or getattr(vacancy, 'assigned_to_all', False):
+        return True
+    if vacancy.department_id and await is_dept_lead_or_admin(user.id, vacancy.department_id, db):
+        return True
     return False
 
 

@@ -47,7 +47,7 @@ import { readHeadlineTags, HeadlineTagChip, HEADLINE_TAG_COLORS, HEADLINE_TAG_CO
 import { STATUS_LABELS } from '@/types';
 import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
 import CandidateHandoverModal from '@/components/vacancies/CandidateHandoverModal';
-import { getAllVacancies, createApplication } from '@/services/api/vacancies';
+import { getAllVacancies, createApplication, getVacancy } from '@/services/api/vacancies';
 import { funnelSearchMatch } from '@/utils/translit';
 import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
 import type { KanbanCard } from '@/services/api/candidates';
@@ -546,11 +546,64 @@ export default function RecruiterFunnelsPage() {
     return recruiterGroups.filter((group) => group.userName.toLowerCase().includes(q));
   }, [recruiterGroups, recruiterSearch]);
 
-  // Selected vacancy
-  const selectedVacancy = useMemo(
+  // Selected vacancy — сначала ищем в загруженном списке пользователя.
+  const listedVacancy = useMemo(
     () => vacancies.find((v) => v.id === selectedVacancyId),
     [vacancies, selectedVacancyId],
   );
+
+  // ДИПЛИНК НА ВОРОНКУ, КОТОРОЙ НЕТ В СПИСКЕ (?v=<чужая/закрытая/удалённая>).
+  // Раньше selectedVacancy молча оставался undefined → страница рисовала обзор
+  // СВОИХ воронок с прежним URL, и это читалось как «меня перекинуло на мои же
+  // вакансии» (обратная связь Эльвиры, 2026-09-07): отличить «нет прав» от
+  // «сломалось» было невозможно, 403 глотался пустым catch в loadCandidates.
+  // Теперь спрашиваем воронку точечно (GET /vacancies/{id}):
+  //   200 → берём её как fallback (в списке её могло не быть из-за фильтров
+  //         стора/пагинации — воронка доступна, просто не попала в выборку);
+  //   403 → явный экран «Нет доступа к этой воронке»;
+  //   404 → «Воронка не найдена» (удалена или чужая орг).
+  // Пока запрос летит, показываем лоадер, а НЕ обзор своих воронок — иначе
+  // прежний «отскок на свои ваки» просто мигал бы перед экраном ошибки.
+  const [probedVacancy, setProbedVacancy] = useState<Vacancy | null>(null);
+  const [vacancyAccessError, setVacancyAccessError] = useState<'forbidden' | 'missing' | null>(null);
+  const [vacancyProbing, setVacancyProbing] = useState(false);
+
+  useEffect(() => {
+    if (!selectedVacancyId || listedVacancy) {
+      setProbedVacancy(null);
+      setVacancyAccessError(null);
+      setVacancyProbing(false);
+      return;
+    }
+    // Уже разрешили этот id — не долбим бэк на каждый ре-рендер.
+    if (probedVacancy?.id === selectedVacancyId) return;
+    let cancelled = false;
+    setVacancyProbing(true);
+    setVacancyAccessError(null);
+    getVacancy(selectedVacancyId)
+      .then((v) => {
+        if (cancelled) return;
+        setProbedVacancy(v);
+        setVacancyAccessError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        setProbedVacancy(null);
+        // Сетевую ошибку не выдаём за отказ в доступе — для неё остаётся
+        // прежнее поведение (обзор воронок), иначе оффлайн выглядел бы как
+        // отобранные права.
+        setVacancyAccessError(status === 403 ? 'forbidden' : status === 404 ? 'missing' : null);
+      })
+      .finally(() => {
+        if (!cancelled) setVacancyProbing(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedVacancyId, listedVacancy, probedVacancy?.id]);
+
+  const selectedVacancy = listedVacancy ?? (probedVacancy?.id === selectedVacancyId ? probedVacancy : undefined);
+  // Воронка запрошена в URL, но недоступна — рисуем экран отказа вместо обзора.
+  const funnelBlocked = !!selectedVacancyId && !selectedVacancy && vacancyAccessError !== null;
 
   // ШАРИНГ-ССЫЛКА без ?recruiter=: восстанавливаем «путь» воронки. Ссылка-дип-линк
   // рекрутёра обычно вида ?v=176&entity=8913&stage=applied (БЕЗ recruiter) → сайдбар
@@ -589,7 +642,7 @@ export default function RecruiterFunnelsPage() {
 
   // Load candidates when vacancy selected
   useEffect(() => {
-    if (!selectedVacancyId) {
+    if (!selectedVacancyId || funnelBlocked) {
       setCandidates([]);
       return;
     }
@@ -645,7 +698,7 @@ export default function RecruiterFunnelsPage() {
   // Админ сменил рекрутёра в сайдбаре при открытой воронке — перезагружаем
   // кандидатов под новый скоуп (тихо, без скелетона).
   useEffect(() => {
-    if (selectedVacancyId) loadCandidates(selectedVacancyId, true);
+    if (selectedVacancyId && !funnelBlocked) loadCandidates(selectedVacancyId, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidateScopeRecruiterId]);
 
@@ -661,12 +714,12 @@ export default function RecruiterFunnelsPage() {
       const now = Date.now();
       if (now - lastRun < 3000) return;
       lastRun = now;
-      if (selectedVacancyId) loadCandidates(selectedVacancyId, true);
+      if (selectedVacancyId && !funnelBlocked) loadCandidates(selectedVacancyId, true);
       fetchVacancies(true);
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [selectedVacancyId, loadCandidates, fetchVacancies]);
+  }, [selectedVacancyId, loadCandidates, fetchVacancies, funnelBlocked]);
 
   // Поллинг воронки каждые 15с (только когда вкладка видима): на проде WS
   // ненадёжен, поэтому тихо подтягиваем кандидатов и вакансии — иначе рекрутёр,
@@ -675,11 +728,11 @@ export default function RecruiterFunnelsPage() {
   useEffect(() => {
     const id = setInterval(() => {
       if (document.visibilityState !== 'visible') return;
-      if (selectedVacancyId) loadCandidates(selectedVacancyId, true);
+      if (selectedVacancyId && !funnelBlocked) loadCandidates(selectedVacancyId, true);
       fetchVacancies(true);
     }, 15000);
     return () => clearInterval(id);
-  }, [selectedVacancyId, loadCandidates, fetchVacancies]);
+  }, [selectedVacancyId, loadCandidates, fetchVacancies, funnelBlocked]);
 
   // Filter candidates by search — умный матч по ИМЕНИ (транслит RU↔EN + любой
   // порядок слов + опечатки, как серверный pg_trgm в «Все кандидаты»); по
@@ -2084,7 +2137,7 @@ export default function RecruiterFunnelsPage() {
       )}
 
       {/* ========== LEFT SIDEBAR: Recruiter tree (admin only) ========== */}
-      {isHrAdmin && !selectedVacancy && <aside className={clsx(
+      {isHrAdmin && !selectedVacancy && !funnelBlocked && <aside className={clsx(
         'hf-recruiter-sidebar flex-shrink-0 flex flex-col overflow-hidden z-50 transition-all duration-200',
         // Desktop: collapsible
         sidebarCollapsed
@@ -2213,7 +2266,7 @@ export default function RecruiterFunnelsPage() {
       </aside>}
 
       {/* Expand sidebar button (visible when collapsed, admin only) */}
-      {isHrAdmin && !selectedVacancy && sidebarCollapsed && (
+      {isHrAdmin && !selectedVacancy && !funnelBlocked && sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
           className="hf-recruiter-sidebar-expand hidden lg:flex group"
@@ -2225,8 +2278,39 @@ export default function RecruiterFunnelsPage() {
 
       {/* ========== MAIN CONTENT ========== */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* No vacancy selected — show funnels overview */}
-        {!selectedVacancy ? (
+        {/* Диплинк на недоступную воронку — явный экран вместо обзора своих. */}
+        {funnelBlocked ? (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="max-w-md text-center">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-[var(--hf-white-alpha-06)] border border-[color:var(--hf-white-alpha-10)] flex items-center justify-center mb-4">
+                <Lock className="w-7 h-7 text-[var(--hf-dark-500)]" />
+              </div>
+              <h2 className="text-lg font-semibold text-[var(--hf-dark-200)] mb-2">
+                {vacancyAccessError === 'missing'
+                  ? 'Воронка не найдена'
+                  : 'Нет доступа к этой воронке'}
+              </h2>
+              <p className="text-sm text-[var(--hf-dark-500)] mb-6">
+                {vacancyAccessError === 'missing'
+                  ? 'Вакансия удалена или ссылка ведёт в другую организацию.'
+                  : 'Ссылка ведёт в воронку другого рекрутёра. Вы видите только те воронки, где вы участник — создатель, назначенный или принявший заявку. Попросите владельца воронки или HR-админа выдать доступ.'}
+              </p>
+              <button
+                type="button"
+                onClick={deselectVacancy}
+                className="px-5 py-2 rounded-lg text-sm font-medium bg-[var(--hf-cyan-700)] text-white hover:opacity-90"
+              >
+                К моим вакансиям
+              </button>
+            </div>
+          </div>
+        ) : vacancyProbing ? (
+          /* Пока проверяем доступ — лоадер, а не обзор своих воронок: иначе
+             прежний «отскок на свои ваки» мигал бы перед экраном ошибки. */
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-[var(--hf-dark-500)]" />
+          </div>
+        ) : !selectedVacancy ? (
           <div className="vacancies-page flex-1 w-full max-w-full flex flex-col overflow-hidden text-[var(--hf-vacancies-page-text)]">
             <div className="hf-funnels-overview-head">
               <div className="hf-funnels-toolbar-shell">

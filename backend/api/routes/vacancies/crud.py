@@ -13,7 +13,8 @@ from .common import (
     User, Department, DepartmentMember, DeptRole, OrgMember, OrgRole,
     VacancyCreate, VacancyUpdate, VacancyResponse,
     check_vacancy_access, has_full_database_access, can_access_vacancy,
-    can_edit_vacancy, get_shared_vacancy_ids
+    can_edit_vacancy, has_hr_segment_access,
+    can_delete_vacancy
 )
 from ...services.auth import get_current_user, get_user_org
 from ...services.cache import scoring_cache
@@ -59,8 +60,14 @@ async def list_vacancies(
     # Apply access control based on user role
     # Full access: superadmin, owner, or member with has_full_access flag
     has_full_access = await has_full_database_access(current_user, org, db)
+    # 2026-09-07: просмотр воронок открыт ВСЕМУ HR-сегменту (см.
+    # has_hr_segment_access) — рекрутёр видит воронки коллег, а не только свои.
+    # Список ниже фильтруется на фронте: «Мои вакансии» по-прежнему показывает
+    # только личные (isPersonallyActive), чужие открываются через переключатель
+    # владельца в сайдбаре.
+    sees_all_vacancies = has_full_access or await has_hr_segment_access(current_user, org, db)
 
-    if not has_full_access:
+    if not sees_all_vacancies:
         # Get departments where user is lead/sub_admin (not just member)
         lead_dept_result = await db.execute(
             select(DepartmentMember.department_id).where(
@@ -70,16 +77,12 @@ async def list_vacancies(
         )
         lead_dept_ids = [row[0] for row in lead_dept_result.all()]
 
-        # Get vacancy IDs shared with user
-        shared_vacancy_ids = await get_shared_vacancy_ids(current_user.id, db)
-
         # User can see:
         # 1. Vacancies they created
         # 2. Vacancies where they are hiring manager
         # 3. Vacancies in departments where they are lead/sub_admin
-        # 4. Vacancies shared with them via SharedAccess
-        # 5. Vacancies assigned to them (assigned_to JSON contains user_id)
-        # 6. Vacancies open for all HR (assigned_to_all == True)
+        # 4. Vacancies assigned to them (assigned_to JSON contains user_id)
+        # 5. Vacancies open for all HR (assigned_to_all == True)
         access_conditions = []
 
         # Always add created_by and hiring_manager conditions
@@ -88,8 +91,6 @@ async def list_vacancies(
 
         if lead_dept_ids:
             access_conditions.append(Vacancy.department_id.in_(lead_dept_ids))
-        if shared_vacancy_ids:
-            access_conditions.append(Vacancy.id.in_(shared_vacancy_ids))
 
         # ВАЖНО (2026-07-07): visible_to_all БОЛЬШЕ НЕ даёт member видимость.
         # Рекрутёр видит заявку ТОЛЬКО если она реально на него назначена
@@ -602,12 +603,19 @@ async def delete_vacancy(
     if not vacancy or vacancy.org_id != org.id:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Удаление доступно ВСЕМ, у кого есть доступ к вакансии, включая рекрутёров-
-    # member (по запросу юзера 2026-08-04 — разворот прежнего admin-only от
-    # 2026-07-07). Настоящее удаление: в общей воронке сносит вакансию у ВСЕХ
-    # участников. Доступ к самой вакансии уже проверен зависимостью
-    # check_vacancy_access. Кому нужен только выход у себя — есть decline_vacancy
-    # («Отказаться»), это отдельная кнопка.
+    # Удаление доступно тем, кто вакансию реально ВЕДЁТ: админ/владелец орга,
+    # создатель, наниматель, назначенный рекрутёр, лид отдела (см.
+    # can_delete_vacancy). Рекрутёры-member сюда по-прежнему входят как
+    # участники (запрос юзера 2026-08-04), но посторонний рекрутёр — нет.
+    # Раньше явной проверки не было: гейтом служил сам доступ к вакансии, а он
+    # с 2026-09-07 открыт всему HR-сегменту — без этой проверки любой рекрутёр
+    # сносил бы чужую воронку у ВСЕХ её участников. Кому нужен только выход у
+    # себя — есть decline_vacancy («Отказаться»), это отдельная кнопка.
+    if not await can_delete_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Удалить воронку может только тот, кто её ведёт: владелец, назначенный рекрутёр или админ",
+        )
 
     # Если удаляем КЛОН заявки — «закрываем» оригинал у этого рекрутёра (как при
     # закрытии клона), иначе после удаления рабочей вакансии исходная заявка снова

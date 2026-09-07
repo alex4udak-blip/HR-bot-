@@ -1169,20 +1169,27 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                         {declining ? 'Отказ...' : 'Отказаться'}
                       </button>
                     )}
-                    {/* «Удалить вакансию» доступна ВСЕМ, включая рекрутёров-member
+                    {/* «Удалить вакансию» доступна рекрутёрам-УЧАСТНИКАМ воронки
                         (по запросу юзера 2026-08-04, разворот прежнего admin-only от
-                        3eab9bda). Удаление мягкое (deleted_at → «Удалённые»,
-                        восстановимо) и настоящее: в общей воронке сносит вакансию у
-                        ВСЕХ участников. «Отказаться» (уйти у себя) остаётся отдельной
-                        кнопкой рядом для тех, кому нужен именно выход. */}
-                    <button
-                      type="button"
-                      onClick={handleDeleteVacancy}
-                      disabled={statusAction}
-                      className="w-full h-[36px] rounded-[8px] border border-[var(--hf-status-red-badge)] text-[13px] font-medium text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-status-red-badge)] disabled:opacity-50"
-                    >
-                      Удалить вакансию
-                    </button>
+                        3eab9bda) и админам орга. Удаление мягкое (deleted_at →
+                        «Удалённые», восстановимо) и настоящее: в общей воронке сносит
+                        вакансию у ВСЕХ участников — поэтому постороннему рекрутёру её
+                        не показываем. Раньше кнопка висела у всех, но чужую воронку
+                        было и не открыть; с 2026-09-07 просмотр открыт всему
+                        HR-сегменту, и без этого гейта кнопка «Удалить» появилась бы
+                        на каждой чужой воронке (бэк отвечает 403, см.
+                        can_delete_vacancy). «Отказаться» (уйти у себя) остаётся
+                        отдельной кнопкой рядом для тех, кому нужен именно выход. */}
+                    {(isAdmin || isVacancyParticipant(vacancy, user?.id)) && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteVacancy}
+                        disabled={statusAction}
+                        className="w-full h-[36px] rounded-[8px] border border-[var(--hf-status-red-badge)] text-[13px] font-medium text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-status-red-badge)] disabled:opacity-50"
+                      >
+                        Удалить вакансию
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

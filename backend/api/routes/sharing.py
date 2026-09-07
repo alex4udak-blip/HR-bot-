@@ -127,6 +127,19 @@ async def share_resource(
     """Share a resource with another user"""
     current_user = await db.merge(current_user)
 
+    # ШАРИНГ ВОРОНОК ОТКЛЮЧЁН (2026-09-07, решение юзера): просмотр воронок открыт
+    # всему HR-сегменту (см. vacancies/common.py::has_hr_segment_access), так что
+    # выдавать доступ поштучно больше незачем. Специализированные роуты
+    # /vacancies/{id}/share* удалены вместе с ветками SharedAccess в предикатах
+    # доступа к вакансии — этот общий эндпоинт был последним способом завести
+    # такую строку, поэтому режем resource_type=vacancy явно. Остальные типы
+    # (чат, кандидат, звонок, проект) не трогаем: ими шарятся из ShareModal.
+    if data.resource_type == ResourceType.vacancy:
+        raise HTTPException(
+            status_code=400,
+            detail="Шаринг воронок отключён: воронки видны всем, у кого есть HR-раздел",
+        )
+
     # Check if resource exists first (before permission check)
     if not await resource_exists(data.resource_type, data.resource_id, db):
         raise HTTPException(status_code=404, detail="Resource not found")

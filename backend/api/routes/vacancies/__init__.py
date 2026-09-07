@@ -28,11 +28,8 @@ from .common import (
     has_full_database_access,
     get_user_department_ids,
     is_dept_lead_or_admin,
-    has_shared_vacancy_access,
-    get_shared_vacancy_ids,
     can_access_vacancy,
     can_edit_vacancy,
-    can_share_vacancy,
     check_vacancy_access,
     # Logger
     logger,
@@ -93,24 +90,11 @@ from .history import (
     StageTransitionResponse,
 )
 
-# Import sharing handlers
-from .sharing import (
-    share_vacancy,
-    get_vacancy_shares,
-    revoke_vacancy_share,
-    get_vacancies_shared_with_me,
-    VacancyShareRequest,
-    VacancyShareResponse,
-)
-
 # Import legacy-clone reconciliation (superadmin one-off)
 from .reconcile import reconcile_clones, CloneReconcileReport
 
 # Register routes in the correct order
 # More specific routes must come before generic ones (like /{vacancy_id})
-
-# Sharing: /shared-with-me must be before /{vacancy_id}
-router.add_api_route("/shared-with-me", get_vacancies_shared_with_me, methods=["GET"], tags=["vacancy-sharing"])
 
 # Stats: /stats/overview must be before /{vacancy_id}
 router.add_api_route("/stats/overview", get_vacancies_stats, methods=["GET"], tags=["vacancy-stats"])
@@ -160,9 +144,6 @@ router.add_api_route("/{vacancy_id}/notify-candidates", notify_matching_candidat
 router.add_api_route("/{vacancy_id}/invite-candidate/{entity_id}", invite_candidate_to_vacancy, methods=["POST"], tags=["vacancy-matching"])
 
 # Vacancy sharing
-router.add_api_route("/{vacancy_id}/share", share_vacancy, methods=["POST"], tags=["vacancy-sharing"])
-router.add_api_route("/{vacancy_id}/shares", get_vacancy_shares, methods=["GET"], tags=["vacancy-sharing"])
-router.add_api_route("/{vacancy_id}/share/{share_id}", revoke_vacancy_share, methods=["DELETE"], tags=["vacancy-sharing"])
 
 # Re-export everything for backwards compatibility
 __all__ = [
@@ -178,8 +159,6 @@ __all__ = [
     "KanbanColumn",
     "KanbanBoard",
     "BulkStageUpdate",
-    "VacancyShareRequest",
-    "VacancyShareResponse",
     "CandidateMatchResponse",
     "NotifyCandidatesResponse",
     "StageTransitionResponse",
@@ -188,11 +167,8 @@ __all__ = [
     "has_full_database_access",
     "get_user_department_ids",
     "is_dept_lead_or_admin",
-    "has_shared_vacancy_access",
-    "get_shared_vacancy_ids",
     "can_access_vacancy",
     "can_edit_vacancy",
-    "can_share_vacancy",
     "check_vacancy_access",
     # Logger
     "logger",

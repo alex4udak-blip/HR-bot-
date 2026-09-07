@@ -17,7 +17,6 @@ import {
   XCircle,
   TrendingUp,
   ExternalLink,
-  Share2,
   UserCheck
 } from 'lucide-react';
 import type { Vacancy } from '@/types';
@@ -31,17 +30,14 @@ import {
 import { formatSalary, formatDate } from '@/utils';
 import { getVacancyRecruiterStats } from '@/services/api';
 import type { RecruiterStat } from '@/services/api';
-import ShareModal from '@/components/common/ShareModal';
 
 interface VacancyDetailModalProps {
   vacancy: Vacancy;
   onClose: () => void;
   onEdit: () => void;
-  canShare?: boolean;
 }
 
-export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare = true }: VacancyDetailModalProps) {
-  const [showShareModal, setShowShareModal] = useState(false);
+export default function VacancyDetailModal({ vacancy, onClose, onEdit }: VacancyDetailModalProps) {
   const [recruiterStats, setRecruiterStats] = useState<RecruiterStat[]>([]);
 
   // Fetch recruiter stats when vacancy has assigned recruiters
@@ -96,15 +92,6 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {canShare && (
-              <button
-                onClick={() => setShowShareModal(true)}
-                className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
-                title="Поделиться"
-              >
-                <Share2 className="w-5 h-5" />
-              </button>
-            )}
             <button
               onClick={onEdit}
               className="p-2 hover:bg-[var(--hf-dark-panel-alpha-50)] rounded-lg transition-colors"
@@ -349,15 +336,6 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
 
         {/* Footer */}
         <div className="p-4 border-t border-[color:var(--hf-white-alpha-10)] flex justify-end gap-2">
-          {canShare && (
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="px-4 py-2 glass-light hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-sm transition-colors flex items-center gap-2"
-            >
-              <Share2 className="w-4 h-4" />
-              Поделиться
-            </button>
-          )}
           <button
             onClick={onClose}
             className="px-4 py-2 glass-light hover:bg-[var(--hf-white-alpha-10)] rounded-lg text-sm transition-colors"
@@ -373,15 +351,6 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit, canShare 
           </button>
         </div>
       </motion.div>
-
-      {/* Share Modal */}
-      <ShareModal
-        isOpen={showShareModal}
-        onClose={() => setShowShareModal(false)}
-        resourceType="vacancy"
-        resourceId={vacancy.id}
-        resourceName={vacancy.title}
-      />
     </motion.div>
   );
 }
