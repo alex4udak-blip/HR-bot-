@@ -347,6 +347,37 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
   };
 
 
+  // Резюме уже распознано — в окне лежит несохранённая работа (разбор, правки
+  // полей, комментарий, выбранная воронка). Молча её терять нельзя: переспросим.
+  // Успешное создание закрывает окно через onParsed у родителя, сюда не попадает.
+  const requestClose = useCallback(() => {
+    if (
+      parsedData &&
+      !window.confirm('Закрыть окно? Распознанное резюме и комментарий не сохранятся.')
+    ) {
+      return;
+    }
+    onClose();
+  }, [parsedData, onClose]);
+
+  // ЗАКРЫТИЕ ОКНА. Раньше фон закрывал модалку по любому click — а браузер шлёт
+  // click на ОБЩЕГО ПРЕДКА mousedown и mouseup. Выделяя текст в поле
+  // «Комментарий» и отпуская кнопку чуть за краем узкого окна, рекрутёр получал
+  // click на фоне: окно захлопывалось вместе с распознанным резюме, будто само
+  // («пробую оставить комментарий... и окно просто закрывается, резюме не
+  // сохраняется» — Эльвира, 2026-09-08). Теперь фон закрывает, только если жест
+  // и НАЧАЛСЯ, и закончился на самом фоне.
+  const backdropArmedRef = useRef(false);
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    backdropArmedRef.current = e.target === e.currentTarget;
+  };
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    const armed = backdropArmedRef.current;
+    backdropArmedRef.current = false;
+    if (e.target !== e.currentTarget || !armed) return;
+    requestClose();
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -354,7 +385,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
       exit={{ opacity: 0 }}
       className="fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
-      onClick={onClose}
+      onMouseDown={handleBackdropMouseDown}
+      onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
       aria-labelledby="parser-modal-title"
@@ -377,7 +409,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
             </h2>
           </div>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
             aria-label="Закрыть окно"
           >
@@ -569,7 +601,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-200 flex-shrink-0">
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="px-4 py-2 text-slate-500 hover:text-slate-900 transition-colors"
           >
             Отмена

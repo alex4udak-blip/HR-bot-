@@ -487,8 +487,24 @@ describe('ParserModal', () => {
         // Find the backdrop (the outer container)
         const backdrop = document.querySelector('.fixed.inset-0');
         if (backdrop) {
+          // Настоящий клик по фону: жест и начался, и закончился на фоне.
+          fireEvent.mouseDown(backdrop);
           fireEvent.click(backdrop);
           expect(mockOnClose).toHaveBeenCalled();
+        }
+      });
+
+      // Регрессия: выделение текста в окне, отпущенное за его краем, роняло
+      // модалку вместе с распознанным резюме — браузер шлёт click на общего
+      // предка mousedown и mouseup, то есть на фон (Эльвира, 2026-09-08).
+      it('should NOT close when a drag starts inside the modal and ends on the backdrop', async () => {
+        renderResumeModal();
+        const backdrop = document.querySelector('.fixed.inset-0');
+        const dialog = backdrop?.firstElementChild;
+        if (backdrop && dialog) {
+          fireEvent.mouseDown(dialog);
+          fireEvent.click(backdrop);
+          expect(mockOnClose).not.toHaveBeenCalled();
         }
       });
     });
