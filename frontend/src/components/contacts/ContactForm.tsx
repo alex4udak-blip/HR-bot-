@@ -8,6 +8,7 @@ import { parseResumeFromFile, uploadEntityFile } from '@/services/api';
 import type { Entity, EntityType, EntityStatus, CurrencyCode } from '@/types';
 import { ENTITY_TYPES, STATUS_LABELS } from '@/types';
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface ContactFormProps {
   entity?: Entity | null;
@@ -235,7 +236,7 @@ export default function ContactForm({ entity, prefillData, defaultType, onClose,
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}

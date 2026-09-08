@@ -23,6 +23,7 @@ import {
   type SimilarByProfileResponse
 } from '@/services/api';
 import { ListSkeleton, EmptyState } from '@/components/ui';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface SimilarCandidatesProps {
   entityId: number;
@@ -373,7 +374,7 @@ export default function SimilarCandidates({ entityId, entityName }: SimilarCandi
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--hf-black-alpha-70)]"
-            onClick={handleCloseModal}
+            {...backdropClose(handleCloseModal)}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}

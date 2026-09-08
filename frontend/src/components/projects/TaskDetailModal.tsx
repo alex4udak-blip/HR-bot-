@@ -28,6 +28,7 @@ import * as api from '@/services/api';
 import { getErrorDetail } from '@/utils';
 import { useAuthStore } from '@/stores/authStore';
 import type {
+import { backdropClose } from '@/utils/backdropClose';
   ProjectTask,
   ProjectMember,
   TaskComment,
@@ -1573,7 +1574,7 @@ export default function TaskDetailModal({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
           className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[5vh] overflow-y-auto"
-          onClick={onClose}
+          {...backdropClose(onClose)}
         >
           <motion.div
             initial={{ scale: 0.95, opacity: 0, y: 20 }}

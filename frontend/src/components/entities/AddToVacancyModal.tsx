@@ -11,6 +11,7 @@ import { VACANCY_STATUS_LABELS, VACANCY_STATUS_COLORS } from "@/types";
 import { formatSalary } from "@/utils";
 import { isVacancyParticipant } from "@/utils/vacancy";
 import { useAuthStore } from "@/stores/authStore";
+import { backdropClose } from '@/utils/backdropClose';
 
 interface AddToVacancyModalProps {
   entityId: number;
@@ -224,8 +225,10 @@ export default function AddToVacancyModal({
         isBulk && "flex items-center justify-center p-4",
       )}
       style={isBulk ? { backgroundColor: 'rgba(0, 0, 0, 0.7)' } : undefined}
-      onClick={onClose}
-      onMouseDown={onClose}
+      {/* Был ещё onMouseDown={onClose} — он и закрывал окно, и перебивал
+          спред backdropClose (стоял после него). Убран: закрытие теперь по
+          полноценному клику по фону, как во всех остальных модалках. */}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={

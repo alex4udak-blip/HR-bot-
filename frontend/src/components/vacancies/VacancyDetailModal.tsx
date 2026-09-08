@@ -30,6 +30,7 @@ import {
 import { formatSalary, formatDate } from '@/utils';
 import { getVacancyRecruiterStats } from '@/services/api';
 import type { RecruiterStat } from '@/services/api';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface VacancyDetailModalProps {
   vacancy: Vacancy;
@@ -61,7 +62,7 @@ export default function VacancyDetailModal({ vacancy, onClose, onEdit }: Vacancy
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { getDuplicateCandidates, mergeEntities } from '@/services/api';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface DuplicateCandidate {
   entity_id: number;
@@ -271,7 +272,7 @@ export default function DuplicateWarning({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--hf-black-alpha-70)]"
-            onClick={() => setShowMergeModal(false)}
+            {...backdropClose(() => setShowMergeModal(false))}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}

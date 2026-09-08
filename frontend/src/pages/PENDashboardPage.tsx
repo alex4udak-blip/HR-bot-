@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/services/api/client';
+import { backdropClose } from '@/utils/backdropClose';
 
 // ============================================================
 // TYPES
@@ -627,7 +628,7 @@ export default function PENDashboardPage() {
       {showBonusModal && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-60)] backdrop-blur-sm"
-            onClick={() => setShowBonusModal(false)}
+            {...backdropClose(() => setShowBonusModal(false))}
           >
             <div
               className="bg-[var(--hf-bg-dark-panel)] rounded-xl border border-[color:var(--hf-white-alpha-10)] p-6 w-full max-w-md"

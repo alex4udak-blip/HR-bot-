@@ -73,6 +73,7 @@ import { computeEntityParamUpdate, shouldAdoptUrlEntity } from '@/utils/candidat
 import { useFormBadgeStore } from '@/stores/formBadgeStore';
 import { getEntityFormsUnreadCount, getEntityDispatches, markEntityDispatchesSeen, type FormDispatchInfo } from '@/services/api/forms';
 import { AnketaResponses } from '@/features/forms/AnketaResponses';
+import { backdropClose } from '@/utils/backdropClose';
 const AnketaDrawer = lazy(() =>
   import('@/features/forms/AnketaDrawer').then((m) => ({ default: m.AnketaDrawer })),
 );
@@ -3627,7 +3628,7 @@ export default function RecruiterFunnelsPage() {
       {interviewForCandidate && (
         <div
           className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => !interviewSaving && setInterviewForCandidate(null)}
+          {...backdropClose(() => !interviewSaving && setInterviewForCandidate(null))}
         >
           <div
             className="glass rounded-xl p-5 w-full max-w-sm space-y-4"

@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { importTelegramHistory, cleanupBadImport, transcribeAllMedia, repairVideoNotes, ImportResult, CleanupResult, CleanupMode, ImportProgress, getImportProgress, generateImportId, TranscribeAllResult, RepairVideoResult } from '@/services/api';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface ImportHistoryModalProps {
   chatId: number;
@@ -198,7 +199,7 @@ export default function ImportHistoryModal({ chatId, chatTitle, isOpen, onClose 
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-950/80"
-          onClick={handleClose}
+          {...backdropClose(handleClose)}
         >
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}

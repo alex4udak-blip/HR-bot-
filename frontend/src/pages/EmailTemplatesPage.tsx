@@ -16,6 +16,7 @@ import clsx from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfirmDialog, EmptyState, ErrorMessage } from '@/components/ui';
 import api from '@/services/api/client';
+import { backdropClose } from '@/utils/backdropClose';
 
 // Types
 interface EmailTemplate {
@@ -486,7 +487,7 @@ function TemplateFormModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.9 }}
@@ -656,7 +657,7 @@ function TemplatePreviewModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.9 }}

@@ -7,6 +7,7 @@ import { useVacancyStore } from '@/stores/vacancyStore';
 import { getEntities } from '@/services/api';
 import type { Entity } from '@/types';
 import { STATUS_LABELS, STATUS_COLORS } from '@/types';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface AddCandidateModalProps {
   vacancyId: number;
@@ -76,7 +77,7 @@ export default function AddCandidateModal({ vacancyId, onClose }: AddCandidateMo
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      {...backdropClose(onClose)}
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-candidate-modal-title"

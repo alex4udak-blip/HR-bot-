@@ -4,6 +4,7 @@ import { X, ListTodo, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { ProjectTask, TaskCreate, TaskUpdate, TaskStatus } from '@/services/api/projects';
 import type { ProjectMember } from '@/services/api/projects';
+import { backdropClose } from '@/utils/backdropClose';
 
 const TASK_STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'backlog', label: 'Бэклог' },
@@ -100,7 +101,7 @@ export default function TaskForm({ task, members = [], parentTaskId, isOpen, onC
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50"
-            onClick={onClose}
+            {...backdropClose(onClose)}
           />
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}

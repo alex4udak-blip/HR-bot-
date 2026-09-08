@@ -92,6 +92,7 @@ import ResumeTab, { useResumeSources } from "@/components/entities/candidateDeta
 import ImportedParticipations, { readParticipations } from "@/components/entities/candidateDetail/ImportedParticipations";
 import HireToStaffButton from "@/components/entities/HireToStaffButton";
 import StaffStatusBadge from "@/components/entities/StaffStatusBadge";
+import { backdropClose } from '@/utils/backdropClose';
 const AnketaDrawer = lazy(() =>
   import("@/features/forms/AnketaDrawer").then((m) => ({ default: m.AnketaDrawer })),
 );
@@ -1605,7 +1606,7 @@ export default function AllCandidatesPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-30)]"
-            onClick={() => setShowBulkDeleteConfirm(false)}
+            {...backdropClose(() => setShowBulkDeleteConfirm(false))}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -4441,7 +4442,7 @@ export function EditCandidateModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[var(--hf-edit-overlay-z)] flex items-start justify-center overflow-auto bg-[var(--hf-black-alpha-30)] pt-[var(--hf-edit-overlay-top)] font-hf-body"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.985, opacity: 0 }}
@@ -4907,7 +4908,7 @@ function ListSettingsModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[var(--hf-list-settings-z)] flex items-start justify-center bg-transparent pt-[var(--hf-list-settings-top)]"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ opacity: 0, y: -8, scale: 0.985 }}

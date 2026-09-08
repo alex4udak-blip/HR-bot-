@@ -31,6 +31,7 @@ import AIPanel from '@/components/chat/AIPanel';
 import type { ChatTypeId } from '@/types';
 import { matchesTranslit } from '@/utils/translit';
 import clsx from 'clsx';
+import { backdropClose } from '@/utils/backdropClose';
 
 // Chat type filter options
 const CHAT_TYPE_FILTERS: { id: ChatTypeId | 'all'; name: string; icon: typeof MessageSquare }[] = [
@@ -344,7 +345,7 @@ export default function ChatsPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-950/80"
-            onClick={() => setShowAddModal(false)}
+            {...backdropClose(() => setShowAddModal(false))}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}

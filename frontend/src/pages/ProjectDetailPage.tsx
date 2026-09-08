@@ -56,6 +56,7 @@ import type {
 } from '@/services/api/projects';
 import * as api from '@/services/api';
 import { ProjectForm, TaskDetailModal, AITaskModal } from '@/components/projects';
+import { backdropClose } from '@/utils/backdropClose';
 
 // ============================================================
 // CONSTANTS
@@ -1656,7 +1657,7 @@ export default function ProjectDetailPage() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowDeleteConfirm(false)}
+              {...backdropClose(() => setShowDeleteConfirm(false))}
             />
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}

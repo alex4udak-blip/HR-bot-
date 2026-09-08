@@ -43,6 +43,7 @@ import {
   ErrorMessage
 } from '@/components/ui';
 import {
+import { backdropClose } from '@/utils/backdropClose';
   HUNTFLOW_VACANCY_STATUS_FILTERS,
   getHuntflowVacancyStatusFilterLabel,
 } from '@/components/hr/huntflowVacancyStatus';
@@ -106,7 +107,7 @@ function AssignModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-60)]" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-60)]" {...backdropClose(onClose)}>
       <div
         className="w-full max-w-md mx-4 bg-[var(--hf-white)] border border-[var(--hf-ui-border)] text-[var(--hf-main-900)] rounded-2xl shadow-[var(--hf-shadow-2xl)] overflow-hidden"
         onClick={e => e.stopPropagation()}

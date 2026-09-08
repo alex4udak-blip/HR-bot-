@@ -17,6 +17,7 @@ import * as docsApi from '@/services/api/documents';
 import type { SignedDocument } from '@/services/api/documents';
 import SignatureCanvas from '@/components/SignatureCanvas';
 import type {
+import { backdropClose } from '@/utils/backdropClose';
   EmployeeData,
   LeaveBalance,
   LeaveRequestData,
@@ -80,7 +81,7 @@ function DocumentSigningModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" {...backdropClose(onClose)}>
       <div
         className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -206,7 +207,7 @@ function LeaveRequestModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" {...backdropClose(onClose)}>
       <div
         className="bg-dark-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
         onClick={(e) => e.stopPropagation()}

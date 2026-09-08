@@ -36,6 +36,7 @@ import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
 import { getErrorDetail } from '@/utils';
 import clsx from 'clsx';
+import { backdropClose } from '@/utils/backdropClose';
 
 const DEPT_ROLE_CONFIG: Record<DeptRole, { label: string; icon: typeof Crown; color: string; description: string }> = {
   lead: { label: 'Руководитель', icon: Crown, color: 'text-yellow-400 bg-yellow-500/20', description: 'Видит все данные департамента' },
@@ -475,7 +476,7 @@ function CreateDepartmentModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
@@ -598,7 +599,7 @@ function EditDepartmentModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
@@ -773,7 +774,7 @@ function DepartmentMembersModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}

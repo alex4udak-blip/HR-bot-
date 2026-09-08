@@ -19,6 +19,7 @@ import { getEntityFiles, uploadEntityFile, deleteEntityFile, downloadEntityFile 
 import { formatDate, getErrorDetail } from '@/utils';
 import { EmptyFiles } from '@/components/ui';
 import type { EntityFile } from '@/services/api';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface EntityFilesProps {
   entityId: number;
@@ -260,10 +261,10 @@ export default function EntityFiles({ entityId, canEdit = true, onFilesChanged }
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => {
+            {...backdropClose(() => {
               setShowUploadForm(false);
               setSelectedFile(null);
-            }}
+            })}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}

@@ -4,6 +4,7 @@ import { X, Star, FileText, Send } from 'lucide-react';
 import clsx from 'clsx';
 import type { VacancyApplication, ApplicationStage } from '@/types';
 import { APPLICATION_STAGE_LABELS } from '@/types';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface InterviewSummaryModalProps {
   application: VacancyApplication;
@@ -64,7 +65,7 @@ export default function InterviewSummaryModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 bg-[var(--hf-black-alpha-60)] backdrop-blur-sm z-[60] flex items-center justify-center p-4"
-        onClick={onCancel}
+        {...backdropClose(onCancel)}
       >
         <motion.div
           initial={{ scale: 0.95, opacity: 0, y: 20 }}

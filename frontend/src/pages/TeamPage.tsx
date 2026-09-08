@@ -30,6 +30,7 @@ import {
   type DepartmentMember,
 } from '@/services/api/auth';
 import { useAuthStore } from '@/stores/authStore';
+import { backdropClose } from '@/utils/backdropClose';
 
 // Use the type from the backend response (array of user objects)
 interface ResourceUser {
@@ -329,7 +330,7 @@ function AddMemberModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.95, y: 10 }}
@@ -565,7 +566,7 @@ function ManageDeptModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.95, y: 10 }}

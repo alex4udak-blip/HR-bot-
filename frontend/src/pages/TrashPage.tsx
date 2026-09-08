@@ -14,6 +14,7 @@ import toast from 'react-hot-toast';
 import { getDeletedChats, restoreChat, permanentDeleteChat } from '@/services/api';
 import { formatDate } from '@/utils';
 import type { Chat } from '@/types';
+import { backdropClose } from '@/utils/backdropClose';
 
 export default function TrashPage() {
   const queryClient = useQueryClient();
@@ -160,7 +161,7 @@ export default function TrashPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-950/80"
-            onClick={() => setConfirmDelete(null)}
+            {...backdropClose(() => setConfirmDelete(null))}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import type { Project, ProjectCreate, ProjectUpdate, ProjectStatus } from '@/services/api/projects';
 import { getDepartments } from '@/services/api';
 import type { Department } from '@/services/api';
+import { backdropClose } from '@/utils/backdropClose';
 
 const STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
   { value: 'planning', label: 'Планирование' },
@@ -124,7 +125,7 @@ export default function ProjectForm({ project, isOpen, onClose, onSubmit }: Proj
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50"
-            onClick={onClose}
+            {...backdropClose(onClose)}
           />
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}

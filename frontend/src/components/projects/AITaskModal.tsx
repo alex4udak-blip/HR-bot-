@@ -16,6 +16,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { aiParsePlan, aiCreateTasks } from '@/services/api/projects';
 import type { ParsedTaskItem } from '@/services/api/projects';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface AITaskModalProps {
   isOpen: boolean;
@@ -135,7 +136,7 @@ export default function AITaskModal({ isOpen, onClose, projectId, onTasksCreated
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50"
-            onClick={handleClose}
+            {...backdropClose(handleClose)}
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}

@@ -45,6 +45,7 @@ import {
   type EntryReaction,
 } from "@/components/entities/candidateDetail/model";
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
+import { backdropClose } from '@/utils/backdropClose';
 
 // ── Module-scope helpers/constants moved verbatim from AllCandidatesPage
 //    (used only by CandidateVacancyCard). ──
@@ -1537,7 +1538,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       {videoModal && createPortal(
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4"
-          onClick={() => setVideoModal(null)}
+          {...backdropClose(() => setVideoModal(null))}
         >
           <div className="relative w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
             <button

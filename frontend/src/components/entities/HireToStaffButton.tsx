@@ -7,6 +7,7 @@ import type { Department } from '@/services/api';
 import { getBoardFolders, updateBoardRow, getBoardPositions, type BoardFolder } from '@/services/api/staffBoard';
 import { getErrorDetail } from '@/utils';
 import DatePickerFactorial from '@/factorial/components/DatePickerFactorial';
+import { backdropClose } from '@/utils/backdropClose';
 
 const HIREABLE = new Set(['hired', 'probation']);
 
@@ -134,7 +135,7 @@ export default function HireToStaffButton(props: Props) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !saving && setOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" {...backdropClose(() => !saving && setOpen(false))}>
           <div className="w-full max-w-md rounded-xl bg-dark-800 border border-white/10 p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold text-white">Взять в штат — {entityName}</h3>

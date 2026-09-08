@@ -17,6 +17,7 @@ import ParsedDataPreview from './ParsedDataPreview';
 import type { Entity, Vacancy } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 import { isVacancyParticipant } from '@/utils/vacancy';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface ParserModalProps {
   type: 'resume' | 'vacancy';
@@ -360,24 +361,6 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     onClose();
   }, [parsedData, onClose]);
 
-  // ЗАКРЫТИЕ ОКНА. Раньше фон закрывал модалку по любому click — а браузер шлёт
-  // click на ОБЩЕГО ПРЕДКА mousedown и mouseup. Выделяя текст в поле
-  // «Комментарий» и отпуская кнопку чуть за краем узкого окна, рекрутёр получал
-  // click на фоне: окно захлопывалось вместе с распознанным резюме, будто само
-  // («пробую оставить комментарий... и окно просто закрывается, резюме не
-  // сохраняется» — Эльвира, 2026-09-08). Теперь фон закрывает, только если жест
-  // и НАЧАЛСЯ, и закончился на самом фоне.
-  const backdropArmedRef = useRef(false);
-  const handleBackdropMouseDown = (e: React.MouseEvent) => {
-    backdropArmedRef.current = e.target === e.currentTarget;
-  };
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    const armed = backdropArmedRef.current;
-    backdropArmedRef.current = false;
-    if (e.target !== e.currentTarget || !armed) return;
-    requestClose();
-  };
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -385,8 +368,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
       exit={{ opacity: 0 }}
       className="fixed inset-0 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
-      onMouseDown={handleBackdropMouseDown}
-      onClick={handleBackdropClick}
+      {...backdropClose(requestClose)}
       role="dialog"
       aria-modal="true"
       aria-labelledby="parser-modal-title"

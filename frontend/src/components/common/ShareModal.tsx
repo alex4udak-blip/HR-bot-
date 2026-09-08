@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import * as api from '@/services/api';
 import type { ResourceType, AccessLevel, ShareResponse, UserSimple } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -135,7 +136,7 @@ export default function ShareModal({ isOpen, onClose, resourceType, resourceId, 
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-        onClick={onClose}
+        {...backdropClose(onClose)}
       >
         <motion.div
           initial={{ scale: 0.9, opacity: 0 }}

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useCommandPalette, type CommandPaletteItem, type ResultCategory } from '@/hooks/useCommandPalette';
+import { backdropClose } from '@/utils/backdropClose';
 
 /**
  * Icon mapping for dynamic icons
@@ -167,12 +168,6 @@ export default function CommandPalette() {
   }, [selectedIndex, results.length]);
 
   // Handle click outside to close
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      close();
-    }
-  };
-
   // Group results by category
   const groupedResults = groupResultsByCategory(results);
   const categoryOrder: ResultCategory[] = ['actions', 'pages', 'candidates', 'vacancies'];
@@ -192,7 +187,7 @@ export default function CommandPalette() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
           className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm"
-          onClick={handleBackdropClick}
+          {...backdropClose(close)}
           role="dialog"
           aria-modal="true"
           aria-label="Command palette search"

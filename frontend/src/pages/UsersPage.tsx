@@ -32,6 +32,7 @@ import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
 import { getErrorDetail } from '@/utils';
 import clsx from 'clsx';
+import { backdropClose } from '@/utils/backdropClose';
 
 const ORG_ROLE_CONFIG: Record<OrgRole, { label: string; icon: typeof Crown; color: string; description: string }> = {
   owner: { label: 'Владелец', icon: Crown, color: 'text-yellow-400 bg-yellow-500/20', description: 'Полный доступ, управление организацией' },
@@ -675,7 +676,7 @@ function InviteMemberModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-        onClick={onClose}
+        {...backdropClose(onClose)}
       >
         <motion.div
           initial={{ scale: 0.9, opacity: 0 }}
@@ -751,7 +752,7 @@ function InviteMemberModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
@@ -1404,7 +1405,7 @@ function EditUserModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-      onClick={onClose}
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
