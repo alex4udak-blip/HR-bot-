@@ -1,6 +1,10 @@
 # Node modules (rebuilt in Docker)
 **/node_modules
 
+# Python venv (пересоздаётся в Docker). В git не лежит, но при локальной
+# сборке попадал бы в контекст — а это полгигабайта на ровном месте.
+**/.venv
+
 # Build outputs (rebuilt in Docker)
 frontend/dist
 
