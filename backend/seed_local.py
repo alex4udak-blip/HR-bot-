@@ -66,6 +66,18 @@ CANDIDATES = [
 # Кандидат сразу в двух воронках → две HR-метки на одной карточке.
 SECOND_FUNNEL = ("Гилев Данила", "Head of User Acquisition", ApplicationStage.screening, "recruiter2.test@example.com")
 
+# Доска «Статусы» показывает только тех, кто уже вышел на практику или ушёл
+# (BOARD_STATUSES в staff_board.py). Без этих записей страница пустая, и
+# посмотреть колонку «HR» не на чем. Колонку намеренно заполняем НЕ всем:
+# сейчас она заполняется только руками, и прочерки — честное текущее состояние.
+# (имя, должность, статус, ответственный HR или None)
+STAFF = [
+    ("Романов Артём", "Digital-маркетолог", EntityStatus.transferred, "recruiter.test@example.com"),
+    ("Ковалёв Игорь", "Media Buyer", EntityStatus.transferred, None),
+    ("Никитина Ольга", "SEO-специалист", EntityStatus.probation, None),
+    ("Карменов Тимур", "Influence Marketing", EntityStatus.dismissed, "recruiter2.test@example.com"),
+]
+
 
 async def main() -> None:
     if "localhost" not in DB_URL and "127.0.0.1" not in DB_URL:
@@ -160,6 +172,28 @@ async def main() -> None:
 
         name, vac_title, stage, adder_email = SECOND_FUNNEL
         await _ensure_application(db, vacs[vac_title], ents[name], stage, users[adder_email])
+
+        for name, position, status, hr_email in STAFF:
+            ent = (await db.execute(select(Entity).where(
+                Entity.org_id == org.id, Entity.name == name
+            ))).scalar_one_or_none()
+            if ent is not None:
+                continue
+            extra = {"source": "seed"}
+            if hr_email:
+                # Ключ доски — staff_board._K_ASSIGNEE.
+                extra["assignee_user_id"] = users[hr_email].id
+            db.add(Entity(
+                org_id=org.id,
+                type=EntityType.candidate,
+                name=name,
+                position=position,
+                status=status,
+                created_by=users[hr_email or "maria@mstech.io"].id,
+                extra_data=extra,
+            ))
+            who = users[hr_email].name if hr_email else "HR не проставлен"
+            print(f"  + сотрудник {name} — {status.value}, {who}")
 
         await db.commit()
 
