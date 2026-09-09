@@ -5,6 +5,7 @@ import {
   getTags,
   createTag,
   archiveTag,
+  restoreTag,
   updateTag,
   getEntityTags,
   addTagToEntity,
@@ -108,20 +109,40 @@ export default function TagPicker({
     }
   };
 
+  /** «+» рядом с полем: завести метку и сразу повесить её на кандидата.
+   *
+   * Имя в справочнике уникально, поэтому повторный ввод существующего просто
+   * отбивался ошибкой «Не удалось создать метку» — и выглядело это как «метка
+   * не сохраняется». Причём разобраться было нельзя: метка, уже стоящая на
+   * этом кандидате, из списка выбора скрыта, так что её существование ничем не
+   * выдавало себя. Теперь совпадение по имени не ошибка: вешаем найденную
+   * метку, а создаём только по-настоящему новую.
+   */
   const handleCreate = async () => {
     const name = newName.trim();
     if (!name || !entityId) return;
     setCreating(true);
     try {
-      const tag = await createTag({ name, color: newColor, kind: newKind });
-      // Имя могло существовать в скрытых — бэкенд вернёт ту же запись, поэтому
-      // не плодим дубль в списке, а обновляем по id.
+      const sameName = (t: Tag) => t.name.trim().toLowerCase() === name.toLowerCase();
+      const onCandidate = entityTags.find(sameName);
+      if (onCandidate) {
+        setNewName('');
+        setOpen(false);
+        toast(`«${onCandidate.name}» уже стоит на кандидате`);
+        return;
+      }
+
+      // Есть в справочнике, но на кандидате её нет — просто вешаем.
+      const known = orgTags.find(sameName);
+      const tag = known ?? await createTag({ name, color: newColor, kind: newKind });
+
+      // Имя могло существовать среди скрытых — бэкенд вернёт ту же запись,
+      // поэтому не плодим дубль в списке, а обновляем по id.
       setOrgTags((prev) => [...prev.filter((t) => t.id !== tag.id), tag]);
       setNewName('');
-      if (!entityTags.some((t) => t.id === tag.id)) {
-        await addTagToEntity(entityId, tag.id);
-        publish([...entityTags, tag]);
-      }
+      await addTagToEntity(entityId, tag.id);
+      publish([...entityTags, tag]);
+      setOpen(false);
     } catch {
       toast.error('Не удалось создать метку');
     } finally {
@@ -148,17 +169,38 @@ export default function TagPicker({
     }
   };
 
-  /** «Удалить за ненадобностью» — убрать из списка выбора у всей организации. */
+  /** «Удалить за ненадобностью» — убрать из списка выбора у всей организации.
+   *
+   * Без подтверждения (просил юзер): диалог мешал, а действие не разрушительное —
+   * с карточек метка не пропадает. Страховка от промаха — «Вернуть» в тосте.
+   */
   const handleArchive = async (tag: Tag) => {
-    if (!window.confirm(
-      `Убрать метку «${tag.name}» из списка?\n\n` +
-      'У кандидатов, которым она уже проставлена, метка останется — ' +
-      'снять её можно крестиком на карточке.',
-    )) return;
     try {
       await archiveTag(tag.id);
       setOrgTags((prev) => prev.filter((t) => t.id !== tag.id));
-      toast.success(`«${tag.name}» убрана из списка`);
+      toast.success(
+        (t) => (
+          <span className="flex items-center gap-2">
+            «{tag.name}» убрана из списка
+            <button
+              type="button"
+              onClick={async () => {
+                toast.dismiss(t.id);
+                try {
+                  const back = await restoreTag(tag.id);
+                  setOrgTags((prev) => [...prev.filter((x) => x.id !== back.id), back]);
+                } catch {
+                  toast.error('Не удалось вернуть метку');
+                }
+              }}
+              className="underline underline-offset-2"
+            >
+              Вернуть
+            </button>
+          </span>
+        ),
+        { duration: 6000 },
+      );
     } catch {
       toast.error('Не удалось убрать метку');
     }
@@ -298,7 +340,11 @@ export default function TagPicker({
                     type="text"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      handleCreate();
+                    }}
                     placeholder="Новая метка..."
                     className="flex-1 px-2 py-1 text-xs bg-[var(--hf-white)] border border-[var(--hf-ui-border)] rounded text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-500)] focus:outline-none focus:border-[var(--hf-cyan-500)]"
                   />
