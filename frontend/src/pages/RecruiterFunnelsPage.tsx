@@ -38,8 +38,8 @@ import { getAssignableUsers, getApplications, updateApplication, deleteApplicati
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink, updateEntity } from '@/services/api/entities';
 import TakeCandidateButton from '@/components/entities/TakeCandidateButton';
+import TagPicker from '@/components/entities/TagPicker';
 import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds } from '@/utils/vacancy';
-import { getTags, getEntityTags, addTagToEntity, removeTagFromEntity, createTag } from '@/services/api/tags';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
@@ -80,16 +80,6 @@ const AnketaDrawer = lazy(() =>
 
 // ==================== Constants ====================
 
-const TAG_PALETTE = [
-  { color: 'var(--hf-red-500)', label: 'Красный' },
-  { color: 'var(--hf-status-blue)', label: 'Синий' },
-  { color: 'var(--hf-green-500)', label: 'Зелёный' },
-  { color: 'var(--hf-status-yellow)', label: 'Жёлтый' },
-  { color: 'var(--hf-status-purple)', label: 'Фиолетовый' },
-  { color: 'var(--hf-status-orange)', label: 'Оранжевый' },
-  { color: 'var(--hf-status-pink)', label: 'Розовый' },
-  { color: 'var(--hf-status-cyan)', label: 'Голубой' },
-];
 
 const STATUS_FILTER_IDS = new Set<string>(HUNTFLOW_VACANCY_STATUS_FILTERS.map((f) => f.id));
 
@@ -323,17 +313,11 @@ export default function RecruiterFunnelsPage() {
   const [entityExtraData, setEntityExtraData] = useState<Record<string, unknown> | null>(null);
 
   // Tags state
-  const [orgTags, setOrgTags] = useState<TagType[]>([]);
   const [entityTags, setEntityTags] = useState<TagType[]>([]);
-  const [showTagDropdown, setShowTagDropdown] = useState(false);
-  const [newTagName, setNewTagName] = useState('');
   // Яркие теги-ярлыки у имени (редактор в воронке).
   const [showHlInput, setShowHlInput] = useState(false);
   const [hlText, setHlText] = useState('');
   const [hlColor, setHlColor] = useState('pink');
-  const [newTagColor, setNewTagColor] = useState(TAG_PALETTE[0].color);
-  const [creatingTag, setCreatingTag] = useState(false);
-  const tagDropdownRef = useRef<HTMLDivElement>(null);
 
   // "Add to vacancy" dropdown state
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
@@ -1288,72 +1272,7 @@ export default function RecruiterFunnelsPage() {
   // Сброс активной вкладки резюме при переключении кандидата.
   useEffect(() => { setResumeIndex(0); }, [selectedCandidate?.entity_id]);
 
-  // Load org tags once
-  useEffect(() => {
-    getTags().then(setOrgTags).catch(() => setOrgTags([]));
-  }, []);
-
-  // Load entity tags when candidate selected
-  useEffect(() => {
-    if (!selectedCandidate?.entity_id) { setEntityTags([]); return; }
-    getEntityTags(selectedCandidate.entity_id)
-      .then(setEntityTags)
-      .catch(() => setEntityTags([]));
-  }, [selectedCandidate?.entity_id]);
-
-  // Close tag dropdown on outside click
-  useEffect(() => {
-    if (!showTagDropdown) return;
-    const handler = (e: MouseEvent) => {
-      if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
-        setShowTagDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showTagDropdown]);
-
   // Tag handlers
-  const handleAddTag = useCallback(async (tagId: number) => {
-    if (!selectedCandidate?.entity_id) return;
-    try {
-      await addTagToEntity(selectedCandidate.entity_id, tagId);
-      const tag = orgTags.find(t => t.id === tagId);
-      if (tag) setEntityTags(prev => [...prev, tag]);
-    } catch {
-      toast.error('Ошибка добавления метки');
-    }
-  }, [selectedCandidate?.entity_id, orgTags]);
-
-  const handleRemoveTag = useCallback(async (tagId: number) => {
-    if (!selectedCandidate?.entity_id) return;
-    try {
-      await removeTagFromEntity(selectedCandidate.entity_id, tagId);
-      setEntityTags(prev => prev.filter(t => t.id !== tagId));
-    } catch {
-      toast.error('Ошибка удаления метки');
-    }
-  }, [selectedCandidate?.entity_id]);
-
-  const handleCreateTag = useCallback(async () => {
-    if (!newTagName.trim()) return;
-    setCreatingTag(true);
-    try {
-      const tag = await createTag({ name: newTagName.trim(), color: newTagColor });
-      setOrgTags(prev => [...prev, tag]);
-      setNewTagName('');
-      // Auto-add to current entity
-      if (selectedCandidate?.entity_id) {
-        await addTagToEntity(selectedCandidate.entity_id, tag.id);
-        setEntityTags(prev => [...prev, tag]);
-      }
-    } catch {
-      toast.error('Ошибка создания метки');
-    } finally {
-      setCreatingTag(false);
-    }
-  }, [newTagName, newTagColor, selectedCandidate?.entity_id]);
-
   // Авто-выбор первого кандидата при смене вкладки (страховка к эффекту выше):
   // справа всегда открыт первый кандидат вкладки, если ничего не выбрано.
   // Блокируем только на дип-линк ТЕКУЩЕЙ вкладки (см. подробный комментарий выше).
@@ -3344,90 +3263,15 @@ export default function RecruiterFunnelsPage() {
                                       HR: {hr.name}{hr.vacancy_title ? ` · ${hr.vacancy_title}` : ""}
                                     </span>
                                   ))}
-                                  {entityTags.map(tag => (
-                                    <span
-                                      key={tag.id}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                                      style={{
-                                        backgroundColor: `color-mix(in srgb, ${tag.color} 12%, transparent)`,
-                                        color: tag.color,
-                                        border: `1px solid color-mix(in srgb, ${tag.color} 25%, transparent)`,
-                                      }}
-                                    >
-                                      {tag.name}
-                                      <button
-                                        onClick={() => handleRemoveTag(tag.id)}
-                                        className="ml-0.5 hover:opacity-70 transition-opacity"
-                                      >
-                                        <X className="w-3 h-3" />
-                                      </button>
-                                    </span>
-                                  ))}
-                                  <div className="relative" ref={tagDropdownRef}>
-                                    <button
-                                      onClick={() => setShowTagDropdown(!showTagDropdown)}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-[var(--hf-dark-400)] border border-dashed border-[color:var(--hf-white-alpha-10)] hover:border-[color:var(--hf-white-alpha-20)] hover:text-[var(--hf-dark-300)] transition-colors"
-                                    >
-                                      <Plus className="w-3 h-3" />
-                                    </button>
-                                    {showTagDropdown && (
-                                      <div className="absolute left-0 top-full mt-1 z-50 w-56 bg-[var(--hf-white)] border border-[var(--hf-ui-border)] rounded-lg shadow-[var(--hf-shadow-xl)] overflow-hidden">
-                                        <div className="max-h-48 overflow-y-auto">
-                                          {orgTags
-                                            .filter(t => !entityTags.find(et => et.id === t.id))
-                                            .map(tag => (
-                                              <button
-                                                key={tag.id}
-                                                onClick={() => { handleAddTag(tag.id); setShowTagDropdown(false); }}
-                                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[var(--hf-main-800)] hover:bg-[var(--hf-ui-hover)] transition-colors text-left"
-                                              >
-                                                <span
-                                                  className="w-3 h-3 rounded-full flex-shrink-0"
-                                                  style={{ backgroundColor: tag.color }}
-                                                />
-                                                {tag.name}
-                                              </button>
-                                            ))}
-                                          {orgTags.filter(t => !entityTags.find(et => et.id === t.id)).length === 0 && (
-                                            <div className="px-3 py-2 text-xs text-[var(--hf-main-500)]">Нет доступных меток</div>
-                                          )}
-                                        </div>
-                                        <div className="border-t border-[var(--hf-ui-divider)] p-2">
-                                          <div className="flex items-center gap-1.5 mb-1.5">
-                                            {TAG_PALETTE.map(p => (
-                                              <button
-                                                key={p.color}
-                                                onClick={() => setNewTagColor(p.color)}
-                                                className="w-4 h-4 rounded-full transition-transform"
-                                                style={{
-                                                  backgroundColor: p.color,
-                                                  transform: newTagColor === p.color ? 'scale(1.3)' : 'scale(1)',
-                                                  boxShadow: newTagColor === p.color ? `0 0 0 2px color-mix(in srgb, ${p.color} 38%, transparent)` : 'none',
-                                                }}
-                                              />
-                                            ))}
-                                          </div>
-                                          <div className="flex items-center gap-1">
-                                            <input
-                                              type="text"
-                                              value={newTagName}
-                                              onChange={e => setNewTagName(e.target.value)}
-                                              onKeyDown={e => { if (e.key === 'Enter') handleCreateTag(); }}
-                                              placeholder="Новая метка..."
-                                              className="flex-1 px-2 py-1 text-xs bg-[var(--hf-white)] border border-[var(--hf-ui-border)] rounded text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-500)] focus:outline-none focus:border-[var(--hf-cyan-500)]"
-                                            />
-                                            <button
-                                              onClick={handleCreateTag}
-                                              disabled={creatingTag || !newTagName.trim()}
-                                              className="px-2 py-1 text-xs rounded bg-[var(--hf-ui-hover)] text-[var(--hf-main-800)] hover:bg-[var(--hf-main-200)] disabled:opacity-40 transition-colors"
-                                            >
-                                              {creatingTag ? <Loader2 className="w-3 h-3 animate-spin" /> : '+'}
-                                            </button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
+                                  {/* Каталожные метки + «+». Тот же компонент, что
+                                      в «Все кандидаты» — раньше этот блок был только
+                                      здесь, отчего в общей базе метку поставить было
+                                      нельзя. entityTags держим у себя: ниже он идёт
+                                      в данные для AI-панели. */}
+                                  <TagPicker
+                                    entityId={selectedCandidate?.entity_id}
+                                    onChange={setEntityTags}
+                                  />
                                 </div>
                               </div>
                                 </div>

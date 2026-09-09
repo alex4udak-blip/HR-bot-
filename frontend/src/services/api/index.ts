@@ -691,6 +691,8 @@ export {
   getTags,
   createTag,
   deleteTag,
+  archiveTag,
+  restoreTag,
   getEntityTags,
   addTagToEntity,
   removeTagFromEntity,

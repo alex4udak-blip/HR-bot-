@@ -1910,9 +1910,14 @@ class EntityTag(Base):
     id = Column(Integer, primary_key=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
-    color = Column(String(20), nullable=False, default="#3b82f6")
+    # 40, а не 20: палитра шлёт CSS-переменные вида var(--hf-status-purple).
+    color = Column(String(40), nullable=False, default="#3b82f6")
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=func.now())
+    # «Удалена за ненадобностью»: метка пропадает из списка выбора, но остаётся
+    # на карточках тех, кому уже проставлена. Настоящий DELETE тут не подходит —
+    # у entity_tags стоит ondelete=CASCADE и снёс бы метку у всех разом.
+    archived_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         UniqueConstraint('org_id', 'name', name='uq_entity_tag_org_name'),

@@ -41,6 +41,7 @@ class TagOut(BaseModel):
     color: str
     created_by: int | None = None
     created_at: datetime | None = None
+    archived_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -58,16 +59,19 @@ async def _get_org_id(db: AsyncSession, user: User) -> int:
 
 @router.get("", response_model=list[TagOut])
 async def list_tags(
+    include_archived: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all tags for the current organization."""
+    """Метки организации для выбора. Скрытые («удалённые за ненадобностью») не
+    отдаём: они больше не предлагаются в списке, но продолжают показываться на
+    карточках кандидатов, которым уже проставлены (см. get_entity_tags).
+    include_archived=true — для экрана управления метками."""
     org_id = await _get_org_id(db, current_user)
-    result = await db.execute(
-        select(EntityTag)
-        .where(EntityTag.org_id == org_id)
-        .order_by(EntityTag.name)
-    )
+    query = select(EntityTag).where(EntityTag.org_id == org_id)
+    if not include_archived:
+        query = query.where(EntityTag.archived_at.is_(None))
+    result = await db.execute(query.order_by(EntityTag.name))
     return list(result.scalars().all())
 
 
@@ -81,14 +85,23 @@ async def create_tag(
     org_id = await _get_org_id(db, current_user)
 
     # Check for duplicate name
-    existing = await db.execute(
+    existing = (await db.execute(
         select(EntityTag).where(
             EntityTag.org_id == org_id,
             EntityTag.name == data.name.strip(),
         )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(409, "Tag with this name already exists")
+    )).scalar_one_or_none()
+    if existing is not None:
+        if existing.archived_at is None:
+            raise HTTPException(409, "Tag with this name already exists")
+        # Метку с таким именем когда-то скрыли, а теперь заводят снова —
+        # возвращаем её из архива вместо второй записи с тем же именем
+        # (unique(org_id, name) второй всё равно не даст создать).
+        existing.archived_at = None
+        existing.color = data.color
+        await db.commit()
+        await db.refresh(existing)
+        return existing
 
     tag = EntityTag(
         org_id=org_id,
@@ -108,7 +121,11 @@ async def delete_tag(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a tag (removes it from all entities too via CASCADE)."""
+    """НАСТОЯЩЕЕ удаление: сносит метку и со ВСЕХ карточек разом (у entity_tags
+    стоит ondelete=CASCADE). Интерфейс этим НЕ пользуется — кнопка «удалить за
+    ненадобностью» вызывает /archive, чтобы у кандидатов метка осталась.
+    Оставлено для чистки мусора вручную; вешать на кнопку без явного
+    подтверждения «сорвать у всех» нельзя."""
     org_id = await _get_org_id(db, current_user)
     result = await db.execute(
         select(EntityTag).where(EntityTag.id == tag_id, EntityTag.org_id == org_id)
@@ -120,6 +137,52 @@ async def delete_tag(
     await db.delete(tag)
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/{tag_id}/archive", response_model=TagOut)
+async def archive_tag(
+    tag_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Убрать метку из списка выбора, НЕ трогая карточки кандидатов.
+
+    Это и есть «удалить за ненадобностью» с точки зрения рекрутёра: метка
+    перестаёт предлагаться при добавлении, но у тех, кому уже проставлена,
+    остаётся — снять её оттуда можно крестиком на самой карточке.
+    Идемпотентно: повторный вызов ничего не меняет.
+    """
+    org_id = await _get_org_id(db, current_user)
+    tag = (await db.execute(
+        select(EntityTag).where(EntityTag.id == tag_id, EntityTag.org_id == org_id)
+    )).scalar_one_or_none()
+    if not tag:
+        raise HTTPException(404, "Tag not found")
+    if tag.archived_at is None:
+        tag.archived_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(tag)
+    return tag
+
+
+@router.post("/{tag_id}/restore", response_model=TagOut)
+async def restore_tag(
+    tag_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Вернуть скрытую метку в список выбора."""
+    org_id = await _get_org_id(db, current_user)
+    tag = (await db.execute(
+        select(EntityTag).where(EntityTag.id == tag_id, EntityTag.org_id == org_id)
+    )).scalar_one_or_none()
+    if not tag:
+        raise HTTPException(404, "Tag not found")
+    if tag.archived_at is not None:
+        tag.archived_at = None
+        await db.commit()
+        await db.refresh(tag)
+    return tag
 
 
 # ==================== Entity <-> Tag ====================

@@ -461,6 +461,23 @@ ENTITY_FILES_ORG_ID = (
     "Add org_id to entity_files"
 )
 
+# Метка «уходит из списка», но остаётся у тех кандидатов, кому уже проставлена.
+# Настоящий DELETE тут не годится: у entity_tags стоит ondelete=CASCADE, и
+# удаление записи справочника молча срывает метку со ВСЕХ карточек. Поэтому
+# «удалить за ненадобностью» = archived_at, а связи кандидат↔метка не трогаем.
+ENTITY_TAG_ARCHIVED_AT = (
+    "ALTER TABLE entity_tags_catalog ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+    "Add archived_at to entity_tags_catalog"
+)
+
+# color заводили под hex (#3b82f6 — 7 символов), а палитра в интерфейсе шлёт
+# CSS-переменные: 'var(--hf-status-purple)' это 23 символа. В VARCHAR(20) лезут
+# только «Красный» и «Зелёный», остальные 6 цветов роняли создание метки в 500.
+ENTITY_TAG_COLOR_WIDTH = (
+    "ALTER TABLE entity_tags_catalog ALTER COLUMN color TYPE VARCHAR(40)",
+    "Widen entity_tags_catalog.color to 40"
+)
+
 # ── Org units (HR org chart) — изолировано от рекрутинговых departments ──
 CREATE_ORG_UNITS_SQL = """
     CREATE TABLE IF NOT EXISTS org_units (

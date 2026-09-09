@@ -57,6 +57,8 @@ from api.db.migrations import (
     SHARED_ACCESS_CALL_ID,
     SHARED_ACCESS_VACANCY_ID,
     ENTITY_FILES_ORG_ID,
+    ENTITY_TAG_ARCHIVED_AT,
+    ENTITY_TAG_COLOR_WIDTH,
     CREATE_ORG_UNITS_SQL,
     ORG_UNITS_INDEXES,
     EMPLOYEE_ORG_UNIT_COLUMN,
@@ -311,6 +313,8 @@ async def init_database():
 
     # Add org_id column if table exists but column doesn't (for existing deployments)
     await run_migration(engine, ENTITY_FILES_ORG_ID[0], ENTITY_FILES_ORG_ID[1])
+    await run_migration(engine, ENTITY_TAG_ARCHIVED_AT[0], ENTITY_TAG_ARCHIVED_AT[1])
+    await run_migration(engine, ENTITY_TAG_COLOR_WIDTH[0], ENTITY_TAG_COLOR_WIDTH[1])
 
     logger.info("=== ENTITY FILES TABLE READY ===")
 

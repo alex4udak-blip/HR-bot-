@@ -74,6 +74,7 @@ import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
 import type { EntityFile } from "@/services/api/entities";
 import AddToVacancyModal from "@/components/entities/AddToVacancyModal";
 import TakeCandidateButton from "@/components/entities/TakeCandidateButton";
+import TagPicker from "@/components/entities/TagPicker";
 import ShadowDuplicateBanner from "@/components/entities/ShadowDuplicateBanner";
 import ParserModal from "@/components/parser/ParserModal";
 import { useAuthStore } from "@/stores/authStore";
@@ -3219,6 +3220,12 @@ const InfoTab = memo(function InfoTab({
                   </button>
                 </span>
               ))}
+              {/* Метки из справочника организации. Раньше их здесь можно было
+                  только СМОТРЕТЬ: «+» жил лишь в воронке, и пометить кандидата
+                  (например, кто его привёл) из общей базы было нельзя — а
+                  ставят их чаще всего именно отсюда, когда кандидат ещё ни в
+                  одной воронке. Компонент общий с воронкой. */}
+              <TagPicker entityId={card.id} disabled={readonly} />
             </div>
           </InfoRow>
         </div>
