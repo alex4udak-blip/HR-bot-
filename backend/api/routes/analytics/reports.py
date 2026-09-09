@@ -20,7 +20,7 @@ from ...database import get_db
 from ...models.database import (
     User, UserRole, Vacancy, VacancyStatus, VacancyApplication,
     ApplicationStage, Entity, EntityType, StageTransition,
-    OrgMember, OrgRole,
+    OrgMember, OrgRole, EntityTag, entity_tag_association,
 )
 from ...services.auth import get_current_user, get_user_org
 from ...utils.logging import get_logger
@@ -165,6 +165,25 @@ class StageMovementItem(BaseModel):
 class MovementReport(BaseModel):
     total_movements: int
     movements: List[StageMovementItem]
+
+
+class SourcerStat(BaseModel):
+    tag_id: int
+    name: str
+    color: str
+    archived: bool
+    brought: int
+    in_work: int
+    reached_offer: int
+    hired: int
+    rejected: int
+    conversion: float
+
+
+class SourcersReport(BaseModel):
+    items: List[SourcerStat]
+    total_brought: int
+    total_hired: int
 
 
 # ========== HELPERS ==========
@@ -572,6 +591,114 @@ async def get_funnel_by_recruiter(
     return FunnelByRecruiterReport(
         summary=summary,
         by_recruiter=by_recruiter,
+    )
+
+
+# Как считаем судьбу кандидата. Стадии смотрим по ВСЕМ его заявкам сразу:
+# человек мог быть в двух воронках, и «нанят хоть куда-то» важнее, чем «отказ
+# в одной из них». Поэтому классифицируем один раз на кандидата, а не на заявку.
+_HIRED_STAGES = {
+    ApplicationStage.hired,
+    ApplicationStage.probation,
+    ApplicationStage.transferred,
+}
+_CLOSED_STAGES = {ApplicationStage.rejected, ApplicationStage.withdrawn}
+
+
+@router.get("/sourcers", response_model=SourcersReport)
+async def get_sourcers_report(
+    period: str = Query("current"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Кого привели сорсеры и что из этого вышло.
+
+    Сорсер — внешний человек без доступа в систему; в базе он живёт меткой из
+    общего справочника с kind='sourcer'. Считаем по связям кандидат↔метка,
+    поэтому отдельного хранилища не нужно.
+
+    Скрытые метки («убрали за ненадобностью») ОСТАЮТСЯ в отчёте: человек привёл
+    кандидатов, и удаление метки из списка выбора не должно задним числом
+    переписывать историю. В выдаче они помечены archived.
+    """
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    df, dt = _get_date_filter(period, date_from, date_to)
+    is_admin = await _is_admin_analytics(current_user, org.id, db)
+
+    # Одним запросом: метка → кандидат → стадии всех его заявок.
+    # LEFT JOIN на заявки: кандидата могли завести с меткой и ещё никуда не
+    # добавить — он всё равно «приведён» и должен попасть в счётчик.
+    query = (
+        select(
+            EntityTag.id, EntityTag.name, EntityTag.color, EntityTag.archived_at,
+            Entity.id, VacancyApplication.stage,
+        )
+        .select_from(EntityTag)
+        .join(entity_tag_association, entity_tag_association.c.tag_id == EntityTag.id)
+        .join(Entity, Entity.id == entity_tag_association.c.entity_id)
+        .outerjoin(VacancyApplication, VacancyApplication.entity_id == Entity.id)
+        .where(
+            EntityTag.org_id == org.id,
+            EntityTag.kind == "sourcer",
+            Entity.org_id == org.id,
+            Entity.is_archived.is_not(True),
+        )
+    )
+    # Рекрутёр без прав на общую аналитику видит только тех, кого завёл сам —
+    # то же правило, что у остальных отчётов (_is_admin_analytics).
+    if not is_admin:
+        query = query.where(Entity.created_by == current_user.id)
+    if df:
+        query = query.where(Entity.created_at >= df)
+    if dt:
+        query = query.where(Entity.created_at <= dt)
+
+    rows = (await db.execute(query)).all()
+
+    # tag_id → (имя, цвет, скрыта), tag_id → {entity_id: set(стадий)}
+    meta: Dict[int, Any] = {}
+    stages_by: Dict[int, Dict[int, set]] = {}
+    for tag_id, name, color, archived_at, entity_id, stage in rows:
+        meta.setdefault(tag_id, (name, color, archived_at is not None))
+        per_entity = stages_by.setdefault(tag_id, {})
+        bucket = per_entity.setdefault(entity_id, set())
+        if stage is not None:
+            bucket.add(stage)
+
+    items: List[SourcerStat] = []
+    for tag_id, (name, color, archived) in meta.items():
+        brought = in_work = reached_offer = hired = rejected = 0
+        for stages in stages_by.get(tag_id, {}).values():
+            brought += 1
+            if stages & _HIRED_STAGES:
+                hired += 1
+                reached_offer += 1
+            elif ApplicationStage.offer in stages:
+                reached_offer += 1
+                in_work += 1
+            elif stages and stages <= _CLOSED_STAGES:
+                # Все заявки закрыты отказом — дальше человек не идёт.
+                rejected += 1
+            else:
+                # Есть живые заявки либо заявок нет вовсе (просто в базе).
+                in_work += 1
+        items.append(SourcerStat(
+            tag_id=tag_id, name=name, color=color, archived=archived,
+            brought=brought, in_work=in_work, reached_offer=reached_offer,
+            hired=hired, rejected=rejected,
+            conversion=round(hired / brought * 100, 1) if brought else 0.0,
+        ))
+
+    items.sort(key=lambda i: (-i.brought, i.name))
+    return SourcersReport(
+        items=items,
+        total_brought=sum(i.brought for i in items),
+        total_hired=sum(i.hired for i in items),
     )
 
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Clock, Users, Filter, ChevronDown, FileSpreadsheet,
+  Clock, Users, UserPlus, Filter, ChevronDown, FileSpreadsheet,
   FileDown, XCircle, ArrowRight, UserCheck,
   BarChart3, CalendarRange,
 } from 'lucide-react';
@@ -78,6 +78,26 @@ interface FunnelByRecruiterReport {
   by_recruiter: RecruiterFunnelItem[];
 }
 
+interface SourcerStat {
+  tag_id: number;
+  name: string;
+  color: string;
+  /** Метку убрали из списка выбора — из отчёта она не пропадает. */
+  archived: boolean;
+  brought: number;
+  in_work: number;
+  reached_offer: number;
+  hired: number;
+  rejected: number;
+  conversion: number;
+}
+
+interface SourcersReport {
+  items: SourcerStat[];
+  total_brought: number;
+  total_hired: number;
+}
+
 interface RejectionsByStage {
   stage: string;
   label: string;
@@ -142,6 +162,14 @@ const REPORT_CATEGORIES = [
       { id: 'funnel-recruiter', label: 'Воронка по рекрутерам', icon: Users },
     ],
   },
+  {
+    id: 'sourcer',
+    label: 'Сорсеры',
+    icon: UserPlus,
+    reports: [
+      { id: 'sourcers', label: 'Кого привели сорсеры', icon: UserPlus },
+    ],
+  },
 ] as const;
 
 const PERIOD_TABS = [
@@ -204,6 +232,7 @@ export default function DashboardPage() {
   const [ttfData, setTtfData] = useState<TimeToFillReport | null>(null);
   const [funnelData, setFunnelData] = useState<FunnelReport | null>(null);
   const [funnelByRecruiter, setFunnelByRecruiter] = useState<FunnelByRecruiterReport | null>(null);
+  const [sourcersData, setSourcersData] = useState<SourcersReport | null>(null);
   const [rejectionsData, setRejectionsData] = useState<RejectionsReport | null>(null);
   const [sourcesData, setSourcesData] = useState<SourceReport | null>(null);
   const [movementData, setMovementData] = useState<MovementReport | null>(null);
@@ -243,6 +272,11 @@ export default function DashboardPage() {
         case 'funnel-recruiter': {
           const res = await api.get<FunnelByRecruiterReport>('/analytics/reports/funnel-by-recruiter', { params });
           setFunnelByRecruiter(res.data);
+          break;
+        }
+        case 'sourcers': {
+          const res = await api.get<SourcersReport>('/analytics/reports/sourcers', { params });
+          setSourcersData(res.data);
           break;
         }
         case 'rejections': {
@@ -668,6 +702,7 @@ export default function DashboardPage() {
               {activeReport === 'ttf' && ttfData && <TTFContent data={ttfData} />}
               {activeReport === 'funnel' && funnelData && <FunnelContent data={funnelData} />}
               {activeReport === 'funnel-recruiter' && funnelByRecruiter && <FunnelByRecruiterContent data={funnelByRecruiter} />}
+              {activeReport === 'sourcers' && sourcersData && <SourcersContent data={sourcersData} />}
               {activeReport === 'rejections' && rejectionsData && <RejectionsContent data={rejectionsData} />}
               {activeReport === 'sources' && sourcesData && <SourcesContent data={sourcesData} />}
               {activeReport === 'movement' && movementData && <MovementContent data={movementData} />}
@@ -1067,6 +1102,105 @@ function SourcesContent({ data }: { data: SourceReport }) {
             label={s.source === 'unknown' ? 'Не указан' : s.source}
           />
         ))}
+      </div>
+    </>
+  );
+}
+
+// ===== SOURCERS =====
+
+/** Кого привели сорсеры и что из этого вышло.
+ *
+ * Сорсер — внешний человек без доступа в систему, поэтому в базе он живёт
+ * меткой с kind='sourcer', а не пользователем. Считается по связям
+ * кандидат↔метка, отдельного хранилища нет.
+ *
+ * Оформление намеренно повторяет «Воронку по рекрутерам»: те же карточки с
+ * аватаркой и полосами, чтобы отчёт не выглядел чужим на этой странице.
+ */
+function SourcersContent({ data }: { data: SourcersReport }) {
+  if (data.items.length === 0) {
+    return (
+      <div className="hf-analytics-empty-state">
+        <UserPlus className="hf-analytics-empty-icon" />
+        <h3>Сорсеров пока нет</h3>
+        <p>
+          Отметьте метку как сорсера на карточке кандидата: в списке меток
+          выберите тип «Сорсер». После этого здесь появится статистика.
+        </p>
+      </div>
+    );
+  }
+
+  const conversion = data.total_brought
+    ? Math.round((data.total_hired / data.total_brought) * 100)
+    : 0;
+
+  return (
+    <>
+      <div className="hf-analytics-kpi-row hf-analytics-kpi-row-compact">
+        <KPICard value={data.total_brought} label="Приведено кандидатов" />
+        <KPICard value={data.items.length} label="Сорсеров" />
+        <KPICard value={`${conversion}%`} label="Дошли до найма" />
+      </div>
+
+      <SectionTitle>По сорсерам</SectionTitle>
+      <div className="hf-analytics-recruiter-list">
+        {data.items.map((s) => {
+          // Полосы меряем от «привёл» этого же сорсера: интересна его
+          // собственная воронка, а не сравнение с самым результативным.
+          const rows = [
+            { label: 'Привёл', value: s.brought, color: BAR_COLORS.primary },
+            { label: 'В работе', value: s.in_work, color: BAR_COLORS.blue },
+            { label: 'Дошли до оффера', value: s.reached_offer, color: BAR_COLORS.purple },
+            { label: 'Наняты', value: s.hired, color: BAR_COLORS.green },
+            { label: 'Отказ', value: s.rejected, color: BAR_COLORS.red },
+          ];
+          return (
+            <div key={s.tag_id} className="hf-analytics-recruiter-card">
+              <div className="hf-analytics-recruiter-head">
+                <div className="hf-analytics-recruiter-person">
+                  <div
+                    className="hf-analytics-recruiter-avatar"
+                    style={{ backgroundColor: s.color }}
+                  >
+                    {s.name.charAt(0)}
+                  </div>
+                  <span className="hf-analytics-recruiter-name">
+                    {s.name}
+                    {s.archived && (
+                      <span className="hf-analytics-sourcer-archived" title="Метка убрана из списка выбора, но история сохранена">
+                        не в списке
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="hf-analytics-recruiter-meta">
+                  конверсия {s.conversion}%
+                </div>
+              </div>
+              <div>
+                {rows.map((r) => (
+                  <div key={r.label} className="hf-analytics-recruiter-row">
+                    <div className="hf-analytics-recruiter-stage">{r.label}</div>
+                    <div className="hf-analytics-funnel-track">
+                      <div
+                        className="h-5 rounded-sm"
+                        style={{
+                          width: `${Math.max((r.value / Math.max(s.brought, 1)) * 100, 1)}%`,
+                          backgroundColor: r.color,
+                        }}
+                      />
+                      {r.value > 0 && (
+                        <span className="hf-analytics-funnel-value">{r.value}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </>
   );

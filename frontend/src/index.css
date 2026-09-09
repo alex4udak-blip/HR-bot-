@@ -8807,6 +8807,17 @@ body.performance-mode .glass-card:hover {
   animation: hf-loading-spin 0.8s linear infinite;
 }
 
+/* Метку убрали из списка выбора, но в отчёте сорсер остаётся: он привёл людей,
+   и удаление метки не должно задним числом переписывать историю. */
+.hf-analytics-sourcer-archived {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: var(--hf-fs-6xs);
+  font-weight: var(--hf-fw-medium);
+  color: var(--hf-main-500);
+  background: var(--hf-main-100);
+}
 .hf-analytics-empty-state {
   min-height: 220px;
   display: flex;
