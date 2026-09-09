@@ -16,10 +16,23 @@ router = APIRouter()
 
 _HTML_TAG_RE = re.compile(r"<[^>]*>")
 
+# Тип метки. 'sourcer' — тот, кто привёл кандидата (внешний человек без доступа
+# в систему); остальные метки обычные ярлыки. Нужен, чтобы аналитика по сорсерам
+# не считала заодно «Срочно» и «Знает английский».
+TAG_KINDS = ("general", "sourcer")
+
 
 class TagCreate(BaseModel):
     name: str
     color: str = "#3b82f6"
+    kind: str = "general"
+
+    @field_validator("kind")
+    @classmethod
+    def _check_kind(cls, v: str) -> str:
+        if v not in TAG_KINDS:
+            raise ValueError(f"kind must be one of {TAG_KINDS}")
+        return v
 
     @field_validator("name")
     @classmethod
@@ -42,6 +55,7 @@ class TagOut(BaseModel):
     created_by: int | None = None
     created_at: datetime | None = None
     archived_at: datetime | None = None
+    kind: str = "general"
 
     class Config:
         from_attributes = True
@@ -60,6 +74,7 @@ async def _get_org_id(db: AsyncSession, user: User) -> int:
 @router.get("", response_model=list[TagOut])
 async def list_tags(
     include_archived: bool = False,
+    kind: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -69,6 +84,10 @@ async def list_tags(
     include_archived=true — для экрана управления метками."""
     org_id = await _get_org_id(db, current_user)
     query = select(EntityTag).where(EntityTag.org_id == org_id)
+    if kind is not None:
+        if kind not in TAG_KINDS:
+            raise HTTPException(422, f"kind must be one of {TAG_KINDS}")
+        query = query.where(EntityTag.kind == kind)
     if not include_archived:
         query = query.where(EntityTag.archived_at.is_(None))
     result = await db.execute(query.order_by(EntityTag.name))
@@ -99,6 +118,7 @@ async def create_tag(
         # (unique(org_id, name) второй всё равно не даст создать).
         existing.archived_at = None
         existing.color = data.color
+        existing.kind = data.kind
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -107,6 +127,7 @@ async def create_tag(
         org_id=org_id,
         name=data.name.strip(),
         color=data.color,
+        kind=data.kind,
         created_by=current_user.id,
     )
     db.add(tag)
@@ -137,6 +158,46 @@ async def delete_tag(
     await db.delete(tag)
     await db.commit()
     return {"ok": True}
+
+
+class TagUpdate(BaseModel):
+    kind: str | None = None
+    color: str | None = None
+
+    @field_validator("kind")
+    @classmethod
+    def _check_kind(cls, v: str | None) -> str | None:
+        if v is not None and v not in TAG_KINDS:
+            raise ValueError(f"kind must be one of {TAG_KINDS}")
+        return v
+
+
+@router.patch("/{tag_id}", response_model=TagOut)
+async def update_tag(
+    tag_id: int,
+    data: TagUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Поменять тип или цвет метки.
+
+    Нужен в первую очередь для меток, заведённых до появления типа: они все
+    'general', и без этого пометить старого «Сорсера Ивана» было бы нечем,
+    кроме как завести заново. Имя не меняем — по нему метку узнают на карточках.
+    """
+    org_id = await _get_org_id(db, current_user)
+    tag = (await db.execute(
+        select(EntityTag).where(EntityTag.id == tag_id, EntityTag.org_id == org_id)
+    )).scalar_one_or_none()
+    if not tag:
+        raise HTTPException(404, "Tag not found")
+    if data.kind is not None:
+        tag.kind = data.kind
+    if data.color is not None:
+        tag.color = data.color
+    await db.commit()
+    await db.refresh(tag)
+    return tag
 
 
 @router.post("/{tag_id}/archive", response_model=TagOut)

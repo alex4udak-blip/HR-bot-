@@ -693,6 +693,7 @@ export {
   deleteTag,
   archiveTag,
   restoreTag,
+  updateTag,
   getEntityTags,
   addTagToEntity,
   removeTagFromEntity,

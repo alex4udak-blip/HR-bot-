@@ -478,6 +478,14 @@ ENTITY_TAG_COLOR_WIDTH = (
     "Widen entity_tags_catalog.color to 40"
 )
 
+# Тип метки. Для системы «Сорсер Иван», «Срочно» и «Знает английский» были
+# неразличимы — просто строки, поэтому отдельную аналитику по сорсерам собрать
+# было не из чего. Старые метки становятся 'general', ничего не ломая.
+ENTITY_TAG_KIND = (
+    "ALTER TABLE entity_tags_catalog ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'general'",
+    "Add kind to entity_tags_catalog"
+)
+
 # ── Org units (HR org chart) — изолировано от рекрутинговых departments ──
 CREATE_ORG_UNITS_SQL = """
     CREATE TABLE IF NOT EXISTS org_units (

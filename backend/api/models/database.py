@@ -1912,6 +1912,11 @@ class EntityTag(Base):
     name = Column(String(100), nullable=False)
     # 40, а не 20: палитра шлёт CSS-переменные вида var(--hf-status-purple).
     color = Column(String(40), nullable=False, default="#3b82f6")
+    # 'general' | 'sourcer'. Сорсер — внешний человек без доступа в систему,
+    # который привёл кандидата; помечаем метку, чтобы отделить её от обычных
+    # ярлыков в аналитике. Enum в БД намеренно не заводим: значений мало и
+    # добавлять новые через ALTER TYPE дороже, чем через строку.
+    kind = Column(String(20), nullable=False, default="general", server_default="general")
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=func.now())
     # «Удалена за ненадобностью»: метка пропадает из списка выбора, но остаётся

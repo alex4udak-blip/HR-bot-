@@ -13,15 +13,29 @@ export interface Tag {
   created_at: string | null;
   /** Скрыта из списка выбора, но остаётся на карточках, где уже проставлена. */
   archived_at?: string | null;
+  /** 'sourcer' — тот, кто привёл кандидата; 'general' — обычный ярлык. */
+  kind?: TagKind;
 }
+
+export type TagKind = 'general' | 'sourcer';
 
 export interface TagCreate {
   name: string;
   color: string;
+  kind?: TagKind;
 }
 
-export const getTags = async (): Promise<Tag[]> => {
-  const { data } = await api.get<Tag[]>('/tags');
+export const getTags = async (kind?: TagKind): Promise<Tag[]> => {
+  const { data } = await api.get<Tag[]>('/tags', { params: kind ? { kind } : undefined });
+  return data;
+};
+
+/** Поменять тип или цвет метки. Имя не меняем — по нему её узнают на карточках. */
+export const updateTag = async (
+  tagId: number,
+  patch: { kind?: TagKind; color?: string },
+): Promise<Tag> => {
+  const { data } = await api.patch<Tag>(`/tags/${tagId}`, patch);
   return data;
 };
 

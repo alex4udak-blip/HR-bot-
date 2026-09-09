@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Plus, X, Loader2, Trash2 } from 'lucide-react';
+import { Plus, X, Loader2, Trash2, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   getTags,
   createTag,
   archiveTag,
+  updateTag,
   getEntityTags,
   addTagToEntity,
   removeTagFromEntity,
   type Tag,
+  type TagKind,
 } from '@/services/api/tags';
 
 /**
@@ -55,6 +57,7 @@ export default function TagPicker({
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(TAG_PALETTE[0].color);
+  const [newKind, setNewKind] = useState<TagKind>('general');
   const [creating, setCreating] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -110,7 +113,7 @@ export default function TagPicker({
     if (!name || !entityId) return;
     setCreating(true);
     try {
-      const tag = await createTag({ name, color: newColor });
+      const tag = await createTag({ name, color: newColor, kind: newKind });
       // Имя могло существовать в скрытых — бэкенд вернёт ту же запись, поэтому
       // не плодим дубль в списке, а обновляем по id.
       setOrgTags((prev) => [...prev.filter((t) => t.id !== tag.id), tag]);
@@ -123,6 +126,25 @@ export default function TagPicker({
       toast.error('Не удалось создать метку');
     } finally {
       setCreating(false);
+    }
+  };
+
+  /** Пометить существующую метку сорсером и обратно.
+   *
+   * Нужно прежде всего для меток, заведённых до появления типа: они все
+   * 'general', и иначе старого «Сорсера Ивана» пришлось бы заводить заново. */
+  const handleToggleKind = async (tag: Tag) => {
+    const next: TagKind = tag.kind === 'sourcer' ? 'general' : 'sourcer';
+    try {
+      const updated = await updateTag(tag.id, { kind: next });
+      setOrgTags((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      toast.success(
+        next === 'sourcer'
+          ? `«${tag.name}» — теперь сорсер`
+          : `«${tag.name}» — обычная метка`,
+      );
+    } catch {
+      toast.error('Не удалось изменить тип метки');
     }
   };
 
@@ -200,6 +222,20 @@ export default function TagPicker({
                       />
                       <span className="truncate">{tag.name}</span>
                     </button>
+                    {/* Тип метки. Сорсер — тот, кто привёл кандидата; по этому
+                        признаку аналитика отделяет их от обычных ярлыков. */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleKind(tag)}
+                      title={tag.kind === 'sourcer'
+                        ? 'Сорсер — снять пометку'
+                        : 'Пометить как сорсера'}
+                      className={tag.kind === 'sourcer'
+                        ? 'text-[var(--hf-cyan-600)]'
+                        : 'opacity-0 group-hover/row:opacity-100 transition-opacity text-[var(--hf-main-500)] hover:text-[var(--hf-cyan-600)]'}
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                    </button>
                     {/* Убрать из списка у всей организации. На карточках остаётся. */}
                     <button
                       type="button"
@@ -219,6 +255,26 @@ export default function TagPicker({
               </div>
 
               <div className="border-t border-[var(--hf-ui-divider)] p-2">
+                <div className="flex items-center gap-1 mb-1.5">
+                  {([
+                    { id: 'general' as TagKind, label: 'Обычная' },
+                    { id: 'sourcer' as TagKind, label: 'Сорсер' },
+                  ]).map((k) => (
+                    <button
+                      key={k.id}
+                      type="button"
+                      onClick={() => setNewKind(k.id)}
+                      className={
+                        'px-2 py-0.5 rounded text-[11px] border transition-colors ' +
+                        (newKind === k.id
+                          ? 'border-[color:var(--hf-cyan-500)] text-[var(--hf-cyan-600)] font-medium'
+                          : 'border-[color:var(--hf-ui-border)] text-[var(--hf-main-500)] hover:text-[var(--hf-main-800)]')
+                      }
+                    >
+                      {k.label}
+                    </button>
+                  ))}
+                </div>
                 <div className="flex items-center gap-1.5 mb-1.5">
                   {TAG_PALETTE.map((p) => (
                     <button
