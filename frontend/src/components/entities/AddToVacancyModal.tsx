@@ -215,6 +215,9 @@ export default function AddToVacancyModal({
   // Рендерим в портал на document.body: иначе position:fixed считается от
   // трансформированного предка (страница в framer-motion layout-анимациях) и
   // модалка съезжает по-разному у разных пользователей.
+  // На фоне был ещё onMouseDown={onClose}: он закрывал окно по нажатию и
+  // вдобавок перебивал спред backdropClose, стоя после него. Убран — закрытие
+  // теперь по полноценному клику по фону, как во всех остальных модалках.
   return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
@@ -225,9 +228,6 @@ export default function AddToVacancyModal({
         isBulk && "flex items-center justify-center p-4",
       )}
       style={isBulk ? { backgroundColor: 'rgba(0, 0, 0, 0.7)' } : undefined}
-      {/* Был ещё onMouseDown={onClose} — он и закрывал окно, и перебивал
-          спред backdropClose (стоял после него). Убран: закрытие теперь по
-          полноценному клику по фону, как во всех остальных модалках. */}
       {...backdropClose(onClose)}
     >
       <motion.div

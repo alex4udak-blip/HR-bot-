@@ -1,3 +1,4 @@
+import { backdropClose } from '@/utils/backdropClose';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCurrencyRates } from '@/hooks';
@@ -43,7 +44,6 @@ import {
   ErrorMessage
 } from '@/components/ui';
 import {
-import { backdropClose } from '@/utils/backdropClose';
   HUNTFLOW_VACANCY_STATUS_FILTERS,
   getHuntflowVacancyStatusFilterLabel,
 } from '@/components/hr/huntflowVacancyStatus';

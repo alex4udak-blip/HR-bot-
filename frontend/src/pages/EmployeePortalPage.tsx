@@ -4,6 +4,7 @@
  * For regular employees (/my-profile): personal profile, leave balance, documents
  * For HRD/admin (/employees): employee list, reminders, leave request management
  */
+import { backdropClose } from '@/utils/backdropClose';
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useUrlTab } from '@/hooks/useUrlTab';
@@ -17,7 +18,6 @@ import * as docsApi from '@/services/api/documents';
 import type { SignedDocument } from '@/services/api/documents';
 import SignatureCanvas from '@/components/SignatureCanvas';
 import type {
-import { backdropClose } from '@/utils/backdropClose';
   EmployeeData,
   LeaveBalance,
   LeaveRequestData,

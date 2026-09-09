@@ -1,3 +1,4 @@
+import { backdropClose } from '@/utils/backdropClose';
 import { useState, useEffect, useRef } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -12,7 +13,6 @@ import {
   type HiddenDuplicateMeta,
 } from "@/services/api/entities";
 import {
-import { backdropClose } from '@/utils/backdropClose';
   CandidateCompareCard,
   sideFromCard,
   sideFromEntity,

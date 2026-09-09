@@ -1,3 +1,4 @@
+import { backdropClose } from '@/utils/backdropClose';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -28,7 +29,6 @@ import * as api from '@/services/api';
 import { getErrorDetail } from '@/utils';
 import { useAuthStore } from '@/stores/authStore';
 import type {
-import { backdropClose } from '@/utils/backdropClose';
   ProjectTask,
   ProjectMember,
   TaskComment,

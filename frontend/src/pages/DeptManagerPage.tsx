@@ -1,3 +1,4 @@
+import { backdropClose } from '@/utils/backdropClose';
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,7 +16,6 @@ import {
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import {
-import { backdropClose } from '@/utils/backdropClose';
   getDepartments,
   createDepartment,
   updateDepartment,
