@@ -1,14 +1,20 @@
 """Наполнение ЛОКАЛЬНОЙ базы демо-данными — чтобы было что кликать.
 
+Аккаунты создаются РОВНО те, что перечислены в DevAccountSwitcher (кнопка
+«Аккаунт» внизу справа в дев-сборке), с тем же паролем Demo1234!. Переключатель
+существовал и раньше, но ничего не создавало эти аккаунты — при пустой базе он
+просто ругался «не удалось войти». Список ролей и адресов дублировать нельзя:
+если правишь его тут — поправь и во фронтовом компоненте.
+
 Не для прода: скрипт отказывается работать, если DATABASE_URL не смотрит на
 localhost. Идемпотентен — повторный запуск ничего не дублирует, ищет по email
 и по названию вакансии.
 
     cd backend && .venv/bin/python seed_local.py
 
-Создаёт трёх рекрутёров (пароль у всех local123), две открытые воронки и
-несколько кандидатов на разных этапах — включая одного в двух воронках сразу
-и одного отказанного, чтобы было видно, как HR-метки появляются и пропадают.
+Кроме людей создаёт две открытые воронки у разных владельцев и кандидатов на
+разных этапах — включая одного сразу в двух воронках (две HR-метки от разных
+рекрутёров) и одного отказанного (метки быть не должно).
 """
 import asyncio
 import os
@@ -27,31 +33,38 @@ from api.models.database import (
 from api.services.auth import hash_password
 
 DB_URL = os.environ.get("DATABASE_URL", "")
+PASSWORD = "Demo1234!"
 
-RECRUITERS = [
-    ("valentina@hrbot.dev", "Валентина", OrgRole.hr),
-    ("elvira@hrbot.dev", "Эльвира Ефименко", OrgRole.hr),
-    ("maria@hrbot.dev", "Мария", OrgRole.admin),
+# (email, имя, роль в организации, наблюдатель) — зеркало DEV_ACCOUNTS
+# во frontend/src/components/DevAccountSwitcher.tsx.
+# admin@mstech.io тут нет: суперадмина создаёт само приложение на старте из
+# SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD, дублировать его — плодить второго.
+PEOPLE = [
+    ("nastya@mstech.io", "Настя", OrgRole.admin, False),
+    ("maria@mstech.io", "Мария", OrgRole.admin, False),
+    ("recruiter.test@example.com", "Тестовый Рекрутёр", OrgRole.hr, False),
+    ("recruiter2.test@example.com", "Пётр", OrgRole.hr, False),
+    ("observer.test@example.com", "Наблюдатель", OrgRole.member, True),
 ]
 
 VACANCIES = [
-    ("User Acquisition Manager", "valentina@hrbot.dev"),
-    ("Head of User Acquisition", "elvira@hrbot.dev"),
+    ("User Acquisition Manager", "recruiter.test@example.com"),
+    ("Head of User Acquisition", "recruiter2.test@example.com"),
 ]
 
 # (имя, должность, воронка, этап, кто добавил)
 CANDIDATES = [
-    ("Гилев Данила", "Таргетолог", "User Acquisition Manager", ApplicationStage.applied, "valentina@hrbot.dev"),
-    ("Кравцов Артём", "Lead User Acquisition", "User Acquisition Manager", ApplicationStage.screening, "valentina@hrbot.dev"),
-    ("Морозов Олександр", "Chief Marketing Officer", "User Acquisition Manager", ApplicationStage.interview, "elvira@hrbot.dev"),
-    ("Платонов Роман", "Senior Performance Marketing", "Head of User Acquisition", ApplicationStage.applied, "elvira@hrbot.dev"),
-    ("Блинова Анастасия", "Head of Digital", "Head of User Acquisition", ApplicationStage.offer, "elvira@hrbot.dev"),
-    # Отказ — у него HR-метки быть НЕ должно, стадия исключена из расчёта.
-    ("Шеншин Игорь", "Media Buyer", "Head of User Acquisition", ApplicationStage.rejected, "elvira@hrbot.dev"),
+    ("Гилев Данила", "Таргетолог", "User Acquisition Manager", ApplicationStage.applied, "recruiter.test@example.com"),
+    ("Кравцов Артём", "Lead User Acquisition", "User Acquisition Manager", ApplicationStage.screening, "recruiter.test@example.com"),
+    ("Морозов Олександр", "Chief Marketing Officer", "User Acquisition Manager", ApplicationStage.interview, "recruiter2.test@example.com"),
+    ("Платонов Роман", "Senior Performance Marketing", "Head of User Acquisition", ApplicationStage.applied, "recruiter2.test@example.com"),
+    ("Блинова Анастасия", "Head of Digital", "Head of User Acquisition", ApplicationStage.offer, "recruiter2.test@example.com"),
+    # Отказ — HR-метки быть НЕ должно, стадия исключена из расчёта.
+    ("Шеншин Игорь", "Media Buyer", "Head of User Acquisition", ApplicationStage.rejected, "recruiter2.test@example.com"),
 ]
 
 # Кандидат сразу в двух воронках → две HR-метки на одной карточке.
-SECOND_FUNNEL = ("Гилев Данила", "Head of User Acquisition", ApplicationStage.screening, "elvira@hrbot.dev")
+SECOND_FUNNEL = ("Гилев Данила", "Head of User Acquisition", ApplicationStage.screening, "recruiter2.test@example.com")
 
 
 async def main() -> None:
@@ -61,6 +74,8 @@ async def main() -> None:
     engine = create_async_engine(DB_URL, echo=False)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+    await _ensure_prereqs(engine)
+
     async with Session() as db:
         org = (await db.execute(
             select(Organization).where(Organization.slug == "default")
@@ -69,27 +84,29 @@ async def main() -> None:
             raise SystemExit("Нет организации 'default'. Запусти сначала бэкенд — он создаёт её на старте.")
 
         users: dict[str, User] = {}
-        for email, name, role in RECRUITERS:
+        for email, name, role, readonly in PEOPLE:
             user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
             if user is None:
                 user = User(
                     email=email,
-                    password_hash=hash_password("local123"),
+                    password_hash=hash_password(PASSWORD),
                     name=name,
                     role=UserRole.member,
                     is_active=True,
                 )
                 db.add(user)
                 await db.flush()
-                print(f"  + пользователь {name} <{email}>")
+                print(f"  + {name} <{email}>")
             users[email] = user
 
             member = (await db.execute(select(OrgMember).where(
                 OrgMember.org_id == org.id, OrgMember.user_id == user.id
             ))).scalar_one_or_none()
             if member is None:
-                db.add(OrgMember(org_id=org.id, user_id=user.id, role=role, is_readonly=False))
-                print(f"    роль в организации: {role.value}")
+                db.add(OrgMember(
+                    org_id=org.id, user_id=user.id, role=role, is_readonly=readonly,
+                ))
+                print(f"      роль: {role.value}{' + наблюдатель' if readonly else ''}")
 
         await db.flush()
 
@@ -146,8 +163,8 @@ async def main() -> None:
 
         await db.commit()
 
-        # HR-метки считаются из заявок — пересчитываем, иначе карточки будут
-        # без меток до первого открытия (self-heal сработал бы и сам, но
+        # HR-метки считаются из заявок — пересчитываем сразу, иначе карточки
+        # будут без меток до первого открытия (self-heal сработал бы и сам, но
         # проверять фичу на пустых метках неудобно).
         from api.services.hr_tags import sync_for_entity
         for ent in ents.values():
@@ -155,7 +172,42 @@ async def main() -> None:
         await db.commit()
 
     await engine.dispose()
-    print("\nГотово. Вход: valentina@hrbot.dev / elvira@hrbot.dev / maria@hrbot.dev, пароль local123")
+    print(f"\nГотово. Вход — кнопка «Аккаунт» внизу справа, либо вручную с паролем {PASSWORD}")
+
+
+async def _ensure_prereqs(engine) -> None:
+    """Две вещи, без которых чистая локальная база выглядит сломанной.
+
+    1. Значения enum ``entitystatus`` для доски «Статусы». Их добавляет
+       ``start.sh`` (в проде он и запускает приложение), а не само приложение —
+       поэтому при запуске uvicorn напрямую их нет, и доска кандидатов падает
+       с 500 «invalid input value for enum entitystatus».
+    2. Фича ``candidate_database``. Она из числа ограниченных: без явной записи
+       ``/api/vacancies`` отдаёт 403 всем, кроме owner/superadmin, и «Все
+       кандидаты» выглядят пустыми.
+
+    ALTER TYPE ADD VALUE нельзя выполнять внутри транзакции → AUTOCOMMIT.
+    """
+    from sqlalchemy import text
+
+    async with engine.connect() as conn:
+        auto = await conn.execution_options(isolation_level="AUTOCOMMIT")
+        for value in ("probation", "transferred", "dismissed", "quit"):
+            await auto.execute(
+                text(f"ALTER TYPE entitystatus ADD VALUE IF NOT EXISTS '{value}'")
+            )
+        await auto.execute(text("""
+            INSERT INTO department_features (org_id, department_id, feature_name, enabled, created_at, updated_at)
+            SELECT o.id, NULL, f, true, now(), now()
+              FROM organizations o,
+                   unnest(ARRAY['candidate_database','vacancies','ai_analysis','analytics']) f
+             WHERE o.slug = 'default'
+               AND NOT EXISTS (
+                   SELECT 1 FROM department_features df
+                    WHERE df.org_id = o.id AND df.department_id IS NULL AND df.feature_name = f
+               )
+        """))
+    print("  · enum entitystatus и фичи организации проверены")
 
 
 async def _ensure_application(
@@ -176,7 +228,7 @@ async def _ensure_application(
         created_by=adder.id,
     ))
     await db.flush()
-    print(f"    → {ent.name} в «{vac.title}», этап {stage.value}, добавил {adder.name}")
+    print(f"      → {ent.name} в «{vac.title}», этап {stage.value}, добавил {adder.name}")
 
 
 if __name__ == "__main__":
