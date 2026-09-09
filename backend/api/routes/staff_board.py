@@ -36,6 +36,7 @@ from ..database import get_db
 from ..models.database import (
     Entity, EntityStatus, EntityFile, EntityFileType,
     Employee, Organization, User, Department,
+    EntityTag, entity_tag_association,
 )
 from ..services.auth import get_current_user, get_user_org
 
@@ -163,6 +164,16 @@ class BoardRow(BaseModel):
     # HR, ведущий сотрудника (колонка Assignee в ClickUp)
     assignee_user_id: Optional[int] = None
     assignee_name: Optional[str] = None
+    # Подставлено из воронки, а не выбрано руками. Тот же приём, что у вех:
+    # ручное значение главнее, авто показываем блёкло и его можно перебить.
+    # Кандидат и сотрудник — одна запись, поэтому HR, который вёл человека в
+    # подборе, известен и здесь; раньше колонку заполняли заново руками, и она
+    # у всех стояла пустая.
+    assignee_auto: bool = False
+    # Метки-сорсеры этого человека: кто его привёл. Живут в общем справочнике
+    # меток (entity_tags_catalog.kind='sourcer'), показываем рядом с HR — по
+    # решению юзера в ОДНОЙ колонке, а не отдельной.
+    sourcers: List["BoardSourcer"] = []
     dismissal_date: Optional[str] = None
     # Отметки «пройдено» рядом с каждой вехой
     dept_done: bool = False
@@ -170,6 +181,12 @@ class BoardRow(BaseModel):
     m1_done: bool = False
     m3_done: bool = False
     y1_done: bool = False
+
+
+class BoardSourcer(BaseModel):
+    id: int
+    name: str
+    color: str
 
 
 class BoardRowUpdate(BaseModel):
@@ -299,10 +316,43 @@ def _first_telegram(entity: Entity) -> Optional[str]:
     return None
 
 
+async def _load_sourcers(
+    db: AsyncSession, entity_ids: List[int]
+) -> Dict[int, List["BoardSourcer"]]:
+    """Метки-сорсеры для пачки людей — ОДНИМ запросом.
+
+    Скрытые (archived_at) намеренно включаем: метку могли убрать из списка
+    выбора, но у тех, кому она уже проставлена, она должна остаться видимой —
+    ровно то же правило, что на карточке кандидата.
+    """
+    if not entity_ids:
+        return {}
+    rows = (await db.execute(
+        select(
+            entity_tag_association.c.entity_id,
+            EntityTag.id, EntityTag.name, EntityTag.color,
+        )
+        .select_from(entity_tag_association)
+        .join(EntityTag, EntityTag.id == entity_tag_association.c.tag_id)
+        .where(
+            entity_tag_association.c.entity_id.in_(entity_ids),
+            EntityTag.kind == "sourcer",
+        )
+        .order_by(EntityTag.name)
+    )).all()
+    out: Dict[int, List[BoardSourcer]] = {}
+    for ent_id, tag_id, name, color in rows:
+        out.setdefault(ent_id, []).append(
+            BoardSourcer(id=tag_id, name=name, color=color)
+        )
+    return out
+
+
 def _row_from_entity(
     entity: Entity,
     offer: Optional[EntityFile],
     assignee_names: Optional[Dict[int, str]] = None,
+    sourcers_by_entity: Optional[Dict[int, List["BoardSourcer"]]] = None,
 ) -> BoardRow:
     ex = _extra(entity)
     dept_start = _parse_date(_pick(ex, _K_DEPT_START, _CF_DEPT_START))
@@ -341,6 +391,26 @@ def _row_from_entity(
         dept_name = SANDBOX_LABEL
     telegram = _first_telegram(entity) or (str(_pick(ex, _CF_TELEGRAM) or "").lstrip("@") or None)
 
+    # HR: сначала выбранный руками, иначе — из воронки. Авто-метки HR лежат в
+    # extra_data.system_hr_tags (их считает services/hr_tags по активным
+    # заявкам), поэтому лишних запросов не нужно. Берём первого: у человека,
+    # дошедшего до практики, воронка почти всегда одна, а если их несколько —
+    # показываем того, кто раньше, и HR всегда может перебить выбор руками.
+    assignee_id = _as_int(ex.get(_K_ASSIGNEE))
+    assignee_auto = False
+    if assignee_id is not None:
+        assignee_name = assignee_names.get(assignee_id) if assignee_names else None
+    else:
+        assignee_name = None
+        hr_tags = ex.get("system_hr_tags")
+        if isinstance(hr_tags, list):
+            for t in hr_tags:
+                if isinstance(t, dict) and _as_int(t.get("hr_id")) is not None:
+                    assignee_id = _as_int(t.get("hr_id"))
+                    assignee_name = t.get("name") or None
+                    assignee_auto = True
+                    break
+
     return BoardRow(
         entity_id=entity.id,
         name=entity.name,
@@ -355,8 +425,10 @@ def _row_from_entity(
         manager=_pick(ex, _K_MANAGER, _CF_MANAGER),
         w2=w2, m1=m1, m3=m3, y1=y1,
         w2_auto=w2_auto, m1_auto=m1_auto, m3_auto=m3_auto, y1_auto=y1_auto,
-        assignee_user_id=_as_int(ex.get(_K_ASSIGNEE)),
-        assignee_name=assignee_names.get(_as_int(ex.get(_K_ASSIGNEE))) if assignee_names else None,
+        assignee_user_id=assignee_id,
+        assignee_name=assignee_name,
+        assignee_auto=assignee_auto,
+        sourcers=(sourcers_by_entity or {}).get(entity.id, []),
         dismissal_date=_iso(_parse_date(_pick(ex, _K_DISMISSAL, _CF_DISMISSAL))),
         dept_done=_as_done(ex, "dept_done"),
         w2_done=_as_done(ex, "w2_done"),
@@ -647,7 +719,12 @@ async def list_rows(
             )).all()
         }
 
-    return [_row_from_entity(e, offers.get(e.id), assignee_names) for e in entities]
+    sourcers_by_entity = await _load_sourcers(db, ids)
+
+    return [
+        _row_from_entity(e, offers.get(e.id), assignee_names, sourcers_by_entity)
+        for e in entities
+    ]
 
 
 @router.patch("/rows/{entity_id}", response_model=BoardRow)

@@ -9693,6 +9693,8 @@ body.performance-mode .glass-card:hover {
 
 /* Узкие колонки: отметки, оффер, аватар */
 .hf-statuses-td-narrow { width: 44px; text-align: center; }
+/* Колонка «HR»: 44px хватало на аватарку, но не на метки сорсеров рядом. */
+.hf-statuses-td-assignee { min-width: 132px; text-align: center; }
 
 .hf-statuses-pill {
   display: inline-block;
@@ -9721,7 +9723,30 @@ body.performance-mode .glass-card:hover {
 .hf-statuses-empty-cell:hover { color: var(--hf-cyan-600); }
 
 /* Ведущий HR: аватар с инициалами поверх невидимого select */
-.hf-statuses-assignee { position: relative; display: grid; place-items: center; }
+/* HR + метки-сорсеры в одной ячейке (решение юзера — не разводить по колонкам).
+   Раньше тут центрировалась одна аватарка (grid/place-items), теперь строка:
+   аватарка, затем метки. Без сорсеров выглядит как прежде — по центру. */
+.hf-statuses-assignee {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+/* Метка сорсера: те же пилюли, что на карточке кандидата, только мельче.
+   pointer-events снимаем — клик по ячейке должен открывать выбор HR, который
+   лежит невидимым select'ом поверх. */
+.hf-statuses-sourcer {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: var(--hf-fs-6xs);
+  font-weight: var(--hf-fw-medium);
+  white-space: nowrap;
+  pointer-events: none;
+}
 .hf-statuses-assignee-select {
   position: absolute; inset: 0;
   width: 100%; height: 100%;

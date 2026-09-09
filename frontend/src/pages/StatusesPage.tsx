@@ -758,7 +758,7 @@ function Row({
         </div>
       </td>
 
-      <td className="hf-statuses-td hf-statuses-td-narrow">
+      <td className="hf-statuses-td hf-statuses-td-assignee">
         <AssigneeCell
           row={row}
           people={people}
@@ -1089,7 +1089,18 @@ function PillCell({
   );
 }
 
-/** HR, ведущий сотрудника. В ClickUp это Assignee с аватаром-инициалами. */
+/** HR, ведущий сотрудника, и метки-сорсеры рядом.
+ *
+ * HR берётся из воронки, если руками его не выбрали: кандидат и сотрудник —
+ * одна и та же запись, так что рекрутёр, который вёл человека в подборе, тут
+ * известен. Раньше колонку заполняли заново вручную, и она у всех стояла
+ * пустая. Авто-значение показываем блёкло и курсивом — тот же приём, что у вех
+ * 1/3/12 месяцев на этой же доске; выбор руками его перебивает.
+ *
+ * Сорсеры (кто привёл человека) живут в ОДНОЙ колонке с HR — так решил юзер.
+ * Чтобы они не сливались, HR идёт аватаркой с именем, а сорсеры — цветными
+ * метками, как на карточке кандидата.
+ */
 function AssigneeCell({
   row, people, onSave,
 }: {
@@ -1100,13 +1111,19 @@ function AssigneeCell({
   const initials = (row.assignee_name || "")
     .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
+  const sourcers = row.sourcers ?? [];
+
   return (
     <div className="hf-statuses-assignee">
       <select
         className="hf-statuses-assignee-select"
-        value={row.assignee_user_id ?? ""}
+        value={row.assignee_auto ? "" : (row.assignee_user_id ?? "")}
         onChange={(e) => onSave(e.target.value ? Number(e.target.value) : null)}
-        title={row.assignee_name || "не назначен"}
+        title={
+          row.assignee_auto
+            ? `${row.assignee_name} — из воронки. Выберите, чтобы закрепить другого.`
+            : (row.assignee_name || "не назначен")
+        }
       >
         <option value="">—</option>
         {/* назначенный ранее мог потерять роль HR — не теряем его из виду */}
@@ -1123,13 +1140,32 @@ function AssigneeCell({
       {initials ? (
         <span
           className="hf-statuses-avatar"
-          style={{ background: `hsl(${pillHue(row.assignee_name || "")} 60% 45%)` }}
+          style={{
+            background: `hsl(${pillHue(row.assignee_name || "")} 60% 45%)`,
+            // Из воронки — приглушаем, чтобы отличалось от выбранного руками.
+            opacity: row.assignee_auto ? 0.55 : 1,
+          }}
+          title={row.assignee_auto ? `${row.assignee_name} — из воронки` : row.assignee_name || ""}
         >
           {initials}
         </span>
       ) : (
         <span className="hf-statuses-avatar hf-statuses-avatar-empty">—</span>
       )}
+      {sourcers.map((t) => (
+        <span
+          key={t.id}
+          className="hf-statuses-sourcer"
+          title={`Привёл: ${t.name}`}
+          style={{
+            backgroundColor: `color-mix(in srgb, ${t.color} 12%, transparent)`,
+            color: t.color,
+            border: `1px solid color-mix(in srgb, ${t.color} 25%, transparent)`,
+          }}
+        >
+          {t.name}
+        </span>
+      ))}
     </div>
   );
 }

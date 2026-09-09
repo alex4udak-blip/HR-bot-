@@ -70,12 +70,19 @@ SECOND_FUNNEL = ("Гилев Данила", "Head of User Acquisition", Applicat
 # (BOARD_STATUSES в staff_board.py). Без этих записей страница пустая, и
 # посмотреть колонку «HR» не на чем. Колонку намеренно заполняем НЕ всем:
 # сейчас она заполняется только руками, и прочерки — честное текущее состояние.
-# (имя, должность, статус, ответственный HR или None)
+# (имя, должность, статус, ответственный HR руками или None, воронка, кто вёл)
+# Колонка «HR» намеренно заполнена руками не у всех: там, где её нет, значение
+# подставляется из воронки и показывается блёкло. Так на доске видно оба случая.
 STAFF = [
-    ("Романов Артём", "Digital-маркетолог", EntityStatus.transferred, "recruiter.test@example.com"),
-    ("Ковалёв Игорь", "Media Buyer", EntityStatus.transferred, None),
-    ("Никитина Ольга", "SEO-специалист", EntityStatus.probation, None),
-    ("Карменов Тимур", "Influence Marketing", EntityStatus.dismissed, "recruiter2.test@example.com"),
+    ("Романов Артём", "Digital-маркетолог", EntityStatus.transferred,
+     "recruiter.test@example.com", "User Acquisition Manager", "recruiter.test@example.com"),
+    ("Ковалёв Игорь", "Media Buyer", EntityStatus.transferred,
+     None, "Head of User Acquisition", "recruiter2.test@example.com"),
+    ("Никитина Ольга", "SEO-специалист", EntityStatus.probation,
+     None, "User Acquisition Manager", "recruiter.test@example.com"),
+    # Уволен и ни в какой воронке — колонка «HR» останется пустой.
+    ("Карменов Тимур", "Influence Marketing", EntityStatus.dismissed,
+     "recruiter2.test@example.com", None, None),
 ]
 
 
@@ -173,27 +180,35 @@ async def main() -> None:
         name, vac_title, stage, adder_email = SECOND_FUNNEL
         await _ensure_application(db, vacs[vac_title], ents[name], stage, users[adder_email])
 
-        for name, position, status, hr_email in STAFF:
+        for name, position, status, hr_email, vac_title, funnel_hr in STAFF:
             ent = (await db.execute(select(Entity).where(
                 Entity.org_id == org.id, Entity.name == name
             ))).scalar_one_or_none()
-            if ent is not None:
-                continue
-            extra = {"source": "seed"}
-            if hr_email:
-                # Ключ доски — staff_board._K_ASSIGNEE.
-                extra["assignee_user_id"] = users[hr_email].id
-            db.add(Entity(
-                org_id=org.id,
-                type=EntityType.candidate,
-                name=name,
-                position=position,
-                status=status,
-                created_by=users[hr_email or "maria@mstech.io"].id,
-                extra_data=extra,
-            ))
-            who = users[hr_email].name if hr_email else "HR не проставлен"
-            print(f"  + сотрудник {name} — {status.value}, {who}")
+            if ent is None:
+                extra = {"source": "seed"}
+                if hr_email:
+                    # Ключ доски — staff_board._K_ASSIGNEE.
+                    extra["assignee_user_id"] = users[hr_email].id
+                ent = Entity(
+                    org_id=org.id,
+                    type=EntityType.candidate,
+                    name=name,
+                    position=position,
+                    status=status,
+                    created_by=users[funnel_hr or hr_email or "maria@mstech.io"].id,
+                    extra_data=extra,
+                )
+                db.add(ent)
+                await db.flush()
+                who = users[hr_email].name if hr_email else "HR руками не проставлен"
+                print(f"  + сотрудник {name} — {status.value}, {who}")
+            ents[name] = ent
+            # Заявка в воронке: из неё берётся HR, когда руками не выбрали.
+            if vac_title and funnel_hr:
+                stage = (ApplicationStage.probation
+                         if status == EntityStatus.probation
+                         else ApplicationStage.transferred)
+                await _ensure_application(db, vacs[vac_title], ent, stage, users[funnel_hr])
 
         await db.commit()
 

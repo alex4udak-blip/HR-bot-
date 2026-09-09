@@ -34,6 +34,10 @@ export interface BoardRow {
   /** HR, ведущий сотрудника (колонка Assignee в ClickUp) */
   assignee_user_id: number | null;
   assignee_name: string | null;
+  /** HR подставлен из воронки, а не выбран руками — показываем блёкло. */
+  assignee_auto?: boolean;
+  /** Метки-сорсеры: кто привёл этого человека. */
+  sourcers?: { id: number; name: string; color: string }[];
   dismissal_date: string | null;
   /** отметки «веха пройдена» — парные колонки в скобках из ClickUp */
   dept_done: boolean;
