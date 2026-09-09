@@ -113,3 +113,6 @@ docs/superpowers/
 # Сборка Telegram Mini App — делается в Docker, в репозитории не нужна
 frontend/dist-miniapp/
 backend/static-miniapp/
+
+# Локальный env для launch.json (macOS)
+backend/dev.env

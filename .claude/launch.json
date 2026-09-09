@@ -10,6 +10,13 @@
     },
     {
       "name": "backend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "set -a && . ./dev.env && set +a && exec ./.venv/bin/python -m uvicorn main:app --reload --port 8000"],
+      "port": 8000,
+      "cwd": "backend"
+    },
+    {
+      "name": "backend-windows",
       "runtimeExecutable": "powershell.exe",
       "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "start_dev.ps1"],
       "port": 8000,
