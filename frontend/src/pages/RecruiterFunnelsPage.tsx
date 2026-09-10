@@ -267,6 +267,13 @@ export default function RecruiterFunnelsPage() {
   const arrivedViaSharedCandidateRef = useRef(
     !!(searchParams.get('v') && searchParams.get('entity')),
   );
+  // Сам кандидат из ссылки — тоже только на маунте. Живой ?entity= для этого не
+  // годится: страница переписывает его при каждом выборе кандидата, и после смены
+  // фильтра («Только мои» → выкл) в «воронке Марии» застревал последний выбранный
+  // чужой кандидат.
+  const linkedEntityOnMountRef = useRef<number | null>(
+    Number(searchParams.get('entity')) || null,
+  );
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
@@ -736,18 +743,18 @@ export default function RecruiterFunnelsPage() {
   //    срезали бы у админа со-рекрутёрских кандидатов: их сервер включает, а в
   //    ответе нет поля, по которому фронт мог бы их узнать (только created_by);
   //  • «Только мои» явно сильнее выбора рекрутёра — фильтр не накладываем;
-  //  • кандидат из ссылки (?entity=) остаётся в списке всегда — иначе ссылка на
-  //    со-рекрутёрского кандидата открывала бы пустое окно.
+  //  • кандидат из ССЫЛКИ (?entity= на момент открытия страницы) остаётся в списке
+  //    всегда — иначе ссылка на со-рекрутёрского кандидата открывала бы пустое окно.
   // Без ?recruiter= (просто /my-funnels) фильтра нет — видны все кандидаты воронки.
   const recruiterScopedCandidates = useMemo(() => {
     if (selectedRecruiterFilter == null) return candidates;
     if (superadminOnlyMine) return candidates;
     if (candidateScopeRecruiterId === selectedRecruiterFilter) return candidates;
-    const linkedEntity = Number(searchParams.get('entity')) || null;
+    const linkedEntity = linkedEntityOnMountRef.current;
     return candidates.filter(
       (c) => c.created_by === selectedRecruiterFilter || c.entity_id === linkedEntity,
     );
-  }, [candidates, selectedRecruiterFilter, superadminOnlyMine, candidateScopeRecruiterId, searchParams]);
+  }, [candidates, selectedRecruiterFilter, superadminOnlyMine, candidateScopeRecruiterId]);
 
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return recruiterScopedCandidates;
