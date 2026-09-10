@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { sanitizeHtml } from "../utils/sanitizeHtml";
 import { formatSalary } from "@/utils/currency";
 import { parseServerDate } from "@/utils/date";
-import { isRequestVisibleTo, isPersonallyActive, hasPersonallyAccepted } from "@/utils/vacancy";
+import { isRequestVisibleTo, isPersonallyActive, hasPersonallyAccepted, isExplicitlyAssigned } from "@/utils/vacancy";
 import {
   LayoutDashboard,
   Users,
@@ -419,8 +419,9 @@ export function SidebarRequestPreviewModal({
           <button type="button" onClick={onEdit} className="hf-vacancy-secondary-btn">
             Редактировать
           </button>
-          {/* «Отказаться» — только рекрутёр (member): снимает себя с заявки. */}
-          {!isModalAdmin && (
+          {/* «Отказаться» — снимает себя с заявки: рекрутёр всегда, админ — если его
+              ЯВНО назначили (раньше админ не мог отказаться вовсе, 2026-09-10). */}
+          {(!isModalAdmin || isExplicitlyAssigned(vacancy, user?.id)) && (
             <button
               type="button"
               onClick={handleDecline}
@@ -872,9 +873,20 @@ export default function Layout() {
   const hrFunnelsPickerRef = useRef<HTMLDivElement | null>(null);
   // Фильтр «чьи вакансии показывать» в попапе «Мои вакансии» (2026-07-09):
   // null = свои (текущий юзер), иначе — id выбранного рекрутёра из числа тех,
-  // кто лично принял хотя бы одну вакансию (accepted_by). Сбрасывается при
-  // перезагрузке страницы — это быстрая линза, а не постоянная настройка.
-  const [pickerOwnerId, setPickerOwnerId] = useState<number | null>(null);
+  // кто лично принял хотя бы одну вакансию (accepted_by). На «Мои вакансии»
+  // выбор живёт и в URL (?recruiter=) — оттуда же и восстанавливаем: F5 должен
+  // оставлять «Вакансии: Мария», а не сбрасывать на «Мои вакансии» (решение
+  // юзера 2026-09-10). recruiter = я — это «Я» (null).
+  const urlPickerOwnerId = (() => {
+    if (location.pathname !== "/my-funnels") return undefined;
+    const raw = Number(new URLSearchParams(location.search).get("recruiter"));
+    if (!Number.isFinite(raw) || raw <= 0) return undefined;
+    return raw === user?.id ? null : raw;
+  })();
+  const [pickerOwnerId, setPickerOwnerId] = useState<number | null>(urlPickerOwnerId ?? null);
+  useEffect(() => {
+    if (urlPickerOwnerId !== undefined) setPickerOwnerId(urlPickerOwnerId);
+  }, [urlPickerOwnerId]);
   const [pickerSearch, setPickerSearch] = useState("");
   const [pickerUsersById, setPickerUsersById] = useState<Record<number, string>>({});
   useEffect(() => {
@@ -1372,15 +1384,6 @@ export default function Layout() {
   const canManageFactorialPeople = isHrSidebarAdmin || user?.org_role === "hr";
   const sidebarSearchParams = new URLSearchParams(location.search);
   const sidebarSelectedVacancyId = sidebarSearchParams.get("v");
-  // Скоуп воронки по рекрутёру живёт в URL (?recruiter=), а pickerOwnerId — отдельный
-  // стейт сайдбара. Если смотришь чужую воронку через URL (шаринг/переход), pickerOwnerId
-  // может быть пуст — и ссылка вакансии роняла ?recruiter=, а на клике воронка грузила
-  // ВСЕХ кандидатов (не только этого рекрутёра). Берём recruiter как pickerOwnerId ИЛИ
-  // текущий ?recruiter= из URL, чтобы клик по вакансии сохранял скоуп.
-  const sidebarUrlRecruiter =
-    location.pathname === "/my-funnels"
-      ? sidebarSearchParams.get("recruiter")
-      : null;
   const isClosedFunnelsView =
     location.pathname === "/my-funnels" &&
     sidebarSearchParams.get("status") === "closed";
@@ -1914,11 +1917,11 @@ export default function Layout() {
                         <NavLink
                           key={v.id}
                           to={(() => {
-                            const rec =
-                              pickerOwnerId != null
-                                ? String(pickerOwnerId)
-                                : sidebarUrlRecruiter;
-                            return rec
+                            // Воронка из сайдбара всегда со скоупом: выбранный
+                            // владелец, а у «Я» — свой id (своя воронка отсюда =
+                            // только свои кандидаты, решение юзера 2026-09-10).
+                            const rec = pickerOwnerId ?? user?.id ?? null;
+                            return rec != null
                               ? `/my-funnels?v=${v.id}&recruiter=${rec}`
                               : `/my-funnels?v=${v.id}`;
                           })()}

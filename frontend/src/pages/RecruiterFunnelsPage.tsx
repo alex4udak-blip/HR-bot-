@@ -723,6 +723,15 @@ export default function RecruiterFunnelsPage() {
   // наблюдателя уже чинили).
   const isForeignContext =
     selectedRecruiterFilter != null && selectedRecruiterFilter !== user?.id;
+  // Своя воронка из сайдбара («Я» → вакансия, ?recruiter=<я>) — только свои
+  // кандидаты, кнопке тут переключать нечего.
+  const isSelfContext = selectedRecruiterFilter != null && selectedRecruiterFilter === user?.id;
+  // «Только мои» имеет смысл только в воронке, которая у человека В РАБОТЕ (лично
+  // взял — как в сайдбаре «Мои вакансии»). В воронке не в работе своих кандидатов
+  // нет — кнопка выключена и неактивна. Пока вакансия не загрузилась — считаем
+  // «в работе», чтобы список не перегружался дважды.
+  const worksOnFunnel = !selectedVacancy || (!!user && isPersonallyActive(selectedVacancy, user.id));
+  const onlyMineAvailable = worksOnFunnel && !isSelfContext;
   const ownOnlyMine = storedOwnOnlyMine ?? !(isSuperadmin || user?.is_readonly);
   const [foreignOnlyMine, setForeignOnlyMine] = useState(() => {
     if (!isDocumentReloadOfCurrentUrl()) return false;
@@ -739,8 +748,9 @@ export default function RecruiterFunnelsPage() {
       writeFunnelSession(FOREIGN_ONLY_MINE_KEY, { v: selectedVacancyId, r: selectedRecruiterFilter });
     }
   }, [foreignOnlyMine, selectedVacancyId, selectedRecruiterFilter]);
-  const onlyMine = isForeignContext ? foreignOnlyMine : ownOnlyMine;
+  const onlyMine = !onlyMineAvailable ? false : isForeignContext ? foreignOnlyMine : ownOnlyMine;
   const setOnlyMine = (value: boolean) => {
+    if (!onlyMineAvailable) return;
     setSharedEntryEntityId(null);
     if (isForeignContext) setForeignOnlyMine(value);
     else setStoredOwnOnlyMine(value);
@@ -774,7 +784,7 @@ export default function RecruiterFunnelsPage() {
   //    «только своих» даёт кнопка, и /my-funnels для всех ролей значит «все».
   const candidateScopeRecruiterId = arrivedViaSharedCandidate
     ? undefined
-    : onlyMine
+    : onlyMine || isSelfContext
     ? (user?.id ?? undefined)
     : !isHrAdmin
       ? undefined
@@ -2055,9 +2065,12 @@ export default function RecruiterFunnelsPage() {
     }
   }, [showVacancyTopSearch]);
 
+  // Своё меню «Рекрутеры» этой страницы — только для HR-админа. Выбор владельца
+  // из сайдбара (?recruiter=) при этом действует для ВСЕХ ролей: рекрутёр в
+  // «Вакансии: Мария» видит кандидатов Марии (решение юзера 2026-09-10; раньше
+  // здесь фильтр у не-админа сбрасывался и он видел всю воронку).
   useEffect(() => {
     if (isHrAdmin) return;
-    setSelectedRecruiterFilter(null);
     setShowRecruiterMenu(false);
     setRecruiterSearch('');
   }, [isHrAdmin]);
@@ -2812,14 +2825,22 @@ export default function RecruiterFunnelsPage() {
                 {(
                   <div className="flex items-center px-3 sm:px-5 py-2 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
                     <label
-                      className="group inline-flex items-center cursor-pointer select-none"
-                      title={isForeignContext
-                        ? 'Показать в этой воронке только кандидатов, которых добавил я. Выключится само, когда уйдёте из воронки.'
-                        : 'Показывать только кандидатов, которых добавил я. Снимите — будут видны все, выбор запомнится.'}
+                      className={clsx(
+                        'group inline-flex items-center select-none',
+                        onlyMineAvailable ? 'cursor-pointer' : 'cursor-default opacity-50',
+                      )}
+                      title={isSelfContext
+                        ? 'Это ваша воронка из «Мои вакансии» — здесь показаны только ваши кандидаты.'
+                        : !worksOnFunnel
+                          ? 'Эта воронка не у вас в работе — ваших кандидатов в ней нет, фильтр недоступен.'
+                          : isForeignContext
+                            ? 'Показать в этой воронке только кандидатов, которых добавил я. Выключится само, когда уйдёте из воронки.'
+                            : 'Показывать только кандидатов, которых добавил я. Снимите — будут видны все, выбор запомнится.'}
                     >
                       <input
                         type="checkbox"
-                        checked={onlyMine}
+                        checked={isSelfContext || onlyMine}
+                        disabled={!onlyMineAvailable}
                         onChange={(e) => setOnlyMine(e.target.checked)}
                         className="peer sr-only"
                       />

@@ -35,7 +35,7 @@ import {
   VacancyStatusBadge,
 } from '@/components/vacancies';
 import { SidebarRequestPreviewModal } from '@/components/Layout';
-import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds, isExplicitlyAssigned } from '@/utils/vacancy';
 import {
   ContextMenu,
   createVacancyContextMenu,
@@ -933,7 +933,10 @@ export default function VacanciesPage() {
                 const closedDate = getClosedVacancyDate(vacancy);
                 const salaryDisplay = getSalaryDisplay(vacancy);
                 const employmentLabel = getEmploymentTypeLabel(vacancy.employment_type);
-                const isRequestForMe = !isAdmin && user && vacancy.created_by !== user.id && isAssignedToMe(vacancy);
+                // Админ — как рекрутёр, если его ЯВНО назначили: тоже может взять заявку в
+                // работу (раньше кнопки у админа не было вовсе, 2026-09-10).
+                const isRequestForMe = !!user && vacancy.created_by !== user.id &&
+                  (isAdmin ? isExplicitlyAssigned(vacancy, user.id) : isAssignedToMe(vacancy));
                 const isAlreadyAssigned = vacancy.assigned_to_all || (vacancy.assigned_to && vacancy.assigned_to.length > 0);
                 const showAdminAssign = isAdmin && (
                   vacancy.status === 'pending_review' ||
@@ -958,6 +961,13 @@ export default function VacanciesPage() {
                         ? { ...it, label: 'Отказаться', icon: X }
                         : it
                     ),
+                    // Назначенный админ может и отказаться (удаление у него остаётся).
+                    ...(isAdmin && user && isExplicitlyAssigned(vacancy, user.id) ? [{
+                      id: 'decline',
+                      label: 'Отказаться',
+                      icon: X,
+                      onClick: () => handleDecline(vacancy),
+                    }] : []),
                     ...(vacancy.status === 'open' || vacancy.status === 'paused' ? [{
                       id: 'close',
                       label: 'Закрыть заявку',

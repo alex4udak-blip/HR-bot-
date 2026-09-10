@@ -14,7 +14,7 @@ import type { Vacancy, VacancyStatus } from '@/types';
 import { getAssignableUsers, assignVacancy, takeVacancy, declineVacancy } from '@/services/api';
 import type { AssignableUser } from '@/services/api';
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
-import { isVacancyParticipant, otherActiveParticipants, hasPersonallyAccepted } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, hasPersonallyAccepted, isExplicitlyAssigned } from '@/utils/vacancy';
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
@@ -447,6 +447,9 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
   const isMineByOwnership = !!(user && vacancy && (vacancy.created_by === user.id || vacancy.hiring_manager_id === user.id));
   const isAssignedToMe = !!(user && vacancy && (vacancy.assigned_to_all || (vacancy.assigned_to || []).includes(user.id)));
+  // Админа, которого ЯВНО назначили, считаем участником наравне с рекрутёром:
+  // он тоже может отказаться (2026-09-10).
+  const isExplicitlyAssignedToMe = !!(user && vacancy && isExplicitlyAssigned(vacancy, user.id));
   const canEditVacancy = isAdmin || isMineByOwnership || isAssignedToMe;
   const isReadOnlyRequest = !!vacancy && !canEditVacancy;
 
@@ -1159,7 +1162,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                         Закрыть вакансию
                       </button>
                     )}
-                    {!isAdmin && (
+                    {(!isAdmin || isExplicitlyAssignedToMe) && (
                       <button
                         type="button"
                         onClick={handleDecline}

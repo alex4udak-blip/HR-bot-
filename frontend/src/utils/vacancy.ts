@@ -18,6 +18,18 @@ export function isVacancyParticipant(v: Vacancy, userId: number | undefined | nu
 }
 
 /**
+ * Юзера ЯВНО назначили на вакансию (он в assigned_to и не «закрыл у себя»).
+ * Без создателя и без assigned_to_all — для админа это разные вещи: заявку он
+ * мог создать чисто для раздачи, а «всем рекрутёрам» его не касается.
+ */
+export function isExplicitlyAssigned(v: Vacancy, userId: number | undefined | null): boolean {
+  if (!userId) return false;
+  const dismissed = ((v.extra_data as Record<string, unknown> | undefined)?.dismissed_by as number[] | undefined) || [];
+  if (dismissed.includes(userId)) return false;
+  return (v.assigned_to || []).includes(userId);
+}
+
+/**
  * Личное принятие заявки, 2026-07-08: «воронка общая, но заявку каждый
  * берёт сам». Взятие статуса вакансии в open происходит один раз (при
  * первом чьём-либо «Взять в работу»), но это НЕ означает, что все
@@ -69,7 +81,12 @@ export function isRequestVisibleTo(
     // в работу (take_into_work: pending_review/draft → open), заявка уходит из сайдбара
     // админа. Раньше здесь было `return !assigned` — заявка пропадала сразу после
     // НАЗНАЧЕНИЯ, хотя в работу её ещё не взяли (жалоба Марии: назначаю → исчезает).
-    return v.status === "pending_review" || v.status === "draft";
+    if (v.status === "pending_review" || v.status === "draft") return true;
+    // Плюс — как у рекрутёра — вакансии, куда админа ЯВНО назначили, а он её ещё
+    // лично не взял (взял кто-то другой, статус уже open). Раньше админ их не видел
+    // нигде — ни тут, ни в «Мои вакансии» — и не мог присоединиться к общей
+    // воронке, хотя рядовой рекрутёр мог (2026-09-10, «даунгрейд Марии»).
+    return isExplicitlyAssigned(v, userId) && !isPersonallyActive(v, userId);
   }
   return isVacancyParticipant(v, userId) && !isPersonallyActive(v, userId);
 }
