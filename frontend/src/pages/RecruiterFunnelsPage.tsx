@@ -723,10 +723,36 @@ export default function RecruiterFunnelsPage() {
   // порядок слов + опечатки, как серверный pg_trgm в «Все кандидаты»); по
   // email/телефону — обычная подстрока; по telegram — ВСЕ ники кандидата +
   // текст комментариев карточки; запрос с «@» — строгий режим (только тг/комменты).
+  // «Вакансии: Мария» в сайдбаре (?recruiter=) — показываем только кандидатов
+  // выбранного рекрутёра. Для админа это делает сервер (created_by в запросе,
+  // вместе со со-рекрутёрами). А обычному рекрутёру сервер фильтр по КОЛЛЕГЕ не
+  // применяет: принимает created_by только на самого себя, и на воронке «Видна
+  // коллегам» отдаёт всех. Раньше это не проявлялось — чужие воронки рекрутёр не
+  // видел; с 2026-09-07 видит, и в «воронке Марии» вперемешку лезли кандидаты
+  // Влады. Бэкенд по решению юзера не трогаем — фильтруем здесь.
+  //
+  // Правила:
+  //  • фильтр только если сервер НЕ отфильтровал сам на того же рекрутёра — иначе
+  //    срезали бы у админа со-рекрутёрских кандидатов: их сервер включает, а в
+  //    ответе нет поля, по которому фронт мог бы их узнать (только created_by);
+  //  • «Только мои» явно сильнее выбора рекрутёра — фильтр не накладываем;
+  //  • кандидат из ссылки (?entity=) остаётся в списке всегда — иначе ссылка на
+  //    со-рекрутёрского кандидата открывала бы пустое окно.
+  // Без ?recruiter= (просто /my-funnels) фильтра нет — видны все кандидаты воронки.
+  const recruiterScopedCandidates = useMemo(() => {
+    if (selectedRecruiterFilter == null) return candidates;
+    if (superadminOnlyMine) return candidates;
+    if (candidateScopeRecruiterId === selectedRecruiterFilter) return candidates;
+    const linkedEntity = Number(searchParams.get('entity')) || null;
+    return candidates.filter(
+      (c) => c.created_by === selectedRecruiterFilter || c.entity_id === linkedEntity,
+    );
+  }, [candidates, selectedRecruiterFilter, superadminOnlyMine, candidateScopeRecruiterId, searchParams]);
+
   const filteredCandidates = useMemo(() => {
-    if (!candidateSearch.trim()) return candidates;
-    return candidates.filter((c) => funnelSearchMatch(candidateSearch, c));
-  }, [candidates, candidateSearch]);
+    if (!candidateSearch.trim()) return recruiterScopedCandidates;
+    return recruiterScopedCandidates.filter((c) => funnelSearchMatch(candidateSearch, c));
+  }, [recruiterScopedCandidates, candidateSearch]);
 
   // Derive stages config from custom_stages or fallback to defaults
   // Each column has a unique `key` and optional `maps_to` (the real DB enum value)
@@ -2537,7 +2563,7 @@ export default function RecruiterFunnelsPage() {
                   {selectedVacancy.title?.trim() || 'Без названия'}{selectedVacancy.department_name ? ` · ${selectedVacancy.department_name}` : ''}
                 </span>
                 <span className="hf-vacancy-counter text-xs text-[var(--hf-dark-500)] ml-1 sm:ml-2 flex-shrink-0">
-                  {candidates.length}
+                  {recruiterScopedCandidates.length}
                 </span>
               </div>
 
