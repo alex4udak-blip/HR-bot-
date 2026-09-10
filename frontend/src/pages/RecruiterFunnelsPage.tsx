@@ -189,6 +189,33 @@ function isDocumentReloadOfCurrentUrl(): boolean {
   return documentReloadHref != null;
 }
 
+// Состояние воронки, которое должно пережить F5 в этой вкладке, но не новую
+// вкладку и не новую ссылку, — sessionStorage.
+const SHARED_ENTRY_KEY = 'funnel_shared_entry';
+const FOREIGN_ONLY_MINE_KEY = 'funnel_foreign_only_mine';
+function readFunnelSession<T>(key: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+function writeFunnelSession(key: string, value: unknown) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* приватный режим — просто не запомним */
+  }
+}
+function removeFunnelSession(key: string) {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    /* noop */
+  }
+}
+
 function groupAcceptorIds(v: Vacancy): number[] {
   const acceptedBy = ((v.extra_data as Record<string, unknown> | undefined)?.accepted_by as number[] | undefined) || [];
   return acceptedBy.length > 0 ? acceptedBy : [0];
@@ -284,16 +311,27 @@ export default function RecruiterFunnelsPage() {
   // ссылке) — а сам кандидат из ссылки остаётся в списке при любом фильтре.
   // Хранится id кандидата из URL на момент открытия: живой ?entity= не годится,
   // страница переписывает его при каждом выборе кандидата.
-  //  • F5 — НЕ ссылка: ?entity= туда записала сама страница. Иначе после
-  //    перезагрузки в «воронке Марии» застревал последний открытый чужой кандидат
-  //    (прод, 2026-09-10: Шатилов с меткой Влады в «Вакансии: Мария»).
+  //  • F5 — НЕ новая ссылка: ?entity= туда записала сама страница. F5 обязан
+  //    вернуть ровно то, что было на экране (решение юзера 2026-09-10), поэтому
+  //    кандидат из ссылки запоминается в sessionStorage вкладки и после F5
+  //    восстанавливается оттуда, а не из ?entity=. Иначе после перезагрузки в
+  //    «воронке Марии» застревал последний открытый чужой кандидат (прод,
+  //    2026-09-10: Шатилов с меткой Влады в «Вакансии: Мария»).
   //  • Режим живёт до первого своего действия — смена воронки, рекрутёра или
   //    «Только мои» (см. эффект у onlyMine ниже).
   const [sharedEntryEntityId, setSharedEntryEntityId] = useState<number | null>(() => {
-    const entityId = Number(searchParams.get('entity')) || null;
-    if (!searchParams.get('v') || entityId == null) return null;
-    return isDocumentReloadOfCurrentUrl() ? null : entityId;
+    const vacancyId = Number(searchParams.get('v')) || null;
+    if (vacancyId == null) return null;
+    if (isDocumentReloadOfCurrentUrl()) {
+      const saved = readFunnelSession<{ v: number; entityId: number }>(SHARED_ENTRY_KEY);
+      return saved?.v === vacancyId ? saved.entityId : null;
+    }
+    return Number(searchParams.get('entity')) || null;
   });
+  useEffect(() => {
+    if (sharedEntryEntityId == null || selectedVacancyId == null) removeFunnelSession(SHARED_ENTRY_KEY);
+    else writeFunnelSession(SHARED_ENTRY_KEY, { v: selectedVacancyId, entityId: sharedEntryEntityId });
+  }, [sharedEntryEntityId, selectedVacancyId]);
   const arrivedViaSharedCandidate = sharedEntryEntityId != null;
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
@@ -679,34 +717,48 @@ export default function RecruiterFunnelsPage() {
   //  • ЧУЖАЯ воронка (в сайдбаре выбран другой рекрутёр) — кнопка ВЫКЛЮЧЕНА,
   //    видны кандидаты этого рекрутёра. Включил — видишь в его воронке своих.
   //    Это временно: ушёл из воронки — кнопка отжимается и не запоминается.
+  //    F5 уходом не считается — состояние кнопки держится в sessionStorage вкладки.
   // Наблюдателю и суперадмину по умолчанию «выключено»: сами они кандидатов не
   // добавляют, и с включённой кнопкой видели бы пустые воронки (такой баг у
   // наблюдателя уже чинили).
   const isForeignContext =
     selectedRecruiterFilter != null && selectedRecruiterFilter !== user?.id;
   const ownOnlyMine = storedOwnOnlyMine ?? !(isSuperadmin || user?.is_readonly);
-  const [foreignOnlyMine, setForeignOnlyMine] = useState(false);
+  const [foreignOnlyMine, setForeignOnlyMine] = useState(() => {
+    if (!isDocumentReloadOfCurrentUrl()) return false;
+    const saved = readFunnelSession<{ v: number; r: number }>(FOREIGN_ONLY_MINE_KEY);
+    return (
+      saved != null &&
+      saved.v === (Number(searchParams.get('v')) || null) &&
+      saved.r === (Number(searchParams.get('recruiter')) || null)
+    );
+  });
   useEffect(() => {
-    // Любой уход из чужой воронки — другая воронка или другой рекрутёр —
-    // отжимает временную кнопку.
-    setForeignOnlyMine(false);
-  }, [selectedVacancyId, selectedRecruiterFilter]);
+    if (!foreignOnlyMine) removeFunnelSession(FOREIGN_ONLY_MINE_KEY);
+    else if (selectedVacancyId != null && selectedRecruiterFilter != null) {
+      writeFunnelSession(FOREIGN_ONLY_MINE_KEY, { v: selectedVacancyId, r: selectedRecruiterFilter });
+    }
+  }, [foreignOnlyMine, selectedVacancyId, selectedRecruiterFilter]);
   const onlyMine = isForeignContext ? foreignOnlyMine : ownOnlyMine;
   const setOnlyMine = (value: boolean) => {
     setSharedEntryEntityId(null);
     if (isForeignContext) setForeignOnlyMine(value);
     else setStoredOwnOnlyMine(value);
   };
-  // Режим шаринг-ссылки заканчивается, как только юзер ушёл в другую воронку или к
-  // другому рекрутёру. null → X по рекрутёру — не уход: это URL-синк на маунте и
-  // восстановление владельца для ссылки без ?recruiter= (эффект выше).
+  // Уход в другую воронку или к другому рекрутёру заканчивает режим шаринг-ссылки
+  // и отжимает временную «Только мои» чужой воронки. null → X по рекрутёру — не
+  // уход: это URL-синк на маунте и восстановление владельца для ссылки без
+  // ?recruiter= (эффект выше).
   const sharedEntryContextRef = useRef({ v: selectedVacancyId, r: selectedRecruiterFilter });
   useEffect(() => {
     const prev = sharedEntryContextRef.current;
     sharedEntryContextRef.current = { v: selectedVacancyId, r: selectedRecruiterFilter };
     const vacancyChanged = prev.v !== selectedVacancyId;
     const recruiterChanged = prev.r != null && prev.r !== selectedRecruiterFilter;
-    if (vacancyChanged || recruiterChanged) setSharedEntryEntityId(null);
+    if (vacancyChanged || recruiterChanged) {
+      setSharedEntryEntityId(null);
+      setForeignOnlyMine(false);
+    }
   }, [selectedVacancyId, selectedRecruiterFilter]);
 
   // Скоуп кандидатов на СЕРВЕРЕ:
@@ -1046,19 +1098,22 @@ export default function RecruiterFunnelsPage() {
 
   // Зеркалим выбранную вкладку статуса воронки в URL (?stage=<key>) — чтобы F5
   // оставлял рекрутёра на той же колонке (кандидат уже переживает F5 через ?entity=
-  // выше). 'all' — дефолт, поэтому его не пишем (просто чистим параметр). Функциональная
-  // форма setSearchParams(prev => …) сохраняет v/entity/status/recruiter; no-op guard
-  // возвращает prev без изменений, если значение не поменялось — защита от лишней
-  // записи в историю и от цикла с эффектом восстановления вкладки выше.
+  // выше). «Все» пишем тоже (stage=all): без этого F5 на «Все» открывал первую
+  // рабочую вкладку, а открытый кандидат терялся. Пока эффект авто-вкладки ниже не
+  // выставил вкладку для ЭТОЙ воронки — URL не трогаем: стартовое 'all' иначе
+  // перетёрло бы ?stage= из ссылки/F5. Функциональная форма setSearchParams(prev => …)
+  // сохраняет v/entity/status/recruiter; no-op guard возвращает prev без изменений,
+  // если значение не поменялось — защита от лишней записи в историю и от цикла с
+  // эффектом восстановления вкладки.
   useEffect(() => {
+    if (selectedVacancyId == null || autoTabVacancyRef.current !== selectedVacancyId) return;
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      if (!selectedTab || selectedTab === 'all') next.delete('stage');
-      else next.set('stage', selectedTab);
+      next.set('stage', selectedTab || 'all');
       if ((prev.get('stage') || '') === (next.get('stage') || '')) return prev;
       return next;
     }, { replace: true });
-  }, [selectedTab, setSearchParams]);
+  }, [selectedTab, selectedVacancyId, setSearchParams]);
 
   // Клик по вкладке-этапу: помимо смены стейта ПУШИМ ?stage= в историю, чтобы
   // браузерный «Назад» вернул на предыдущую вкладку вместе с открытым кандидатом
@@ -1070,8 +1125,7 @@ export default function RecruiterFunnelsPage() {
     setSelectedCandidateId(null);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      if (!key || key === 'all') next.delete('stage');
-      else next.set('stage', key);
+      next.set('stage', key || 'all');
       // Снимаем открытого кандидата из URL в том же push (он и так деселектится):
       // иначе ?entity= off-tab кандидата может отскочить/переспорить адопт при
       // смене вкладки. Предыдущая запись истории сохраняет entity — Back вернёт.
