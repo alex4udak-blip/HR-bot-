@@ -1,4 +1,6 @@
-const DEFAULT_SERVER_URL = 'https://enceladus.site';
+// ВРЕМЕННО (2026-09-10): enceladus.site ушёл в петлю редиректов, пока не
+// поправят DNS — работаем через saturn.ac. Вернуть на enceladus.site после починки.
+const DEFAULT_SERVER_URL = 'https://enceladus-7oylzk.saturn.ac';
 const REQUEST_TIMEOUT_MS = 25000;
 
 // Один и тот же бэк отвечает на двух доменах, и куки у них РАЗНЫЕ. Рабочий —
@@ -8,8 +10,8 @@ const REQUEST_TIMEOUT_MS = 25000;
 // иначе он молча не найдёт живую сессию. JWT общий (один jwt_secret и одна
 // база), поэтому токен с любого из доменов валиден на другом.
 const SESSION_ORIGINS = [
-  'https://enceladus.site',
   'https://enceladus-7oylzk.saturn.ac',
+  'https://enceladus.site',
 ];
 
 // ---- Авторизация: единственный владелец токенов ----
@@ -27,7 +29,9 @@ function normalizeServerUrl(raw) {
   const url = (raw || '').replace(/\/$/, '');
   if (!url) return DEFAULT_SERVER_URL;
   if (/localhost|127\.0\.0\.1/.test(url)) return url;
-  return SESSION_ORIGINS.includes(url) ? url : DEFAULT_SERVER_URL;
+  // Пока enceladus.site не работает, сохранённый адрес не уважаем — всегда
+  // рабочий DEFAULT_SERVER_URL (иначе продление сессии стучалось бы в петлю).
+  return DEFAULT_SERVER_URL;
 }
 
 async function readAuth() {
