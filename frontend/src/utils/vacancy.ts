@@ -106,6 +106,26 @@ export function getAcceptorIds(v: Vacancy): number[] {
   return v.created_by ? [v.created_by] : [];
 }
 
+/**
+ * Что предлагать вместо одной двусмысленной «Закрыть» (решение юзера 2026-09-10):
+ * две кнопки с однозначными названиями.
+ *  • «Выйти из вакансии» — снимаешь себя, у остальных участников она остаётся в
+ *    работе (POST /decline). Есть, пока в вакансии кроме тебя кто-то работает.
+ *  • «Закрыть вакансию» — закрывается у всех. Админу — всегда; остальным — когда
+ *    выйти нельзя (последний участник или не участник): закрытие рядовым
+ *    участником при других участниках бэкенд всё равно превращает в выход.
+ */
+export function getVacancyExitOptions(
+  v: Vacancy,
+  userId: number | undefined | null,
+  isAdmin: boolean,
+): { canLeave: boolean; canClose: boolean; others: number[] } {
+  const participant = isVacancyParticipant(v, userId);
+  const others = participant ? otherActiveParticipants(v, userId) : [];
+  const canLeave = participant && others.length > 0;
+  return { canLeave, canClose: isAdmin || !canLeave, others };
+}
+
 /** Активные участники, кроме указанного юзера (для вопроса «ты последний?»). */
 export function otherActiveParticipants(v: Vacancy, userId: number | undefined | null): number[] {
   const dismissed = new Set(

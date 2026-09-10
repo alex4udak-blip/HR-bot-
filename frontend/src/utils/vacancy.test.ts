@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Vacancy } from '@/types';
-import { isExplicitlyAssigned, isRequestVisibleTo } from './vacancy';
+import { getVacancyExitOptions, isExplicitlyAssigned, isRequestVisibleTo } from './vacancy';
 
 const ME = 3;
 const vac = (over: Partial<Vacancy> & { accepted_by?: number[]; dismissed_by?: number[] }): Vacancy => {
@@ -48,5 +48,23 @@ describe('isRequestVisibleTo — recruiter', () => {
   it('sees an assigned vacancy until taking it', () => {
     expect(isRequestVisibleTo(vac({ assigned_to: [ME], accepted_by: [4] }), ME, false)).toBe(true);
     expect(isRequestVisibleTo(vac({ assigned_to: [ME], accepted_by: [ME] }), ME, false)).toBe(false);
+  });
+});
+
+describe('getVacancyExitOptions', () => {
+  const shared = vac({ created_by: 4, assigned_to: [4, ME], accepted_by: [4, ME] });
+  const alone = vac({ created_by: ME, assigned_to: [ME], accepted_by: [ME] });
+  it('recruiter in a shared vacancy can only leave', () => {
+    expect(getVacancyExitOptions(shared, ME, false)).toMatchObject({ canLeave: true, canClose: false, others: [4] });
+  });
+  it('admin in a shared vacancy can both leave and close', () => {
+    expect(getVacancyExitOptions(shared, ME, true)).toMatchObject({ canLeave: true, canClose: true });
+  });
+  it('the last participant can only close', () => {
+    expect(getVacancyExitOptions(alone, ME, false)).toMatchObject({ canLeave: false, canClose: true });
+    expect(getVacancyExitOptions(alone, ME, true)).toMatchObject({ canLeave: false, canClose: true });
+  });
+  it('a non-participant admin can only close', () => {
+    expect(getVacancyExitOptions(shared, 77, true)).toMatchObject({ canLeave: false, canClose: true });
   });
 });

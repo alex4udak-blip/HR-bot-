@@ -20,6 +20,7 @@ import {
   Pencil,
   Archive,
   Trash2,
+  LogOut,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -35,7 +36,7 @@ import {
   VacancyStatusBadge,
 } from '@/components/vacancies';
 import { SidebarRequestPreviewModal } from '@/components/Layout';
-import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds, isExplicitlyAssigned } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds, isExplicitlyAssigned, getVacancyExitOptions } from '@/utils/vacancy';
 import {
   ContextMenu,
   createVacancyContextMenu,
@@ -211,7 +212,7 @@ export default function VacanciesPage() {
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     vacancy: Vacancy | null;
-    type: 'delete' | 'close';
+    type: 'delete' | 'close' | 'leave';
   }>({ open: false, vacancy: null, type: 'delete' });
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -570,22 +571,24 @@ export default function VacanciesPage() {
     setConfirmDialog({ open: true, vacancy, type: 'close' });
   };
 
+  // «Выйти из заявки» — снять себя, у остальных участников она остаётся в работе.
+  // Отдельно от «Закрыть заявку», которая закрывает у всех (2026-09-10).
+  const handleLeaveClick = (vacancy: Vacancy) => {
+    setConfirmDialog({ open: true, vacancy, type: 'leave' });
+  };
+
   const handleConfirmDelete = async () => {
     if (!confirmDialog.vacancy) return;
     setDeleteLoading(true);
     try {
-      if (confirmDialog.type === 'close') {
+      if (confirmDialog.type === 'leave') {
+        await declineVacancy(confirmDialog.vacancy.id);
+        toast.success('Вы вышли из заявки — у остальных она осталась в работе');
+        fetchVacancies();
+      } else if (confirmDialog.type === 'close') {
         // Task 14: Close vacancy and auto-switch to "open" filter
         await updateVacancy(confirmDialog.vacancy.id, { status: 'closed' });
-        // Общая воронка: участник с другими активными участниками не закрывает,
-        // а ВЫХОДИТ (бэкенд статус не меняет) — честный тост.
-        const leftOnly =
-          !isAdmin && user &&
-          isVacancyParticipant(confirmDialog.vacancy, user.id) &&
-          otherActiveParticipants(confirmDialog.vacancy, user.id).length > 0;
-        toast.success(leftOnly
-          ? 'Вы завершили работу над заявкой — у остальных участников она осталась'
-          : 'Заявка закрыта');
+        toast.success('Заявка закрыта');
         setStatusFilter('open');
         fetchVacancies();
       } else {
@@ -597,11 +600,51 @@ export default function VacanciesPage() {
       }
       setConfirmDialog({ open: false, vacancy: null, type: 'delete' });
     } catch {
-      toast.error(confirmDialog.type === 'close' ? 'Не удалось закрыть заявку' : 'Не удалось удалить заявку');
+      toast.error(
+        confirmDialog.type === 'leave' ? 'Не удалось выйти из заявки'
+          : confirmDialog.type === 'close' ? 'Не удалось закрыть заявку' : 'Не удалось удалить заявку',
+      );
     } finally {
       setDeleteLoading(false);
     }
   };
+
+  // Тексты подтверждения — прямо говорим, у кого что останется/закроется.
+  const confirmCopy = (() => {
+    const v = confirmDialog.vacancy;
+    if (confirmDialog.type === 'delete' || !v) {
+      return {
+        title: 'Удалить заявку',
+        message: 'Вы уверены, что хотите удалить эту заявку? Это действие невозможно отменить.',
+        confirmLabel: 'Удалить',
+        variant: 'danger' as const,
+      };
+    }
+    const others = otherActiveParticipants(v, user?.id);
+    const exit = getVacancyExitOptions(v, user?.id, isAdmin);
+    if (confirmDialog.type === 'leave') {
+      return {
+        title: 'Выйти из заявки',
+        message: `Вы перестанете над ней работать — она пропадёт из ваших «Мои вакансии». У остальных участников (${others.length}) она останется в работе.${exit.canClose ? ' Закрыть её для всех — «Закрыть заявку».' : ''}`,
+        confirmLabel: 'Выйти',
+        variant: 'warning' as const,
+      };
+    }
+    const total = others.length + (isVacancyParticipant(v, user?.id) ? 1 : 0);
+    return total > 1
+      ? {
+          title: 'Закрыть заявку для всех',
+          message: `Заявка закроется у всех участников (${total}) и переместится в «Закрытые». Кандидаты и история сохранятся.${exit.canLeave ? ' Если хотите только перестать работать над ней сами — «Выйти из заявки».' : ''}`,
+          confirmLabel: 'Закрыть для всех',
+          variant: 'warning' as const,
+        }
+      : {
+          title: 'Закрыть заявку',
+          message: 'Заявка переместится в «Закрытые». Кандидаты и история сохранятся.',
+          confirmLabel: 'Закрыть',
+          variant: 'warning' as const,
+        };
+  })();
 
   const handleCancelConfirm = () => {
     if (!deleteLoading) {
@@ -945,6 +988,8 @@ export default function VacanciesPage() {
                 );
                 const showAdminReassign = isAdmin && vacancy.status === 'open' && isAlreadyAssigned;
                 const showTakeBtn = isRequestForMe && !hasAlreadyTaken(vacancy);
+                const exitOptions = getVacancyExitOptions(vacancy, user?.id, isAdmin);
+                const isLive = vacancy.status === 'open' || vacancy.status === 'paused';
                 const acceptedCount = vacancy.stage_counts.hired || 0;
 
                 return (
@@ -956,24 +1001,33 @@ export default function VacanciesPage() {
                       () => setEditingVacancy(vacancy),
                       () => (isAdmin ? handleDeleteClick(vacancy) : handleDecline(vacancy)),
                       () => handleCopyLink(vacancy)
-                    ).map((it) =>
+                    ).flatMap((it) =>
+                      // «Отказаться» — только от ещё не взятой заявки; из взятой
+                      // выходят через «Выйти из заявки».
                       it.id === 'delete' && !isAdmin
-                        ? { ...it, label: 'Отказаться', icon: X }
-                        : it
+                        ? (hasAlreadyTaken(vacancy) ? [] : [{ ...it, label: 'Отказаться', icon: X }])
+                        : [it]
                     ),
                     // Назначенный админ может и отказаться (удаление у него остаётся).
-                    ...(isAdmin && user && isExplicitlyAssigned(vacancy, user.id) ? [{
+                    ...(isAdmin && user && isExplicitlyAssigned(vacancy, user.id) && !hasAlreadyTaken(vacancy) ? [{
                       id: 'decline',
                       label: 'Отказаться',
                       icon: X,
                       onClick: () => handleDecline(vacancy),
                     }] : []),
-                    ...(vacancy.status === 'open' || vacancy.status === 'paused' ? [{
+                    ...(isLive && exitOptions.canLeave ? [{
+                      id: 'leave',
+                      label: 'Выйти из заявки',
+                      icon: LogOut,
+                      onClick: () => handleLeaveClick(vacancy),
+                      divider: true,
+                    }] : []),
+                    ...(isLive && exitOptions.canClose ? [{
                       id: 'close',
-                      label: 'Закрыть заявку',
+                      label: exitOptions.canLeave ? 'Закрыть заявку для всех' : 'Закрыть заявку',
                       icon: XCircle,
                       onClick: () => handleCloseClick(vacancy),
-                      divider: true,
+                      divider: !exitOptions.canLeave,
                     }] : []),
                   ]}
                 >
@@ -1127,7 +1181,20 @@ export default function VacanciesPage() {
                           >
                             <Pencil className="hf-vacancies-search-action-icon" />
                           </button>
-                          {(vacancy.status === 'open' || vacancy.status === 'paused') && (
+                          {isLive && exitOptions.canLeave && (
+                            <button
+                              type="button"
+                              className="hf-vacancies-search-action"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleLeaveClick(vacancy);
+                              }}
+                              title="Выйти из заявки — у остальных она останется в работе"
+                            >
+                              <LogOut className="hf-vacancies-search-action-icon" />
+                            </button>
+                          )}
+                          {isLive && exitOptions.canClose && (
                             <button
                               type="button"
                               className="hf-vacancies-search-action"
@@ -1135,7 +1202,7 @@ export default function VacanciesPage() {
                                 e.stopPropagation();
                                 handleCloseClick(vacancy);
                               }}
-                              title="Закрыть заявку"
+                              title={exitOptions.canLeave ? 'Закрыть заявку для всех участников' : 'Закрыть заявку'}
                             >
                               <Archive className="hf-vacancies-search-action-icon" />
                             </button>
@@ -1153,7 +1220,7 @@ export default function VacanciesPage() {
                             >
                               <Trash2 className="hf-vacancies-search-action-icon" />
                             </button>
-                          ) : (
+                          ) : !hasAlreadyTaken(vacancy) && (
                             <button
                               type="button"
                               className="hf-vacancies-search-action"
@@ -1201,13 +1268,11 @@ export default function VacanciesPage() {
       {/* Confirmation Dialog */}
       <ConfirmDialog
         open={confirmDialog.open}
-        title={confirmDialog.type === 'close' ? 'Закрыть заявку' : 'Удалить заявку'}
-        message={confirmDialog.type === 'close'
-          ? 'Вы уверены, что хотите закрыть эту заявку? Она переместится в статус "Закрыта".'
-          : 'Вы уверены, что хотите удалить эту заявку? Это действие невозможно отменить.'}
-        confirmLabel={confirmDialog.type === 'close' ? 'Закрыть' : 'Удалить'}
+        title={confirmCopy.title}
+        message={confirmCopy.message}
+        confirmLabel={confirmCopy.confirmLabel}
         cancelLabel="Отмена"
-        variant={confirmDialog.type === 'close' ? 'warning' : 'danger'}
+        variant={confirmCopy.variant}
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelConfirm}
         loading={deleteLoading}

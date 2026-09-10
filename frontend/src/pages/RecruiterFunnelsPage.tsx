@@ -28,18 +28,19 @@ import {
   ExternalLink,
   Phone,
   Send,
+  LogOut,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useFunnelFilterStore } from '@/stores/funnelFilterStore';
-import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile } from '@/services/api';
+import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, declineVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink, updateEntity } from '@/services/api/entities';
 import TakeCandidateButton from '@/components/entities/TakeCandidateButton';
 import TagPicker from '@/components/entities/TagPicker';
-import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds, getVacancyExitOptions } from '@/utils/vacancy';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
@@ -1489,13 +1490,19 @@ export default function RecruiterFunnelsPage() {
 
   // Confirmation modal — единый для close/delete (window.confirm не везде работает в headless/iframe).
   const [confirmDialog, setConfirmDialog] = useState<{
-    type: 'close' | 'delete';
+    type: 'close' | 'leave' | 'delete';
     vacancy: Vacancy;
   } | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
 
   const handleCloseVacancy = (vacancy: Vacancy) => {
     setConfirmDialog({ type: 'close', vacancy });
+  };
+
+  // «Выйти из вакансии» — снять себя, у остальных она остаётся в работе.
+  // Отдельно от «Закрыть вакансию», которая закрывает у всех (2026-09-10).
+  const handleLeaveVacancy = (vacancy: Vacancy) => {
+    setConfirmDialog({ type: 'leave', vacancy });
   };
 
   const handleDeleteVacancy = (vacancy: Vacancy) => {
@@ -1506,17 +1513,13 @@ export default function RecruiterFunnelsPage() {
     if (!confirmDialog) return;
     setConfirmBusy(true);
     try {
-      if (confirmDialog.type === 'close') {
+      if (confirmDialog.type === 'leave') {
+        await declineVacancy(confirmDialog.vacancy.id);
+        toast.success('Вы вышли из вакансии — у остальных она осталась в работе');
+        fetchVacancies();
+      } else if (confirmDialog.type === 'close') {
         await updateVacancy(confirmDialog.vacancy.id, { status: 'closed' });
-        // Общая воронка: если есть другие активные участники, бэкенд трактует
-        // закрытие участником как ВЫХОД (статус не меняется) — отражаем в тосте.
-        const leftOnly =
-          !isHrAdmin && user &&
-          isVacancyParticipant(confirmDialog.vacancy, user.id) &&
-          otherActiveParticipants(confirmDialog.vacancy, user.id).length > 0;
-        toast.success(leftOnly
-          ? 'Вы завершили работу над вакансией — у остальных участников она осталась'
-          : 'Вакансия закрыта');
+        toast.success('Вакансия закрыта');
         fetchVacancies();
       } else {
         await deleteVacancy(confirmDialog.vacancy.id);
@@ -1530,11 +1533,41 @@ export default function RecruiterFunnelsPage() {
       }
       setConfirmDialog(null);
     } catch {
-      toast.error(confirmDialog.type === 'close' ? 'Ошибка при закрытии' : 'Ошибка при удалении');
+      toast.error(
+        confirmDialog.type === 'leave' ? 'Не удалось выйти из вакансии'
+          : confirmDialog.type === 'close' ? 'Ошибка при закрытии' : 'Ошибка при удалении',
+      );
     } finally {
       setConfirmBusy(false);
     }
   };
+
+  // Тексты подтверждения выхода/закрытия — прямо говорим, у кого что останется.
+  const confirmCopy = (() => {
+    if (!confirmDialog || confirmDialog.type === 'delete') return null;
+    const v = confirmDialog.vacancy;
+    const others = otherActiveParticipants(v, user?.id);
+    const exit = getVacancyExitOptions(v, user?.id, isHrAdmin);
+    if (confirmDialog.type === 'leave') {
+      return {
+        title: 'Выйти из вакансии?',
+        text: `Вы перестанете над ней работать — она пропадёт из ваших «Мои вакансии». У остальных участников (${others.length}) она останется в работе.${exit.canClose ? ' Закрыть её для всех — кнопка «Закрыть вакансию».' : ''}`,
+        confirmLabel: 'Выйти',
+      };
+    }
+    const total = others.length + (isVacancyParticipant(v, user?.id) ? 1 : 0);
+    return total > 1
+      ? {
+          title: 'Закрыть вакансию для всех?',
+          text: `Она закроется у всех участников (${total}) и уйдёт в «Закрытые вакансии». Кандидаты и история сохранятся.${exit.canLeave ? ' Если хотите только перестать работать над ней сами — «Выйти из вакансии».' : ''}`,
+          confirmLabel: 'Закрыть для всех',
+        }
+      : {
+          title: 'Закрыть вакансию?',
+          text: 'Она уйдёт в «Закрытые вакансии». Кандидаты и история сохранятся.',
+          confirmLabel: 'Закрыть',
+        };
+  })();
 
   // Change candidate stage
   const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage, comment?: string) => {
@@ -2618,7 +2651,20 @@ export default function RecruiterFunnelsPage() {
                               >
                                 <Pencil className="hf-vacancies-search-action-icon" />
                               </button>
-                              {v.status !== 'closed' && (
+                              {v.status !== 'closed' && getVacancyExitOptions(v, user?.id, isHrAdmin).canLeave && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleLeaveVacancy(v);
+                                  }}
+                                  className="hf-vacancies-search-action"
+                                  title="Выйти из вакансии — у остальных она останется в работе"
+                                >
+                                  <LogOut className="hf-vacancies-search-action-icon" />
+                                </button>
+                              )}
+                              {v.status !== 'closed' && getVacancyExitOptions(v, user?.id, isHrAdmin).canClose && (
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -2626,7 +2672,7 @@ export default function RecruiterFunnelsPage() {
                                     handleCloseVacancy(v);
                                   }}
                                   className="hf-vacancies-search-action"
-                                  title="Закрыть вакансию"
+                                  title={getVacancyExitOptions(v, user?.id, isHrAdmin).canLeave ? 'Закрыть вакансию для всех участников' : 'Закрыть вакансию'}
                                 >
                                   <Archive className="hf-vacancies-search-action-icon" />
                                 </button>
@@ -3693,11 +3739,14 @@ export default function RecruiterFunnelsPage() {
           >
             <div>
               <h3 className="hf-confirm-modal-title">
-                {confirmDialog.type === 'close' ? 'Закрыть вакансию?' : 'Удалить вакансию?'}
+                {confirmCopy?.title ?? 'Удалить вакансию?'}
               </h3>
               <p className="hf-confirm-modal-subtitle">
                 «{confirmDialog.vacancy.title?.trim() || 'Без названия'}»
               </p>
+              {confirmCopy && (
+                <p className="hf-confirm-modal-subtitle">{confirmCopy.text}</p>
+              )}
               {confirmDialog.type === 'delete' && (
                 <p className="hf-confirm-modal-danger-text">
                   Действие нельзя отменить. Кандидаты в воронке потеряют связь с этой вакансией.
@@ -3724,7 +3773,7 @@ export default function RecruiterFunnelsPage() {
               >
                 {confirmBusy
                   ? 'Применяем…'
-                  : confirmDialog.type === 'close' ? 'Закрыть' : 'Удалить'}
+                  : confirmCopy?.confirmLabel ?? 'Удалить'}
               </button>
             </div>
           </div>

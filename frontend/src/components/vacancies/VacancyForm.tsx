@@ -14,7 +14,7 @@ import type { Vacancy, VacancyStatus } from '@/types';
 import { getAssignableUsers, assignVacancy, takeVacancy, declineVacancy } from '@/services/api';
 import type { AssignableUser } from '@/services/api';
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
-import { isVacancyParticipant, otherActiveParticipants, hasPersonallyAccepted, isExplicitlyAssigned } from '@/utils/vacancy';
+import { isVacancyParticipant, hasPersonallyAccepted, isExplicitlyAssigned, getVacancyExitOptions } from '@/utils/vacancy';
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
@@ -464,6 +464,32 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [taking, setTaking] = useState(false);
   const [declining, setDeclining] = useState(false);
   // «Отказаться» — рекрутёр снимает себя с заявки (backend /decline), не удаляет.
+  // «Выйти из вакансии» / «Закрыть вакансию» — две разные кнопки (2026-09-10),
+  // см. getVacancyExitOptions. «Отказаться» — только для ещё не взятой заявки.
+  const exitOptions = vacancy && user
+    ? getVacancyExitOptions(vacancy, user.id, isAdmin)
+    : { canLeave: false, canClose: true, others: [] as number[] };
+  const showDecline = !alreadyTaken && (isAdmin ? isExplicitlyAssignedToMe : isAssignedToMe);
+  const showLeave = exitOptions.canLeave && !showDecline;
+  const handleLeave = async () => {
+    if (!vacancy || declining) return;
+    const closeHint = exitOptions.canClose ? '\nЧтобы закрыть её для всех — «Закрыть вакансию».' : '';
+    if (!window.confirm(
+      `Выйти из вакансии «${vacancy.title?.trim() || 'Без названия'}»?\n\n` +
+      `Вы перестанете над ней работать. У остальных участников (${exitOptions.others.length}) она останется в работе.${closeHint}`,
+    )) return;
+    setDeclining(true);
+    try {
+      await declineVacancy(vacancy.id);
+      toast.success('Вы вышли из вакансии — у остальных она осталась в работе');
+      onSuccess();
+      onClose();
+    } catch {
+      toast.error('Не удалось выйти из вакансии');
+    } finally {
+      setDeclining(false);
+    }
+  };
   const handleDecline = async () => {
     if (!vacancy || declining) return;
     setDeclining(true);
@@ -697,17 +723,15 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [statusAction, setStatusAction] = useState(false);
   const runStatusAction = async (status: VacancyStatus, msg: string) => {
     if (!vacancy) return;
-    // Общая воронка (2026-07-02): «Закрыть вакансию» участником при других
-    // активных участниках = ВЫХОД из воронки (бэкенд не меняет статус, снимает
-    // участника). Если участник ПОСЛЕДНИЙ — спрашиваем про полное закрытие.
-    let toastMsg = msg;
-    if (status === 'closed' && user && !isAdmin) {
-      const others = otherActiveParticipants(vacancy, user.id);
-      if (others.length === 0) {
-        if (!window.confirm('Вы последний рекрутёр на этой вакансии. Закрыть её полностью?')) return;
-      } else if (isVacancyParticipant(vacancy, user.id)) {
-        toastMsg = 'Вы завершили работу над вакансией — у остальных участников она осталась';
-      }
+    // «Закрыть вакансию» закрывает её у ВСЕХ — говорим это прямо. Кому нужно
+    // только перестать работать самому — отдельная кнопка «Выйти из вакансии».
+    const toastMsg = msg;
+    if (status === 'closed') {
+      const n = exitOptions.others.length;
+      const text = n > 0
+        ? `Закрыть вакансию для всех?\n\nОна закроется у всех участников (${n + 1}), включая вас. Кандидаты и история сохранятся.\nЕсли хотите только перестать работать над ней сами — «Выйти из вакансии».`
+        : 'Закрыть вакансию?\n\nВы последний участник — она закроется полностью. Кандидаты и история сохранятся.';
+      if (!window.confirm(text)) return;
     }
     setStatusAction(true);
     try {
@@ -1152,7 +1176,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                       >
                         Открыть вакансию
                       </button>
-                    ) : (
+                    ) : exitOptions.canClose && (
                       <button
                         type="button"
                         onClick={() => runStatusAction('closed', 'Вакансия закрыта')}
@@ -1162,7 +1186,17 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                         Закрыть вакансию
                       </button>
                     )}
-                    {(!isAdmin || isExplicitlyAssignedToMe) && (
+                    {showLeave && vacancy.status !== 'closed' && (
+                      <button
+                        type="button"
+                        onClick={handleLeave}
+                        disabled={declining}
+                        className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
+                      >
+                        {declining ? 'Выходим…' : 'Выйти из вакансии'}
+                      </button>
+                    )}
+                    {showDecline && (
                       <button
                         type="button"
                         onClick={handleDecline}
