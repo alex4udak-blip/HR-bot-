@@ -236,7 +236,7 @@ export default function RecruiterFunnelsPage() {
   const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState<number | null>(null);
   // Суперадмин: чекбокс «Только мои» — быстрый self-фильтр поверх дефолта «видеть
   // всех». Стейт в общем сторе — чекбокс дублируется в сайдбаре (Layout), оба синхронны.
-  const { onlyMine: superadminOnlyMine, setOnlyMine: setSuperadminOnlyMine } = useFunnelFilterStore();
+  const { onlyMine: storedOwnOnlyMine, setOnlyMine: setStoredOwnOnlyMine } = useFunnelFilterStore();
   // «Удалённые»: мягко-удалённые вакансии тянем отдельным запросом (deleted=true).
   const [deletedVacancies, setDeletedVacancies] = useState<Vacancy[]>([]);
   useEffect(() => {
@@ -651,29 +651,49 @@ export default function RecruiterFunnelsPage() {
   // вернуть только что снятого кандидата («удаляй дважды»). Применяем результат
   // загрузки ТОЛЬКО если это последний запрос; любая мутация бампает счётчик.
   const loadSeqRef = useRef(0);
-  // Скоуп кандидатов по рекрутёру в общей воронке:
-  //  • Чекбокс «Только мои» (onlyMine) — для ЛЮБОЙ роли форсит скоуп на СЕБЯ
-  //    (created_by == self), перекрывая всё остальное. Нужен на воронках «Видна
-  //    коллегам», где иначе рекрутёр видит и чужих (просили: «только мои»).
-  //  • Иначе обычный рекрутёр (hr/member) — сервер сам решает (undefined): на
-  //    «скрытой» воронке видит своих, на «Видна коллегам» — всех.
-  //  • СУПЕРАДМИН по умолчанию видит ВСЕХ; свитчер фильтрует на конкретного.
-  //  • НАБЛЮДАТЕЛЬ (is_readonly) — ментор, должен видеть ВСЕХ по умолчанию (как
-  //    суперадмин), иначе admin-наблюдатель скоупился на СВОЙ id и видел пустую
-  //    воронку («на этом этапе пока нет кандидатов»). Свитчер по-прежнему фильтрует.
-  //  • АДМИН/ОВНЕР по умолчанию — только свои; через свитчер может выбрать любого.
-  //  • ШАРИНГ-ССЫЛКА (arrivedViaSharedCandidate): БЕЗ скоупа — показываем всю воронку
-  //    вакансии, чтобы кандидат из ссылки гарантированно был в списке (иначе у
-  //    админа/рекрутёра, скоупленного на себя, чужой кандидат не грузился → пусто).
+  // «Только мои» живёт в двух режимах (решение юзера 2026-09-10):
+  //  • СВОЯ воронка (в сайдбаре рекрутёр не выбран или выбран я) — кнопка
+  //    ВКЛЮЧЕНА по умолчанию. Выключил — видны все кандидаты, и выбор
+  //    запоминается для всех своих воронок (funnelFilterStore, localStorage).
+  //  • ЧУЖАЯ воронка (в сайдбаре выбран другой рекрутёр) — кнопка ВЫКЛЮЧЕНА,
+  //    видны кандидаты этого рекрутёра. Включил — видишь в его воронке своих.
+  //    Это временно: ушёл из воронки — кнопка отжимается и не запоминается.
+  // Наблюдателю и суперадмину по умолчанию «выключено»: сами они кандидатов не
+  // добавляют, и с включённой кнопкой видели бы пустые воронки (такой баг у
+  // наблюдателя уже чинили).
+  const isForeignContext =
+    selectedRecruiterFilter != null && selectedRecruiterFilter !== user?.id;
+  const ownOnlyMine = storedOwnOnlyMine ?? !(isSuperadmin || user?.is_readonly);
+  const [foreignOnlyMine, setForeignOnlyMine] = useState(false);
+  useEffect(() => {
+    // Любой уход из чужой воронки — другая воронка или другой рекрутёр —
+    // отжимает временную кнопку.
+    setForeignOnlyMine(false);
+  }, [selectedVacancyId, selectedRecruiterFilter]);
+  const onlyMine = isForeignContext ? foreignOnlyMine : ownOnlyMine;
+  const setOnlyMine = (value: boolean) => {
+    if (isForeignContext) setForeignOnlyMine(value);
+    else setStoredOwnOnlyMine(value);
+  };
+
+  // Скоуп кандидатов на СЕРВЕРЕ:
+  //  • ШАРИНГ-ССЫЛКА (arrivedViaSharedCandidate): без скоупа — грузим всю воронку,
+  //    чтобы кандидат из ссылки гарантированно был в списке; сужаем уже на фронте
+  //    (recruiterScopedCandidates), оставляя кандидата из ссылки.
+  //  • «Только мои» — на себя. Сервер разрешает это любой роли и учитывает
+  //    со-рекрутёров.
+  //  • Обычный рекрутёр — без скоупа: фильтр на КОЛЛЕГУ сервер ему не применяет
+  //    (бэкенд по решению юзера не трогаем), сужаем на фронте.
+  //  • Админ, суперадмин, наблюдатель — на выбранного в сайдбаре рекрутёра, а без
+  //    выбора — ВСЕ. Раньше админ/овнер по умолчанию видел только своих; теперь
+  //    «только своих» даёт кнопка, и /my-funnels для всех ролей значит «все».
   const candidateScopeRecruiterId = arrivedViaSharedCandidateRef.current
     ? undefined
-    : superadminOnlyMine
+    : onlyMine
     ? (user?.id ?? undefined)
     : !isHrAdmin
       ? undefined
-      : (isSuperadmin || user?.is_readonly)
-        ? (selectedRecruiterFilter ?? undefined)
-        : (selectedRecruiterFilter != null ? selectedRecruiterFilter : (user?.id ?? undefined));
+      : (selectedRecruiterFilter ?? undefined);
   const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
     const seq = ++loadSeqRef.current;
     if (!silent) setCandidatesLoading(true);
@@ -730,31 +750,23 @@ export default function RecruiterFunnelsPage() {
   // порядок слов + опечатки, как серверный pg_trgm в «Все кандидаты»); по
   // email/телефону — обычная подстрока; по telegram — ВСЕ ники кандидата +
   // текст комментариев карточки; запрос с «@» — строгий режим (только тг/комменты).
-  // «Вакансии: Мария» в сайдбаре (?recruiter=) — показываем только кандидатов
-  // выбранного рекрутёра. Для админа это делает сервер (created_by в запросе,
-  // вместе со со-рекрутёрами). А обычному рекрутёру сервер фильтр по КОЛЛЕГЕ не
-  // применяет: принимает created_by только на самого себя, и на воронке «Видна
-  // коллегам» отдаёт всех. Раньше это не проявлялось — чужие воронки рекрутёр не
-  // видел; с 2026-09-07 видит, и в «воронке Марии» вперемешку лезли кандидаты
-  // Влады. Бэкенд по решению юзера не трогаем — фильтруем здесь.
-  //
-  // Правила:
-  //  • фильтр только если сервер НЕ отфильтровал сам на того же рекрутёра — иначе
-  //    срезали бы у админа со-рекрутёрских кандидатов: их сервер включает, а в
-  //    ответе нет поля, по которому фронт мог бы их узнать (только created_by);
-  //  • «Только мои» явно сильнее выбора рекрутёра — фильтр не накладываем;
-  //  • кандидат из ССЫЛКИ (?entity= на момент открытия страницы) остаётся в списке
+  // Фронтовое сужение списка — там, где сервер не отфильтровал сам.
+  // Кого показываем: при «Только мои» — себя, иначе рекрутёра из сайдбара
+  // («Вакансии: Мария» → кандидаты Марии), а без выбора — всех.
+  //  • Если сервер уже отфильтровал на того же человека — верим ему: он учитывает
+  //    со-рекрутёров, а в ответе нет поля, по которому их узнал бы фронт (только
+  //    created_by), и фронтовый фильтр их бы срезал.
+  //  • Кандидат из ССЫЛКИ (?entity= на момент открытия страницы) остаётся в списке
   //    всегда — иначе ссылка на со-рекрутёрского кандидата открывала бы пустое окно.
-  // Без ?recruiter= (просто /my-funnels) фильтра нет — видны все кандидаты воронки.
   const recruiterScopedCandidates = useMemo(() => {
-    if (selectedRecruiterFilter == null) return candidates;
-    if (superadminOnlyMine) return candidates;
-    if (candidateScopeRecruiterId === selectedRecruiterFilter) return candidates;
+    const wantedOwner = onlyMine ? (user?.id ?? null) : selectedRecruiterFilter;
+    if (wantedOwner == null) return candidates;
+    if (candidateScopeRecruiterId === wantedOwner) return candidates;
     const linkedEntity = linkedEntityOnMountRef.current;
     return candidates.filter(
-      (c) => c.created_by === selectedRecruiterFilter || c.entity_id === linkedEntity,
+      (c) => c.created_by === wantedOwner || c.entity_id === linkedEntity,
     );
-  }, [candidates, selectedRecruiterFilter, superadminOnlyMine, candidateScopeRecruiterId]);
+  }, [candidates, onlyMine, user?.id, selectedRecruiterFilter, candidateScopeRecruiterId]);
 
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return recruiterScopedCandidates;
@@ -2714,12 +2726,14 @@ export default function RecruiterFunnelsPage() {
                   <div className="flex items-center px-3 sm:px-5 py-2 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
                     <label
                       className="group inline-flex items-center cursor-pointer select-none"
-                      title="Показывать в воронке только кандидатов, которых добавил я. Снимите — снова видны все."
+                      title={isForeignContext
+                        ? 'Показать в этой воронке только кандидатов, которых добавил я. Выключится само, когда уйдёте из воронки.'
+                        : 'Показывать только кандидатов, которых добавил я. Снимите — будут видны все, выбор запомнится.'}
                     >
                       <input
                         type="checkbox"
-                        checked={superadminOnlyMine}
-                        onChange={(e) => setSuperadminOnlyMine(e.target.checked)}
+                        checked={onlyMine}
+                        onChange={(e) => setOnlyMine(e.target.checked)}
                         className="peer sr-only"
                       />
                       <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors border-[color:var(--hf-white-alpha-12)] text-[var(--hf-main-600)] group-hover:border-[color:var(--hf-white-alpha-25)] group-hover:text-[var(--hf-main-800)] peer-checked:border-[color:var(--hf-accent)] peer-checked:text-[color:var(--hf-accent)] peer-checked:bg-[color:var(--hf-accent-soft,var(--hf-white-alpha-06))] peer-focus-visible:ring-2 peer-focus-visible:ring-[color:var(--hf-accent)]">
