@@ -862,6 +862,24 @@ async def update_entity(
                 can_edit = True
 
     if not can_edit:
+        # Теги-ярлыки у имени (extra_data.headline_tags) — как метки: их ставит
+        # любой рекрутёр орга (модель A, check_entity_access(edit)). Раньше
+        # рекрутёр на чужом кандидате получал 403 «Ошибка сохранения тега», хотя
+        # метки рядом ставились (2026-09-10, Эльвира). Остальные поля кандидата —
+        # по-прежнему только автор/админ/расшаренный. Наблюдателю запись закрыта
+        # раньше, в get_current_user.
+        sent = data.model_dump(exclude_unset=True)
+        only_headline_tags = (
+            set(sent) == {"extra_data"}
+            and isinstance(sent.get("extra_data"), dict)
+            and set(sent["extra_data"]) == {"headline_tags"}
+        )
+        if only_headline_tags and await check_entity_access(
+            entity, current_user, org.id, db, AccessLevel.edit
+        ):
+            can_edit = True
+
+    if not can_edit:
         raise HTTPException(403, "No edit permission for this entity")
 
     # Validate department_id if provided
