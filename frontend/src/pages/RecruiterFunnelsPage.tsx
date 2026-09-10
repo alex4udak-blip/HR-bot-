@@ -170,6 +170,26 @@ const colorToStageColor = (colorKey?: string, enumVal?: string): string => {
 // что реально показывает сайдбар «Мои вакансии» (тот же баг, что чинили в
 // Layout.tsx funnelsPickerRecruiters). Пустой accepted_by → uid=0
 // «Без исполнителя», чтобы заявка не выпала из группировки совсем.
+// F5 открытой воронки: документ перезагружен ровно на текущем URL. Проверка
+// идемпотентна (StrictMode в dev дважды зовёт инициализатор useState), а после
+// маунта страница гасит её (forgetDocumentReload) — последующие SPA-заходы на
+// /my-funnels уже не «перезагрузка».
+let documentReloadHref: string | null | undefined;
+function isDocumentReloadOfCurrentUrl(): boolean {
+  if (documentReloadHref === undefined) {
+    try {
+      const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+      documentReloadHref = nav?.type === 'reload' ? nav.name : null;
+    } catch {
+      documentReloadHref = null;
+    }
+  }
+  return documentReloadHref === window.location.href;
+}
+function forgetDocumentReload() {
+  documentReloadHref = null;
+}
+
 function groupAcceptorIds(v: Vacancy): number[] {
   const acceptedBy = ((v.extra_data as Record<string, unknown> | undefined)?.accepted_by as number[] | undefined) || [];
   return acceptedBy.length > 0 ? acceptedBy : [0];
@@ -260,20 +280,23 @@ export default function RecruiterFunnelsPage() {
   // ClickUp view: selected vacancy + candidates
   const selectedVacancyId = searchParams.get('v') ? Number(searchParams.get('v')) : null;
   // Открыли по ШАРИНГ-ССЫЛКЕ на кандидата (в URL сразу есть и ?v=, и ?entity=).
-  // Реф фиксируется ОДИН раз на маунте (useRef игнорит повторные аргументы). В этом
-  // режиме грузим кандидатов БЕЗ скоупа по рекрутёру — иначе чужой кандидат (added
-  // другим рекрутёром) не попадает в список и окно пустое (баг Марии по ссылке).
-  // Обычную навигацию (зашёл на /my-funnels без ?entity=) это не трогает.
-  const arrivedViaSharedCandidateRef = useRef(
-    !!(searchParams.get('v') && searchParams.get('entity')),
-  );
-  // Сам кандидат из ссылки — тоже только на маунте. Живой ?entity= для этого не
-  // годится: страница переписывает его при каждом выборе кандидата, и после смены
-  // фильтра («Только мои» → выкл) в «воронке Марии» застревал последний выбранный
-  // чужой кандидат.
-  const linkedEntityOnMountRef = useRef<number | null>(
-    Number(searchParams.get('entity')) || null,
-  );
+  // В этом режиме грузим кандидатов БЕЗ скоупа по рекрутёру — иначе чужой кандидат
+  // (added другим рекрутёром) не попадает в список и окно пустое (баг Марии по
+  // ссылке) — а сам кандидат из ссылки остаётся в списке при любом фильтре.
+  // Хранится id кандидата из URL на момент открытия: живой ?entity= не годится,
+  // страница переписывает его при каждом выборе кандидата.
+  //  • F5 — НЕ ссылка: ?entity= туда записала сама страница. Иначе после
+  //    перезагрузки в «воронке Марии» застревал последний открытый чужой кандидат
+  //    (прод, 2026-09-10: Шатилов с меткой Влады в «Вакансии: Мария»).
+  //  • Режим живёт до первого своего действия — смена воронки, рекрутёра или
+  //    «Только мои» (см. эффект у onlyMine ниже).
+  const [sharedEntryEntityId, setSharedEntryEntityId] = useState<number | null>(() => {
+    const entityId = Number(searchParams.get('entity')) || null;
+    if (!searchParams.get('v') || entityId == null) return null;
+    return isDocumentReloadOfCurrentUrl() ? null : entityId;
+  });
+  useEffect(() => { forgetDocumentReload(); }, []);
+  const arrivedViaSharedCandidate = sharedEntryEntityId != null;
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
@@ -604,7 +627,7 @@ export default function RecruiterFunnelsPage() {
   // дальше существующий механизм (?recruiter= → pickerOwnerId в Layout) поднимает
   // контекст сайдбара. Только для шаринг-сессии, только когда вакансия уже загружена.
   useEffect(() => {
-    if (!arrivedViaSharedCandidateRef.current) return;
+    if (!arrivedViaSharedCandidate) return;
     if (searchParams.get('recruiter')) return;
     if (!selectedVacancy) return;
     const ownerId = getAcceptorIds(selectedVacancy)[0];
@@ -617,7 +640,7 @@ export default function RecruiterFunnelsPage() {
       },
       { replace: true },
     );
-  }, [selectedVacancy, searchParams, setSearchParams]);
+  }, [arrivedViaSharedCandidate, selectedVacancy, searchParams, setSearchParams]);
 
   // Закрытая (архивная) вакансия открывается тем же полноценным окном, что и
   // активная (просмотр, резюме, история) — но любая попытка её изменить
@@ -672,9 +695,21 @@ export default function RecruiterFunnelsPage() {
   }, [selectedVacancyId, selectedRecruiterFilter]);
   const onlyMine = isForeignContext ? foreignOnlyMine : ownOnlyMine;
   const setOnlyMine = (value: boolean) => {
+    setSharedEntryEntityId(null);
     if (isForeignContext) setForeignOnlyMine(value);
     else setStoredOwnOnlyMine(value);
   };
+  // Режим шаринг-ссылки заканчивается, как только юзер ушёл в другую воронку или к
+  // другому рекрутёру. null → X по рекрутёру — не уход: это URL-синк на маунте и
+  // восстановление владельца для ссылки без ?recruiter= (эффект выше).
+  const sharedEntryContextRef = useRef({ v: selectedVacancyId, r: selectedRecruiterFilter });
+  useEffect(() => {
+    const prev = sharedEntryContextRef.current;
+    sharedEntryContextRef.current = { v: selectedVacancyId, r: selectedRecruiterFilter };
+    const vacancyChanged = prev.v !== selectedVacancyId;
+    const recruiterChanged = prev.r != null && prev.r !== selectedRecruiterFilter;
+    if (vacancyChanged || recruiterChanged) setSharedEntryEntityId(null);
+  }, [selectedVacancyId, selectedRecruiterFilter]);
 
   // Скоуп кандидатов на СЕРВЕРЕ:
   //  • ШАРИНГ-ССЫЛКА (arrivedViaSharedCandidate): без скоупа — грузим всю воронку,
@@ -687,7 +722,7 @@ export default function RecruiterFunnelsPage() {
   //  • Админ, суперадмин, наблюдатель — на выбранного в сайдбаре рекрутёра, а без
   //    выбора — ВСЕ. Раньше админ/овнер по умолчанию видел только своих; теперь
   //    «только своих» даёт кнопка, и /my-funnels для всех ролей значит «все».
-  const candidateScopeRecruiterId = arrivedViaSharedCandidateRef.current
+  const candidateScopeRecruiterId = arrivedViaSharedCandidate
     ? undefined
     : onlyMine
     ? (user?.id ?? undefined)
@@ -756,17 +791,17 @@ export default function RecruiterFunnelsPage() {
   //  • Если сервер уже отфильтровал на того же человека — верим ему: он учитывает
   //    со-рекрутёров, а в ответе нет поля, по которому их узнал бы фронт (только
   //    created_by), и фронтовый фильтр их бы срезал.
-  //  • Кандидат из ССЫЛКИ (?entity= на момент открытия страницы) остаётся в списке
-  //    всегда — иначе ссылка на со-рекрутёрского кандидата открывала бы пустое окно.
+  //  • Кандидат из ССЫЛКИ (sharedEntryEntityId) остаётся в списке, пока юзер не
+  //    сменил контекст — иначе ссылка на со-рекрутёрского кандидата открывала бы
+  //    пустое окно.
   const recruiterScopedCandidates = useMemo(() => {
     const wantedOwner = onlyMine ? (user?.id ?? null) : selectedRecruiterFilter;
     if (wantedOwner == null) return candidates;
     if (candidateScopeRecruiterId === wantedOwner) return candidates;
-    const linkedEntity = linkedEntityOnMountRef.current;
     return candidates.filter(
-      (c) => c.created_by === wantedOwner || c.entity_id === linkedEntity,
+      (c) => c.created_by === wantedOwner || c.entity_id === sharedEntryEntityId,
     );
-  }, [candidates, onlyMine, user?.id, selectedRecruiterFilter, candidateScopeRecruiterId]);
+  }, [candidates, onlyMine, user?.id, selectedRecruiterFilter, candidateScopeRecruiterId, sharedEntryEntityId]);
 
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return recruiterScopedCandidates;
