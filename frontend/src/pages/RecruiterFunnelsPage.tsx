@@ -171,9 +171,10 @@ const colorToStageColor = (colorKey?: string, enumVal?: string): string => {
 // Layout.tsx funnelsPickerRecruiters). Пустой accepted_by → uid=0
 // «Без исполнителя», чтобы заявка не выпала из группировки совсем.
 // F5 открытой воронки: документ перезагружен ровно на текущем URL. Проверка
-// идемпотентна (StrictMode в dev дважды зовёт инициализатор useState), а после
-// маунта страница гасит её (forgetDocumentReload) — последующие SPA-заходы на
-// /my-funnels уже не «перезагрузка».
+// идемпотентна: StrictMode в dev дважды зовёт инициализатор useState, а страница
+// после загрузки может смонтироваться повторно (гарды ролей/авторизации) — всё
+// это та же перезагрузка. Отметка гаснет, как только адрес стал другим: значит,
+// юзер уже ходил по приложению, и следующий заход с ?entity= — снова ссылка.
 let documentReloadHref: string | null | undefined;
 function isDocumentReloadOfCurrentUrl(): boolean {
   if (documentReloadHref === undefined) {
@@ -184,10 +185,8 @@ function isDocumentReloadOfCurrentUrl(): boolean {
       documentReloadHref = null;
     }
   }
-  return documentReloadHref === window.location.href;
-}
-function forgetDocumentReload() {
-  documentReloadHref = null;
+  if (documentReloadHref !== window.location.href) documentReloadHref = null;
+  return documentReloadHref != null;
 }
 
 function groupAcceptorIds(v: Vacancy): number[] {
@@ -295,7 +294,6 @@ export default function RecruiterFunnelsPage() {
     if (!searchParams.get('v') || entityId == null) return null;
     return isDocumentReloadOfCurrentUrl() ? null : entityId;
   });
-  useEffect(() => { forgetDocumentReload(); }, []);
   const arrivedViaSharedCandidate = sharedEntryEntityId != null;
   const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
