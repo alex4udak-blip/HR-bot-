@@ -1844,7 +1844,14 @@ export default function RecruiterFunnelsPage() {
   const cardDeleteHistory = useCallback(
     async (appId: number, historyId: number) => {
       if (blockIfArchived()) return;
-      await deleteApplicationHistory(appId, historyId);
+      const res = await deleteApplicationHistory(appId, historyId);
+      // Удалили ошибочный последний переход — бэк вернул заявку на прошлый этап;
+      // двигаем кандидата в его колонку сразу, без перезагрузки воронки.
+      if (res?.reverted_to) {
+        const stage = res.reverted_to as ApplicationStage;
+        setCandidates((prev) => prev.map((c) => (c.id === appId ? { ...c, stage } : c)));
+        toast.success('Запись удалена — кандидат возвращён на прошлый этап');
+      }
       await refreshActivity();
     },
     [refreshActivity, blockIfArchived],

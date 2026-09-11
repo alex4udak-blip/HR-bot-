@@ -2,15 +2,15 @@
 Stage transition history endpoints for vacancy applications.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 
 from .common import (
-    logger, get_db, VacancyApplication, Vacancy, User,
-    check_vacancy_access, can_access_vacancy
+    logger, get_db, VacancyApplication, Vacancy, User, ApplicationStage,
+    Entity, STAGE_SYNC_MAP, check_vacancy_access, can_access_vacancy
 )
 from ...models.database import StageTransition
 from ...services.auth import get_user_org
@@ -123,6 +123,53 @@ async def delete_application_history(
     if not transition:
         raise HTTPException(status_code=404, detail="History entry not found")
 
+    # Удаляют ПОСЛЕДНИЙ переход, который и привёл заявку в текущий этап, —
+    # значит, этот этап ошибочный: возвращаем заявку туда, откуда она пришла.
+    # Раньше удалялась только запись, а кандидат оставался на «удалённом» этапе
+    # (2026-09-11, Мария: Каспер и Глушко висели в «Интервью с HR»). Более
+    # старые записи и начальная «Этап: Новый» этап не трогают.
+    reverted_to = None
+    latest_id = (await db.execute(
+        select(StageTransition.id)
+        .where(StageTransition.application_id == application_id)
+        .order_by(StageTransition.created_at.desc(), StageTransition.id.desc())
+        .limit(1)
+    )).scalar()
+    current_stage = application.stage.value if application.stage else None
+    if (
+        latest_id == transition.id
+        and transition.from_stage
+        and transition.from_stage != transition.to_stage
+        and transition.to_stage == current_stage
+    ):
+        try:
+            prev_stage = ApplicationStage(transition.from_stage)
+        except ValueError:
+            prev_stage = None
+        if prev_stage is not None:
+            max_order = (await db.execute(
+                select(func.max(VacancyApplication.stage_order)).where(
+                    VacancyApplication.vacancy_id == application.vacancy_id,
+                    VacancyApplication.stage == prev_stage,
+                )
+            )).scalar() or 0
+            application.stage = prev_stage
+            application.stage_order = max_order + 1
+            application.last_stage_change_at = datetime.utcnow()
+            if prev_stage in STAGE_SYNC_MAP:
+                entity = (await db.execute(
+                    select(Entity).where(Entity.id == application.entity_id)
+                )).scalar()
+                new_status = STAGE_SYNC_MAP[prev_stage]
+                if entity and entity.status != new_status:
+                    entity.status = new_status
+                    entity.updated_at = datetime.utcnow()
+            reverted_to = prev_stage.value
+            logger.info(
+                f"Application {application_id}: history {history_id} deleted, "
+                f"stage reverted {transition.to_stage} -> {reverted_to}"
+            )
+
     await db.delete(transition)
     await db.commit()
-    return {"success": True}
+    return {"success": True, "reverted_to": reverted_to}

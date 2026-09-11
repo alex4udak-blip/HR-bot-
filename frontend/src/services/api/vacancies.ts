@@ -492,14 +492,17 @@ export const getApplicationHistory = async (
   return data;
 };
 
+// reverted_to — этап, на который бэк вернул заявку, если удалили её последний
+// переход (ошибочный этап). null — этап не менялся.
 export const deleteApplicationHistory = async (
   applicationId: number,
   historyId: number
-): Promise<void> => {
-  await debouncedMutation<void>(
+): Promise<{ success: boolean; reverted_to?: string | null }> => {
+  const resp = await debouncedMutation<{ success: boolean; reverted_to?: string | null }>(
     'delete',
     `/vacancies/applications/${applicationId}/history/${historyId}`
   );
+  return resp.data;
 };
 
 // ============================================================
