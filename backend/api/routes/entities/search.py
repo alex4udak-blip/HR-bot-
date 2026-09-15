@@ -1156,12 +1156,17 @@ async def merge_shadow_duplicate(
             db=db, source_entity=source_entity, target_entity=target_entity,
             merged_by_name=current_user.name,
         )
+        # merge_entities снял флаг целиком — возвращаем баннер на следующий
+        # нерешённый дубль, если такие остались.
+        next_duplicate_id = await _repoint_duplicate_flag(db, merged)
+        await db.commit()
         await broadcast_entity_updated(org.id, merged.id)
         await broadcast_entity_deleted(org.id, request.duplicate_id)
         return {
             "success": True,
             "merged_entity_id": merged.id,
             "deleted_entity_id": request.duplicate_id,
+            "next_duplicate_id": next_duplicate_id,
         }
     except MergeIdentityConflict as e:
         raise HTTPException(
@@ -1297,6 +1302,31 @@ async def unmerge_entity(
     }
 
 
+async def _repoint_duplicate_flag(db: AsyncSession, entity: Entity) -> Optional[int]:
+    """После решения по ОДНОЙ паре переставить баннер на следующий нерешённый дубль.
+
+    Раньше «объединить»/«разные люди» по любой одной анкете снимали флаг
+    hidden_duplicate_id целиком: из 4 похожих решили одну — баннер пропал, остальные
+    три так и остались непроверенными (2026-09-15, Эльвира, «Иванов Кирилл»).
+    Теперь флаг снимается, только когда нерешённых совпадений не осталось.
+    Best-effort: сбой детектора не ломает само решение. Не коммитит.
+    """
+    from ...services.similarity import detect_archived_duplicate
+    try:
+        next_id = await detect_archived_duplicate(db, entity)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"shadow-dedup repoint failed for entity {entity.id}: {e}")
+        return None
+    extra = dict(entity.extra_data or {})
+    if next_id:
+        extra["hidden_duplicate_id"] = next_id
+    else:
+        extra.pop("hidden_duplicate_id", None)
+        extra.pop("hidden_duplicate_meta", None)
+    entity.extra_data = extra
+    return next_id
+
+
 @router.post("/{entity_id}/dismiss-duplicate")
 async def dismiss_shadow_duplicate(
     entity_id: int,
@@ -1335,6 +1365,8 @@ async def dismiss_shadow_duplicate(
     extra["dismissed_duplicate_ids"] = dismissed
     extra.pop("hidden_duplicate_id", None)
     entity.extra_data = extra
+    # Остальные похожие анкеты по-прежнему ждут решения — баннер на следующую.
+    next_duplicate_id = await _repoint_duplicate_flag(db, entity)
 
     # Двусторонне: помечаем пару и у ВТОРОГО профиля, иначе при просмотре его
     # карточки эта же пара всплыла бы снова как «похожий».
@@ -1356,7 +1388,11 @@ async def dismiss_shadow_duplicate(
     await broadcast_entity_updated(org.id, entity.id)
     if other is not None:
         await broadcast_entity_updated(org.id, other.id)
-    return {"success": True, "dismissed_duplicate_id": request.duplicate_id}
+    return {
+        "success": True,
+        "dismissed_duplicate_id": request.duplicate_id,
+        "next_duplicate_id": next_duplicate_id,
+    }
 
 
 @router.get("/{entity_id}/compare/{other_entity_id}", response_model=SimilarCandidateResponse)

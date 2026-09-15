@@ -63,6 +63,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   // Кэш тех же профилей в ref — для СИНХРОННого сидинга (предвыбор/triggerEntity),
   // чтобы трек не моргал спиннером там, где профиль уже под рукой.
   const entityCache = useRef<Map<number, EntityWithRelations>>(new Map());
+  // Решения ПО ПАРАМ (2026-09-15, Эльвира): кнопки действуют только на анкету,
+  // открытую справа. Решённые помечаются и пропускаются, окно закрывается само,
+  // только когда решены все — раньше решение по последней в карусели закрывало
+  // окно, и непролистанные анкеты молча оставались непроверенными.
+  const [decisions, setDecisions] = useState<Record<number, "merged" | "dismissed">>({});
 
   // Подгружаем профиль дубля сразу (не только по клику «Проверить»), чтобы заранее
   // понять — это реальное совпадение или мусорный/устаревший флаг. Баннер по-прежнему
@@ -105,6 +110,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   };
 
   const openModal = async () => {
+    setDecisions({});
     setOpen(true);
     setLoading(true);
     try {
@@ -154,22 +160,36 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     }
   };
 
+  // После решения по текущей паре — к следующей НЕрешённой (сначала вперёд по
+  // карусели, потом назад). Нерешённых нет — всё проверено, закрываем окно.
+  const afterDecision = (targetId: number, kind: "merged" | "dismissed") => {
+    const next = { ...decisions, [targetId]: kind };
+    setDecisions(next);
+    const pos = duplicates.findIndex((d) => d.entity_id === targetId);
+    const undecided = (d: DuplicateCandidateResult) => !next[d.entity_id];
+    const forward = duplicates.slice(pos + 1).find(undecided);
+    const backward = duplicates.slice(0, Math.max(pos, 0)).reverse().find(undecided);
+    const nextDup = forward ?? backward;
+    if (nextDup) {
+      loadSelected(nextDup.entity_id);
+    } else {
+      setOpen(false);
+      setResolved(true);
+      onResolved?.();
+    }
+  };
+
   const handleMerge = async () => {
     const targetId = selectedDupId ?? hiddenId;
-    if (targetId == null) return;
+    if (targetId == null || decisions[targetId]) return;
     setBusy(true);
     try {
       await mergeShadowDuplicate(card.id, targetId);
-      toast.success("Профили объединены");
-      if (idx >= duplicates.length - 1) {
-        setOpen(false);
-        setResolved(true);
-        onResolved?.();
-      } else {
-        goToDup(1);
-      }
-    } catch {
-      toast.error("Не удалось объединить профили");
+      toast.success("Анкета объединена с новым кандидатом");
+      afterDecision(targetId, "merged");
+    } catch (err) {
+      const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
+      toast.error(detail?.status === 409 && detail.data?.detail ? detail.data.detail : "Не удалось объединить профили");
     } finally {
       setBusy(false);
     }
@@ -177,23 +197,28 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
 
   const handleDismiss = async () => {
     const targetId = selectedDupId ?? hiddenId;
-    if (targetId == null) return;
+    if (targetId == null || decisions[targetId]) return;
     setBusy(true);
     try {
       await dismissDuplicate(card.id, targetId);
-      toast.success("Отмечено: это разные люди");
-      if (idx >= duplicates.length - 1) {
-        setOpen(false);
-        setResolved(true);
-        onResolved?.();
-      } else {
-        goToDup(1);
-      }
+      toast.success("Отмечено: эта анкета — другой человек");
+      afterDecision(targetId, "dismissed");
     } catch {
       toast.error("Не удалось сохранить");
     } finally {
       setBusy(false);
     }
+  };
+
+  // «Закрыть» при частично решённых: решения сохранены, остальные ждут —
+  // говорим прямо, чтобы не казалось, что закрытие разделило всех.
+  const closeModal = () => {
+    const decidedCount = Object.keys(decisions).length;
+    const left = duplicates.length - decidedCount;
+    if (decidedCount > 0 && left > 0) {
+      toast(`Решения сохранены. Ещё не проверено анкет: ${left}`);
+    }
+    setOpen(false);
   };
 
   const left = sideFromCard(card, status);
@@ -205,7 +230,10 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   if (!triggerEntity) return null;
 
   // Индекс показанного справа дубликата — для нав-стрелок «перебираем карточки».
-  const idx = duplicates.findIndex((d) => d.entity_id === selectedDupId);
+  const idx = Math.max(0, duplicates.findIndex((d) => d.entity_id === selectedDupId));
+  const selectedDecision = selectedDupId != null ? decisions[selectedDupId] : undefined;
+  const undecidedCount = duplicates.filter((d) => !decisions[d.entity_id]).length;
+  const selectedName = duplicates[idx]?.entity_name || archived?.name || "";
   // Перелистывание дублей (свайп карточки / клик по точке) — на delta шагов.
   // Трек спружинит к idx*100%, новая карточка въедет справа без пустоты.
   const goToDup = (delta: number) => {
@@ -245,7 +273,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          {...backdropClose(() => !busy && setOpen(false))}
+          {...backdropClose(() => !busy && closeModal())}
         >
           {loading ? (
             <div className="text-white flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
@@ -294,6 +322,8 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                         </button>
                         <span className="tabular-nums min-w-[50px] text-center">
                           {idx + 1} из {duplicates.length}
+                          {" · "}
+                          {undecidedCount > 0 ? `не проверено: ${undecidedCount}` : "все проверены"}
                         </span>
                         <button
                           onClick={() => goToDup(1)}
@@ -328,6 +358,19 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                                 div::-webkit-scrollbar { display: none; }
                               `}</style>
                               {/* Карточка дубля с собственными стилями: bg-white border border-gray-200 rounded-xl shadow-sm p-6 */}
+                              {decisions[d.entity_id] && (
+                                <div
+                                  className={`mb-2 rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                                    decisions[d.entity_id] === "merged"
+                                      ? "bg-lime-100 text-lime-800"
+                                      : "bg-red-50 text-red-700"
+                                  }`}
+                                >
+                                  {decisions[d.entity_id] === "merged"
+                                    ? "Объединена с новым кандидатом"
+                                    : "Отмечено: другой человек"}
+                                </div>
+                              )}
                               {dupSide ? (
                                 <CandidateCompareCard
                                   title=""
@@ -359,29 +402,38 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
               </div>
 
               {/* FOOTER - белый низ с кнопками */}
-              <div className="shrink-0 p-4 bg-white border-t border-gray-200 flex justify-center items-center gap-4">
+              <div className="shrink-0 p-4 bg-white border-t border-gray-200 flex flex-col items-center gap-3">
+                {duplicates.length > 1 && (
+                  <div className="text-sm text-gray-600 text-center">
+                    {selectedDecision
+                      ? "По этой анкете решение уже принято — пролистайте к непроверенной"
+                      : <>Решение только по анкете {idx + 1} из {duplicates.length}{selectedName ? <>: <b>{selectedName}</b></> : null}</>}
+                  </div>
+                )}
+                <div className="flex justify-center items-center gap-4">
                 <button
-                  disabled={busy}
+                  disabled={busy || !!selectedDecision}
                   onClick={handleMerge}
                   className="inline-flex items-center justify-center gap-2 bg-lime-500 hover:bg-lime-600 text-white rounded-lg px-6 py-2.5 text-sm font-semibold disabled:opacity-50"
                 >
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Завершить объединение
+                  {duplicates.length > 1 ? "Объединить с этой анкетой" : "Завершить объединение"}
                 </button>
                 <button
-                  disabled={busy}
+                  disabled={busy || !!selectedDecision}
                   onClick={handleDismiss}
                   className="inline-flex items-center justify-center gap-2 border-2 border-red-500 bg-white text-red-600 hover:bg-red-50 rounded-lg px-6 py-2.5 text-sm font-semibold disabled:opacity-50"
                 >
-                  Нет, это разные люди
+                  {duplicates.length > 1 ? "Это другой человек" : "Нет, это разные люди"}
                 </button>
                 <button
                   disabled={busy}
-                  onClick={() => setOpen(false)}
+                  onClick={closeModal}
                   className="inline-flex items-center justify-center gap-2 bg-white text-black hover:bg-gray-100 rounded-lg px-6 py-2.5 text-sm font-semibold border-2 border-black disabled:opacity-50"
                 >
                   Закрыть
                 </button>
+                </div>
               </div>
             </div>
           )}
