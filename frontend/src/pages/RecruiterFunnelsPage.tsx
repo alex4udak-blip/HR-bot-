@@ -1910,41 +1910,20 @@ export default function RecruiterFunnelsPage() {
       // Комменты СКОУПИМ по воронке: показываем только заметки ЭТОЙ вакансии
       // (vacancy_id === selectedVacancyId) + «Общие» (без vacancy_id / легаси).
       // Один кандидат в нескольких воронках — у каждой своя лента комментов.
-      // + ПО АВТОРУ: в ОБЩЕЙ воронке несколько со-рекрутёров на одном кандидате,
-      // поэтому обычный рекрутёр (hr/member) видит только свои. Легаси без
-      // автора остаются видны всем (старая общая история).
-      // ИСКЛЮЧЕНИЯ (видят ВСЁ, без фильтра по автору):
-      //  • АДМИН/ОВНЕР/СУПЕРАДМИН (isHrAdmin) — та же семантика, что и
-      //    sees_all_candidates/isHrAdmin везде в приложении: полный доступ к
-      //    базе, фильтр по автору для них не применяется вообще.
-      //  • НАБЛЮДАТЕЛЬ (is_readonly) — своих комментов у него нет (не пишет),
-      //    показываем комменты ВЛАДЕЛЬЦА заявки («того человека, в чьей
-      //    воронке он находится») — created_by заявки, а если не записан
-      //    (bulk-добавление) — владелец вакансии (тот же fallback, что и
-      //    бэкенд для HR-меток, services/hr_tags.compute_hr_tags).
+      // По автору НЕ фильтруем: все видят комментарии всех, кто работает в этой
+      // воронке, — как на «Все кандидаты» (решение юзера 2026-09-15; раньше
+      // рекрутёр видел только свои, и отказ Марии в её воронке у коллег пропадал).
       extra_data: (() => {
         const ed = (entityExtraData || {}) as Record<string, unknown>;
         const allNotes = Array.isArray(ed.notes) ? (ed.notes as Array<Record<string, unknown>>) : null;
         if (!allNotes) return ed;
-        const isObserver = !!user?.is_readonly;
-        // Админ/овнер/суперадмин видят ВСЁ в этой воронке (без фильтра по
-        // автору) — targetAuthorId=null отключает сравнение ниже, вакансийный
-        // скоуп (inFunnel) при этом остаётся: чужая воронка сюда не подмешивается.
-        const targetAuthorId = isHrAdmin
-          ? null
-          : isObserver
-            ? (selectedCandidate?.created_by ?? selectedVacancy?.created_by ?? null)
-            : (user?.id ?? null);
-        const scoped = allNotes.filter((n) => {
-          const inFunnel = n?.vacancy_id == null || n.vacancy_id === selectedVacancyId;
-          if (!inFunnel) return false;
-          const aid = (n as { author_id?: unknown })?.author_id;
-          return aid == null || targetAuthorId == null || String(aid) === String(targetAuthorId);
-        });
+        const scoped = allNotes.filter(
+          (n) => n?.vacancy_id == null || n.vacancy_id === selectedVacancyId,
+        );
         return { ...ed, notes: scoped };
       })(),
     };
-  }, [selectedCandidate, entityExtraData, dupCard, selectedVacancyId, isHrAdmin, user?.id, user?.is_readonly, selectedVacancy?.created_by]);
+  }, [selectedCandidate, entityExtraData, dupCard, selectedVacancyId]);
 
   // ---- Яркие теги-ярлыки у имени: редактирование прямо в воронке ----
   const hlTags = readHeadlineTags(entityExtraData);
