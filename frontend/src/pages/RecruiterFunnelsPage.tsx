@@ -356,7 +356,14 @@ export default function RecruiterFunnelsPage() {
   // Master-detail state
   const [selectedTab, setSelectedTab] = useState<string>('all');
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
-  const [entityActivity, setEntityActivity] = useState<ActivityBlockData[]>([]);
+  // Лента активности ПРИВЯЗАНА к кандидату, для которого загружена. Раньше это был
+  // голый массив: при переключении кандидата в нём до ответа сервера (или навсегда,
+  // если опоздавший ответ прошлого кандидата прилетал позже) лежала лента ДРУГОГО
+  // человека, и карточка брала оттуда application_id — «Отказ» уходил чужой заявке
+  // в той же воронке, а комментарий «Этап: Отказ» — выбранному (2026-09-15, Мария:
+  // «поставила отказ, а висит в Выполняет ТЗ»).
+  const [activityState, setActivityState] = useState<{ entityId: number | null; blocks: ActivityBlockData[] }>({ entityId: null, blocks: [] });
+  const activityEntityRef = useRef<number | null>(null);
   const [dupCard, setDupCard] = useState<KanbanCard | null>(null);
   // По умолчанию 'resume' — как в «Все кандидаты» (detailTab там тоже стартует
   // с "resume"): резюме видно сразу прокруткой, без клика по вкладке. 'info'
@@ -1297,11 +1304,16 @@ export default function RecruiterFunnelsPage() {
 
   // Load cross-vacancy activity feed when entity changes
   useEffect(() => {
-    const eid = selectedCandidate?.entity_id;
-    if (!eid) { setEntityActivity([]); return; }
+    const eid = selectedCandidate?.entity_id ?? null;
+    activityEntityRef.current = eid;
+    setActivityState({ entityId: eid, blocks: [] });
+    if (!eid) return;
     getEntityActivity(eid)
-      .then((blocks) => setEntityActivity(Array.isArray(blocks) ? blocks : []))
-      .catch(() => setEntityActivity([]));
+      .then((blocks) => {
+        if (activityEntityRef.current !== eid) return; // опоздавший ответ прошлого кандидата
+        setActivityState({ entityId: eid, blocks: Array.isArray(blocks) ? blocks : [] });
+      })
+      .catch(() => {});
   }, [selectedCandidate?.entity_id]);
 
   // Перезагрузка ленты активности после мутации в карточке вакансии +
@@ -1311,7 +1323,9 @@ export default function RecruiterFunnelsPage() {
     if (eid) {
       try {
         const blocks = await getEntityActivity(eid);
-        setEntityActivity(Array.isArray(blocks) ? blocks : []);
+        if (activityEntityRef.current === eid) {
+          setActivityState({ entityId: eid, blocks: Array.isArray(blocks) ? blocks : [] });
+        }
       } catch {
         /* ignore — оставляем прежнюю ленту */
       }
@@ -1978,25 +1992,35 @@ export default function RecruiterFunnelsPage() {
   // «Первичный» блок = заявка на текущую вакансию воронки (если определима),
   // иначе первый блок активности. Его applicationId/events/vacancyTitle уходят в
   // живой контейнер; статус живого = статус самого кандидата (его текущий этап).
+  // Только лента ВЫБРАННОГО кандидата — чужая (ещё не сменившаяся) не годится.
+  const entityActivity = useMemo(
+    () => (activityState.entityId === (selectedCandidate?.entity_id ?? null) ? activityState.blocks : []),
+    [activityState, selectedCandidate?.entity_id],
+  );
   const primaryBlock = useMemo(() => {
     if (entityActivity.length === 0) return undefined;
     return (
-      entityActivity.find((b) => b.vacancy_id === selectedVacancyId)
+      entityActivity.find((b) => b.application_id === selectedCandidate?.id)
+      || entityActivity.find((b) => b.vacancy_id === selectedVacancyId)
       || entityActivity[0]
     );
-  }, [entityActivity, selectedVacancyId]);
+  }, [entityActivity, selectedVacancyId, selectedCandidate?.id]);
 
   const containers = useMemo<StageContainer[]>(() => {
     if (!funnelCard) return [];
     return buildStageContainers({
       card: funnelCard,
       status: selectedCandidate?.stage || primaryBlock?.current_stage || 'applied',
-      liveApplicationId: primaryBlock?.application_id ?? 0,
+      // В воронке выбранный кандидат И ЕСТЬ заявка этой воронки — берём её id
+      // напрямую, а не из ленты (защита от смены этапа чужой заявке).
+      liveApplicationId:
+        (selectedCandidate && selectedCandidate.vacancy_id === selectedVacancyId ? selectedCandidate.id : undefined)
+        ?? primaryBlock?.application_id ?? 0,
       liveEvents: primaryBlock?.events,
       liveVacancyTitle: primaryBlock?.vacancy_title ?? null,
       allEntityFiles: entityFiles,
     });
-  }, [funnelCard, selectedCandidate?.stage, primaryBlock, entityFiles]);
+  }, [funnelCard, selectedCandidate?.stage, selectedCandidate?.id, selectedCandidate?.vacancy_id, selectedVacancyId, primaryBlock, entityFiles]);
 
   const cardReact = useCallback(
     async (entryKey: string, emoji: string): Promise<EntryReaction[] | null> => {
