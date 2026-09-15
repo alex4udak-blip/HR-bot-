@@ -1,8 +1,8 @@
-"""Теги-ярлыки у имени: рекрутёр ставит их на чужом кандидате (2026-09-10).
+"""Рекрутёр правит кандидата коллеги (2026-09-10 теги, 2026-09-15 все поля).
 
 Раньше PUT /entities/{id} пускал только автора/админа, и рекрутёр на кандидате
-коллеги получал 403 «Ошибка сохранения тега», хотя метки рядом ставились.
-Теперь только headline_tags открыты любому рекрутёру орга; остальные поля — нет.
+коллеги получал 403 («Ошибка сохранения тега», «Ошибка сохранения» в форме).
+Теперь любого кандидата может править любой рекрутёр орга; member — нет.
 """
 from datetime import datetime
 
@@ -48,23 +48,33 @@ async def test_recruiter_can_set_headline_tags_on_colleagues_candidate(
     assert candidate_entity.extra_data["headline_tags"] == TAGS
 
 
-async def test_recruiter_still_cannot_edit_other_fields(
-    client: AsyncClient, candidate_entity: Entity, hr_member: OrgMember, second_user: User,
+async def test_recruiter_can_edit_any_field_of_colleagues_candidate(
+    client: AsyncClient, db_session: AsyncSession, candidate_entity: Entity,
+    hr_member: OrgMember, second_user: User,
 ):
+    r = await client.put(
+        f"/api/entities/{candidate_entity.id}",
+        json={"telegram_usernames": ["@Bannucchio"], "extra_data": {"city": "Israel"}},
+        headers=_headers(second_user),
+    )
+    assert r.status_code == 200, r.text
+    await db_session.refresh(candidate_entity)
+    assert candidate_entity.telegram_usernames == ["bannucchio"]
+    assert candidate_entity.extra_data["city"] == "Israel"
+
+
+async def test_plain_member_still_cannot_edit(
+    client: AsyncClient, db_session: AsyncSession, organization: Organization,
+    candidate_entity: Entity, second_user: User,
+):
+    db_session.add(OrgMember(
+        org_id=organization.id, user_id=second_user.id, role=OrgRole.member,
+        created_at=datetime.utcnow(),
+    ))
+    await db_session.commit()
     r = await client.put(
         f"/api/entities/{candidate_entity.id}",
         json={"name": "Другое имя"},
-        headers=_headers(second_user),
-    )
-    assert r.status_code == 403
-
-
-async def test_headline_tags_bundled_with_other_extra_keys_rejected(
-    client: AsyncClient, candidate_entity: Entity, hr_member: OrgMember, second_user: User,
-):
-    r = await client.put(
-        f"/api/entities/{candidate_entity.id}",
-        json={"extra_data": {"headline_tags": TAGS, "salary": 100}},
         headers=_headers(second_user),
     )
     assert r.status_code == 403
