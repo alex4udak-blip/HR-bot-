@@ -14,6 +14,7 @@ This module is the SINGLE source of truth for the computation. The one-shot bulk
 backfill in ``start.sh`` mirrors the exact same rule in SQL — keep them in sync.
 """
 import logging
+from datetime import datetime
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -130,6 +131,14 @@ async def sync_for_entity(
     else:
         merged.pop(EXTRA_KEY, None)  # нет активных HR → убираем ключ совсем
     locked.extra_data = merged
+    # updated_at ставим ЯВНО, питоновским значением. У колонки server-side
+    # onupdate=func.now(): после UPDATE SQLAlchemy помечает атрибут expired, и
+    # следующее обращение к нему тянет ленивую догрузку. В get_entity это
+    # обращение происходит уже вне async-контекста → MissingGreenlet → 500 на
+    # ОТКРЫТИИ КАРТОЧКИ. Ловится только когда набор HR реально поменялся (иначе
+    # diff-guard выше выходит раньше и записи нет) — потому и выглядело как
+    # «иногда карточка не открывается». Тот же приём, что в kanban.bulk_move.
+    locked.updated_at = datetime.utcnow()
 
     if commit:
         await db.commit()
