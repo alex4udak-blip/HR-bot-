@@ -15,6 +15,14 @@ const DANGEROUS_TAGS = new Set([
  * - опасные теги (script/iframe/…) удаляются вместе с содержимым;
  * - прочие неразрешённые теги заменяются своим содержимым (текст сохраняется);
  * - у разрешённых тегов срезаются все атрибуты, кроме href (только http/https) у <a>.
+ *
+ * ВАЖНО про порядок обхода: поддерево неразрешённого тега чистится ДО того, как
+ * его содержимое поднимут на место самого тега. Иначе поднятые узлы не проходят
+ * очистку вообще — обход идёт по снимку `parent.children`, снятому до мутации, и
+ * новые дети в него не попадают. Ровно на этом строился обход санитайзера:
+ * `<img src=x onerror=…>` срезался, а `<section><img src=x onerror=…></section>`
+ * выживал целиком, вместе с onerror, и исполнялся при вставке через innerHTML.
+ * Так же протекали `<a href="javascript:…">` внутри любого чужого тега.
  */
 export function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return "";
@@ -30,6 +38,8 @@ export function sanitizeHtml(html: string | null | undefined): string {
         return;
       }
       if (!ALLOWED_TAGS.has(tag)) {
+        // Сначала вычищаем то, что лежит внутри, и только потом поднимаем.
+        clean(el);
         el.replaceWith(...Array.from(el.childNodes));
         return;
       }
