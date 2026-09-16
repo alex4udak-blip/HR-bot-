@@ -637,6 +637,23 @@ async def update_application(
                 detail="Можно изменять только своих кандидатов",
             )
 
+    # Страховка от промаха по заявке: фронт присылает, КОМУ он собирался менять
+    # этап. Не совпало — значит, карточка держала чужую заявку (баг 2026-09-15,
+    # «поставила отказ, а он висит в Выполняет ТЗ»): отказываем и пишем в лог.
+    if data.expected_entity_id is not None and data.expected_entity_id != application.entity_id:
+        logger.error(
+            "STAGE_GUARD mismatch: user=%s app=%s принадлежит entity=%s, "
+            "а фронт ожидал entity=%s (vacancy=%s, stage %s -> %s)",
+            current_user.id, application.id, application.entity_id,
+            data.expected_entity_id, application.vacancy_id,
+            application.stage.value if application.stage else None,
+            data.stage.value if data.stage else None,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="Карточка кандидата устарела — обновите страницу и повторите",
+        )
+
     # Save old values for notifications
     old_stage = application.stage
     old_interview_at = application.next_interview_at
@@ -691,6 +708,15 @@ async def update_application(
             entity_to_sync.status = new_status
             entity_to_sync.updated_at = datetime.utcnow()
             logger.info(f"Synchronized application {application_id} stage {data.stage} to entity {application.entity_id} status {new_status}")
+
+    if data.stage and data.stage != old_stage:
+        logger.info(
+            "STAGE_CHANGE: user=%s (%s) app=%s entity=%s vacancy=%s %s -> %s expected_entity=%s",
+            current_user.id, current_user.name, application.id, application.entity_id,
+            application.vacancy_id,
+            old_stage.value if old_stage else None, data.stage.value,
+            data.expected_entity_id,
+        )
 
     # Record stage transition in audit log
     if data.stage and data.stage != old_stage:

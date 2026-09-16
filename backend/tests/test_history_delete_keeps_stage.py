@@ -79,3 +79,32 @@ async def test_deleting_older_transition_keeps_stage(
     assert r.status_code == 200, r.text
     await db_session.refresh(app)
     assert app.stage == SECOND
+
+
+async def test_stage_change_rejects_wrong_candidate(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User, moved_application,
+):
+    """Страховка: если фронт ждал другого кандидата — этап не меняется (409)."""
+    app, _initial, _moved = moved_application
+    r = await client.put(
+        f"/api/vacancies/applications/{app.id}",
+        json={"stage": FIRST.value, "expected_entity_id": app.entity_id + 999},
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 409, r.text
+    await db_session.refresh(app)
+    assert app.stage == SECOND
+
+
+async def test_stage_change_applies_for_matching_candidate(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User, moved_application,
+):
+    app, _initial, _moved = moved_application
+    r = await client.put(
+        f"/api/vacancies/applications/{app.id}",
+        json={"stage": FIRST.value, "expected_entity_id": app.entity_id},
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    await db_session.refresh(app)
+    assert app.stage == FIRST

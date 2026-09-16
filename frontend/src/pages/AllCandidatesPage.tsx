@@ -2147,6 +2147,8 @@ const InfoTab = memo(function InfoTab({
           await updateApplication(appId, {
             stage: stage as ApplicationStage,
             ...(comment ? { comment } : {}),
+            // Страховка: бэк сверит заявку с этим кандидатом.
+            expected_entity_id: card.id,
           });
         } catch {
           // Раньше ошибка тут проглатывалась молча («entity-статус уже

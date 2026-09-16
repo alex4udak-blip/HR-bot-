@@ -1586,8 +1586,14 @@ export default function RecruiterFunnelsPage() {
   // Change candidate stage
   const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage, comment?: string) => {
     if (blockIfArchived()) return false;
+    // Кандидат, которому МЫ меняем этап: бэк сверит с заявкой и не даст промахнуться.
+    const target = candidates.find((c) => c.id === applicationId);
     try {
-      await updateApplication(applicationId, { stage: newStage, ...(comment ? { comment } : {}) });
+      await updateApplication(applicationId, {
+        stage: newStage,
+        ...(comment ? { comment } : {}),
+        ...(target?.entity_id ? { expected_entity_id: target.entity_id } : {}),
+      });
       // Локально двигаем кандидата на новый этап + СРАЗУ снимаем «предыдущую
       // серию» (оптимистично): смена этапа обновляет last_stage_change_at на
       // бэке → отклик уходит из серой зоны. Не ждём рефетча, иначе серость
@@ -1608,11 +1614,16 @@ export default function RecruiterFunnelsPage() {
       // Refresh vacancy store for updated counts
       fetchVacancies();
       return true;
-    } catch {
-      toast.error('Ошибка смены статуса');
+    } catch (err) {
+      const status = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
+      toast.error(
+        status?.status === 409 && status.data?.detail
+          ? status.data.detail
+          : 'Ошибка смены статуса',
+      );
       return false;
     }
-  }, [fetchVacancies, getVacancyStageLabel, blockIfArchived]);
+  }, [fetchVacancies, getVacancyStageLabel, blockIfArchived, candidates]);
 
   // ─── Interview scheduling modal ───
   const [interviewForCandidate, setInterviewForCandidate] = useState<typeof selectedCandidate | null>(null);

@@ -82,6 +82,9 @@ export interface ApplicationUpdate {
   rejection_reason?: string;
   next_interview_at?: string;
   comment?: string;
+  // Кому фронт СОБИРАЛСЯ менять этап. Бэк сверяет с заявкой и отвечает 409,
+  // если карточка держала чужую заявку (страховка после бага 15.09).
+  expected_entity_id?: number;
 }
 
 export const getVacancies = async (filters?: VacancyFilters): Promise<Vacancy[]> => {
@@ -192,6 +195,10 @@ export const takeApplication = async (
 };
 
 export const updateApplication = async (applicationId: number, updates: ApplicationUpdate): Promise<VacancyApplication> => {
+  if (updates.stage) {
+    // Видно в консоли браузера: кому и на какой этап ушёл запрос.
+    console.info('[stage] PUT application', applicationId, '→', updates.stage, 'entity=', updates.expected_entity_id);
+  }
   const { data } = await debouncedMutation<VacancyApplication>('put', `/vacancies/applications/${applicationId}`, updates);
   return data;
 };

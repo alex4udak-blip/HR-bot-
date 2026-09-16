@@ -128,6 +128,13 @@ async def delete_application_history(
     if not transition:
         raise HTTPException(status_code=404, detail="History entry not found")
 
+    logger.info(
+        "HISTORY_DELETE: user=%s app=%s entity=%s запись %s (%s -> %s) удалена, "
+        "этап заявки остаётся %s",
+        current_user.id, application.id, application.entity_id, transition.id,
+        transition.from_stage, transition.to_stage,
+        application.stage.value if application.stage else None,
+    )
     await db.delete(transition)
     await db.commit()
     return {"success": True}

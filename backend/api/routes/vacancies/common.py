@@ -643,6 +643,10 @@ class ApplicationUpdate(BaseModel):
     interview_summary: Optional[str] = None
     next_interview_at: Optional[datetime] = None
     comment: Optional[str] = None  # коммент к переходу этапа (пишется в историю, не поле заявки)
+    # Кандидат, которому фронт СОБИРАЛСЯ менять этап. Страховка от промаха по
+    # заявке (2026-09-15: этап уходил заявке предыдущего открытого кандидата).
+    # Не совпало с заявкой — 409 и запись в лог, вместо тихой правки не того.
+    expected_entity_id: Optional[int] = None
 
 
 class ApplicationResponse(BaseModel):
