@@ -63,7 +63,7 @@ import {
 } from "@/services/api/entities";
 import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
 import type { ApplicationStage } from "@/types";
-import { STATUS_LABELS, APPLICATION_STAGE_LABELS } from "@/types";
+import { STATUS_LABELS, APPLICATION_STAGE_LABELS, STATUS_TO_STAGE_MAP, type EntityStatus } from "@/types";
 import { getAllVacancies, createApplication, updateApplication, deleteApplication, deleteApplicationHistory } from "@/services/api/vacancies";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
@@ -2120,10 +2120,24 @@ const InfoTab = memo(function InfoTab({
   const cardChangeStage = useCallback(
     async (appId: number, stage: string, comment?: string) => {
       let ok = true;
-      if (appId > 0) {
+      // Пикер собран из КОЛОНОК доски, а там статусы кандидата (EntityStatus:
+      // new / practice / tech_practice / is_interview…). У заявки свой набор
+      // (ApplicationStage: applied / phone_screen / interview / assessment…), и
+      // четыре значения в них называются по-разному. Раньше статус уходил в
+      // заявку через `stage as ApplicationStage` — приведение типа, которое
+      // ничего не проверяет: «Новый», «Интервью с HR», «Интервью с заказчиком»
+      // и «Принятие решения» бэкенд не принимал и отвечал 422. Остальные
+      // совпадают по имени и работали случайно.
+      const appStage = STATUS_TO_STAGE_MAP[stage as EntityStatus];
+      if (appId > 0 && !appStage) {
+        // У статуса нет пары среди этапов заявки — двигаем только кандидата,
+        // молча и без ошибки. Это не сбой, просто заявке такого этапа нет.
+        console.warn('[stage] у статуса нет этапа заявки, двигаем только кандидата:', stage);
+      }
+      if (appId > 0 && appStage) {
         try {
           await updateApplication(appId, {
-            stage: stage as ApplicationStage,
+            stage: appStage,
             ...(comment ? { comment } : {}),
             // Страховка: бэк сверит заявку с этим кандидатом.
             expected_entity_id: card.id,

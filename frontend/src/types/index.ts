@@ -802,6 +802,9 @@ export const STATUS_TO_STAGE_MAP: Partial<Record<EntityStatus, ApplicationStage>
   probation: 'probation',
   transferred: 'transferred',
   rejected: 'rejected',
+  // withdrawn был пропущен: значение есть и в EntityStatus, и в ApplicationStage,
+  // а без строки в карте «Отозван» не доезжал до заявки.
+  withdrawn: 'withdrawn',
   reserve: 'reserve',
   // Legacy aliases
   applied: 'applied',
