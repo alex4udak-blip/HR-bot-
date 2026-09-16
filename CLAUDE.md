@@ -1,91 +1,124 @@
-# HR-bot - Enterprise HR Intelligence Platform
+# HR-bot — платформа найма (Enceladus)
 
-## Быстрые команды
+## Локальный запуск
+Конфиги лежат в `.claude/launch.json` (frontend + backend). Бэкенд читает
+`backend/dev.env` (в git его нет — секреты).
+
 ```bash
-cd backend && uvicorn main:app --reload    # API на :8000
-cd frontend && npm run dev                  # UI на :5173
-docker-compose up -d                        # Всё вместе
-pytest                                      # Тесты (3.5MB тестов!)
-alembic upgrade head                        # Миграции
+cd frontend && node node_modules/vite/bin/vite.js --host        # UI :5173
+cd backend && set -a && . ./dev.env && set +a && \
+  ./.venv/bin/python -m uvicorn main:app --reload --port 8000   # API :8000
+cd backend && ./.venv/bin/python -m pytest -q                   # тесты бэка
+cd frontend && npx tsc --noEmit -p . && npx vitest run          # типы + тесты фронта
 ```
 
-## Архитектура
+Локальные демо-аккаунты (пароль `Demo1234!`) создаёт `backend/seed_local.py`,
+переключаться между ними удобнее через DEV-кнопку «Аккаунт» в левом нижнем углу
+(только в dev-сборке): Super Admin, Настя и Мария (админы), Тестовый Рекрутёр и
+Пётр (hr), Наблюдатель (readonly).
+
+**Эталон тестов** (эти падения были ДО правок, сверяйся с ними, а не с нулём):
+- `vitest` — 241 падение;
+- `pytest tests/test_cross_org.py tests/test_entities*.py` — 26 падений;
+- `pytest tests/test_vacanc*.py tests/test_kanban_privacy.py` — 25 падений.
+
+## Деплой — Saturn (не Railway)
+Панель: https://saturn.ac → проект Enceladus. Сервисы: **frontend**, **backend**,
+**app**, postgresql-db, redis-cache. Всё на сервере saturn2.
+
+- Рабочий адрес: **https://enceladus-7oylzk.saturn.ac** (бэк —
+  `enceladus-ns9s2o.saturn.ac`, nginx фронта проксирует на него `/api`).
+- `enceladus.site` — в петле редиректов, DNS смотрит не на тот сервер. Пока не
+  починят, каноническим считается адрес saturn.ac (расширение переключено на
+  него временно, см. `backend/chrome-extension/background.js`).
+- **Деплой запускает человек** кнопкой Deploy в Saturn, автодеплой по пушу
+  срабатывает не всегда. Бывало, что сборка «успешна», а сайт отдаёт старую:
+  проверяй по факту, а не по статусу.
+
+Проверка, что на проде реально новый код:
+```bash
+base=https://enceladus-7oylzk.saturn.ac
+idx=$(curl -s "$base/?r=$RANDOM" | grep -o '/assets/index-[^"]*\.js' | head -1)
+curl -sI "$base/?r=$RANDOM" | grep -i last-modified
+curl -s "$base$idx" | grep -o 'assets/RecruiterFunnelsPage-[^"]*\.js' | head -1
+# затем поискать в чанке строку из своего коммита
 ```
-├── backend/
-│   ├── api/
-│   │   ├── services/      # 15,769 строк бизнес-логики
-│   │   │   ├── vacancy_recommender.py   # AI матчинг кандидат↔вакансия
-│   │   │   ├── similarity.py            # Детекция дубликатов
-│   │   │   ├── external_links.py        # Парсер Google Docs/Drive/Fireflies
-│   │   │   ├── smart_search.py          # Умный поиск
-│   │   │   ├── red_flags.py             # Детекция красных флагов
-│   │   │   ├── call_processor.py        # Обработка звонков
-│   │   │   └── abac/                    # Attribute-Based Access Control
-│   │   ├── routes/        # API endpoints
-│   │   ├── models/        # SQLAlchemy + Pydantic
-│   │   └── bot.py         # Telegram bot (aiogram 3.x)
-│   └── tests/             # 3.5MB тестов — enterprise уровень
-├── frontend/              # React + Tailwind + Framer Motion
-│   ├── components/
-│   │   ├── ui/            # Базовые компоненты
-│   │   ├── layout/        # Layouts
-│   │   └── features/      # Бизнес-компоненты
-│   └── pages/             # Страницы админки
-```
+
+## Git
+Пуш сразу в `main`, без PR и веток. Коммиты по-русски, тело объясняет ПРИЧИНУ и
+что проверено. Заканчивать строкой `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 
 ## Стек
-- Backend: FastAPI, SQLAlchemy 2.0, asyncpg, aiogram 3.x
-- Frontend: React 18, Tailwind, Framer Motion, Recharts, Zustand
-- AI: Claude API (анализ), Whisper API (транскрибация)
-- DB: PostgreSQL
-- Deploy: Railway + Docker
+FastAPI, SQLAlchemy 2.0 (style `select`), asyncpg, aiogram 3.x, Alembic.
+React 18, Vite, Zustand, Tailwind, Recharts. PostgreSQL, Redis. Claude API.
 
-## Git Workflow — ПРЯМОЙ PUSH В MAIN
-```bash
-# Коммит и пуш сразу в main, без PR!
-git add .
-git commit -m "feat: [описание]"
-git push origin main
-
-# Railway автоматически деплоит из main за 3-5 мин
+```
+backend/api/
+  routes/            # эндпоинты; vacancies/, entities/ — по файлу на тему
+  services/          # бизнес-логика (similarity.py — дубли, hr_tags, abac/)
+  models/database.py # SQLAlchemy + enum'ы этапов/ролей
+  bot.py             # Telegram
+backend/chrome-extension/   # расширение hh.ru («Magic Button»), zip отдаёт бэк
+frontend/src/pages/         # AllCandidatesPage, RecruiterFunnelsPage, Statuses…
+frontend/src/components/entities/  # карточка кандидата, дубли, метки
 ```
 
-**ВАЖНО:** НЕ создавай PR и ветки. Исправления сразу в main.
+## Роли
+| Роль | Кто | Права |
+|---|---|---|
+| superadmin | платформа | всё |
+| owner / admin | Настя, Мария | HR-сегмент целиком, аналитика, ПЭН, экспорт |
+| hr | рекрутёры | кандидаты, воронки, вакансии, созвоны |
+| member | сотрудники | без HR-раздела |
+| is_readonly | наблюдатель | видит всё в HR, любые изменения блокируются в `get_current_user` |
 
-## Railway
-- **URL:** [TODO — добавить после деплоя]
-- **Auto-deploy:** при push в main
-- **Время деплоя:** ~3-5 мин
+`isHrAdmin` на фронте = superadmin, owner или admin.
 
-## Проверка на проде
-После merge:
-1. Подожди 3-5 мин (Railway деплоит)
-2. Открой URL через Chrome extension
-3. Проверь функционал
-4. Обнови WORK_LOG.md
+## Модель работы HR
+- **Кандидаты общие** для организации: смотреть и править может любой рекрутёр,
+  неважно, кто добавил (`check_entity_access`, уровень edit). Удаление и передача
+  — у автора и админов.
+- **Воронка** = вакансия. Заявка (`VacancyApplication`) — связка кандидат↔вакансия,
+  у неё свой этап. Заявку «берут в работу» лично (`extra_data.accepted_by`), в
+  одной воронке может работать несколько рекрутёров (второй — через «Забрать»,
+  `ApplicationCoRecruiter`).
+- **«Мои вакансии»** в сайдбаре = где ты лично принял. Выпадающий список там
+  («Выбрать владельца вакансий») кладёт в адрес `?recruiter=<id>` — страница
+  воронок показывает кандидатов этого человека. Работает для всех ролей.
+- **«Только мои»** в воронке: в своей воронке включена по умолчанию, в чужой
+  выключена и временная, в воронке не в работе — неактивна.
+- **«Выйти из вакансии»** (снять себя, у остальных остаётся) и **«Закрыть
+  вакансию»** (закрыть у всех) — две разные кнопки, см. `getVacancyExitOptions`.
+- **Метки** (`entity_tags_catalog`) ставит любой рекрутёр; метки вида
+  «HR: Имя · Вакансия» считаются автоматически из заявок и не редактируются.
+- **История этапов** (`StageTransition`): удаление записи удаляет ТОЛЬКО запись,
+  этап заявки не меняется.
 
-## Ключевые фичи
-- Сквозной сбор данных о кандидате (текст, голос, видео)
-- AI-анализ личности через Claude
-- Мультитенантность (Superadmin/Admin роли)
-- Vacancy Recommender — AI матчинг с cultural fit
-- Детекция дубликатов с транслитерацией RU↔EN
-- Парсинг внешних ссылок через Playwright
+## Дубли кандидатов
+Сейчас совпадения ищут несколько разных кусков кода, и правила у них разъехались —
+это известная проблема, план исправления обсуждён (см. историю диалога):
+- единый матчер и нормализация телефонов (E.164);
+- «Фамилия+Имя» перестаёт быть точным совпадением, отчества учитываются;
+- уровень «тот же человек» только предупреждает, создавать кандидата можно;
+- решения по парам — в отдельную таблицу, сейчас они лежат в
+  `extra_data.dismissed_duplicate_ids` и теряются при слиянии.
 
-## Паттерны кода
-- Async/await везде
-- Pydantic для валидации
-- SQLAlchemy 2.0 style (select, not query)
-- Сервисный слой отделён от routes
-- ABAC для авторизации
+Окно сравнения решает пары по одной: кнопки действуют на анкету, открытую справа.
 
-## Роли системы
-- **Superadmin**: видит всё, управляет пользователями
-- **Admin (HR)**: видит свои чаты, делает анализ
+## Логи и диагностика
+В бэкенде есть маркеры, по ним удобно искать в логах Saturn:
+- `STAGE_CHANGE` — смена этапа: кто, заявка, кандидат, воронка, из→в;
+- `STAGE_GUARD mismatch` — фронт просил сменить этап не тому кандидату (409);
+- `HISTORY_DELETE` — удаление записи истории.
 
-## Тесты
-```bash
-pytest                           # Все тесты
-pytest tests/test_auth.py        # Конкретный файл
-pytest -v --tb=short             # Verbose с коротким traceback
-```
+В консоли браузера смена этапа печатает `[stage] PUT application … → этап`.
+
+## Правила работы в этом репозитории
+- Работаем в рамках **HR-сегмента**: `/all-candidates`, `/statuses`, `/analytics`,
+  `/my-funnels`, `/vacancies` и их бэкенд.
+- Сначала проверяешь локально сам (тесты + браузер), потом отдаёшь на ручную
+  проверку. Тестовые данные в локальной базе после проверки убираешь.
+- В панели Saturn — только чтение. Любое изменение переменных, деплой,
+  перезапуск — после явного «да» от владельца.
+- Никогда не запускать `docker system prune --volumes` / `docker volume prune`
+  на сервере: снесёт том PostgreSQL.
