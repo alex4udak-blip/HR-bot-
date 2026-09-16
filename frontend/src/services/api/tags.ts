@@ -15,6 +15,13 @@ export interface Tag {
   archived_at?: string | null;
   /** 'sourcer' — тот, кто привёл кандидата; 'general' — обычный ярлык. */
   kind?: TagKind;
+  /**
+   * Показывать ли метку ЯРКИМ ЯРЛЫКОМ у ФИО (бывшие extra_data.headline_tags).
+   * Признак живёт на СВЯЗИ кандидат↔метка, поэтому осмыслен только в выдаче
+   * getEntityTags: одна и та же метка у одного человека ярлык у имени, у
+   * другого обычная. В общем справочнике (getTags) всегда false.
+   */
+  show_at_name?: boolean;
 }
 
 export type TagKind = 'general' | 'sourcer';
@@ -72,8 +79,27 @@ export const getEntityTags = async (entityId: number): Promise<Tag[]> => {
   return data;
 };
 
-export const addTagToEntity = async (entityId: number, tagId: number): Promise<void> => {
-  await api.post(`/tags/entities/${entityId}/tags/${tagId}`);
+/**
+ * Повесить метку на кандидата. showAtName=true — сразу ярким ярлыком у ФИО.
+ * Если метка уже висит обычной, повторный вызов с true поднимает её к имени.
+ */
+export const addTagToEntity = async (
+  entityId: number,
+  tagId: number,
+  showAtName = false,
+): Promise<void> => {
+  await api.post(`/tags/entities/${entityId}/tags/${tagId}`, { show_at_name: showAtName });
+};
+
+/** Поднять метку к ФИО или убрать оттуда, НЕ снимая её с кандидата. */
+export const setTagShowAtName = async (
+  entityId: number,
+  tagId: number,
+  showAtName: boolean,
+): Promise<void> => {
+  await api.patch(`/tags/entities/${entityId}/tags/${tagId}/show-at-name`, {
+    show_at_name: showAtName,
+  });
 };
 
 export const removeTagFromEntity = async (entityId: number, tagId: number): Promise<void> => {

@@ -56,9 +56,24 @@ class TagOut(BaseModel):
     created_at: datetime | None = None
     archived_at: datetime | None = None
     kind: str = "general"
+    # Заполняется только там, где метка отдаётся В КОНТЕКСТЕ кандидата
+    # (get_entity_tags): признак живёт на связи, а не на самой метке.
+    show_at_name: bool = False
 
     class Config:
         from_attributes = True
+
+
+class EntityTagAttach(BaseModel):
+    """Тело простановки метки кандидату."""
+    # true — метка сразу становится ярким ярлыком у ФИО («+ тег» рядом с именем),
+    # false — обычная метка в строке «Метки». Одна и та же метка у разных
+    # кандидатов может быть и тем, и другим.
+    show_at_name: bool = False
+
+
+class ShowAtNameUpdate(BaseModel):
+    show_at_name: bool
 
 
 async def _get_org_id(db: AsyncSession, user: User) -> int:
@@ -265,23 +280,34 @@ async def get_entity_tags(
     if not entity:
         raise HTTPException(404, "Entity not found")
 
+    # Тянем метку ВМЕСТЕ с флагом связи: show_at_name у каждого кандидата свой.
     result = await db.execute(
-        select(EntityTag)
+        select(EntityTag, entity_tag_association.c.show_at_name)
         .join(entity_tag_association, EntityTag.id == entity_tag_association.c.tag_id)
         .where(entity_tag_association.c.entity_id == entity_id)
         .order_by(EntityTag.name)
     )
-    return list(result.scalars().all())
+    out: list[TagOut] = []
+    for tag, show_at_name in result.all():
+        row = TagOut.model_validate(tag)
+        row.show_at_name = bool(show_at_name)
+        out.append(row)
+    return out
 
 
 @router.post("/entities/{entity_id}/tags/{tag_id}")
 async def add_tag_to_entity(
     entity_id: int,
     tag_id: int,
+    data: EntityTagAttach | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add a tag to an entity."""
+    """Add a tag to an entity.
+
+    data.show_at_name — ставить ли метку ярким ярлыком у ФИО. Тело
+    необязательное: старые вызовы без него работают как раньше (обычная метка).
+    """
     org_id = await _get_org_id(db, current_user)
 
     # Verify entity
@@ -305,14 +331,67 @@ async def add_tag_to_entity(
             entity_tag_association.c.tag_id == tag_id,
         )
     )
+    show_at_name = bool(data.show_at_name) if data else False
     if existing.first():
-        return {"ok": True, "message": "Already tagged"}
+        # Метка уже висит. Повторный вызов из блока «у имени» ДОЛЖЕН поднять её
+        # к ФИО, иначе кнопка молча не срабатывает на уже проставленной метке.
+        if show_at_name:
+            await db.execute(
+                entity_tag_association.update()
+                .where(
+                    entity_tag_association.c.entity_id == entity_id,
+                    entity_tag_association.c.tag_id == tag_id,
+                )
+                .values(show_at_name=True)
+            )
+            await db.commit()
+        return {"ok": True, "message": "Already tagged", "show_at_name": show_at_name}
 
     await db.execute(
-        entity_tag_association.insert().values(entity_id=entity_id, tag_id=tag_id)
+        entity_tag_association.insert().values(
+            entity_id=entity_id, tag_id=tag_id, show_at_name=show_at_name
+        )
     )
     await db.commit()
-    return {"ok": True}
+    return {"ok": True, "show_at_name": show_at_name}
+
+
+@router.patch("/entities/{entity_id}/tags/{tag_id}/show-at-name")
+async def set_tag_show_at_name(
+    entity_id: int,
+    tag_id: int,
+    data: ShowAtNameUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Поднять метку к ФИО или убрать оттуда, не снимая её с кандидата."""
+    org_id = await _get_org_id(db, current_user)
+
+    entity_result = await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org_id)
+    )
+    if not entity_result.scalar_one_or_none():
+        raise HTTPException(404, "Entity not found")
+
+    # org-скоуп метки: без него можно было бы дёрнуть чужую по id.
+    tag_result = await db.execute(
+        select(EntityTag.id).where(EntityTag.id == tag_id, EntityTag.org_id == org_id)
+    )
+    if not tag_result.scalar_one_or_none():
+        raise HTTPException(404, "Tag not found")
+
+    res = await db.execute(
+        entity_tag_association.update()
+        .where(
+            entity_tag_association.c.entity_id == entity_id,
+            entity_tag_association.c.tag_id == tag_id,
+        )
+        .values(show_at_name=bool(data.show_at_name))
+    )
+    if res.rowcount == 0:
+        raise HTTPException(404, "Tag is not attached to this entity")
+    await db.commit()
+    return {"ok": True, "show_at_name": bool(data.show_at_name)}
 
 
 @router.delete("/entities/{entity_id}/tags/{tag_id}")

@@ -486,6 +486,16 @@ ENTITY_TAG_KIND = (
     "Add kind to entity_tags_catalog"
 )
 
+# «Показывать у имени» — ЯРКИЙ ярлык рядом с ФИО кандидата. Флаг стоит на СВЯЗИ
+# кандидат↔метка, а не на самой метке: до объединения такие ярлыки жили в
+# extra_data.headline_tags конкретного человека («перфомер» у Руслана, а не у
+# всех подряд). Повесь мы флаг на справочник — метка, проставленная кому-то
+# ещё, тут же вылезла бы у имени у всех, а это не то поведение, что было.
+ENTITY_TAG_SHOW_AT_NAME = (
+    "ALTER TABLE entity_tags ADD COLUMN IF NOT EXISTS show_at_name BOOLEAN NOT NULL DEFAULT FALSE",
+    "Add show_at_name to entity_tags"
+)
+
 # ── Org units (HR org chart) — изолировано от рекрутинговых departments ──
 CREATE_ORG_UNITS_SQL = """
     CREATE TABLE IF NOT EXISTS org_units (

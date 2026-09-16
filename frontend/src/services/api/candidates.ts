@@ -164,6 +164,8 @@ export interface KanbanCard {
   /** Версия для оптимистичной блокировки: форма правки шлёт её в PUT /entities,
    *  бэк отвечает 409, если кандидата успел изменить кто-то ещё. */
   version?: number;
+  /** Яркие ярлыки у ФИО — метки справочника, поднятые к имени у этого кандидата. */
+  headline_tags?: { name: string; color: string }[];
   extra_data?: Record<string, any>;
 }
 

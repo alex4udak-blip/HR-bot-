@@ -60,6 +60,7 @@ from api.db.migrations import (
     ENTITY_TAG_ARCHIVED_AT,
     ENTITY_TAG_COLOR_WIDTH,
     ENTITY_TAG_KIND,
+    ENTITY_TAG_SHOW_AT_NAME,
     CREATE_ORG_UNITS_SQL,
     ORG_UNITS_INDEXES,
     EMPLOYEE_ORG_UNIT_COLUMN,
@@ -317,6 +318,7 @@ async def init_database():
     await run_migration(engine, ENTITY_TAG_ARCHIVED_AT[0], ENTITY_TAG_ARCHIVED_AT[1])
     await run_migration(engine, ENTITY_TAG_COLOR_WIDTH[0], ENTITY_TAG_COLOR_WIDTH[1])
     await run_migration(engine, ENTITY_TAG_KIND[0], ENTITY_TAG_KIND[1])
+    await run_migration(engine, ENTITY_TAG_SHOW_AT_NAME[0], ENTITY_TAG_SHOW_AT_NAME[1])
 
     logger.info("=== ENTITY FILES TABLE READY ===")
 
@@ -400,6 +402,18 @@ async def init_database():
                 )
     except Exception as e:
         logger.warning(f"Fix NULL org_id: {e}")
+
+    # Яркие ярлыки у ФИО переехали из extra_data.headline_tags в общий
+    # справочник меток. Бэкафилл идемпотентен и на устаканившейся базе не
+    # делает ни одного запроса на запись, поэтому живёт прямо в старте.
+    # Некритичен: упасть из-за него старт не должен.
+    try:
+        from ..services.headline_tags_backfill import backfill_headline_tags
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await backfill_headline_tags(session)
+    except Exception as e:
+        logger.warning(f"Headline tags backfill failed (non-critical): {e}")
 
     logger.info("=== DATABASE INITIALIZATION COMPLETE ===")
 

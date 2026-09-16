@@ -12,6 +12,7 @@ import {
   removeTagFromEntity,
   type Tag,
   type TagKind,
+  setTagShowAtName,
 } from '@/services/api/tags';
 
 /**
@@ -47,12 +48,22 @@ export default function TagPicker({
   entityId,
   disabled = false,
   onChange,
+  variant = 'labels',
 }: {
   entityId: number | null | undefined;
   disabled?: boolean;
   /** Дёргается после любой правки — чтобы родитель обновил свои производные данные. */
   onChange?: (tags: Tag[]) => void;
+  /**
+   * Куда рисуем. Справочник ОДИН на оба режима, различается только признак
+   * связи show_at_name и оформление чипа:
+   *  - 'labels'   — строка «Метки», бледные чипы (как было);
+   *  - 'headline' — яркие ярлыки у ФИО (бывшие extra_data.headline_tags).
+   * Одна и та же метка у одного кандидата может быть ярлыком, у другого — нет.
+   */
+  variant?: 'labels' | 'headline';
 }) {
+  const atName = variant === 'headline';
   const [orgTags, setOrgTags] = useState<Tag[]>([]);
   const [entityTags, setEntityTags] = useState<Tag[]>([]);
   const [open, setOpen] = useState(false);
@@ -92,20 +103,39 @@ export default function TagPicker({
     if (!entityId) return;
     setOpen(false);
     try {
-      await addTagToEntity(entityId, tag.id);
-      publish([...entityTags, tag]);
+      await addTagToEntity(entityId, tag.id, atName);
+      // Метка могла уже висеть обычной — тогда бэкенд поднял её к имени, и в
+      // списке надо обновить флаг, а не добавлять вторую копию.
+      const already = entityTags.some((t) => t.id === tag.id);
+      publish(
+        already
+          ? entityTags.map((t) => (t.id === tag.id ? { ...t, show_at_name: atName } : t))
+          : [...entityTags, { ...tag, show_at_name: atName }],
+      );
     } catch {
-      toast.error('Не удалось добавить метку');
+      toast.error(atName ? 'Не удалось добавить тег' : 'Не удалось добавить метку');
     }
   };
 
+  /** Крестик на чипе.
+   *
+   * В «Метках» снимает метку с кандидата целиком, как и раньше. У имени —
+   * только опускает её из ярлыков: сама метка остаётся на кандидате в «Метках».
+   * Снести её насовсем оттуда и так можно, а вот случайно потерять метку,
+   * убирая ярлык, было бы неприятно.
+   */
   const handleRemoveFromCandidate = async (tagId: number) => {
     if (!entityId) return;
     try {
+      if (atName) {
+        await setTagShowAtName(entityId, tagId, false);
+        publish(entityTags.map((t) => (t.id === tagId ? { ...t, show_at_name: false } : t)));
+        return;
+      }
       await removeTagFromEntity(entityId, tagId);
       publish(entityTags.filter((t) => t.id !== tagId));
     } catch {
-      toast.error('Не удалось снять метку');
+      toast.error(atName ? 'Не удалось убрать тег' : 'Не удалось снять метку');
     }
   };
 
@@ -128,6 +158,12 @@ export default function TagPicker({
       if (onCandidate) {
         setNewName('');
         setOpen(false);
+        // У имени «уже стоит» ещё не значит «уже ярлык»: метка может висеть
+        // обычной. Поднимаем её, иначе кнопка молча ничего не делает.
+        if (atName && !onCandidate.show_at_name) {
+          await handleAdd(onCandidate);
+          return;
+        }
         toast(`«${onCandidate.name}» уже стоит на кандидате`);
         return;
       }
@@ -140,8 +176,8 @@ export default function TagPicker({
       // поэтому не плодим дубль в списке, а обновляем по id.
       setOrgTags((prev) => [...prev.filter((t) => t.id !== tag.id), tag]);
       setNewName('');
-      await addTagToEntity(entityId, tag.id);
-      publish([...entityTags, tag]);
+      await addTagToEntity(entityId, tag.id, atName);
+      publish([...entityTags, { ...tag, show_at_name: atName }]);
       setOpen(false);
     } catch {
       toast.error('Не удалось создать метку');
@@ -206,18 +242,34 @@ export default function TagPicker({
     }
   };
 
-  const available = orgTags.filter((t) => !entityTags.some((et) => et.id === t.id));
+  // Чипы рисуем по признаку связи: у имени — только поднятые, в «Метках» —
+  // только обычные. Одна метка попадает ровно в одно место.
+  const shownTags = entityTags.filter((t) => !!t.show_at_name === atName);
+  // Что предложить в выпадайке. В «Метках» — всё, чего на кандидате нет.
+  // У имени дополнительно предлагаем метки, которые на кандидате ЕСТЬ, но
+  // ярлыком не подняты: иначе поднять уже проставленную метку было бы нечем.
+  const available = orgTags.filter((t) => {
+    const onCandidate = entityTags.find((et) => et.id === t.id);
+    if (!onCandidate) return true;
+    return atName && !onCandidate.show_at_name;
+  });
 
   return (
     <>
-      {entityTags.map((tag) => (
+      {shownTags.map((tag) => (
         <span
           key={tag.id}
-          className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+          className={
+            atName
+              // У ФИО ярлык крупнее и заметнее — так он и выглядел до переезда
+              // в справочник; насыщенность фона выше, чем у обычных меток.
+              ? 'group inline-flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[12px] font-semibold whitespace-nowrap'
+              : 'group inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium'
+          }
           style={{
-            backgroundColor: `color-mix(in srgb, ${tag.color} 12%, transparent)`,
+            backgroundColor: `color-mix(in srgb, ${tag.color} ${atName ? 18 : 12}%, transparent)`,
             color: tag.color,
-            border: `1px solid color-mix(in srgb, ${tag.color} 25%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${tag.color} ${atName ? 35 : 25}%, transparent)`,
           }}
         >
           {tag.name}
@@ -225,7 +277,9 @@ export default function TagPicker({
             <button
               type="button"
               onClick={() => handleRemoveFromCandidate(tag.id)}
-              title="Снять метку с этого кандидата"
+              title={atName
+                ? 'Убрать от имени (метка останется в «Метках»)'
+                : 'Снять метку с этого кандидата'}
               className="ml-0.5 hover:opacity-70 transition-opacity"
             >
               <X className="w-3 h-3" />
@@ -239,10 +293,15 @@ export default function TagPicker({
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            title="Добавить метку"
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-[var(--hf-dark-400)] border border-dashed border-[color:var(--hf-ui-border)] hover:text-[var(--hf-dark-300)] transition-colors"
+            title={atName ? 'Добавить тег к имени' : 'Добавить метку'}
+            className={
+              atName
+                ? 'inline-flex items-center gap-1 rounded-full border border-dashed border-[color:var(--hf-main-300)] px-2.5 py-[3px] text-[12px] font-medium text-[var(--hf-main-500)] transition-colors hover:border-[color:var(--hf-main-500)] hover:text-[var(--hf-main-800)]'
+                : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-[var(--hf-dark-400)] border border-dashed border-[color:var(--hf-ui-border)] hover:text-[var(--hf-dark-300)] transition-colors'
+            }
           >
             <Plus className="w-3 h-3" />
+            {atName && <span>тег</span>}
           </button>
 
           {open && (
@@ -291,12 +350,18 @@ export default function TagPicker({
                 ))}
                 {available.length === 0 && (
                   <div className="px-3 py-2 text-xs text-[var(--hf-main-500)]">
-                    Нет доступных меток
+                    {atName ? 'Нет доступных тегов' : 'Нет доступных меток'}
                   </div>
                 )}
               </div>
 
               <div className="border-t border-[var(--hf-ui-divider)] p-2">
+                {/* «Сорсер» — тот, кто ПРИВЁЛ кандидата: по этому признаку
+                    считается отчёт «Кого привели сорсеры» и строка на «Статусах».
+                    У имени висят ярлыки роли («перформер»), заводить оттуда
+                    сорсера смысла нет — выбор прячем, новая метка будет обычной.
+                    Пометить метку сорсером по-прежнему можно в «Метках». */}
+                {!atName && (
                 <div className="flex items-center gap-1 mb-1.5">
                   {([
                     { id: 'general' as TagKind, label: 'Обычная' },
@@ -317,6 +382,7 @@ export default function TagPicker({
                     </button>
                   ))}
                 </div>
+                )}
                 <div className="flex items-center gap-1.5 mb-1.5">
                   {TAG_PALETTE.map((p) => (
                     <button
@@ -345,7 +411,7 @@ export default function TagPicker({
                       e.preventDefault();
                       handleCreate();
                     }}
-                    placeholder="Новая метка..."
+                    placeholder={atName ? "Новый тег..." : "Новая метка..."}
                     className="flex-1 px-2 py-1 text-xs bg-[var(--hf-white)] border border-[var(--hf-ui-border)] rounded text-[var(--hf-main-900)] placeholder:text-[var(--hf-main-500)] focus:outline-none focus:border-[var(--hf-cyan-500)]"
                   />
                   <button

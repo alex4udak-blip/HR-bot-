@@ -98,11 +98,48 @@ def _entity_photo(entity, photo_file_map: Optional[dict] = None):
     return photo if isinstance(photo, str) else None
 
 
-def _headline_tags(entity):
-    """Яркие теги-ярлыки у имени (extra_data.headline_tags=[{text,color}]) —
-    отдаём в воронку, чтобы показывать так же, как в «Все кандидаты»."""
+async def _load_headline_tag_map(db: AsyncSession, entity_ids: list[int]) -> dict:
+    """entity_id → яркие ярлыки у ФИО, одним запросом (без N+1).
+
+    Ярлыки переехали в общий справочник меток: ярлык = метка со взведённым
+    show_at_name на связи с этим кандидатом. Раньше лежали свободным текстом в
+    extra_data.headline_tags — своя палитра, своя коллекция, отсюда «перформер»
+    в метках рядом с «перфомер» в тегах.
+    """
+    out: dict = {}
+    if not entity_ids:
+        return out
+    try:
+        from ...models.database import EntityTag, entity_tag_association
+        rows = await db.execute(
+            select(entity_tag_association.c.entity_id, EntityTag.name, EntityTag.color)
+            .join(EntityTag, EntityTag.id == entity_tag_association.c.tag_id)
+            .where(
+                entity_tag_association.c.entity_id.in_(entity_ids),
+                entity_tag_association.c.show_at_name.is_(True),
+            )
+            .order_by(EntityTag.name)
+        )
+        for ent_id, name, color in rows.all():
+            out.setdefault(ent_id, []).append({"name": name, "color": color})
+    except Exception as exc:
+        logger.warning(f"Headline tags query failed (non-critical): {exc}")
+    return out
+
+
+def _headline_tags(entity, headline_map: Optional[dict] = None):
+    """Ярлыки кандидата: из справочника, с откатом на старое хранение.
+
+    extra_data.headline_tags бэкафилл намеренно не удаляет, так что пока прод не
+    устаканился, у карточки может не быть связей — тогда показываем старое, а не
+    пустоту.
+    """
     if entity is None:
         return None
+    if headline_map is not None:
+        from_catalog = headline_map.get(entity.id)
+        if from_catalog:
+            return from_catalog
     ed = entity.extra_data if isinstance(entity.extra_data, dict) else {}
     raw = ed.get("headline_tags")
     if not isinstance(raw, list):
@@ -219,6 +256,7 @@ async def list_applications(
             entities_map[entity.id] = entity
 
     photo_file_map = await _load_photo_file_map(db, entity_ids)
+    headline_map = await _load_headline_tag_map(db, entity_ids)
 
     # Точка отсчёта «серии» — момент последнего переоткрытия вакансии. Константа
     # для всех откликов (vacancy уже загружен выше), поэтому флаг считаем в этом
@@ -247,7 +285,7 @@ async def list_applications(
             entity_notes_text=_notes_blob(entity),
             entity_position=entity.position if entity else None,
             entity_photo=_entity_photo(entity, photo_file_map),
-            entity_headline_tags=_headline_tags(entity),
+            entity_headline_tags=_headline_tags(entity, headline_map),
             stage=app.stage,
             stage_order=app.stage_order or 0,
             rating=app.rating,
@@ -418,6 +456,7 @@ async def create_application(
     logger.info(f"Created application {application.id} for vacancy {vacancy_id}")
 
     photo_file_map = await _load_photo_file_map(db, [entity.id])
+    headline_map = await _load_headline_tag_map(db, [entity.id])
 
     return ApplicationResponse(
         id=application.id,
@@ -430,7 +469,7 @@ async def create_application(
         entity_telegram=(entity.telegram_usernames[0] if entity.telegram_usernames else None),
         entity_position=entity.position,
         entity_photo=_entity_photo(entity, photo_file_map),
-        entity_headline_tags=_headline_tags(entity),
+        entity_headline_tags=_headline_tags(entity, headline_map),
         stage=application.stage,
         stage_order=application.stage_order or 0,
         rating=application.rating,

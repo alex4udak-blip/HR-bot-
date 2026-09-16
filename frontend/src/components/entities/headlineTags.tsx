@@ -1,11 +1,21 @@
 import clsx from "clsx";
 import { X } from "lucide-react";
 
-// ---- Яркие теги-ярлыки у имени кандидата (запрос Марии) ----
-// Отдельно от обычных «Меток»: HR вписывает слово + выбирает цвет, показываем крупно
-// рядом с именем. Хранится в extra_data.headline_tags=[{text,color}]. Общий модуль —
-// используется в «Все кандидаты» и в воронках.
-export type HeadlineTag = { text: string; color: string };
+// ---- Яркие ярлыки у имени кандидата ----
+// Живут в ОБЩЕМ справочнике меток: ярлык = метка со взведённым show_at_name на
+// связи с этим кандидатом. Форма данных оттуда — {name, color}, где color это
+// CSS-значение из палитры справочника ('var(--hf-status-purple)').
+//
+// Поле text и ключи палитры ('pink'/'purple'/…) — наследство от старого
+// хранения в extra_data.headline_tags. Держим их читаемыми: бэкафилл ничего из
+// extra_data не удаляет, и на карточках, куда свежие данные ещё не доехали,
+// чип должен рисоваться, а не падать.
+export type HeadlineTag = {
+  name?: string;
+  /** Старое поле. Используется, если name не задан. */
+  text?: string;
+  color: string;
+};
 
 export const HEADLINE_TAG_COLORS: Record<
   string,
@@ -31,9 +41,11 @@ export function readHeadlineTags(source: unknown): HeadlineTag[] {
   return raw
     .filter(
       (t): t is HeadlineTag =>
-        !!t && typeof (t as HeadlineTag).text === "string",
+        !!t &&
+        (typeof (t as HeadlineTag).text === "string" ||
+          typeof (t as HeadlineTag).name === "string"),
     )
-    .map((t) => ({ text: t.text, color: t.color || "pink" }));
+    .map((t) => ({ name: t.name, text: t.text, color: t.color || "pink" }));
 }
 
 export function HeadlineTagChip({
@@ -45,23 +57,32 @@ export function HeadlineTagChip({
   small?: boolean;
   onRemove?: () => void;
 }) {
-  const c = HEADLINE_TAG_COLORS[tag.color] || HEADLINE_TAG_COLORS.pink;
+  // Ключ старой палитры — рисуем как раньше, чтобы недоехавшие карточки не
+  // меняли вид. Всё остальное считаем цветом справочника.
+  const legacy = HEADLINE_TAG_COLORS[tag.color];
+  const style = legacy
+    ? { background: legacy.bg, color: legacy.text, border: `1px solid ${legacy.border}` }
+    : {
+        background: `color-mix(in srgb, ${tag.color} 18%, transparent)`,
+        color: tag.color,
+        border: `1px solid color-mix(in srgb, ${tag.color} 35%, transparent)`,
+      };
   return (
     <span
       className={clsx(
         "inline-flex items-center gap-1 rounded-full font-semibold whitespace-nowrap",
         small ? "px-2 py-[1px] text-[11px]" : "px-2.5 py-[3px] text-[12px]",
       )}
-      style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}
+      style={style}
     >
-      {tag.text}
+      {tag.name || tag.text}
       {onRemove && (
         <button
           type="button"
           onClick={onRemove}
           title="Убрать тег"
           className="ml-0.5 inline-flex items-center opacity-60 hover:opacity-100"
-          style={{ color: c.text }}
+          style={{ color: style.color }}
         >
           <X className="w-3 h-3" />
         </button>

@@ -633,8 +633,9 @@ export interface VacancyApplication {
   entity_position?: string;
   entity_company?: string;
   entity_photo?: string | null;
-  // Яркие теги-ярлыки у имени (extra_data.headline_tags) — показываем в воронке.
-  entity_headline_tags?: { text: string; color: string }[] | null;
+  // Яркие ярлыки у ФИО — метки справочника, поднятые к имени (show_at_name).
+  // text оставлен для старых данных из extra_data, пока прод не устаканится.
+  entity_headline_tags?: { name?: string; text?: string; color: string }[] | null;
   stage: ApplicationStage;
   stage_order: number;
   rating?: number;

@@ -846,6 +846,10 @@ class KanbanCard(BaseModel):
     # сверяет её и отдаёт 409). Без неё форма правки не могла ничего прислать,
     # и параллельные правки двух рекрутёров тихо затирали друг друга.
     version: int = 1
+    # Яркие ярлыки у ФИО: метки справочника, поднятые к имени у ЭТОГО кандидата
+    # (entity_tags.show_at_name). Отдаём прямо в карточке — список слева рисует
+    # их на каждой строке, и дозагружать метки по одному было бы N+1.
+    headline_tags: list[dict] = []
 
     class Config:
         from_attributes = True
@@ -1023,6 +1027,30 @@ async def get_candidates_kanban(
         except Exception as exc:
             logger.warning(f"Vacancy map query failed (non-critical): {exc}")
 
+    # Ярлыки у имени — одним запросом на всю выдачу.
+    headline_map: dict[int, list[dict]] = {}
+    try:
+        from ..models.database import EntityTag, entity_tag_association
+        ids = [e.id for e in display_entities]
+        if ids:
+            rows = await db.execute(
+                select(
+                    entity_tag_association.c.entity_id,
+                    EntityTag.name,
+                    EntityTag.color,
+                )
+                .join(EntityTag, EntityTag.id == entity_tag_association.c.tag_id)
+                .where(
+                    entity_tag_association.c.entity_id.in_(ids),
+                    entity_tag_association.c.show_at_name.is_(True),
+                )
+                .order_by(EntityTag.name)
+            )
+            for ent_id, name, color in rows.all():
+                headline_map.setdefault(ent_id, []).append({"name": name, "color": color})
+    except Exception as exc:
+        logger.warning(f"Headline tags query failed (non-critical): {exc}")
+
     # Group by status (display_entities уже обрезаны до per_column на колонку)
     grouped: dict[str, list] = {s: [] for s in KANBAN_STATUSES}
     for e in display_entities:
@@ -1066,6 +1094,7 @@ async def get_candidates_kanban(
                 is_archived=bool(getattr(e, "is_archived", False)),
                 extra_data=ed if ed else None,
                 version=getattr(e, "version", None) or 1,
+                headline_tags=headline_map.get(e.id, []),
             ))
         except Exception as exc:
             logger.warning(f"Skipping entity {e.id} in kanban: {exc}")

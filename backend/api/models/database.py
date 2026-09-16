@@ -1899,6 +1899,11 @@ entity_tag_association = Table(
     Base.metadata,
     Column("entity_id", Integer, ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True),
     Column("tag_id", Integer, ForeignKey("entity_tags_catalog.id", ondelete="CASCADE"), primary_key=True),
+    # Яркий ярлык у ФИО кандидата (бывшие extra_data.headline_tags). Флаг на
+    # СВЯЗИ, а не на метке: «перфомер» висел у конкретного Руслана, и если бы
+    # признак жил в справочнике, та же метка у другого кандидата сразу полезла
+    # бы ему к имени. Одна метка — у кого-то ярлык, у кого-то обычная.
+    Column("show_at_name", Boolean, nullable=False, server_default="false", default=False),
     extend_existing=True,
 )
 
