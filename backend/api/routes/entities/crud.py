@@ -1171,7 +1171,12 @@ async def toggle_timeline_reaction(
     if not org and current_user.role != UserRole.superadmin:
         raise HTTPException(403, "No organization access")
 
-    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    # FOR UPDATE — см. add_entity_note. Реакции живут в том же блобе extra_data,
+    # а кликают их часто и быстро: без блокировки тоггл реакции спокойно затирает
+    # только что добавленный комментарий.
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id).with_for_update()
+    )
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Entity not found")
@@ -1241,7 +1246,12 @@ async def update_entity_note(
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
 
-    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    # FOR UPDATE — по той же причине, что в add_entity_note: extra_data
+    # перезаписывается ЦЕЛИКОМ, и без блокировки правка коммента затирает
+    # заметки/реакции, добавленные параллельным писателем (lost update).
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id).with_for_update()
+    )
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Entity not found")
@@ -1284,7 +1294,13 @@ async def delete_entity_note(
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
 
-    result = await db.execute(select(Entity).where(Entity.id == entity_id))
+    # FOR UPDATE — см. add_entity_note: удаление одного коммента переписывает
+    # весь extra_data, поэтому без блокировки оно затрёт заметку, которую в этот
+    # момент добавляет коллега (или self-heal HR-тегов). Это ровно тот «пропали
+    # НЕКОТОРЫЕ комментарии», который чинили в POST, но не тут.
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id).with_for_update()
+    )
     entity = result.scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Entity not found")
