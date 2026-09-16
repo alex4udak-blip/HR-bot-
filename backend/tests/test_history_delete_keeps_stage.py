@@ -1,7 +1,8 @@
-"""Удаление ошибочного перехода в истории возвращает заявку на прошлый этап.
+"""Удаление записи истории НЕ трогает этап заявки (2026-09-16).
 
-Раньше DELETE /vacancies/applications/{id}/history/{hid} удалял только запись,
-а кандидат оставался на «удалённом» этапе (2026-09-11, Мария).
+Кандидата перенесли, запись о переносе удалили — он остаётся там, куда его
+перенесли. Короткое время (11.09–16.09) удаление последнего перехода возвращало
+заявку на прошлый этап; это оказалось не тем поведением, которое нужно.
 """
 from datetime import datetime, timedelta
 
@@ -56,7 +57,7 @@ def _headers(user: User) -> dict:
     return auth_headers(create_access_token(data={"sub": str(user.id)}))
 
 
-async def test_deleting_latest_transition_reverts_stage(
+async def test_deleting_latest_transition_keeps_stage(
     client: AsyncClient, db_session: AsyncSession, admin_user: User, moved_application,
 ):
     app, _initial, moved = moved_application
@@ -64,9 +65,8 @@ async def test_deleting_latest_transition_reverts_stage(
         f"/api/vacancies/applications/{app.id}/history/{moved.id}", headers=_headers(admin_user),
     )
     assert r.status_code == 200, r.text
-    assert r.json()["reverted_to"] == FIRST.value
     await db_session.refresh(app)
-    assert app.stage == FIRST
+    assert app.stage == SECOND
 
 
 async def test_deleting_older_transition_keeps_stage(
@@ -77,6 +77,5 @@ async def test_deleting_older_transition_keeps_stage(
         f"/api/vacancies/applications/{app.id}/history/{initial.id}", headers=_headers(admin_user),
     )
     assert r.status_code == 200, r.text
-    assert r.json()["reverted_to"] is None
     await db_session.refresh(app)
     assert app.stage == SECOND

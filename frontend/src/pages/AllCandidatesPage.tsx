@@ -2245,14 +2245,8 @@ const InfoTab = memo(function InfoTab({
   const cardDeleteHistory = useCallback(
     async (appId: number, historyId: number) => {
       try {
-        const res = await deleteApplicationHistory(appId, historyId);
-        // Удалили ошибочный последний переход — бэк вернул заявку на прошлый этап.
-        if (res?.reverted_to) {
-          onStatusChange(res.reverted_to);
-          toast.success("Запись удалена — кандидат возвращён на прошлый этап");
-        } else {
-          toast.success("Запись удалена");
-        }
+        await deleteApplicationHistory(appId, historyId);
+        toast.success("Запись удалена");
       } catch {
         toast.error("Не удалось удалить запись");
       }
