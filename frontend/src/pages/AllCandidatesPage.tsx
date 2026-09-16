@@ -1394,21 +1394,20 @@ export default function AllCandidatesPage() {
                           </div>
                           {/* Text column (RIGHT) — name, position, company/date */}
                           <div className="hf-candidate-row-copy">
-                            <div className="flex items-center gap-1.5 min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                               <div className="hf-candidate-row-name">
                                 {card.name}
                               </div>
                               {/* Яркие теги-ярлыки у имени (HR вписывает сам) —
                                   read-only в списке, редактируются в карточке.
-                                  В списке показываем ТОЛЬКО первый тег (остальные
-                                  видны в карточке), иначе строка захламляется. */}
-                              {readHeadlineTags(card.extra_data)
-                                .slice(0, 1)
-                                .map((t, i) => (
-                                  <span key={i} className="shrink-0">
-                                    <HeadlineTagChip tag={t} small />
-                                  </span>
-                                ))}
+                                  Показываем ВСЕ (запрос HR 16.09: «чтобы все метки
+                                  рядом с кандидатом подсвечивались»); не влезли —
+                                  переносятся на следующую строку, имя не сжимается. */}
+                              {readHeadlineTags(card.extra_data).map((t, i) => (
+                                <span key={i} className="shrink-0">
+                                  <HeadlineTagChip tag={t} small />
+                                </span>
+                              ))}
                               {/* Из теневой базы: попадает в список ТОЛЬКО при поиске.
                                   Метим явно, чтобы не путать с активными. */}
                               {card.is_archived && (
