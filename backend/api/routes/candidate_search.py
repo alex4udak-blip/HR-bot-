@@ -842,6 +842,10 @@ class KanbanCard(BaseModel):
     # на фронте плашкой «Архив», чтобы не путать с активными.
     is_archived: bool = False
     extra_data: Optional[dict] = None
+    # Версия карточки для оптимистичной блокировки при правке (PUT /entities
+    # сверяет её и отдаёт 409). Без неё форма правки не могла ничего прислать,
+    # и параллельные правки двух рекрутёров тихо затирали друг друга.
+    version: int = 1
 
     class Config:
         from_attributes = True
@@ -1061,6 +1065,7 @@ async def get_candidates_kanban(
                 rejection_reason=rejection_map.get(e.id),
                 is_archived=bool(getattr(e, "is_archived", False)),
                 extra_data=ed if ed else None,
+                version=getattr(e, "version", None) or 1,
             ))
         except Exception as exc:
             logger.warning(f"Skipping entity {e.id} in kanban: {exc}")

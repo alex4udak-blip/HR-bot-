@@ -161,6 +161,9 @@ export interface KanbanCard {
   rejection_reason?: string;
   /** Карточка из теневой базы — приходит в выдачу ТОЛЬКО при поиске, метится «Архив». */
   is_archived?: boolean;
+  /** Версия для оптимистичной блокировки: форма правки шлёт её в PUT /entities,
+   *  бэк отвечает 409, если кандидата успел изменить кто-то ещё. */
+  version?: number;
   extra_data?: Record<string, any>;
 }
 

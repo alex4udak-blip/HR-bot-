@@ -12,8 +12,8 @@ from .common import (
     Entity, EntityType, User, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
     check_vacancy_access, can_access_vacancy, can_manage_applications,
-    is_org_admin_or_owner, sees_all_candidates,
-    BaseModel, OrgMember, OrgRole,
+    is_org_admin_or_owner, sees_all_candidates, has_single_active_application,
+    BaseModel, OrgMember, OrgRole, UserRole,
 )
 from ...services.auth import get_user_org
 from ...models.database import ApplicationCoRecruiter
@@ -369,8 +369,14 @@ async def create_application(
     db.add(application)
 
     # Sync Entity.status if the application stage differs from current entity status
-    # This ensures Entity.status matches VacancyApplication.stage
-    if initial_stage in STAGE_SYNC_MAP:
+    # This ensures Entity.status matches VacancyApplication.stage.
+    #
+    # ТОЛЬКО для ПЕРВОЙ воронки кандидата (has_other_applications посчитан выше).
+    # Иначе добавление во вторую воронку сбрасывало общий статус в «Новый»: у
+    # новой заявки этап applied, и человек, стоящий на оффере в первой воронке,
+    # визуально откатывался на старт на «Статусах» и «Всех кандидатах» — просто
+    # потому, что его позвали ещё в одну вакансию.
+    if initial_stage in STAGE_SYNC_MAP and not has_other_applications:
         expected_entity_status = STAGE_SYNC_MAP[initial_stage]
         if entity.status != expected_entity_status:
             entity.status = expected_entity_status
@@ -613,6 +619,20 @@ async def update_application(
         select(Vacancy).where(Vacancy.id == application.vacancy_id)
     )
     vacancy = vacancy_result.scalar()
+
+    # Org-граница ДО ролевых проверок. is_org_admin_or_owner смотрит роль в
+    # СВОЕЙ орге вызывающего и, вернув True, замыкает `or` ниже — граница,
+    # которая живёт ВНУТРИ can_access_vacancy, тогда не выполняется вовсе, и
+    # admin орга A правил заявку орга B, зная только её id. Тот же класс бага,
+    # что чинили в can_access_vacancy (аудит 2026-08-07), где update_application
+    # прямо назван среди затронутых роутов: там границу поставили внутрь
+    # функции, а короткое замыкание перед ней осталось. Массовое перемещение
+    # (kanban.bulk_move) грузит вакансию сразу с фильтром org_id — здесь
+    # фильтра не было. 404, а не 403: наличие чужой заявки подтверждать нечего.
+    if vacancy and current_user.role != UserRole.superadmin:
+        if org is None or vacancy.org_id != org.id:
+            raise HTTPException(status_code=404, detail="Application not found")
+
     # Перемещение по этапам: админ/владелец орга двигает в ЛЮБОЙ воронке,
     # остальные — если видят вакансию (can_access_vacancy). Единая логика с
     # массовым перемещением (bulk-move). Удаление из воронки (delete) остаётся
@@ -688,6 +708,11 @@ async def update_application(
     update_data = data.model_dump(exclude_unset=True)
     # comment — не поле VacancyApplication, а коммент к переходу (пишется в историю).
     transition_comment = update_data.pop("comment", None)
+    # expected_entity_id — тоже не поле заявки, а служебная сверка (см. выше).
+    # Без pop его вслепую вешает setattr ниже: сегодня это безобидный атрибут
+    # мимо маппинга, но стоит появиться колонке с таким именем — служебное поле
+    # начнёт молча писаться в строку.
+    update_data.pop("expected_entity_id", None)
     for field, value in update_data.items():
         if field != 'stage_order' or data.stage_order is not None:  # Don't override auto-calculated order
             setattr(application, field, value)
@@ -696,7 +721,10 @@ async def update_application(
     if application.stage_order is not None and application.stage_order < 0:
         await rebalance_stage_orders(db, application.vacancy_id, application.stage)
 
-    # Synchronize with entity status
+    # Synchronize with entity status — ТОЛЬКО когда воронка у кандидата одна.
+    # См. has_single_active_application: при двух воронках общий статус верен
+    # максимум для одной из них, и перенос в первой молча переписывал карточку
+    # на «Статусах»/«Всех кандидатах», ничего не сообщая второй.
     if data.stage and data.stage in STAGE_SYNC_MAP:
         new_status = STAGE_SYNC_MAP[data.stage]
         # Get entity and update its status
@@ -705,18 +733,16 @@ async def update_application(
         )
         entity_to_sync = entity_result.scalar()
         if entity_to_sync and entity_to_sync.status != new_status:
-            entity_to_sync.status = new_status
-            entity_to_sync.updated_at = datetime.utcnow()
-            logger.info(f"Synchronized application {application_id} stage {data.stage} to entity {application.entity_id} status {new_status}")
-
-    if data.stage and data.stage != old_stage:
-        logger.info(
-            "STAGE_CHANGE: user=%s (%s) app=%s entity=%s vacancy=%s %s -> %s expected_entity=%s",
-            current_user.id, current_user.name, application.id, application.entity_id,
-            application.vacancy_id,
-            old_stage.value if old_stage else None, data.stage.value,
-            data.expected_entity_id,
-        )
+            if await has_single_active_application(db, application.entity_id):
+                entity_to_sync.status = new_status
+                entity_to_sync.updated_at = datetime.utcnow()
+                logger.info(f"Synchronized application {application_id} stage {data.stage} to entity {application.entity_id} status {new_status}")
+            else:
+                logger.info(
+                    "Entity %s в нескольких воронках — общий статус не трогаем "
+                    "(заявка %s ушла в %s)",
+                    application.entity_id, application_id, data.stage,
+                )
 
     # Record stage transition in audit log
     if data.stage and data.stage != old_stage:
@@ -732,6 +758,19 @@ async def update_application(
 
     await db.commit()
     await db.refresh(application)
+
+    # Лог ПОСЛЕ коммита: до него запись врала бы про переход, который откатился
+    # (падение record_transition или самого commit). Смысл STAGE_CHANGE — по
+    # логам подтвердить, что этап реально сменился, поэтому ложное срабатывание
+    # тут хуже отсутствия записи. expire_on_commit=False, атрибуты живы.
+    if data.stage and data.stage != old_stage:
+        logger.info(
+            "STAGE_CHANGE: user=%s (%s) app=%s entity=%s vacancy=%s %s -> %s expected_entity=%s",
+            current_user.id, current_user.name, application.id, application.entity_id,
+            application.vacancy_id,
+            old_stage.value if old_stage else None, data.stage.value,
+            data.expected_entity_id,
+        )
 
     # Get entity info
     entity_result = await db.execute(

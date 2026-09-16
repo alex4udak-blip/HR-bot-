@@ -707,3 +707,49 @@ class KanbanBoard(BaseModel):
 class BulkStageUpdate(BaseModel):
     application_ids: List[int]
     stage: ApplicationStage
+
+
+# === Синхронизация этапа заявки с глобальным статусом кандидата ===
+
+async def has_single_active_application(db: AsyncSession, entity_id: int) -> bool:
+    """Можно ли отражать этап заявки в глобальном Entity.status.
+
+    Entity.status — ОДНО поле на кандидата, а заявок у него может быть сколько
+    угодно. Обратное направление синка (Entity.status -> VacancyApplication.stage)
+    давно отказывается работать при нескольких откликах: «непонятно, в какой
+    вакансии менять этап, и можно затереть чужую воронку» (см. update_entity и
+    update_entity_status в routes/entities/crud.py). Прямое направление такой
+    проверки не имело вовсе — и любой перенос в ОДНОЙ воронке переписывал общий
+    статус: на «Статусах» и «Всех кандидатах» человек уезжал в этап, верный лишь
+    для одной из его воронок, а вторая воронка об этом даже не знала. Добавление
+    во ВТОРУЮ воронку и вовсе сбрасывало статус стоящего на оффере в «Новый».
+
+    Закрытые вакансии не считаем: работа идёт только в открытых.
+    """
+    count = (await db.execute(
+        select(func.count(VacancyApplication.id))
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            VacancyApplication.entity_id == entity_id,
+            Vacancy.status != VacancyStatus.closed,
+        )
+    )).scalar() or 0
+    return count <= 1
+
+
+async def entities_with_single_active_application(
+    db: AsyncSession, entity_ids: List[int]
+) -> set:
+    """Bulk-вариант has_single_active_application — одним запросом, без N+1."""
+    if not entity_ids:
+        return set()
+    rows = (await db.execute(
+        select(VacancyApplication.entity_id, func.count(VacancyApplication.id))
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            VacancyApplication.entity_id.in_(entity_ids),
+            Vacancy.status != VacancyStatus.closed,
+        )
+        .group_by(VacancyApplication.entity_id)
+    )).all()
+    return {eid for eid, cnt in rows if cnt <= 1}

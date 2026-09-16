@@ -79,6 +79,9 @@ export const updateEntity = async (id: number, updates: {
   expected_salary_min?: number;
   expected_salary_max?: number;
   expected_salary_currency?: string;
+  /** Оптимистичная блокировка: версия карточки, с которой начали правку.
+   *  Бэк сверяет её с текущей и отдаёт 409, если кандидата уже изменили. */
+  version?: number;
 }): Promise<Entity> => {
   const { data } = await debouncedMutation<Entity>('put', `/entities/${id}`, updates);
   return data;

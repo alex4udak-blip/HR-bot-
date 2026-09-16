@@ -12,7 +12,7 @@ from .common import (
     Entity, User, STAGE_SYNC_MAP,
     ApplicationResponse, KanbanColumn, KanbanBoard, BulkStageUpdate,
     check_vacancy_access, can_access_vacancy, is_org_admin_or_owner,
-    sees_all_candidates,
+    sees_all_candidates, entities_with_single_active_application,
 )
 from ...services.auth import get_user_org
 
@@ -512,14 +512,21 @@ async def bulk_move_applications(
                     )
 
     # Get max stage_order for the new stage
-    # SECURITY: Use FOR UPDATE to prevent race condition in bulk move
+    #
+    # БЕЗ FOR UPDATE. Postgres запрещает его с агрегатами («FOR UPDATE is not
+    # allowed with aggregate functions»), поэтому этот запрос ронял ВЕСЬ
+    # bulk-move в 500 на проде — массовое перемещение не работало вообще.
+    # Тесты этого не ловили: сьют идёт на SQLite, где FOR UPDATE игнорируется.
+    # В update_application ту же строку уже сняли с тем же обоснованием:
+    # stage_order — только порядок показа, гонка тут допустима. Сами заявки
+    # заблокированы выше (SELECT ... FOR UPDATE по application_ids), так что
+    # дубли переходов в StageTransition по-прежнему исключены.
     max_order_result = await db.execute(
         select(func.max(VacancyApplication.stage_order))
         .where(
             VacancyApplication.vacancy_id == vacancy_id,
             VacancyApplication.stage == data.stage
         )
-        .with_for_update()
     )
     max_order = max_order_result.scalar() or 0
 
@@ -528,8 +535,13 @@ async def bulk_move_applications(
     # Save old stages for audit log
     old_stages = {app.id: app.stage for app in applications}
 
-    # Synchronize VacancyApplication.stage -> Entity.status
+    # Synchronize VacancyApplication.stage -> Entity.status — только тем, у кого
+    # воронка одна (см. has_single_active_application). Считаем одним запросом на
+    # всю пачку, без N+1.
     new_entity_status = STAGE_SYNC_MAP.get(data.stage)
+    single_funnel_entities = await entities_with_single_active_application(
+        db, [app.entity_id for app in applications]
+    )
 
     for i, app in enumerate(applications):
         app.stage = data.stage
@@ -541,7 +553,7 @@ async def bulk_move_applications(
         app.updated_at = now
 
         # Sync entity status
-        if new_entity_status:
+        if new_entity_status and app.entity_id in single_funnel_entities:
             entity = entities_map.get(app.entity_id)
             if entity and entity.status != new_entity_status:
                 entity.status = new_entity_status

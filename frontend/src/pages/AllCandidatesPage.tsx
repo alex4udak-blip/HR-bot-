@@ -2139,7 +2139,6 @@ const InfoTab = memo(function InfoTab({
   // реальная первичная заявка (appId>0) — синхронизируем и её стадию (воронка).
   const cardChangeStage = useCallback(
     async (appId: number, stage: string, comment?: string) => {
-      onStatusChange(stage);
       let ok = true;
       if (appId > 0) {
         try {
@@ -2149,29 +2148,49 @@ const InfoTab = memo(function InfoTab({
             // Страховка: бэк сверит заявку с этим кандидатом.
             expected_entity_id: card.id,
           });
-        } catch {
+        } catch (err) {
           // Раньше ошибка тут проглатывалась молча («entity-статус уже
           // обновлён» — но это ДРУГОЕ поле, VacancyApplication.stage мог не
           // измениться). Возвращаем false, чтобы вызывающий пикер не писал
           // комментарий-«обещание» поверх неприменённого перехода.
           ok = false;
-          toast.error("Не удалось изменить этап заявки");
+          const resp = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
+          toast.error(
+            resp?.status === 409 && resp.data?.detail
+              ? resp.data.detail
+              : "Не удалось изменить этап заявки",
+          );
         }
       }
+      // Статус самого кандидата (entity) двигаем ТОЛЬКО если заявка реально
+      // переехала. Раньше onStatusChange шёл ПЕРВЫМ и уже сохранял статус на
+      // сервере: упавший PUT заявки (например 409 от страховки) оставлял
+      // кандидата в «Отказе», а его заявку — в «Выполняет ТЗ», то есть ровно тот
+      // рассинхрон, от которого страховка и защищает.
+      if (ok) onStatusChange(stage);
       await loadActivity();
       return ok;
     },
-    [onStatusChange, loadActivity],
+    [onStatusChange, loadActivity, card.id],
   );
 
   const cardComment = useCallback(
     async (
-      _appId: number,
+      appId: number,
       stage: string,
       stageLabel: string,
       text: string,
       opts?: { parent_key?: string; stage_at_write_label?: string },
     ) => {
+      // Воронка, в которой написан коммент. Карточка тут рендерится ПО ВАКАНСИИ
+      // (у неё свой applicationId и заголовок вакансии), но vacancy_id раньше не
+      // передавался — и коммент становился «Общим», то есть всплывал во ВСЕХ
+      // воронках кандидата. В /my-funnels тот же компонент давно шлёт vacancy_id
+      // (saveEntityNote), так что один и тот же UI вёл себя по-разному.
+      // Кандидат без заявок (appId = 0) — «Общий», как и было.
+      const commentVacancyId =
+        activityBlocks.find((b) => b.application_id === appId)?.vacancy_id ??
+        primaryBlock?.vacancy_id;
       // Комментарий пишем на entity (тот же кандидат во всех заявках) через
       // POST /entities/{id}/notes — рекрутёру достаточно view-доступа.
       try {
@@ -2182,6 +2201,7 @@ const InfoTab = memo(function InfoTab({
           // Дописка к прошлой статусной записи (parent_key) + этап-на-момент-написания.
           parent_key: opts?.parent_key,
           stage_at_write_label: opts?.stage_at_write_label,
+          vacancy_id: commentVacancyId ?? undefined,
         });
         if (!card.extra_data) card.extra_data = {};
         const existing: Array<Record<string, unknown>> = Array.isArray(
@@ -2215,7 +2235,7 @@ const InfoTab = memo(function InfoTab({
       }
       await loadActivity();
     },
-    [card, loadActivity, bumpNotes],
+    [card, loadActivity, bumpNotes, activityBlocks, primaryBlock],
   );
 
   const cardReact = useCallback(
@@ -4360,7 +4380,7 @@ export function EditCandidateModal({
         city: city.trim() || undefined,
         skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
       };
-      await updateEntity(card.id, {
+      const saved = await updateEntity(card.id, {
         name: fullName,
         phone: normalizedPhone,
         email: email.trim() || undefined,
@@ -4368,6 +4388,12 @@ export function EditCandidateModal({
         position: position.trim() || undefined,
         company: company.trim() || undefined,
         extra_data: extraData,
+        // Оптимистичная блокировка. Бэк умеет её с самого начала (PUT /entities
+        // сверяет version и отдаёт 409), но фронт поле не слал — ветка не
+        // выполнялась никогда, и два рекрутёра, открывшие карточку разом, тихо
+        // затирали правки друг друга: побеждал тот, кто нажал «Сохранить»
+        // последним. undefined (старая доска без поля) = прежнее поведение.
+        version: card.version,
       });
       toast.success("Кандидат обновлён");
       onSaved({
@@ -4387,9 +4413,20 @@ export function EditCandidateModal({
         source: extraData.source,
         age: extraData.age != null ? String(extraData.age) : undefined,
         extra_data: extraData,
+        // Свежая версия с сервера — иначе повторное «Сохранить» без перезагрузки
+        // доски ушло бы со старой version и словило ложный 409.
+        version: saved?.version,
       });
-    } catch {
-      toast.error("Ошибка сохранения");
+    } catch (err) {
+      // 409 — карточку успел изменить кто-то ещё. Молчать тут нельзя: человек
+      // видел бы «Ошибка сохранения» и не понимал, что его правки не потерялись,
+      // а просто устарели и их надо перенести на свежую версию.
+      const resp = (err as { response?: { status?: number } })?.response;
+      toast.error(
+        resp?.status === 409
+          ? "Кандидата изменил кто-то ещё — обновите страницу и повторите правку"
+          : "Ошибка сохранения",
+      );
     } finally {
       setSaving(false);
     }

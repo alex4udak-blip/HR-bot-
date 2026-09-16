@@ -278,6 +278,9 @@ export interface Entity {
   // Vacancy tracking for candidates
   vacancies_count?: number;
   vacancy_names?: string[];
+  /** Оптимистичная блокировка: PUT /entities сверяет присланную version с
+   *  текущей и отдаёт 409, если карточку успел изменить кто-то ещё. */
+  version?: number;
 }
 
 export interface EntityFile {

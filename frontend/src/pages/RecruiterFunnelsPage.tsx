@@ -1584,15 +1584,26 @@ export default function RecruiterFunnelsPage() {
   })();
 
   // Change candidate stage
-  const handleStageChange = useCallback(async (applicationId: number, newStage: ApplicationStage, comment?: string) => {
+  //
+  // expectedEntityId — ОБЯЗАТЕЛЕН и приходит СНАРУЖИ: это кандидат, которого
+  // пользователь видит открытым. Брать его здесь по applicationId нельзя —
+  // получится сверка числа с самим собой (entity_id заявки == entity_id заявки),
+  // и страховка 2026-09-16 не поймала бы ровно тот случай, ради которого
+  // сделана: applicationId из устаревшей ленты принадлежит ДРУГОМУ кандидату
+  // той же воронки, его entity_id совпал бы с серверным, и «Отказ» снова ушёл
+  // бы не тому (баг Марии 2026-09-15).
+  const handleStageChange = useCallback(async (
+    applicationId: number,
+    newStage: ApplicationStage,
+    comment: string | undefined,
+    expectedEntityId: number,
+  ) => {
     if (blockIfArchived()) return false;
-    // Кандидат, которому МЫ меняем этап: бэк сверит с заявкой и не даст промахнуться.
-    const target = candidates.find((c) => c.id === applicationId);
     try {
       await updateApplication(applicationId, {
         stage: newStage,
         ...(comment ? { comment } : {}),
-        ...(target?.entity_id ? { expected_entity_id: target.entity_id } : {}),
+        expected_entity_id: expectedEntityId,
       });
       // Локально двигаем кандидата на новый этап + СРАЗУ снимаем «предыдущую
       // серию» (оптимистично): смена этапа обновляет last_stage_change_at на
@@ -1623,7 +1634,7 @@ export default function RecruiterFunnelsPage() {
       );
       return false;
     }
-  }, [fetchVacancies, getVacancyStageLabel, blockIfArchived, candidates]);
+  }, [fetchVacancies, getVacancyStageLabel, blockIfArchived]);
 
   // ─── Interview scheduling modal ───
   const [interviewForCandidate, setInterviewForCandidate] = useState<typeof selectedCandidate | null>(null);
@@ -1785,11 +1796,21 @@ export default function RecruiterFunnelsPage() {
   // чтобы лента карточек и счётчики досок обновились. ───
   const cardChangeStage = useCallback(
     async (appId: number, stage: string, comment?: string) => {
-      const ok = await handleStageChange(appId, stage as ApplicationStage, comment);
+      // Кандидат, которого пользователь ВИДИТ открытым. Именно его бэк сверит с
+      // заявкой: appId приходит из ленты активности и может оказаться чужим —
+      // тогда сверка не сойдётся и этап не уедет не туда.
+      const expectedEntityId = selectedCandidate?.entity_id;
+      if (!expectedEntityId) {
+        // Без открытого кандидата сверять не с чем — лучше отказать, чем
+        // отправить запрос без страховки.
+        toast.error('Кандидат не выбран — обновите страницу и повторите');
+        return false;
+      }
+      const ok = await handleStageChange(appId, stage as ApplicationStage, comment, expectedEntityId);
       await refreshActivity();
       return ok;
     },
-    [handleStageChange, refreshActivity],
+    [handleStageChange, refreshActivity, selectedCandidate?.entity_id],
   );
 
   const cardComment = useCallback(
