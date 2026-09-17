@@ -12,7 +12,7 @@ from .common import (
     Entity, User, STAGE_SYNC_MAP,
     ApplicationResponse, KanbanColumn, KanbanBoard, BulkStageUpdate,
     check_vacancy_access, can_access_vacancy, is_org_admin_or_owner,
-    sees_all_candidates, entities_with_single_active_application,
+    sees_all_candidates, recompute_entity_status,
 )
 from ...services.auth import get_user_org
 
@@ -535,13 +535,6 @@ async def bulk_move_applications(
     # Save old stages for audit log
     old_stages = {app.id: app.stage for app in applications}
 
-    # Synchronize VacancyApplication.stage -> Entity.status — только тем, у кого
-    # воронка одна (см. has_single_active_application). Считаем одним запросом на
-    # всю пачку, без N+1.
-    new_entity_status = STAGE_SYNC_MAP.get(data.stage)
-    single_funnel_entities = await entities_with_single_active_application(
-        db, [app.entity_id for app in applications]
-    )
 
     for i, app in enumerate(applications):
         app.stage = data.stage
@@ -552,20 +545,19 @@ async def bulk_move_applications(
         # ответе вне async-контекста -> MissingGreenlet (500).
         app.updated_at = now
 
-        # Sync entity status
-        if new_entity_status and app.entity_id in single_funnel_entities:
-            entity = entities_map.get(app.entity_id)
-            if entity and entity.status != new_entity_status:
-                entity.status = new_entity_status
-                entity.updated_at = now
-                logger.info(f"bulk-move: Synchronized application {app.id} stage {data.stage} -> entity {entity.id} status {new_entity_status}")
-
         # Активно работаемый кандидат не должен оставаться в теневом архиве
         # дедупа — реальное перемещение по этапам выводит его из архива.
         # entities_map уже загружена одним запросом выше — без N+1.
         moved_entity = entities_map.get(app.entity_id)
         if moved_entity and moved_entity.is_archived:
             moved_entity.is_archived = False
+
+    # Общий статус кандидата — по АКТУАЛЬНОЙ заявке (самой свежей среди живых
+    # воронок; отказ/резерв учитываются, только если живых нет). Раньше статус
+    # обновлялся лишь тем, у кого воронка одна, и у остальных подвисал.
+    await db.flush()
+    for _eid in {app.entity_id for app in applications}:
+        await recompute_entity_status(db, _eid)
 
     # Record stage transitions in audit log
     from ...services.stage_transitions import record_transition

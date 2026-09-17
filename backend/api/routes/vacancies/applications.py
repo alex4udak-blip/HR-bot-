@@ -12,7 +12,7 @@ from .common import (
     Entity, EntityType, User, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
     check_vacancy_access, can_access_vacancy, can_manage_applications,
-    is_org_admin_or_owner, sees_all_candidates, has_single_active_application,
+    is_org_admin_or_owner, sees_all_candidates, recompute_entity_status,
     BaseModel, OrgMember, OrgRole, UserRole,
 )
 from ...services.auth import get_user_org
@@ -760,28 +760,14 @@ async def update_application(
     if application.stage_order is not None and application.stage_order < 0:
         await rebalance_stage_orders(db, application.vacancy_id, application.stage)
 
-    # Synchronize with entity status — ТОЛЬКО когда воронка у кандидата одна.
-    # См. has_single_active_application: при двух воронках общий статус верен
-    # максимум для одной из них, и перенос в первой молча переписывал карточку
-    # на «Статусах»/«Всех кандидатах», ничего не сообщая второй.
-    if data.stage and data.stage in STAGE_SYNC_MAP:
-        new_status = STAGE_SYNC_MAP[data.stage]
-        # Get entity and update its status
-        entity_result = await db.execute(
-            select(Entity).where(Entity.id == application.entity_id)
-        )
-        entity_to_sync = entity_result.scalar()
-        if entity_to_sync and entity_to_sync.status != new_status:
-            if await has_single_active_application(db, application.entity_id):
-                entity_to_sync.status = new_status
-                entity_to_sync.updated_at = datetime.utcnow()
-                logger.info(f"Synchronized application {application_id} stage {data.stage} to entity {application.entity_id} status {new_status}")
-            else:
-                logger.info(
-                    "Entity %s в нескольких воронках — общий статус не трогаем "
-                    "(заявка %s ушла в %s)",
-                    application.entity_id, application_id, data.stage,
-                )
+    # Общий статус кандидата (колонка на «Все кандидаты»/«Статусы») пересчитываем
+    # по АКТУАЛЬНОЙ заявке: самой свежей среди живых воронок; отказ/резерв берутся
+    # в расчёт, только если живых воронок не осталось (решение юзера 2026-09-17).
+    # Раньше при двух воронках общий статус не обновлялся вовсе и подвисал на
+    # старом значении — «не видно, где он сейчас».
+    if data.stage:
+        await db.flush()  # чтобы пересчёт увидел новый этап этой заявки
+        await recompute_entity_status(db, application.entity_id)
 
     # Record stage transition in audit log
     if data.stage and data.stage != old_stage:

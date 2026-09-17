@@ -158,6 +158,10 @@ export interface KanbanCard {
   salary?: string;
   total_experience?: string;
   vacancy_name?: string;
+  // Воронка, по которой сейчас показан статус кандидата, и сколько у него воронок
+  // всего — список рисует подпись «воронка (+N)», чтобы было видно, где он сейчас.
+  status_vacancy_name?: string | null;
+  funnel_count?: number;
   rejection_reason?: string;
   /** Карточка из теневой базы — приходит в выдачу ТОЛЬКО при поиске, метится «Архив». */
   is_archived?: boolean;

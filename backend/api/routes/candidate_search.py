@@ -33,6 +33,7 @@ from api.models.database import (
     User,
     UserRole,
     Vacancy,
+    VacancyStatus,
     VacancyApplication,
     ApplicationStage,
     StageTransition,
@@ -837,6 +838,11 @@ class KanbanCard(BaseModel):
     salary: Optional[str] = None
     total_experience: Optional[str] = None
     vacancy_name: Optional[str] = None
+    # Воронка, по которой сейчас показан статус кандидата (самая свежая среди
+    # живых), и сколько у него воронок всего — список рисует подпись «этап ·
+    # воронка (+N)», чтобы было видно, где человек сейчас.
+    status_vacancy_name: Optional[str] = None
+    funnel_count: int = 0
     rejection_reason: Optional[str] = None
     # Карточка из теневой базы: попадает в выдачу ТОЛЬКО при поиске, помечается
     # на фронте плашкой «Архив», чтобы не путать с активными.
@@ -964,6 +970,8 @@ async def get_candidates_kanban(
     # Get vacancy names and rejection reasons for entities (только отображаемые)
     entity_ids = [e.id for e in display_entities]
     vacancy_map: dict = {}
+    status_vacancy_map: dict = {}
+    funnel_count_map: dict = {}
     rejection_map: dict = {}
 
     # Bulk fetch photo files (EntityFile rows with image mime types) as a
@@ -1013,17 +1021,42 @@ async def get_candidates_kanban(
             va_result = await db.execute(
                 select(
                     VacancyApplication.entity_id,
+                    VacancyApplication.id,
+                    VacancyApplication.stage,
+                    VacancyApplication.last_stage_change_at,
+                    VacancyApplication.applied_at,
                     Vacancy.title,
+                    Vacancy.status,
                     VacancyApplication.rejection_reason,
                 ).select_from(VacancyApplication)
                 .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
                 .where(VacancyApplication.entity_id.in_(entity_ids))
             )
+            from .vacancies.common import INACTIVE_STAGES as _INACTIVE
+            _by_entity: dict = {}
             for row in va_result.all():
                 if row.entity_id not in vacancy_map:
                     vacancy_map[row.entity_id] = row.title
                 if row.rejection_reason and row.entity_id not in rejection_map:
                     rejection_map[row.entity_id] = row.rejection_reason
+                if row.status != VacancyStatus.closed:
+                    _by_entity.setdefault(row.entity_id, []).append(row)
+            # Подпись воронки в списке: та же «актуальная» заявка, по которой
+            # считается общий статус кандидата (самая свежая среди живых; отказ
+            # и резерв — только если живых воронок нет).
+            for eid, rows in _by_entity.items():
+                funnel_count_map[eid] = len(rows)
+                live = [r for r in rows if r.stage not in _INACTIVE]
+                pool = live or rows
+                best = max(
+                    pool,
+                    key=lambda r: (
+                        (r.last_stage_change_at or r.applied_at) is not None,
+                        r.last_stage_change_at or r.applied_at,
+                        r.id,
+                    ),
+                )
+                status_vacancy_map[eid] = best.title
         except Exception as exc:
             logger.warning(f"Vacancy map query failed (non-critical): {exc}")
 
@@ -1090,6 +1123,8 @@ async def get_candidates_kanban(
                 salary=_as_str(ed.get("salary")),
                 total_experience=_as_str(ed.get("total_experience")),
                 vacancy_name=vacancy_map.get(e.id),
+                status_vacancy_name=status_vacancy_map.get(e.id),
+                funnel_count=funnel_count_map.get(e.id, 0),
                 rejection_reason=rejection_map.get(e.id),
                 is_archived=bool(getattr(e, "is_archived", False)),
                 extra_data=ed if ed else None,

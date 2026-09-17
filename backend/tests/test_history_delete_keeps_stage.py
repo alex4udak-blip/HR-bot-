@@ -162,3 +162,51 @@ async def test_stale_application_id_of_neighbour_is_rejected(
     await db_session.refresh(open_app)
     assert stale_app.stage == SECOND, "заявка соседа не должна была сдвинуться"
     assert open_app.stage == FIRST, "заявка открытого кандидата тоже не тронута"
+
+
+async def test_entity_status_follows_live_funnel_not_rejection(
+    client: AsyncClient, db_session: AsyncSession, organization: Organization,
+    department: Department, admin_user: User, org_owner: OrgMember,
+    candidate_entity: Entity, moved_application,
+):
+    """Отказ в одной воронке не перебивает живую работу в другой (17.09).
+
+    Общий статус кандидата (колонка «Все кандидаты») считается по самой свежей
+    ЖИВОЙ заявке; отказ учитывается, только когда живых воронок не осталось.
+    """
+    app_live, _initial, _moved = moved_application
+    now = datetime.utcnow()
+    second_vacancy = Vacancy(
+        org_id=organization.id, department_id=department.id, created_by=admin_user.id,
+        title="Вторая воронка", status=VacancyStatus.open, salary_currency="RUB",
+        created_at=now, updated_at=now,
+    )
+    db_session.add(second_vacancy)
+    await db_session.commit()
+    app_other = VacancyApplication(
+        vacancy_id=second_vacancy.id, entity_id=candidate_entity.id, stage=FIRST,
+        stage_order=1, created_by=admin_user.id, applied_at=now,
+        last_stage_change_at=now, updated_at=now,
+    )
+    db_session.add(app_other)
+    await db_session.commit()
+
+    # Отказ во ВТОРОЙ воронке — позже всех остальных изменений.
+    r = await client.put(
+        f"/api/vacancies/applications/{app_other.id}",
+        json={"stage": "rejected", "expected_entity_id": candidate_entity.id},
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    await db_session.refresh(candidate_entity)
+    assert candidate_entity.status != EntityStatus.rejected
+
+    # Живых воронок не осталось — тогда отказ и становится общим статусом.
+    r = await client.put(
+        f"/api/vacancies/applications/{app_live.id}",
+        json={"stage": "rejected", "expected_entity_id": candidate_entity.id},
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    await db_session.refresh(candidate_entity)
+    assert candidate_entity.status == EntityStatus.rejected

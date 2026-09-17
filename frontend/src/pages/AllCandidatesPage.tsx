@@ -1325,9 +1325,19 @@ export default function AllCandidatesPage() {
                     .map(({ card, status }) => {
                       const isSelected = selectedCard?.id === card.id;
                       const isChecked = selectedIds.has(card.id);
+                      // Подпись воронки: та, по которой сейчас показан статус
+                      // кандидата (см. status_vacancy_name на бэке). Кандидат в
+                      // нескольких воронках получает «+N» — видно, что есть ещё
+                      // (запрос юзера 17.09).
+                      const listFunnelName =
+                        card.status_vacancy_name || card.vacancy_name;
+                      const listExtraFunnels = Math.max(
+                        (card.funnel_count || 0) - 1,
+                        0,
+                      );
                       const listMetaPrimary =
                         (listSettings.fields.lastCompany ? card.company : undefined) ||
-                        card.vacancy_name;
+                        listFunnelName;
                       const showListDate = !card.company;
                       return (
                         <div
@@ -1437,6 +1447,14 @@ export default function AllCandidatesPage() {
                                   title={listMetaPrimary}
                                 >
                                   {listMetaPrimary}
+                                </span>
+                              )}
+                              {listExtraFunnels > 0 && (
+                                <span
+                                  className="hf-candidate-row-meta-text shrink-0 text-[color:var(--hf-accent)]"
+                                  title={`Кандидат ещё в ${listExtraFunnels} воронке(ах) — этапы видны в карточке`}
+                                >
+                                  +{listExtraFunnels}
                                 </span>
                               )}
                               {listMetaPrimary &&

@@ -711,6 +711,64 @@ class BulkStageUpdate(BaseModel):
 
 # === Синхронизация этапа заявки с глобальным статусом кандидата ===
 
+# Этапы, на которых работа по воронке ОСТАНОВЛЕНА. Такой этап не должен
+# перебивать живую работу в другой воронке: отказали в одной — человек всё ещё
+# «Выполняет ТЗ» во второй (решение юзера 2026-09-17, обратная связь Эльвиры).
+INACTIVE_STAGES = {
+    ApplicationStage.rejected,
+    ApplicationStage.withdrawn,
+    ApplicationStage.reserve,
+}
+
+
+def pick_primary_application(apps: List[VacancyApplication]):
+    """«Актуальная» заявка кандидата: самая свежая среди ЖИВЫХ, а если живых нет —
+    самая свежая из остановленных. По ней считается общий статус кандидата и
+    подпись воронки в списке «Все кандидаты»."""
+    if not apps:
+        return None
+
+    def _when(a):
+        return a.last_stage_change_at or a.applied_at or a.updated_at
+
+    live = [a for a in apps if a.stage not in INACTIVE_STAGES]
+    pool = live or list(apps)
+    # Без даты — в конец: неизвестное время не должно выигрывать у реальной смены.
+    return max(pool, key=lambda a: (_when(a) is not None, _when(a), a.id))
+
+
+async def recompute_entity_status(db: AsyncSession, entity_id: int) -> None:
+    """Пересчитать Entity.status по «актуальной» заявке кандидата (см.
+    pick_primary_application). Раньше общий статус просто НЕ обновлялся, если
+    воронок больше одной, и на «Все кандидаты» кандидат подвисал в старой
+    колонке — было не видно, где он сейчас.
+
+    Не коммитит. Закрытые вакансии не учитываем: работа идёт в открытых.
+    """
+    apps = (await db.execute(
+        select(VacancyApplication)
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            VacancyApplication.entity_id == entity_id,
+            Vacancy.status != VacancyStatus.closed,
+        )
+    )).scalars().all()
+    primary = pick_primary_application(apps)
+    if primary is None or primary.stage not in STAGE_SYNC_MAP:
+        return
+    new_status = STAGE_SYNC_MAP[primary.stage]
+    entity = (await db.execute(
+        select(Entity).where(Entity.id == entity_id)
+    )).scalar()
+    if entity is not None and entity.status != new_status:
+        entity.status = new_status
+        entity.updated_at = datetime.utcnow()
+        logger.info(
+            "ENTITY_STATUS recompute: entity=%s -> %s (по заявке %s, воронка %s)",
+            entity_id, new_status.value, primary.id, primary.vacancy_id,
+        )
+
+
 async def has_single_active_application(db: AsyncSession, entity_id: int) -> bool:
     """Можно ли отражать этап заявки в глобальном Entity.status.
 
