@@ -3,6 +3,7 @@ import type { KanbanCard } from "@/services/api/candidates";
 import type { EntityWithRelations } from "@/types";
 import { STATUS_LABELS } from "@/types";
 import { sanitizeHtml } from "@/utils/sanitizeHtml";
+import { CompareResumePreview } from "./CompareResumePreview";
 
 /**
  * Презентационная «карточка сравнения кандидата» + её типы, билдеры данных и
@@ -307,63 +308,6 @@ function StatusBlock({ side, vacancies }: { side: Side; vacancies?: SystemHrTag[
   );
 }
 
-function ResumeFallbackRow({ label, value }: { label: string; value: string }) {
-  if (!value) return null;
-  return (
-    <div className="rounded-lg bg-slate-50 p-2.5 text-xs">
-      <div className="text-slate-500 mb-0.5">{label}</div>
-      <div className="text-slate-800 leading-relaxed whitespace-pre-wrap">{value}</div>
-    </div>
-  );
-}
-
-function ResumeBlock({ resumes, text, extra }: { resumes: ResumeDemo[]; text: string; extra: ResumeExtra }) {
-  const hasResume = resumes.length > 0 || !!text;
-  const hasExtra = !!(extra.experience || extra.skills || extra.languages || extra.education);
-  return (
-    <div className="mt-3 pt-3 border-t border-slate-200">
-      <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
-        Резюме{resumes.length > 1 ? ` (${resumes.length})` : ""}
-      </div>
-      {hasResume ? (
-        <div className="space-y-2">
-          {resumes.map((r, i) => (
-            <div key={i} className="rounded-lg bg-slate-50 p-2.5 text-xs">
-              {r.title && <div className="font-medium text-slate-800">{r.title}</div>}
-              {r.subtitle && <div className="text-slate-500">{r.subtitle}</div>}
-              {(r.sections || []).map((s, j) => (
-                <div key={j} className="mt-1.5">
-                  {s.title && <div className="text-slate-500">{s.title}</div>}
-                  {(s.lines || []).length > 0 && (
-                    <div className="text-slate-800 leading-relaxed whitespace-pre-wrap">
-                      {(s.lines || []).join("\n")}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
-          {text && (
-            <div className="rounded-lg bg-slate-50 p-2.5 text-xs whitespace-pre-wrap text-slate-800">
-              {text}
-            </div>
-          )}
-        </div>
-      ) : hasExtra ? (
-        // Полного резюме нет — показываем структурные поля (анкеты из расширения)
-        <div className="space-y-2">
-          <ResumeFallbackRow label="Опыт" value={extra.experience} />
-          <ResumeFallbackRow label="Навыки" value={extra.skills} />
-          <ResumeFallbackRow label="Языки" value={extra.languages} />
-          <ResumeFallbackRow label="Образование" value={extra.education} />
-        </div>
-      ) : (
-        <div className="text-sm text-slate-400">—</div>
-      )}
-    </div>
-  );
-}
-
 function NotesBlock({ notes }: { notes: Array<{ text?: string; author?: string; date?: string }> }) {
   if (notes.length === 0) return null;
   return (
@@ -427,6 +371,7 @@ export function CandidateCompareCard({
   matchedFields,
   entityId,
   vacancies,
+  extraData,
 }: {
   title: string;
   side: Side | null;
@@ -435,6 +380,8 @@ export function CandidateCompareCard({
   matchedFields?: string[];
   entityId?: number;
   vacancies?: SystemHrTag[];
+  /** extra_data анкеты — из неё берутся распарсенные версии резюме. */
+  extraData?: Record<string, unknown>;
 }) {
   if (!side) {
     return <div className="rounded-xl border border-slate-200 p-4 text-slate-400">—</div>;
@@ -496,7 +443,12 @@ export function CandidateCompareCard({
         ))}
       </div>
 
-      <ResumeBlock resumes={side.resumes} text={side.resumeText} extra={side.resumeExtra} />
+      {/* Само загруженное резюме (PDF/сканы), с откатом на текстовую версию. */}
+      <CompareResumePreview
+        entityId={entityId}
+        extraData={extraData}
+        parts={{ resumes: side.resumes, text: side.resumeText, extra: side.resumeExtra }}
+      />
       <NotesBlock notes={side.notes} />
     </div>
   );

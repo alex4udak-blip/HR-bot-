@@ -26,9 +26,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from api.models.database import (
-    Entity, EntityType, EntityStatus, Organization, User,
+    Entity, EntityFile, EntityFileType, EntityType, EntityStatus, Organization, User,
 )
-from api.services.similarity import detect_archived_duplicate
+from api.services.similarity import detect_archived_duplicate, transliterate_ru_to_en
 
 DB_URL = os.environ.get("DATABASE_URL", "")
 MARKER = "demo_dup_fixture"
@@ -196,6 +196,56 @@ NAMESAKE_NEW = dict(name="Иванов Кирилл Владимирович", p
                     extra_data=_new_extra(city="Нижний Новгород"))
 
 
+def _minimal_pdf(lines) -> bytes:
+    """Однослойный валидный PDF из нескольких строк — чтобы в окне сравнения было
+    что показать в рамке. Без внешних зависимостей: base-14 Helvetica, латиница
+    (кириллица в WinAnsi всё равно не отрисуется, а для фикстуры это неважно)."""
+    content = "BT /F1 14 Tf 60 780 Td 18 TL\n"
+    for line in lines:
+        # Base-14 Helvetica кириллицу не кодирует — транслитерируем тем же
+        # хелпером, что и матчер, чтобы в фикстуре не было «????».
+        safe = transliterate_ru_to_en(line).replace("\\", "").replace("(", "").replace(")", "")
+        content += f"({safe}) Tj T*\n"
+    content += "ET"
+    stream = content.encode("latin-1", "replace")
+
+    objects = [
+        b"<</Type/Catalog/Pages 2 0 R>>",
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]"
+        b"/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>",
+        b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>",
+        b"<</Length " + str(len(stream)).encode() + b">>stream\n" + stream + b"\nendstream",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        # Пробел перед endobj обязателен: иначе "endstreamendobj" склеивается в
+        # один токен и просмотрщик считает файл битым.
+        out += f"{i} 0 obj".encode() + body + b"\nendobj\n"
+    xref_at = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode()
+    out += b"0000000000 65535 f \n"
+    for off in offsets:
+        out += f"{off:010d} 00000 n \n".encode()
+    out += (
+        f"trailer<</Size {len(objects) + 1}/Root 1 0 R>>\nstartxref\n{xref_at}\n%%EOF".encode()
+    )
+    return bytes(out)
+
+
+def _attach_resume(db: AsyncSession, entity: Entity, org_id: int, lines) -> None:
+    """Прикрепить кандидату PDF-резюме (file_type=resume) — ровно так же, как это
+    делает загрузка файла в карточке: содержимое лежит в БД (file_data)."""
+    data = _minimal_pdf(lines)
+    db.add(EntityFile(
+        entity_id=entity.id, org_id=org_id, file_type=EntityFileType.resume,
+        file_name=f"resume_{entity.id}.pdf", file_data=data, file_size=len(data),
+        mime_type="application/pdf", description="Демо-резюме для проверки дублей",
+    ))
+
+
 async def _purge(db: AsyncSession, org_id: int) -> int:
     rows = (await db.execute(
         select(Entity).where(Entity.org_id == org_id, Entity.type == EntityType.candidate)
@@ -252,6 +302,14 @@ async def main() -> None:
             db.add(old)
             await db.flush()
 
+            _attach_resume(db, old, org.id, [
+                f"CV: {old.name}",
+                f"Position: {old_kw.get('position') or '-'}",
+                f"Company: {old_kw.get('company') or '-'}",
+                "",
+                "Experience: demo fixture for duplicate comparison.",
+            ])
+
             new = Entity(org_id=org.id, type=EntityType.candidate, created_by=author_id,
                          status=EntityStatus.new, **new_kw)
             db.add(new)
@@ -282,6 +340,11 @@ async def main() -> None:
                          status=EntityStatus.new, **kw)
             db.add(old)
             await db.flush()
+            _attach_resume(db, old, org.id, [
+                f"CV: {old.name}",
+                f"Position: {kw.get('position') or '-'}",
+                f"City: {(kw.get('extra_data') or {}).get('city') or '-'}",
+            ])
             print(f"  [{old.id}] {old.name:32} — {note}")
         new = Entity(org_id=org.id, type=EntityType.candidate, created_by=author_id,
                      status=EntityStatus.new, **NAMESAKE_NEW)

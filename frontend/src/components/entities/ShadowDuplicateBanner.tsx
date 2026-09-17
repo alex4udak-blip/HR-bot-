@@ -1,5 +1,5 @@
 import { backdropClose } from '@/utils/backdropClose';
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
@@ -12,6 +12,7 @@ import {
   type DuplicateCandidateResult,
   type HiddenDuplicateMeta,
 } from "@/services/api/entities";
+import { clearCompareFilesCache } from "./CompareResumePreview";
 import {
   CandidateCompareCard,
   sideFromCard,
@@ -63,6 +64,14 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   // Кэш тех же профилей в ref — для СИНХРОННого сидинга (предвыбор/triggerEntity),
   // чтобы трек не моргал спиннером там, где профиль уже под рукой.
   const entityCache = useRef<Map<number, EntityWithRelations>>(new Map());
+  // Трек карусели: нативный scroll-snap вместо transform. Даёт настоящий свайп
+  // (тачпад, тач, drag) и «подглядывание» следующей анкеты краем — по прежнему
+  // треку на translateX было не видно, что анкет несколько (жалоба Эльвиры:
+  // пролистала, не поняв, что решение принимается по одной).
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const slideRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  // Скролл, который мы вызвали сами, не должен тут же перевыбирать анкету.
+  const scrollingTo = useRef<number | null>(null);
   // Решения ПО ПАРАМ (2026-09-15, Эльвира): кнопки действуют только на анкету,
   // открытую справа. Решённые помечаются и пропускаются, окно закрывается само,
   // только когда решены все — раньше решение по последней в карусели закрывало
@@ -86,18 +95,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     }
   }, [hiddenId, triggerEntity]);
 
-  if (!hiddenId || resolved) return null;
-
-  // Профиль ВЫБРАННОГО в треке дубликата (центрированная правая карточка). Дерайвится
-  // из entities-state по selectedDupId; до подгрузки — fallback на triggerEntity
-  // (hiddenId), чтобы «Совпадение по»/right/matched работали с первого кадра.
-  const archived: EntityWithRelations | null =
-    (selectedDupId != null ? entities[selectedDupId] : undefined) ?? triggerEntity ?? null;
-
-  // Выбирает дубликат для центрирования + добирает его профиль в STATE/кэш, если
+  // Выбирает дубликат для сравнения + добирает его профиль в STATE/кэш, если
   // префетч ещё не доставил. Трек сам подменит плейсхолдер на карточку, как только
   // entities обновится — отдельный right-спиннер больше не нужен.
-  const loadSelected = async (id: number) => {
+  // Объявлено ДО ранних return'ов: на неё ссылаются эффекты карусели ниже.
+  const loadSelected = useCallback(async (id: number) => {
     setSelectedDupId(id);
     if (entityCache.current.has(id)) return;
     try {
@@ -107,9 +109,90 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     } catch {
       toast.error("Не удалось загрузить профиль дубликата");
     }
-  };
+  }, []);
+
+  // Скролл трека к анкете (снап её отцентрирует).
+  const scrollToId = useCallback((id: number, behavior: ScrollBehavior = "smooth") => {
+    scrollingTo.current = id;
+    slideRefs.current.get(id)?.scrollIntoView({ behavior, inline: "center", block: "nearest" });
+  }, []);
+
+  // Свайп/скролл трека выбирает анкету сам: решение всегда относится к той, что
+  // стоит по центру. Иначе рекрутёр листает, а кнопки действуют на другую пару.
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el || !open) return;
+    let timer: number | undefined;
+    const onScroll = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        // Центры считаем по getBoundingClientRect: у слайдов свой offsetParent
+        // (они position:relative), поэтому offsetLeft лежит в другой системе
+        // координат и выбор «залипал» на первой анкете.
+        const trackRect = el.getBoundingClientRect();
+        const center = trackRect.left + trackRect.width / 2;
+        let bestId: number | null = null;
+        let bestDist = Number.POSITIVE_INFINITY;
+        slideRefs.current.forEach((node, id) => {
+          const r = node.getBoundingClientRect();
+          const dist = Math.abs(r.left + r.width / 2 - center);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestId = id;
+          }
+        });
+        if (bestId != null) {
+          scrollingTo.current = null;
+          setSelectedDupId((prev) => (prev === bestId ? prev : bestId));
+          if (bestId != null && !entityCache.current.has(bestId)) void loadSelected(bestId);
+        }
+      }, 120);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.clearTimeout(timer);
+    };
+    // loading — обязательная зависимость: пока крутится спиннер, трека в DOM нет
+    // и вешать слушатель не на что. Без неё эффект отрабатывал вхолостую один раз
+    // при открытии, и свайп не переключал анкету.
+  }, [open, loading, duplicates.length, loadSelected]);
+
+  // Выбор поменялся не скроллом (открытие окна, переход к следующей непроверенной
+  // после решения) — подводим трек к нужной анкете.
+  useEffect(() => {
+    if (!open || selectedDupId == null) return;
+    const node = slideRefs.current.get(selectedDupId);
+    if (node) scrollToId(selectedDupId, scrollingTo.current == null ? "auto" : "smooth");
+  }, [open, loading, selectedDupId, duplicates.length, scrollToId]);
+
+  // Стрелки клавиатуры — привычный способ листать карусель.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const pos = duplicates.findIndex((d) => d.entity_id === selectedDupId);
+      const next = Math.max(0, Math.min(duplicates.length - 1, pos + (e.key === "ArrowRight" ? 1 : -1)));
+      if (next === pos || !duplicates[next]) return;
+      e.preventDefault();
+      scrollToId(duplicates[next].entity_id);
+      void loadSelected(duplicates[next].entity_id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, duplicates, selectedDupId, scrollToId, loadSelected]);
+
+  if (!hiddenId || resolved) return null;
+
+  // Профиль ВЫБРАННОГО в треке дубликата (центрированная правая карточка). Дерайвится
+  // из entities-state по selectedDupId; до подгрузки — fallback на triggerEntity
+  // (hiddenId), чтобы «Совпадение по»/right/matched работали с первого кадра.
+  const archived: EntityWithRelations | null =
+    (selectedDupId != null ? entities[selectedDupId] : undefined) ?? triggerEntity ?? null;
 
   const openModal = async () => {
+    // Резюме могли догрузить с прошлой проверки — читаем файлы заново.
+    clearCompareFilesCache();
     setDecisions({});
     setOpen(true);
     setLoading(true);
@@ -234,13 +317,14 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   const selectedDecision = selectedDupId != null ? decisions[selectedDupId] : undefined;
   const undecidedCount = duplicates.filter((d) => !decisions[d.entity_id]).length;
   const selectedName = duplicates[idx]?.entity_name || archived?.name || "";
-  // Перелистывание дублей (свайп карточки / клик по точке) — на delta шагов.
-  // Трек спружинит к idx*100%, новая карточка въедет справа без пустоты.
-  const goToDup = (delta: number) => {
-    const target = idx + delta;
-    if (target < 0 || target >= duplicates.length || target === idx) return;
-    loadSelected(duplicates[target].entity_id);
+  // Показать анкету по индексу: доскроллить трек и выбрать её для решения.
+  const goToIndex = (target: number) => {
+    if (target < 0 || target >= duplicates.length) return;
+    const id = duplicates[target].entity_id;
+    scrollToId(id);
+    if (id !== selectedDupId) void loadSelected(id);
   };
+  const goToDup = (delta: number) => goToIndex(idx + delta);
 
   return (
     <>
@@ -301,6 +385,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                     matched={matched}
                     entityId={card.id}
                     vacancies={Array.isArray((card.extra_data as any)?.system_hr_tags) ? (card.extra_data as any).system_hr_tags : undefined}
+                    extraData={card.extra_data as Record<string, unknown> | undefined}
                   />
                 </div>
 
@@ -337,11 +422,12 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                     )}
                   </div>
 
-                  {/* Трек карусели */}
+                  {/* Трек карусели: горизонтальный скролл со снапом */}
                   <div className="flex-1 overflow-hidden relative flex flex-col">
                     <div
-                      className="flex h-full transition-transform duration-300 ease-in-out"
-                      style={{ transform: `translateX(-${idx * 100}%)` }}
+                      ref={trackRef}
+                      className="flex h-full gap-3 overflow-x-auto snap-x snap-mandatory overscroll-x-contain"
+                      style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
                     >
                       {duplicates.length > 0 ? (
                         duplicates.map((d) => {
@@ -351,7 +437,16 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                             /* Слайд - прозрачный */
                             <div
                               key={d.entity_id}
-                              className="w-full h-full flex-shrink-0 flex flex-col overflow-y-auto pb-2 pr-2 relative"
+                              ref={(el) => {
+                                if (el) slideRefs.current.set(d.entity_id, el);
+                                else slideRefs.current.delete(d.entity_id);
+                              }}
+                              data-dup-id={d.entity_id}
+                              // Чуть уже колонки, когда анкет несколько: справа
+                              // выглядывает край следующей — видно, что она есть.
+                              className={`h-full flex-shrink-0 flex flex-col overflow-y-auto pb-2 pr-2 relative snap-center transition-opacity ${
+                                duplicates.length > 1 ? "w-[94%]" : "w-full"
+                              } ${d.entity_id === selectedDupId ? "opacity-100" : "opacity-60"}`}
                               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                             >
                               <style>{`
@@ -380,6 +475,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                                   matchedFields={Object.keys(d.matched_fields)}
                                   entityId={d.entity_id}
                                   vacancies={Array.isArray((ent?.extra_data as any)?.system_hr_tags) ? (ent?.extra_data as any).system_hr_tags : undefined}
+                                  extraData={ent?.extra_data as Record<string, unknown> | undefined}
                                 />
                               ) : (
                                 <div className="flex items-center justify-center text-gray-400 h-full">
@@ -396,6 +492,47 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                       )}
                     </div>
                   </div>
+
+                  {/* Лента анкет: видно ВСЕ похожие сразу — кто уже решён, кто ждёт,
+                      и на какой мы стоим. Клик листает трек к нужной. */}
+                  {duplicates.length > 1 && (
+                    <div className="shrink-0 flex gap-1.5 overflow-x-auto pt-2 pb-0.5" style={{ scrollbarWidth: "none" }}>
+                      {duplicates.map((d, i) => {
+                        const decided = decisions[d.entity_id];
+                        const isCurrent = d.entity_id === selectedDupId;
+                        return (
+                          <button
+                            key={d.entity_id}
+                            onClick={() => goToIndex(i)}
+                            title={d.entity_name}
+                            className={`shrink-0 max-w-[150px] rounded-lg border px-2 py-1 text-left transition-colors ${
+                              isCurrent
+                                ? "border-gray-800 bg-white"
+                                : "border-gray-200 bg-white/60 hover:bg-white"
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                  decided === "merged"
+                                    ? "bg-lime-500"
+                                    : decided === "dismissed"
+                                      ? "bg-red-500"
+                                      : "bg-amber-400"
+                                }`}
+                              />
+                              <span className="truncate text-[11px] font-medium text-gray-700">
+                                {d.entity_name || `Анкета ${i + 1}`}
+                              </span>
+                            </div>
+                            <div className="pl-3 text-[10px] text-gray-400">
+                              {decided ? (decided === "merged" ? "объединена" : "другой человек") : `${d.confidence}%`}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
                 </div>
 
