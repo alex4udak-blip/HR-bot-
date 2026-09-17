@@ -1369,7 +1369,7 @@ class SimilarityService:
             EntityAIConversation, EntityFile, EntityTransfer,
             FormSubmission, FormDispatch, RecruiterBonus,
             EntityCriteria, PrometheusReviewCache,
-            Employee, ParseJob, SharedAccess,
+            Employee, ParseJob, SharedAccess, CandidateShareLink,
         )
         from sqlalchemy import text as _sql_text
 
@@ -1472,6 +1472,10 @@ class SimilarityService:
             EntityAnalysis,
             EntityAIConversation, EntityFile, EntityTransfer,
             FormSubmission, FormDispatch, RecruiterBonus,
+            # Публичные ссылки предпросмотра: FK CASCADE, и без переноса ссылка,
+            # уже отправленная заказчику, после слияния отдавала бы 404 (владелец
+            # 17.09.2026 — вопрос «что ещё объединяется вместе с анкетами»).
+            CandidateShareLink,
             # SET NULL FK на entities.id — без перепривязки осиротеют после удаления source.
             Employee, ParseJob,
         ):

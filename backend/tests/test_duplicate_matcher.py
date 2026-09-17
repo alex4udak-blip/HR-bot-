@@ -281,3 +281,93 @@ async def test_merge_blocked_for_different_patronymics(db_session, organization)
     with pytest.raises(MergeIdentityConflict) as err:
         await similarity_service.merge_entities(db=db_session, source_entity=b, target_entity=a)
     assert "отчества" in err.value.reason
+
+
+# ============================================================
+# Что происходит с АНКЕТАМИ (form_dispatches/form_submissions), когда у
+# нескольких похожих кандидатов они заполнены, — вопрос владельца 17.09.2026.
+# ============================================================
+
+async def _form_for(db, org_id, slug: str):
+    from api.models.database import FormTemplate
+    f = FormTemplate(org_id=org_id, title="Анкета кандидата", slug=slug, fields=[])
+    db.add(f)
+    await db.flush()
+    return f
+
+
+async def _fill_form(db, form, entity, answer: str, token: str):
+    """Анкета, отправленная кандидату и заполненная им."""
+    from api.models.database import FormDispatch, FormSubmission
+    d = FormDispatch(form_id=form.id, entity_id=entity.id, token=token, status="submitted")
+    db.add(d)
+    await db.flush()
+    sub = FormSubmission(form_id=form.id, entity_id=entity.id, data={"q": answer}, dispatch_id=d.id)
+    db.add(sub)
+    await db.flush()
+    return d, sub
+
+
+@pytest.mark.asyncio
+async def test_forms_of_all_merged_duplicates_land_on_survivor(db_session, organization):
+    """Три карточки одного человека, у КАЖДОЙ своя заполненная анкета. После
+    попарного слияния все три анкеты должны оказаться на выжившей карточке —
+    ни одна не теряется (FK у form_dispatches — CASCADE, без переноса они бы
+    удалились вместе с влитой карточкой)."""
+    from sqlalchemy import select as _select
+    from api.models.database import FormDispatch, FormSubmission
+
+    form = await _form_for(db_session, organization.id, "anketa-merge")
+    survivor = await _mk(db_session, organization.id, "Иванов Кирилл Владимирович", email="k.ivanov@x.com")
+    dup1 = await _mk(db_session, organization.id, "Кирилл Иванов", email="k.ivanov@x.com")
+    dup2 = await _mk(db_session, organization.id, "Иванов К. В.", email="k.ivanov@x.com")
+    await db_session.flush()
+    await _fill_form(db_session, form, survivor, "ответ выжившего", "tok-survivor")
+    await _fill_form(db_session, form, dup1, "ответ первого дубля", "tok-dup1")
+    await _fill_form(db_session, form, dup2, "ответ второго дубля", "tok-dup2")
+    await db_session.commit()
+
+    # Рекрутёр решает пары по одной — ровно как в окне сравнения.
+    await similarity_service.merge_entities(db=db_session, source_entity=dup1, target_entity=survivor)
+    await similarity_service.merge_entities(db=db_session, source_entity=dup2, target_entity=survivor)
+    await db_session.commit()
+
+    dispatches = (await db_session.execute(
+        _select(FormDispatch).where(FormDispatch.entity_id == survivor.id)
+    )).scalars().all()
+    assert len(dispatches) == 3, "все три отправленные анкеты остаются на карточке"
+    assert {d.token for d in dispatches} == {"tok-survivor", "tok-dup1", "tok-dup2"}
+
+    answers = {
+        s.data["q"] for s in (await db_session.execute(
+            _select(FormSubmission).where(FormSubmission.entity_id == survivor.id)
+        )).scalars().all()
+    }
+    assert answers == {"ответ выжившего", "ответ первого дубля", "ответ второго дубля"}
+
+
+@pytest.mark.asyncio
+async def test_public_share_link_survives_merge(db_session, organization):
+    """Публичная ссылка на кандидата (её уже отправили заказчику) после слияния
+    должна вести на выжившую карточку, а не отваливаться в 404."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import select as _select
+    from api.models.database import CandidateShareLink
+
+    survivor = await _mk(db_session, organization.id, "Жукова Ольга", email="o.zhukova@x.com")
+    dup = await _mk(db_session, organization.id, "Ольга Жукова", email="o.zhukova@x.com")
+    await db_session.flush()
+    db_session.add(CandidateShareLink(
+        org_id=organization.id, entity_id=dup.id, token="share-token-1",
+        expires_at=datetime.utcnow() + timedelta(days=30),
+    ))
+    await db_session.commit()
+
+    await similarity_service.merge_entities(db=db_session, source_entity=dup, target_entity=survivor)
+    await db_session.commit()
+
+    link = (await db_session.execute(
+        _select(CandidateShareLink).where(CandidateShareLink.token == "share-token-1")
+    )).scalar_one_or_none()
+    assert link is not None, "ссылка не должна исчезать вместе с влитой карточкой"
+    assert link.entity_id == survivor.id

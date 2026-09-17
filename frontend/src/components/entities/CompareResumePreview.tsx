@@ -167,10 +167,12 @@ export function CompareResumePreview({
                   setActive(i);
                   setPage(0);
                 }}
-                className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                // Окно сравнения светлое: активная вкладка — белая «таблетка» с
+                // рамкой, а не тёмный прямоугольник (он выбивался из модалки).
+                className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors border ${
                   i === active
-                    ? "bg-slate-800 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    ? "border-slate-300 bg-white text-slate-800 shadow-sm"
+                    : "border-transparent text-slate-500 hover:bg-slate-100"
                 }`}
               >
                 {t.label}
