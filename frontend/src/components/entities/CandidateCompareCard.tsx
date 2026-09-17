@@ -80,20 +80,24 @@ const FIELDS: { key: FieldKey; label: string }[] = [
   { key: "tags", label: "Метки" },
 ];
 
-// Поле → RU-метка для чипов «совпало по …» на карточке дубликата.
+// Поле → RU-метка для чипов «совпало по …» на карточке дубликата. Ключи приходят
+// с бэка из единого ядра (duplicate_matcher.DupSignal.field) — включая мягкие
+// сигналы (дата рождения, возраст, город) и подсказку по тексту резюме.
 const DUP_FIELD_LABEL: Record<string, string> = {
   phone: "Телефон",
   email: "Эл. почта",
   telegram: "Telegram",
   name: "Имя",
   full_name: "Имя",
+  birth_date: "Дата рождения",
+  source: "Ссылка на резюме",
+  resume_text: "Текст резюме",
   position: "Должность",
   company: "Компания",
   city: "Город",
   age: "Возраст",
   salary: "Зарплата",
   experience: "Опыт",
-  source: "Источник",
   tags: "Метки",
 };
 

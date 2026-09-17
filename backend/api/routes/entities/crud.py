@@ -1659,71 +1659,24 @@ async def rescan_active_duplicates(
 ):
     """Разовый прогон детекта по ВСЕМ активным кандидатам против всех остальных
     (активные + архив). Детект-на-создании покрывает только новых; этот прогон
-    помечает уже существующих. Проставляет extra_data.hidden_duplicate_id обоим
-    профилям пары — на карточках появится баннер «Проверить». Только суперадмин.
+    помечает уже существующих. Проставляет extra_data.hidden_duplicate_id — на
+    карточках появится баннер «Проверить». Только суперадмин.
+
+    Считает ЕДИНЫМ ядром (services/duplicate_matcher), тем же, что баннер и окно
+    сравнения. Раньше здесь был свой индекс ключей, где ФИО сверялось точной
+    строкой: «Векленко Кирилл» и «Векленко Кирилл Дмитриевич» пере-скан считал
+    разными людьми, хотя детект-на-создании — одним.
     """
     current_user = await db.merge(current_user)
     if current_user.role != UserRole.superadmin:
         raise HTTPException(403, "Только для суперадмина")
     org = await get_user_org(current_user, db)
 
-    from ...services.similarity import (
-        normalize_email, normalize_phone, normalize_telegram,
-        is_matchable_telegram, looks_like_person_name, normalize_source_url,
-    )
+    from ...services.duplicate_matcher import scan_org_pairs, best_match, _dismissed_ids
 
-    # 1) ВСЕ кандидаты org (активные + архив) — грузим заранее, чтобы посчитать
-    # частоту telegram-значений и отсеять мусорные ярлыки источника
-    # («telegram», «hh_b2b», «hh_news_hr»), из-за которых десятки РАЗНЫХ людей
-    # матчатся друг с другом в один ложный кластер.
-    all_q = select(
-        Entity.id, Entity.name, Entity.email, Entity.phone,
-        Entity.telegram_usernames, Entity.extra_data,
-    ).where(Entity.type == EntityType.candidate)
-    if org is not None:
-        all_q = all_q.where(Entity.org_id == org.id)
-    all_rows = (await db.execute(all_q)).all()
+    items, pair_matches = await scan_org_pairs(db, org.id if org is not None else None)
+    names = {it.entity_id: it.name for it in items}
 
-    tg_freq: dict = {}
-    for _cid, _cn, _ce, _cp, ctg, _cx in all_rows:
-        for t in (ctg or []):
-            k = normalize_telegram(t)
-            if k:
-                tg_freq[k] = tg_freq.get(k, 0) + 1
-
-    def _keys(name, email, phone, tg, extra):
-        ks = []
-        # ФИО как ключ — только если это похоже на имя человека, а не на должность
-        # («Flutter Developer, Минск, 25 лет») и не placeholder.
-        if looks_like_person_name(name):
-            ks.append("n:" + " ".join((name or "").strip().lower().split()))
-        ne = normalize_email(email or "")
-        if ne:
-            ks.append("e:" + ne)
-        d = normalize_phone(phone or "")
-        if len(d) >= 10:
-            ks.append("p:" + d[-10:])
-        for t in (tg or []):
-            if is_matchable_telegram(t, tg_freq):
-                ks.append("t:" + normalize_telegram(t))
-        # source_url резюме (hh) — стабильный ключ: ловит один и тот же профиль,
-        # добавленный дважды, когда контакты скрыты и имя — заглушка-должность.
-        ex = extra if isinstance(extra, dict) else {}
-        sk = normalize_source_url(ex.get("source_url") or ex.get("source_key") or "")
-        if sk:
-            ks.append("s:" + sk)
-        return ks
-
-    key_ids: dict = {}
-    names: dict = {}
-    for cid, cname, cemail, cphone, ctg, cx in all_rows:
-        names[cid] = cname
-        for k in _keys(cname, cemail, cphone, ctg, cx):
-            key_ids.setdefault(k, []).append(cid)
-    # key_ids может оказаться пустым — это нормально: ниже всё равно снимем
-    # устаревшие авто-флаги (reconcile), поэтому раннего выхода нет.
-
-    # 2) Активные кандидаты — каждому ищем дубль (активный или архивный), кроме self
     act_q = select(Entity).where(
         Entity.is_archived.is_not(True), Entity.type == EntityType.candidate
     )
@@ -1738,44 +1691,45 @@ async def rescan_active_duplicates(
     for e in actives:
         scanned += 1
         extra = e.extra_data if isinstance(e.extra_data, dict) else {}
-        dismissed = set()
-        for x in (extra.get("dismissed_duplicate_ids") or []):
-            try:
-                dismissed.add(int(x))
-            except (TypeError, ValueError):
-                pass
+        dismissed = _dismissed_ids(extra)
 
-        dup_id = None
-        for k in _keys(e.name, e.email, e.phone, e.telegram_usernames, e.extra_data):
-            for cand in key_ids.get(k, []):
-                if cand != e.id and cand not in dismissed:
-                    dup_id = cand
-                    break
-            if dup_id is not None:
-                break
+        found = [m for m in pair_matches.get(e.id, []) if m.entity_id not in dismissed]
+        chosen = best_match(found)
+        dup_id = chosen.entity_id if chosen is not None else None
 
         cur = extra.get("hidden_duplicate_id")
-        if dup_id is not None:
+        if chosen is not None:
             matches.append({
                 "id": e.id,
                 "name": e.name,
                 "duplicate_id": dup_id,
                 "duplicate_name": names.get(dup_id),
+                "strength": chosen.strength,
+                "confidence": chosen.confidence,
             })
-            if cur != dup_id:
-                new_extra = dict(extra)
+            new_extra = dict(extra)
+            meta = {
+                "strength": chosen.strength,
+                "confidence": chosen.confidence,
+                "reasons": chosen.reasons,
+                "matched_id": chosen.entity_id,
+            }
+            if cur != dup_id or new_extra.get("hidden_duplicate_meta") != meta:
                 new_extra["hidden_duplicate_id"] = dup_id
+                new_extra["hidden_duplicate_meta"] = meta
                 e.extra_data = new_extra
-                changed += 1
+                if cur != dup_id:
+                    changed += 1
         elif cur is not None:
             # Реального дубля больше нет (напр. ушло ложное совпадение по мусорному
             # telegram) — снимаем устаревший авто-флаг, чтобы баннер исчез.
             new_extra = dict(extra)
             new_extra.pop("hidden_duplicate_id", None)
+            new_extra.pop("hidden_duplicate_meta", None)
             e.extra_data = new_extra
             cleared += 1
 
-    if changed or cleared:
+    if changed or cleared or matches:
         await db.commit()
     return {
         "scanned": scanned,
@@ -1791,40 +1745,26 @@ async def find_archive_duplicates(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Найти дубликаты ВНУТРИ архива: группы архивных кандидатов, совпадающих
-    по email / телефону (10 цифр) / telegram. Возвращает группы из ≥2 профилей.
-    Только суперадмин."""
+    """Найти дубликаты ВНУТРИ архива: группы архивных кандидатов, которых единое
+    ядро (services/duplicate_matcher) считает одним человеком. Возвращает группы
+    из ≥2 профилей. Только суперадмин.
+
+    Раньше группы строились собственным union-find по email/телефону/telegram/URL
+    и ФИО не учитывали вовсе — архивные карточки одного человека, добавленные без
+    контактов, в группу не попадали.
+    """
     current_user = await db.merge(current_user)
     if current_user.role != UserRole.superadmin:
         raise HTTPException(403, "Только для суперадмина")
     org = await get_user_org(current_user, db)
 
-    from ...services.similarity import (
-        normalize_email, normalize_phone, normalize_telegram, is_matchable_telegram,
-        normalize_source_url, TG_COMMON_THRESHOLD,
+    from ...services.duplicate_matcher import scan_org_pairs, _dismissed_ids
+
+    items, pair_matches = await scan_org_pairs(
+        db, org.id if org is not None else None, archived_only=True,
     )
 
-    q = select(
-        Entity.id, Entity.name, Entity.email, Entity.phone,
-        Entity.telegram_usernames, Entity.position, Entity.extra_data,
-    ).where(Entity.is_archived.is_(True), Entity.type == EntityType.candidate)
-    if org is not None:
-        q = q.where(Entity.org_id == org.id)
-    rows = (await db.execute(q)).all()
-
-    # Годность telegram-хэндла: считаем РАЗНЫЕ ИМЕНА на хэндл, а не карточки.
-    # Иначе один человек, разъехавшийся на 3 карточки с одним @хэндлом, давал бы
-    # частоту 3 и НЕ матчился (ровно кейс, который мы и хотим склеить). Мусорный
-    # ярлык («telegram», «hh_b2b») сидит у МНОГИХ РАЗНЫХ имён → не матчим.
-    tg_name_freq: dict = {}
-    for _r in rows:
-        _nm = (_r[1] or "").strip().lower()
-        for t in (_r[4] or []):
-            k = normalize_telegram(t)
-            if k:
-                tg_name_freq.setdefault(k, set()).add(_nm)
-
-    # Union-find: связываем профили, делящие хотя бы один идентификатор
+    # Union-find поверх пар, которые ядро признало дублями.
     parent: dict = {}
 
     def find(x):
@@ -1841,34 +1781,23 @@ async def find_archive_duplicates(
             parent[rb] = ra
 
     info: dict = {}
-    key_to_id: dict = {}
-    for rid, name, email, phone, tg, position, extra in rows:
-        parent.setdefault(rid, rid)
-        info[rid] = {
-            "id": rid, "name": name, "email": email, "phone": phone,
-            "telegram": (tg[0] if tg else None), "position": position,
+    for it in items:
+        parent.setdefault(it.entity_id, it.entity_id)
+        ph = sorted(it.keys.get("phones10") or set())
+        em = sorted(it.keys.get("emails") or set())
+        tg = sorted(it.keys.get("tg_names") or set())
+        info[it.entity_id] = {
+            "id": it.entity_id,
+            "name": it.name,
+            "email": em[0] if em else None,
+            "phone": ph[0] if ph else None,
+            "telegram": tg[0] if tg else None,
+            "position": (it.extra_data or {}).get("position"),
         }
-        keys = []
-        ne = normalize_email(email or "")
-        if ne:
-            keys.append("e:" + ne)
-        d = normalize_phone(phone or "")
-        if len(d) >= 10:
-            keys.append("p:" + d[-10:])
-        for t in (tg or []):
-            k = normalize_telegram(t)
-            if k and is_matchable_telegram(k) and len(tg_name_freq.get(k, ())) < TG_COMMON_THRESHOLD:
-                keys.append("t:" + k)
-        # source_url резюме (hh) — стабильный ключ (без волатильных query hh)
-        ex = extra if isinstance(extra, dict) else {}
-        sk = normalize_source_url(ex.get("source_url") or ex.get("source_key") or "")
-        if sk:
-            keys.append("s:" + sk)
-        for k in keys:
-            if k in key_to_id:
-                union(key_to_id[k], rid)
-            else:
-                key_to_id[k] = rid
+    for eid, ms in pair_matches.items():
+        for m in ms:
+            if eid in parent and m.entity_id in parent:
+                union(eid, m.entity_id)
 
     groups_map: dict = {}
     for rid in info:
@@ -1894,16 +1823,18 @@ async def find_archive_duplicates(
                 if ent is None:
                     continue
                 extra = ent.extra_data if isinstance(ent.extra_data, dict) else {}
-                dismissed = set()
-                for x in (extra.get("dismissed_duplicate_ids") or []):
-                    try:
-                        dismissed.add(int(x))
-                    except (TypeError, ValueError):
-                        pass
-                if sibling in dismissed or extra.get("hidden_duplicate_id") == sibling:
+                if sibling in _dismissed_ids(extra) or extra.get("hidden_duplicate_id") == sibling:
                     continue
                 ne = dict(extra)
                 ne["hidden_duplicate_id"] = sibling
+                hit = next((m for m in pair_matches.get(mid, []) if m.entity_id == sibling), None)
+                if hit is not None:
+                    ne["hidden_duplicate_meta"] = {
+                        "strength": hit.strength,
+                        "confidence": hit.confidence,
+                        "reasons": hit.reasons,
+                        "matched_id": sibling,
+                    }
                 ent.extra_data = ne
                 changed = True
         if changed:
@@ -1914,6 +1845,7 @@ async def find_archive_duplicates(
         "total_groups": len(groups),
         "total_dupes": sum(len(g) for g in groups),
     }
+
 
 
 class _MergeArchivedRequest(BaseModel):

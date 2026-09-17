@@ -358,12 +358,30 @@ export interface SimilarCandidateResult {
   entity2_position?: string | null;
 }
 
+/**
+ * Один факт, из-за которого бэк считает пару дублем. Приходит из единого ядра
+ * (services/duplicate_matcher): окно сравнения подсвечивает ровно эти поля,
+ * вместо того чтобы заново сравнивать значения на фронте.
+ */
+export interface DuplicateSignal {
+  field: string;      // phone | email | telegram | name | birth_date | city | …
+  label: string;      // человекочитаемая причина (RU)
+  weight: number;     // 100 — идентификатор, 0 — мягкий/контекстный сигнал
+  identity: boolean;
+  left: string;
+  right: string;
+}
+
 export interface DuplicateCandidateResult {
   entity_id: number;
   entity_name: string;
+  /** Та же шкала, что у баннера: 100 — точное совпадение, иначе балл/процент. */
   confidence: number;
   match_reasons: string[];
   matched_fields: Record<string, string[]>;
+  /** Тир совпадения — те же значения, что у HiddenDuplicateMeta.strength. */
+  strength?: HiddenDuplicateMeta["strength"];
+  signals?: DuplicateSignal[];
 }
 
 export interface MergeEntitiesResponse {
