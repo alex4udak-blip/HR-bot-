@@ -915,7 +915,15 @@ export default function AllCandidatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCard?.id]);
 
-  const handleStatusChange = async (newStatus: string) => {
+  // persist=false — статус кандидата уже синхронизировал бэк (PUT заявки по
+  // STAGE_SYNC_MAP), нужно лишь подвинуть карточку в доске локально. Раньше отсюда
+  // всегда уходил PATCH /candidates/{id}/status, а он выравнивает ВСЕ заявки
+  // кандидата под один этап: смена этапа в одной воронке меняла его и во всех
+  // остальных (2026-09-17), плюс писала вторую запись в историю.
+  const handleStatusChange = async (
+    newStatus: string,
+    opts?: { persist?: boolean },
+  ) => {
     if (!selectedCard || newStatus === selectedStatus) return;
     const old = selectedStatus;
     const name = selectedCard.name;
@@ -941,6 +949,7 @@ export default function AllCandidatesPage() {
       };
     });
     setSelectedStatus(newStatus);
+    if (opts?.persist === false) return;
     try {
       await changeCandidateStatus(selectedCard.id, newStatus);
       toast.success(
@@ -1840,7 +1849,7 @@ const InfoTab = memo(function InfoTab({
   columns: KanbanColumn[];
   detailSection: DetailSection;
   onDetailSectionChange: (section: DetailSection) => void;
-  onStatusChange: (s: string) => void;
+  onStatusChange: (s: string, opts?: { persist?: boolean }) => void;
   onAddToVacancy: (rect?: { left: number; bottom: number }) => void;
   onEdit: () => void;
   // Слияние дубля разрешено в баннере → родитель перечитывает выжившего и доску
@@ -2165,7 +2174,10 @@ const InfoTab = memo(function InfoTab({
       // сервере: упавший PUT заявки (например 409 от страховки) оставлял
       // кандидата в «Отказе», а его заявку — в «Выполняет ТЗ», то есть ровно тот
       // рассинхрон, от которого страховка и защищает.
-      if (ok) onStatusChange(stage);
+      // Заявка есть — её PUT уже подтянул статус кандидата на сервере: здесь
+      // только локальная перестановка карточки, без PATCH статуса (он бы
+      // выровнял и остальные воронки кандидата).
+      if (ok) onStatusChange(stage, appId > 0 ? { persist: false } : undefined);
       await loadActivity();
       return ok;
     },
