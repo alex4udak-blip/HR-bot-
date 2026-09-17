@@ -257,6 +257,23 @@ def _minimal_pdf(lines) -> bytes:
     return bytes(out)
 
 
+def _cv_lines(name, position, company, city) -> list:
+    """Текст демо-резюме. Длиной не меньше настоящего: извлечение текста
+    (services/resume_text_extract) отбрасывает обрывки короче 200 символов, и на
+    трёхстрочной заглушке проверить бэкфилл было бы нельзя."""
+    body = (
+        f"Position: {position or '-'}. Company: {company or '-'}. City: {city or '-'}. "
+        "Experience: led hiring for engineering and marketing teams, built the "
+        "sourcing funnel from scratch and tracked stage conversion weekly. "
+        "Ran screening calls, coordinated technical interviews with hiring "
+        "managers and prepared offers together with the compensation team. "
+        "Worked with ATS analytics, kept the candidate database clean and "
+        "de-duplicated, reported hiring metrics to the department head. "
+        "Skills: sourcing, screening, interviewing, ATS, reporting, analytics."
+    )
+    return [f"CV: {name}"] + [body[i:i + 88] for i in range(0, len(body), 88)]
+
+
 def _attach_resume(db: AsyncSession, entity: Entity, org_id: int, lines) -> None:
     """Прикрепить кандидату PDF-резюме (file_type=resume) — ровно так же, как это
     делает загрузка файла в карточке: содержимое лежит в БД (file_data)."""
@@ -324,13 +341,10 @@ async def main() -> None:
             db.add(old)
             await db.flush()
 
-            _attach_resume(db, old, org.id, [
-                f"CV: {old.name}",
-                f"Position: {old_kw.get('position') or '-'}",
-                f"Company: {old_kw.get('company') or '-'}",
-                "",
-                "Experience: demo fixture for duplicate comparison.",
-            ])
+            _attach_resume(db, old, org.id, _cv_lines(
+                old.name, old_kw.get("position"), old_kw.get("company"),
+                (old_kw.get("extra_data") or {}).get("city"),
+            ))
 
             new = Entity(org_id=org.id, type=EntityType.candidate, created_by=author_id,
                          status=EntityStatus.new, **new_kw)
@@ -362,11 +376,10 @@ async def main() -> None:
                          status=EntityStatus.new, **kw)
             db.add(old)
             await db.flush()
-            _attach_resume(db, old, org.id, [
-                f"CV: {old.name}",
-                f"Position: {kw.get('position') or '-'}",
-                f"City: {(kw.get('extra_data') or {}).get('city') or '-'}",
-            ])
+            _attach_resume(db, old, org.id, _cv_lines(
+                old.name, kw.get("position"), kw.get("company"),
+                (kw.get("extra_data") or {}).get("city"),
+            ))
             print(f"  [{old.id}] {old.name:32} — {note}")
         new = Entity(org_id=org.id, type=EntityType.candidate, created_by=author_id,
                      status=EntityStatus.new, **NAMESAKE_NEW)

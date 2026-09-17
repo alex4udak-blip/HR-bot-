@@ -32,6 +32,11 @@ def resume_text_blob(extra_data: Optional[dict]) -> str:
       не срабатывала бы на кандидатах из расширения (основной поток)."""
     ed = extra_data if isinstance(extra_data, dict) else {}
     parts = []
+    # Текст ПРИЛОЖЕННОГО файла (services/resume_text_extract кладёт его на
+    # загрузке резюме в карточку). Без него резюме, добавленное к существующему
+    # кандидату, в сравнении текста не участвовало вовсе.
+    if isinstance(ed.get("resume_text"), str):
+        parts.append(ed["resume_text"])
     # «Обо мне» — about (парсер файла) ИЛИ summary (расширение).
     for key in ("about", "summary"):
         if isinstance(ed.get(key), str):

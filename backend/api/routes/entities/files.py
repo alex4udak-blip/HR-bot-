@@ -26,7 +26,7 @@ import fitz  # PyMuPDF — PDF to image conversion
 from .common import (
     logger, get_db, Entity, EntityType, EntityStatus, User, Department,
     EntityFile, EntityFileType, AccessLevel, OrgRole,
-    get_current_user, get_user_org, get_user_org_role,
+    get_current_user, get_user_org, get_user_org_role, UserRole,
     check_entity_access, regenerate_entity_profile_background,
     normalize_and_validate_identifiers, broadcast_entity_created
 )
@@ -715,6 +715,28 @@ async def upload_entity_file(
         f"org_id={org.id} | path={file_path}"
     )
 
+    # Текст резюме из приложенного файла — БЕЗ ИИ (pdfplumber/docx). До этого
+    # файл, добавленный в карточку существующего кандидата, для дедупа был
+    # невидим: текста в базе не появлялось и детектор копипаста его не видел.
+    # Best-effort: ошибка извлечения не должна ломать загрузку файла.
+    if file_type_enum == EntityFileType.resume:
+        try:
+            from ...services.resume_text_extract import store_resume_text
+            chars, stored = await store_resume_text(
+                db, entity, content, original_name, entity_file.id,
+            )
+            if stored:
+                # Текст появился — перепроверяем совпадение по тексту резюме.
+                from ...services.resume_text_twin import detect_resume_text_twin
+                await detect_resume_text_twin(db, entity)
+            if chars or stored:
+                await db.commit()
+                await db.refresh(entity)
+        except Exception as e:
+            file_logger.warning(
+                f"RESUME_TEXT: extract failed for entity {entity_id}, file {entity_file.id}: {e}"
+            )
+
     # Auto-convert resume documents to inline images
     if file_type_enum == EntityFileType.resume:
         pdf_for_conversion = None
@@ -1246,4 +1268,98 @@ async def cleanup_all_orphaned_files_endpoint(
         "success": True,
         "org_id": org.id,
         **result
+    }
+
+
+@router.post("/resume-text/backfill")
+async def backfill_resume_text(
+    limit: int = Query(200, ge=1, le=2000, description="Сколько кандидатов обработать за раз"),
+    force: bool = Query(False, description="Перечитать файл даже если текст уже есть"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Разовый проход по УЖЕ загруженным резюме: достать текст (pdfplumber/docx,
+    без ИИ) и положить в extra_data.resume_text, чтобы такие кандидаты начали
+    участвовать в сравнении по тексту.
+
+    Извлечение на загрузке покрывает только новые файлы; этот прогон — для тех,
+    что лежат в базе с прежних времён. Только admin/owner/superadmin.
+    Возвращает статистику, включая сканы без текстового слоя.
+    """
+    from ...services.resume_text_extract import store_resume_text, is_text_extractable
+    from ...services.resume_text_twin import detect_resume_text_twin
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+    org_role = await get_user_org_role(current_user, org.id, db)
+    if current_user.role != UserRole.superadmin and org_role not in (OrgRole.admin, OrgRole.owner):
+        raise HTTPException(403, "Только администратор организации")
+
+    # Кандидаты организации, у которых есть файл-резюме. Сначала ТОЛЬКО id:
+    # SELECT DISTINCT по всей строке Entity падает в Postgres — у json-колонки
+    # extra_data нет оператора равенства.
+    ids = (await db.execute(
+        select(EntityFile.entity_id)
+        .join(Entity, Entity.id == EntityFile.entity_id)
+        .where(
+            Entity.org_id == org.id,
+            Entity.type == EntityType.candidate,
+            EntityFile.file_type == EntityFileType.resume,
+        )
+        .group_by(EntityFile.entity_id)
+        .order_by(EntityFile.entity_id)
+        .limit(limit)
+    )).scalars().all()
+    rows = (await db.execute(select(Entity).where(Entity.id.in_(ids)))).scalars().all() if ids else []
+
+    scanned = extracted = skipped = no_text = twins = 0
+    for entity in rows:
+        scanned += 1
+        extra = entity.extra_data if isinstance(entity.extra_data, dict) else {}
+        if not force and isinstance(extra.get("resume_text"), str) and extra["resume_text"].strip():
+            skipped += 1
+            continue
+
+        # Самый свежий файл-резюме кандидата, из которого вообще можно достать текст.
+        files = (await db.execute(
+            select(EntityFile)
+            .where(
+                EntityFile.entity_id == entity.id,
+                EntityFile.file_type == EntityFileType.resume,
+            )
+            .order_by(EntityFile.created_at.desc())
+        )).scalars().all()
+        target = next((f for f in files if is_text_extractable(f.file_name or "")), None)
+        if target is None:
+            skipped += 1
+            continue
+
+        data = target.file_data
+        if not data and target.file_path:
+            try:
+                data = Path(target.file_path).read_bytes()
+            except OSError:
+                data = None
+        if not data:
+            skipped += 1
+            continue
+
+        _chars, stored = await store_resume_text(db, entity, data, target.file_name, target.id)
+        if stored:
+            extracted += 1
+            twin_id, _sim = await detect_resume_text_twin(db, entity)
+            if twin_id:
+                twins += 1
+        else:
+            no_text += 1
+
+    await db.commit()
+    return {
+        "scanned": scanned,
+        "extracted": extracted,
+        "no_text_layer": no_text,
+        "skipped": skipped,
+        "text_twins_found": twins,
     }
