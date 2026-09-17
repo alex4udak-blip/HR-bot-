@@ -1330,6 +1330,36 @@ export default function RecruiterFunnelsPage() {
     fetchVacancies();
   }, [selectedCandidate?.entity_id, fetchVacancies]);
 
+  // Открытая карточка в воронке тоже должна оживать сама: комменты и этап,
+  // изменённые на «Все кандидаты» или коллегой, раньше появлялись только после
+  // F5 (2026-09-17). Тикаем раз в 15с и сразу при возврате на вкладку.
+  useEffect(() => {
+    const eid = selectedCandidate?.entity_id;
+    if (!eid) return;
+    const poll = () => {
+      if (document.visibilityState !== 'visible') return;
+      void refreshActivity();
+      getEntity(eid)
+        .then((fresh) => {
+          if (activityEntityRef.current === eid && fresh?.extra_data) {
+            setEntityExtraData(fresh.extra_data as Record<string, unknown>);
+          }
+        })
+        .catch(() => {});
+    };
+    const id = window.setInterval(poll, 15000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') poll();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [selectedCandidate?.entity_id, refreshActivity]);
+
   // Load entity files (resumes) when candidate selected
   useEffect(() => {
     if (!selectedCandidate?.entity_id) {

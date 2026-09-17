@@ -2001,11 +2001,27 @@ const InfoTab = memo(function InfoTab({
           bumpNotes();
         })
         .catch(() => {});
+      // Заявки по воронкам: этапы и история переходов. Без этого смена этапа,
+      // сделанная в воронке (или коллегой), на открытой карточке появлялась
+      // только после F5 (2026-09-17).
+      getEntityActivity(card.id)
+        .then((blocks) => {
+          if (!cancelled) setActivityBlocks(Array.isArray(blocks) ? blocks : []);
+        })
+        .catch(() => {});
     };
     const id = setInterval(poll, 15000);
+    // Вернулись на вкладку — обновляем сразу, не дожидаясь тика.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [card, bumpNotes]);
   const loadActivity = useCallback(async () => {
