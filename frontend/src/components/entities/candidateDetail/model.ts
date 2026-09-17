@@ -190,6 +190,12 @@ export function buildResumeSources(
  *
  * `liveApplicationId` / `liveEvents` / `liveVacancyTitle` вычисляет вызывающая
  * сторона (primaryBlock + getVacancyStageLabel) — модель остаётся чистой.
+ *
+ * `liveBlocks` (заявки кандидата по воронкам) — если переданы, живой контейнер
+ * разворачивается в ОТДЕЛЬНУЮ карточку на каждую воронку: своя заявка, свой этап,
+ * своя история и свои комментарии. Без этого кандидат в двух воронках показывал
+ * одну карточку: комментарии второй воронки не появлялись на «Все кандидаты», а
+ * смена этапа там меняла только одну заявку (2026-09-17, Мария).
  */
 export function buildStageContainers(params: {
   card: KanbanCard;
@@ -197,6 +203,13 @@ export function buildStageContainers(params: {
   liveApplicationId: number;
   liveEvents?: ActivityEvent[];
   liveVacancyTitle: string | null;
+  liveBlocks?: Array<{
+    application_id: number;
+    vacancy_id?: number | null;
+    vacancy_title?: string | null;
+    current_stage?: string | null;
+    events?: ActivityEvent[];
+  }>;
   allEntityFiles: EntityFile[];
 }): StageContainer[] {
   const {
@@ -205,6 +218,7 @@ export function buildStageContainers(params: {
     liveApplicationId,
     liveEvents,
     liveVacancyTitle,
+    liveBlocks,
     allEntityFiles,
   } = params;
 
@@ -249,19 +263,43 @@ export function buildStageContainers(params: {
       : []
   ).filter((n) => !_mergedNoteSigs.has(_noteSig(n)));
 
-  const liveContainer: StageContainer = {
-    origin: "live",
-    applicationId: liveApplicationId,
-    status,
-    name: card.name,
-    notes: _liveNotes,
-    resumeDemos: Array.isArray(card.extra_data?.resume_demos)
-      ? (card.extra_data.resume_demos as ContainerResumeDemo[])
-      : [],
-    vacancyTitle: liveVacancyTitle,
-    addedAt: card.created_at,
-    events: liveEvents,
-  };
+  const _resumeDemos = Array.isArray(card.extra_data?.resume_demos)
+    ? (card.extra_data.resume_demos as ContainerResumeDemo[])
+    : [];
+
+  // Заявки по воронкам: карточка на каждую. Комментарии раскладываем по своей
+  // воронке (note.vacancy_id); «общие» (без воронки, легаси) — в первую карточку,
+  // чтобы не задваивались.
+  const _blocks = (liveBlocks || []).filter((b) => b && b.application_id);
+  const liveContainers: StageContainer[] = _blocks.length
+    ? _blocks.map((b, i) => ({
+        origin: "live" as const,
+        applicationId: b.application_id,
+        status: b.current_stage || status,
+        name: card.name,
+        notes: _liveNotes.filter((n) => {
+          const nv = (n as { vacancy_id?: number | null })?.vacancy_id;
+          return nv == null ? i === 0 : nv === b.vacancy_id;
+        }),
+        resumeDemos: i === 0 ? _resumeDemos : [],
+        vacancyTitle: b.vacancy_title ?? null,
+        addedAt: i === 0 ? card.created_at : undefined,
+        events: b.events,
+      }))
+    : [
+        {
+          origin: "live" as const,
+          applicationId: liveApplicationId,
+          status,
+          name: card.name,
+          notes: _liveNotes,
+          resumeDemos: _resumeDemos,
+          vacancyTitle: liveVacancyTitle,
+          addedAt: card.created_at,
+          events: liveEvents,
+        },
+      ];
+  const liveContainer = liveContainers[0];
 
   // Файлы по контейнерам: исключаем авто-файлы; merged показывает СВОИ file_ids;
   // живой — остальные (не смёрдженные), т.е. свои собственные документы.
@@ -331,7 +369,8 @@ export function buildStageContainers(params: {
     _liveNotes.length === 0 &&
     !(liveEvents && liveEvents.length) &&
     !liveVacancyTitle;
-  const _head = _liveEmpty && participationContainers.length > 0 ? [] : [liveContainer];
+  const _head =
+    _liveEmpty && participationContainers.length > 0 ? [] : liveContainers;
 
   return [..._head, ...mergedContainers, ...participationContainers];
 }

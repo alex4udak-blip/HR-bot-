@@ -2065,12 +2065,16 @@ const InfoTab = memo(function InfoTab({
         liveApplicationId: primaryBlock?.application_id ?? 0,
         liveEvents: primaryBlock?.events,
         liveVacancyTitle: getVacancyStageLabel(card) ?? null,
+        // Карточка на КАЖДУЮ воронку кандидата: свой этап, своя история, свои
+        // комментарии. Иначе комментарии второй воронки тут не появлялись, а
+        // смена этапа меняла только одну заявку (2026-09-17, Мария).
+        liveBlocks: activityBlocks,
         allEntityFiles: allEntityFiles || [],
       }),
     // notesVersion — форс-пересчёт после мутаций card.extra_data.notes (add/edit/delete),
     // которые меняют данные in-place без смены ссылки card.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [primaryBlock, status, card, allEntityFiles, notesVersion],
+    [primaryBlock, status, card, allEntityFiles, notesVersion, activityBlocks]
   );
 
   // Карта vacancy_id → название воронки (все прохождения кандидата). Нужна, чтобы
