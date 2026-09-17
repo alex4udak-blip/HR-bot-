@@ -3133,8 +3133,17 @@ const InfoTab = memo(function InfoTab({
           onReact={c.origin === "live" ? cardReact : undefined}
           files={c.files}
           onDeleteFile={c.origin === "live" ? cardDeleteFile : undefined}
-          resolveNoteVacancyLabel={resolveNoteVacancyLabel}
-          funnelStages={c.origin === "live" ? funnelStages : undefined}
+          // Карточка теперь одна НА ВОРОНКУ, поэтому в шапке — её собственный
+          // этап и название воронки. Список «этапы по воронкам» и бейдж воронки
+          // у комментария остаются только в запасном виде (заявок нет).
+          resolveNoteVacancyLabel={
+            activityBlocks.length > 0 ? undefined : resolveNoteVacancyLabel
+          }
+          funnelStages={
+            c.origin === "live" && activityBlocks.length === 0
+              ? funnelStages
+              : undefined
+          }
         />
       ))}
 
