@@ -74,8 +74,7 @@ PAIRS = [
              email="alisa.goncharova@gmail.com", phone="+7 903 118-44-01",
              status=EntityStatus.rejected,
              extra_data=_old_extra(city="Москва", birth_date="1994-03-12",
-                                   rejection_reason="не сошлись по вилке",
-                                   resume_text="UX-дизайнер, 7 лет. Ozon, Wildberries. Figma, CustDev.")),
+                                   rejection_reason="не сошлись по вилке")),
         dict(name="Алиса Гончарова", position="Product Designer", company="Wildberries",
              email="alisa.goncharova@gmail.com", phone="+7 903 118-44-01",
              extra_data=_new_extra(city="Москва", birth_date="1994-03-12")),
@@ -84,8 +83,7 @@ PAIRS = [
         "Почта сменила домен, локаль та же (тир email)",
         dict(name="Тарасов Вадим", position="Backend-разработчик", company="Тинькофф",
              email="v.tarasov@gmail.com",
-             extra_data=_old_extra(city="Казань",
-                                   resume_text="Python, FastAPI, PostgreSQL. 6 лет в финтехе.")),
+             extra_data=_old_extra(city="Казань")),
         dict(name="Вадим Тарасов", position="Python Developer", company="Яндекс",
              email="v.tarasov@mail.ru",
              extra_data=_new_extra(city="Казань")),
@@ -94,8 +92,7 @@ PAIRS = [
         "Телефон в другом формате (тир phone)",
         dict(name="Ильина Марина", position="Рекрутёр", company="Сбер",
              phone="8 (912) 345-67-89",
-             extra_data=_old_extra(city="Екатеринбург",
-                                   resume_text="IT-рекрутинг, 4 года. Массовый и точечный подбор.")),
+             extra_data=_old_extra(city="Екатеринбург")),
         # Фамилия сменилась (замужество) — по ФИО пара не матчится, ловит только телефон.
         dict(name="Соколова Марина", position="Talent Acquisition", company="СберТех",
              phone="+7 912 3456789",
@@ -104,8 +101,7 @@ PAIRS = [
     (
         "ФИО с отчеством + транслит, контактов нет (тир name)",
         dict(name="Векленко Кирилл Дмитриевич", position="Аналитик", company="X5",
-             extra_data=_old_extra(city="Москва",
-                                   resume_text="Продуктовая аналитика, SQL, Python, A/B.")),
+             extra_data=_old_extra(city="Москва")),
         dict(name="Kirill Veklenko", position="Data Analyst", company="Lamoda",
              extra_data=_new_extra(city="Москва")),
     ),
@@ -113,7 +109,7 @@ PAIRS = [
         "Личный telegram (тир telegram)",
         dict(name="Шарипов Тимур", position="QA-инженер", company="МТС",
              telegram_usernames=["timur_qa_2024"],
-             extra_data=_old_extra(city="Уфа", resume_text="Ручное и авто-тестирование, Playwright.")),
+             extra_data=_old_extra(city="Уфа", )),
         dict(name="Тимур Ш.", position="QA Automation", company="VK",
              telegram_usernames=["@Timur_QA_2024"],
              extra_data=_new_extra(city="Уфа")),
@@ -121,8 +117,7 @@ PAIRS = [
     (
         "Та же ссылка на резюме hh (тир source)",
         dict(name="Кандидат без имени", position="Flutter Developer, Минск, 27 лет",
-             extra_data=_old_extra(source_url="https://hh.ru/resume/a1b2c3d4e5f6?hhtmFrom=chat&t=111",
-                                   resume_text="Flutter, Dart, 4 года.")),
+             extra_data=_old_extra(source_url="https://hh.ru/resume/a1b2c3d4e5f6?hhtmFrom=chat&t=111")),
         dict(name="Flutter Developer, Минск", position="Flutter Developer",
              extra_data=_new_extra(source_url="https://hh.ru/resume/a1b2c3d4e5f6?vacancyId=99&t=999")),
     ),
@@ -130,8 +125,7 @@ PAIRS = [
         "Мягкий тир: другое ФИО, те же 7 цифр телефона + дата рождения",
         dict(name="Петров Александр", position="Маркетолог", company="Avito",
              phone="+7 916 000-11-22",
-             extra_data=_old_extra(birth_date="1990-05-14", city="Москва",
-                                   resume_text="Performance-маркетинг, 8 лет.")),
+             extra_data=_old_extra(birth_date="1990-05-14", city="Москва")),
         dict(name="Сидоров Иван", position="Head of Growth", company="Ozon",
              phone="+7 495 000-11-22",
              extra_data=_new_extra(birth_date="14.05.1990", city="Москва")),
@@ -140,8 +134,7 @@ PAIRS = [
         "Мягкий тир 75%: те же 7 цифр телефона + дата рождения, ГОРОДА РАЗНЫЕ",
         dict(name="Романова Ольга", position="Логист", company="СДЭК",
              phone="+7 921 777-31-40",
-             extra_data=_old_extra(birth_date="1988-11-02", city="Санкт-Петербург",
-                                   resume_text="Логистика и ВЭД, 7 лет.")),
+             extra_data=_old_extra(birth_date="1988-11-02", city="Санкт-Петербург")),
         dict(name="Кузнецова Алина", position="Менеджер ВЭД", company="Байкал-Сервис",
              phone="+7 495 777-31-40",
              extra_data=_new_extra(birth_date="02.11.1988", city="Москва")),
@@ -150,8 +143,7 @@ PAIRS = [
         "НИЖЕ ПОРОГА (48 баллов): та же дата рождения + тот же город — не показывается вовсе",
         dict(name="Зайцев Артём", position="Копирайтер", company="Skyeng",
              phone="+7 911 100-20-30",
-             extra_data=_old_extra(birth_date="1995-07-19", city="Казань",
-                                   resume_text="Тексты для образовательных проектов.")),
+             extra_data=_old_extra(birth_date="1995-07-19", city="Казань")),
         dict(name="Морозов Денис", position="Редактор", company="Нетология",
              phone="+7 999 400-50-60",
              extra_data=_new_extra(birth_date="19.07.1995", city="Казань")),
@@ -198,13 +190,11 @@ NAMESAKES = [
     # (анкета, ожидание)
     (dict(name="Иванов Кирилл Владимирович", position="Логист", company="Деловые линии",
           phone="+7 917 200-40-60",
-          extra_data=_old_extra(city="Нижний Новгород",
-                                resume_text="Логистика, ВЭД, 5 лет.")),
+          extra_data=_old_extra(city="Нижний Новгород")),
      "дубль: то же отчество"),
     (dict(name="Кирилл Иванов", position="Специалист по логистике", company="СДЭК",
           phone="8 917 2004060",
-          extra_data=_old_extra(city="Нижний Новгород",
-                                resume_text="Та же карточка из другого источника.")),
+          extra_data=_old_extra(city="Нижний Новгород")),
      "дубль: тот же телефон"),
     (dict(name="Иванов Кирилл Евгеньевич", position="Водитель", company="Магнит",
           extra_data=_old_extra(city="Краснодар")), "однофамилец: другое отчество"),
@@ -258,18 +248,30 @@ def _minimal_pdf(lines) -> bytes:
 
 
 def _cv_lines(name, position, company, city) -> list:
-    """Текст демо-резюме. Длиной не меньше настоящего: извлечение текста
-    (services/resume_text_extract) отбрасывает обрывки короче 200 символов, и на
-    трёхстрочной заглушке проверить бэкфилл было бы нельзя."""
+    """Текст демо-резюме. Два требования: не короче настоящего (извлечение
+    отбрасывает обрывки < 200 символов) и РАЗНЫЙ у разных людей — иначе все
+    фикстуры становятся «копипастой» друг друга и детектор текста ловит ложных
+    близнецов вместо тех трёх, что задуманы одинаковыми."""
+    import hashlib
+
+    pos = position or "specialist"
+    comp = company or "company"
+    town = city or "city"
+    seed = int(hashlib.md5((name or "").encode()).hexdigest(), 16)
+    duties = [
+        f"Owned the {pos} agenda at {comp}: planning, execution and weekly reporting.",
+        f"Built processes from scratch in {town} and handed them over to the team.",
+        f"Ran cross-team projects with product, finance and operations at {comp}.",
+        f"Prepared analytics for the {pos} function and defended budgets quarterly.",
+        f"Mentored two juniors and wrote the internal playbook for {pos} work.",
+        f"Negotiated with contractors and cut costs of the {pos} stack by a third.",
+    ]
+    picked = [duties[(seed + i) % len(duties)] for i in range(3)]
     body = (
-        f"Position: {position or '-'}. Company: {company or '-'}. City: {city or '-'}. "
-        "Experience: led hiring for engineering and marketing teams, built the "
-        "sourcing funnel from scratch and tracked stage conversion weekly. "
-        "Ran screening calls, coordinated technical interviews with hiring "
-        "managers and prepared offers together with the compensation team. "
-        "Worked with ATS analytics, kept the candidate database clean and "
-        "de-duplicated, reported hiring metrics to the department head. "
-        "Skills: sourcing, screening, interviewing, ATS, reporting, analytics."
+        f"Position: {pos}. Company: {comp}. City: {town}. "
+        + " ".join(picked)
+        + f" Tools: internal CRM, spreadsheets, BI dashboards. Languages: Russian, English. "
+        f"Contact preference: email. Notice period: two weeks. Candidate: {name}."
     )
     return [f"CV: {name}"] + [body[i:i + 88] for i in range(0, len(body), 88)]
 
@@ -284,6 +286,82 @@ def _attach_resume(db: AsyncSession, entity: Entity, org_id: int, lines) -> None
         mime_type="application/pdf", description="Демо-резюме для проверки дублей",
     ))
 
+
+
+# ---------------------------------------------------------------------------
+# Блок «проверка текста резюме» (владелец 17.09.2026): файлы прикладываем, а
+# текст НЕ извлекаем — чтобы было на чём прогнать бэкфилл и увидеть разницу.
+# ---------------------------------------------------------------------------
+
+SHARED_CV = (
+    "Experience: senior recruiter in a fintech product company. Owned the full "
+    "hiring cycle for engineering and analytics: sourcing, screening calls, "
+    "technical interviews with hiring managers, offer approval with the "
+    "compensation team. Rebuilt the referral programme and cut time-to-hire "
+    "from 54 to 31 days. Maintained the candidate database, merged duplicate "
+    "profiles and reported funnel conversion to the head of HR every week. "
+    "Skills: sourcing, executive search, ATS, analytics, employer branding."
+)
+
+
+def _scan_pdf(lines) -> bytes:
+    """PDF-СКАН: страница отрендерена в картинку, текстового слоя нет."""
+    import pymupdf
+
+    src = pymupdf.open(stream=_minimal_pdf(lines), filetype="pdf")
+    pix = src[0].get_pixmap(dpi=140)
+    out = pymupdf.open()
+    page = out.new_page(width=pix.width, height=pix.height)
+    page.insert_image(page.rect, stream=pix.tobytes("png"))
+    return out.tobytes()
+
+
+def _docx_bytes(lines) -> bytes:
+    """DOCX-резюме — второй формат, который умеет читать парсер."""
+    import io
+
+    from docx import Document
+
+    doc = Document()
+    for line in lines:
+        doc.add_paragraph(transliterate_ru_to_en(line))
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _attach_file(db: AsyncSession, entity: Entity, org_id: int, data: bytes,
+                 file_name: str, mime: str) -> None:
+    db.add(EntityFile(
+        entity_id=entity.id, org_id=org_id, file_type=EntityFileType.resume,
+        file_name=file_name, file_data=data, file_size=len(data),
+        mime_type=mime, description="Демо-резюме для проверки извлечения текста",
+    ))
+
+
+# (анкета, как приложить файл, что должно получиться)
+RESUME_TEXT_CASES = [
+    (dict(name="Ефимов Глеб", position="Senior Recruiter", company="Тинькофф",
+          email="gleb.efimov@x.com", phone="+7 905 400-10-20",
+          extra_data=_new_extra(city="Москва")),
+     "pdf-shared", "PDF с текстовым слоем, текст ОБЩИЙ со следующим кандидатом"),
+    (dict(name="Латыпова Динара", position="Talent Partner", company="Ozon",
+          email="dinara.latypova@y.com", phone="+7 927 800-70-60",
+          extra_data=_new_extra(city="Казань")),
+     "pdf-shared", "тот же текст резюме, общих контактов НЕТ — ловится только текстом"),
+    (dict(name="Сканов Пётр", position="Аналитик", company="X5",
+          email="p.skanov@z.com",
+          extra_data=_new_extra(city="Самара")),
+     "scan", "скан-PDF: текстового слоя нет, OCR к PDF не подключён"),
+    (dict(name="Докунова Дарья", position="HR BP", company="Авито",
+          email="d.dokunova@z.com",
+          extra_data=_new_extra(city="Новосибирск")),
+     "docx", "резюме в DOCX — второй поддерживаемый формат"),
+    (dict(name="Пустой Кандидат", position="Без резюме", company="—",
+          email="empty.candidate@z.com",
+          extra_data=_new_extra(city="Москва")),
+     None, "файлов нет — СЮДА загрузите своё PDF и проверьте путь загрузки"),
+]
 
 async def _purge(db: AsyncSession, org_id: int) -> int:
     rows = (await db.execute(
@@ -308,6 +386,41 @@ async def _purge(db: AsyncSession, org_id: int) -> int:
     return killed
 
 
+
+async def _print_status(db: AsyncSession, org_id: int) -> None:
+    """Что сейчас с текстом резюме у кандидатов организации: есть ли файл, достали
+    ли из него текст, нашёлся ли близнец по тексту. Команда для повторных проверок:
+    ``seed_duplicates_demo.py --status``."""
+    from api.services.resume_text_twin import resume_text_blob, text_shingles
+
+    ents = (await db.execute(
+        select(Entity).where(Entity.org_id == org_id, Entity.type == EntityType.candidate)
+        .order_by(Entity.id)
+    )).scalars().all()
+    files = (await db.execute(
+        select(EntityFile.entity_id, EntityFile.file_name)
+        .where(EntityFile.file_type == EntityFileType.resume)
+    )).all()
+    by_entity: dict = {}
+    for eid, fname in files:
+        by_entity.setdefault(eid, []).append(fname)
+
+    print(f"{'id':>4}  {'кандидат':24} {'файл резюме':26} {'текст':>7}  {'сравним':7} близнец")
+    print("-" * 92)
+    for e in ents:
+        names = by_entity.get(e.id) or []
+        if not names and not (e.extra_data or {}).get("resume_text"):
+            continue
+        ed = e.extra_data if isinstance(e.extra_data, dict) else {}
+        src = ed.get("resume_text_source") or {}
+        chars = len(ed.get("resume_text") or "")
+        comparable = "да" if len(text_shingles(resume_text_blob(ed))) >= 5 else "НЕТ"
+        twin = (ed.get("text_twin") or {}).get("twin_id")
+        mark = " (скан)" if src.get("empty") else ""
+        print(f"{e.id:>4}  {e.name[:24]:24} {(names[0] if names else '—')[:26]:26} "
+              f"{chars:>7}  {comparable:7} {twin or '—'}{mark}")
+
+
 async def main() -> None:
     if "localhost" not in DB_URL and "127.0.0.1" not in DB_URL:
         raise SystemExit(f"Отказ: DATABASE_URL не локальный ({DB_URL!r}). Скрипт только для локальной базы.")
@@ -321,6 +434,11 @@ async def main() -> None:
         )).scalar_one_or_none()
         if org is None:
             raise SystemExit("Нет организации 'default'. Запусти бэкенд — он создаёт её на старте.")
+
+        if "--status" in sys.argv:
+            await _print_status(db, org.id)
+            await engine.dispose()
+            return
 
         killed = await _purge(db, org.id)
         if killed:
@@ -396,6 +514,22 @@ async def main() -> None:
         print(f"  [{new.id}] {new.name:32} — НОВЫЙ, предложено дублей: {len(offered)}")
         for d in offered:
             print(f"        → {d.entity_id} {d.entity_name} · {d.strength} {d.confidence}%")
+
+        print("\nПроверка текста резюме — файлы приложены, текст НЕ извлечён:")
+        for kw, kind, note in RESUME_TEXT_CASES:
+            ent = Entity(org_id=org.id, type=EntityType.candidate, created_by=author_id,
+                         status=EntityStatus.new, **kw)
+            db.add(ent)
+            await db.flush()
+            lines = [f"CV: {ent.name}"] + [SHARED_CV[i:i + 88] for i in range(0, len(SHARED_CV), 88)]
+            if kind == "pdf-shared":
+                _attach_file(db, ent, org.id, _minimal_pdf(lines), f"resume_{ent.id}.pdf", "application/pdf")
+            elif kind == "scan":
+                _attach_file(db, ent, org.id, _scan_pdf(lines), f"scan_{ent.id}.pdf", "application/pdf")
+            elif kind == "docx":
+                _attach_file(db, ent, org.id, _docx_bytes(lines), f"resume_{ent.id}.docx",
+                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            print(f"  [{ent.id}] {ent.name:24} — {note}")
 
         await db.commit()
 
