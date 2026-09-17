@@ -211,3 +211,73 @@ async def test_best_match_prefers_strong_over_soft_over_phone(db_session, organi
     )
     assert {m.entity_id for m in matches} == {phone_only.id, strong.id}
     assert best_match(matches).entity_id == strong.id
+
+
+# ============================================================
+# Отчества (Эльвира, 2026-09-16): четыре однофамильца-тёзки с РАЗНЫМИ
+# отчествами показывались как «точное совпадение», отличить их было нечем.
+# ============================================================
+
+class TestPatronymics:
+    def test_different_patronymics_are_not_a_duplicate(self):
+        a = build_dup_keys(name="Иванов Кирилл Владимирович")
+        b = build_dup_keys(name="Иванов Кирилл Евгеньевич")
+        assert compare_key_sets(a, b)[0] is None
+
+    def test_missing_patronymic_on_one_side_still_matches(self):
+        # «Векленко Кирилл» ↔ «Векленко Кирилл Дмитриевич» — по-прежнему дубль:
+        # отсутствие отчества не противоречит ничему.
+        a = build_dup_keys(name="Векленко Кирилл")
+        b = build_dup_keys(name="Векленко Кирилл Дмитриевич")
+        assert compare_key_sets(a, b)[0] == "name"
+
+    def test_initial_translit_and_typo_are_not_conflicts(self):
+        base = build_dup_keys(name="Иванов Кирилл Владимирович")
+        for other in ("Иванов Кирилл В.", "Ivanov Kirill Vladimirovich",
+                      "Иванов Кирилл Владимирвич"):
+            assert compare_key_sets(base, build_dup_keys(name=other))[0] == "name", other
+
+    def test_serbian_surname_is_not_read_as_patronymic(self):
+        # «Петрович» — фамилия, а не отчество: набор отчеств пересекается по ней,
+        # значит конфликта нет и пара сравнивается как обычно.
+        a = build_dup_keys(name="Петрович Иван Драганович")
+        b = build_dup_keys(name="Петрович Иван Мирославович")
+        assert compare_key_sets(a, b)[0] == "name"
+
+    def test_shared_contact_still_wins_over_patronymic(self):
+        # Отчества разные, но почта одна — это по-прежнему дубль (контакт сильнее),
+        # просто «Имя» больше не числится среди совпавших полей.
+        a = build_dup_keys(name="Иванов Кирилл Владимирович", email="k@x.com")
+        b = build_dup_keys(name="Иванов Кирилл Евгеньевич", email="k@x.com")
+        strength, _conf, signals = compare_key_sets(a, b)
+        assert strength == "email"
+        assert "name" not in {s.field for s in signals}
+
+
+@pytest.mark.asyncio
+async def test_elvira_case_only_same_patronymic_is_offered(db_session, organization):
+    """Кейс Эльвиры: у нового «Иванова Кирилла Владимировича» четыре однофамильца.
+    Предлагать к слиянию можно только того, у кого отчество совпадает."""
+    same = await _mk(db_session, organization.id, "Иванов Кирилл Владимирович")
+    for other in ("Иванов Кирилл Евгеньевич", "Иванов Кирилл Сергеевич", "Иванов Кирилл Петрович"):
+        await _mk(db_session, organization.id, other)
+    new = await _mk(db_session, organization.id, "Иванов Кирилл Владимирович")
+    await db_session.commit()
+
+    dups = await similarity_service.detect_duplicates(db=db_session, entity=new)
+    assert [d.entity_id for d in dups] == [same.id]
+    assert await detect_archived_duplicate(db_session, new) == same.id
+
+
+@pytest.mark.asyncio
+async def test_merge_blocked_for_different_patronymics(db_session, organization):
+    """Даже если рекрутёр дошёл до слияния руками — склеить разных людей нельзя."""
+    from api.services.similarity import MergeIdentityConflict
+
+    a = await _mk(db_session, organization.id, "Иванов Кирилл Владимирович", email="k@x.com")
+    b = await _mk(db_session, organization.id, "Иванов Кирилл Евгеньевич", email="k@x.com")
+    await db_session.commit()
+
+    with pytest.raises(MergeIdentityConflict) as err:
+        await similarity_service.merge_entities(db=db_session, source_entity=b, target_entity=a)
+    assert "отчества" in err.value.reason

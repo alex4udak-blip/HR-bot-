@@ -168,6 +168,34 @@ PAIRS = [
 ]
 
 
+# Кейс Эльвиры (2026-09-16): «Иванов Кирилл Владимирович» поднимал ЧЕТЫРЁХ
+# однофамильцев-тёзок с разными отчествами, и все шли как «точное совпадение».
+# Проверяем, что теперь предлагаются только настоящие дубли (совпало отчество и
+# совпал телефон), а трое с чужими отчествами не предлагаются вовсе.
+NAMESAKES = [
+    # (анкета, ожидание)
+    (dict(name="Иванов Кирилл Владимирович", position="Логист", company="Деловые линии",
+          phone="+7 917 200-40-60",
+          extra_data=_old_extra(city="Нижний Новгород",
+                                resume_text="Логистика, ВЭД, 5 лет.")),
+     "дубль: то же отчество"),
+    (dict(name="Кирилл Иванов", position="Специалист по логистике", company="СДЭК",
+          phone="8 917 2004060",
+          extra_data=_old_extra(city="Нижний Новгород",
+                                resume_text="Та же карточка из другого источника.")),
+     "дубль: тот же телефон"),
+    (dict(name="Иванов Кирилл Евгеньевич", position="Водитель", company="Магнит",
+          extra_data=_old_extra(city="Краснодар")), "однофамилец: другое отчество"),
+    (dict(name="Иванов Кирилл Сергеевич", position="Менеджер", company="Ozon",
+          extra_data=_old_extra(city="Москва")), "однофамилец: другое отчество"),
+    (dict(name="Иванов Кирилл Петрович", position="Сварщик", company="ММК",
+          extra_data=_old_extra(city="Магнитогорск")), "однофамилец: другое отчество"),
+]
+NAMESAKE_NEW = dict(name="Иванов Кирилл Владимирович", position="Руководитель склада",
+                    company="Wildberries", phone="+7 917 200-40-60",
+                    extra_data=_new_extra(city="Нижний Новгород"))
+
+
 async def _purge(db: AsyncSession, org_id: int) -> int:
     rows = (await db.execute(
         select(Entity).where(Entity.org_id == org_id, Entity.type == EntityType.candidate)
@@ -247,6 +275,29 @@ async def main() -> None:
                 if match_id else (f"только текст ({round(sim * 100)}%)" if twin_id else "НЕ найден")
             )
             print(f"  [{old.id} ← {new.id}] {title}\n        {new.name}: {mark}")
+
+        print("\nКейс Эльвиры — один новый кандидат против пяти однофамильцев:")
+        for kw, note in NAMESAKES:
+            old = Entity(org_id=org.id, type=EntityType.candidate, created_by=author_id,
+                         status=EntityStatus.new, **kw)
+            db.add(old)
+            await db.flush()
+            print(f"  [{old.id}] {old.name:32} — {note}")
+        new = Entity(org_id=org.id, type=EntityType.candidate, created_by=author_id,
+                     status=EntityStatus.new, **NAMESAKE_NEW)
+        db.add(new)
+        await db.flush()
+        match_id = await detect_archived_duplicate(db, new)
+        if match_id:
+            extra = dict(new.extra_data or {})
+            extra["hidden_duplicate_id"] = match_id
+            new.extra_data = extra
+            await db.flush()
+        from api.services.similarity import similarity_service
+        offered = await similarity_service.detect_duplicates(db=db, entity=new)
+        print(f"  [{new.id}] {new.name:32} — НОВЫЙ, предложено дублей: {len(offered)}")
+        for d in offered:
+            print(f"        → {d.entity_id} {d.entity_name} · {d.strength} {d.confidence}%")
 
         await db.commit()
 

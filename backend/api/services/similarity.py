@@ -423,6 +423,11 @@ def _full_name_match(a: dict, b: dict) -> bool:
     lb, fb = b.get("last_names") or set(), b.get("first_names") or set()
     if not (la and fa and lb and fb):
         return False
+    # Разные отчества у обеих сторон — разные люди (Эльвира, 2026-09-16:
+    # четыре «Иванова Кирилла» с разными отчествами шли как точные дубли).
+    pa, pb = a.get("patronymics") or set(), b.get("patronymics") or set()
+    if pa and pb and not _any_part_match(pa, pb):
+        return False
     straight = _any_part_match(la, lb) and _any_part_match(fa, fb)
     swapped = _any_part_match(la, fb) and _any_part_match(fa, lb)
     return straight or swapped
@@ -474,6 +479,48 @@ def score_soft_identity(a: dict, b: dict) -> SoftScore:
                      reasons=reasons, detail=detail)
 
 
+# Окончания отчеств — кириллица и транслит. «ич» намеренно НЕ в списке отдельно:
+# по нему сербские/черногорские фамилии (Петрович, Радич) принимались бы за
+# отчества. Ловим только полные формы -ович/-евич/-ьич и женские -овна/-евна/-ична.
+_PATRONYMIC_SUFFIXES = (
+    "ович", "евич", "ьич", "овна", "евна", "ична", "инична", "івна",
+    "ovich", "evich", "ovna", "evna", "ichna",
+)
+
+
+def patronymics_of(name: str) -> Set[str]:
+    """Слова, похожие на отчество. Пусто, если в записи меньше трёх слов.
+
+    Порядок слов в наших источниках плавает («Кирилл Евгеньевич Борисов» ↔
+    «Борисов Кирилл Евгеньевич»), поэтому ищем по окончанию в любой позиции, а не
+    по третьему слову. Возвращаем НАБОР: у сербской фамилии «Петрович» под правило
+    попадёт и фамилия, и отчество — тогда сравнение наборов не даст ложный
+    конфликт, потому что фамилия совпадёт у обеих сторон.
+    """
+    words = [w.strip("-_.,").lower() for w in fold_homoglyphs(name or "").split()]
+    words = [w for w in words if w]
+    if len(words) < 3:
+        return set()
+    return {w for w in words if w.endswith(_PATRONYMIC_SUFFIXES)}
+
+
+def patronymic_conflict(name1: str, name2: str) -> bool:
+    """Отчества есть у ОБОИХ и НИ ОДНО не совпадает → это разные люди.
+
+    Заказчик (Эльвира, 2026-09-16): «Иванов Кирилл Владимирович» поднимал четырёх
+    однофамильцев-тёзок с РАЗНЫМИ отчествами, и все они показывались как «точное
+    совпадение». Отчество — единственное, что их различает, и игнорировать его
+    нельзя. Консервативно: если хотя бы у одной стороны отчества нет («Векленко
+    Кирилл» ↔ «Векленко Кирилл Дмитриевич»), конфликта НЕТ — это по-прежнему дубль.
+    Сравниваем через name_part_match, поэтому инициал («В.»), транслит
+    («Vladimirovich») и опечатка ≤1 конфликтом не считаются.
+    """
+    pa, pb = patronymics_of(name1), patronymics_of(name2)
+    if not pa or not pb:
+        return False
+    return not _any_part_match(pa, pb)
+
+
 def names_match_surname_firstname(name1: str, name2: str) -> bool:
     """Совпадают ли ФИО по «Фамилия + Имя» (первые два слова, порядок МОЖЕТ быть
     обратным, каждое слово — с учётом транслитерации). Ловит «Векленко Кирилл»
@@ -494,6 +541,9 @@ def names_match_surname_firstname(name1: str, name2: str) -> bool:
     w1 = [w for w in (name1 or "").split() if len(w.strip("-_.,")) >= 2]
     w2 = [w for w in (name2 or "").split() if len(w.strip("-_.,")) >= 2]
     if len(w1) < 2 or len(w2) < 2:
+        return False
+    # Разные отчества у обеих сторон — разные люди, связка ФИО не считается.
+    if patronymic_conflict(name1, name2):
         return False
     straight = name_part_match(w1[0], w2[0]) and name_part_match(w1[1], w2[1])
     swapped = name_part_match(w1[0], w2[1]) and name_part_match(w1[1], w2[0])
@@ -842,6 +892,14 @@ def hard_identity_conflict(a, b) -> Optional[str]:
     dob_conflict = bool(da) and bool(dbb) and da != dbb
     if phone_conflict and dob_conflict:
         return f"разные телефоны (…{pa[-4:]} vs …{pb[-4:]}) и разные даты рождения ({da} vs {dbb})"
+    # Отчества есть у обоих и они разные — однофамильцы-тёзки, а не дубль. Это
+    # самостоятельное основание отказать: слияние необратимо стягивает историю
+    # двух РАЗНЫХ людей в одну карточку.
+    na, nb = getattr(a, "name", "") or "", getattr(b, "name", "") or ""
+    if patronymic_conflict(na, nb):
+        wa = ", ".join(sorted(patronymics_of(na)))
+        wb = ", ".join(sorted(patronymics_of(nb)))
+        return f"разные отчества ({wa} vs {wb})"
     return None
 
 
@@ -1692,6 +1750,9 @@ def build_dup_keys(
         "phones7": phones7,
         "email_locals": email_locals,
         "cities": cities,
+        # Отчества (разные у обеих сторон — признак РАЗНЫХ людей, см.
+        # patronymic_conflict). Берём из вылеченного гомоглифами имени.
+        "patronymics": patronymics_of(folded_name),
         # Контекст (сам дубль не поднимает, но объясняет пару в окне сравнения).
         "company": (company or "").strip().lower(),
         "skills": extract_skills(ed),
