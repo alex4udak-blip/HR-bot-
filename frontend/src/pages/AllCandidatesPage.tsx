@@ -1331,13 +1331,21 @@ export default function AllCandidatesPage() {
                       // (запрос юзера 17.09).
                       const listFunnelName =
                         card.status_vacancy_name || card.vacancy_name;
+                      // Этапы по воронкам прямо в строке: «Выполняет ТЗ · Трафик,
+                      // Отказ · UAM» (решение юзера 17.09 — видно всё, не открывая
+                      // карточку). Больше трёх — прячем под «+N».
+                      const listFunnels = (card.funnels || []).slice(0, 3);
+                      const listFunnelsHidden = Math.max(
+                        (card.funnels || []).length - listFunnels.length,
+                        0,
+                      );
                       const listExtraFunnels = Math.max(
                         (card.funnel_count || 0) - 1,
                         0,
                       );
                       const listMetaPrimary =
                         (listSettings.fields.lastCompany ? card.company : undefined) ||
-                        listFunnelName;
+                        (listFunnels.length ? undefined : listFunnelName);
                       const showListDate = !card.company;
                       return (
                         <div
@@ -1440,6 +1448,35 @@ export default function AllCandidatesPage() {
                                 {card.position}
                               </div>
                             )}
+                            {listFunnels.length > 0 && (
+                              <div className="mt-[2px] flex flex-wrap items-center gap-x-[6px] gap-y-[2px]">
+                                {listFunnels.map((f, i) => (
+                                  <span
+                                    key={`${f.vacancy_title}-${i}`}
+                                    className="inline-flex max-w-full items-center gap-[4px] text-[length:var(--hf-fs-2xs)] text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]"
+                                    title={`${APPLICATION_STAGE_LABELS[f.stage as keyof typeof APPLICATION_STAGE_LABELS] || f.stage} · ${f.vacancy_title}`}
+                                  >
+                                    <span
+                                      className={clsx(
+                                        "inline-flex shrink-0 items-center rounded-[20px] px-[6px] py-[1px] font-semibold",
+                                        STAGE_CHIP_BRIGHT[f.stage] ||
+                                          "bg-[var(--hf-status-gray)] text-[#111827]",
+                                      )}
+                                    >
+                                      {APPLICATION_STAGE_LABELS[
+                                        f.stage as keyof typeof APPLICATION_STAGE_LABELS
+                                      ] || f.stage}
+                                    </span>
+                                    <span className="truncate">{f.vacancy_title}</span>
+                                  </span>
+                                ))}
+                                {listFunnelsHidden > 0 && (
+                                  <span className="text-[length:var(--hf-fs-2xs)] text-[color:var(--hf-accent)]">
+                                    +{listFunnelsHidden}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <div className="hf-candidate-row-meta">
                               {listMetaPrimary && (
                                 <span
@@ -1449,7 +1486,7 @@ export default function AllCandidatesPage() {
                                   {listMetaPrimary}
                                 </span>
                               )}
-                              {listExtraFunnels > 0 && (
+                              {listFunnels.length === 0 && listExtraFunnels > 0 && (
                                 <span
                                   className="hf-candidate-row-meta-text shrink-0 text-[color:var(--hf-accent)]"
                                   title={`Кандидат ещё в ${listExtraFunnels} воронке(ах) — этапы видны в карточке`}

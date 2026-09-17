@@ -162,6 +162,9 @@ export interface KanbanCard {
   // всего — список рисует подпись «воронка (+N)», чтобы было видно, где он сейчас.
   status_vacancy_name?: string | null;
   funnel_count?: number;
+  // Этапы по всем живым воронкам кандидата (живые впереди) — строка списка
+  // показывает «Выполняет ТЗ · Трафик, Отказ · UAM».
+  funnels?: Array<{ vacancy_title: string; stage: string }>;
   rejection_reason?: string;
   /** Карточка из теневой базы — приходит в выдачу ТОЛЬКО при поиске, метится «Архив». */
   is_archived?: boolean;

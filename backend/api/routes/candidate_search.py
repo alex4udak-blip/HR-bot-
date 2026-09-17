@@ -819,6 +819,12 @@ KANBAN_STATUS_LABELS = {
 }
 
 
+class CandidateFunnelInfo(BaseModel):
+    """Одна воронка кандидата для списка: название вакансии + его этап в ней."""
+    vacancy_title: str
+    stage: str
+
+
 class KanbanCard(BaseModel):
     id: int
     name: str
@@ -843,6 +849,9 @@ class KanbanCard(BaseModel):
     # воронка (+N)», чтобы было видно, где человек сейчас.
     status_vacancy_name: Optional[str] = None
     funnel_count: int = 0
+    # Этапы по ВСЕМ живым воронкам кандидата — список рисует «Выполняет ТЗ ·
+    # Трафик, Отказ · UAM», чтобы не открывать карточку. Живые впереди.
+    funnels: List[CandidateFunnelInfo] = []
     rejection_reason: Optional[str] = None
     # Карточка из теневой базы: попадает в выдачу ТОЛЬКО при поиске, помечается
     # на фронте плашкой «Архив», чтобы не путать с активными.
@@ -972,6 +981,7 @@ async def get_candidates_kanban(
     vacancy_map: dict = {}
     status_vacancy_map: dict = {}
     funnel_count_map: dict = {}
+    funnels_map: dict = {}
     rejection_map: dict = {}
 
     # Bulk fetch photo files (EntityFile rows with image mime types) as a
@@ -1048,15 +1058,26 @@ async def get_candidates_kanban(
                 funnel_count_map[eid] = len(rows)
                 live = [r for r in rows if r.stage not in _INACTIVE]
                 pool = live or rows
-                best = max(
-                    pool,
-                    key=lambda r: (
+                def _when(r):
+                    return (
                         (r.last_stage_change_at or r.applied_at) is not None,
                         r.last_stage_change_at or r.applied_at,
                         r.id,
-                    ),
-                )
+                    )
+
+                best = max(pool, key=_when)
                 status_vacancy_map[eid] = best.title
+                # Живые воронки впереди, внутри — свежие выше.
+                ordered = sorted(live, key=_when, reverse=True) + sorted(
+                    [r for r in rows if r.stage in _INACTIVE], key=_when, reverse=True
+                )
+                funnels_map[eid] = [
+                    CandidateFunnelInfo(
+                        vacancy_title=r.title,
+                        stage=r.stage.value if hasattr(r.stage, "value") else str(r.stage),
+                    )
+                    for r in ordered
+                ]
         except Exception as exc:
             logger.warning(f"Vacancy map query failed (non-critical): {exc}")
 
@@ -1125,6 +1146,7 @@ async def get_candidates_kanban(
                 vacancy_name=vacancy_map.get(e.id),
                 status_vacancy_name=status_vacancy_map.get(e.id),
                 funnel_count=funnel_count_map.get(e.id, 0),
+                funnels=funnels_map.get(e.id, []),
                 rejection_reason=rejection_map.get(e.id),
                 is_archived=bool(getattr(e, "is_archived", False)),
                 extra_data=ed if ed else None,
