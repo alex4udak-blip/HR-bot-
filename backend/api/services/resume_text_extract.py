@@ -56,7 +56,10 @@ async def extract_resume_text(file_bytes: bytes, file_name: str) -> str:
     except Exception as e:  # noqa: BLE001 — извлечение best-effort
         logger.warning(f"RESUME_TEXT: parse failed for {file_name!r}: {e}")
         return ""
-    text = _SERVICE_MARKERS.sub("", result.content or "")
+    # Неразрывные пробелы и мягкие переносы — обычное дело в выгрузках резюме;
+    # в сравнении и в карточке они только мешают.
+    text = (result.content or "").replace("\xa0", " ").replace("\u00ad", "")
+    text = _SERVICE_MARKERS.sub("", text)
     return "\n".join(line.rstrip() for line in text.splitlines() if line.strip()).strip()
 
 

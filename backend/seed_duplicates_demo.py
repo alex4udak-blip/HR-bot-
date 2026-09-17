@@ -208,123 +208,227 @@ NAMESAKE_NEW = dict(name="Иванов Кирилл Владимирович", p
                     extra_data=_new_extra(city="Нижний Новгород"))
 
 
-def _minimal_pdf(lines) -> bytes:
-    """Однослойный валидный PDF из нескольких строк — чтобы в окне сравнения было
-    что показать в рамке. Без внешних зависимостей: base-14 Helvetica, латиница
-    (кириллица в WinAnsi всё равно не отрисуется, а для фикстуры это неважно)."""
-    content = "BT /F1 14 Tf 60 780 Td 18 TL\n"
-    for line in lines:
-        # Base-14 Helvetica кириллицу не кодирует — транслитерируем тем же
-        # хелпером, что и матчер, чтобы в фикстуре не было «????».
-        safe = transliterate_ru_to_en(line).replace("\\", "").replace("(", "").replace(")", "")
-        content += f"({safe}) Tj T*\n"
-    content += "ET"
-    stream = content.encode("latin-1", "replace")
-
-    objects = [
-        b"<</Type/Catalog/Pages 2 0 R>>",
-        b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
-        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]"
-        b"/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>",
-        b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>",
-        b"<</Length " + str(len(stream)).encode() + b">>stream\n" + stream + b"\nendstream",
-    ]
-    out = bytearray(b"%PDF-1.4\n")
-    offsets = []
-    for i, body in enumerate(objects, start=1):
-        offsets.append(len(out))
-        # Пробел перед endobj обязателен: иначе "endstreamendobj" склеивается в
-        # один токен и просмотрщик считает файл битым.
-        out += f"{i} 0 obj".encode() + body + b"\nendobj\n"
-    xref_at = len(out)
-    out += f"xref\n0 {len(objects) + 1}\n".encode()
-    out += b"0000000000 65535 f \n"
-    for off in offsets:
-        out += f"{off:010d} 00000 n \n".encode()
-    out += (
-        f"trailer<</Size {len(objects) + 1}/Root 1 0 R>>\nstartxref\n{xref_at}\n%%EOF".encode()
-    )
-    return bytes(out)
-
-
-def _cv_lines(name, position, company, city) -> list:
-    """Текст демо-резюме. Два требования: не короче настоящего (извлечение
-    отбрасывает обрывки < 200 символов) и РАЗНЫЙ у разных людей — иначе все
-    фикстуры становятся «копипастой» друг друга и детектор текста ловит ложных
-    близнецов вместо тех трёх, что задуманы одинаковыми."""
-    import hashlib
-
-    pos = position or "specialist"
-    comp = company or "company"
-    town = city or "city"
-    seed = int(hashlib.md5((name or "").encode()).hexdigest(), 16)
-    duties = [
-        f"Owned the {pos} agenda at {comp}: planning, execution and weekly reporting.",
-        f"Built processes from scratch in {town} and handed them over to the team.",
-        f"Ran cross-team projects with product, finance and operations at {comp}.",
-        f"Prepared analytics for the {pos} function and defended budgets quarterly.",
-        f"Mentored two juniors and wrote the internal playbook for {pos} work.",
-        f"Negotiated with contractors and cut costs of the {pos} stack by a third.",
-    ]
-    picked = [duties[(seed + i) % len(duties)] for i in range(3)]
-    body = (
-        f"Position: {pos}. Company: {comp}. City: {town}. "
-        + " ".join(picked)
-        + f" Tools: internal CRM, spreadsheets, BI dashboards. Languages: Russian, English. "
-        f"Contact preference: email. Notice period: two weeks. Candidate: {name}."
-    )
-    return [f"CV: {name}"] + [body[i:i + 88] for i in range(0, len(body), 88)]
-
-
-def _attach_resume(db: AsyncSession, entity: Entity, org_id: int, lines) -> None:
-    """Прикрепить кандидату PDF-резюме (file_type=resume) — ровно так же, как это
-    делает загрузка файла в карточке: содержимое лежит в БД (file_data)."""
-    data = _minimal_pdf(lines)
-    db.add(EntityFile(
-        entity_id=entity.id, org_id=org_id, file_type=EntityFileType.resume,
-        file_name=f"resume_{entity.id}.pdf", file_data=data, file_size=len(data),
-        mime_type="application/pdf", description="Демо-резюме для проверки дублей",
-    ))
-
-
-
-# ---------------------------------------------------------------------------
-# Блок «проверка текста резюме» (владелец 17.09.2026): файлы прикладываем, а
-# текст НЕ извлекаем — чтобы было на чём прогнать бэкфилл и увидеть разницу.
-# ---------------------------------------------------------------------------
-
-SHARED_CV = (
-    "Experience: senior recruiter in a fintech product company. Owned the full "
-    "hiring cycle for engineering and analytics: sourcing, screening calls, "
-    "technical interviews with hiring managers, offer approval with the "
-    "compensation team. Rebuilt the referral programme and cut time-to-hire "
-    "from 54 to 31 days. Maintained the candidate database, merged duplicate "
-    "profiles and reported funnel conversion to the head of HR every week. "
-    "Skills: sourcing, executive search, ATS, analytics, employer branding."
+# Шрифт с кириллицей: base-14 Helvetica её не кодирует, и резюме получалось
+# латиницей («cv: goncharova alisa») — сравнивать такое глазами невозможно.
+# Порядок важен: Arial Unicode весит 22 МБ и вшивается в каждый файл, поэтому он
+# последний — сначала обычные шрифты с кириллицей.
+_FONT_CANDIDATES = (
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
 )
 
 
-def _scan_pdf(lines) -> bytes:
+def _font_path():
+    for path in _FONT_CANDIDATES:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+# Блоки резюме: (вид, текст). Вид задаёт кегль и отступ при отрисовке.
+TITLE, SUB, HEADING, BODY, BULLET = "title", "sub", "heading", "body", "bullet"
+_STYLE = {
+    TITLE: (18, 0, 26),
+    SUB: (11, 0, 18),
+    HEADING: (12, 0, 24),
+    BODY: (10, 0, 15),
+    BULLET: (10, 14, 15),
+}
+
+
+def _render_resume_pdf(blocks) -> bytes:
+    """Резюме в PDF с текстовым слоем: A4, разделы, переносы, вторая страница при
+    необходимости. Текст извлекается pdfplumber'ом — именно он идёт в сравнение."""
+    import pymupdf
+
+    font_file = _font_path()
+    if font_file is None:  # деградация: латиница base-14, но файл валидный
+        blocks = [(k, transliterate_ru_to_en(t)) for k, t in blocks]
+    font = pymupdf.Font(fontfile=font_file) if font_file else pymupdf.Font("helv")
+    fontname = "CV" if font_file else "helv"
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    if font_file:
+        page.insert_font(fontname=fontname, fontfile=font_file)
+    left, right, top, bottom = 56, 539, 64, 780
+    y = top
+
+    def _wrap(text: str, size: float, width: float):
+        words, line, out = text.split(), "", []
+        for w in words:
+            probe = f"{line} {w}".strip()
+            if font.text_length(probe, size) <= width:
+                line = probe
+            else:
+                if line:
+                    out.append(line)
+                line = w
+        if line:
+            out.append(line)
+        return out or [""]
+
+    for kind, text in blocks:
+        size, indent, leading = _STYLE[kind]
+        prefix = "• " if kind == BULLET else ""
+        for i, line in enumerate(_wrap(prefix + text, size, right - left - indent)):
+            if y > bottom:
+                page = doc.new_page()
+                if font_file:
+                    page.insert_font(fontname=fontname, fontfile=font_file)
+                y = top
+            page.insert_text((left + indent + (10 if i and kind == BULLET else 0), y),
+                             line, fontsize=size, fontname=fontname)
+            y += leading
+        y += 4 if kind in (TITLE, HEADING) else 0
+    # Без subset шрифт вшивается целиком: демо-резюме весило 23 МБ на файл.
+    try:
+        doc.subset_fonts()
+    except Exception:
+        pass
+    return doc.tobytes()
+
+
+# Наполнение резюме. Каждый кандидат получает СВОЙ текст (обязанности,
+# прошлое место, вуз и навыки выбираются по хэшу имени) — иначе детектор
+# копипаста находил бы «близнецов» у всех демо-анкет сразу.
+_PREV_COMPANIES = ["Яндекс", "СберТех", "Ozon", "Авито", "Тинькофф", "Lamoda", "Самокат", "VK"]
+_UNIVERSITIES = [
+    "МГУ им. Ломоносова, экономический факультет",
+    "НИУ ВШЭ, факультет бизнеса и менеджмента",
+    "СПбГУ, факультет психологии",
+    "РАНХиГС, управление персоналом",
+    "КФУ, институт управления и экономики",
+]
+_DUTIES = [
+    "Вёл полный цикл подбора: от снятия заявки до выхода кандидата.",
+    "Выстроил воронку найма с нуля и еженедельно считал конверсию этапов.",
+    "Проводил скрининги и финальные интервью вместе с нанимающими менеджерами.",
+    "Согласовывал офферы с финансами, закрывал вилки вне утверждённой сетки.",
+    "Перевёл отчётность на дашборды, сократил ручную работу команды вдвое.",
+    "Запустил реферальную программу, доля рекомендаций выросла до трети найма.",
+    "Вёл базу кандидатов: чистил дубли, следил за актуальностью контактов.",
+    "Договаривался с подрядчиками и снизил стоимость привлечения на 20%.",
+]
+_ACHIEVEMENTS = [
+    "Сократил время закрытия вакансии с 54 до 31 дня.",
+    "Закрыл 42 вакансии за год при плане 30.",
+    "Поднял долю принятых офферов с 68% до 85%.",
+    "Собрал команду из 12 человек под запуск нового направления.",
+]
+_ABOUT = [
+    "Работаю в найме девятый год, последние четыре — в {town}. Люблю прозрачные "
+    "процессы: считаю метрики, не боюсь говорить нанимающим менеджерам «нет» и "
+    "аккуратно веду базу — половина проблем найма начинается с грязных данных.",
+    "Пришла в подбор из операционки, поэтому смотрю на найм как на процесс с "
+    "узкими местами. В {comp} собрала отчётность, по которой стало видно, где "
+    "воронка теряет людей, и починила два самых дорогих этапа.",
+    "Больше всего люблю сложный точечный поиск: когда кандидатов на рынке "
+    "двадцать человек и до каждого нужно достучаться лично. Умею писать письма, "
+    "на которые отвечают, и не выгорать от отказов.",
+    "Считаю, что рекрутёр отвечает не за количество собеседований, а за то, "
+    "чтобы человек вышел и остался. Поэтому довожу кандидата до конца "
+    "испытательного и собираю обратную связь с обеих сторон.",
+]
+_COURSES = [
+    "«Оценка персонала» (2020)", "«Аналитика найма» (2022)",
+    "«Интервью по компетенциям» (2019)", "«HR-аналитика на SQL» (2023)",
+    "«Employer brand» (2021)", "«Executive search» (2018)",
+]
+_FORMATS = [
+    "Английский — Upper-Intermediate. Готов к гибридному формату.",
+    "Английский — B1, читаю профильную литературу. Рассматриваю удалёнку.",
+    "Английский — Advanced, вёл найм в международной команде. Офис или гибрид.",
+]
+_SKILLS = [
+    "поиск и подбор, executive search, массовый подбор",
+    "оценка компетенций, структурированное интервью, кейс-интервью",
+    "ATS, аналитика воронки, отчётность по метрикам найма",
+    "работа с нанимающими менеджерами, калибровка требований",
+    "HR-бренд, работа с площадками и реферальной программой",
+]
+
+
+def _resume_blocks(name, position, company, city, phone=None, email=None, birth=None) -> list:
+    """Полноценное резюме: шапка, опыт с двумя местами работы, образование,
+    навыки и «о себе». ~2000 знаков — на таком тексте сравнение уже осмысленно."""
+    import hashlib
+
+    import random
+
+    seed = int(hashlib.md5((name or "").encode()).hexdigest(), 16)
+    rnd = random.Random(seed)
+    pos = position or "Специалист"
+    comp = company or "—"
+    town = city or "Москва"
+    # Независимые выборки (не арифметика по одному числу): при выборе «по модулю»
+    # разные люди слишком часто получали один и тот же набор фраз, и детектор
+    # копипаста честно ловил их как близнецов — проверять было не на чем.
+    prev = rnd.choice(_PREV_COMPANIES)
+    uni = rnd.choice(_UNIVERSITIES)
+    duties = rnd.sample(_DUTIES, 3)
+    duties_prev = rnd.sample([d for d in _DUTIES if d not in duties], 2)
+    ach = rnd.choice(_ACHIEVEMENTS)
+    skills = ", ".join(rnd.sample(_SKILLS, 3))
+    about = rnd.choice(_ABOUT).format(town=town, comp=comp)
+    courses = ", ".join(rnd.sample(_COURSES, 2))
+    fmt = rnd.choice(_FORMATS)
+    start_year = rnd.choice((2019, 2020, 2021, 2022))
+    prev_from, prev_to = start_year - 4, start_year
+
+    contacts = " · ".join(x for x in (phone, email, town, f"д.р. {birth}" if birth else None) if x)
+    return [
+        (TITLE, name),
+        (SUB, f"{pos} · {comp}"),
+        (SUB, contacts or town),
+        (HEADING, "ОПЫТ РАБОТЫ"),
+        (BODY, f"{start_year} — настоящее время · {comp} · {pos}"),
+        *[(BULLET, d) for d in duties],
+        (BULLET, ach),
+        (BODY, f"{prev_from} — {prev_to} · {prev} · Специалист по подбору персонала"),
+        *[(BULLET, d) for d in duties_prev],
+        (HEADING, "ОБРАЗОВАНИЕ"),
+        (BODY, f"{prev_from - 5} — {prev_from - 1} · {uni}"),
+        (BODY, f"Курсы: {courses}"),
+        (HEADING, "КЛЮЧЕВЫЕ НАВЫКИ"),
+        (BODY, skills),
+        (HEADING, "О СЕБЕ"),
+        (BODY, about),
+        (BODY, fmt),
+    ]
+
+
+def _scan_pdf(blocks) -> bytes:
     """PDF-СКАН: страница отрендерена в картинку, текстового слоя нет."""
     import pymupdf
 
-    src = pymupdf.open(stream=_minimal_pdf(lines), filetype="pdf")
-    pix = src[0].get_pixmap(dpi=140)
+    src = pymupdf.open(stream=_render_resume_pdf(blocks), filetype="pdf")
+    pix = src[0].get_pixmap(dpi=130)
     out = pymupdf.open()
     page = out.new_page(width=pix.width, height=pix.height)
     page.insert_image(page.rect, stream=pix.tobytes("png"))
     return out.tobytes()
 
 
-def _docx_bytes(lines) -> bytes:
-    """DOCX-резюме — второй формат, который умеет читать парсер."""
+def _docx_bytes(blocks) -> bytes:
+    """То же резюме в DOCX — второй формат, который читает парсер."""
     import io
 
     from docx import Document
 
     doc = Document()
-    for line in lines:
-        doc.add_paragraph(transliterate_ru_to_en(line))
+    for kind, text in blocks:
+        if kind == TITLE:
+            doc.add_heading(text, level=1)
+        elif kind == HEADING:
+            doc.add_heading(text, level=2)
+        elif kind == BULLET:
+            doc.add_paragraph(text, style="List Bullet")
+        else:
+            doc.add_paragraph(text)
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
@@ -338,6 +442,18 @@ def _attach_file(db: AsyncSession, entity: Entity, org_id: int, data: bytes,
         mime_type=mime, description="Демо-резюме для проверки извлечения текста",
     ))
 
+
+def _attach_resume(db: AsyncSession, entity: Entity, org_id: int, blocks) -> None:
+    """Прикрепить кандидату PDF-резюме (file_type=resume) — как загрузка файла в
+    карточке: содержимое лежит в БД (file_data)."""
+    _attach_file(db, entity, org_id, _render_resume_pdf(blocks),
+                 f"resume_{entity.id}.pdf", "application/pdf")
+
+
+# ---------------------------------------------------------------------------
+# Блок «проверка текста резюме» (владелец 17.09.2026): файлы прикладываем, а
+# текст НЕ извлекаем — чтобы было на чём прогнать бэкфилл и увидеть разницу.
+# ---------------------------------------------------------------------------
 
 # (анкета, как приложить файл, что должно получиться)
 RESUME_TEXT_CASES = [
@@ -459,9 +575,11 @@ async def main() -> None:
             db.add(old)
             await db.flush()
 
-            _attach_resume(db, old, org.id, _cv_lines(
+            _attach_resume(db, old, org.id, _resume_blocks(
                 old.name, old_kw.get("position"), old_kw.get("company"),
                 (old_kw.get("extra_data") or {}).get("city"),
+                phone=old_kw.get("phone"), email=old_kw.get("email"),
+                birth=(old_kw.get("extra_data") or {}).get("birth_date"),
             ))
 
             new = Entity(org_id=org.id, type=EntityType.candidate, created_by=author_id,
@@ -494,9 +612,10 @@ async def main() -> None:
                          status=EntityStatus.new, **kw)
             db.add(old)
             await db.flush()
-            _attach_resume(db, old, org.id, _cv_lines(
+            _attach_resume(db, old, org.id, _resume_blocks(
                 old.name, kw.get("position"), kw.get("company"),
                 (kw.get("extra_data") or {}).get("city"),
+                phone=kw.get("phone"), email=kw.get("email"),
             ))
             print(f"  [{old.id}] {old.name:32} — {note}")
         new = Entity(org_id=org.id, type=EntityType.candidate, created_by=author_id,
@@ -521,13 +640,16 @@ async def main() -> None:
                          status=EntityStatus.new, **kw)
             db.add(ent)
             await db.flush()
-            lines = [f"CV: {ent.name}"] + [SHARED_CV[i:i + 88] for i in range(0, len(SHARED_CV), 88)]
+            # ОДИН И ТОТ ЖЕ текст резюме на всю группу (меняется только шапка с
+            # именем) — так проверяется именно детектор копипаста.
+            shared = _resume_blocks("Копия резюме", "Senior Recruiter", "Финтех-компания", "Москва")
+            blocks = [(TITLE, ent.name)] + shared[1:]
             if kind == "pdf-shared":
-                _attach_file(db, ent, org.id, _minimal_pdf(lines), f"resume_{ent.id}.pdf", "application/pdf")
+                _attach_file(db, ent, org.id, _render_resume_pdf(blocks), f"resume_{ent.id}.pdf", "application/pdf")
             elif kind == "scan":
-                _attach_file(db, ent, org.id, _scan_pdf(lines), f"scan_{ent.id}.pdf", "application/pdf")
+                _attach_file(db, ent, org.id, _scan_pdf(blocks), f"scan_{ent.id}.pdf", "application/pdf")
             elif kind == "docx":
-                _attach_file(db, ent, org.id, _docx_bytes(lines), f"resume_{ent.id}.docx",
+                _attach_file(db, ent, org.id, _docx_bytes(blocks), f"resume_{ent.id}.docx",
                              "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
             print(f"  [{ent.id}] {ent.name:24} — {note}")
 
