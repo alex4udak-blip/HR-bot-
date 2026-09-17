@@ -44,6 +44,7 @@ export type Side = {
   email: string;
   telegram: string;
   age: string;
+  birthDate: string;
   city: string;
   salary: string;
   experience: string;
@@ -60,7 +61,12 @@ export type Side = {
   notes: Array<{ text?: string; author?: string; date?: string }>;
 };
 
-export type FieldKey = "phone" | "email" | "telegram" | "age" | "city" | "salary" | "experience" | "source" | "tags";
+export type FieldKey =
+  | "phone" | "email" | "telegram" | "birthDate" | "age" | "city"
+  | "salary" | "experience" | "source" | "tags";
+
+/** Насколько совпало поле: точно (идентификатор) или частично (мягкий сигнал). */
+export type MatchKind = "exact" | "partial" | null;
 
 // String() coercion: значения полей (age/salary/experience) из API могут прийти
 // числом, а не строкой — без приведения .trim() падает «(e||"").trim is not a function».
@@ -68,12 +74,27 @@ const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
 const normPhone = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
 const normTg = (v: unknown) => String(v ?? "").trim().replace(/^@/, "").toLowerCase();
 const HL = "bg-amber-100 text-amber-900 rounded px-1.5 py-0.5";
+// Частичное совпадение (мягкий сигнал: 7 цифр телефона, возраст ±1) НЕ должно
+// выглядеть как точное — иначе разные номера подсвечены одинаково и кажется,
+// что система ошиблась.
+const HL_PARTIAL =
+  "rounded px-1.5 py-0.5 text-amber-900 underline decoration-dashed decoration-amber-400 underline-offset-4";
+
+function hlClass(kind: MatchKind): string {
+  if (kind === "exact") return HL;
+  if (kind === "partial") return HL_PARTIAL;
+  return "";
+}
 
 const FIELDS: { key: FieldKey; label: string }[] = [
   { key: "salary", label: "Зарплата" },
   { key: "phone", label: "Телефон" },
   { key: "email", label: "Эл. почта" },
   { key: "telegram", label: "Telegram" },
+  // Дата рождения — видимое поле: мягкий тир часто держится ИМЕННО на ней, а
+  // проверить её в карточке было негде (владелец 17.09.2026: «справа нет никакой
+  // инфы, но всё равно есть совпадение»).
+  { key: "birthDate", label: "Дата рождения" },
   { key: "age", label: "Возраст" },
   { key: "city", label: "Город" },
   { key: "experience", label: "Опыт" },
@@ -81,34 +102,29 @@ const FIELDS: { key: FieldKey; label: string }[] = [
   { key: "tags", label: "Метки" },
 ];
 
-// Поле → RU-метка для чипов «совпало по …» на карточке дубликата. Ключи приходят
-// с бэка из единого ядра (duplicate_matcher.DupSignal.field) — включая мягкие
-// сигналы (дата рождения, возраст, город) и подсказку по тексту резюме.
-const DUP_FIELD_LABEL: Record<string, string> = {
-  phone: "Телефон",
-  email: "Эл. почта",
-  telegram: "Telegram",
-  name: "Имя",
-  full_name: "Имя",
-  birth_date: "Дата рождения",
-  source: "Ссылка на резюме",
-  resume_text: "Текст резюме",
-  position: "Должность",
-  company: "Компания",
-  city: "Город",
-  age: "Возраст",
-  salary: "Зарплата",
-  experience: "Опыт",
-  tags: "Метки",
-};
+/** Дата рождения из extra_data в едином виде ДД.ММ.ГГГГ (источники пишут
+ *  и «1990-05-14», и «14.05.1990»). */
+function birthParts(birthDate?: string): { y: number; m: number; d: number } | null {
+  if (!birthDate) return null;
+  const iso = /(\d{4})-(\d{2})-(\d{2})/.exec(birthDate);
+  if (iso) return { y: +iso[1], m: +iso[2], d: +iso[3] };
+  const ru = /(\d{2})[.\/](\d{2})[.\/](\d{4})/.exec(birthDate);
+  if (ru) return { y: +ru[3], m: +ru[2], d: +ru[1] };
+  return null;
+}
+
+function formatBirth(birthDate?: string): string {
+  const p = birthParts(birthDate);
+  if (!p) return "";
+  return `${String(p.d).padStart(2, "0")}.${String(p.m).padStart(2, "0")}.${p.y}`;
+}
 
 function computeAge(birthDate?: string): string {
-  if (!birthDate) return "";
-  const m = /(\d{4})-(\d{2})-(\d{2})/.exec(birthDate);
-  if (!m) return "";
+  const p = birthParts(birthDate);
+  if (!p) return "";
   const today = new Date();
-  let age = today.getFullYear() - parseInt(m[1], 10);
-  if ((today.getMonth() + 1) * 100 + today.getDate() < parseInt(m[2], 10) * 100 + parseInt(m[3], 10)) age -= 1;
+  let age = today.getFullYear() - p.y;
+  if ((today.getMonth() + 1) * 100 + today.getDate() < p.m * 100 + p.d) age -= 1;
   return age >= 14 && age <= 100 ? `${age} лет` : "";
 }
 
@@ -196,6 +212,7 @@ export function sideFromCard(card: KanbanCard, statusKey?: string): Side {
     email: card.email || "",
     telegram: card.telegram_username || "",
     age: card.age ? String(card.age) : computeAge(extra.birth_date as string | undefined),
+    birthDate: formatBirth(extra.birth_date as string | undefined),
     city: card.city || ((extra.city as string) || ""),
     salary: card.salary ? String(card.salary) : "",
     experience: card.total_experience ? String(card.total_experience) : ((extra.total_experience as string) || ""),
@@ -235,6 +252,7 @@ export function sideFromEntity(e: EntityWithRelations): Side {
     email: e.email || (e.emails && e.emails[0]) || "",
     telegram: (e.telegram_usernames && e.telegram_usernames[0]) || "",
     age: (extra.age as string) || computeAge(extra.birth_date as string | undefined),
+    birthDate: formatBirth(extra.birth_date as string | undefined),
     city: (ent.city as string) || ((extra.city as string) || ""),
     salary,
     experience: ((ent.total_experience as string) || (extra.total_experience as string) || ""),
@@ -250,6 +268,43 @@ export function sideFromEntity(e: EntityWithRelations): Side {
     resumeExtra: resumeExtraFrom(extra),
     notes: notesFrom(extra),
   };
+}
+
+// Поле сигнала с бэка (duplicate_matcher.DupSignal.field) → поле карточки.
+const SIGNAL_FIELD_TO_SIDE: Record<string, FieldKey | "name"> = {
+  name: "name",
+  email: "email",
+  phone: "phone",
+  telegram: "telegram",
+  birth_date: "birthDate",
+  age: "age",
+  city: "city",
+  source: "source",
+};
+
+export type DupSignalLike = { field: string; label: string; identity: boolean };
+
+/**
+ * Насколько совпало поле — по сигналам БЭКА, а не по сравнению строк на фронте.
+ *
+ * ВИД подсветки отвечает на вопрос «значения одинаковые?», а не «насколько
+ * сильный это признак»: у пары на 83% сигнал «совпал телефон» означал совпадение
+ * последних 7 цифр при РАЗНЫХ номерах (+7 495… и +7 916…) — такое поле красим
+ * пунктиром, а одинаковые дату рождения и город — сплошной заливкой, как раньше.
+ * Силу признака (идентификатор / косвенный) показывает блок «почему считаем
+ * дублем», а не подсветка. Фолбэк на matchSide работает, пока сигналов нет.
+ */
+export function matchKindOf(
+  signals: DupSignalLike[] | undefined,
+  key: FieldKey | "name",
+  sameValue: () => boolean,
+): MatchKind {
+  if (signals && signals.length > 0) {
+    const hit = signals.find((s) => SIGNAL_FIELD_TO_SIDE[s.field] === key);
+    if (!hit) return null;
+    return sameValue() ? "exact" : "partial";
+  }
+  return sameValue() ? "exact" : null;
 }
 
 // Совпадение поля между двумя сторонами: телефон через normPhone, telegram через
@@ -368,16 +423,17 @@ export function CandidateCompareCard({
   side,
   matched,
   confidence,
-  matchedFields,
+  signals,
   entityId,
   vacancies,
   extraData,
 }: {
   title: string;
   side: Side | null;
-  matched: (key: FieldKey | "name") => boolean;
+  matched: (key: FieldKey | "name") => MatchKind;
   confidence?: number;
-  matchedFields?: string[];
+  /** Сигналы пары с бэка: из них строится блок «почему совпало». */
+  signals?: DupSignalLike[];
   entityId?: number;
   vacancies?: SystemHrTag[];
   /** extra_data анкеты — из неё берутся распарсенные версии резюме. */
@@ -407,20 +463,37 @@ export function CandidateCompareCard({
       <div className="mb-4">
         <Avatar photo={side.photo} name={side.name} />
         <div className="min-w-0 mt-3">
-          <span className={`text-2xl font-bold leading-tight ${matched("name") ? HL : "text-slate-900"}`}>
+          <span className={`text-2xl font-bold leading-tight ${hlClass(matched("name")) || "text-slate-900"}`}>
             {side.name || "—"}
           </span>
           {subtitle && <div className="text-sm text-slate-500 mt-1.5">{subtitle}</div>}
-          {matchedFields && matchedFields.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {matchedFields.map((f) => (
-                <span
-                  key={f}
-                  className="text-[10px] font-medium rounded bg-amber-50 text-amber-700 px-1.5 py-0.5"
-                >
-                  {DUP_FIELD_LABEL[f] || f}
-                </span>
-              ))}
+          {signals && signals.length > 0 && (
+            /* Почему пара считается дублем — с конкретными значениями обеих
+               сторон. Раньше тут были чипы с одним лишь названием поля, и по
+               ним нельзя было понять, что «Телефон» — это совпавшие последние
+               7 цифр у РАЗНЫХ номеров, а «Дата рождения» вообще не показана. */
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2">
+              <div className="text-[10px] uppercase tracking-wide text-amber-700/80 mb-1">
+                Почему считаем дублем
+              </div>
+              <div className="space-y-1">
+                {signals.map((sig) => (
+                  <div key={`${sig.field}-${sig.label}`} className="flex items-start gap-1.5 text-[11px]">
+                    <span
+                      className={`mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full ${
+                        sig.identity ? "bg-red-500" : "bg-amber-400"
+                      }`}
+                    />
+                    <span className="text-slate-700">{sig.label}</span>
+                  </div>
+                ))}
+              </div>
+              {signals.some((sig) => !sig.identity) && (
+                <div className="mt-1.5 text-[10px] leading-snug text-amber-700/70">
+                  Оранжевым — косвенные признаки: сами по себе они не доказывают,
+                  что это один человек.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -435,7 +508,10 @@ export function CandidateCompareCard({
           <div key={key}>
             <div className="text-[13px] text-slate-400 mb-0.5">{label}</div>
             <div className="text-[15px] leading-snug">
-              <span className={matched(key) ? HL : side[key] ? "text-slate-800" : "text-slate-300"}>
+              <span
+                className={hlClass(matched(key)) || (side[key] ? "text-slate-800" : "text-slate-300")}
+                title={matched(key) === "partial" ? "Совпало частично — сверьте значения" : undefined}
+              >
                 {side[key] || "—"}
               </span>
             </div>

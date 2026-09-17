@@ -18,7 +18,9 @@ import {
   sideFromCard,
   sideFromEntity,
   matchSide,
+  matchKindOf,
   type FieldKey,
+  type MatchKind,
 } from "./CandidateCompareCard";
 
 /**
@@ -307,7 +309,13 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   const left = sideFromCard(card, status);
   const right = archived ? sideFromEntity(archived) : null;
 
-  const matched = (key: FieldKey | "name"): boolean => matchSide(left, right, key);
+  // Сигналы ВЫБРАННОЙ пары — общий источник подсветки для обеих карточек:
+  // подсвечиваем ровно те поля, из-за которых бэк считает пару дублем, и отличаем
+  // точное совпадение от частичного. matchSide остаётся фолбэком, пока список
+  // дублей ещё не пришёл.
+  const selectedSignals = duplicates.find((d) => d.entity_id === selectedDupId)?.signals;
+  const matched = (key: FieldKey | "name"): MatchKind =>
+    matchKindOf(selectedSignals, key, () => matchSide(left, right, key));
 
   // Баннер показываем только если есть triggerEntity (найден возможный дубликат)
   if (!triggerEntity) return null;
@@ -470,9 +478,9 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                                 <CandidateCompareCard
                                   title=""
                                   side={dupSide}
-                                  matched={(k) => matchSide(left, dupSide, k)}
+                                  matched={(k) => matchKindOf(d.signals, k, () => matchSide(left, dupSide, k))}
                                   confidence={d.confidence}
-                                  matchedFields={Object.keys(d.matched_fields)}
+                                  signals={d.signals}
                                   entityId={d.entity_id}
                                   vacancies={Array.isArray((ent?.extra_data as any)?.system_hr_tags) ? (ent?.extra_data as any).system_hr_tags : undefined}
                                   extraData={ent?.extra_data as Record<string, unknown> | undefined}
