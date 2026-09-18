@@ -528,3 +528,56 @@ export function entityToKanbanCard(
     extra_data: extra,
   } as KanbanCard;
 }
+
+// ── Список «Все кандидаты»: какие карточки доски показывать ──
+
+export type VisibleCard = { card: KanbanCard; status: string; label: string };
+
+/**
+ * Отбор карточек доски для левого списка.
+ *
+ * Два правила, и оба про ПОИСК: когда рекрутёр что-то ищет, ни вкладка-этап, ни
+ * скоуп «Только мои» не должны резать выдачу — человек ищет конкретного человека
+ * и ждёт его найти, чей бы он ни был. Раньше скоуп применялся всегда, и выходило
+ * «сервер нашёл 1, а список пуст»: кандидат в базе есть, кнопка расширения его
+ * видит, а поиск — нет (Эльвира, 18.09.2026).
+ */
+export function selectVisibleCards(
+  columns: KanbanColumn[],
+  opts: { activeTab: string; scope: "mine" | "all"; myName: string; search: string },
+): VisibleCard[] {
+  const searching = opts.search.trim().length > 0;
+  const myName = (opts.myName || "").trim();
+  const scopeMine = opts.scope === "mine" && myName.length > 0 && !searching;
+
+  const items: VisibleCard[] = [];
+  for (const col of columns) {
+    if (!(searching || opts.activeTab === "all" || col.status === opts.activeTab)) continue;
+    for (const c of col.cards || []) {
+      if (scopeMine && (c.recruiter_name || "").trim() !== myName) continue;
+      items.push({ card: c, status: col.status, label: col.label });
+    }
+  }
+  if (searching || opts.activeTab === "all") {
+    return items.sort(
+      (a, b) => new Date(b.card.created_at).getTime() - new Date(a.card.created_at).getTime(),
+    );
+  }
+  return items;
+}
+
+/** Сколько карточек доски прячет скоуп «Только мои» — для объяснения пустого списка. */
+export function countHiddenByScope(
+  columns: KanbanColumn[],
+  opts: { scope: "mine" | "all"; myName: string },
+): number {
+  const myName = (opts.myName || "").trim();
+  if (opts.scope !== "mine" || !myName) return 0;
+  let hidden = 0;
+  for (const col of columns) {
+    for (const c of col.cards || []) {
+      if ((c.recruiter_name || "").trim() !== myName) hidden += 1;
+    }
+  }
+  return hidden;
+}

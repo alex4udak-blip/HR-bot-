@@ -11,6 +11,8 @@ import {
   CANDIDATE_VACANCY_STAGE_LABELS,
   readSystemHrTags,
   entityToKanbanCard,
+  selectVisibleCards,
+  countHiddenByScope,
 } from "../model";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
@@ -481,5 +483,63 @@ describe('entityToKanbanCard (диплинк на кандидата вне до
     const card = entityToKanbanCard(entity, { archived: true });
     expect(card.is_archived).toBe(true);
     expect((card.extra_data as { is_archived?: boolean }).is_archived).toBe(true);
+  });
+});
+
+describe('selectVisibleCards (список «Все кандидаты»)', () => {
+  const card = (id: number, name: string, recruiter: string) =>
+    ({ id, name, recruiter_name: recruiter, created_at: `2026-09-${10 + id}T10:00:00` }) as unknown as KanbanCard;
+
+  const columns = [
+    { status: 'new', label: 'Новый', count: 2, cards: [card(1, 'Кузнецов Владислав', 'Влада'), card(2, 'Мой Кандидат', 'Эльвира')] },
+    { status: 'rejected', label: 'Отказ', count: 1, cards: [card(3, 'Чужой Отказник', 'Влада')] },
+  ] as unknown as KanbanColumn[];
+
+  it('скоуп «Только мои» прячет чужих, пока НЕ ищут', () => {
+    const visible = selectVisibleCards(columns, {
+      activeTab: 'all', scope: 'mine', myName: 'Эльвира', search: '',
+    });
+    expect(visible.map((v) => v.card.name)).toEqual(['Мой Кандидат']);
+  });
+
+  it('при поиске скоуп не применяется — иначе «сервер нашёл, а списка нет»', () => {
+    const visible = selectVisibleCards(columns, {
+      activeTab: 'all', scope: 'mine', myName: 'Эльвира', search: 'Кузнецов',
+    });
+    expect(visible.map((v) => v.card.name)).toContain('Кузнецов Владислав');
+  });
+
+  it('поиск игнорирует и вкладку-этап: совпадения из всех колонок', () => {
+    const visible = selectVisibleCards(columns, {
+      activeTab: 'new', scope: 'all', myName: 'Эльвира', search: 'Чужой',
+    });
+    expect(visible.map((v) => v.card.name)).toContain('Чужой Отказник');
+  });
+
+  it('без поиска вкладка-этап ограничивает список своей колонкой', () => {
+    const visible = selectVisibleCards(columns, {
+      activeTab: 'rejected', scope: 'all', myName: 'Эльвира', search: '',
+    });
+    expect(visible.map((v) => v.card.name)).toEqual(['Чужой Отказник']);
+  });
+});
+
+describe('countHiddenByScope', () => {
+  const columns = [
+    {
+      status: 'new', label: 'Новый', count: 2,
+      cards: [
+        { id: 1, name: 'A', recruiter_name: 'Влада', created_at: '' },
+        { id: 2, name: 'B', recruiter_name: 'Эльвира', created_at: '' },
+      ],
+    },
+  ] as unknown as KanbanColumn[];
+
+  it('считает чужие карточки при скоупе «мои»', () => {
+    expect(countHiddenByScope(columns, { scope: 'mine', myName: 'Эльвира' })).toBe(1);
+  });
+
+  it('при скоупе «все» ничего не скрыто', () => {
+    expect(countHiddenByScope(columns, { scope: 'all', myName: 'Эльвира' })).toBe(0);
   });
 });

@@ -29,8 +29,10 @@ import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidat
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import {
   buildStageContainers,
+  countHiddenByScope,
   entityToKanbanCard,
   readSystemHrTags,
+  selectVisibleCards,
   type EntryReaction,
 } from "@/components/entities/candidateDetail/model";
 import {
@@ -586,39 +588,29 @@ export default function AllCandidatesPage() {
 
   // useMemo чтобы фильтрация была реактивной и не пересчитывалась лишний раз
   // (без него были репорты что переключение таба не обновляет список).
-  const filteredCards = useMemo(() => {
-    if (!board) return [];
-    // F7: scope «Только по моим вакансиям» — показываем кандидатов, где рекрутёр
-    // = текущий пользователь. recruiter_name приходит из User.name (как и user.name),
-    // поэтому сравнение точное и список не обнуляется из-за расхождения форматов.
-    const myName = (user?.name || "").trim();
-    const scopeMine = listSettings.scope === "mine" && myName.length > 0;
-    // При активном ПОИСКЕ (лупа: ник/ФИО) игнорируем вкладку-статус и показываем
-    // совпадения из ВСЕХ колонок. Сервер уже отфильтровал board по q, поэтому все
-    // оставшиеся карточки — это совпадения, и их надо показать независимо от того,
-    // на каком статусе стоит юзер. Иначе поиск «находил» только на вкладке, где
-    // кандидат физически лежит (баг: на «Новый» не находит того, кто в «Практике»).
-    const searching = debouncedSearch.trim().length > 0;
-    const items: { card: KanbanCard; status: string; label: string }[] = [];
-    for (const col of board.columns) {
-      if (searching || activeTab === "all" || col.status === activeTab) {
-        for (const c of col.cards) {
-          if (scopeMine && (c.recruiter_name || "").trim() !== myName) continue;
-          items.push({ card: c, status: col.status, label: col.label });
-        }
-      }
-    }
-    if (searching || activeTab === "all") {
-      return items.sort(
-        (a, b) =>
-          new Date(b.card.created_at).getTime() -
-          new Date(a.card.created_at).getTime(),
-      );
-    }
-    return items;
-  }, [board, activeTab, listSettings.scope, user?.name, debouncedSearch]);
+  const filteredCards = useMemo(
+    () =>
+      selectVisibleCards(board?.columns || [], {
+        activeTab,
+        scope: listSettings.scope,
+        myName: user?.name || "",
+        search: debouncedSearch,
+      }),
+    [board, activeTab, listSettings.scope, user?.name, debouncedSearch],
+  );
 
   const displayedCards = filteredCards;
+
+  // Сколько карточек доски отсеял локальный фильтр «Только мои» — нужно, чтобы
+  // пустой список не выглядел пропажей кандидата.
+  const hiddenByScopeCount = useMemo(
+    () =>
+      countHiddenByScope(board?.columns || [], {
+        scope: listSettings.scope,
+        myName: user?.name || "",
+      }),
+    [board, listSettings.scope, user?.name],
+  );
 
   const selectedBulkCards = useMemo(() => {
     if (!board) return [];
@@ -1320,8 +1312,23 @@ export default function AllCandidatesPage() {
             {/* List */}
             <div className="hf-candidates-list-scroll">
               {displayedCards.length === 0 ? (
-                <div className="flex items-center justify-center h-40 text-hf-xxs text-[var(--hf-main-500)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)]">
-                  Нет кандидатов
+                <div className="flex flex-col items-center justify-center gap-2 h-40 px-4 text-center text-hf-xxs text-[var(--hf-main-500)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)]">
+                  <span>Нет кандидатов</span>
+                  {/* Счётчики колонок приходят с сервера, а список фильтруется уже
+                      здесь — расхождение «Все N, а показывать нечего» выглядело
+                      как потеря кандидата. Объясняем и даём снять фильтр. */}
+                  {hiddenByScopeCount > 0 && (
+                    <span>
+                      Скрыто фильтром «Только мои»: {hiddenByScopeCount}.{" "}
+                      <button
+                        type="button"
+                        className="underline hover:no-underline"
+                        onClick={() => setListSettings((prev) => ({ ...prev, scope: "all" }))}
+                      >
+                        Показать всех
+                      </button>
+                    </span>
+                  )}
                 </div>
               ) : (
                 <>
