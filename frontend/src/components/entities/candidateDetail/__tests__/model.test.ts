@@ -10,6 +10,7 @@ import {
   matchesTimelineFilter,
   CANDIDATE_VACANCY_STAGE_LABELS,
   readSystemHrTags,
+  entityToKanbanCard,
 } from "../model";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
@@ -430,5 +431,55 @@ describe("readSystemHrTags", () => {
       { hr_id: 1, name: "Оля" },
       { hr_id: 2, name: "Настя" },
     ]);
+  });
+});
+
+describe('entityToKanbanCard (диплинк на кандидата вне доски)', () => {
+  const entity = {
+    id: 9221,
+    name: 'Кузнецов Владислав Александрович',
+    email: '864777@mail.ru',
+    phone: '+7 985 786-00-11',
+    telegram_usernames: ['vlad_k'],
+    emails: ['864777@mail.ru', 'v.kuznetsov@x.com'],
+    position: 'Маркетолог',
+    company: 'Ecom company',
+    created_at: '2026-09-09T10:00:00',
+    status: 'withdrawn',
+    tags: ['трафик'],
+    extra_data: { city: 'Москва', age: 24 },
+  };
+
+  it('собирает карточку из ответа GET /entities/{id}', () => {
+    const card = entityToKanbanCard(entity);
+    expect(card.id).toBe(9221);
+    expect(card.name).toBe('Кузнецов Владислав Александрович');
+    expect(card.position).toBe('Маркетолог');
+    expect(card.city).toBe('Москва');
+    expect(card.age).toBe('24');
+    expect(card.telegram_username).toBe('vlad_k');
+    expect(card.emails).toEqual(['864777@mail.ru', 'v.kuznetsov@x.com']);
+  });
+
+  it('берёт город из location, а возраст считает из даты рождения (импорт CSV/ClickUp)', () => {
+    const card = entityToKanbanCard(
+      { ...entity, extra_data: { location: 'Минск', birth_date: '1995-05-01' } },
+      { calcAge: () => 31 },
+    );
+    expect(card.city).toBe('Минск');
+    expect(card.age).toBe('31');
+  });
+
+  it('единственный комментарий импорта показывает как заметку', () => {
+    const card = entityToKanbanCard({ ...entity, extra_data: { comment: 'Звонили в марте' } });
+    const notes = (card.extra_data as { notes?: Array<{ text: string; author_name: string }> }).notes;
+    expect(notes?.[0].text).toBe('Звонили в марте');
+    expect(notes?.[0].author_name).toBe('Импорт');
+  });
+
+  it('архивный флаг проставляется явно', () => {
+    const card = entityToKanbanCard(entity, { archived: true });
+    expect(card.is_archived).toBe(true);
+    expect((card.extra_data as { is_archived?: boolean }).is_archived).toBe(true);
   });
 });

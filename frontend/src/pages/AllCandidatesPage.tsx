@@ -27,7 +27,12 @@ import toast from "react-hot-toast";
 import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
-import { buildStageContainers, readSystemHrTags, type EntryReaction } from "@/components/entities/candidateDetail/model";
+import {
+  buildStageContainers,
+  entityToKanbanCard,
+  readSystemHrTags,
+  type EntryReaction,
+} from "@/components/entities/candidateDetail/model";
 import {
   HeadlineTagChip,
 } from "@/components/entities/headlineTags";
@@ -672,6 +677,9 @@ export default function AllCandidatesPage() {
   }, [setSearchParams]);
   // Чтобы не тянуть entity повторно после неудачной попытки селекта.
   const entityFetchTriedRef = useRef<number | null>(null);
+  // id кандидата, которого сейчас открываем по ссылке. Пока не разрешён —
+  // зеркало «выбор → ?entity=» молчит, чтобы адрес не уехал на прошлую карточку.
+  const deepLinkPendingRef = useRef<number | null>(null);
   const detectTriedRef = useRef<number | null>(null);
   // Предыдущий выбранный id — чтобы зеркало URL отличало настоящее закрытие
   // (selected->null) от ещё не завершённого диплинка (null->null) и не стирало ?entity=.
@@ -721,22 +729,43 @@ export default function AllCandidatesPage() {
         consumeOneShotParams();
         return;
       }
-      // Кандидат пришёл из расширения / другой страницы и не виден на текущем фильтре —
-      // подтягиваем по имени, чтобы доска подгрузила его и авто-селект сработал.
+      // Кандидата нет на доске: архив, статус вне колонок («Отозван» скрыт),
+      // активный фильтр или чужой скоуп. Грузим по id и открываем НАПРЯМУЮ.
+      // Раньше сюда подставлялось ФИО в поиск в надежде, что доска его найдёт;
+      // когда не находила — на экране оставалась ПРОШЛАЯ карточка, а зеркало URL
+      // переписывало ?entity= на неё же, и рекрутёр по ссылке из расширения
+      // попадал на чужого человека (Эльвира, 18.09.2026).
       if (entityFetchTriedRef.current !== entityId) {
         entityFetchTriedRef.current = entityId;
+        deepLinkPendingRef.current = entityId;   // запрещаем зеркалу трогать URL
         getEntity(entityId)
           .then((entity) => {
-            if (entity?.name) {
-              setActiveTab("all", { push: false });  // диплинк-резолв, не плодим историю
-              setSearchText(entity.name);
-            } else {
+            if (!entity?.id) {
               toast.error("Кандидат не найден");
+              deepLinkPendingRef.current = null;
               clearCandidateDeepLink();
+              return;
             }
+            setSelectedCard(entityToKanbanCard(entity, { calcAge: calculateAge }));
+            setSelectedStatus((entity.status as string) || "");
+            if (editParam === "1") setShowEditModal(true);
+            if (tabParam === "anketa") setDetailTab("anketa");
+            consumeOneShotParams();
+            deepLinkPendingRef.current = null;
+            // Говорим прямо, почему его нет в списке слева — иначе выглядит как
+            // «база открыла не того».
+            const why = (entity as unknown as { is_archived?: boolean }).is_archived
+              ? "он в архиве"
+              : `его статус «${
+                  (STATUS_LABELS as Record<string, string>)[(entity.status as string) || ""] ||
+                  entity.status ||
+                  "—"
+                }» не показывается на доске`;
+            toast(`Карточка открыта отдельно: ${why}`, { icon: "ℹ️" });
           })
           .catch(() => {
             toast.error("Не удалось открыть кандидата (нет доступа?)");
+            deepLinkPendingRef.current = null;
             clearCandidateDeepLink();
           });
         return;
@@ -775,6 +804,9 @@ export default function AllCandidatesPage() {
   // профиль закрывается через UI, не кнопкой «Назад»). Чистая функция вернёт null,
   // когда менять нечего — это и есть защита от бесконечного цикла.
   useEffect(() => {
+    // Пока диплинк не разрешён, НЕ трогаем адрес: иначе ?entity=<запрошенный>
+    // затирается id прошлой открытой карточки, и ссылка начинает вести на чужого.
+    if (deepLinkPendingRef.current != null) return;
     const curId = selectedCard?.id ?? null;
     const next = computeEntityParamUpdate(searchParams, curId, prevSelectedIdRef.current);
     prevSelectedIdRef.current = curId;
@@ -791,50 +823,23 @@ export default function AllCandidatesPage() {
     const entityId = parseInt(entityParam);
     if (Number.isNaN(entityId) || entityFetchTriedRef.current === entityId) return;
     entityFetchTriedRef.current = entityId;
+    deepLinkPendingRef.current = entityId;
     getEntity(entityId)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then((e: any) => {
         if (!e?.id) {
           toast.error("Кандидат не найден");
+          deepLinkPendingRef.current = null;
           return;
         }
-        const extra: Record<string, any> = { ...(e.extra_data || {}) };
-        if ((!Array.isArray(extra.notes) || extra.notes.length === 0) && extra.comment) {
-          extra.notes = [{ text: String(extra.comment), date: e.created_at, author_name: "Импорт" }];
-        }
-        extra.is_archived = true;
-        // Импорт (ClickUp/CSV) кладёт location/birth_date, а шапка карточки
-        // показывает city/age/salary/опыт — маппим с фолбэком, иначе у архивной
-        // карточки шапка пустая, хотя данные есть (совпадает с бэкенд-билдером
-        // в candidate_search.get_candidates_kanban).
-        const _archAge = extra.age ?? calculateAge(extra.birth_date) ?? undefined;
-        setSelectedCard({
-          id: e.id,
-          name: e.name,
-          email: e.email || undefined,
-          phone: e.phone || undefined,
-          telegram_username: (e.telegram_usernames && e.telegram_usernames[0]) || undefined,
-          // Полные списки — у склеенного человека телефонов/телеграмов/почт может
-          // быть несколько (из разных записей); показываем все, не только первый.
-          phones: Array.isArray(e.phones) ? e.phones : undefined,
-          emails: Array.isArray(e.emails) ? e.emails : undefined,
-          telegram_usernames: Array.isArray(e.telegram_usernames) ? e.telegram_usernames : undefined,
-          position: e.position || undefined,
-          company: e.company || undefined,
-          source: e.source || extra.source || undefined,
-          created_at: e.created_at || "",
-          tags: e.tags || [],
-          photo_url: e.photo_url || undefined,
-          city: extra.city || extra.location || undefined,
-          age: _archAge != null ? String(_archAge) : undefined,
-          salary: extra.salary != null ? String(extra.salary) : undefined,
-          total_experience:
-            extra.total_experience != null ? String(extra.total_experience) : undefined,
-          extra_data: extra,
-        } as KanbanCard);
+        setSelectedCard(entityToKanbanCard(e, { archived: true, calcAge: calculateAge }));
         setSelectedStatus((e.status as string) || "");
+        deepLinkPendingRef.current = null;
       })
-      .catch(() => toast.error("Не удалось открыть кандидата"));
+      .catch(() => {
+        deepLinkPendingRef.current = null;
+        toast.error("Не удалось открыть кандидата");
+      });
   }, [entityParam, archivedParam]);
 
   // Живой детект дубля при ОТКРЫТИИ карточки. Если флаг ещё не стоит — спрашиваем

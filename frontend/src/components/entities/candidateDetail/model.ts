@@ -471,3 +471,60 @@ export function readSystemHrTags(
       return tag;
     });
 }
+
+// ── Deep-link: карточка из «сырой» сущности ──
+
+/**
+ * Собрать KanbanCard из ответа GET /entities/{id}.
+ *
+ * Нужна, когда кандидата НЕТ на доске: архив, статус вне колонок («Отозван»
+ * скрыт), фильтр или чужой скоуп. Раньше диплинк из расширения в таком случае
+ * подставлял ФИО в поиск и надеялся, что доска его найдёт; если доска не
+ * находила — на экране оставалась ПРОШЛАЯ карточка, а адрес переписывался на
+ * неё же (жалоба Эльвиры 18.09.2026: «перехожу по ссылке — открывается другой
+ * кандидат»). Теперь карточка собирается напрямую из сущности.
+ *
+ * Импорт (ClickUp/CSV) кладёт location/birth_date, а шапка карточки показывает
+ * city/age — маппим с фолбэком, иначе шапка пустая, хотя данные есть.
+ */
+export function entityToKanbanCard(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  e: any,
+  opts: { archived?: boolean; calcAge?: (birth?: string) => number | null } = {},
+): KanbanCard {
+  const extra: Record<string, unknown> = { ...((e?.extra_data as Record<string, unknown>) || {}) };
+  // CSV-импорт кладёт единственный комментарий в extra_data.comment — показываем
+  // его как личную заметку, иначе карточка выглядит пустой.
+  if ((!Array.isArray(extra.notes) || (extra.notes as unknown[]).length === 0) && extra.comment) {
+    extra.notes = [{ text: String(extra.comment), date: e.created_at, author_name: "Импорт" }];
+  }
+  if (opts.archived) extra.is_archived = true;
+
+  const age =
+    (extra.age as number | string | undefined) ??
+    (opts.calcAge ? opts.calcAge(extra.birth_date as string | undefined) ?? undefined : undefined);
+
+  return {
+    id: e.id,
+    name: e.name,
+    email: e.email || undefined,
+    phone: e.phone || undefined,
+    telegram_username: (e.telegram_usernames && e.telegram_usernames[0]) || undefined,
+    // Полные списки: у склеенного человека контактов может быть несколько.
+    phones: Array.isArray(e.phones) ? e.phones : undefined,
+    emails: Array.isArray(e.emails) ? e.emails : undefined,
+    telegram_usernames: Array.isArray(e.telegram_usernames) ? e.telegram_usernames : undefined,
+    position: e.position || undefined,
+    company: e.company || undefined,
+    source: e.source || (extra.source as string) || undefined,
+    created_at: e.created_at || "",
+    tags: e.tags || [],
+    photo_url: e.photo_url || undefined,
+    city: (extra.city as string) || (extra.location as string) || undefined,
+    age: age != null ? String(age) : undefined,
+    salary: extra.salary != null ? String(extra.salary) : undefined,
+    total_experience: extra.total_experience != null ? String(extra.total_experience) : undefined,
+    is_archived: Boolean(opts.archived || e.is_archived),
+    extra_data: extra,
+  } as KanbanCard;
+}
