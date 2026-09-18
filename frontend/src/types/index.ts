@@ -470,6 +470,10 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
   }
 };
 
+/** Служебная колонка доски «Все кандидаты»: статусы вне воронки (уволен,
+ *  уволился, легаси). Не статус сущности — поэтому вне EntityStatus. */
+export const BOARD_OTHER_STATUS = 'other';
+
 export const STATUS_LABELS: Record<EntityStatus, string> = {
   // Единые HR-лейблы: держим в синхронизации с KANBAN_STATUS_LABELS
   // и APPLICATION_STAGE_LABELS.

@@ -801,7 +801,14 @@ async def list_tags(
 # GET /kanban  — candidates grouped by status for kanban board
 # ---------------------------------------------------------------------------
 
-KANBAN_STATUSES = ["new", "screening", "practice", "tech_practice", "is_interview", "offer", "hired", "probation", "transferred", "rejected", "reserve"]
+KANBAN_STATUSES = ["new", "screening", "practice", "tech_practice", "is_interview", "offer", "hired", "probation", "transferred", "rejected", "withdrawn", "reserve"]
+
+# Колонка-приёмник для статусов вне воронки (dismissed/quit/interview/active и
+# прочее легаси). Раньше такие кандидаты просто ВЫПАДАЛИ с доски: карточка в базе
+# есть, по id открывается, а в «Все кандидаты» её нет и поиск её не находит
+# (Эльвира, 18.09.2026). «Все кандидаты» обязаны показывать всех.
+OTHER_STATUS = "other"
+BOARD_COLUMNS = KANBAN_STATUSES + [OTHER_STATUS]
 
 KANBAN_STATUS_LABELS = {
     "new": "Новый",
@@ -815,6 +822,7 @@ KANBAN_STATUS_LABELS = {
     "transferred": "Перешёл в отдел",
     "rejected": "Отказ",
     "withdrawn": "Отозван",
+    "other": "Вне воронки",
     "reserve": "Резерв",
 }
 
@@ -930,14 +938,8 @@ async def get_candidates_kanban(
     if recruiter_id:
         base_q = base_q.where(Entity.created_by == recruiter_id)
 
-    # Only fetch candidates in kanban statuses
-    status_enums = []
-    for s in KANBAN_STATUSES:
-        try:
-            status_enums.append(EntityStatus(s))
-        except ValueError:
-            pass
-    base_q = base_q.where(Entity.status.in_(status_enums))
+    # Фильтра по статусу НЕТ: кандидат с нестандартным статусом попадает в колонку
+    # «Вне воронки», а не исчезает из «Все кандидаты» вместе с поиском.
 
     # Порядок: при поиске — по релевантности (лучшее совпадение первым, ранг —
     # сумма пословных word_similarity), иначе новизна.
@@ -955,17 +957,17 @@ async def get_candidates_kanban(
     # (построение карточек + два IN-подзапроса фото/вакансий). Раньше всё это
     # гонялось по ВСЕМ кандидатам, а хвост выкидывался — не держало «тысячи».
     # counts считаем по полному набору, поэтому числа в колонках точные.
-    by_status: dict[str, list] = {s: [] for s in KANBAN_STATUSES}
-    counts: dict[str, int] = {s: 0 for s in KANBAN_STATUSES}
+    by_status: dict[str, list] = {s: [] for s in BOARD_COLUMNS}
+    counts: dict[str, int] = {s: 0 for s in BOARD_COLUMNS}
     for e in entities:
         status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
         if status_val not in by_status:
-            continue
+            status_val = OTHER_STATUS   # «Вне воронки», но кандидат ВИДЕН
         counts[status_val] += 1
         if len(by_status[status_val]) < per_column:
             by_status[status_val].append(e)
     # Плоский список ТОЛЬКО отображаемых кандидатов (≤ per_column × колонок)
-    display_entities = [e for s in KANBAN_STATUSES for e in by_status[s]]
+    display_entities = [e for s in BOARD_COLUMNS for e in by_status[s]]
 
     # Get recruiter names
     creator_ids = {e.created_by for e in display_entities if e.created_by}
@@ -1106,12 +1108,12 @@ async def get_candidates_kanban(
         logger.warning(f"Headline tags query failed (non-critical): {exc}")
 
     # Group by status (display_entities уже обрезаны до per_column на колонку)
-    grouped: dict[str, list] = {s: [] for s in KANBAN_STATUSES}
+    grouped: dict[str, list] = {s: [] for s in BOARD_COLUMNS}
     for e in display_entities:
         try:
             status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
             if status_val not in grouped:
-                continue
+                status_val = OTHER_STATUS
             tg = e.telegram_usernames[0] if e.telegram_usernames else None
             source_val = None
             ed = e.extra_data if isinstance(e.extra_data, dict) else {}
@@ -1171,7 +1173,7 @@ async def get_candidates_kanban(
 
     columns = []
     total = 0
-    for s in KANBAN_STATUSES:
+    for s in BOARD_COLUMNS:
         all_cards = grouped.get(s, [])
         # count — ПОЛНОЕ число в колонке (по всему набору), cards — обрезанные.
         col_count = counts.get(s, len(all_cards))

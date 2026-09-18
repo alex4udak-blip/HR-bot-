@@ -1019,7 +1019,10 @@ export default function AllCandidatesPage() {
     ) ?? 0;
   const topStageItems = useMemo(() => {
     const columns = board?.columns || [];
-    return columns.filter((column) => column.status !== "withdrawn");
+    // Колонку «Отозван» больше не прячем: кандидат, которого не видно в «Все
+    // кандидаты», для рекрутёра равен пропавшему (владелец 18.09.2026 — «во всех
+    // кандидатах должны быть все кандидаты, никто не должен быть скрытым»).
+    return columns;
   }, [board?.columns]);
   const [expandedEmptyStageGroups, setExpandedEmptyStageGroups] = useState<Set<string>>(
     () => new Set(),
@@ -1821,6 +1824,7 @@ const CANDIDATE_VACANCY_STAGE_LABELS: Record<string, string> = {
   transferred: "Перешёл в отдел",
   rejected: "Отказ",
   withdrawn: "Отозван",
+  other: "Вне воронки",
   reserve: "Резерв",
 };
 
