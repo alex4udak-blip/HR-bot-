@@ -903,6 +903,100 @@ def hard_identity_conflict(a, b) -> Optional[str]:
     return None
 
 
+
+# --- Пополевое слияние ---------------------------------------------------------
+# Раньше «Объединить» молча оставлял у выжившей карточки её имя, должность,
+# компанию, основные почту и телефон, город и дату рождения — значения второй
+# анкеты пропадали (кроме списков контактов). Теперь рекрутёр выбирает по каждому
+# полю, чьё значение останется. Клиент присылает ТОЛЬКО сторону ("target" /
+# "source"), сами значения берутся из сущностей на сервере — подменить данные
+# через запрос нельзя.
+MERGE_FIELD_KEYS = (
+    "name", "position", "company", "email", "phone", "telegram",
+    "city", "birth_date", "total_experience", "source", "salary",
+)
+_MERGE_EXTRA_FIELDS = ("city", "birth_date", "total_experience", "source")
+
+
+def validate_field_choices(choices: Optional[Dict[str, str]]) -> Dict[str, str]:
+    """Проверить выбор по полям. ValueError — на неизвестное поле или сторону."""
+    out: Dict[str, str] = {}
+    for key, side in (choices or {}).items():
+        if key not in MERGE_FIELD_KEYS:
+            raise ValueError(f"Неизвестное поле для слияния: {key}")
+        if side not in ("target", "source"):
+            raise ValueError(f"Поле {key}: сторона должна быть target или source, пришло {side!r}")
+        out[key] = side
+    return out
+
+
+def _merge_snapshot(e) -> Dict[str, Any]:
+    """Значения полей сущности ДО слияния (источник потом удаляется)."""
+    ex = e.extra_data if isinstance(e.extra_data, dict) else {}
+    return {
+        "name": e.name,
+        "position": e.position,
+        "company": e.company,
+        "email": e.email,
+        "phone": e.phone,
+        "telegram": (e.telegram_usernames or [None])[0] if e.telegram_usernames else None,
+        "city": ex.get("city") or ex.get("location"),
+        "birth_date": ex.get("birth_date"),
+        "total_experience": ex.get("total_experience"),
+        "source": ex.get("source"),
+        "salary": (e.expected_salary_min, e.expected_salary_max, e.expected_salary_currency),
+    }
+
+
+def _apply_field_choices(
+    target, te: Dict[str, Any], src: Dict[str, Any], choices: Dict[str, str],
+    tgt: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    """Перенести на выжившую карточку значения, которые рекрутёр выбрал у второй.
+
+    Ничего не теряется: прежние почта/телефон/telegram выжившей остаются в
+    списках контактов (их объединение уже сделано выше), а все значения второй
+    анкеты сохраняются в её контейнере merged_from. Пустое значение источника не
+    затирает заполненное — выбор «справа» при пустой правой стороне игнорируется.
+    """
+    applied: List[str] = []
+    tgt = tgt or {}
+    for key, side in choices.items():
+        if side == "target":
+            # «Оставить слева» = ровно как было у выжившей. Общая часть слияния
+            # расширяет диапазон зарплаты и перемешивает список telegram (он
+            # объединяется через set) — возвращаем исходное.
+            if key == "salary" and tgt.get("salary"):
+                target.expected_salary_min, target.expected_salary_max, cur = tgt["salary"]
+                if cur:
+                    target.expected_salary_currency = cur
+            elif key == "telegram" and tgt.get("telegram"):
+                rest = [t for t in (target.telegram_usernames or []) if t != tgt["telegram"]]
+                target.telegram_usernames = [tgt["telegram"]] + rest
+            continue
+        value = src.get(key)
+        if key == "salary":
+            lo, hi, cur = value or (None, None, None)
+            if lo is None and hi is None:
+                continue
+            target.expected_salary_min, target.expected_salary_max = lo, hi
+            if cur:
+                target.expected_salary_currency = cur
+            applied.append(key)
+            continue
+        if value in (None, ""):
+            continue
+        if key in ("name", "position", "company", "email", "phone"):
+            setattr(target, key, value)
+        elif key == "telegram":
+            rest = [t for t in (target.telegram_usernames or []) if t != value]
+            target.telegram_usernames = [value] + rest
+        elif key in _MERGE_EXTRA_FIELDS:
+            te[key] = value
+        applied.append(key)
+    return applied
+
+
 class SimilarityService:
     """Сервис поиска похожих кандидатов и детекции дубликатов."""
 
@@ -1255,6 +1349,7 @@ class SimilarityService:
         keep_source_data: bool = False,
         merged_by_name=None,
         force: bool = False,
+        field_choices: Optional[Dict[str, str]] = None,
     ) -> Entity:
         """
         Объединение двух сущностей (дубликатов).
@@ -1279,6 +1374,12 @@ class SimilarityService:
                 (разные телефон И дата рождения) и force=False — защита от ошибочной
                 склейки разных людей (реальный кейс: три разных «Никиты»).
         """
+        # Выбор по полям проверяем ДО любых изменений: ошибка в запросе не должна
+        # оставить полуслитые карточки.
+        _choices = validate_field_choices(field_choices)
+        _src_snapshot = _merge_snapshot(source_entity)
+        _tgt_snapshot = _merge_snapshot(target_entity)
+
         # Страховка от ложного слияния: не даём слить заведомо РАЗНЫХ людей.
         if not force:
             conflict = hard_identity_conflict(source_entity, target_entity)
@@ -1571,6 +1672,9 @@ class SimilarityService:
             "extra_data": _se_clean,
             "file_ids": _src_file_ids,
             "form_dispatch_ids": _src_dispatch_ids,
+            # Какие поля при слиянии взяли у этой анкеты — для разбора «откуда
+            # у карточки это имя/почта» и для разъединения.
+            "field_choices": _choices,
         }
         _target_mf = target_extra.get("merged_from") if isinstance(target_extra.get("merged_from"), list) else []
         _te["merged_from"] = list(_target_mf) + [_b_container] + list(_src_mf)
@@ -1589,6 +1693,12 @@ class SimilarityService:
         _s_tids = _se.get("clickup_task_ids") if isinstance(_se.get("clickup_task_ids"), list) else []
         if _s_tids or _t_tids:
             _te["clickup_task_ids"] = sorted(set(_t_tids) | set(_s_tids))
+
+        _applied = _apply_field_choices(target_entity, _te, _src_snapshot, _choices, _tgt_snapshot)
+        if _applied:
+            logger.info(
+                f"MERGE_FIELDS: {source_entity.id} → {target_entity.id} взяты у источника: {_applied}"
+            )
 
         _te.pop("hidden_duplicate_id", None)
         target_entity.extra_data = _te

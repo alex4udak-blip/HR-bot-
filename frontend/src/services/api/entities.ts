@@ -496,13 +496,24 @@ export interface TextTwinMeta {
  * active candidate. Survivor = active (entityId); the archived duplicate is
  * deleted, its whole history moved over, and the hidden_duplicate_id flag cleared.
  */
+/** Чьё значение поля оставить при слиянии: выжившей карточки или вливаемой. */
+export type MergeSide = 'target' | 'source';
+/** Ключи полей, которые бэк умеет выбирать при слиянии (MERGE_FIELD_KEYS). */
+export type MergeFieldKey =
+  | 'name' | 'position' | 'company' | 'email' | 'phone' | 'telegram'
+  | 'city' | 'birth_date' | 'total_experience' | 'source' | 'salary';
+
 export const mergeShadowDuplicate = async (
   entityId: number,
-  duplicateId: number
+  duplicateId: number,
+  fieldChoices?: Partial<Record<MergeFieldKey, MergeSide>>,
 ): Promise<{ success: boolean; merged_entity_id: number; deleted_entity_id: number }> => {
+  const body: Record<string, unknown> = { duplicate_id: duplicateId };
+  // Пополевое слияние: отправляем только сторону, значения бэк берёт сам.
+  if (fieldChoices && Object.keys(fieldChoices).length > 0) body.field_choices = fieldChoices;
   const { data } = await debouncedMutation<{
     success: boolean; merged_entity_id: number; deleted_entity_id: number;
-  }>('post', `/entities/${entityId}/merge-shadow`, { duplicate_id: duplicateId });
+  }>('post', `/entities/${entityId}/merge-shadow`, body);
   return data;
 };
 
