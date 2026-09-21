@@ -148,6 +148,7 @@ export interface KanbanCard {
   position?: string;
   source?: string;
   source_url?: string;
+  recruiter_id?: number | null;
   recruiter_name?: string;
   created_at: string;
   tags: string[];

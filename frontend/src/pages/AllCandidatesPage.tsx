@@ -599,10 +599,10 @@ export default function AllCandidatesPage() {
       selectVisibleCards(board?.columns || [], {
         activeTab,
         scope: listSettings.scope,
-        myName: user?.name || "",
+        myId: user?.id,
         search: debouncedSearch,
       }),
-    [board, activeTab, listSettings.scope, user?.name, debouncedSearch],
+    [board, activeTab, listSettings.scope, user?.id, debouncedSearch],
   );
 
   const displayedCards = filteredCards;
@@ -613,9 +613,9 @@ export default function AllCandidatesPage() {
     () =>
       countHiddenByScope(board?.columns || [], {
         scope: listSettings.scope,
-        myName: user?.name || "",
+        myId: user?.id,
       }),
-    [board, listSettings.scope, user?.name],
+    [board, listSettings.scope, user?.id],
   );
 
   const selectedBulkCards = useMemo(() => {
@@ -1650,7 +1650,7 @@ export default function AllCandidatesPage() {
           // «Выбрать всех» = ВСЕ кандидаты текущего фильтра, а не только
           // загруженные per_column карточки (бейдж показывал 115, выбиралось 75).
           const scopeMine =
-            listSettings.scope === "mine" && (user?.name || "").trim().length > 0;
+            listSettings.scope === "mine" && user?.id != null;
           try {
             const ids = await getCandidateIds({
               q: debouncedSearch || undefined,

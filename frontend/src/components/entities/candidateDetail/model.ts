@@ -544,17 +544,19 @@ export type VisibleCard = { card: KanbanCard; status: string; label: string };
  */
 export function selectVisibleCards(
   columns: KanbanColumn[],
-  opts: { activeTab: string; scope: "mine" | "all"; myName: string; search: string },
+  opts: { activeTab: string; scope: "mine" | "all"; myId: number | null | undefined; search: string },
 ): VisibleCard[] {
   const searching = opts.search.trim().length > 0;
-  const myName = (opts.myName || "").trim();
-  const scopeMine = opts.scope === "mine" && myName.length > 0 && !searching;
+  // «Мой» — по номеру аккаунта (кто добавил), а не по имени: два рекрутёра с
+  // одинаковым именем видели бы кандидатов друг друга, а переименование в
+  // профиле прятало бы своих.
+  const scopeMine = opts.scope === "mine" && opts.myId != null && !searching;
 
   const items: VisibleCard[] = [];
   for (const col of columns) {
     if (!(searching || opts.activeTab === "all" || col.status === opts.activeTab)) continue;
     for (const c of col.cards || []) {
-      if (scopeMine && (c.recruiter_name || "").trim() !== myName) continue;
+      if (scopeMine && c.recruiter_id !== opts.myId) continue;
       items.push({ card: c, status: col.status, label: col.label });
     }
   }
@@ -569,14 +571,13 @@ export function selectVisibleCards(
 /** Сколько карточек доски прячет скоуп «Только мои» — для объяснения пустого списка. */
 export function countHiddenByScope(
   columns: KanbanColumn[],
-  opts: { scope: "mine" | "all"; myName: string },
+  opts: { scope: "mine" | "all"; myId: number | null | undefined },
 ): number {
-  const myName = (opts.myName || "").trim();
-  if (opts.scope !== "mine" || !myName) return 0;
+  if (opts.scope !== "mine" || opts.myId == null) return 0;
   let hidden = 0;
   for (const col of columns) {
     for (const c of col.cards || []) {
-      if ((c.recruiter_name || "").trim() !== myName) hidden += 1;
+      if (c.recruiter_id !== opts.myId) hidden += 1;
     }
   }
   return hidden;

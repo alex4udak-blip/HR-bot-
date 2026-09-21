@@ -842,6 +842,9 @@ class KanbanCard(BaseModel):
     position: Optional[str] = None
     source: Optional[str] = None
     source_url: Optional[str] = None
+    # Кто добавил (Entity.created_by). Фильтр «Только мои» на фронте сравнивает
+    # ЭТО поле, а не имя: у двух рекрутёров может совпасть имя.
+    recruiter_id: Optional[int] = None
     recruiter_name: Optional[str] = None
     created_at: datetime
     tags: list = []
@@ -1134,6 +1137,7 @@ async def get_candidates_kanban(
                 position=e.position,
                 source=source_val,
                 source_url=source_url_val,
+                recruiter_id=e.created_by,
                 recruiter_name=recruiter_map.get(e.created_by),
                 created_at=e.created_at,
                 tags=e.tags or [],
