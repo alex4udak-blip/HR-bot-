@@ -4,6 +4,7 @@ import {
   ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   getBoardRows, updateBoardRow,
@@ -733,7 +734,15 @@ function Row({
         {/* Всё в одну строку: раньше имя, статус и направление шли друг под
             другом, строка вырастала втрое и таблицу «трясло» при листании. */}
         <div className="hf-statuses-name-controls">
-          <span className="hf-statuses-name">{row.name}</span>
+          {/* Имя — ссылка на карточку в «Все кандидаты»: кандидат и сотрудник —
+              одна запись, вся история (резюме, воронки, комментарии) там. */}
+          <Link
+            to={`/all-candidates?entity=${row.entity_id}`}
+            className="hf-statuses-name hf-statuses-name-link"
+            title="Открыть карточку в «Все кандидаты»"
+          >
+            {row.name}
+          </Link>
           {/* Смена статуса прямо в строке: раньше перевести человека из
               «Практики» в «Уволен» через интерфейс было нельзя вообще. */}
           <select

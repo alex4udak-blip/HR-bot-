@@ -9733,6 +9733,18 @@ body.performance-mode .glass-card:hover {
 }
 .hf-statuses-empty-cell:hover { color: var(--hf-cyan-600); }
 
+/* Имя на «Статусах» ведёт в карточку кандидата */
+.hf-statuses-name-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.hf-statuses-name-link:hover {
+  color: var(--hf-cyan-500);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Быстрый фильтр «HR: …» рядом с поиском */
 .hf-statuses-hr-filter {
   height: 36px;
