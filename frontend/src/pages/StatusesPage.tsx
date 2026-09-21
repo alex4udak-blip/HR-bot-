@@ -20,7 +20,7 @@ import { useUrlTab } from "@/hooks/useUrlTab";
 /**
  * Страница «Статусы» — доска жизненного цикла сотрудника внутри направления.
  *
- * Слева — папки-направления (свой список организации, создаются прямо здесь).
+ * Слева — отделы оргструктуры (бывшие «направления»; «+ Отдел» заводит новый).
  * Справа — таблица, сгруппированная в сворачиваемые секции по статусам
  * ПРАКТИКА / ПЕРЕВЁЛСЯ / УВОЛЕН / УВОЛИЛСЯ. Все колонки редактируются инлайн,
  * у каждой — свой фильтр. Вехи 1/3/12 мес считаются от «выход в отдел»
@@ -246,6 +246,7 @@ export default function StatusesPage() {
         setPeople(
           m
             .filter((x) => x.role === "owner" || x.role === "admin" || x.role === "hr")
+            .filter((x) => isBoardHr(x.user_name))
             .map((x) => ({ user_id: x.user_id, user_name: x.user_name }))
             .sort((a, b) => (a.user_name || "").localeCompare(b.user_name || "", "ru"))
         )
@@ -1033,6 +1034,14 @@ const rowAssignees = (r: BoardRow) =>
 /** Быстрый фильтр «кандидаты Лизы»: id HR или «без HR». */
 const HR_NONE = "none";
 const HR_FILTER_STORAGE_KEY = "hf-statuses-hr";
+
+/** Кого можно добавить в колонку HR через «+». Решение владельца 21.09.2026:
+ *  доску «Статусы» ведут только Мария и Эльвира, остальные HR в списке
+ *  мешали. Сверяем по первому слову имени (кириллица или латиница), без учёта
+ *  регистра. Уже назначенных других HR это не снимает — их кружки остаются. */
+const BOARD_HR_FIRST_NAMES = ["мария", "maria", "эльвира", "elvira"];
+const isBoardHr = (name: string | null | undefined) =>
+  BOARD_HR_FIRST_NAMES.includes((name || "").trim().split(/\s+/)[0].toLowerCase());
 
 /** Сколько HR можно закрепить за человеком — как на бэке (MAX_ASSIGNEES). */
 const MAX_HR = 5;
