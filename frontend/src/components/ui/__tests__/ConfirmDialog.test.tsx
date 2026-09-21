@@ -108,7 +108,7 @@ describe('ConfirmDialog', () => {
     render(<ConfirmDialog {...defaultProps} onCancel={onCancel} loading={true} />);
 
     // Click the backdrop - should not trigger onCancel during loading
-    const backdrop = screen.getByRole('dialog').parentElement;
+    const backdrop = screen.getByRole('alertdialog').parentElement;
     if (backdrop) {
       fireEvent.click(backdrop);
       expect(onCancel).not.toHaveBeenCalled();
@@ -119,24 +119,24 @@ describe('ConfirmDialog', () => {
     it('should render danger variant correctly', () => {
       render(<ConfirmDialog {...defaultProps} variant="danger" />);
       // The dialog should render with danger styling (red colors)
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     });
 
     it('should render warning variant correctly', () => {
       render(<ConfirmDialog {...defaultProps} variant="warning" />);
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     });
 
     it('should render info variant correctly', () => {
       render(<ConfirmDialog {...defaultProps} variant="info" />);
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     });
   });
 
   it('should have accessible role and aria attributes', () => {
     render(<ConfirmDialog {...defaultProps} />);
 
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(dialog).toHaveAttribute('aria-labelledby', 'confirm-dialog-title');
   });
@@ -157,21 +157,21 @@ describe('ConfirmDialog', () => {
     it('should have proper dialog role', () => {
       render(<ConfirmDialog {...defaultProps} />);
 
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
       expect(dialog).toBeInTheDocument();
     });
 
     it('should have aria-modal attribute set to true', () => {
       render(<ConfirmDialog {...defaultProps} />);
 
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
       expect(dialog).toHaveAttribute('aria-modal', 'true');
     });
 
     it('should have aria-labelledby pointing to title', () => {
       render(<ConfirmDialog {...defaultProps} />);
 
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
       expect(dialog).toHaveAttribute('aria-labelledby', 'confirm-dialog-title');
     });
 
@@ -209,13 +209,13 @@ describe('ConfirmDialog', () => {
 
     it('should include icon for each variant', () => {
       const { rerender } = render(<ConfirmDialog {...defaultProps} variant="danger" />);
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 
       rerender(<ConfirmDialog {...defaultProps} variant="warning" />);
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 
       rerender(<ConfirmDialog {...defaultProps} variant="info" />);
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     });
 
     it('should indicate disabled state in buttons when loading', () => {
@@ -234,7 +234,7 @@ describe('ConfirmDialog', () => {
       const onCancel = vi.fn();
       render(<ConfirmDialog {...defaultProps} onCancel={onCancel} />);
 
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
       fireEvent.keyDown(dialog, { key: 'Escape' });
 
       expect(onCancel).toHaveBeenCalledTimes(1);
@@ -244,7 +244,7 @@ describe('ConfirmDialog', () => {
       const onCancel = vi.fn();
       render(<ConfirmDialog {...defaultProps} onCancel={onCancel} loading={true} />);
 
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
       fireEvent.keyDown(dialog, { key: 'Escape' });
 
       expect(onCancel).not.toHaveBeenCalled();
@@ -255,7 +255,7 @@ describe('ConfirmDialog', () => {
       const onConfirm = vi.fn();
       render(<ConfirmDialog {...defaultProps} onCancel={onCancel} onConfirm={onConfirm} />);
 
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
 
       fireEvent.keyDown(dialog, { key: 'Enter' });
       fireEvent.keyDown(dialog, { key: 'Space' });
@@ -320,7 +320,7 @@ describe('ConfirmDialog', () => {
     it('should contain interactive elements within dialog', () => {
       render(<ConfirmDialog {...defaultProps} />);
 
-      const dialog = screen.getByRole('dialog');
+      const dialog = screen.getByRole('alertdialog');
       const buttons = dialog.querySelectorAll('button');
 
       // Should have: close button, cancel button, confirm button

@@ -71,8 +71,23 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
     handleChange(field, numValue);
   };
 
+  // Навыки — тот же приём, что у ФИО: поле хранит НАБРАННЫЙ текст, а список
+  // считается из него. Раньше value пересобиралось из списка на каждое нажатие:
+  // запятая в конце («JavaScript,») давала ['JavaScript'] → поле «JavaScript»,
+  // и запятую нельзя было напечатать — «JavaScript, React» превращалось в
+  // «JavaScriptReact» (вставка из буфера работала, набор руками — нет).
+  const skillsFromData = ((data as ParsedResume).skills || []).join(', ');
+  const [skillsText, setSkillsText] = useState(skillsFromData);
+  const lastEmittedSkills = useRef<string | null>(null);
+  useEffect(() => {
+    if (skillsFromData === lastEmittedSkills.current) return;
+    setSkillsText(skillsFromData);
+  }, [skillsFromData]);
+
   const handleSkillsChange = (value: string) => {
+    setSkillsText(value);
     const skills = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    lastEmittedSkills.current = skills.join(', ');
     handleChange('skills', skills);
   };
 
@@ -264,7 +279,7 @@ export default function ParsedDataPreview({ type, data, onDataChange }: ParsedDa
           <label className="block text-sm text-slate-600 mb-1">Навыки (через запятую)</label>
           <input
             type="text"
-            value={(resumeData.skills || []).join(', ')}
+            value={skillsText}
             onChange={(e) => handleSkillsChange(e.target.value)}
             className="w-full px-3 py-2 glass-light rounded-lg focus:outline-none focus:border-[color:var(--hf-cyan-500)] text-sm"
             placeholder="Python, FastAPI, PostgreSQL"

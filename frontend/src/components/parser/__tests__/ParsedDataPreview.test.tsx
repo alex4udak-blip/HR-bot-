@@ -79,7 +79,9 @@ describe('ParsedDataPreview', () => {
 
       it('should display parsed resume data correctly', () => {
         renderResumePreview();
-        expect(screen.getByDisplayValue('John Doe')).toBeInTheDocument();
+        // ФИО разложено по трём полям: Фамилия / Имя / Отчество.
+        expect(screen.getByPlaceholderText('Фамилия')).toHaveValue('John');
+        expect(screen.getByPlaceholderText('Имя')).toHaveValue('Doe');
         expect(screen.getByDisplayValue('john@example.com')).toBeInTheDocument();
         expect(screen.getByDisplayValue('+79991234567')).toBeInTheDocument();
         expect(screen.getByDisplayValue('@johndoe')).toBeInTheDocument();
@@ -112,9 +114,12 @@ describe('ParsedDataPreview', () => {
     describe('Field Editing - Name', () => {
       it('should update name when typed', async () => {
         renderResumePreview();
-        const nameInput = screen.getByDisplayValue('John Doe');
-        await userEvent.clear(nameInput);
-        await userEvent.type(nameInput, 'Jane Smith');
+        const lastNameInput = screen.getByPlaceholderText('Фамилия');
+        const firstNameInput = screen.getByPlaceholderText('Имя');
+        await userEvent.clear(lastNameInput);
+        await userEvent.type(lastNameInput, 'Jane');
+        await userEvent.clear(firstNameInput);
+        await userEvent.type(firstNameInput, 'Smith');
 
         expect(mockOnDataChange).toHaveBeenCalled();
         const lastCall = mockOnDataChange.mock.calls[mockOnDataChange.mock.calls.length - 1][0];
@@ -375,9 +380,9 @@ describe('ParsedDataPreview', () => {
           />
         );
 
-        expect(screen.getByDisplayValue('John Doe')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Фамилия')).toHaveValue('John');
         // Empty fields should show empty inputs
-        expect(screen.getByPlaceholderText('ivan@mail.ru')).toHaveValue('');
+        expect(screen.getByPlaceholderText('candidate@example.com')).toHaveValue('');
         expect(screen.getByPlaceholderText('+7 999 123-45-67')).toHaveValue('');
       });
 
@@ -405,7 +410,7 @@ describe('ParsedDataPreview', () => {
         const { rerender } = renderResumePreview();
 
         // Verify initial data
-        expect(screen.getByDisplayValue('John Doe')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Фамилия')).toHaveValue('John');
 
         // Update data prop
         const updatedResume = { ...mockParsedResume, name: 'Updated Name' };
@@ -419,7 +424,8 @@ describe('ParsedDataPreview', () => {
 
         // Verify updated data
         await waitFor(() => {
-          expect(screen.getByDisplayValue('Updated Name')).toBeInTheDocument();
+          expect(screen.getByPlaceholderText('Фамилия')).toHaveValue('Updated');
+          expect(screen.getByPlaceholderText('Имя')).toHaveValue('Name');
         });
       });
     });
@@ -675,7 +681,7 @@ describe('ParsedDataPreview', () => {
         );
 
         const titleInput = screen.getByPlaceholderText('Senior Python Developer');
-        expect(titleInput.classList.toString()).toContain('border-red');
+        expect(titleInput.classList.toString()).toContain('hf-status-red');
       });
 
       it('should not show error when title is provided', () => {

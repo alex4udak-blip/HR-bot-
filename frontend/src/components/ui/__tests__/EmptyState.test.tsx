@@ -53,13 +53,13 @@ describe('EmptyState', () => {
       expect(screen.getByText('With Icon')).toBeInTheDocument();
     });
 
-    it('should render action button when action prop is provided', () => {
+    it('should render a single action button from actions prop', () => {
       const onClick = vi.fn();
       render(
         <RouterWrapper>
           <EmptyState
             title="Test"
-            action={{ label: 'Click Me', onClick }}
+            actions={[{ label: 'Click Me', onClick }]}
             animated={false}
           />
         </RouterWrapper>
@@ -468,57 +468,4 @@ describe('EmptyState', () => {
     });
   });
 
-  describe('Legacy exports', () => {
-    it('NoVacanciesEmpty should render correctly', () => {
-      const onCreate = vi.fn();
-      render(
-        <RouterWrapper>
-          <NoVacanciesEmpty onCreate={onCreate} />
-        </RouterWrapper>
-      );
-
-      expect(screen.getByText('Пока нет вакансий')).toBeInTheDocument();
-    });
-
-    it('NoCandidatesEmpty should render correctly', () => {
-      const onAdd = vi.fn();
-      render(
-        <RouterWrapper>
-          <NoCandidatesEmpty onAdd={onAdd} />
-        </RouterWrapper>
-      );
-
-      expect(screen.getByText('Нет откликов на вакансию')).toBeInTheDocument();
-    });
-
-    it('NoResultsEmpty should render correctly', () => {
-      render(
-        <RouterWrapper>
-          <NoResultsEmpty query="test query" />
-        </RouterWrapper>
-      );
-
-      expect(screen.getByText('Ничего не найдено')).toBeInTheDocument();
-    });
-
-    it('NoDataEmpty should render correctly', () => {
-      render(
-        <RouterWrapper>
-          <NoDataEmpty />
-        </RouterWrapper>
-      );
-
-      expect(screen.getByText('Нет данных')).toBeInTheDocument();
-    });
-
-    it('NoEntityVacanciesEmpty should render correctly', () => {
-      render(
-        <RouterWrapper>
-          <NoEntityVacanciesEmpty />
-        </RouterWrapper>
-      );
-
-      expect(screen.getByText('Нет откликов на вакансии')).toBeInTheDocument();
-    });
-  });
 });

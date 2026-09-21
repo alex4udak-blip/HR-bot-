@@ -13,6 +13,11 @@ vi.mock('@/stores/vacancyStore', () => ({
 // Mock the API
 vi.mock('@/services/api', () => ({
   getDepartments: vi.fn().mockResolvedValue([]),
+  getAssignableUsers: vi.fn().mockResolvedValue([]),
+  assignVacancy: vi.fn().mockResolvedValue({}),
+  takeVacancy: vi.fn().mockResolvedValue({}),
+  declineVacancy: vi.fn().mockResolvedValue({}),
+  getExchangeRates: vi.fn().mockResolvedValue({ base: 'RUB', rates: {} }),
 }));
 
 // Mock framer-motion to avoid animation issues in tests
@@ -127,30 +132,30 @@ describe('VacanciesPage', () => {
   describe('Quick Filters', () => {
     it('should render the filters button', () => {
       renderWithRouter();
-      expect(screen.getByText('Filters')).toBeInTheDocument();
+      expect(screen.getByText('Фильтры')).toBeInTheDocument();
     });
 
     it('should open filters dropdown when clicking the button', async () => {
       renderWithRouter();
 
-      const filtersButton = screen.getByText('Filters');
+      const filtersButton = screen.getByText('Фильтры');
       fireEvent.click(filtersButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Quick Filters')).toBeInTheDocument();
+        expect(screen.getByText('Быстрые фильтры')).toBeInTheDocument();
       });
     });
 
     it('should display status filter options', async () => {
       renderWithRouter();
 
-      const filtersButton = screen.getByText('Filters');
+      const filtersButton = screen.getByText('Фильтры');
       fireEvent.click(filtersButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Status')).toBeInTheDocument();
+        expect(screen.getByText('Статус')).toBeInTheDocument();
         // Check for status options in the dropdown
-        const dropdown = screen.getByText('Quick Filters').parentElement?.parentElement;
+        const dropdown = screen.getByText('Быстрые фильтры').parentElement?.parentElement;
         expect(dropdown).toBeInTheDocument();
       });
     });
@@ -158,13 +163,13 @@ describe('VacanciesPage', () => {
     it('should display salary range filter options', async () => {
       renderWithRouter();
 
-      const filtersButton = screen.getByText('Filters');
+      const filtersButton = screen.getByText('Фильтры');
       fireEvent.click(filtersButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Salary Range')).toBeInTheDocument();
-        expect(screen.getByText('Any Salary')).toBeInTheDocument();
-        expect(screen.getByText('Under 100k')).toBeInTheDocument();
+        expect(screen.getByText('Зарплата')).toBeInTheDocument();
+        expect(screen.getByText('Любая зарплата')).toBeInTheDocument();
+        expect(screen.getByText('До 100k')).toBeInTheDocument();
         expect(screen.getByText('100k - 200k')).toBeInTheDocument();
         expect(screen.getByText('200k - 300k')).toBeInTheDocument();
         expect(screen.getByText('300k+')).toBeInTheDocument();
@@ -174,27 +179,27 @@ describe('VacanciesPage', () => {
     it('should display date range filter options', async () => {
       renderWithRouter();
 
-      const filtersButton = screen.getByText('Filters');
+      const filtersButton = screen.getByText('Фильтры');
       fireEvent.click(filtersButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Created Date')).toBeInTheDocument();
-        expect(screen.getByText('Any Time')).toBeInTheDocument();
-        expect(screen.getByText('Last 7 days')).toBeInTheDocument();
-        expect(screen.getByText('Last 30 days')).toBeInTheDocument();
-        expect(screen.getByText('Last 90 days')).toBeInTheDocument();
+        expect(screen.getByText('Дата создания')).toBeInTheDocument();
+        expect(screen.getByText('За всё время')).toBeInTheDocument();
+        expect(screen.getByText('За 7 дней')).toBeInTheDocument();
+        expect(screen.getByText('За 30 дней')).toBeInTheDocument();
+        expect(screen.getByText('За 90 дней')).toBeInTheDocument();
       });
     });
 
     it('should show active filter count badge when filters are applied', async () => {
       renderWithRouter();
 
-      const filtersButton = screen.getByText('Filters');
+      const filtersButton = screen.getByText('Фильтры');
       fireEvent.click(filtersButton);
 
       // Click on a salary filter
       await waitFor(() => {
-        const under100kButton = screen.getByText('Under 100k');
+        const under100kButton = screen.getByText('До 100k');
         fireEvent.click(under100kButton);
       });
 
@@ -207,36 +212,36 @@ describe('VacanciesPage', () => {
     it('should show clear all button when filters are active', async () => {
       renderWithRouter();
 
-      const filtersButton = screen.getByText('Filters');
+      const filtersButton = screen.getByText('Фильтры');
       fireEvent.click(filtersButton);
 
       // Apply a filter
       await waitFor(() => {
-        const under100kButton = screen.getByText('Under 100k');
+        const under100kButton = screen.getByText('До 100k');
         fireEvent.click(under100kButton);
       });
 
       // Check for clear all button
       await waitFor(() => {
-        expect(screen.getByText('Clear All')).toBeInTheDocument();
+        expect(screen.getByText('Сбросить')).toBeInTheDocument();
       });
     });
 
     it('should clear all filters when clear all button is clicked', async () => {
       renderWithRouter();
 
-      const filtersButton = screen.getByText('Filters');
+      const filtersButton = screen.getByText('Фильтры');
       fireEvent.click(filtersButton);
 
       // Apply a filter
       await waitFor(() => {
-        const under100kButton = screen.getByText('Under 100k');
+        const under100kButton = screen.getByText('До 100k');
         fireEvent.click(under100kButton);
       });
 
       // Click clear all
       await waitFor(() => {
-        const clearAllButton = screen.getByText('Clear All');
+        const clearAllButton = screen.getByText('Сбросить');
         fireEvent.click(clearAllButton);
       });
 
@@ -251,29 +256,29 @@ describe('VacanciesPage', () => {
     it('should display filtered vacancies count', async () => {
       renderWithRouter();
 
-      const filtersButton = screen.getByText('Filters');
+      const filtersButton = screen.getByText('Фильтры');
       fireEvent.click(filtersButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/Showing \d+ of \d+ vacancies/)).toBeInTheDocument();
+        expect(screen.getByText(/Показано \d+ из \d+ заявок/)).toBeInTheDocument();
       });
     });
 
     it('should close dropdown when clicking outside', async () => {
       renderWithRouter();
 
-      const filtersButton = screen.getByText('Filters');
+      const filtersButton = screen.getByText('Фильтры');
       fireEvent.click(filtersButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Quick Filters')).toBeInTheDocument();
+        expect(screen.getByText('Быстрые фильтры')).toBeInTheDocument();
       });
 
       // Click outside the dropdown
       fireEvent.mouseDown(document.body);
 
       await waitFor(() => {
-        expect(screen.queryByText('Quick Filters')).not.toBeInTheDocument();
+        expect(screen.queryByText('Быстрые фильтры')).not.toBeInTheDocument();
       });
     });
   });
@@ -290,16 +295,18 @@ describe('VacanciesPage', () => {
     it('should display vacancy priority badges', () => {
       renderWithRouter();
 
-      expect(screen.getByText('Important')).toBeInTheDocument();
-      expect(screen.getByText('Urgent')).toBeInTheDocument();
+      expect(screen.getByText('Важно')).toBeInTheDocument();
+      expect(screen.getByText('Срочно')).toBeInTheDocument();
     });
 
     it('should display candidate counts', () => {
       renderWithRouter();
 
-      expect(screen.getByText('5 candidates')).toBeInTheDocument();
-      expect(screen.getByText('3 candidates')).toBeInTheDocument();
-      expect(screen.getByText('10 candidates')).toBeInTheDocument();
+      // Число кандидатов — отдельный бейдж с иконкой, без слова «candidates».
+      const counts = Array.from(
+        document.querySelectorAll('.hf-vacancies-search-candidates'),
+      ).map((el) => el.textContent?.trim());
+      expect(counts).toEqual(expect.arrayContaining(['5', '3', '10']));
     });
 
     it('should show loading skeletons when loading', () => {
@@ -331,17 +338,13 @@ describe('VacanciesPage', () => {
   describe('Header Actions', () => {
     it('should display New Vacancy button', () => {
       renderWithRouter();
-      expect(screen.getByText('New Vacancy')).toBeInTheDocument();
+      expect(screen.getByText('Новая заявка')).toBeInTheDocument();
     });
 
-    it('should display Import button', () => {
-      renderWithRouter();
-      expect(screen.getByText('Import')).toBeInTheDocument();
-    });
 
     it('should display search input', () => {
       renderWithRouter();
-      expect(screen.getByPlaceholderText('Search by title...')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Поиск по названию...')).toBeInTheDocument();
     });
   });
 });

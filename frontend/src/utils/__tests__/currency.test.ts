@@ -140,37 +140,37 @@ describe('Currency Utilities', () => {
     describe('with only min value', () => {
       it('should format "from X" with RUB', () => {
         const result = formatSalary(100000, undefined, 'RUB');
-        expect(result).toBe('from 100\u00a0000 \u20bd');
+        expect(result).toBe('от 100\u00a0000 \u20bd');
       });
 
       it('should format "from X" with USD', () => {
-        expect(formatSalary(5000, undefined, 'USD')).toBe('from 5\u00a0000 $');
+        expect(formatSalary(5000, undefined, 'USD')).toBe('от 5\u00a0000 $');
       });
     });
 
     describe('with only max value', () => {
       it('should format "up to X" with RUB', () => {
         const result = formatSalary(undefined, 200000, 'RUB');
-        expect(result).toBe('up to 200\u00a0000 \u20bd');
+        expect(result).toBe('до 200\u00a0000 \u20bd');
       });
 
       it('should format "up to X" with EUR', () => {
-        expect(formatSalary(undefined, 10000, 'EUR')).toBe('up to 10\u00a0000 \u20ac');
+        expect(formatSalary(undefined, 10000, 'EUR')).toBe('до 10\u00a0000 \u20ac');
       });
     });
 
     describe('with no values', () => {
       it('should return "Not specified" with no arguments', () => {
-        expect(formatSalary()).toBe('Not specified');
+        expect(formatSalary()).toBe('Не указана');
       });
 
       it('should return "Not specified" with both undefined', () => {
-        expect(formatSalary(undefined, undefined)).toBe('Not specified');
+        expect(formatSalary(undefined, undefined)).toBe('Не указана');
       });
 
       it('should return "Not specified" regardless of currency', () => {
-        expect(formatSalary(undefined, undefined, 'USD')).toBe('Not specified');
-        expect(formatSalary(undefined, undefined, 'EUR')).toBe('Not specified');
+        expect(formatSalary(undefined, undefined, 'USD')).toBe('Не указана');
+        expect(formatSalary(undefined, undefined, 'EUR')).toBe('Не указана');
       });
     });
 
@@ -183,15 +183,15 @@ describe('Currency Utilities', () => {
 
     describe('edge cases with zero', () => {
       it('should treat zero min as not specified', () => {
-        expect(formatSalary(0, 100000, 'RUB')).toBe('up to 100\u00a0000 \u20bd');
+        expect(formatSalary(0, 100000, 'RUB')).toBe('до 100\u00a0000 \u20bd');
       });
 
       it('should treat zero max as not specified', () => {
-        expect(formatSalary(100000, 0, 'RUB')).toBe('from 100\u00a0000 \u20bd');
+        expect(formatSalary(100000, 0, 'RUB')).toBe('от 100\u00a0000 \u20bd');
       });
 
       it('should return not specified when both are zero', () => {
-        expect(formatSalary(0, 0, 'RUB')).toBe('Not specified');
+        expect(formatSalary(0, 0, 'RUB')).toBe('Не указана');
       });
     });
 
