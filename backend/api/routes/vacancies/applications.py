@@ -2,7 +2,7 @@
 Application management endpoints for vacancies.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, or_, text
+from sqlalchemy import select, func, or_, text, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from datetime import datetime
@@ -500,9 +500,10 @@ async def take_application(
     """«Забрать» кандидата в воронку на выбранного рекрутёра.
 
     Идемпотентно: если кандидата в этой воронке ещё НЕТ — создаём заявку с
-    created_by = recruiter_id; если он УЖЕ там — просто меняем владельца
-    (created_by), т.е. переназначаем «HR: Имя». «Кому отдать» — любой любому
-    (в пределах пула рекрутёров орга).
+    created_by = recruiter_id; если он УЖЕ там — ПЕРЕНОСИМ: владелец заявки
+    (created_by) меняется на нового, прежний кандидата теряет. Кнопка для
+    кандидатов уходящих рекрутёров (решение владельца 21.09.2026). «Кому отдать» —
+    любой любому (в пределах пула рекрутёров орга).
     """
     org = await get_user_org(current_user, db)
     if not org:
@@ -545,24 +546,31 @@ async def take_application(
 
     created = False
     if application:
-        # Уже в воронке — АДДИТИВНО: добавляем со-рекрутёра, НЕ снимая владельца.
-        # Кандидат в общей воронке может быть у нескольких HR сразу.
-        if application.created_by is None:
-            # Первый ответственный — становится владельцем (метка от created_by).
+        # Уже в воронке — ПЕРЕНОС к новому рекрутёру. Раньше (28.08) было
+        # аддитивно: новый добавлялся со-рекрутёром, прежний оставался, и
+        # «Забрать» у уходящего рекрутёра ничего у него не забирало.
+        prev_owner = application.created_by
+        if prev_owner != data.recruiter_id:
             application.created_by = data.recruiter_id
-        elif application.created_by != data.recruiter_id:
-            # Идемпотентно: unique(application_id,user_id) не даст дубль.
-            already = (await db.execute(
-                select(ApplicationCoRecruiter).where(
+            # Новый мог быть со-рекрутёром — теперь он владелец, запись лишняя.
+            # Остальных со-рекрутёров не трогаем.
+            await db.execute(
+                delete(ApplicationCoRecruiter).where(
                     ApplicationCoRecruiter.application_id == application.id,
                     ApplicationCoRecruiter.user_id == data.recruiter_id,
                 )
-            )).scalar()
-            if not already:
-                db.add(ApplicationCoRecruiter(
-                    application_id=application.id,
-                    user_id=data.recruiter_id,
-                ))
+            )
+            # Карточка («кто добавил») — за новым, если ею владел прежний: как в
+            # передаче уходящего рекрутёра (services/recruiter_transfer.py). Иначе
+            # у нового кандидат не попадал в «Только по моим» на «Все кандидаты».
+            if prev_owner is not None and entity.created_by == prev_owner:
+                entity.created_by = data.recruiter_id
+                entity.updated_at = datetime.utcnow()
+            logger.info(
+                "TAKE_TRANSFER app=%s entity=%s vacancy=%s from=%s to=%s by=%s",
+                application.id, data.entity_id, vacancy_id, prev_owner,
+                data.recruiter_id, current_user.id,
+            )
         application.updated_at = datetime.utcnow()
     else:
         created = True
