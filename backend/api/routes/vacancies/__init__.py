@@ -93,6 +93,9 @@ from .history import (
 # Import legacy-clone reconciliation (superadmin one-off)
 from .reconcile import reconcile_clones, CloneReconcileReport
 
+# Слияние вакансии-дубля в главную (админы HR)
+from .merge import merge_vacancy_into
+
 # Register routes in the correct order
 # More specific routes must come before generic ones (like /{vacancy_id})
 
@@ -127,6 +130,7 @@ router.add_api_route("/{vacancy_id}", delete_vacancy, methods=["DELETE"], status
 router.add_api_route("/{vacancy_id}/assign", assign_vacancy, methods=["POST"], tags=["vacancies"])
 router.add_api_route("/{vacancy_id}/take", take_vacancy, methods=["POST"], tags=["vacancies"])
 router.add_api_route("/{vacancy_id}/decline", decline_vacancy, methods=["POST"], tags=["vacancies"])
+router.add_api_route("/{target_id}/merge-from/{source_id}", merge_vacancy_into, methods=["POST"], tags=["vacancies"])
 
 # Vacancy applications
 # «Забрать» — более специфичный путь, регистрируем ДО generic /{vacancy_id}/applications.
