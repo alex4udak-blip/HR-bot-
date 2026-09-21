@@ -31,8 +31,12 @@ import {
   buildStageContainers,
   countHiddenByScope,
   entityToKanbanCard,
+  loadCandidateListSettings,
   readSystemHrTags,
+  saveCandidateListSettings,
   selectVisibleCards,
+  type CandidateListFields,
+  type CandidateListSettings,
   type EntryReaction,
 } from "@/components/entities/candidateDetail/model";
 import {
@@ -4770,79 +4774,6 @@ function EditField({
 // LIST SETTINGS MODAL (Huntflow user settings)
 // ================================================================
 
-// F7-fix: настройки списка кандидатов теперь СОХРАНЯЮТСЯ (localStorage) и
-// применяются к карточкам. В компактном списке реально выводятся только
-// «должность» (lastPosition) и «компания» (lastCompany) — их тумблеры влияют
-// на отображение. Остальные поля и scope в этом списке пока не выводятся.
-type CandidateListFields = {
-  name: boolean;
-  desiredPosition: boolean;
-  desiredSalary: boolean;
-  age: boolean;
-  experience: boolean;
-  lastPosition: boolean;
-  lastCompany: boolean;
-  source: boolean;
-  vacanciesCount: boolean;
-  tags: boolean;
-};
-type CandidateListSettings = {
-  scope: "mine" | "all";
-  fields: CandidateListFields;
-};
-// v2: дефолт scope = "all" — все рекрутёры видят ВСЕХ кандидатов орги (требование).
-// Ключ обновлён на .v2, чтобы у существующих юзеров слетел старый сохранённый
-// "mine" (иначе он продолжал бы прятать чужих кандидатов из localStorage).
-const CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings.v2";
-const LEGACY_CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings";
-const DEFAULT_CANDIDATE_LIST_SETTINGS: CandidateListSettings = {
-  scope: "all",
-  fields: {
-    name: true,
-    desiredPosition: false,
-    desiredSalary: false,
-    age: false,
-    experience: false,
-    lastPosition: true,
-    lastCompany: true,
-    source: false,
-    vacanciesCount: false,
-    tags: false,
-  },
-};
-function loadCandidateListSettings(): CandidateListSettings {
-  try {
-    const raw = localStorage.getItem(CANDIDATE_LIST_SETTINGS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        // в v2 дефолт — "all"; "mine" остаётся, только если юзер ЯВНО его выбрал
-        scope: parsed?.scope === "mine" ? "mine" : "all",
-        fields: { ...DEFAULT_CANDIDATE_LIST_SETTINGS.fields, ...(parsed?.fields || {}) },
-      };
-    }
-    // Миграция со старого ключа: переносим настройки полей, а scope сбрасываем
-    // на новый дефолт "all" (старый сохранённый "mine" больше не прячет чужих).
-    const legacy = localStorage.getItem(LEGACY_CANDIDATE_LIST_SETTINGS_KEY);
-    if (legacy) {
-      const old = JSON.parse(legacy);
-      return {
-        scope: "all",
-        fields: { ...DEFAULT_CANDIDATE_LIST_SETTINGS.fields, ...(old?.fields || {}) },
-      };
-    }
-    return DEFAULT_CANDIDATE_LIST_SETTINGS;
-  } catch {
-    return DEFAULT_CANDIDATE_LIST_SETTINGS;
-  }
-}
-function saveCandidateListSettings(settings: CandidateListSettings) {
-  try {
-    localStorage.setItem(CANDIDATE_LIST_SETTINGS_KEY, JSON.stringify(settings));
-  } catch {
-    /* ignore */
-  }
-}
 
 function ListSettingsModal({
   onClose,

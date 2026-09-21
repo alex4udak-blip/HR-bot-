@@ -581,3 +581,80 @@ export function countHiddenByScope(
   }
   return hidden;
 }
+
+// ================================================================
+// Настройки списка «Все кандидаты» (окно с ползунками справа сверху)
+// ================================================================
+
+export type CandidateListFields = {
+  name: boolean;
+  desiredPosition: boolean;
+  desiredSalary: boolean;
+  age: boolean;
+  experience: boolean;
+  lastPosition: boolean;
+  lastCompany: boolean;
+  source: boolean;
+  vacanciesCount: boolean;
+  tags: boolean;
+};
+export type CandidateListSettings = {
+  scope: "mine" | "all";
+  fields: CandidateListFields;
+};
+
+export const CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings.v2";
+const LEGACY_CANDIDATE_LIST_SETTINGS_KEY = "hf.candidateListSettings";
+export const DEFAULT_CANDIDATE_LIST_SETTINGS: CandidateListSettings = {
+  scope: "all",
+  fields: {
+    name: true,
+    desiredPosition: false,
+    desiredSalary: false,
+    age: false,
+    experience: false,
+    lastPosition: true,
+    lastCompany: true,
+    source: false,
+    vacanciesCount: false,
+    tags: false,
+  },
+};
+
+/**
+ * Поля списка запоминаются (localStorage), а фильтр «Только по моим вакансиям»
+ * — НИКОГДА. «Все кандидаты» по умолчанию показывают всех: выбор «только мои»
+ * живёт, пока открыта страница (переключение этапов его не сбрасывает), а
+ * обновление, уход в воронку, новая вкладка или браузер — снова «все».
+ * Раньше scope хранился в браузере: рекрутёр однажды выбирал «мои», и потом
+ * вкладка «Практика 9» показывала ему 4 карточки без объяснения (прод 2026-09-21).
+ */
+export function loadCandidateListSettings(): CandidateListSettings {
+  try {
+    const raw =
+      localStorage.getItem(CANDIDATE_LIST_SETTINGS_KEY) ??
+      localStorage.getItem(LEGACY_CANDIDATE_LIST_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        scope: "all",
+        fields: { ...DEFAULT_CANDIDATE_LIST_SETTINGS.fields, ...(parsed?.fields || {}) },
+      };
+    }
+  } catch {
+    /* битый JSON / недоступный storage — дефолт */
+  }
+  return DEFAULT_CANDIDATE_LIST_SETTINGS;
+}
+
+/** Сохраняет ТОЛЬКО поля списка; scope в браузер не пишется. */
+export function saveCandidateListSettings(settings: CandidateListSettings): void {
+  try {
+    localStorage.setItem(
+      CANDIDATE_LIST_SETTINGS_KEY,
+      JSON.stringify({ fields: settings.fields }),
+    );
+  } catch {
+    /* ignore */
+  }
+}
