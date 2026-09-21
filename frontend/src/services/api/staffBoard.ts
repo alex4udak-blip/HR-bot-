@@ -125,3 +125,17 @@ export async function importClickUpFolders(): Promise<BoardFolder[]> {
   const { data } = await api.post('/staff-board/folders/import-clickup');
   return data || [];
 }
+
+export interface HireDefaults {
+  position: string | null;
+  department_id: number | null;
+  department_name: string | null;
+  vacancy_title: string | null;
+}
+
+/** Должность и отдел по вакансии, на которую человек шёл — подсказка для
+ *  «Взять в штат», чтобы не вбивать заново то, что уже известно. */
+export async function getHireDefaults(entityId: number): Promise<HireDefaults> {
+  const { data } = await api.get(`/entities/${entityId}/hire-defaults`);
+  return data;
+}

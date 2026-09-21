@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { hireEntity, getDepartments } from '@/services/api';
 import type { Department } from '@/services/api';
-import { getBoardFolders, updateBoardRow, getBoardPositions, type BoardFolder } from '@/services/api/staffBoard';
+import { getBoardFolders, updateBoardRow, getBoardPositions, getHireDefaults, type BoardFolder } from '@/services/api/staffBoard';
 import { getErrorDetail } from '@/utils';
 import DatePickerFactorial from '@/factorial/components/DatePickerFactorial';
 import { backdropClose } from '@/utils/backdropClose';
@@ -51,8 +51,17 @@ export default function HireToStaffButton(props: Props) {
       getDepartments(-1).then((d) => setDepts(d)).catch(() => setDepts([]));
       getBoardFolders().then(setFolders).catch(() => setFolders([]));
       getBoardPositions().then(setPositions).catch(() => setPositions([]));
+      // Должность и отдел из вакансии, на которую человек шёл. Подставляем
+      // только в ПУСТЫЕ поля: должность из карточки и то, что HR уже успел
+      // выбрать, главнее.
+      getHireDefaults(entityId)
+        .then((d) => {
+          if (d.position) setPos((cur) => cur || d.position || '');
+          if (d.department_id) setDeptId((cur) => (cur === '' ? d.department_id! : cur));
+        })
+        .catch(() => { /* подсказки нет — поля остаются пустыми, как раньше */ });
     }
-  }, [open]);
+  }, [open, entityId]);
 
   // Подставляем логин(email)/должность кандидата. useState-инициализатор срабатывает
   // ОДИН раз при монтировании, а кнопка переиспользуется между кандидатами и профиль

@@ -25,7 +25,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ...database import get_db
 from ...models.database import (
     Entity, EntityStatus, Employee, User, UserRole, OrgMember, OrgRole,
-    VacancyApplication, STATUS_SYNC_MAP,
+    VacancyApplication, STATUS_SYNC_MAP, Vacancy, Department, ApplicationStage,
 )
 from ...services.auth import get_current_user, get_user_org, hash_password
 from ...services.stage_transitions import record_transition
@@ -225,3 +225,61 @@ async def entity_staff_status(
     if not emp:
         return StaffStatusResponse()
     return StaffStatusResponse(employee_id=emp.id, is_active=emp.is_active)
+
+
+class HireDefaults(BaseModel):
+    position: Optional[str] = None
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    vacancy_title: Optional[str] = None
+
+
+async def resolve_hire_defaults(db: AsyncSession, entity_id: int, org_id: int) -> HireDefaults:
+    """Должность и отдел по вакансии, на которую человек шёл.
+
+    Название вакансии — это и есть должность, а у вакансии уже указан отдел.
+    Раньше при оформлении HR вбивал оба поля заново, хотя они известны.
+
+    Берём самую свежую живую заявку: отказ и отзыв не в счёт — на ту
+    вакансию человека не брали.
+    """
+    dead = (ApplicationStage.rejected, ApplicationStage.withdrawn)
+    row = (await db.execute(
+        select(Vacancy.title, Vacancy.department_id, Department.name)
+        .select_from(VacancyApplication)
+        .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
+        .outerjoin(Department, Department.id == Vacancy.department_id)
+        .where(
+            VacancyApplication.entity_id == entity_id,
+            Vacancy.org_id == org_id,
+            VacancyApplication.stage.notin_(dead),
+        )
+        .order_by(
+            VacancyApplication.last_stage_change_at.desc().nullslast(),
+            VacancyApplication.id.desc(),
+        )
+        .limit(1)
+    )).first()
+    if not row:
+        return HireDefaults()
+    title, dept_id, dept_name = row
+    return HireDefaults(
+        position=(title or "").strip() or None,
+        department_id=dept_id,
+        department_name=dept_name,
+        vacancy_title=title,
+    )
+
+
+@router.get("/{entity_id}/hire-defaults", response_model=HireDefaults)
+async def entity_hire_defaults(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Подсказки для «Взять в штат»: должность и отдел из вакансии."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        return HireDefaults()
+    return await resolve_hire_defaults(db, entity_id, org.id)
