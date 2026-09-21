@@ -116,33 +116,6 @@ export const transferEntity = async (entityId: number, transferData: {
   return data;
 };
 
-export interface HirePayload {
-  department_id: number | null;
-  email: string;
-  position?: string | null;
-  department_start_date?: string | null;
-}
-
-export interface HireResult {
-  employee_id: number;
-  user_existed: boolean;
-}
-
-export const hireEntity = async (entityId: number, payload: HirePayload): Promise<HireResult> => {
-  const { data } = await debouncedMutation<HireResult>('post', `/entities/${entityId}/hire`, payload);
-  return data;
-};
-
-export interface StaffStatus {
-  employee_id: number | null;
-  is_active: boolean | null; // null — не оформлен; true — в штате; false — уволен
-}
-
-export const getStaffStatus = async (entityId: number): Promise<StaffStatus> => {
-  const { data } = await deduplicatedGet<StaffStatus>(`/entities/${entityId}/staff-status`);
-  return data;
-};
-
 export const linkChatToEntity = async (entityId: number, chatId: number): Promise<void> => {
   await debouncedMutation<void>('post', `/entities/${entityId}/link-chat/${chatId}`);
 };

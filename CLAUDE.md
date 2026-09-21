@@ -178,6 +178,10 @@ frontend/src/components/entities/  # карточка кандидата, дуб
   `ResumeUploader` + `useResumeUpload`, `components/vacancies/KanbanBoard`
   (и эндпоинт `/vacancies/{id}/kanban`, который зовёт только он). Не чинить
   «заодно» — либо удалить отдельной задачей, либо не трогать.
+- Кнопки «Взять в штат» и «В штате — открыть в Factorial» убраны из карточки
+  кандидата (21.09.2026, пока не нужны). Бэкенд оформления оставлен:
+  `POST /entities/{id}/hire`, `GET /entities/{id}/staff-status`
+  (`routes/entities/hire.py`) — у них сейчас нет интерфейса.
 - Бэкенд-тесты ещё красные (эталон выше).
 
 ## Логи и диагностика

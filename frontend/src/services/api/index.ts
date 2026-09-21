@@ -136,8 +136,6 @@ export {
   deleteEntity,
   updateEntityStatus,
   transferEntity,
-  hireEntity,
-  getStaffStatus,
   linkChatToEntity,
   unlinkChatFromEntity,
   // Red flags
@@ -201,9 +199,6 @@ export type {
   SimilarCandidateResult,
   DuplicateCandidateResult,
   MergeEntitiesResponse,
-  HirePayload,
-  HireResult,
-  StaffStatus,
   EntityFile,
   ParsedResume,
   ParsedVacancy,

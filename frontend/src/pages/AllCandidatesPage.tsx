@@ -102,8 +102,6 @@ import CandidateVacancyCard from "@/components/entities/CandidateVacancyCard";
 import { BulkSelectionBar } from "@/components/entities/BulkSelectionBar";
 import ResumeTab, { useResumeSources } from "@/components/entities/candidateDetail/ResumeTab";
 import ImportedParticipations, { readParticipations } from "@/components/entities/candidateDetail/ImportedParticipations";
-import HireToStaffButton from "@/components/entities/HireToStaffButton";
-import StaffStatusBadge from "@/components/entities/StaffStatusBadge";
 import { backdropClose } from '@/utils/backdropClose';
 const AnketaDrawer = lazy(() =>
   import("@/features/forms/AnketaDrawer").then((m) => ({ default: m.AnketaDrawer })),
@@ -1688,7 +1686,6 @@ export default function AllCandidatesPage() {
                     setSelectedCard(null);
                     fetchBoard();
                   }}
-                  onHired={() => fetchBoard(true)}
                 />
               </div>
             ) : (
@@ -1985,7 +1982,6 @@ const InfoTab = memo(function InfoTab({
   onEdit,
   onMerged,
   onRemovedFromVacancy,
-  onHired,
 }: {
   card: KanbanCard;
   status: string;
@@ -2000,8 +1996,6 @@ const InfoTab = memo(function InfoTab({
   onMerged?: () => void;
   // Снятие кандидата с воронки → родитель обновляет доску и сбрасывает выбор.
   onRemovedFromVacancy?: () => void;
-  // Оформление в штат (HireToStaffButton) → родитель тихо перечитывает доску.
-  onHired?: () => void;
 }) {
   const { user: currentUser } = useAuthStore();
   const navigate = useNavigate();
@@ -2009,8 +2003,6 @@ const InfoTab = memo(function InfoTab({
   // Просмотр (анкета/резюме, клики по тг/почте/ссылкам) и «Поделиться» — доступны.
   const readonly = !!currentUser?.is_readonly;
   const roStyle = readonly ? { opacity: 0.45, cursor: "not-allowed" as const } : undefined;
-  // Оформлять в штат могут все участники орга — и админы, и рекрутёры (hr/member).
-  const canHire = currentUser?.role === "superadmin" || !!currentUser?.org_role;
   // Сохранён только сеттер: action-бар сбрасывает (закрывает) меню действий.
   const [, setShowActionMenu] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -2972,18 +2964,6 @@ const InfoTab = memo(function InfoTab({
             <h2 className="hf-profile-title">
               {card.name}
             </h2>
-            <HireToStaffButton
-              entityId={card.id}
-              entityName={card.name}
-              status={status}
-              email={card.email}
-              phone={card.phone}
-              telegram={card.telegram_username || (card.telegram_usernames || [])[0]}
-              position={card.position}
-              canHire={canHire}
-              onHired={() => onHired?.()}
-            />
-            <StaffStatusBadge entityId={card.id} status={status} />
             {/* Яркие ярлыки у ФИО. Раньше это был свободный текст в
                 extra_data.headline_tags со своей палитрой, теперь — тот же
                 справочник, что и «Метки» (variant='headline'): выпадающий

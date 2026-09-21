@@ -56,8 +56,6 @@ import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
 import { BulkSelectionBar } from '@/components/entities/BulkSelectionBar';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
 import ResumeTab from '@/components/entities/candidateDetail/ResumeTab';
-import HireToStaffButton from '@/components/entities/HireToStaffButton';
-import StaffStatusBadge from '@/components/entities/StaffStatusBadge';
 import { buildStageContainers, buildResumeSources, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
 import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
 import { EditCandidateModal } from './AllCandidatesPage';
@@ -3272,18 +3270,6 @@ export default function RecruiterFunnelsPage() {
                                     <h2 className="hf-profile-title">
                                       {selectedCandidate.entity_name || 'Без имени'}
                                     </h2>
-                                    <HireToStaffButton
-                                      entityId={selectedCandidate.entity_id}
-                                      entityName={selectedCandidate.entity_name || ''}
-                                      status={selectedCandidate.stage}
-                                      email={selectedCandidate.entity_email}
-                                      phone={selectedCandidate.entity_phone}
-                                      telegram={selectedCandidate.entity_telegram}
-                                      position={selectedCandidate.entity_position}
-                                      canHire={!!user?.org_role || isSuperadmin}
-                                      onHired={() => { if (selectedVacancyId) loadCandidates(selectedVacancyId, true); }}
-                                    />
-                                    <StaffStatusBadge entityId={selectedCandidate.entity_id} status={selectedCandidate.stage} />
                                     {/* Ярлыки у ФИО — тот же справочник, что и
                                         «Метки» (см. TagPicker variant='headline').
                                         Раньше тут был свободный ввод со своей
