@@ -9752,7 +9752,7 @@ body.performance-mode .glass-card:hover {
   font-weight: var(--hf-fw-semibold);
 }
 
-/* Ведущие HR: кружки с инициалами, клик открывает выбор */
+/* HR и сорсеры: кружки с инициалами, «×» при наведении, «+» — добавить HR */
 /* HR + метки-сорсеры в одной ячейке (решение юзера — не разводить по колонкам).
    Раньше тут центрировалась одна аватарка (grid/place-items), теперь строка:
    аватарка, затем метки. Без сорсеров выглядит как прежде — по центру. */
@@ -9764,32 +9764,38 @@ body.performance-mode .glass-card:hover {
   gap: 4px;
   flex-wrap: wrap;
 }
-/* Метка сорсера: те же пилюли, что на карточке кандидата, только мельче.
-   pointer-events снимаем — клик по ячейке должен открывать выбор HR, который
-   лежит невидимым select'ом поверх. */
-.hf-statuses-sourcer {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 7px;
-  border-radius: 999px;
-  font-size: var(--hf-fs-6xs);
-  font-weight: var(--hf-fw-medium);
-  white-space: nowrap;
-  pointer-events: none;
-}
-/* Кружки HR (до двух) — кнопка, открывающая выбор. Второй кружок чуть
-   наезжает на первый, как стопка аватарок в ClickUp. */
-.hf-statuses-avatars {
-  display: inline-flex;
-  align-items: center;
-  padding: 0;
+/* Кружок HR/сорсера — кнопка: при наведении инициалы сменяются на «×». */
+.hf-statuses-avatar.hf-statuses-avatar-removable {
+  position: relative;
   border: 0;
-  background: none;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.hf-statuses-avatar-x { display: none; }
+.hf-statuses-avatar.hf-statuses-avatar-removable:hover .hf-statuses-avatar-text,
+.hf-statuses-avatar.hf-statuses-avatar-removable:focus-visible .hf-statuses-avatar-text { display: none; }
+.hf-statuses-avatar.hf-statuses-avatar-removable:hover .hf-statuses-avatar-x,
+.hf-statuses-avatar.hf-statuses-avatar-removable:focus-visible .hf-statuses-avatar-x { display: block; }
+.hf-statuses-avatar.hf-statuses-avatar-removable:hover { filter: brightness(0.85); }
+.hf-statuses-avatar-add {
+  display: grid;
+  place-items: center;
+  width: 26px; height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px dashed var(--hf-main-200);
+  background: var(--hf-white);
+  color: var(--hf-main-400);
   cursor: pointer;
 }
-.hf-statuses-avatars .hf-statuses-avatar + .hf-statuses-avatar {
-  margin-left: -6px;
-  box-shadow: 0 0 0 2px var(--hf-white);
+.hf-statuses-avatar-add:hover {
+  border-style: solid;
+  color: var(--hf-main-800);
+}
+.hf-statuses-avatar-sm {
+  width: 20px; height: 20px;
+  flex: none;
 }
 .hf-statuses-hr-menu {
   position: fixed;
@@ -9823,27 +9829,6 @@ body.performance-mode .glass-card:hover {
   cursor: pointer;
 }
 .hf-statuses-hr-option:hover { background: var(--hf-main-50, #f1f5f9); }
-.hf-statuses-hr-option.is-on { font-weight: var(--hf-fw-semibold); }
-.hf-statuses-hr-check {
-  display: grid;
-  place-items: center;
-  width: 16px; height: 16px;
-  flex: none;
-  border-radius: 4px;
-  border: 1px solid var(--hf-main-200, #cbd5e1);
-  font-size: 11px;
-  color: var(--hf-white);
-}
-.hf-statuses-hr-option.is-on .hf-statuses-hr-check {
-  background: #16a34a;
-  border-color: #16a34a;
-}
-.hf-statuses-hr-clear {
-  margin-top: 2px;
-  border-top: 1px solid var(--hf-main-100);
-  border-radius: 0 0 6px 6px;
-  color: var(--hf-main-400);
-}
 .hf-statuses-avatar {
   display: grid;
   place-items: center;

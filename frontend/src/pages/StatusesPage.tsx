@@ -14,6 +14,7 @@ import { uploadEntityFile, deleteEntityFile, downloadEntityFile } from "@/servic
 import { getDepartments, type Department } from "@/services/api/auth";
 import { getBoardPositions, getBoardManagers, importClickUpFolders } from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
+import { removeTagFromEntity } from "@/services/api/tags";
 import { useUrlTab } from "@/hooks/useUrlTab";
 
 /**
@@ -845,6 +846,7 @@ function Row({
           row={row}
           people={people}
           onSave={(ids) => onPatch(row, { assignee_user_ids: ids })}
+          onReload={onReload}
         />
       </td>
 
@@ -1113,7 +1115,7 @@ const HR_NONE = "none";
 const HR_FILTER_STORAGE_KEY = "hf-statuses-hr";
 
 /** Сколько HR можно закрепить за человеком — как на бэке (MAX_ASSIGNEES). */
-const MAX_HR = 2;
+const MAX_HR = 5;
 
 const initialsOf = (name: string | null | undefined) =>
   (name || "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
@@ -1189,44 +1191,38 @@ function PillCell({
   );
 }
 
-/** HR, ведущий сотрудника, и метки-сорсеры рядом.
+/** HR и сорсеры человека — кружками с инициалами.
  *
- * HR берётся из воронки, если руками его не выбрали: кандидат и сотрудник —
- * одна и та же запись, так что рекрутёр, который вёл человека в подборе, тут
- * известен. Раньше колонку заполняли заново вручную, и она у всех стояла
- * пустая. Авто-значение показываем блёкло и курсивом — тот же приём, что у вех
- * 1/3/12 месяцев на этой же доске; выбор руками его перебивает.
+ * Подтягиваются из меток кандидата: «HR: …» (их считает воронка) и метки-
+ * сорсеры (кто привёл). Кандидат и сотрудник — одна запись, так что заново
+ * вбивать их не нужно.
  *
- * Сорсеры (кто привёл человека) живут в ОДНОЙ колонке с HR — так решил юзер.
- * Чтобы они не сливались, HR идёт аватаркой с именем, а сорсеры — цветными
- * метками, как на карточке кандидата.
+ * Наведение на кружок меняет инициалы на «×» — снять этого человека. «+»
+ * справа — добавить HR. HR после правки хранятся на доске (метки воронки их
+ * больше не перебивают); сорсер снимается с самой карточки — это та же метка.
  */
 function AssigneeCell({
-  row, people, onSave,
+  row, people, onSave, onReload,
 }: {
   row: BoardRow;
   people: { user_id: number; user_name: string | null }[];
   onSave: (ids: number[]) => void;
+  onReload: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const cellRef = useRef<HTMLButtonElement>(null);
+  const plusRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Старые ответы бэка без assignees — собираем из одиночного поля.
-  const assignees = row.assignees ?? (row.assignee_user_id != null
-    ? [{ user_id: row.assignee_user_id, name: row.assignee_name, auto: !!row.assignee_auto }]
-    : []);
-  const auto = assignees.length > 0 && assignees.every((a) => a.auto);
-  // Из воронки — ещё не выбор: первый клик по человеку закрепляет только его.
-  const chosen = auto ? [] : assignees.map((a) => a.user_id);
+  const assignees = rowAssignees(row);
+  const ids = assignees.map((a) => a.user_id);
   const sourcers = row.sourcers ?? [];
 
   useEffect(() => {
     if (!open) return;
     const close = (e: Event) => {
       const t = e.target as Node;
-      if (menuRef.current?.contains(t) || cellRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t) || plusRef.current?.contains(t)) return;
       setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
@@ -1241,93 +1237,88 @@ function AssigneeCell({
     };
   }, [open]);
 
-  const toggleMenu = () => {
+  const openMenu = () => {
     if (open) { setOpen(false); return; }
-    const r = cellRef.current?.getBoundingClientRect();
+    if (ids.length >= MAX_HR) { toast.error(`Не больше ${MAX_HR} HR на человека`); return; }
+    const r = plusRef.current?.getBoundingClientRect();
     if (r) setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 232)) });
     setOpen(true);
   };
 
-  const toggle = (uid: number) => {
-    if (chosen.includes(uid)) {
-      onSave(chosen.filter((x) => x !== uid));
-    } else if (chosen.length >= MAX_HR) {
-      // Третьего не добавляем молча вместо кого-то — пусть HR решит, кого снять
-      toast.error(`Не больше ${MAX_HR} HR на человека`);
-    } else {
-      onSave([...chosen, uid]);
+  const add = (uid: number) => {
+    setOpen(false);
+    onSave([...ids, uid]);
+  };
+
+  const removeSourcer = async (tagId: number, name: string) => {
+    try {
+      await removeTagFromEntity(row.entity_id, tagId);
+      onReload();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || `Не удалось снять «${name}»`);
     }
   };
 
-  // Назначенный ранее мог потерять роль HR — не теряем его из списка
-  const options = [
-    ...assignees
-      .filter((a) => !a.auto && !people.some((p) => p.user_id === a.user_id))
-      .map((a) => ({ user_id: a.user_id, user_name: a.name })),
-    ...people,
-  ];
-
-  const title = assignees.length === 0
-    ? "HR не назначен"
-    : assignees.map((a) => a.name || `#${a.user_id}`).join(", ") + (auto ? " — из воронки" : "");
+  const options = people.filter((p) => !ids.includes(p.user_id));
 
   return (
     <div className="hf-statuses-assignee">
-      <button ref={cellRef} type="button" className="hf-statuses-avatars" onClick={toggleMenu} title={title}>
-        {assignees.length === 0 ? (
-          <span className="hf-statuses-avatar hf-statuses-avatar-empty">—</span>
-        ) : assignees.map((a) => (
-          <span
-            key={a.user_id}
-            className="hf-statuses-avatar"
-            style={{
-              background: `hsl(${pillHue(a.name || "")} 60% 45%)`,
-              // Из воронки — приглушаем, чтобы отличалось от выбранного руками.
-              opacity: a.auto ? 0.55 : 1,
-            }}
+      {assignees.map((a) => {
+        const name = a.name || `#${a.user_id}`;
+        return (
+          <button
+            key={`hr-${a.user_id}`}
+            type="button"
+            className="hf-statuses-avatar hf-statuses-avatar-removable"
+            style={{ background: `hsl(${pillHue(a.name || "")} 60% 45%)` }}
+            title={`HR: ${name} — убрать`}
+            aria-label={`Убрать HR ${name}`}
+            onClick={() => onSave(ids.filter((x) => x !== a.user_id))}
           >
-            {initialsOf(a.name)}
-          </span>
-        ))}
-      </button>
+            <span className="hf-statuses-avatar-text">{initialsOf(a.name)}</span>
+            <X className="hf-statuses-avatar-x" size={13} />
+          </button>
+        );
+      })}
       {sourcers.map((t) => (
-        <span
-          key={t.id}
-          className="hf-statuses-sourcer"
-          title={`Привёл: ${t.name}`}
-          style={{
-            backgroundColor: `color-mix(in srgb, ${t.color} 12%, transparent)`,
-            color: t.color,
-            border: `1px solid color-mix(in srgb, ${t.color} 25%, transparent)`,
-          }}
+        <button
+          key={`src-${t.id}`}
+          type="button"
+          className="hf-statuses-avatar hf-statuses-avatar-removable"
+          style={{ background: t.color }}
+          title={`Сорсер: ${t.name} — убрать`}
+          aria-label={`Убрать сорсера ${t.name}`}
+          onClick={() => removeSourcer(t.id, t.name)}
         >
-          {t.name}
-        </span>
+          <span className="hf-statuses-avatar-text">{initialsOf(t.name)}</span>
+          <X className="hf-statuses-avatar-x" size={13} />
+        </button>
       ))}
+      <button
+        ref={plusRef}
+        type="button"
+        className="hf-statuses-avatar-add"
+        title="Добавить HR"
+        aria-label="Добавить HR"
+        onClick={openMenu}
+      >
+        <Plus size={13} />
+      </button>
       {open && pos && (
         <div ref={menuRef} className="hf-statuses-hr-menu" style={{ top: pos.top, left: pos.left }}>
-          <div className="hf-statuses-hr-menu-hint">
-            {auto ? "Сейчас — из воронки. Выберите, чтобы закрепить." : `До ${MAX_HR} HR`}
-          </div>
-          {options.map((p) => {
-            const on = chosen.includes(p.user_id);
-            return (
-              <button
-                key={p.user_id}
-                type="button"
-                className={clsx("hf-statuses-hr-option", on && "is-on")}
-                onClick={() => toggle(p.user_id)}
+          <div className="hf-statuses-hr-menu-hint">Добавить HR</div>
+          {options.length === 0 && <div className="hf-statuses-hr-menu-hint">Все HR уже добавлены</div>}
+          {options.map((p) => (
+            <button key={p.user_id} type="button" className="hf-statuses-hr-option" onClick={() => add(p.user_id)}>
+              <span
+                className="hf-statuses-avatar hf-statuses-avatar-sm"
+                style={{ background: `hsl(${pillHue(p.user_name || "")} 60% 45%)` }}
               >
-                <span className="hf-statuses-hr-check">{on ? "✓" : ""}</span>
-                {p.user_name || `#${p.user_id}`}
-              </button>
-            );
-          })}
-          {chosen.length > 0 && (
-            <button type="button" className="hf-statuses-hr-option hf-statuses-hr-clear" onClick={() => onSave([])}>
-              Снять всех — вернуть из воронки
+                {initialsOf(p.user_name)}
+              </span>
+              {p.user_name || `#${p.user_id}`}
             </button>
-          )}
+          ))}
         </div>
       )}
     </div>

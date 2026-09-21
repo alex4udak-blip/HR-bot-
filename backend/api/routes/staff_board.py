@@ -96,10 +96,11 @@ _K_Y1 = "y1_date"
 # Перенос из ClickUp: HR, ведущий сотрудника; дата увольнения; отметки
 # «веха пройдена» рядом с каждой датой (в ClickUp это колонки в скобках).
 _K_ASSIGNEE = "assignee_user_id"
-# Несколько ведущих HR (кандидата часто ведут вдвоём). Первый дублируется в
-# _K_ASSIGNEE — его читают старые клиенты и фильтры.
+# Ведущие HR, выбранные руками (кнопки «+» и «×» в колонке HR). Первый
+# дублируется в _K_ASSIGNEE — его читают старые клиенты и фильтры. Ключ есть,
+# но список пуст — HR сняли всех, и воронка их больше не подставляет.
 _K_ASSIGNEES = "assignee_user_ids"
-MAX_ASSIGNEES = 2
+MAX_ASSIGNEES = 5
 _K_DISMISSAL = "dismissal_date"
 _K_DONE = {
     "dept_done": "department_start_done",
@@ -201,20 +202,21 @@ class BoardAssignee(BaseModel):
     auto: bool = False
 
 
-def _manual_assignee_ids(ex: Dict[str, Any]) -> List[int]:
-    """HR, выбранные руками: новый список или старое одиночное поле."""
+def _manual_assignee_ids(ex: Dict[str, Any]) -> Optional[List[int]]:
+    """HR, выбранные руками: новый список или старое одиночное поле.
+
+    None — руками не трогали (HR берутся из меток воронки); [] — сняли всех.
+    """
     raw = ex.get(_K_ASSIGNEES)
-    ids: List[int] = []
     if isinstance(raw, list):
+        ids: List[int] = []
         for v in raw:
             i = _as_int(v)
             if i is not None and i not in ids:
                 ids.append(i)
-    if not ids:
-        single = _as_int(ex.get(_K_ASSIGNEE))
-        if single is not None:
-            ids.append(single)
-    return ids[:MAX_ASSIGNEES]
+        return ids[:MAX_ASSIGNEES]
+    single = _as_int(ex.get(_K_ASSIGNEE))
+    return [single] if single is not None else None
 
 
 class BoardSourcer(BaseModel):
@@ -427,16 +429,16 @@ def _row_from_entity(
         dept_name = SANDBOX_LABEL
     telegram = _first_telegram(entity) or (str(_pick(ex, _CF_TELEGRAM) or "").lstrip("@") or None)
 
-    # HR: сначала выбранные руками, иначе — из воронки. Авто-метки HR лежат в
-    # extra_data.system_hr_tags (их считает services/hr_tags по активным
-    # заявкам), поэтому лишних запросов не нужно. Кандидата нередко ведут
-    # двое — показываем до MAX_ASSIGNEES человек; выбор руками перебивает
-    # воронку целиком.
+    # HR: сначала выбранные руками, иначе — из меток «HR: …» кандидата. Они
+    # лежат в extra_data.system_hr_tags (их считает services/hr_tags по
+    # активным заявкам), поэтому лишних запросов не нужно. Правка руками
+    # (добавить / снять) перебивает метки целиком.
+    manual = _manual_assignee_ids(ex)
     assignees: List[BoardAssignee] = [
         BoardAssignee(user_id=i, name=(assignee_names or {}).get(i))
-        for i in _manual_assignee_ids(ex)
+        for i in (manual or [])
     ]
-    if not assignees:
+    if manual is None:
         hr_tags = ex.get("system_hr_tags")
         if isinstance(hr_tags, list):
             for t in hr_tags:
@@ -750,7 +752,7 @@ async def list_rows(
         uid
         for e in entities
         if isinstance(e.extra_data, dict)
-        for uid in _manual_assignee_ids(e.extra_data)
+        for uid in (_manual_assignee_ids(e.extra_data) or [])
     }
     assignee_names: Dict[int, str] = {}
     if assignee_ids:
@@ -866,11 +868,12 @@ async def update_row(
         if len(ids) > MAX_ASSIGNEES:
             raise HTTPException(400, f"Не больше {MAX_ASSIGNEES} HR на человека")
         payload.pop("assignee_user_id", None)
+        # Пустой список храним как есть: сняли всех — значит «без HR», а не
+        # «вернуть из меток», иначе снятый «×» HR тут же появлялся бы снова.
+        ex[_K_ASSIGNEES] = ids
         if ids:
-            ex[_K_ASSIGNEES] = ids
             ex[_K_ASSIGNEE] = str(ids[0])
         else:
-            ex.pop(_K_ASSIGNEES, None)
             ex.pop(_K_ASSIGNEE, None)
         touched_extra = True
     elif "assignee_user_id" in payload:
@@ -963,11 +966,15 @@ async def update_row(
 
     # Имя ведущего HR — иначе после сохранения в ячейке осталось бы пусто
     names: Dict[int, str] = {}
-    a_ids = _manual_assignee_ids(_extra(entity))
+    a_ids = _manual_assignee_ids(_extra(entity)) or []
     if a_ids:
         names = dict((await db.execute(
             select(User.id, User.name).where(User.id.in_(a_ids))
         )).all())
 
+    # Сорсеры тоже: без них после любой правки строки метки-кружки пропадали
+    # из ячейки до перезагрузки страницы.
+    sourcers = await _load_sourcers(db, [entity.id])
+
     logger.info(f"Board row updated: entity {entity_id} by user {current_user.id}")
-    return _row_from_entity(entity, offer, names)
+    return _row_from_entity(entity, offer, names, sourcers)
