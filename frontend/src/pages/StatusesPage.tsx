@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, Loader2, Plus, Trash2, X,
+  Search, Loader2, Plus, Trash2, Check, X,
   ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
@@ -10,7 +10,7 @@ import {
   type BoardRow, type BoardRowUpdate,
 } from "@/services/api/staffBoard";
 import { uploadEntityFile, deleteEntityFile, downloadEntityFile } from "@/services/api/entities";
-import { getDepartments, type Department } from "@/services/api/auth";
+import { getDepartments, createDepartment, type Department } from "@/services/api/auth";
 import { getBoardPositions, getBoardManagers } from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
 import { removeTagFromEntity } from "@/services/api/tags";
@@ -525,6 +525,7 @@ export default function StatusesPage() {
             counts={counts}
             active={dept}
             onSelect={setDept}
+            onCreated={(d) => setDepartments((cur) => [...cur, d])}
           />
 
           <div className="hf-statuses-table-wrap">
@@ -604,16 +605,52 @@ export default function StatusesPage() {
 
 /** Отделы слева — вместо прежних «направлений» (это были те же отделы).
  *  Сначала отделы, где кто-то есть, потом пустые: пустых в оргструктуре
- *  много, и за ними терялись нужные. Отделы заводят в настройках оргструктуры,
- *  отсюда — только выбор. */
+ *  много, и за ними терялись нужные. «+ Отдел» заводит отдел прямо здесь —
+ *  это тот же отдел оргструктуры, он сразу появляется и в колонке «Отдел». */
 function DepartmentSidebar({
-  departments, counts, active, onSelect,
+  departments, counts, active, onSelect, onCreated,
 }: {
   departments: Department[];
   counts: Record<string, number>;
   active: string;
   onSelect: (id: string) => void;
+  onCreated: (d: Department) => void;
 }) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const cancel = () => { setAdding(false); setName(""); };
+
+  const create = async () => {
+    const clean = name.trim().replace(/\s+/g, " ");
+    if (!clean || busy) return;
+    // Такой уже есть — не плодим близнецов, просто открываем его
+    const same = departments.find((d) => !d.parent_id && d.name.trim().toLowerCase() === clean.toLowerCase());
+    if (same) {
+      toast(`Отдел «${same.name}» уже есть`);
+      onSelect(String(same.id));
+      cancel();
+      return;
+    }
+    setBusy(true);
+    try {
+      const d = await createDepartment({ name: clean });
+      onCreated(d);
+      onSelect(String(d.id));
+      toast.success(`Отдел «${d.name}» создан`);
+      cancel();
+    } catch (e: any) {
+      toast.error(
+        e?.response?.status === 403
+          ? "Создавать отделы может только владелец организации"
+          : e?.response?.data?.detail || "Не удалось создать отдел"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const label = (d: Department) => (d.parent_name ? `${d.parent_name} → ${d.name}` : d.name);
   const sorted = [...departments].sort((a, b) => {
     const ca = counts[String(a.id)] ?? 0;
@@ -639,6 +676,34 @@ function DepartmentSidebar({
       {item("all", "Все")}
       {sorted.map((d) => item(String(d.id), label(d)))}
       {item(UNASSIGNED, "Без отдела")}
+
+      {adding ? (
+        <div className="hf-statuses-folder-edit">
+          <input
+            autoFocus
+            className="hf-statuses-folder-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") create();
+              if (e.key === "Escape") cancel();
+            }}
+            placeholder="Название отдела"
+            maxLength={100}
+            disabled={busy}
+          />
+          <button className="hf-statuses-folder-action" onClick={create} disabled={busy} title="Создать">
+            {busy ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />}
+          </button>
+          <button className="hf-statuses-folder-action" onClick={cancel} disabled={busy} title="Отмена">
+            <X size={14} />
+          </button>
+        </div>
+      ) : (
+        <button className="hf-statuses-folder-add" onClick={() => setAdding(true)}>
+          <Plus size={14} /> Отдел
+        </button>
+      )}
     </div>
   );
 }
