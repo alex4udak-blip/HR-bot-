@@ -12,7 +12,7 @@ from .common import (
     Entity, User, STAGE_SYNC_MAP,
     ApplicationResponse, KanbanColumn, KanbanBoard, BulkStageUpdate,
     check_vacancy_access, can_access_vacancy, is_org_admin_or_owner,
-    sees_all_candidates, recompute_entity_status,
+    sees_all_candidates, recompute_entity_status, recruiter_owns_application,
 )
 from ...services.auth import get_user_org
 
@@ -126,7 +126,7 @@ async def get_kanban_board(
     if created_by is not None and (is_admin_viewer or created_by == current_user.id):
         # Явный скоуп: админ — на любого рекрутёра, ЛЮБОЙ — на СЕБЯ («Только мои»),
         # даже на «Видна коллегам».
-        base_filters.append(VacancyApplication.created_by == created_by)
+        base_filters.append(recruiter_owns_application(vacancy, created_by))
     elif not is_admin_viewer and not bool(vacancy.visible_to_all):
         # Обычный рекрутёр на «скрытой» вакансии без скоупа: свои + legacy (NULL).
         base_filters.append(or_(
@@ -290,7 +290,7 @@ async def get_kanban_column(
     ]
     if created_by is not None and (is_admin_viewer or created_by == current_user.id):
         # Явный скоуп: админ — на любого, ЛЮБОЙ — на СЕБЯ («Только мои»).
-        col_filters.append(VacancyApplication.created_by == created_by)
+        col_filters.append(recruiter_owns_application(vacancy, created_by))
     elif not is_admin_viewer and not bool(vacancy.visible_to_all):
         col_filters.append(or_(
             VacancyApplication.created_by == current_user.id,

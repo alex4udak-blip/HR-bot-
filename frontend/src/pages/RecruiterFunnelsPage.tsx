@@ -863,10 +863,16 @@ export default function RecruiterFunnelsPage() {
     const wantedOwner = onlyMine ? (user?.id ?? null) : selectedRecruiterFilter;
     if (wantedOwner == null) return candidates;
     if (candidateScopeRecruiterId === wantedOwner) return candidates;
+    // Заявка без автора (created_by = null) — кандидат владельца вакансии, как
+    // у метки «HR: …» и серверного скоупа (recruiter_owns_application).
+    const ownsVacancy = selectedVacancy?.created_by === wantedOwner;
     return candidates.filter(
-      (c) => c.created_by === wantedOwner || c.entity_id === sharedEntryEntityId,
+      (c) =>
+        c.created_by === wantedOwner ||
+        (c.created_by == null && ownsVacancy) ||
+        c.entity_id === sharedEntryEntityId,
     );
-  }, [candidates, onlyMine, user?.id, selectedRecruiterFilter, candidateScopeRecruiterId, sharedEntryEntityId]);
+  }, [candidates, onlyMine, user?.id, selectedRecruiterFilter, candidateScopeRecruiterId, sharedEntryEntityId, selectedVacancy?.created_by]);
 
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return recruiterScopedCandidates;

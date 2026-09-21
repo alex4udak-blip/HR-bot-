@@ -130,6 +130,20 @@ async def sees_all_candidates(user: User, org: Organization, db: AsyncSession) -
     )
 
 
+def recruiter_owns_application(vacancy: Vacancy, recruiter_id: int):
+    """Условие «заявка принадлежит рекрутёру R» для скоупа воронки по рекрутёру.
+
+    R — автор заявки (created_by), а если автор не записан (NULL: старые данные,
+    удалённый пользователь — FK ondelete=SET NULL) — владелец вакансии. Ровно то
+    же правило, что у авто-метки «HR: …» (services/hr_tags.py, coalesce): иначе
+    метка говорила «кандидат Марии», а воронка Марии его не показывала.
+    """
+    cond = VacancyApplication.created_by == recruiter_id
+    if vacancy.created_by == recruiter_id:
+        cond = or_(cond, VacancyApplication.created_by.is_(None))
+    return cond
+
+
 async def get_user_department_ids(user_id: int, org_id: int, db: AsyncSession) -> List[int]:
     """Get all department IDs user belongs to in the organization."""
     result = await db.execute(

@@ -13,6 +13,7 @@ from .common import (
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
     check_vacancy_access, can_access_vacancy, can_manage_applications,
     is_org_admin_or_owner, sees_all_candidates, recompute_entity_status,
+    recruiter_owns_application,
     BaseModel, OrgMember, OrgRole, UserRole,
 )
 from ...services.auth import get_user_org
@@ -214,7 +215,7 @@ async def list_applications(
         # ЛЮБОЙ рекрутёр — на СЕБЯ (чекбокс «Только мои»). Себя можно фильтровать
         # даже на «Видна коллегам», иначе рекрутёр не мог оставить только своих.
         query = query.where(or_(
-            VacancyApplication.created_by == created_by,
+            recruiter_owns_application(vacancy, created_by),
             _co_recruiter_of(created_by),
         ))
     elif not is_admin_viewer and not vacancy.visible_to_all:

@@ -377,3 +377,48 @@ async def test_recruiter_can_move_foreign_on_collegial(
         json={"application_ids": [app_id], "stage": "interview"},
     )
     assert r_bulk.status_code == 200, r_bulk.text
+
+
+@pytest.mark.asyncio
+async def test_null_author_belongs_to_vacancy_owner_in_recruiter_scope(
+    client, db_session, organization, admin_user, org_owner,
+    second_user, org_member, collegial_vacancy_with_two_apps,
+):
+    """Заявка без автора (created_by=NULL) в скоупе по рекрутёру принадлежит
+    ВЛАДЕЛЬЦУ вакансии — как авто-метка «HR: …» (hr_tags, coalesce). Прод
+    2026-09-21: метка «HR: Мария · Трафик», а в воронке Марии кандидата не было."""
+    v, e_admin_id, e_member_id = collegial_vacancy_with_two_apps  # владелец — admin_user
+
+    e_legacy = await _mk_entity(db_session, organization, admin_user, "Без автора")
+    db_session.add(VacancyApplication(
+        vacancy_id=v.id, entity_id=e_legacy.id,
+        stage=ApplicationStage.applied, stage_order=1,
+        created_by=None, applied_at=datetime.utcnow(),
+    ))
+    await db_session.commit()
+
+    def ids(r):
+        assert r.status_code == 200, r.text
+        return {a["entity_id"] for a in r.json()}
+
+    # Скоуп на владельца вакансии — «ничей» кандидат его.
+    r_owner = await client.get(
+        f"/api/vacancies/{v.id}/applications?created_by={admin_user.id}",
+        headers=_h(admin_user),
+    )
+    assert ids(r_owner) == {e_admin_id, e_legacy.id}
+
+    # Скоуп на другого рекрутёра — «ничей» кандидат не его.
+    r_other = await client.get(
+        f"/api/vacancies/{v.id}/applications?created_by={second_user.id}",
+        headers=_h(admin_user),
+    )
+    assert ids(r_other) == {e_member_id}
+
+    # Канбан-доска с тем же скоупом ведёт себя так же.
+    r_board = await client.get(
+        f"/api/vacancies/{v.id}/kanban?created_by={admin_user.id}",
+        headers=_h(admin_user),
+    )
+    assert r_board.status_code == 200, r_board.text
+    assert _all_entity_ids(r_board.json()) == {e_admin_id, e_legacy.id}
