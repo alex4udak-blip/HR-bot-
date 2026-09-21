@@ -853,6 +853,7 @@ class DuplicateCandidateResponse(BaseModel):
     match_reasons: List[str] = []
     matched_fields: dict = {}  # {field: [value1, value2]}
     strength: str = ""         # тир: source|email|telegram|name|phone|soft|text
+    level: str = "possible"    # exact — совпало ≥2 признака (красный), possible — жёлтый
     signals: List[dict] = []   # все сработавшие сигналы — подсветка полей в окне
 
     class Config:
@@ -982,6 +983,7 @@ async def get_duplicate_candidates(
             match_reasons=d.match_reasons,
             matched_fields={k: list(v) for k, v in d.matched_fields.items()},
             strength=d.strength,
+            level=d.level,
             signals=[s.to_dict() for s in d.signals],
         )
         for d in duplicates

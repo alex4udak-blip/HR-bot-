@@ -790,7 +790,8 @@ class TestSoftTierMatching:
 
     @pytest.mark.asyncio
     async def test_exact_email_still_strength_email(self, db_session):
-        # Level-1 path must be unchanged: exact email => strength 'email', 100%.
+        # Тир по-прежнему email, но одиночный признак — «возможно тот же» (60%),
+        # 100% только при ≥2 совпавших признаках (решение владельца 21.09.2026).
         from api.services.similarity import build_dup_keys, find_duplicate_matches
         org = Organization(name="ExactOrg", slug="exact-org")
         db_session.add(org)
@@ -802,7 +803,8 @@ class TestSoftTierMatching:
         keys = build_dup_keys(name="Пётр Петров", email="dup@gmail.com")
         matches = await find_duplicate_matches(db_session, org.id, keys)
         assert matches[0].strength == "email"
-        assert matches[0].confidence == 100
+        assert matches[0].confidence == 60
+        assert matches[0].level == "possible"
 
 
 class TestDetectArchivedDuplicateMeta:
@@ -858,7 +860,8 @@ class TestDetectArchivedDuplicateMeta:
         meta = (new.extra_data or {}).get("hidden_duplicate_meta")
         assert meta is not None
         assert meta["strength"] == "email"
-        assert meta["confidence"] == 100
+        assert meta["confidence"] == 60
+        assert meta["level"] == "possible"
         assert meta["matched_id"] == old.id
 
     @pytest.mark.asyncio

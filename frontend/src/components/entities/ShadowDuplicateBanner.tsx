@@ -41,15 +41,21 @@ interface ShadowDuplicateBannerProps {
 export default function ShadowDuplicateBanner({ card, status, onResolved }: ShadowDuplicateBannerProps) {
   const hiddenId = (card.extra_data?.hidden_duplicate_id as number | undefined) ?? null;
   const meta = (card.extra_data?.hidden_duplicate_meta ?? null) as HiddenDuplicateMeta | null;
-  const isSoft = meta?.strength === "soft";
+  // Красный — только когда совпало НЕСКОЛЬКО признаков личности (level=exact).
+  // Одиночное совпадение (только почта, только ФИО, только текст резюме) — жёлтое
+  // «возможно тот же человек» с процентом и причинами. Старые флаги без level
+  // считаем «возможными», пока карточка не пересчитает их при открытии.
   const isText = meta?.strength === "text";
-  const bannerBg = isSoft || isText ? "bg-amber-500" : "bg-red-600";
-  const bannerTitle = isSoft
-    ? `Возможно тот же человек · ${Math.round(meta?.confidence ?? 0)}%`
-    : isText
-      ? `Текст резюме совпадает · ${Math.round(meta?.confidence ?? 0)}%`
-      : "Точное совпадение — кандидат уже в базе";
-  const bannerReasons = isSoft || isText ? (meta?.reasons ?? []) : [];
+  const isExact = meta?.level === "exact";
+  const bannerBg = isExact ? "bg-red-600" : "bg-amber-500";
+  const bannerTitle = isExact
+    ? "Точное совпадение — кандидат уже в базе"
+    : !meta
+      ? "Возможно тот же человек" // флаг без меты (старый) — процента не знаем
+      : isText
+        ? `Текст резюме совпадает · ${Math.round(meta.confidence)}%`
+        : `Возможно тот же человек · ${Math.round(meta.confidence)}%`;
+  const bannerReasons = meta?.reasons ?? [];
   const [resolved, setResolved] = useState(false);
   const [open, setOpen] = useState(false);
   // triggerEntity — профиль hiddenId, по которому решается ПОКАЗ баннера (стабилен,
@@ -480,6 +486,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                                   side={dupSide}
                                   matched={(k) => matchKindOf(d.signals, k, () => matchSide(left, dupSide, k))}
                                   confidence={d.confidence}
+                                  level={d.level}
                                   signals={d.signals}
                                   entityId={d.entity_id}
                                   vacancies={Array.isArray((ent?.extra_data as any)?.system_hr_tags) ? (ent?.extra_data as any).system_hr_tags : undefined}

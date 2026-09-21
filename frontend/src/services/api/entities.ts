@@ -381,6 +381,8 @@ export interface DuplicateCandidateResult {
   matched_fields: Record<string, string[]>;
   /** Тир совпадения — те же значения, что у HiddenDuplicateMeta.strength. */
   strength?: HiddenDuplicateMeta["strength"];
+  /** exact — совпало ≥2 признака личности (красный), possible — один (жёлтый). */
+  level?: DuplicateLevel;
   signals?: DuplicateSignal[];
 }
 
@@ -472,11 +474,15 @@ export const mergeEntities = async (
  * (Record<string, unknown>) — read this via
  * `card.extra_data?.hidden_duplicate_meta as HiddenDuplicateMeta | undefined`.
  */
+export type DuplicateLevel = "exact" | "possible";
+
 export interface HiddenDuplicateMeta {
   strength: "source" | "email" | "telegram" | "name" | "phone" | "soft" | "text";
   confidence: number;
   reasons: string[];
   matched_id: number;
+  /** Нет у флагов, записанных до 21.09.2026 — такие карточка пересчитывает при открытии. */
+  level?: DuplicateLevel;
 }
 
 /**

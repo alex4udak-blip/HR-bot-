@@ -28,8 +28,10 @@
     soft    — мягкий скоринг личности (``score_soft_identity`` ≥ порога);
     text    — совпал ТЕКСТ резюме (инфо-сигнал, слияние по нему не предлагаем).
 
-``confidence`` — ОДНО число на пару: 100 для уровней 1-5, балл мягкого скоринга
-для ``soft``, процент Жаккара для ``text``. Раньше окно сравнения считало своё,
+``confidence`` — ОДНО число на пару. 100 — только «точный» уровень (``level``
+exact: совпало ≥2 признака личности, красный баннер). Одиночный признак —
+«возможно тот же» (possible, жёлтый): сумма весов ``EVIDENCE_WEIGHTS``, для
+``soft`` — балл мягкого скоринга, для ``text`` — процент Жаккара. Раньше окно сравнения считало своё,
 поэтому «точное совпадение» в баннере превращалось в «30%» на карточке.
 """
 
@@ -46,6 +48,9 @@ from ..models.database import Entity, EntityType
 from .similarity import (
     DupMatch,
     DupSignal,
+    POSSIBLE_CONFIDENCE_CAP,
+    evidence_confidence,
+    match_level,
     build_dup_keys,
     email_locals_of,
     is_matchable_telegram,
@@ -60,8 +65,8 @@ from .similarity import (
 
 logger = logging.getLogger("hr-analyzer.duplicate_matcher")
 
-# Уровни-идентификаторы в порядке убывания приоритета. Совпадение ЛЮБОГО из них —
-# «точный» дубль (confidence 100).
+# Уровни-идентификаторы в порядке убывания приоритета. Совпадение любого из них
+# задаёт тир пары; «точным» (100%) пара становится только при ≥2 признаках.
 IDENTITY_ORDER: Tuple[str, ...] = ("source", "email", "telegram", "name", "phone")
 
 # Человекочитаемые причины (идут в баннер и в чипы карточки сравнения).
@@ -199,10 +204,13 @@ def compare_key_sets(a: dict, b: dict) -> Tuple[Optional[str], int, List[DupSign
     # телефон и давало 100%.
     identity_fields = {x.field for x in signals if x.identity}
     strength = next((s for s in IDENTITY_ORDER if s in identity_fields), None)
+    # Процент — от ЧИСЛА совпавших признаков: 100 только при ≥2 (красный баннер),
+    # одиночное совпадение — «возможно тот же человек» (решение владельца 21.09).
     if strength is not None:
-        return strength, 100, signals
+        return strength, evidence_confidence(signals), signals
     if soft.is_flag:
-        return "soft", soft.confidence, signals
+        conf = 100 if match_level(signals) == "exact" else min(POSSIBLE_CONFIDENCE_CAP, soft.confidence)
+        return "soft", conf, signals
     return None, 0, signals
 
 
@@ -425,6 +433,9 @@ async def match_entities(
             signals.append(sig)
             if strength is None:
                 strength, confidence = "text", pct
+            elif match_level(signals) == "exact":
+                # Текст резюме + ещё один признак личности — это уже «точно он».
+                confidence = 100
         if strength is None:
             continue
         out.append(DupMatch(
@@ -507,10 +518,14 @@ def best_match(
 ) -> Optional[DupMatch]:
     """Лучшее совпадение: по тиру (см. :data:`BEST_MATCH_ORDER`), внутри тира —
     первое в порядке выдачи (id DESC)."""
-    for s in order:
-        hit = next((m for m in matches if m.strength == s), None)
-        if hit is not None:
-            return hit
+    # Сначала «точные» (совпало ≥2 признака), и только потом по тиру: иначе
+    # баннер мог показать одиночное совпадение почты, когда рядом есть анкета,
+    # совпавшая и по почте, и по телефону.
+    for pool in ([m for m in matches if m.level == "exact"], list(matches)):
+        for s in order:
+            hit = next((m for m in pool if m.strength == s), None)
+            if hit is not None:
+                return hit
     return None
 
 

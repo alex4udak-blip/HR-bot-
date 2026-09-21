@@ -16,7 +16,8 @@ from api.services.duplicate_matcher import (
     best_match,
 )
 from api.services.similarity import (
-    build_dup_keys, detect_archived_duplicate, find_duplicate_matches, similarity_service,
+    DupMatch, DupSignal, build_dup_keys, detect_archived_duplicate, find_duplicate_matches,
+    match_level, similarity_service,
 )
 
 
@@ -36,8 +37,42 @@ class TestCompareKeySets:
         a = build_dup_keys(name="Иван Иванов", email="dup@gmail.com")
         b = build_dup_keys(name="Пётр Петров", email="dup@gmail.com")
         strength, confidence, signals = compare_key_sets(a, b)
-        assert (strength, confidence) == ("email", 100)
+        # Одна почта — тир email, но это ОДИН признак: «возможно тот же» (60%),
+        # не красный баннер (решение владельца 21.09.2026).
+        assert (strength, confidence) == ("email", 60)
+        assert match_level(signals) == "possible"
         assert any(s.field == "email" and s.identity for s in signals)
+
+    def test_two_identity_fields_are_exact(self):
+        a = build_dup_keys(name="Иван Иванов", email="dup@gmail.com", phone="+7 910 111-22-33")
+        b = build_dup_keys(name="Пётр Петров", email="dup@gmail.com", phone="8 910 1112233")
+        strength, confidence, signals = compare_key_sets(a, b)
+        assert (strength, confidence) == ("email", 100)
+        assert match_level(signals) == "exact"
+
+    def test_name_alone_is_possible(self):
+        a = build_dup_keys(name="Соколов Пётр")
+        b = build_dup_keys(name="Соколов Пётр")
+        strength, confidence, signals = compare_key_sets(a, b)
+        assert (strength, confidence) == ("name", 50)
+        assert match_level(signals) == "possible"
+
+    def test_name_plus_birth_date_is_exact(self):
+        a = build_dup_keys(name="Соколов Пётр", extra_data={"birth_date": "02.01.1997"})
+        b = build_dup_keys(name="Соколов Пётр", extra_data={"birth_date": "1997-01-02"})
+        strength, confidence, signals = compare_key_sets(a, b)
+        assert (strength, confidence) == ("name", 100)
+        assert match_level(signals) == "exact"
+
+    def test_partial_phone_plus_dob_stays_possible(self):
+        # 7 цифр телефона — не личность, дата рождения — одна: жёлтый, не красный.
+        a = build_dup_keys(name="Сидоров Иван", phone="+7 495 000-11-22",
+                           extra_data={"birth_date": "14.05.1990"})
+        b = build_dup_keys(name="Петров Александр", phone="+7 916 000-11-22",
+                           extra_data={"birth_date": "1990-05-14"})
+        _, confidence, signals = compare_key_sets(a, b)
+        assert match_level(signals) == "possible"
+        assert confidence < 100
 
     def test_soft_component_does_not_fake_identity_tier(self):
         # Совпали ПОСЛЕДНИЕ 7 цифр (разный код города) + дата рождения. Мягкий
@@ -95,8 +130,19 @@ async def test_same_confidence_in_banner_and_compare_window(db_session, organiza
 
     card = next(d for d in dups if d.entity_id == old.id)
     # Раньше: баннер «Точное совпадение» (100), карточка — «30%».
-    assert meta["confidence"] == card.confidence == 100
+    # Одна почта — один признак: оба места показывают одинаковые 60% и «possible».
+    assert meta["confidence"] == card.confidence == 60
     assert meta["strength"] == card.strength == "email"
+    assert meta["level"] == card.level == "possible"
+
+
+def test_best_match_prefers_exact_over_higher_tier():
+    only_email = DupMatch(entity_id=1, is_archived=False, strength="email", confidence=60,
+                          reasons=[], signals=[DupSignal("email", "e", 100, True, "a", "a")])
+    phone_and_name = DupMatch(entity_id=2, is_archived=False, strength="name", confidence=100,
+                              reasons=[], signals=[DupSignal("name", "n", 100, True, "x", "x"),
+                                                   DupSignal("phone", "p", 100, True, "1", "1")])
+    assert best_match([only_email, phone_and_name]).entity_id == 2
 
 
 @pytest.mark.asyncio
@@ -371,3 +417,39 @@ async def test_public_share_link_survives_merge(db_session, organization):
     )).scalar_one_or_none()
     assert link is not None, "ссылка не должна исчезать вместе с влитой карточкой"
     assert link.entity_id == survivor.id
+
+
+@pytest.mark.asyncio
+async def test_back_link_gets_mirrored_meta(db_session, organization):
+    # Второй стороне пары ставится обратная ссылка — и та же мета: иначе баннер
+    # у старого кандидата не знал уровня и показывал «0%».
+    old = await _mk(db_session, organization.id, "Иван Иванов", email="mirror@x.com",
+                    phone="+7 910 222-33-44")
+    new = await _mk(db_session, organization.id, "Другое Имя", email="mirror@x.com",
+                    phone="8 910 2223344")
+    await db_session.commit()
+
+    assert await detect_archived_duplicate(db_session, new) == old.id
+    back = (old.extra_data or {}).get("hidden_duplicate_meta")
+    assert old.extra_data["hidden_duplicate_id"] == new.id
+    assert back["matched_id"] == new.id
+    assert back["level"] == new.extra_data["hidden_duplicate_meta"]["level"] == "exact"
+
+
+@pytest.mark.asyncio
+async def test_weak_back_link_does_not_replace_exact_flag(db_session, organization):
+    # «Кирилл Иванов» уже помечен точным дублем (имя + телефон). Однофамилец,
+    # совпавший только именем, не должен перетянуть его флаг на себя.
+    a = await _mk(db_session, organization.id, "Иванов Кирилл", phone="+7 917 200-40-60")
+    b = await _mk(db_session, organization.id, "Кирилл Иванов", phone="8 917 2004060")
+    await db_session.commit()
+    assert await detect_archived_duplicate(db_session, b) == a.id
+    # Флаг самой анкете ставит роут (создание / detect-duplicate) — повторяем его.
+    b.extra_data = {**b.extra_data, "hidden_duplicate_id": a.id}
+    assert a.extra_data["hidden_duplicate_meta"]["level"] == "exact"
+
+    c = await _mk(db_session, organization.id, "Иванов Кирилл Евгеньевич")
+    await db_session.commit()
+    await detect_archived_duplicate(db_session, c)
+    assert a.extra_data["hidden_duplicate_id"] == b.id
+    assert b.extra_data["hidden_duplicate_id"] == a.id

@@ -112,6 +112,7 @@ class DuplicateCandidate:
     matched_fields: Dict[str, Tuple[str, str]] = field(default_factory=dict)  # field: (value1, value2)
     strength: str = ""                 # тир совпадения (source/email/…/soft/text)
     signals: List["DupSignal"] = field(default_factory=list)
+    level: str = "possible"            # exact — красный, possible — жёлтый
 
 
 @dataclass
@@ -1241,6 +1242,7 @@ class SimilarityService:
                 matched_fields=m.matched_fields,
                 strength=m.strength,
                 signals=m.signals,
+                level=m.level,
             )
             for m in matches
         ]
@@ -1630,6 +1632,60 @@ class DupSignal:
         }
 
 
+# --- Уровень совпадения: «точно он» / «возможно он» ---------------------------
+# Решение владельца 21.09.2026: красный баннер «Точное совпадение» — ТОЛЬКО когда
+# совпало несколько признаков личности. Одна совпавшая почта или одно «Фамилия
+# Имя» — это «возможно тот же человек» (жёлтый): тёзки и общие почты бывают.
+# Город и возраст признаком личности не считаются, 7 цифр телефона — тоже.
+STRONG_EVIDENCE_FIELDS = frozenset(
+    {"source", "email", "telegram", "name", "phone", "birth_date", "resume_text"}
+)
+# Сколько процентов даёт каждое совпавшее поле, пока признак один. Ни одно поле
+# в одиночку не дотягивает до 100 — сотня только у «точного» уровня.
+EVIDENCE_WEIGHTS = {
+    "source": 60, "email": 60, "telegram": 60, "phone": 60, "name": 50,
+    "birth_date": 40, "resume_text": 40, "age": 12, "city": 8,
+}
+PARTIAL_PHONE_WEIGHT = 35  # совпали только последние 7 цифр
+FUZZY_NAME_WEIGHT = 20     # имя похоже лишь нечётко (инициал, мягкий скоринг)
+# Потолок «возможного» уровня: одиночный признак не должен выглядеть как 99%.
+POSSIBLE_CONFIDENCE_CAP = 90
+
+
+def strong_evidence_fields(signals) -> Set[str]:
+    """Поля, совпадение которых — самостоятельный признак личности. Частичное
+    совпадение телефона (7 цифр) признаком не считается."""
+    out: Set[str] = set()
+    for sig in signals or []:
+        if sig.field not in STRONG_EVIDENCE_FIELDS:
+            continue
+        if sig.identity or sig.field in ("birth_date", "resume_text"):
+            out.add(sig.field)
+    return out
+
+
+def match_level(signals) -> str:
+    """«exact» — совпало ≥2 признака личности (красный баннер), иначе «possible»."""
+    return "exact" if len(strong_evidence_fields(signals)) >= 2 else "possible"
+
+
+def evidence_confidence(signals) -> int:
+    """Процент для «возможного» совпадения: сумма весов совпавших полей (по
+    максимуму на поле), не выше POSSIBLE_CONFIDENCE_CAP. «Точному» — всегда 100."""
+    if match_level(signals) == "exact":
+        return 100
+    per_field: Dict[str, int] = {}
+    for sig in signals or []:
+        if sig.field == "phone" and not sig.identity:
+            w = PARTIAL_PHONE_WEIGHT
+        elif sig.field == "name" and not sig.identity:
+            w = FUZZY_NAME_WEIGHT
+        else:
+            w = EVIDENCE_WEIGHTS.get(sig.field, 0)
+        per_field[sig.field] = max(per_field.get(sig.field, 0), w)
+    return min(POSSIBLE_CONFIDENCE_CAP, sum(per_field.values()))
+
+
 @dataclass
 class DupMatch:
     """Одно совпадение единого матчера дублей."""
@@ -1646,6 +1702,11 @@ class DupMatch:
     def matched_fields(self) -> Dict[str, Tuple[str, str]]:
         """{поле: (значение слева, значение справа)} — формат окна сравнения."""
         return {s.field: (s.left, s.right) for s in self.signals}
+
+    @property
+    def level(self) -> str:
+        """«exact» (красный) — совпало ≥2 признака личности, иначе «possible»."""
+        return match_level(self.signals)
 
 
 def build_dup_keys(
@@ -1828,6 +1889,7 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
             "confidence": chosen.confidence,
             "reasons": chosen.reasons,
             "matched_id": chosen.entity_id,
+            "level": chosen.level,
         }
         entity.extra_data = ne
 
@@ -1843,8 +1905,23 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
                     ddis.add(int(x))
                 except (TypeError, ValueError):
                     pass
-            if entity.id not in ddis and de.get("hidden_duplicate_id") != entity.id:
+            # Слабая пара не вытесняет сильную: «Кирилл Иванов» с точным флагом (имя +
+            # телефон) не должен переключаться на однофамильца, совпавшего лишь именем.
+            cur_meta = de.get("hidden_duplicate_meta") or {}
+            cur_rank = (cur_meta.get("level") == "exact", cur_meta.get("confidence") or 0)
+            new_rank = (chosen.level == "exact", chosen.confidence)
+            keeps_better = bool(de.get("hidden_duplicate_id")) and cur_rank > new_rank
+            if (
+                entity.id not in ddis
+                and de.get("hidden_duplicate_id") != entity.id
+                and not keeps_better
+            ):
                 nde = dict(de)
                 nde["hidden_duplicate_id"] = entity.id
+                # Признаки пары симметричны — второй стороне та же мета. Без неё
+                # баннер у старого кандидата не знал уровня и процента («0%»).
+                nde["hidden_duplicate_meta"] = {
+                    **ne["hidden_duplicate_meta"], "matched_id": entity.id,
+                }
                 dup.extra_data = nde
     return match_id

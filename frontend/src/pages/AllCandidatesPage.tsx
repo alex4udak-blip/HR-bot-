@@ -72,7 +72,7 @@ import {
   getEntityActivity,
   archiveEntity,
 } from "@/services/api/entities";
-import type { VacancyActivityBlock, ActivityEvent } from "@/services/api/entities";
+import type { VacancyActivityBlock, ActivityEvent, HiddenDuplicateMeta } from "@/services/api/entities";
 import type { ApplicationStage } from "@/types";
 import { STATUS_LABELS, APPLICATION_STAGE_LABELS, STATUS_TO_STAGE_MAP, type EntityStatus } from "@/types";
 import { getAllVacancies, createApplication, updateApplication, deleteApplication, deleteApplicationHistory } from "@/services/api/vacancies";
@@ -848,7 +848,10 @@ export default function AllCandidatesPage() {
     const card = selectedCard;
     if (!card) return;
     const extra = (card.extra_data || {}) as Record<string, unknown>;
-    if (extra.hidden_duplicate_id) return; // флаг уже есть — баннер покажется и так
+    // Флаг с уровнем — баннер покажется и так. Флаг без level записан старым
+    // правилом («одно совпадение = точный дубль») — пересчитываем его.
+    const flagMeta = extra.hidden_duplicate_meta as HiddenDuplicateMeta | undefined;
+    if (extra.hidden_duplicate_id && flagMeta?.level) return;
     if (detectTriedRef.current === card.id) return; // эту карточку уже проверяли
     detectTriedRef.current = card.id;
     let cancelled = false;
@@ -894,8 +897,13 @@ export default function AllCandidatesPage() {
         const mergedExtra = { ...((e.extra_data || {}) as Record<string, unknown>) };
         // hidden_duplicate_id (детект дубля) и is_archived (deep-link архивного,
         // строка ~700) проставляются локально — не теряем их при рефетче.
+        // Флаг и мета — парой: рефетч мог прийти раньше, чем детект их записал,
+        // и без меты баннер терял уровень и процент.
         if (prevExtra.hidden_duplicate_id && !mergedExtra.hidden_duplicate_id) {
           mergedExtra.hidden_duplicate_id = prevExtra.hidden_duplicate_id;
+          if (prevExtra.hidden_duplicate_meta) {
+            mergedExtra.hidden_duplicate_meta = prevExtra.hidden_duplicate_meta;
+          }
         }
         if (prevExtra.is_archived && !mergedExtra.is_archived) {
           mergedExtra.is_archived = prevExtra.is_archived;

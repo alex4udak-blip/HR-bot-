@@ -1713,6 +1713,7 @@ async def rescan_active_duplicates(
                 "confidence": chosen.confidence,
                 "reasons": chosen.reasons,
                 "matched_id": chosen.entity_id,
+                "level": chosen.level,
             }
             if cur != dup_id or new_extra.get("hidden_duplicate_meta") != meta:
                 new_extra["hidden_duplicate_id"] = dup_id
@@ -1834,6 +1835,7 @@ async def find_archive_duplicates(
                         "confidence": hit.confidence,
                         "reasons": hit.reasons,
                         "matched_id": sibling,
+                        "level": hit.level,
                     }
                 ent.extra_data = ne
                 changed = True

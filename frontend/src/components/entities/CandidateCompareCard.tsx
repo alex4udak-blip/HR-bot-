@@ -404,9 +404,10 @@ function Avatar({ photo, name }: { photo: string; name: string }) {
   );
 }
 
-// Цветовые тиры бейджа уверенности дубликата.
-function confidenceBadgeClass(confidence: number): string {
-  if (confidence >= 80) return "bg-red-100 text-red-700";
+// Цвет бейджа уверенности: красный — только «точный» уровень (совпало ≥2
+// признака), как у плашки. Одиночное совпадение с высоким % — не красное.
+function confidenceBadgeClass(confidence: number, level?: "exact" | "possible"): string {
+  if (level === "exact") return "bg-red-100 text-red-700";
   if (confidence >= 60) return "bg-orange-100 text-orange-700";
   return "bg-amber-100 text-amber-700";
 }
@@ -423,6 +424,7 @@ export function CandidateCompareCard({
   side,
   matched,
   confidence,
+  level,
   signals,
   entityId,
   vacancies,
@@ -432,6 +434,8 @@ export function CandidateCompareCard({
   side: Side | null;
   matched: (key: FieldKey | "name") => MatchKind;
   confidence?: number;
+  /** Уровень пары с бэка: exact — красный бейдж, possible — оранжевый/жёлтый. */
+  level?: "exact" | "possible";
   /** Сигналы пары с бэка: из них строится блок «почему совпало». */
   signals?: DupSignalLike[];
   entityId?: number;
@@ -453,7 +457,7 @@ export function CandidateCompareCard({
           </span>
         )}
         {confidence != null && (
-          <span className={`text-[11px] font-semibold rounded px-1.5 py-0.5 ${confidenceBadgeClass(confidence)}`}>
+          <span className={`text-[11px] font-semibold rounded px-1.5 py-0.5 ${confidenceBadgeClass(confidence, level)}`}>
             {confidence}%
           </span>
         )}
