@@ -29,7 +29,11 @@ import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidat
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import {
   buildStageContainers,
+  cardMatchesMentor,
   countHiddenByScope,
+  countPracticeMentors,
+  PRACTICE_STATUS,
+  type MentorFilter,
   entityToKanbanCard,
   loadCandidateListSettings,
   readSystemHrTags,
@@ -587,9 +591,14 @@ export default function AllCandidatesPage() {
     }
   }, [showTopSearch]);
 
+  // «Практикуются у»: фильтр по тегу-наставнику на вкладке «Практика».
+  // Временный, как «Только по моим»: другая вкладка или поиск — сброс.
+  const [mentorFilter, setMentorFilter] = useState<MentorFilter | null>(null);
+
   // Reset visible count when filters change
   useEffect(() => {
     setVisibleCount(VISIBLE_STEP);
+    setMentorFilter(null);
   }, [activeTab, debouncedSearch]);
 
   // useMemo чтобы фильтрация была реактивной и не пересчитывалась лишний раз
@@ -605,7 +614,22 @@ export default function AllCandidatesPage() {
     [board, activeTab, listSettings.scope, user?.id, debouncedSearch],
   );
 
-  const displayedCards = filteredCards;
+  // Счётчики «Практикуются у» — ТОЛЬКО «Все кандидаты» → вкладка «Практика»
+  // (решение владельца 21.09.2026), и не во время поиска: там список идёт по
+  // всем этапам. Считаем по тому же списку, что видно слева, — цифры сходятся
+  // с тем, что покажет клик.
+  const showMentorStats = activeTab === PRACTICE_STATUS && !debouncedSearch.trim();
+  const mentorStats = useMemo(
+    () => (showMentorStats ? countPracticeMentors(filteredCards.map(({ card }) => card)) : []),
+    [showMentorStats, filteredCards],
+  );
+  const displayedCards = useMemo(
+    () =>
+      showMentorStats && mentorFilter
+        ? filteredCards.filter(({ card }) => cardMatchesMentor(card, mentorFilter))
+        : filteredCards,
+    [showMentorStats, mentorFilter, filteredCards],
+  );
 
   // Сколько карточек доски отсеял локальный фильтр «Только мои» — нужно, чтобы
   // пустой список не выглядел пропажей кандидата.
@@ -1326,6 +1350,40 @@ export default function AllCandidatesPage() {
         <div className="hf-candidates-master">
           {/* LEFT: Candidate list — white card */}
           <div className="hf-candidates-list-panel">
+            {showMentorStats && (
+              <div className="flex-shrink-0 px-3 pt-3 pb-2 border-b border-[var(--hf-ui-divider)]">
+                <div className="text-hf-xxs text-[var(--hf-main-500)] mb-1.5">Практикуются у</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {mentorStats.map(({ key, count }) => {
+                    const active = mentorFilter === key;
+                    const isNone = key === "none";
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setMentorFilter(active ? null : key)}
+                        title={active
+                          ? "Показать всех на практике"
+                          : isNone
+                            ? "Показать практикантов без тега Егора или Влада"
+                            : `Показать практикантов с тегом «${key}»`}
+                        className={clsx(
+                          "inline-flex items-center rounded-full px-2.5 py-[3px] text-[12px] font-medium border transition-colors",
+                          active
+                            ? "border-[color:var(--hf-cyan-500)] bg-[var(--hf-status-cyan-badge)] text-[var(--hf-cyan-700)]"
+                            : isNone
+                              ? "border-[color:var(--hf-ui-border)] text-[var(--hf-main-600)] hover:border-[color:var(--hf-main-400)]"
+                              : "border-[color:color-mix(in_srgb,var(--hf-red-500)_35%,transparent)] bg-[color:color-mix(in_srgb,var(--hf-red-500)_12%,transparent)] text-[var(--hf-red-500)] hover:border-[color:var(--hf-red-500)]",
+                        )}
+                      >
+                        {isNone ? "без тега" : key} · {count}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {/* List */}
             <div className="hf-candidates-list-scroll">
               {displayedCards.length === 0 ? (

@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import type { KanbanCard, KanbanColumn } from "@/services/api/candidates";
 import type { EntityFile } from "@/services/api/entities";
 import {
+  cardMatchesMentor,
+  countPracticeMentors,
+  PRACTICE_STATUS,
   DEFAULT_CANDIDATE_LIST_SETTINGS,
   loadCandidateListSettings,
   saveCandidateListSettings,
@@ -594,5 +597,34 @@ describe("настройки списка «Все кандидаты»: scope �
     localStorage.clear();
     localStorage.setItem(KEY, "{oops");
     expect(loadCandidateListSettings()).toEqual(DEFAULT_CANDIDATE_LIST_SETTINGS);
+  });
+});
+
+describe('«Практикуются у» — счётчик по тегам Егора и Влада', () => {
+  const card = (id: number, tags: string[]) =>
+    ({ id, name: `К${id}`, created_at: '', headline_tags: tags.map((name) => ({ name, color: 'red' })) }) as unknown as KanbanCard;
+  const cards = [
+    card(1, ['Егор']),
+    card(2, ['влад', 'перформер']),   // регистр не важен, слова не мешают
+    card(3, ['Егор', 'Влад']),        // у обоих — считается у обоих
+    card(4, ['перформер']),           // только слово — «без тега»
+    card(5, []),
+  ];
+
+  it('считает только Егора и Влада, остальные теги не считаются', () => {
+    expect(countPracticeMentors(cards)).toEqual([
+      { key: 'Егор', count: 2 },
+      { key: 'Влад', count: 2 },
+      { key: 'none', count: 2 },
+    ]);
+  });
+
+  it('фильтр по наставнику и «без тега»', () => {
+    expect(cards.filter((c) => cardMatchesMentor(c, 'Влад')).map((c) => c.id)).toEqual([2, 3]);
+    expect(cards.filter((c) => cardMatchesMentor(c, 'none')).map((c) => c.id)).toEqual([4, 5]);
+  });
+
+  it('вкладка «Практика» — это probation', () => {
+    expect(PRACTICE_STATUS).toBe('probation');
   });
 });

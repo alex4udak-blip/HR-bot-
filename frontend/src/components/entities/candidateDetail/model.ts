@@ -659,3 +659,38 @@ export function saveCandidateListSettings(settings: CandidateListSettings): void
     /* ignore */
   }
 }
+
+// ================================================================
+// «Практикуются у»: счётчик по тегам-наставникам на вкладке «Практика»
+// ================================================================
+
+/** Ключ этапа «Практика» на доске «Все кандидаты» (подпись орг может сменить). */
+export const PRACTICE_STATUS = "probation";
+
+/** Теги у имени, по которым считается, у кого практикуется кандидат (решение
+ * владельца 21.09.2026). Остальные теги только отображаются. */
+export const PRACTICE_MENTOR_TAGS = ["Егор", "Влад"] as const;
+
+/** Значение фильтра: имя наставника или «без тега» (нет ни одного из них). */
+export type MentorFilter = (typeof PRACTICE_MENTOR_TAGS)[number] | "none";
+
+function mentorsOf(card: KanbanCard): string[] {
+  const names = (card.headline_tags || []).map((t) => (t.name || "").trim().toLowerCase());
+  return PRACTICE_MENTOR_TAGS.filter((m) => names.includes(m.toLowerCase()));
+}
+
+export function cardMatchesMentor(card: KanbanCard, filter: MentorFilter): boolean {
+  const mentors = mentorsOf(card);
+  return filter === "none" ? mentors.length === 0 : mentors.includes(filter);
+}
+
+/** Сколько карточек у каждого наставника и сколько ни у кого. Кандидат с
+ * обоими тегами считается у обоих. */
+export function countPracticeMentors(cards: KanbanCard[]): { key: MentorFilter; count: number }[] {
+  const out: { key: MentorFilter; count: number }[] = PRACTICE_MENTOR_TAGS.map((m) => ({
+    key: m,
+    count: cards.filter((c) => cardMatchesMentor(c, m)).length,
+  }));
+  out.push({ key: "none", count: cards.filter((c) => cardMatchesMentor(c, "none")).length });
+  return out;
+}
