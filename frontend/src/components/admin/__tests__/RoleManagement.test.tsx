@@ -1,3 +1,9 @@
+/**
+ * «Управление ролями и пользователями» (Настройки → роли).
+ *
+ * Экран из трёх вкладок: «Пользователи» (по умолчанию), «Кастомные роли»,
+ * «Матрица прав». Доступ — суперадмин или владелец/админ организации.
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -5,7 +11,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import RoleManagement from '../RoleManagement';
 import * as api from '@/services/api';
 
-// Mock the API module
 vi.mock('@/services/api', async () => {
   const actual = await vi.importActual('@/services/api');
   return {
@@ -20,320 +25,173 @@ vi.mock('@/services/api', async () => {
     assignCustomRole: vi.fn(),
     unassignCustomRole: vi.fn(),
     getPermissionAuditLogs: vi.fn(),
+    getOrgMembers: vi.fn(),
+    updateMemberRole: vi.fn(),
+    getMyOrgRole: vi.fn(),
   };
 });
 
-// Mock the authStore
-const mockAuthStore = {
-  user: { id: 1, email: 'admin@test.com', name: 'Admin User', role: 'superadmin' },
+const authState: { user: { id: number; role: string } } = {
+  user: { id: 1, role: 'superadmin' },
 };
-
 vi.mock('@/stores/authStore', () => ({
-  useAuthStore: vi.fn(() => mockAuthStore),
+  useAuthStore: () => authState,
 }));
 
-// Mock react-hot-toast
 vi.mock('react-hot-toast', () => ({
-  default: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
+  default: { success: vi.fn(), error: vi.fn() },
 }));
 
-const mockRoles: api.CustomRole[] = [
+const mockFn = <T,>(f: T) => f as unknown as ReturnType<typeof vi.fn>;
+
+const roles: api.CustomRole[] = [
   {
     id: 1,
-    name: 'Content Manager',
-    description: 'Manages content across the platform',
+    name: 'Контент-менеджер',
+    description: 'Ведёт контент',
     base_role: 'admin',
-    created_at: '2025-01-01T00:00:00Z',
+    created_at: '2026-01-01T00:00:00Z',
     is_active: true,
-    permission_overrides: [
-      { id: 1, role_id: 1, permission: 'can_create_resources', allowed: true },
-    ],
+    permission_overrides: [{ id: 1, role_id: 1, permission: 'can_create_resources', allowed: true }],
   },
   {
     id: 2,
-    name: 'Viewer',
-    description: 'Read-only access',
+    name: 'Наблюдатель',
+    description: 'Только смотрит',
     base_role: 'member',
-    created_at: '2025-01-01T00:00:00Z',
-    is_active: true,
+    created_at: '2026-01-01T00:00:00Z',
+    is_active: false,
     permission_overrides: [],
   },
 ];
 
-const mockUsers = [
-  { id: 1, email: 'user1@test.com', name: 'User One' },
-  { id: 2, email: 'user2@test.com', name: 'User Two' },
+const members = [
+  { id: 10, user_id: 1, user_name: 'Ильнар', user_email: 'ilnar@test.ru', role: 'owner', has_full_access: true, created_at: '' },
+  { id: 11, user_id: 2, user_name: 'Мария', user_email: 'maria@test.ru', role: 'admin', has_full_access: true, created_at: '' },
 ];
 
-const createTestQueryClient = () =>
-  new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
-
-const renderWithProviders = (ui: React.ReactElement) => {
-  const queryClient = createTestQueryClient();
+function renderPage() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+    <QueryClientProvider client={client}>
+      <RoleManagement />
+    </QueryClientProvider>,
   );
-};
+}
+
+async function openRolesTab() {
+  fireEvent.click(await screen.findByRole('button', { name: /Кастомные роли/ }));
+}
 
 describe('RoleManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (api.getCustomRoles as ReturnType<typeof vi.fn>).mockResolvedValue(mockRoles);
-    (api.getUsers as ReturnType<typeof vi.fn>).mockResolvedValue(mockUsers);
-    (api.getPermissionAuditLogs as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    authState.user = { id: 1, role: 'superadmin' };
+    mockFn(api.getMyOrgRole).mockResolvedValue({ role: 'owner' });
+    mockFn(api.getCustomRoles).mockResolvedValue(roles);
+    mockFn(api.getOrgMembers).mockResolvedValue(members);
+    mockFn(api.getPermissionAuditLogs).mockResolvedValue([]);
+    mockFn(api.createCustomRole).mockResolvedValue({ ...roles[0], id: 3 });
   });
 
-  describe('Rendering', () => {
-    it('should render the component title', async () => {
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Custom Roles')).toBeInTheDocument();
-      });
+  describe('доступ', () => {
+    it('обычному участнику экран закрыт', async () => {
+      authState.user = { id: 5, role: 'member' };
+      mockFn(api.getMyOrgRole).mockResolvedValue({ role: 'member' });
+      renderPage();
+      expect(
+        await screen.findByText('Требуется доступ администратора или владельца организации'),
+      ).toBeInTheDocument();
     });
 
-    it('should render the "New Role" button', async () => {
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /new role/i })).toBeInTheDocument();
-      });
-    });
-
-    it('should render role cards when roles exist', async () => {
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Content Manager')).toBeInTheDocument();
-        expect(screen.getByText('Viewer')).toBeInTheDocument();
-      });
-    });
-
-    it('should show empty state when no roles exist', async () => {
-      (api.getCustomRoles as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText('No custom roles yet')).toBeInTheDocument();
-      });
-    });
-
-    it('should show permission override count on role cards', async () => {
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText('1 permission override')).toBeInTheDocument();
-        expect(screen.getByText('0 permission overrides')).toBeInTheDocument();
-      });
+    it('админу организации открыт', async () => {
+      authState.user = { id: 2, role: 'member' };
+      mockFn(api.getMyOrgRole).mockResolvedValue({ role: 'admin' });
+      renderPage();
+      expect(await screen.findByText('Управление ролями и пользователями')).toBeInTheDocument();
     });
   });
 
-  describe('Create Role Dialog', () => {
-    it('should open create dialog when clicking "New Role"', async () => {
-      const user = userEvent.setup();
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /new role/i })).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByRole('button', { name: /new role/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText('Create Custom Role')).toBeInTheDocument();
-      });
+  describe('вкладка «Пользователи» (по умолчанию)', () => {
+    it('показывает участников и отмечает текущего', async () => {
+      renderPage();
+      expect(await screen.findByText('Мария')).toBeInTheDocument();
+      expect(screen.getByText('Ильнар')).toBeInTheDocument();
+      expect(screen.getByText('Это вы')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Пользователи \(2\)/ })).toBeInTheDocument();
     });
 
-    it('should show base role selector in create dialog', async () => {
-      const user = userEvent.setup();
-      renderWithProviders(<RoleManagement />);
+    it('кнопка «Новая роль» есть только на вкладке ролей', async () => {
+      renderPage();
+      await screen.findByText('Мария');
+      expect(screen.queryByRole('button', { name: /Новая роль/ })).not.toBeInTheDocument();
+      await openRolesTab();
+      expect(screen.getByRole('button', { name: /Новая роль/ })).toBeInTheDocument();
+    });
+  });
 
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /new role/i })).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByRole('button', { name: /new role/i }));
-
-      await waitFor(() => {
-        expect(screen.getByLabelText(/base role/i)).toBeInTheDocument();
-      });
+  describe('вкладка «Кастомные роли»', () => {
+    it('показывает карточки ролей с описанием, основой и числом переопределений', async () => {
+      renderPage();
+      await openRolesTab();
+      expect(await screen.findByText('Контент-менеджер')).toBeInTheDocument();
+      expect(screen.getByText('Ведёт контент')).toBeInTheDocument();
+      expect(screen.getByText('Основа: Администратор')).toBeInTheDocument();
+      expect(screen.getByText('1 переопределение')).toBeInTheDocument();
+      expect(screen.getByText('0 переопределений')).toBeInTheDocument();
+      expect(screen.getAllByText('Настроить права')).toHaveLength(2);
     });
 
-    it('should call createCustomRole when form is submitted', async () => {
-      const user = userEvent.setup();
-      (api.createCustomRole as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 3,
-        name: 'New Role',
-        base_role: 'member',
-        created_at: '2025-01-01T00:00:00Z',
-        is_active: true,
-      });
+    it('помечает неактивную роль', async () => {
+      renderPage();
+      await openRolesTab();
+      await screen.findByText('Наблюдатель');
+      expect(screen.getByText('Неактивна')).toBeInTheDocument();
+    });
 
-      renderWithProviders(<RoleManagement />);
+    it('пустое состояние, если ролей нет', async () => {
+      mockFn(api.getCustomRoles).mockResolvedValue([]);
+      renderPage();
+      await openRolesTab();
+      expect(await screen.findByText('Создайте первую кастомную роль для начала работы')).toBeInTheDocument();
+    });
+  });
 
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /new role/i })).toBeInTheDocument();
-      });
+  describe('создание роли', () => {
+    it('создаёт роль с введённым названием и выбранной основой', async () => {
+      renderPage();
+      await openRolesTab();
+      fireEvent.click(screen.getByRole('button', { name: /Новая роль/ }));
 
-      await user.click(screen.getByRole('button', { name: /new role/i }));
+      expect(await screen.findByText('Создать кастомную роль')).toBeInTheDocument();
+      const submit = screen.getByRole('button', { name: /^Создать$/ });
+      expect(submit).toBeDisabled();
 
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText(/e.g., content manager/i)).toBeInTheDocument();
-      });
+      await userEvent.type(screen.getByPlaceholderText('Например: Контент-менеджер'), 'Сорсер');
+      await userEvent.selectOptions(screen.getByLabelText('Базовая роль'), 'admin');
+      expect(submit).not.toBeDisabled();
+      fireEvent.click(submit);
 
-      await user.type(screen.getByPlaceholderText(/e.g., content manager/i), 'New Role');
-      await user.click(screen.getByRole('button', { name: /^create$/i }));
-
-      await waitFor(() => {
+      await waitFor(() =>
         expect(api.createCustomRole).toHaveBeenCalledWith({
-          name: 'New Role',
+          name: 'Сорсер',
           description: '',
-          base_role: 'member',
-        });
-      });
+          base_role: 'admin',
+        }),
+      );
     });
   });
 
-  describe('Delete Role', () => {
-    it.skip('should call deleteCustomRole when delete is confirmed', async () => {
-      const user = userEvent.setup();
-      (api.deleteCustomRole as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+  describe('журнал', () => {
+    it('открывается кнопкой «Журнал» и грузит записи только тогда', async () => {
+      renderPage();
+      await screen.findByText('Мария');
+      expect(api.getPermissionAuditLogs).not.toHaveBeenCalled();
 
-      // Mock window.confirm
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Content Manager')).toBeInTheDocument();
-      });
-
-      // Find and click delete button
-      const deleteButtons = screen.getAllByTitle('Delete Role');
-      await user.click(deleteButtons[0]);
-
-      await waitFor(() => {
-        expect(confirmSpy).toHaveBeenCalled();
-        expect(api.deleteCustomRole).toHaveBeenCalledWith(1);
-      });
-
-      confirmSpy.mockRestore();
-    });
-
-    it.skip('should not delete when confirmation is cancelled', async () => {
-      const user = userEvent.setup();
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Content Manager')).toBeInTheDocument();
-      });
-
-      const deleteButtons = screen.getAllByTitle('Delete Role');
-      await user.click(deleteButtons[0]);
-
-      expect(api.deleteCustomRole).not.toHaveBeenCalled();
-
-      confirmSpy.mockRestore();
-    });
-  });
-
-  describe('Audit Log', () => {
-    it('should toggle audit log visibility when button is clicked', async () => {
-      const user = userEvent.setup();
-      (api.getPermissionAuditLogs as ReturnType<typeof vi.fn>).mockResolvedValue([
-        {
-          id: 1,
-          action: 'create',
-          permission: 'can_view_all_users',
-          old_value: null,
-          new_value: true,
-          created_at: '2025-01-01T00:00:00Z',
-        },
-      ]);
-
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /audit log/i })).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByRole('button', { name: /audit log/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText('Permission Audit Log')).toBeInTheDocument();
-      });
-    });
-  });
-
-  describe('Access Control', () => {
-    it('should show access denied message for non-superadmin users', async () => {
-      // Override the mock for this test
-      const originalUser = mockAuthStore.user;
-      mockAuthStore.user = { id: 1, email: 'user@test.com', name: 'User', role: 'admin' };
-
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Superadmin access required')).toBeInTheDocument();
-      });
-
-      // Restore original user
-      mockAuthStore.user = originalUser;
-    });
-  });
-
-  describe('Role Cards', () => {
-    it('should display role description', async () => {
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Manages content across the platform')).toBeInTheDocument();
-        expect(screen.getByText('Read-only access')).toBeInTheDocument();
-      });
-    });
-
-    it('should display base role information', async () => {
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/based on: admin/i)).toBeInTheDocument();
-        expect(screen.getByText(/based on: member/i)).toBeInTheDocument();
-      });
-    });
-
-    it('should have configure permissions button', async () => {
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        const configButtons = screen.getAllByText('Configure Permissions');
-        expect(configButtons.length).toBe(2);
-      });
-    });
-
-    it('should show inactive badge for inactive roles', async () => {
-      (api.getCustomRoles as ReturnType<typeof vi.fn>).mockResolvedValue([
-        {
-          ...mockRoles[0],
-          is_active: false,
-        },
-      ]);
-
-      renderWithProviders(<RoleManagement />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Inactive')).toBeInTheDocument();
-      });
+      fireEvent.click(screen.getByRole('button', { name: /Журнал/ }));
+      expect(await screen.findByText('Журнал изменений прав')).toBeInTheDocument();
+      await waitFor(() => expect(api.getPermissionAuditLogs).toHaveBeenCalledWith({ limit: 50 }));
+      expect(await screen.findByText('Журнал пока пуст')).toBeInTheDocument();
     });
   });
 });

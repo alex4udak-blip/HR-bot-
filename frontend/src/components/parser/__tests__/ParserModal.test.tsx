@@ -1,633 +1,357 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+/**
+ * Окно «Парсинг резюме» (кнопка «+» → загрузить резюме).
+ *
+ * Сценарий сейчас такой: резюме грузят ТОЛЬКО файлом (режим «по ссылке» убран),
+ * AI разбирает его, рекрутёр правит поля и либо создаёт нового кандидата —
+ * сразу с комментарием в ленту и на выбранную воронку, — либо прикрепляет файл
+ * к уже существующему кандидату из «Найденных».
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ParserModal from '../ParserModal';
-import type { ParsedResume, ParsedVacancy } from '@/services/api';
+import type { ParsedResume } from '@/services/api';
 
-// Mock the API
 vi.mock('@/services/api', () => ({
-  parseResumeFromUrl: vi.fn(),
   parseResumeFromFile: vi.fn(),
-  parseVacancyFromUrl: vi.fn(),
+  getEntities: vi.fn(),
+  createEntity: vi.fn(),
+  uploadEntityFile: vi.fn(),
+  getAllVacancies: vi.fn(),
+  createApplication: vi.fn(),
 }));
 
-// Mock react-hot-toast
+vi.mock('@/services/api/entities', () => ({
+  addEntityNote: vi.fn(),
+}));
+
 vi.mock('react-hot-toast', () => ({
-  default: {
-    error: vi.fn(),
-    success: vi.fn(),
-  },
+  default: { error: vi.fn(), success: vi.fn() },
+}));
+
+// Текущий пользователь: по умолчанию обычный рекрутёр (id 7).
+const authState: { user: { id: number; role: string; org_role: string } | null } = {
+  user: { id: 7, role: 'member', org_role: 'hr' },
+};
+vi.mock('@/stores/authStore', () => ({
+  useAuthStore: () => authState,
 }));
 
 import {
-  parseResumeFromUrl,
   parseResumeFromFile,
-  parseVacancyFromUrl,
+  getEntities,
+  createEntity,
+  uploadEntityFile,
+  getAllVacancies,
+  createApplication,
 } from '@/services/api';
+import { addEntityNote } from '@/services/api/entities';
 import toast from 'react-hot-toast';
 
-const mockParsedResume: ParsedResume = {
-  name: 'John Doe',
-  email: 'john@example.com',
+const parsed: ParsedResume = {
+  name: 'Иванов Иван Иванович',
+  email: 'ivan@example.com',
   phone: '+79991234567',
-  telegram: '@johndoe',
-  position: 'Python Developer',
-  company: 'TechCorp',
-  experience_years: 5,
-  skills: ['Python', 'FastAPI', 'PostgreSQL'],
-  salary_min: 200000,
-  salary_max: 300000,
+  telegram: '@ivanov',
+  position: 'Маркетолог',
+  company: 'Ромашка',
+  experience_years: 3,
+  skills: ['SEO', 'Директ'],
+  salary_min: 100000,
+  salary_max: 150000,
   salary_currency: 'RUB',
-  location: 'Moscow',
-  summary: 'Experienced backend developer',
-  source_url: 'https://hh.ru/resume/123',
+  location: 'Москва',
+  summary: 'Люблю трафик',
 };
 
-const mockParsedVacancy: ParsedVacancy = {
-  title: 'Senior Python Developer',
-  description: 'We are looking for an experienced developer',
-  requirements: '5+ years Python experience',
-  responsibilities: 'Develop backend services',
-  salary_min: 250000,
-  salary_max: 400000,
-  salary_currency: 'RUB',
-  location: 'Remote',
-  employment_type: 'full-time',
-  experience_level: 'senior',
-  company_name: 'StartupXYZ',
-  source_url: 'https://hh.ru/vacancy/456',
-};
+const vacancies = [
+  // своя (создатель) — видна
+  { id: 1, title: 'Трафик', status: 'open', created_by: 7 },
+  // назначен — видна
+  { id: 2, title: 'Сорсер', status: 'open', created_by: 3, assigned_to: [7] },
+  // чужая — не видна рекрутёру
+  { id: 3, title: 'Чужая', status: 'open', created_by: 3 },
+  // заявка, у которой есть клон (id 5) — оригинал прячем, чтобы не двоилась
+  { id: 4, title: 'Дизайнер', status: 'open', created_by: 7 },
+  { id: 5, title: 'Дизайнер', status: 'open', created_by: 7, extra_data: { cloned_from_request_id: 4 } },
+];
 
-describe('ParserModal', () => {
-  const mockOnClose = vi.fn();
-  const mockOnParsed = vi.fn();
+const mockFn = <T,>(f: T) => f as unknown as ReturnType<typeof vi.fn>;
 
+function pdf(name = 'resume.pdf', size = 1024, type = 'application/pdf') {
+  const file = new File(['x'], name, { type });
+  Object.defineProperty(file, 'size', { value: size });
+  return file;
+}
+
+function renderModal(props: Partial<React.ComponentProps<typeof ParserModal>> = {}) {
+  const onClose = vi.fn();
+  const onParsed = vi.fn();
+  const onAttachedToEntity = vi.fn();
+  const utils = render(
+    <ParserModal
+      type="resume"
+      onClose={onClose}
+      onParsed={onParsed}
+      onAttachedToEntity={onAttachedToEntity}
+      {...props}
+    />,
+  );
+  return { ...utils, onClose, onParsed, onAttachedToEntity };
+}
+
+function chooseFile(file: File) {
+  const input = screen.getByLabelText('Выбрать файл резюме') as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [file] } });
+}
+
+// На форме два списка: валюта зарплаты и воронка — берём воронку.
+function funnelSelect() {
+  return screen.getByRole('option', { name: '— без воронки —' }).closest('select') as HTMLSelectElement;
+}
+
+async function uploadAndParse(file = pdf()) {
+  chooseFile(file);
+  await screen.findByText('Распознано:');
+}
+
+describe('ParserModal — загрузка резюме файлом', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (parseResumeFromUrl as ReturnType<typeof vi.fn>).mockResolvedValue(mockParsedResume);
-    (parseResumeFromFile as ReturnType<typeof vi.fn>).mockResolvedValue(mockParsedResume);
-    (parseVacancyFromUrl as ReturnType<typeof vi.fn>).mockResolvedValue(mockParsedVacancy);
+    authState.user = { id: 7, role: 'member', org_role: 'hr' };
+    mockFn(parseResumeFromFile).mockResolvedValue(parsed);
+    mockFn(getEntities).mockResolvedValue([]);
+    mockFn(getAllVacancies).mockResolvedValue(vacancies);
+    mockFn(createEntity).mockResolvedValue({ id: 501 });
+    mockFn(uploadEntityFile).mockResolvedValue({});
+    mockFn(createApplication).mockResolvedValue({});
+    mockFn(addEntityNote).mockResolvedValue({});
   });
 
-  describe('Resume Parser Modal', () => {
-    const renderResumeModal = () => {
-      return render(
-        <ParserModal type="resume" onClose={mockOnClose} onParsed={mockOnParsed} />
-      );
-    };
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
-    describe('Rendering', () => {
-      it('should render resume parser modal with correct title', () => {
-        renderResumeModal();
-        expect(screen.getByText('Парсинг резюме')).toBeInTheDocument();
-      });
-
-      it('should render URL tab by default', () => {
-        renderResumeModal();
-        expect(screen.getByText('По ссылке')).toBeInTheDocument();
-        expect(screen.getByPlaceholderText('https://hh.ru/resume/123456')).toBeInTheDocument();
-      });
-
-      it('should render file upload tab for resume', () => {
-        renderResumeModal();
-        expect(screen.getByText('Загрузить файл')).toBeInTheDocument();
-      });
-
-      it('should render close button', () => {
-        renderResumeModal();
-        expect(screen.getByText('Отмена')).toBeInTheDocument();
-      });
-
-      it('should not show create button initially', () => {
-        renderResumeModal();
-        expect(screen.queryByText('Создать контакт')).not.toBeInTheDocument();
-      });
+  describe('до загрузки', () => {
+    it('показывает заголовок и область для файла', () => {
+      renderModal();
+      expect(screen.getByText('Парсинг резюме')).toBeInTheDocument();
+      expect(screen.getByText('Перетащите файл сюда или нажмите для выбора')).toBeInTheDocument();
+      expect(screen.getByText('PDF, DOC, DOCX или TXT (максимум 10 МБ)')).toBeInTheDocument();
     });
 
-    describe('URL Input and Source Detection', () => {
-      it('should detect HeadHunter source from URL', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        expect(screen.getByText('HeadHunter')).toBeInTheDocument();
-      });
-
-      it('should detect LinkedIn source from URL', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://linkedin.com/in/johndoe');
-        expect(screen.getByText('LinkedIn')).toBeInTheDocument();
-      });
-
-      it('should detect SuperJob source from URL', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://superjob.ru/resume/python-123');
-        expect(screen.getByText('SuperJob')).toBeInTheDocument();
-      });
-
-      it('should detect Habr Career source from URL', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://career.habr.com/user123');
-        // Note: The source displays as "Хабр Карьера" in the UI
-        await waitFor(() => {
-          const habrBadge = screen.queryByText(/Хабр/);
-          expect(habrBadge).toBeInTheDocument();
-        });
-      });
-
-      it('should not show source badge for unknown URLs', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://example.com/resume');
-        expect(screen.queryByText('HeadHunter')).not.toBeInTheDocument();
-        expect(screen.queryByText('LinkedIn')).not.toBeInTheDocument();
-      });
-
-      it('should disable parse button when URL is empty', () => {
-        renderResumeModal();
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        expect(parseButton).toBeDisabled();
-      });
-
-      it('should disable parse button for invalid URL', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'not-a-valid-url');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        expect(parseButton).toBeDisabled();
-      });
-
-      it('should enable parse button for valid URL', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        expect(parseButton).not.toBeDisabled();
-      });
-    });
-
-    describe('Parsing Loading State', () => {
-      it('should show loading state while parsing', async () => {
-        (parseResumeFromUrl as ReturnType<typeof vi.fn>).mockImplementation(
-          () => new Promise((resolve) => setTimeout(() => resolve(mockParsedResume), 100))
-        );
-
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        expect(await screen.findByText('Загрузка...')).toBeInTheDocument();
-      });
-
-      it('should disable parse button during loading', async () => {
-        (parseResumeFromUrl as ReturnType<typeof vi.fn>).mockImplementation(
-          () => new Promise((resolve) => setTimeout(() => resolve(mockParsedResume), 100))
-        );
-
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(parseButton).toBeDisabled();
-        });
-      });
-
-      it('should disable URL input during loading', async () => {
-        (parseResumeFromUrl as ReturnType<typeof vi.fn>).mockImplementation(
-          () => new Promise((resolve) => setTimeout(() => resolve(mockParsedResume), 100))
-        );
-
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(urlInput).toBeDisabled();
-        });
-      });
-    });
-
-    describe('Parsed Data Preview', () => {
-      it('should show parsed resume data after parsing', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(screen.getByText('Распознано:')).toBeInTheDocument();
-        });
-      });
-
-      it('should show create contact button after parsing', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(screen.getByText('Создать контакт')).toBeInTheDocument();
-        });
-      });
-
-      it('should call parseResumeFromUrl with correct URL', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(parseResumeFromUrl).toHaveBeenCalledWith('https://hh.ru/resume/abc123');
-        });
-      });
-    });
-
-    describe('Create Entity from Parsed Data', () => {
-      it('should call onParsed when creating entity', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(screen.getByText('Создать контакт')).toBeInTheDocument();
-        });
-
-        const createButton = screen.getByText('Создать контакт');
-        fireEvent.click(createButton);
-
-        await waitFor(() => {
-          expect(mockOnParsed).toHaveBeenCalledWith(mockParsedResume);
-        });
-      });
-
-      it('should show error and not call onParsed when name is empty', async () => {
-        const resumeWithoutName = { ...mockParsedResume, name: '' };
-        (parseResumeFromUrl as ReturnType<typeof vi.fn>).mockResolvedValue(resumeWithoutName);
-
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(screen.getByText('Создать контакт')).toBeInTheDocument();
-        });
-
-        const createButton = screen.getByText('Создать контакт');
-        fireEvent.click(createButton);
-
-        expect(toast.error).toHaveBeenCalledWith('Имя контакта обязательно');
-        expect(mockOnParsed).not.toHaveBeenCalled();
-      });
-    });
-
-    describe('File Upload Tab', () => {
-      it('should switch to file upload tab when clicked', async () => {
-        renderResumeModal();
-        const fileTab = screen.getByText('Загрузить файл');
-        await userEvent.click(fileTab);
-        expect(screen.getByText(/Перетащите файл сюда/i)).toBeInTheDocument();
-      });
-
-      it('should display file type restrictions', async () => {
-        renderResumeModal();
-        const fileTab = screen.getByText('Загрузить файл');
-        await userEvent.click(fileTab);
-        expect(screen.getByText(/PDF, DOC, DOCX или TXT/i)).toBeInTheDocument();
-      });
-
-      it('should handle file input change', async () => {
-        renderResumeModal();
-        const fileTab = screen.getByText('Загрузить файл');
-        await userEvent.click(fileTab);
-
-        // Find the hidden file input
-        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-        expect(fileInput).toBeInTheDocument();
-
-        const file = new File(['resume content'], 'resume.pdf', { type: 'application/pdf' });
-        await userEvent.upload(fileInput, file);
-
-        await waitFor(() => {
-          expect(parseResumeFromFile).toHaveBeenCalled();
-        });
-      });
-
-      it('should show error for unsupported file type', async () => {
-        renderResumeModal();
-        const fileTab = screen.getByText('Загрузить файл');
-        await userEvent.click(fileTab);
-
-        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-        const file = new File(['content'], 'image.exe', { type: 'application/octet-stream' });
-
-        // Create a mock event with the file
-        Object.defineProperty(fileInput, 'files', {
-          value: [file],
-          configurable: true,
-        });
-        fireEvent.change(fileInput);
-
-        await waitFor(() => {
-          expect(screen.getByText(/Поддерживаются только PDF, DOC, DOCX и TXT файлы/i)).toBeInTheDocument();
-        });
-      });
-
-      it('should show error for file size exceeding 10MB', async () => {
-        renderResumeModal();
-        const fileTab = screen.getByText('Загрузить файл');
-        await userEvent.click(fileTab);
-
-        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-        // Create a file larger than 10MB
-        const largeContent = new Array(11 * 1024 * 1024).fill('a').join('');
-        const file = new File([largeContent], 'large.pdf', { type: 'application/pdf' });
-
-        Object.defineProperty(fileInput, 'files', {
-          value: [file],
-          configurable: true,
-        });
-        fireEvent.change(fileInput);
-
-        await waitFor(() => {
-          expect(screen.getByText(/Размер файла не должен превышать 10 МБ/i)).toBeInTheDocument();
-        });
-      });
-
-      it('should show loading state during file processing', async () => {
-        (parseResumeFromFile as ReturnType<typeof vi.fn>).mockImplementation(
-          () => new Promise((resolve) => setTimeout(() => resolve(mockParsedResume), 100))
-        );
-
-        renderResumeModal();
-        const fileTab = screen.getByText('Загрузить файл');
-        await userEvent.click(fileTab);
-
-        const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-        const file = new File(['resume content'], 'resume.pdf', { type: 'application/pdf' });
-        await userEvent.upload(fileInput, file);
-
-        expect(await screen.findByText('Обработка файла...')).toBeInTheDocument();
-      });
-    });
-
-    describe('Error Handling', () => {
-      it('should show error message when parsing fails', async () => {
-        (parseResumeFromUrl as ReturnType<typeof vi.fn>).mockRejectedValue(
-          new Error('Network error')
-        );
-
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(screen.getByText('Network error')).toBeInTheDocument();
-        });
-        expect(toast.error).toHaveBeenCalledWith('Ошибка распознавания');
-      });
-
-      it('should show generic error for non-Error exceptions', async () => {
-        (parseResumeFromUrl as ReturnType<typeof vi.fn>).mockRejectedValue('Unknown error');
-
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(screen.getByText('Ошибка парсинга')).toBeInTheDocument();
-        });
-      });
-
-      it('should clear error when typing new URL', async () => {
-        (parseResumeFromUrl as ReturnType<typeof vi.fn>).mockRejectedValue(
-          new Error('Network error')
-        );
-
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(screen.getByText('Network error')).toBeInTheDocument();
-        });
-
-        // Type new URL
-        await userEvent.clear(urlInput);
-        await userEvent.type(urlInput, 'https://hh.ru/resume/xyz789');
-
-        expect(screen.queryByText('Network error')).not.toBeInTheDocument();
-      });
-    });
-
-    describe('Keyboard Navigation', () => {
-      it('should parse on Enter key when URL is valid', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        await userEvent.keyboard('{Enter}');
-
-        await waitFor(() => {
-          expect(parseResumeFromUrl).toHaveBeenCalled();
-        });
-      });
-
-      it('should not parse on Enter when URL is invalid', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'not-a-url');
-        await userEvent.keyboard('{Enter}');
-
-        expect(parseResumeFromUrl).not.toHaveBeenCalled();
-      });
-    });
-
-    describe('Modal Interactions', () => {
-      it('should close modal when clicking cancel button', async () => {
-        renderResumeModal();
-        const cancelButton = screen.getByText('Отмена');
-        await userEvent.click(cancelButton);
-        expect(mockOnClose).toHaveBeenCalledTimes(1);
-      });
-
-      it('should close modal when clicking X button', async () => {
-        renderResumeModal();
-        // Find the X button (it's the one with just an X icon)
-        const closeButtons = screen.getAllByRole('button');
-        const xButton = closeButtons.find(btn => btn.querySelector('svg'));
-        if (xButton && xButton !== screen.getByRole('button', { name: /Парсить/i })) {
-          await userEvent.click(xButton);
-          expect(mockOnClose).toHaveBeenCalled();
-        }
-      });
-
-      it('should close modal when clicking backdrop', async () => {
-        renderResumeModal();
-        // Find the backdrop (the outer container)
-        const backdrop = document.querySelector('.fixed.inset-0');
-        if (backdrop) {
-          // Настоящий клик по фону: жест и начался, и закончился на фоне.
-          fireEvent.mouseDown(backdrop);
-          fireEvent.click(backdrop);
-          expect(mockOnClose).toHaveBeenCalled();
-        }
-      });
-
-      // Регрессия: выделение текста в окне, отпущенное за его краем, роняло
-      // модалку вместе с распознанным резюме — браузер шлёт click на общего
-      // предка mousedown и mouseup, то есть на фон (Эльвира, 2026-09-08).
-      it('should NOT close when a drag starts inside the modal and ends on the backdrop', async () => {
-        renderResumeModal();
-        const backdrop = document.querySelector('.fixed.inset-0');
-        const dialog = backdrop?.firstElementChild;
-        if (backdrop && dialog) {
-          fireEvent.mouseDown(dialog);
-          fireEvent.click(backdrop);
-          expect(mockOnClose).not.toHaveBeenCalled();
-        }
-      });
-    });
-
-    describe('Tab Switching', () => {
-      it('should clear error when switching tabs', async () => {
-        (parseResumeFromUrl as ReturnType<typeof vi.fn>).mockRejectedValue(
-          new Error('Network error')
-        );
-
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(screen.getByText('Network error')).toBeInTheDocument();
-        });
-
-        // Switch to file tab
-        const fileTab = screen.getByText('Загрузить файл');
-        await userEvent.click(fileTab);
-
-        expect(screen.queryByText('Network error')).not.toBeInTheDocument();
-      });
-
-      it('should clear parsed data when switching tabs', async () => {
-        renderResumeModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/resume/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/resume/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
-
-        await waitFor(() => {
-          expect(screen.getByText('Распознано:')).toBeInTheDocument();
-        });
-
-        // Switch to file tab
-        const fileTab = screen.getByText('Загрузить файл');
-        await userEvent.click(fileTab);
-
-        expect(screen.queryByText('Распознано:')).not.toBeInTheDocument();
-      });
+    it('кнопки «Создать» нет, пока резюме не разобрано', () => {
+      renderModal();
+      expect(screen.queryByText('Создать нового кандидата')).not.toBeInTheDocument();
     });
   });
 
-  describe('Vacancy Parser Modal', () => {
-    const renderVacancyModal = () => {
-      return render(
-        <ParserModal type="vacancy" onClose={mockOnClose} onParsed={mockOnParsed} />
-      );
-    };
-
-    describe('Rendering', () => {
-      it('should render vacancy parser modal with correct title', () => {
-        renderVacancyModal();
-        expect(screen.getByText('Парсинг вакансии')).toBeInTheDocument();
-      });
-
-      it('should show vacancy URL placeholder', () => {
-        renderVacancyModal();
-        expect(screen.getByPlaceholderText('https://hh.ru/vacancy/123456')).toBeInTheDocument();
-      });
-
-      it('should NOT show file upload tab for vacancy', () => {
-        renderVacancyModal();
-        expect(screen.queryByText('Загрузить файл')).not.toBeInTheDocument();
-      });
+  describe('проверка файла', () => {
+    it('отклоняет неподдерживаемый формат и не отправляет файл', () => {
+      renderModal();
+      chooseFile(pdf('photo.png', 1024, 'image/png'));
+      expect(screen.getByRole('alert')).toHaveTextContent('Поддерживаются только PDF, DOC, DOCX и TXT файлы');
+      expect(parseResumeFromFile).not.toHaveBeenCalled();
     });
 
-    describe('Create Vacancy from Parsed Data', () => {
-      it('should call onParsed when creating vacancy', async () => {
-        renderVacancyModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/vacancy/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/vacancy/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
+    it('отклоняет файл больше 10 МБ', () => {
+      renderModal();
+      chooseFile(pdf('big.pdf', 11 * 1024 * 1024));
+      expect(screen.getByRole('alert')).toHaveTextContent('Размер файла не должен превышать 10 МБ');
+      expect(parseResumeFromFile).not.toHaveBeenCalled();
+    });
 
-        await waitFor(() => {
-          expect(screen.getByText('Создать вакансию')).toBeInTheDocument();
-        });
+    it('принимает .docx с пустым MIME-типом (так бывает в некоторых браузерах)', async () => {
+      renderModal();
+      chooseFile(pdf('cv.docx', 1024, ''));
+      await screen.findByText('Распознано:');
+      expect(parseResumeFromFile).toHaveBeenCalled();
+    });
 
-        const createButton = screen.getByText('Создать вакансию');
-        fireEvent.click(createButton);
+    it('перетаскивание файла тоже запускает разбор', async () => {
+      renderModal();
+      const zone = screen.getByRole('button', { name: /Область для загрузки файла/ });
+      fireEvent.drop(zone, { dataTransfer: { files: [pdf()] } });
+      await screen.findByText('Распознано:');
+    });
+  });
 
-        await waitFor(() => {
-          expect(mockOnParsed).toHaveBeenCalledWith(mockParsedVacancy);
-        });
-      });
+  describe('разбор', () => {
+    it('показывает распознанные поля', async () => {
+      renderModal();
+      await uploadAndParse();
+      expect(screen.getByPlaceholderText('Фамилия')).toHaveValue('Иванов');
+      expect(screen.getByPlaceholderText('Имя')).toHaveValue('Иван');
+      expect(screen.getByDisplayValue('ivan@example.com')).toBeInTheDocument();
+      expect(toast.success).toHaveBeenCalledWith('Резюме распознано');
+    });
 
-      it('should show error when vacancy title is empty', async () => {
-        const vacancyWithoutTitle = { ...mockParsedVacancy, title: '' };
-        (parseVacancyFromUrl as ReturnType<typeof vi.fn>).mockResolvedValue(vacancyWithoutTitle);
+    it('показывает ошибку, если разбор не удался', async () => {
+      mockFn(parseResumeFromFile).mockRejectedValue(new Error('AI недоступен'));
+      renderModal();
+      chooseFile(pdf());
+      expect(await screen.findByRole('alert')).toHaveTextContent('AI недоступен');
+      expect(screen.queryByText('Распознано:')).not.toBeInTheDocument();
+    });
+  });
 
-        renderVacancyModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/vacancy/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/vacancy/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
+  describe('создание кандидата', () => {
+    it('создаёт кандидата из ОТРЕДАКТИРОВАННЫХ полей и прикладывает файл', async () => {
+      const { onParsed } = renderModal();
+      const file = pdf();
+      await uploadAndParse(file);
 
-        await waitFor(() => {
-          expect(screen.getByText('Создать вакансию')).toBeInTheDocument();
-        });
+      const firstName = screen.getByPlaceholderText('Имя');
+      await userEvent.clear(firstName);
+      await userEvent.type(firstName, 'Пётр');
 
-        const createButton = screen.getByText('Создать вакансию');
-        fireEvent.click(createButton);
+      fireEvent.click(screen.getByText('Создать нового кандидата'));
 
-        expect(toast.error).toHaveBeenCalledWith('Название вакансии обязательно');
-        expect(mockOnParsed).not.toHaveBeenCalled();
-      });
+      await waitFor(() => expect(createEntity).toHaveBeenCalled());
+      const payload = mockFn(createEntity).mock.calls[0][0];
+      expect(payload.name).toBe('Иванов Пётр Иванович');
+      expect(payload.telegram_usernames).toEqual(['ivanov']);
+      expect(payload.extra_data.source).toBe('resume_upload');
+      expect(payload.extra_data.skills).toEqual(['SEO', 'Директ']);
 
-      it('should call parseVacancyFromUrl with correct URL', async () => {
-        renderVacancyModal();
-        const urlInput = screen.getByPlaceholderText('https://hh.ru/vacancy/123456');
-        await userEvent.type(urlInput, 'https://hh.ru/vacancy/abc123');
-        const parseButton = screen.getByRole('button', { name: /Парсить/i });
-        fireEvent.click(parseButton);
+      await waitFor(() => expect(uploadEntityFile).toHaveBeenCalledWith(501, file, 'resume'));
+      await waitFor(() => expect(onParsed).toHaveBeenCalled());
+      expect(toast.success).toHaveBeenCalledWith('Кандидат добавлен');
+      expect(createApplication).not.toHaveBeenCalled();
+      expect(addEntityNote).not.toHaveBeenCalled();
+    });
 
-        await waitFor(() => {
-          expect(parseVacancyFromUrl).toHaveBeenCalledWith('https://hh.ru/vacancy/abc123');
-        });
-      });
+    it('без имени кандидата не создаёт', async () => {
+      mockFn(parseResumeFromFile).mockResolvedValue({ ...parsed, name: '' });
+      renderModal();
+      await uploadAndParse();
+      fireEvent.click(screen.getByText('Создать нового кандидата'));
+      expect(toast.error).toHaveBeenCalledWith('Имя контакта обязательно');
+      expect(createEntity).not.toHaveBeenCalled();
+    });
+
+    it('комментарий рекрутёра уходит в ленту карточки', async () => {
+      renderModal();
+      await uploadAndParse();
+      await userEvent.type(
+        screen.getByPlaceholderText('Появится в ленте карточки — например, откуда кандидат'),
+        'Нашла в чате маркетологов',
+      );
+      fireEvent.click(screen.getByText('Создать нового кандидата'));
+      await waitFor(() =>
+        expect(addEntityNote).toHaveBeenCalledWith(501, {
+          text: 'Нашла в чате маркетологов',
+          stage: 'new',
+          stage_label: 'Новый',
+        }),
+      );
+    });
+
+    it('кандидат создан, даже если комментарий не сохранился', async () => {
+      mockFn(addEntityNote).mockRejectedValue(new Error('500'));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { onParsed } = renderModal();
+      await uploadAndParse();
+      await userEvent.type(
+        screen.getByPlaceholderText('Появится в ленте карточки — например, откуда кандидат'),
+        'коммент',
+      );
+      fireEvent.click(screen.getByText('Создать нового кандидата'));
+      await waitFor(() => expect(onParsed).toHaveBeenCalled());
+      expect(toast.error).toHaveBeenCalledWith('Кандидат создан, но комментарий не сохранился');
+    });
+
+    it('с выбранной воронкой — добавляет кандидата в неё', async () => {
+      renderModal();
+      await uploadAndParse();
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Трафик' })).toBeInTheDocument());
+      await userEvent.selectOptions(funnelSelect(), '1');
+
+      const button = screen.getByText('Создать и добавить на воронку');
+      fireEvent.click(button);
+
+      await waitFor(() =>
+        expect(createApplication).toHaveBeenCalledWith(1, {
+          vacancy_id: 1,
+          entity_id: 501,
+          source: 'resume_upload',
+        }),
+      );
+      expect(toast.success).toHaveBeenCalledWith('Кандидат добавлен на воронку «Трафик»');
+    });
+  });
+
+  describe('список воронок', () => {
+    const optionTitles = () =>
+      Array.from(funnelSelect().options).map((o) => o.textContent).filter((t) => t !== '— без воронки —');
+
+    it('рекрутёр видит только свои воронки, заявка с клоном не двоится', async () => {
+      renderModal();
+      await uploadAndParse();
+      await waitFor(() => expect(optionTitles()).toEqual(['Трафик', 'Сорсер', 'Дизайнер']));
+    });
+
+    it('админ видит все открытые воронки', async () => {
+      authState.user = { id: 1, role: 'member', org_role: 'admin' };
+      renderModal();
+      await uploadAndParse();
+      await waitFor(() => expect(optionTitles()).toEqual(['Трафик', 'Сорсер', 'Чужая', 'Дизайнер']));
+    });
+
+    it('подсказывает, если своих открытых воронок нет', async () => {
+      mockFn(getAllVacancies).mockResolvedValue([]);
+      renderModal();
+      await uploadAndParse();
+      expect(await screen.findByText('У вас нет открытых воронок')).toBeInTheDocument();
+    });
+  });
+
+  describe('найденные кандидаты', () => {
+    it('ищет совпадения по имени и почте и позволяет прикрепить файл', async () => {
+      mockFn(getEntities).mockResolvedValue([
+        { id: 77, name: 'Иванов Иван', email: 'ivan@example.com', type: 'candidate' },
+      ]);
+      const { onAttachedToEntity, onClose } = renderModal();
+      const file = pdf();
+      await uploadAndParse(file);
+
+      expect(await screen.findByText('Найденные кандидаты (1)')).toBeInTheDocument();
+      expect(getEntities).toHaveBeenCalledWith({ search: parsed.name, type: 'candidate', limit: 10 });
+      expect(getEntities).toHaveBeenCalledWith({ search: parsed.email, type: 'candidate', limit: 10 });
+
+      fireEvent.click(screen.getByText('Прикрепить'));
+      await waitFor(() =>
+        expect(uploadEntityFile).toHaveBeenCalledWith(77, file, 'resume', 'Resume (attached via parser)'),
+      );
+      expect(onAttachedToEntity).toHaveBeenCalledWith(77);
+      expect(onClose).toHaveBeenCalled();
+      expect(createEntity).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('закрытие', () => {
+    it('до разбора закрывается сразу', () => {
+      const { onClose } = renderModal();
+      fireEvent.click(screen.getByText('Отмена'));
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('после разбора переспрашивает и не теряет работу при «Нет»', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      const { onClose } = renderModal();
+      await uploadAndParse();
+      fireEvent.click(screen.getByLabelText('Закрыть окно'));
+      expect(confirmSpy).toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByText('Распознано:')).toBeInTheDocument();
+    });
+
+    it('после разбора закрывается при «Да»', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const { onClose } = renderModal();
+      await uploadAndParse();
+      fireEvent.click(screen.getByText('Отмена'));
+      expect(onClose).toHaveBeenCalled();
     });
   });
 });

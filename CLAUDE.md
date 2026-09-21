@@ -18,7 +18,7 @@ cd frontend && npx tsc --noEmit -p . && npx vitest run          # типы + т�
 Пётр (hr), Наблюдатель (readonly).
 
 **Эталон тестов** (эти падения были ДО правок, сверяйся с ними, а не с нулём):
-- `vitest` — 186 падений (было 241 до чистки тестов 21.09.2026);
+- `vitest` — 0 падений (с 21.09.2026; до чистки было 241) — любое падение теперь НОВОЕ;
 - `pytest tests/test_cross_org.py tests/test_entities*.py` — 26 падений;
 - `pytest tests/test_vacanc*.py tests/test_kanban_privacy.py` — 25 падений.
 

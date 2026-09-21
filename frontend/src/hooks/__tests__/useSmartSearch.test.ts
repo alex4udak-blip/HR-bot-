@@ -73,7 +73,9 @@ describe('useSmartSearch', () => {
       }),
     });
 
-    // Mock API
+    // Mock API. Общий vi.fn сбрасываем явно: в vitest 4 restoreAllMocks не
+    // обнуляет вызовы обычных vi.fn, и они копились из предыдущих тестов.
+    mockSmartSearch.mockReset();
     vi.spyOn(api, 'smartSearch').mockImplementation(mockSmartSearch);
     mockSmartSearch.mockResolvedValue(mockSearchResponse);
   });

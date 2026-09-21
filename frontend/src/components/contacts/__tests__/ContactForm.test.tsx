@@ -336,7 +336,7 @@ describe('ContactForm', () => {
       (useEntityStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         createEntity: mockCreateEntity,
         updateEntity: mockUpdateEntity,
-        loading: true,
+        isLoading: true,
       });
 
       render(<ContactForm onClose={mockOnClose} onSuccess={mockOnSuccess} />);
@@ -376,7 +376,8 @@ describe('ContactForm', () => {
     it('should display available statuses for selected entity type', async () => {
       render(<ContactForm defaultType="candidate" onClose={mockOnClose} onSuccess={mockOnSuccess} />);
 
-      const statusSelect = screen.getByRole('combobox');
+      // На форме два списка (статус и валюта) — берём тот, что под «Статус».
+      const statusSelect = screen.getByText('Статус').parentElement!.querySelector('select')!;
       const options = statusSelect.querySelectorAll('option');
 
       // Candidate should have statuses like 'new', 'contacted', 'interview', etc.

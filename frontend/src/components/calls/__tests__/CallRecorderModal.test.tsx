@@ -119,7 +119,7 @@ describe('CallRecorderModal', () => {
       const uploadTab = screen.getByText('Загрузить файл');
       await userEvent.click(uploadTab);
 
-      expect(screen.getByText(/Перетащите аудио\/видео файл сюда/)).toBeInTheDocument();
+      expect(screen.getByText('Перетащите файл сюда')).toBeInTheDocument();
     });
 
     it('should show bot fields in bot mode', () => {
@@ -232,7 +232,7 @@ describe('CallRecorderModal', () => {
       const uploadTab = screen.getByText('Загрузить файл');
       await userEvent.click(uploadTab);
 
-      expect(screen.getByText(/Перетащите аудио\/видео файл сюда/)).toBeInTheDocument();
+      expect(screen.getByText('Перетащите файл сюда')).toBeInTheDocument();
       expect(screen.getByText(/или нажмите для выбора/)).toBeInTheDocument();
     });
 
@@ -242,7 +242,9 @@ describe('CallRecorderModal', () => {
       const uploadTab = screen.getByText('Загрузить файл');
       await userEvent.click(uploadTab);
 
-      expect(screen.getByText('MP3, MP4, WAV, M4A, WebM, OGG')).toBeInTheDocument();
+      expect(screen.getByText('Аудио/Видео: MP3, MP4, WAV, M4A, WebM, OGG')).toBeInTheDocument();
+      // Текстовые расшифровки грузятся без транскрибации.
+      expect(screen.getByText('Текст: TXT, CSV, PDF, DOC, DOCX, MD, HTML')).toBeInTheDocument();
     });
 
     it('should handle file selection via input', async () => {
@@ -286,7 +288,7 @@ describe('CallRecorderModal', () => {
       await userEvent.click(uploadTab);
 
       const file = new File(['audio content'], 'dropped.mp3', { type: 'audio/mp3' });
-      const dropZone = screen.getByText(/Перетащите аудио\/видео файл сюда/).closest('div');
+      const dropZone = screen.getByText('Перетащите файл сюда').closest('div');
 
       if (dropZone) {
         fireEvent.drop(dropZone, {

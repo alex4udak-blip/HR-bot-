@@ -86,12 +86,14 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 });
 
-// Mock ResizeObserver
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+// Mock ResizeObserver — классом: его создают через `new` (виртуальные списки
+// @tanstack/react-virtual), а vi.fn со стрелочной реализацией в vitest 4 не
+// конструируется («is not a constructor»).
+global.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
 
 // Cleanup after each test case (e.g., clearing jsdom)
 afterEach(() => {

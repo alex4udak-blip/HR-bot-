@@ -213,9 +213,11 @@ describe('ChatList', () => {
     it('should not highlight any chat when selectedId is null', () => {
       render(<ChatList chats={mockChats} selectedId={null} onSelect={mockOnSelect} />);
 
-      const chatButtons = screen.getAllByRole('button');
-      chatButtons.forEach((button) => {
-        expect(button).not.toHaveClass('bg-accent-500/10');
+      // Строки списка — role="option" внутри listbox.
+      const options = screen.getAllByRole('option');
+      expect(options.length).toBe(mockChats.length);
+      options.forEach((option) => {
+        expect(option).toHaveAttribute('aria-selected', 'false');
       });
     });
   });
@@ -446,19 +448,23 @@ describe('ChatList', () => {
   });
 
   describe('Performance', () => {
-    it('should render large list of chats efficiently', () => {
+    it('virtualizes a large list: renders only part of 100 chats', () => {
       const largeList: Chat[] = Array.from({ length: 100 }, (_, i) => ({
         ...mockChats[0],
         id: i + 1,
         title: `Chat ${i + 1}`,
       }));
 
-      const { container } = render(
-        <ChatList chats={largeList} selectedId={null} onSelect={mockOnSelect} />
-      );
+      render(<ChatList chats={largeList} selectedId={null} onSelect={mockOnSelect} />);
 
-      const chatButtons = container.querySelectorAll('button');
-      expect(chatButtons).toHaveLength(100);
+      // Больше 50 чатов — список виртуальный: в DOM только видимые строки.
+      expect(screen.getByRole('listbox', { name: 'Chat list' })).toBeInTheDocument();
+      expect(screen.queryAllByRole('option').length).toBeLessThan(100);
+    });
+
+    it('renders every chat when the list is short (no virtualization)', () => {
+      render(<ChatList chats={mockChats} selectedId={null} onSelect={mockOnSelect} />);
+      expect(screen.getAllByRole('option')).toHaveLength(mockChats.length);
     });
   });
 });
