@@ -34,7 +34,6 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useFunnelFilterStore } from '@/stores/funnelFilterStore';
 import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, declineVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink } from '@/services/api/entities';
@@ -281,9 +280,9 @@ export default function RecruiterFunnelsPage() {
   const [recruiterSearch, setRecruiterSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all' | 'deleted'>('all');
   const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState<number | null>(null);
-  // Суперадмин: чекбокс «Только мои» — быстрый self-фильтр поверх дефолта «видеть
-  // всех». Стейт в общем сторе — чекбокс дублируется в сайдбаре (Layout), оба синхронны.
-  const { onlyMine: storedOwnOnlyMine, setOnlyMine: setStoredOwnOnlyMine } = useFunnelFilterStore();
+  // Выключенная рекрутёром «Только мои» в СВОЕЙ воронке — временно, до ухода
+  // из воронки / F5 / новой вкладки (null = умолчание, кнопка включена).
+  const [ownOnlyMineOverride, setOwnOnlyMineOverride] = useState<boolean | null>(null);
   // «Удалённые»: мягко-удалённые вакансии тянем отдельным запросом (deleted=true).
   const [deletedVacancies, setDeletedVacancies] = useState<Vacancy[]>([]);
   useEffect(() => {
@@ -717,8 +716,10 @@ export default function RecruiterFunnelsPage() {
   const loadSeqRef = useRef(0);
   // «Только мои» живёт в двух режимах (решение юзера 2026-09-10):
   //  • СВОЯ воронка (в сайдбаре рекрутёр не выбран или выбран я) — кнопка
-  //    ВКЛЮЧЕНА по умолчанию. Выключил — видны все кандидаты, и выбор
-  //    запоминается для всех своих воронок (funnelFilterStore, localStorage).
+  //    ВКЛЮЧЕНА всегда при входе. Выключил — видны все кандидаты, но только пока
+  //    он в этой воронке: другая воронка, уход со страницы, F5, новая вкладка —
+  //    снова включена. Раньше выключение навсегда писалось в localStorage, и
+  //    рекрутёр, однажды щёлкнувший кнопку, дальше везде видел всех (2026-09-21).
   //  • ЧУЖАЯ воронка (в сайдбаре выбран другой рекрутёр) — кнопка ВЫКЛЮЧЕНА,
   //    видны кандидаты этого рекрутёра. Включил — видишь в его воронке своих.
   //    Это временно: ушёл из воронки — кнопка отжимается и не запоминается.
@@ -737,7 +738,7 @@ export default function RecruiterFunnelsPage() {
   // «в работе», чтобы список не перегружался дважды.
   const worksOnFunnel = !selectedVacancy || (!!user && isPersonallyActive(selectedVacancy, user.id));
   const onlyMineAvailable = worksOnFunnel && !isSelfContext;
-  const ownOnlyMine = storedOwnOnlyMine ?? !(isSuperadmin || user?.is_readonly);
+  const ownOnlyMine = ownOnlyMineOverride ?? !(isSuperadmin || user?.is_readonly);
   const [foreignOnlyMine, setForeignOnlyMine] = useState(() => {
     if (!isDocumentReloadOfCurrentUrl()) return false;
     const saved = readFunnelSession<{ v: number; r: number }>(FOREIGN_ONLY_MINE_KEY);
@@ -758,7 +759,7 @@ export default function RecruiterFunnelsPage() {
     if (!onlyMineAvailable) return;
     setSharedEntryEntityId(null);
     if (isForeignContext) setForeignOnlyMine(value);
-    else setStoredOwnOnlyMine(value);
+    else setOwnOnlyMineOverride(value);
   };
   // Уход в другую воронку или к другому рекрутёру заканчивает режим шаринг-ссылки
   // и отжимает временную «Только мои» чужой воронки. null → X по рекрутёру — не
@@ -773,6 +774,7 @@ export default function RecruiterFunnelsPage() {
     if (vacancyChanged || recruiterChanged) {
       setSharedEntryEntityId(null);
       setForeignOnlyMine(false);
+      setOwnOnlyMineOverride(null);
     }
   }, [selectedVacancyId, selectedRecruiterFilter]);
 
@@ -2910,7 +2912,7 @@ export default function RecruiterFunnelsPage() {
                           ? 'Эта воронка не у вас в работе — ваших кандидатов в ней нет, фильтр недоступен.'
                           : isForeignContext
                             ? 'Показать в этой воронке только кандидатов, которых добавил я. Выключится само, когда уйдёте из воронки.'
-                            : 'Показывать только кандидатов, которых добавил я. Снимите — будут видны все, выбор запомнится.'}
+                            : 'Показывать только кандидатов, которых добавил я. Снимите — будут видны все, пока вы в этой воронке.'}
                     >
                       <input
                         type="checkbox"
