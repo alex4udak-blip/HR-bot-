@@ -96,6 +96,10 @@ _K_Y1 = "y1_date"
 # Перенос из ClickUp: HR, ведущий сотрудника; дата увольнения; отметки
 # «веха пройдена» рядом с каждой датой (в ClickUp это колонки в скобках).
 _K_ASSIGNEE = "assignee_user_id"
+# Несколько ведущих HR (кандидата часто ведут вдвоём). Первый дублируется в
+# _K_ASSIGNEE — его читают старые клиенты и фильтры.
+_K_ASSIGNEES = "assignee_user_ids"
+MAX_ASSIGNEES = 2
 _K_DISMISSAL = "dismissal_date"
 _K_DONE = {
     "dept_done": "department_start_done",
@@ -176,6 +180,8 @@ class BoardRow(BaseModel):
     # подборе, известен и здесь; раньше колонку заполняли заново руками, и она
     # у всех стояла пустая.
     assignee_auto: bool = False
+    # Все ведущие HR (до MAX_ASSIGNEES). assignee_* выше — первый из них.
+    assignees: List["BoardAssignee"] = []
     # Метки-сорсеры этого человека: кто его привёл. Живут в общем справочнике
     # меток (entity_tags_catalog.kind='sourcer'), показываем рядом с HR — по
     # решению юзера в ОДНОЙ колонке, а не отдельной.
@@ -187,6 +193,28 @@ class BoardRow(BaseModel):
     m1_done: bool = False
     m3_done: bool = False
     y1_done: bool = False
+
+
+class BoardAssignee(BaseModel):
+    user_id: int
+    name: Optional[str] = None
+    auto: bool = False
+
+
+def _manual_assignee_ids(ex: Dict[str, Any]) -> List[int]:
+    """HR, выбранные руками: новый список или старое одиночное поле."""
+    raw = ex.get(_K_ASSIGNEES)
+    ids: List[int] = []
+    if isinstance(raw, list):
+        for v in raw:
+            i = _as_int(v)
+            if i is not None and i not in ids:
+                ids.append(i)
+    if not ids:
+        single = _as_int(ex.get(_K_ASSIGNEE))
+        if single is not None:
+            ids.append(single)
+    return ids[:MAX_ASSIGNEES]
 
 
 class BoardSourcer(BaseModel):
@@ -214,6 +242,8 @@ class BoardRowUpdate(BaseModel):
     m3: Optional[str] = None
     y1: Optional[str] = None
     assignee_user_id: Optional[int] = None
+    # Полный список ведущих HR; перекрывает assignee_user_id. [] — очистить.
+    assignee_user_ids: Optional[List[int]] = None
     dismissal_date: Optional[str] = None
     dept_done: Optional[bool] = None
     w2_done: Optional[bool] = None
@@ -397,25 +427,29 @@ def _row_from_entity(
         dept_name = SANDBOX_LABEL
     telegram = _first_telegram(entity) or (str(_pick(ex, _CF_TELEGRAM) or "").lstrip("@") or None)
 
-    # HR: сначала выбранный руками, иначе — из воронки. Авто-метки HR лежат в
+    # HR: сначала выбранные руками, иначе — из воронки. Авто-метки HR лежат в
     # extra_data.system_hr_tags (их считает services/hr_tags по активным
-    # заявкам), поэтому лишних запросов не нужно. Берём первого: у человека,
-    # дошедшего до практики, воронка почти всегда одна, а если их несколько —
-    # показываем того, кто раньше, и HR всегда может перебить выбор руками.
-    assignee_id = _as_int(ex.get(_K_ASSIGNEE))
-    assignee_auto = False
-    if assignee_id is not None:
-        assignee_name = assignee_names.get(assignee_id) if assignee_names else None
-    else:
-        assignee_name = None
+    # заявкам), поэтому лишних запросов не нужно. Кандидата нередко ведут
+    # двое — показываем до MAX_ASSIGNEES человек; выбор руками перебивает
+    # воронку целиком.
+    assignees: List[BoardAssignee] = [
+        BoardAssignee(user_id=i, name=(assignee_names or {}).get(i))
+        for i in _manual_assignee_ids(ex)
+    ]
+    if not assignees:
         hr_tags = ex.get("system_hr_tags")
         if isinstance(hr_tags, list):
             for t in hr_tags:
-                if isinstance(t, dict) and _as_int(t.get("hr_id")) is not None:
-                    assignee_id = _as_int(t.get("hr_id"))
-                    assignee_name = t.get("name") or None
-                    assignee_auto = True
+                hid = _as_int(t.get("hr_id")) if isinstance(t, dict) else None
+                if hid is None or any(a.user_id == hid for a in assignees):
+                    continue
+                assignees.append(BoardAssignee(user_id=hid, name=t.get("name") or None, auto=True))
+                if len(assignees) >= MAX_ASSIGNEES:
                     break
+    first = assignees[0] if assignees else None
+    assignee_id = first.user_id if first else None
+    assignee_name = first.name if first else None
+    assignee_auto = first.auto if first else False
 
     return BoardRow(
         entity_id=entity.id,
@@ -434,6 +468,7 @@ def _row_from_entity(
         assignee_user_id=assignee_id,
         assignee_name=assignee_name,
         assignee_auto=assignee_auto,
+        assignees=assignees,
         sourcers=(sourcers_by_entity or {}).get(entity.id, []),
         dismissal_date=_iso(_parse_date(_pick(ex, _K_DISMISSAL, _CF_DISMISSAL))),
         dept_done=_as_done(ex, "dept_done"),
@@ -712,11 +747,11 @@ async def list_rows(
 
     # Имена ведущих HR — одним запросом, чтобы не ходить в БД на каждую строку
     assignee_ids = {
-        _as_int((e.extra_data or {}).get(_K_ASSIGNEE))
+        uid
         for e in entities
         if isinstance(e.extra_data, dict)
+        for uid in _manual_assignee_ids(e.extra_data)
     }
-    assignee_ids.discard(None)
     assignee_names: Dict[int, str] = {}
     if assignee_ids:
         assignee_names = {
@@ -821,6 +856,25 @@ async def update_row(
     }
     touched_extra = False
     ex = dict(_extra(entity))
+    # HR: список главнее одиночного поля. Одиночное (старые клиенты) заменяет
+    # весь список, иначе второй HR «воскресал» бы после смены первого.
+    if "assignee_user_ids" in payload:
+        ids: List[int] = []
+        for v in payload.pop("assignee_user_ids") or []:
+            if v not in ids:
+                ids.append(v)
+        if len(ids) > MAX_ASSIGNEES:
+            raise HTTPException(400, f"Не больше {MAX_ASSIGNEES} HR на человека")
+        payload.pop("assignee_user_id", None)
+        if ids:
+            ex[_K_ASSIGNEES] = ids
+            ex[_K_ASSIGNEE] = str(ids[0])
+        else:
+            ex.pop(_K_ASSIGNEES, None)
+            ex.pop(_K_ASSIGNEE, None)
+        touched_extra = True
+    elif "assignee_user_id" in payload:
+        ex.pop(_K_ASSIGNEES, None)
     for field, key in extra_map.items():
         if field not in payload:
             continue
@@ -909,11 +963,11 @@ async def update_row(
 
     # Имя ведущего HR — иначе после сохранения в ячейке осталось бы пусто
     names: Dict[int, str] = {}
-    a_id = _as_int(_extra(entity).get(_K_ASSIGNEE))
-    if a_id:
-        nm = (await db.execute(select(User.name).where(User.id == a_id))).scalar_one_or_none()
-        if nm:
-            names[a_id] = nm
+    a_ids = _manual_assignee_ids(_extra(entity))
+    if a_ids:
+        names = dict((await db.execute(
+            select(User.id, User.name).where(User.id.in_(a_ids))
+        )).all())
 
     logger.info(f"Board row updated: entity {entity_id} by user {current_user.id}")
     return _row_from_entity(entity, offer, names)

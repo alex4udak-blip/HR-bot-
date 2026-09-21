@@ -134,7 +134,7 @@ const isBlank = (v: string) => !v.trim() || v.trim() === "—";
 const cellText = (r: BoardRow, key: FilterKey): string => {
   switch (key) {
     case "name": return r.name || "";
-    case "assignee": return r.assignee_name || "";
+    case "assignee": return rowAssignees(r).map((a) => a.name || "").filter(Boolean).join(", ");
     case "position": return r.position || "";
     case "department": return r.department_name || "";
     case "telegram": return r.telegram || "";
@@ -163,6 +163,16 @@ export default function StatusesPage() {
   // Папка живёт в URL (?folder=) — работают браузерные «Назад/Вперёд».
   const [folder, setFolder] = useUrlTab<string>("folder", "all");
   const [q, setQ] = useState("");
+  // Быстрый фильтр по HR — запоминаем: Лиза открывает доску и сразу видит своих
+  const [hrFilter, setHrFilter] = useState<string>(() => {
+    try { return localStorage.getItem(HR_FILTER_STORAGE_KEY) || ""; } catch { return ""; }
+  });
+  useEffect(() => {
+    try {
+      if (hrFilter) localStorage.setItem(HR_FILTER_STORAGE_KEY, hrFilter);
+      else localStorage.removeItem(HR_FILTER_STORAGE_KEY);
+    } catch { /* без хранилища просто не запоминаем */ }
+  }, [hrFilter]);
 
   // Конструктор фильтров повторяет ClickUp: список правил
   // «поле → оператор → значение», которые применяются вместе.
@@ -268,6 +278,14 @@ export default function StatusesPage() {
           .filter(Boolean).some((v) => String(v).toLowerCase().includes(needle))
       );
     }
+    // HR из воронки тоже считается: «кандидаты Лизы» — все, кого она ведёт,
+    // а не только те, за кем её закрепили руками.
+    if (hrFilter === HR_NONE) {
+      out = out.filter((r) => rowAssignees(r).length === 0);
+    } else if (hrFilter) {
+      const uid = Number(hrFilter);
+      out = out.filter((r) => rowAssignees(r).some((a) => a.user_id === uid));
+    }
     // Отмеченная колонка = условие «у человека она заполнена». Несколько
     // отмеченных требуют заполненности КАЖДОЙ.
     // Правила применяются вместе (И) — как в ClickUp.
@@ -289,7 +307,25 @@ export default function StatusesPage() {
       });
     }
     return out;
-  }, [rows, q, rules]);
+  }, [rows, q, rules, hrFilter]);
+
+  /** HR для быстрого фильтра — только те, у кого на доске кто-то есть. */
+  const hrOptions = useMemo(() => {
+    const map = new Map<number, { name: string; count: number }>();
+    let none = 0;
+    for (const r of rows) {
+      const list = rowAssignees(r);
+      if (list.length === 0) none += 1;
+      for (const a of list) {
+        const cur = map.get(a.user_id);
+        map.set(a.user_id, { name: cur?.name || a.name || `#${a.user_id}`, count: (cur?.count || 0) + 1 });
+      }
+    }
+    const list = [...map.entries()]
+      .map(([id, v]) => ({ id, ...v }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    return { list, none };
+  }, [rows]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: searched.length, [UNASSIGNED]: 0 };
@@ -358,6 +394,23 @@ export default function StatusesPage() {
               placeholder="Поиск по имени, должности, отделу…"
             />
           </div>
+
+          <select
+            className={clsx("hf-statuses-hr-filter", hrFilter && "hf-statuses-hr-filter-on")}
+            value={hrFilter}
+            onChange={(e) => setHrFilter(e.target.value)}
+            title="Показать людей конкретного HR"
+          >
+            <option value="">HR: все</option>
+            {hrOptions.list.map((h) => (
+              <option key={h.id} value={String(h.id)}>{h.name} · {h.count}</option>
+            ))}
+            {/* выбранный HR мог пропасть с доски — не сбрасываем выбор молча */}
+            {hrFilter && hrFilter !== HR_NONE && !hrOptions.list.some((h) => String(h.id) === hrFilter) && (
+              <option value={hrFilter}>HR #{hrFilter} · 0</option>
+            )}
+            {hrOptions.none > 0 && <option value={HR_NONE}>Без HR · {hrOptions.none}</option>}
+          </select>
 
           <div className="hf-statuses-filters-picker">
             <button
@@ -791,7 +844,7 @@ function Row({
         <AssigneeCell
           row={row}
           people={people}
-          onSave={(v) => onPatch(row, { assignee_user_id: v })}
+          onSave={(ids) => onPatch(row, { assignee_user_ids: ids })}
         />
       </td>
 
@@ -1048,6 +1101,23 @@ function OfferCell({ row, onReload }: { row: BoardRow; onReload: () => void }) {
 
 /** Цвет пилюли выводим из самого текста: одинаковое значение всегда одного
  *  цвета, а новые должности/отделы получают свой без ручной настройки. */
+
+/** Ведущие HR строки; старый ответ бэка без assignees — из одиночного поля. */
+const rowAssignees = (r: BoardRow) =>
+  r.assignees ?? (r.assignee_user_id != null
+    ? [{ user_id: r.assignee_user_id, name: r.assignee_name, auto: !!r.assignee_auto }]
+    : []);
+
+/** Быстрый фильтр «кандидаты Лизы»: id HR или «без HR». */
+const HR_NONE = "none";
+const HR_FILTER_STORAGE_KEY = "hf-statuses-hr";
+
+/** Сколько HR можно закрепить за человеком — как на бэке (MAX_ASSIGNEES). */
+const MAX_HR = 2;
+
+const initialsOf = (name: string | null | undefined) =>
+  (name || "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+
 function pillHue(value: string): number {
   let h = 0;
   for (let i = 0; i < value.length; i += 1) h = (h * 31 + value.charCodeAt(i)) % 360;
@@ -1080,6 +1150,7 @@ function PillCell({
           className="hf-statuses-input"
           autoFocus
           list={listId}
+          placeholder="впишите или выберите"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
@@ -1135,52 +1206,90 @@ function AssigneeCell({
 }: {
   row: BoardRow;
   people: { user_id: number; user_name: string | null }[];
-  onSave: (v: number | null) => void;
+  onSave: (ids: number[]) => void;
 }) {
-  const initials = (row.assignee_name || "")
-    .split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const cellRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
+  // Старые ответы бэка без assignees — собираем из одиночного поля.
+  const assignees = row.assignees ?? (row.assignee_user_id != null
+    ? [{ user_id: row.assignee_user_id, name: row.assignee_name, auto: !!row.assignee_auto }]
+    : []);
+  const auto = assignees.length > 0 && assignees.every((a) => a.auto);
+  // Из воронки — ещё не выбор: первый клик по человеку закрепляет только его.
+  const chosen = auto ? [] : assignees.map((a) => a.user_id);
   const sourcers = row.sourcers ?? [];
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t) || cellRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    // Меню fixed — при прокрутке доски оно бы «отстало» от ячейки
+    window.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [open]);
+
+  const toggleMenu = () => {
+    if (open) { setOpen(false); return; }
+    const r = cellRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 232)) });
+    setOpen(true);
+  };
+
+  const toggle = (uid: number) => {
+    if (chosen.includes(uid)) {
+      onSave(chosen.filter((x) => x !== uid));
+    } else if (chosen.length >= MAX_HR) {
+      // Третьего не добавляем молча вместо кого-то — пусть HR решит, кого снять
+      toast.error(`Не больше ${MAX_HR} HR на человека`);
+    } else {
+      onSave([...chosen, uid]);
+    }
+  };
+
+  // Назначенный ранее мог потерять роль HR — не теряем его из списка
+  const options = [
+    ...assignees
+      .filter((a) => !a.auto && !people.some((p) => p.user_id === a.user_id))
+      .map((a) => ({ user_id: a.user_id, user_name: a.name })),
+    ...people,
+  ];
+
+  const title = assignees.length === 0
+    ? "HR не назначен"
+    : assignees.map((a) => a.name || `#${a.user_id}`).join(", ") + (auto ? " — из воронки" : "");
 
   return (
     <div className="hf-statuses-assignee">
-      <select
-        className="hf-statuses-assignee-select"
-        value={row.assignee_auto ? "" : (row.assignee_user_id ?? "")}
-        onChange={(e) => onSave(e.target.value ? Number(e.target.value) : null)}
-        title={
-          row.assignee_auto
-            ? `${row.assignee_name} — из воронки. Выберите, чтобы закрепить другого.`
-            : (row.assignee_name || "не назначен")
-        }
-      >
-        <option value="">—</option>
-        {/* назначенный ранее мог потерять роль HR — не теряем его из виду */}
-        {row.assignee_user_id != null &&
-          !people.some((p) => p.user_id === row.assignee_user_id) && (
-            <option value={row.assignee_user_id}>
-              {row.assignee_name || `#${row.assignee_user_id}`}
-            </option>
-          )}
-        {people.map((p) => (
-          <option key={p.user_id} value={p.user_id}>{p.user_name || `#${p.user_id}`}</option>
+      <button ref={cellRef} type="button" className="hf-statuses-avatars" onClick={toggleMenu} title={title}>
+        {assignees.length === 0 ? (
+          <span className="hf-statuses-avatar hf-statuses-avatar-empty">—</span>
+        ) : assignees.map((a) => (
+          <span
+            key={a.user_id}
+            className="hf-statuses-avatar"
+            style={{
+              background: `hsl(${pillHue(a.name || "")} 60% 45%)`,
+              // Из воронки — приглушаем, чтобы отличалось от выбранного руками.
+              opacity: a.auto ? 0.55 : 1,
+            }}
+          >
+            {initialsOf(a.name)}
+          </span>
         ))}
-      </select>
-      {initials ? (
-        <span
-          className="hf-statuses-avatar"
-          style={{
-            background: `hsl(${pillHue(row.assignee_name || "")} 60% 45%)`,
-            // Из воронки — приглушаем, чтобы отличалось от выбранного руками.
-            opacity: row.assignee_auto ? 0.55 : 1,
-          }}
-          title={row.assignee_auto ? `${row.assignee_name} — из воронки` : row.assignee_name || ""}
-        >
-          {initials}
-        </span>
-      ) : (
-        <span className="hf-statuses-avatar hf-statuses-avatar-empty">—</span>
-      )}
+      </button>
       {sourcers.map((t) => (
         <span
           key={t.id}
@@ -1195,6 +1304,32 @@ function AssigneeCell({
           {t.name}
         </span>
       ))}
+      {open && pos && (
+        <div ref={menuRef} className="hf-statuses-hr-menu" style={{ top: pos.top, left: pos.left }}>
+          <div className="hf-statuses-hr-menu-hint">
+            {auto ? "Сейчас — из воронки. Выберите, чтобы закрепить." : `До ${MAX_HR} HR`}
+          </div>
+          {options.map((p) => {
+            const on = chosen.includes(p.user_id);
+            return (
+              <button
+                key={p.user_id}
+                type="button"
+                className={clsx("hf-statuses-hr-option", on && "is-on")}
+                onClick={() => toggle(p.user_id)}
+              >
+                <span className="hf-statuses-hr-check">{on ? "✓" : ""}</span>
+                {p.user_name || `#${p.user_id}`}
+              </button>
+            );
+          })}
+          {chosen.length > 0 && (
+            <button type="button" className="hf-statuses-hr-option hf-statuses-hr-clear" onClick={() => onSave([])}>
+              Снять всех — вернуть из воронки
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

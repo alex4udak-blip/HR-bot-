@@ -36,6 +36,8 @@ export interface BoardRow {
   assignee_name: string | null;
   /** HR подставлен из воронки, а не выбран руками — показываем блёкло. */
   assignee_auto?: boolean;
+  /** Все ведущие HR (до двух); assignee_* — первый из них. */
+  assignees?: { user_id: number; name: string | null; auto: boolean }[];
   /** Метки-сорсеры: кто привёл этого человека. */
   sourcers?: { id: number; name: string; color: string }[];
   dismissal_date: string | null;
@@ -63,6 +65,8 @@ export interface BoardRowUpdate {
   m3?: string | null;
   y1?: string | null;
   assignee_user_id?: number | null;
+  /** Полный список HR; [] — очистить. */
+  assignee_user_ids?: number[];
   dismissal_date?: string | null;
   dept_done?: boolean;
   w2_done?: boolean;
