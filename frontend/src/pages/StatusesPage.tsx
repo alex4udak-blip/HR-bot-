@@ -1,18 +1,17 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, Loader2, Plus, Pencil, Trash2, Check, X,
+  Search, Loader2, Plus, Trash2, X,
   ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
 import {
-  getBoardFolders, createBoardFolder, renameBoardFolder, deleteBoardFolder,
   getBoardRows, updateBoardRow,
-  type BoardFolder, type BoardRow, type BoardRowUpdate,
+  type BoardRow, type BoardRowUpdate,
 } from "@/services/api/staffBoard";
 import { uploadEntityFile, deleteEntityFile, downloadEntityFile } from "@/services/api/entities";
 import { getDepartments, type Department } from "@/services/api/auth";
-import { getBoardPositions, getBoardManagers, importClickUpFolders } from "@/services/api/staffBoard";
+import { getBoardPositions, getBoardManagers } from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
 import { removeTagFromEntity } from "@/services/api/tags";
 import { useUrlTab } from "@/hooks/useUrlTab";
@@ -153,7 +152,6 @@ const cellText = (r: BoardRow, key: FilterKey): string => {
 
 export default function StatusesPage() {
   const [rows, setRows] = useState<BoardRow[]>([]);
-  const [folders, setFolders] = useState<BoardFolder[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   // Справочники для выпадающих списков: должности и руководители собираются
   // из уже существующих значений, HR — из участников организации.
@@ -161,8 +159,10 @@ export default function StatusesPage() {
   const [managers, setManagers] = useState<string[]>([]);
   const [people, setPeople] = useState<{ user_id: number; user_name: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
-  // Папка живёт в URL (?folder=) — работают браузерные «Назад/Вперёд».
-  const [folder, setFolder] = useUrlTab<string>("folder", "all");
+  // Отдел слева живёт в URL (?dept=) — работают браузерные «Назад/Вперёд».
+  // Раньше тут были «направления» — отдельный список папок, но это те же
+  // отделы (решение владельца 21.09.2026), так что панель строится по отделам.
+  const [dept, setDept] = useUrlTab<string>("dept", "all");
   const [q, setQ] = useState("");
   // Быстрый фильтр по HR — запоминаем: Лиза открывает доску и сразу видит своих
   const [hrFilter, setHrFilter] = useState<string>(() => {
@@ -224,9 +224,7 @@ export default function StatusesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [r, f] = await Promise.all([getBoardRows(), getBoardFolders()]);
-      setRows(r);
-      setFolders(f);
+      setRows(await getBoardRows());
     } catch {
       toast.error("Не удалось загрузить доску");
     } finally {
@@ -330,22 +328,18 @@ export default function StatusesPage() {
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: searched.length, [UNASSIGNED]: 0 };
-    for (const f of folders) c[f.id] = 0;
     for (const r of searched) {
-      const key = r.direction && c[r.direction] !== undefined ? r.direction : UNASSIGNED;
+      const key = r.department_id != null ? String(r.department_id) : UNASSIGNED;
       c[key] = (c[key] || 0) + 1;
     }
     return c;
-  }, [searched, folders]);
+  }, [searched]);
 
   const visible = useMemo(() => {
-    if (folder === "all") return searched;
-    if (folder === UNASSIGNED) {
-      const known = new Set(folders.map((f) => f.id));
-      return searched.filter((r) => !r.direction || !known.has(r.direction));
-    }
-    return searched.filter((r) => r.direction === folder);
-  }, [searched, folder, folders]);
+    if (dept === "all") return searched;
+    if (dept === UNASSIGNED) return searched.filter((r) => r.department_id == null);
+    return searched.filter((r) => String(r.department_id) === dept);
+  }, [searched, dept]);
 
   /** Значения для выбора в правиле — те, что реально есть в таблице.
    *  Считаем по строкам текущей папки и поиска, но БЕЗ учёта самих правил:
@@ -383,7 +377,7 @@ export default function StatusesPage() {
       <div className="hf-statuses-header">
         <div>
           <h1 className="hf-statuses-title">Статусы</h1>
-          <p className="hf-statuses-subtitle">Жизненный цикл сотрудника по направлениям</p>
+          <p className="hf-statuses-subtitle">Жизненный цикл сотрудника по отделам</p>
         </div>
         <div className="hf-statuses-tools">
           <div className="hf-statuses-search">
@@ -526,13 +520,11 @@ export default function StatusesPage() {
         </div>
       ) : (
         <div className="hf-statuses-body">
-          <FolderSidebar
-            folders={folders}
+          <DepartmentSidebar
+            departments={departments}
             counts={counts}
-            active={folder}
-            onSelect={setFolder}
-            onChanged={load}
-            setFolders={setFolders}
+            active={dept}
+            onSelect={setDept}
           />
 
           <div className="hf-statuses-table-wrap">
@@ -578,7 +570,6 @@ export default function StatusesPage() {
                         <Row
                           key={r.entity_id}
                           row={r}
-                          folders={folders}
                           departments={departments}
                           positions={positions}
                           managers={managers}
@@ -611,177 +602,43 @@ export default function StatusesPage() {
 // SIDEBAR
 // ============================================================
 
-function FolderSidebar({
-  folders, counts, active, onSelect, onChanged, setFolders,
+/** Отделы слева — вместо прежних «направлений» (это были те же отделы).
+ *  Сначала отделы, где кто-то есть, потом пустые: пустых в оргструктуре
+ *  много, и за ними терялись нужные. Отделы заводят в настройках оргструктуры,
+ *  отсюда — только выбор. */
+function DepartmentSidebar({
+  departments, counts, active, onSelect,
 }: {
-  folders: BoardFolder[];
+  departments: Department[];
   counts: Record<string, number>;
   active: string;
   onSelect: (id: string) => void;
-  onChanged: () => void;
-  setFolders: (f: BoardFolder[]) => void;
 }) {
-  const [adding, setAdding] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [busy, setBusy] = useState(false);
+  const label = (d: Department) => (d.parent_name ? `${d.parent_name} → ${d.name}` : d.name);
+  const sorted = [...departments].sort((a, b) => {
+    const ca = counts[String(a.id)] ?? 0;
+    const cb = counts[String(b.id)] ?? 0;
+    if ((ca > 0) !== (cb > 0)) return ca > 0 ? -1 : 1;
+    return label(a).localeCompare(label(b), "ru");
+  });
 
-  const create = async () => {
-    const name = newName.trim();
-    if (!name || busy) return;
-    setBusy(true);
-    try {
-      const f = await createBoardFolder(name);
-      setFolders([...folders, f]);
-      setNewName("");
-      setAdding(false);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Не удалось создать папку");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const rename = async (id: string) => {
-    const name = editName.trim();
-    if (!name || busy) return;
-    setBusy(true);
-    try {
-      const f = await renameBoardFolder(id, name);
-      setFolders(folders.map((x) => (x.id === id ? f : x)));
-      setEditing(null);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Не удалось переименовать");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async (f: BoardFolder) => {
-    if (!confirm(`Удалить папку «${f.name}»? Сотрудники останутся, но без направления.`)) return;
-    setBusy(true);
-    try {
-      await deleteBoardFolder(f.id);
-      if (active === f.id) onSelect("all");
-      onChanged();
-    } catch {
-      toast.error("Не удалось удалить папку");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const plain = (id: string, label: string) => (
+  const item = (id: string, text: string) => (
     <button
       key={id}
       onClick={() => onSelect(id)}
       className={clsx("hf-statuses-folder", active === id && "hf-statuses-folder-active")}
+      title={text}
     >
-      <span className="hf-statuses-folder-name">{label}</span>
+      <span className="hf-statuses-folder-name">{text}</span>
       <span className="hf-statuses-folder-count">{counts[id] ?? 0}</span>
     </button>
   );
 
   return (
     <div className="hf-statuses-sidebar">
-      {plain("all", "Все")}
-
-      {folders.map((f) =>
-        editing === f.id ? (
-          <div key={f.id} className="hf-statuses-folder-edit">
-            <input
-              autoFocus
-              className="hf-statuses-folder-input"
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") rename(f.id);
-                if (e.key === "Escape") setEditing(null);
-              }}
-            />
-            <button className="hf-statuses-folder-action" onClick={() => rename(f.id)}>
-              <Check size={14} />
-            </button>
-            <button className="hf-statuses-folder-action" onClick={() => setEditing(null)}>
-              <X size={14} />
-            </button>
-          </div>
-        ) : (
-          <div key={f.id} className="hf-statuses-folder-row">
-            {plain(f.id, f.name)}
-            <div className="hf-statuses-folder-actions">
-              <button
-                className="hf-statuses-folder-action"
-                title="Переименовать"
-                onClick={(e) => { e.stopPropagation(); setEditing(f.id); setEditName(f.name); }}
-              >
-                <Pencil size={12} />
-              </button>
-              <button
-                className="hf-statuses-folder-action hf-statuses-folder-action-danger"
-                title="Удалить"
-                onClick={(e) => { e.stopPropagation(); remove(f); }}
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          </div>
-        )
-      )}
-
-      {plain(UNASSIGNED, "Без направления")}
-
-      {adding ? (
-        <div className="hf-statuses-folder-edit">
-          <input
-            autoFocus
-            className="hf-statuses-folder-input"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") create();
-              if (e.key === "Escape") { setAdding(false); setNewName(""); }
-            }}
-            placeholder="Название"
-          />
-          <button className="hf-statuses-folder-action" onClick={create}>
-            <Check size={14} />
-          </button>
-        </div>
-      ) : (
-        <>
-          <button className="hf-statuses-folder-add" onClick={() => setAdding(true)}>
-            <Plus size={14} /> Папка
-          </button>
-          {/* Направлений обычно нет вовсе, а в ClickUp это готовый список
-              отделов — предлагаем завести их одним нажатием. Кнопку прячем,
-              как только направления появились, чтобы не мозолила глаза. */}
-          {folders.length === 0 && (
-            <button
-              className="hf-statuses-folder-add hf-statuses-folder-import"
-              disabled={importing}
-              onClick={async () => {
-                setImporting(true);
-                try {
-                  const fresh = await importClickUpFolders();
-                  setFolders(fresh);
-                  onChanged();
-                  toast.success("Направления заведены по отделам из ClickUp");
-                } catch (e: any) {
-                  toast.error(e?.response?.data?.detail || "Не удалось завести направления");
-                } finally {
-                  setImporting(false);
-                }
-              }}
-            >
-              {importing ? <Loader2 className="animate-spin" size={14} /> : <Plus size={14} />}
-              Отделы из ClickUp
-            </button>
-          )}
-        </>
-      )}
+      {item("all", "Все")}
+      {sorted.map((d) => item(String(d.id), label(d)))}
+      {item(UNASSIGNED, "Без отдела")}
     </div>
   );
 }
@@ -791,10 +648,9 @@ function FolderSidebar({
 // ============================================================
 
 function Row({
-  row, folders, departments, positions, managers, people, saving, onPatch, onStatus, onReload,
+  row, departments, positions, managers, people, saving, onPatch, onStatus, onReload,
 }: {
   row: BoardRow;
-  folders: BoardFolder[];
   departments: Department[];
   positions: string[];
   managers: string[];
@@ -826,16 +682,6 @@ function Row({
           >
             {STATUSES.map((st) => (
               <option key={st.key} value={st.key}>{st.label}</option>
-            ))}
-          </select>
-          <select
-            className="hf-statuses-select hf-statuses-select-sub"
-            value={row.direction || ""}
-            onChange={(e) => onPatch(row, { direction: e.target.value || null })}
-          >
-            <option value="">— без направления —</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>{f.name}</option>
             ))}
           </select>
         </div>
@@ -877,7 +723,7 @@ function Row({
           >
             <option value="">—</option>
             {departments.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
+              <option key={d.id} value={d.id}>{d.parent_name ? `${d.parent_name} → ${d.name}` : d.name}</option>
             ))}
           </select>
         )}
