@@ -46,6 +46,12 @@ router = APIRouter()
 
 # Статусы, попадающие на доску, в порядке отображения секций.
 BOARD_STATUSES: List[EntityStatus] = [
+    # «Оффер выслан» и «Оффер принят» — это этапы воронки offer / hired
+    # («Выставлен оффер» / «Оффер принят»), которые уже синхронизируются со
+    # статусом карточки. Отдельных статусов не заводим: люди с этих этапов
+    # появляются на доске сами, и два источника правды не разъедутся.
+    EntityStatus.offer,
+    EntityStatus.hired,
     EntityStatus.probation,
     EntityStatus.transferred,
     EntityStatus.dismissed,
@@ -758,6 +764,10 @@ async def update_row(
             new_status = EntityStatus(raw)
         except ValueError:
             raise HTTPException(400, f"Неизвестный статус: {raw}")
+        # Только статусы доски: иначе строка с «отказом» молча пропала бы
+        # отсюда, и HR не понял бы, куда делся человек.
+        if new_status not in BOARD_STATUSES:
+            raise HTTPException(400, f"Статус «{raw}» не относится к доске «Статусы»")
         # Перевод в «Уволен»/«Уволился» — это ВТОРАЯ дверь увольнения (первая —
         # DELETE /employees). Раньше доска меняла только статус карточки, а
         # запись сотрудника оставалась активной: кабинет продолжал работать, а

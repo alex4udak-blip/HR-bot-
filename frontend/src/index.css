@@ -9920,3 +9920,54 @@ body.performance-mode .glass-card:hover {
   color: var(--hf-cyan-700);
 }
 .hf-statuses-folder-import:disabled { opacity: .6; cursor: default; }
+
+/* ── «Статусы»: ширины и закреплённое имя ─────────────────────────────
+   Ширины задаёт <colgroup> из COLUMNS; fixed-раскладка их соблюдает, а не
+   растягивает колонку под самую длинную должность. Таблица шире экрана —
+   поэтому колонка с именем прибита слева и не уезжает при прокрутке. */
+.hf-statuses-table {
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+}
+.hf-statuses-th,
+.hf-statuses-td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hf-statuses-th { padding-left: var(--hf-space-s); padding-right: var(--hf-space-s); }
+.hf-statuses-td { padding-left: var(--hf-space-s); padding-right: var(--hf-space-s); }
+
+.hf-statuses-sticky {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--hf-white);
+  /* граница, по которой видно, что справа прокручивается содержимое */
+  box-shadow: 1px 0 0 var(--hf-ui-divider), 6px 0 8px -6px rgba(16, 24, 40, .12);
+}
+.hf-statuses-row:hover .hf-statuses-sticky { background: var(--hf-main-50); }
+
+/* Заголовок группы растянут на все колонки — держим подпись в видимой зоне */
+.hf-statuses-group-inner {
+  position: sticky;
+  left: var(--hf-space-m);
+  width: max-content;
+}
+
+/* Имя — главное в строке: раньше пилюля статуса и выбор направления
+   сжимали его до нуля, и в узкой колонке оставались только они. Теперь
+   имя занимает строку целиком, а статус и направление — под ним. */
+.hf-statuses-sticky .hf-statuses-name-controls {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.hf-statuses-sticky .hf-statuses-name-controls .hf-statuses-name {
+  flex: 1 0 100%;
+}
+
+/* Цвета новых статусов — в тон заголовкам групп */
+.hf-statuses-status-offer { background: #ede9fe; color: #5b21b6; }
+.hf-statuses-status-hired { background: #dbeafe; color: #1e40af; }
+.hf-statuses-chip-offer { background: #ede9fe; color: #5b21b6; }
+.hf-statuses-chip-hired { background: #dbeafe; color: #1e40af; }

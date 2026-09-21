@@ -31,11 +31,21 @@ import { useUrlTab } from "@/hooks/useUrlTab";
 /** Порядок групп повторяет доску ClickUp: там сверху «Перевёлся», а
  *  «Практика» замыкает список. */
 const STATUSES = [
-  { key: "transferred", label: "ПЕРЕВЁЛСЯ" },
-  { key: "dismissed",   label: "УВОЛЕН"    },
-  { key: "quit",        label: "УВОЛИЛСЯ"  },
-  { key: "probation",   label: "ПРАКТИКА"  },
+  { key: "transferred", label: "ПЕРЕВЁЛСЯ",          members: ["transferred"] },
+  // «Уволен» и «Уволился» — одна группа: HR неважно, кто инициатор, а две
+  // полупустые секции только удлиняли доску. В базе различие остаётся
+  // (dismissed / quit) — объединяем только показ, данные не трогаем.
+  { key: "dismissed",   label: "УВОЛЕН / УВОЛИЛСЯ",  members: ["dismissed", "quit"] },
+  { key: "probation",   label: "ПРАКТИКА",           members: ["probation"] },
+  // Этапы воронки «Выставлен оффер» и «Оффер принят» — люди отсюда попадают
+  // на доску сами, как только рекрутёр двигает их в воронке.
+  { key: "offer",       label: "ОФФЕР ВЫСЛАН",       members: ["offer"] },
+  { key: "hired",       label: "ОФФЕР ПРИНЯТ",       members: ["hired"] },
 ] as const;
+
+/** В какую группу попадает статус строки. */
+const groupOf = (status: string) =>
+  STATUSES.find((g) => (g.members as readonly string[]).includes(status))?.key ?? status;
 
 /** Пока человек на практике, отдела и должности нет — обе колонки
  *  показывают «Сандбокс» и не редактируются. */
@@ -52,26 +62,29 @@ type FilterKey =
 /** Порядок и состав повторяют доску «Сотрудники» в ClickUp: после каждой
  *  вехи идёт колонка-отметка «пройдено» (в ClickUp она называлась так же,
  *  но в скобках). «2 недели» — наша дополнительная веха, в ClickUp её нет. */
-const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narrow?: boolean }[] = [
-  { key: "name",                  label: "Сотрудник",         filter: true },
-  { key: "assignee",              label: "HR",                filter: true },
-  { key: "position",              label: "Должность",         filter: true },
-  { key: "department",            label: "Отдел",             filter: true },
-  { key: "telegram",              label: "Telegram",          filter: true },
-  { key: "practice_start_date",   label: "Выход на практику", filter: true },
-  { key: "manager",               label: "Рук-ль",            filter: true },
-  { key: "offer",                 label: "Оффер",             filter: false, narrow: true },
-  { key: "department_start_date", label: "Выход в отдел",     filter: true },
-  { key: "dept_done",             label: "✓",                 filter: true, narrow: true },
-  { key: "w2",                    label: "2 недели",          filter: true },
-  { key: "w2_done",               label: "✓",                 filter: true, narrow: true },
-  { key: "m1",                    label: "1 мес",             filter: true },
-  { key: "m1_done",               label: "✓",                 filter: true, narrow: true },
-  { key: "m3",                    label: "3 мес",             filter: true },
-  { key: "m3_done",               label: "✓",                 filter: true, narrow: true },
-  { key: "y1",                    label: "1 год",             filter: true },
-  { key: "y1_done",               label: "✓",                 filter: true, narrow: true },
-  { key: "dismissal_date",        label: "Дата увольнения",   filter: true },
+/** Ширина в px задана у каждой колонки: без неё 19 колонок растягивались как
+ *  попало, длинная должность раздувала свою, а даты сжимались до переноса.
+ *  Суммарно таблица шире экрана — прокрутка есть, но имя закреплено слева. */
+const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narrow?: boolean; width: number }[] = [
+  { key: "name",                  label: "Сотрудник",         filter: true, width: 250 },
+  { key: "assignee",              label: "HR",                filter: true, width: 130 },
+  { key: "position",              label: "Должность",         filter: true, width: 160 },
+  { key: "department",            label: "Отдел",             filter: true, width: 150 },
+  { key: "telegram",              label: "Telegram",          filter: true, width: 140 },
+  { key: "practice_start_date",   label: "Выход на практику", filter: true, width: 104 },
+  { key: "manager",               label: "Рук-ль",            filter: true, width: 110 },
+  { key: "offer",                 label: "Оффер",             filter: false, narrow: true, width: 64 },
+  { key: "department_start_date", label: "Выход в отдел",     filter: true, width: 104 },
+  { key: "dept_done",             label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "w2",                    label: "2 недели",          filter: true, width: 96 },
+  { key: "w2_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "m1",                    label: "1 мес",             filter: true, width: 96 },
+  { key: "m1_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "m3",                    label: "3 мес",             filter: true, width: 96 },
+  { key: "m3_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "y1",                    label: "1 год",             filter: true, width: 96 },
+  { key: "y1_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "dismissal_date",        label: "Дата увольнения",   filter: true, width: 110 },
 ];
 
 /** Подписи для списка «Фильтры»: там «✓» ничего не сказало бы. */
@@ -321,7 +334,10 @@ export default function StatusesPage() {
   const activeCount = rules.length;
 
   const grouped = useMemo(
-    () => STATUSES.map((s) => ({ ...s, items: visible.filter((r) => r.status === s.key) })),
+    () => STATUSES.map((s) => ({
+      ...s,
+      items: visible.filter((r) => (s.members as readonly string[]).includes(r.status)),
+    })),
     [visible]
   );
 
@@ -467,10 +483,19 @@ export default function StatusesPage() {
 
           <div className="hf-statuses-table-wrap">
             <table className="hf-statuses-table">
+              <colgroup>
+                {COLUMNS.map((c) => <col key={c.key} style={{ width: c.width }} />)}
+              </colgroup>
               <thead>
                 <tr>
                   {COLUMNS.map((c) => (
-                    <th key={c.key} className="hf-statuses-th">{c.label}</th>
+                    <th
+                      key={c.key}
+                      className={clsx("hf-statuses-th", c.key === "name" && "hf-statuses-sticky")}
+                      title={FILTER_LABELS[c.key as FilterKey] || c.label}
+                    >
+                      {c.label}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -729,7 +754,7 @@ function Row({
 
   return (
     <tr className={clsx("hf-statuses-row", saving && "hf-statuses-row-saving")}>
-      <td className="hf-statuses-td">
+      <td className="hf-statuses-td hf-statuses-sticky">
         {/* Всё в одну строку: раньше имя, статус и направление шли друг под
             другом, строка вырастала втрое и таблицу «трясло» при листании. */}
         <div className="hf-statuses-name-controls">
@@ -737,9 +762,13 @@ function Row({
           {/* Смена статуса прямо в строке: раньше перевести человека из
               «Практики» в «Уволен» через интерфейс было нельзя вообще. */}
           <select
-            className={clsx("hf-statuses-status", `hf-statuses-status-${row.status}`)}
-            value={row.status}
-            onChange={(e) => onStatus(row, e.target.value)}
+            className={clsx("hf-statuses-status", `hf-statuses-status-${groupOf(row.status)}`)}
+            value={groupOf(row.status)}
+            onChange={(e) => {
+              // Уже в объединённой группе — повторный выбор ничего не меняет,
+              // иначе «уволился» молча переписался бы в «уволен».
+              if (e.target.value !== groupOf(row.status)) onStatus(row, e.target.value);
+            }}
           >
             {STATUSES.map((st) => (
               <option key={st.key} value={st.key}>{st.label}</option>
