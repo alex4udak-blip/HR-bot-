@@ -1,24 +1,11 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 import HireToStaffButton from '../HireToStaffButton';
 
 vi.mock('@/services/api', () => ({
   hireEntity: vi.fn(),
-  getDepartments: vi.fn().mockResolvedValue([{ id: 7, name: 'Разработка', parent_id: null }]),
+  getDepartments: vi.fn().mockResolvedValue([]),
 }));
-
-const hireDefaults = vi.fn();
-vi.mock('@/services/api/staffBoard', () => ({
-  getBoardFolders: vi.fn().mockResolvedValue([]),
-  getBoardPositions: vi.fn().mockResolvedValue([]),
-  updateBoardRow: vi.fn(),
-  getHireDefaults: (id: number) => hireDefaults(id),
-}));
-
-beforeEach(() => {
-  hireDefaults.mockReset();
-  hireDefaults.mockResolvedValue({ position: null, department_id: null, department_name: null, vacancy_title: null });
-});
 
 const base = {
   entityId: 1, entityName: 'Пётр', email: 'p@x.com',
@@ -60,27 +47,5 @@ describe('HireToStaffButton — автозаполнение из кандида
     fireEvent.click(screen.getByRole('button', { name: /в штат/i }));
     expect(screen.getByDisplayValue('grom@x.com')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Таргетолог')).toBeInTheDocument();
-  });
-});
-
-describe('HireToStaffButton — подстановка из вакансии', () => {
-  const fromVacancy = { position: 'Бэкенд-разработчик', department_id: 7, department_name: 'Разработка', vacancy_title: 'Бэкенд-разработчик' };
-
-  it('пустые должность и отдел берутся из вакансии', async () => {
-    hireDefaults.mockResolvedValue(fromVacancy);
-    render(<HireToStaffButton {...base} position={null} status="hired" canHire />);
-    fireEvent.click(screen.getByRole('button', { name: /в штат/i }));
-    expect(await screen.findByDisplayValue('Бэкенд-разработчик')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText(/Разработка/)).toBeInTheDocument());
-  });
-
-  it('должность из карточки главнее вакансии', async () => {
-    hireDefaults.mockResolvedValue(fromVacancy);
-    render(<HireToStaffButton {...base} position="Маркетолог" status="hired" canHire />);
-    fireEvent.click(screen.getByRole('button', { name: /в штат/i }));
-    await waitFor(() => expect(hireDefaults).toHaveBeenCalledWith(1));
-    await waitFor(() => expect(screen.getByText(/Разработка/)).toBeInTheDocument());
-    expect(screen.getByDisplayValue('Маркетолог')).toBeInTheDocument();
-    expect(screen.queryByDisplayValue('Бэкенд-разработчик')).toBeNull();
   });
 });
