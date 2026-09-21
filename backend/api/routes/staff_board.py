@@ -796,6 +796,11 @@ async def update_row(
             if not dept:
                 raise HTTPException(404, "Отдел не найден")
         entity.department_id = dept_id
+        # Выбрали отдел — значит человек в него вышел. Дату ставим, только если
+        # её ещё нет и её не передали в этом же запросе: руками вбитую не трогаем.
+        autofill_dept_start = dept_id is not None and "department_start_date" not in payload
+    else:
+        autofill_dept_start = False
 
     if "telegram" in payload:
         handle = (payload["telegram"] or "").strip().lstrip("@")
@@ -831,6 +836,13 @@ async def update_row(
                 ex[key] = parsed.isoformat()
             else:
                 ex[key] = str(value).strip()
+        touched_extra = True
+
+    # Автодата выхода в отдел (см. выше, где сохраняется отдел). От неё
+    # считаются все вехи — 2 недели, 1/3/12 месяцев, — так что без неё строка
+    # оставалась бы без плана проверок.
+    if autofill_dept_start and not ex.get(_K_DEPT_START) and not ex.get(_CF_DEPT_START):
+        ex[_K_DEPT_START] = date.today().isoformat()
         touched_extra = True
 
     # Отметки «пройдено» — булевы, отдельно от дат: пустое значение здесь

@@ -13,13 +13,14 @@ User заводится с недоступным случайным парол�
 (POST /factorial/employees/{id}/reset-password), когда доступ действительно нужен.
 """
 import secrets
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from ...database import get_db
 from ...models.database import (
@@ -155,6 +156,15 @@ async def hire_entity(
     ent.status = EntityStatus.transferred
     if data.department_id:
         ent.department_id = data.department_id
+        # Дата выхода в отдел — отсчётная для вех доски «Статусы» (2 недели,
+        # 1/3/12 месяцев). Раньше при найме она оставалась пустой, и у только
+        # что оформленного человека не было ни одной даты проверки. Ставим
+        # сегодня, но только если её ещё нет: вбитую руками не перетираем.
+        ex = dict(ent.extra_data) if isinstance(ent.extra_data, dict) else {}
+        if not ex.get("department_transfer_date") and not ex.get("cf:Выход в отдел"):
+            ex["department_transfer_date"] = date.today().isoformat()
+            ent.extra_data = ex
+            flag_modified(ent, "extra_data")
     if data.position:
         ent.position = data.position
 
