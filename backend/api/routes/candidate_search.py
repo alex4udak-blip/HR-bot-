@@ -895,7 +895,10 @@ class KanbanBoardResponse(BaseModel):
 async def get_candidates_kanban(
     q: Optional[str] = None,
     recruiter_id: Optional[int] = None,
-    per_column: int = Query(50, ge=1, le=500),
+    # 2000: «Все кандидаты» без поиска должны показывать ВСЕХ на каждом этапе
+    # (при 500 «Новый» с 468 вот-вот начал бы молча терять хвост). Выборка из БД
+    # и счётчики от лимита не зависят — он режет только сборку карточек.
+    per_column: int = Query(50, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

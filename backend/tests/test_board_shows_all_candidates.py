@@ -84,3 +84,32 @@ async def test_counts_match_visible_cards(client, db_session, organization, admi
     total_count = sum(col["count"] for col in board["columns"])
     total_cards = sum(len(col["cards"]) for col in board["columns"])
     assert total_count == total_cards == 1
+
+
+@pytest.mark.asyncio
+async def test_column_over_500_is_loaded_in_full(client, db_session, organization, admin_user, org_owner):
+    """Этап больше 500 человек приходит ЦЕЛИКОМ (прод 21.09.2026: «Новый» — 468
+    при лимите 500; дальше хвост молча терялся бы при верном бейдже)."""
+    db_session.add_all([
+        Entity(
+            org_id=organization.id, name=f"Новичков {i}", type=EntityType.candidate,
+            status=EntityStatus.new, created_by=admin_user.id, created_at=datetime.utcnow(),
+        )
+        for i in range(520)
+    ])
+    await db_session.commit()
+
+    r = await client.get("/api/candidates/kanban?per_column=2000", headers=_h(admin_user))
+    assert r.status_code == 200, r.text
+    col = next(c for c in r.json()["columns"] if c["status"] == "new")
+    assert col["count"] == 520
+    assert len(col["cards"]) == 520
+
+    # Поиск по-прежнему работает и ограничен своим лимитом.
+    r_q = await client.get(
+        "/api/candidates/kanban?q=" + "Новичков" + "&per_column=500", headers=_h(admin_user)
+    )
+    assert r_q.status_code == 200, r_q.text
+    col_q = next(c for c in r_q.json()["columns"] if c["status"] == "new")
+    assert col_q["count"] == 520
+    assert len(col_q["cards"]) == 500
