@@ -19,14 +19,9 @@ import {
   sideFromEntity,
   matchSide,
   matchKindOf,
-  buildMergePlan,
-  defaultMergeChoices,
   type FieldKey,
   type MatchKind,
-  type MergeRow,
 } from "./CandidateCompareCard";
-import { MergePlanPanel } from "./MergePlanPanel";
-import type { MergeFieldKey, MergeSide } from "@/services/api/entities";
 
 /**
  * Баннер «Похожий кандидат есть в базе» + БЕЛЫЙ экран сравнения двух анкет
@@ -62,10 +57,6 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   const [triggerEntity, setTriggerEntity] = useState<EntityWithRelations | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Шаг «что оставить»: id вливаемой анкеты, план по полям и выбор рекрутёра.
-  // Пока шаг открыт, вместо колонок сравнения показывается панель выбора.
-  const [mergePlan, setMergePlan] = useState<{ targetId: number; rows: MergeRow[] } | null>(null);
-  const [mergeChoices, setMergeChoices] = useState<Partial<Record<MergeFieldKey, MergeSide>>>({});
   // Полный список похожих кандидатов (трек-карусель) + выбранный для сравнения справа.
   const [duplicates, setDuplicates] = useState<DuplicateCandidateResult[]>([]);
   const [selectedDupId, setSelectedDupId] = useState<number | null>(hiddenId);
@@ -205,7 +196,6 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     // Резюме могли догрузить с прошлой проверки — читаем файлы заново.
     clearCompareFilesCache();
     setDecisions({});
-    setMergePlan(null);
     setOpen(true);
     setLoading(true);
     try {
@@ -274,37 +264,17 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     }
   };
 
-  // «Объединить» больше не склеивает сразу: слияние необратимо, а раньше оно
-  // молча оставляло всё с левой анкеты. Сначала — шаг «что оставить».
-  const handleMerge = () => {
+  const handleMerge = async () => {
     const targetId = selectedDupId ?? hiddenId;
     if (targetId == null || decisions[targetId]) return;
-    const dupEntity = entities[targetId] ?? (targetId === hiddenId ? triggerEntity : null);
-    if (!dupEntity) {
-      toast.error("Профиль анкеты ещё загружается — попробуйте через секунду");
-      return;
-    }
-    const rows = buildMergePlan(sideFromCard(card, status), sideFromEntity(dupEntity));
-    setMergeChoices(defaultMergeChoices(rows));
-    setMergePlan({ targetId, rows });
-  };
-
-  const confirmMerge = async () => {
-    if (!mergePlan) return;
-    const { targetId } = mergePlan;
     setBusy(true);
     try {
-      await mergeShadowDuplicate(card.id, targetId, mergeChoices);
+      await mergeShadowDuplicate(card.id, targetId);
       toast.success("Анкета объединена с новым кандидатом");
-      setMergePlan(null);
       afterDecision(targetId, "merged");
     } catch (err) {
       const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
-      toast.error(
-        (detail?.status === 409 || detail?.status === 422) && detail.data?.detail
-          ? detail.data.detail
-          : "Не удалось объединить профили",
-      );
+      toast.error(detail?.status === 409 && detail.data?.detail ? detail.data.detail : "Не удалось объединить профили");
     } finally {
       setBusy(false);
     }
@@ -328,7 +298,6 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   // «Закрыть» при частично решённых: решения сохранены, остальные ждут —
   // говорим прямо, чтобы не казалось, что закрытие разделило всех.
   const closeModal = () => {
-    setMergePlan(null);
     const decidedCount = Object.keys(decisions).length;
     const left = duplicates.length - decidedCount;
     if (decidedCount > 0 && left > 0) {
@@ -408,15 +377,6 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
               onClick={(e) => e.stopPropagation()}
             >
               {/* BODY: Прозрачные колонки */}
-              {mergePlan ? (
-                <MergePlanPanel
-                  plan={mergePlan.rows}
-                  choices={mergeChoices}
-                  onChoose={(key, side) => setMergeChoices((prev) => ({ ...prev, [key]: side }))}
-                  leftId={card.id}
-                  rightId={mergePlan.targetId}
-                />
-              ) : (
               <div className="flex-1 flex gap-6 p-6 overflow-hidden">
 
                 {/* ЛЕВАЯ КОЛОНКА - полностью прозрачная обертка */}
@@ -585,36 +545,16 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                 </div>
 
               </div>
-              )}
 
               {/* FOOTER - белый низ с кнопками */}
               <div className="shrink-0 p-4 bg-white border-t border-gray-200 flex flex-col items-center gap-3">
-                {duplicates.length > 1 && !mergePlan && (
+                {duplicates.length > 1 && (
                   <div className="text-sm text-gray-600 text-center">
                     {selectedDecision
                       ? "По этой анкете решение уже принято — пролистайте к непроверенной"
                       : <>Решение только по анкете {idx + 1} из {duplicates.length}{selectedName ? <>: <b>{selectedName}</b></> : null}</>}
                   </div>
                 )}
-                {mergePlan ? (
-                  <div className="flex justify-center items-center gap-4">
-                    <button
-                      disabled={busy}
-                      onClick={() => setMergePlan(null)}
-                      className="inline-flex items-center justify-center gap-2 bg-white text-black hover:bg-gray-100 rounded-lg px-6 py-2.5 text-sm font-semibold border-2 border-black disabled:opacity-50"
-                    >
-                      Назад к сравнению
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={confirmMerge}
-                      className="inline-flex items-center justify-center gap-2 bg-lime-500 hover:bg-lime-600 text-white rounded-lg px-6 py-2.5 text-sm font-semibold disabled:opacity-50"
-                    >
-                      {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                      Объединить
-                    </button>
-                  </div>
-                ) : (
                 <div className="flex justify-center items-center gap-4">
                 <button
                   disabled={busy || !!selectedDecision}
@@ -639,7 +579,6 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
                   Закрыть
                 </button>
                 </div>
-                )}
               </div>
             </div>
           )}

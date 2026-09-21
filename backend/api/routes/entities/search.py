@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from typing import Dict, Optional, List
+from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -1067,9 +1067,6 @@ async def merge_entities(
 
 class ShadowDuplicateActionRequest(BaseModel):
     duplicate_id: int  # id архивного (теневого) кандидата-совпадения
-    # Пополевое слияние: {поле: "target" | "source"} — чьё значение оставить.
-    # Не передано — прежнее поведение (выжившая карточка сохраняет свои значения).
-    field_choices: Optional[Dict[str, str]] = None
 
 
 @router.post("/{entity_id}/merge-shadow")
@@ -1118,7 +1115,6 @@ async def merge_shadow_duplicate(
         merged = await similarity_service.merge_entities(
             db=db, source_entity=source_entity, target_entity=target_entity,
             merged_by_name=current_user.name,
-            field_choices=request.field_choices,
         )
         # merge_entities снял флаг целиком — возвращаем баннер на следующий
         # нерешённый дубль, если такие остались.
@@ -1137,10 +1133,6 @@ async def merge_shadow_duplicate(
             409,
             f"Похоже, это РАЗНЫЕ люди: {e.reason}. Слияние отменено — проверьте телефон/дату рождения.",
         )
-    except ValueError as e:
-        # Неизвестное поле или сторона в field_choices — ошибка запроса, слияние
-        # не начиналось (проверка стоит до любых изменений).
-        raise HTTPException(422, str(e))
     except HTTPException:
         raise
     except Exception as e:

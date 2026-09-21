@@ -4,7 +4,6 @@ import type { EntityWithRelations } from "@/types";
 import { STATUS_LABELS } from "@/types";
 import { sanitizeHtml } from "@/utils/sanitizeHtml";
 import { CompareResumePreview } from "./CompareResumePreview";
-import type { MergeFieldKey, MergeSide } from "@/services/api/entities";
 
 /**
  * Презентационная «карточка сравнения кандидата» + её типы, билдеры данных и
@@ -529,72 +528,4 @@ export function CandidateCompareCard({
       <NotesBlock notes={side.notes} />
     </div>
   );
-}
-
-// ── Пополевое слияние: план «что оставить» ──
-
-/**
- * Поле плана слияния.
- * - conflict — заполнено с обеих сторон и различается: выбирает рекрутёр;
- * - fill     — слева пусто, справа есть: по умолчанию берём справа;
- * - keep     — справа пусто или совпадает: остаётся как слева, выбирать нечего.
- */
-export type MergeRowKind = "conflict" | "fill" | "keep";
-
-export type MergeRow = {
-  key: MergeFieldKey;
-  label: string;
-  left: string;
-  right: string;
-  kind: MergeRowKind;
-};
-
-// Поле карточки сравнения → поле бэка (MERGE_FIELD_KEYS) и подпись.
-const MERGE_FIELDS: { side: keyof Side; key: MergeFieldKey; label: string }[] = [
-  { side: "name", key: "name", label: "ФИО" },
-  { side: "position", key: "position", label: "Должность" },
-  { side: "company", key: "company", label: "Компания" },
-  { side: "phone", key: "phone", label: "Основной телефон" },
-  { side: "email", key: "email", label: "Основная почта" },
-  { side: "telegram", key: "telegram", label: "Основной Telegram" },
-  { side: "city", key: "city", label: "Город" },
-  { side: "birthDate", key: "birth_date", label: "Дата рождения" },
-  { side: "salary", key: "salary", label: "Зарплата" },
-  { side: "experience", key: "total_experience", label: "Опыт" },
-  { side: "source", key: "source", label: "Источник" },
-];
-
-function sameValue(key: MergeFieldKey, a: string, b: string): boolean {
-  if (key === "phone") return normPhone(a) === normPhone(b);
-  if (key === "telegram") return normTg(a) === normTg(b);
-  return norm(a) === norm(b);
-}
-
-/**
- * Что будет с каждым полем при слиянии правой анкеты в левую (левая — выжившая).
- * Раньше «Объединить» молча оставлял всё слева, и значения справа терялись;
- * теперь по конфликтам решает рекрутёр.
- */
-export function buildMergePlan(left: Side, right: Side): MergeRow[] {
-  const rows: MergeRow[] = [];
-  for (const f of MERGE_FIELDS) {
-    const l = String(left[f.side] ?? "").trim();
-    const r = String(right[f.side] ?? "").trim();
-    if (!l && !r) continue;
-    let kind: MergeRowKind = "keep";
-    if (!l && r) kind = "fill";
-    else if (l && r && !sameValue(f.key, l, r)) kind = "conflict";
-    rows.push({ key: f.key, label: f.label, left: l, right: r, kind });
-  }
-  return rows;
-}
-
-/** Выбор по умолчанию: при конфликте — как слева (прежнее поведение), пустое — заполнить справа. */
-export function defaultMergeChoices(plan: MergeRow[]): Partial<Record<MergeFieldKey, MergeSide>> {
-  const out: Partial<Record<MergeFieldKey, MergeSide>> = {};
-  for (const row of plan) {
-    if (row.kind === "conflict") out[row.key] = "target";
-    else if (row.kind === "fill") out[row.key] = "source";
-  }
-  return out;
 }
