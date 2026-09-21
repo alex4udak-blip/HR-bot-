@@ -403,17 +403,19 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Fix NULL org_id: {e}")
 
-    # Яркие ярлыки у ФИО переехали из extra_data.headline_tags в общий
-    # справочник меток. Бэкафилл идемпотентен и на устаканившейся базе не
-    # делает ни одного запроса на запись, поэтому живёт прямо в старте.
+    # Теги у ФИО отделены от меток, метки — только сорсеры (21.09.2026), см.
+    # services/tags_split.py. Прежний бэкафилл extra_data.headline_tags →
+    # метки снят: на проде он давно отработал (всё уже в связях show_at_name,
+    # которые этот шаг и переносит), а на каждом старте он возвращал к имени
+    # теги, которые рекрутёр оттуда убрал, и воскрешал бы удалённые метки-слова.
     # Некритичен: упасть из-за него старт не должен.
     try:
-        from ..services.headline_tags_backfill import backfill_headline_tags
+        from ..services.tags_split import split_tags_and_labels
         from ..database import AsyncSessionLocal
         async with AsyncSessionLocal() as session:
-            await backfill_headline_tags(session)
+            await split_tags_and_labels(session)
     except Exception as e:
-        logger.warning(f"Headline tags backfill failed (non-critical): {e}")
+        logger.warning(f"Tags/labels split failed (non-critical): {e}")
 
     logger.info("=== DATABASE INITIALIZATION COMPLETE ===")
 

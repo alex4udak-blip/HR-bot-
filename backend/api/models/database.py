@@ -1937,6 +1937,50 @@ class EntityTag(Base):
     entities = relationship("Entity", secondary="entity_tags", back_populates="tag_objects")
 
 
+# Теги у ФИО кандидата («+ тег» рядом с именем) — ОТДЕЛЬНО от меток (21.09.2026).
+# До этого тег был той же меткой из entity_tags_catalog с флагом show_at_name на
+# связи. Метки теперь — только сорсеры (кто привёл кандидата), а у тегов будет
+# своя задача, поэтому справочники разведены: свой каталог и своя связь.
+entity_name_tag_association = Table(
+    "entity_name_tags",
+    Base.metadata,
+    Column("entity_id", Integer, ForeignKey("entities.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("entity_name_tags_catalog.id", ondelete="CASCADE"), primary_key=True),
+    extend_existing=True,
+)
+
+
+class NameTag(Base):
+    """Тег у ФИО кандидата. Справочник организации, как у меток."""
+    __tablename__ = "entity_name_tags_catalog"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    color = Column(String(40), nullable=False, default="var(--hf-status-pink)")
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    # Скрыт из списка выбора, но остаётся у кандидатов (как у меток).
+    archived_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint('org_id', 'name', name='uq_entity_name_tag_org_name'),
+    )
+
+
+class DataMigrationMark(Base):
+    """Отметка «одноразовая правка данных уже выполнена».
+
+    Правки, которые нельзя повторять на каждом старте (например, удаление меток
+    по списку имён: позже кто-то может завести метку с тем же именем осознанно),
+    сверяются с этой таблицей и пишут сюда ключ после успешного прогона.
+    """
+    __tablename__ = "data_migration_marks"
+
+    key = Column(String(100), primary_key=True)
+    applied_at = Column(DateTime, default=func.now())
+
+
 # ===========================================================================
 # ХАБ ДОСТУПОВ (модуль Enceladus)
 # ---------------------------------------------------------------------------

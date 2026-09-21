@@ -872,9 +872,9 @@ class KanbanCard(BaseModel):
     # сверяет её и отдаёт 409). Без неё форма правки не могла ничего прислать,
     # и параллельные правки двух рекрутёров тихо затирали друг друга.
     version: int = 1
-    # Яркие ярлыки у ФИО: метки справочника, поднятые к имени у ЭТОГО кандидата
-    # (entity_tags.show_at_name). Отдаём прямо в карточке — список слева рисует
-    # их на каждой строке, и дозагружать метки по одному было бы N+1.
+    # Теги у ФИО (свой справочник entity_name_tags_catalog, отдельно от меток).
+    # Отдаём прямо в карточке — список слева рисует их на каждой строке, и
+    # дозагружать по одному было бы N+1.
     headline_tags: list[dict] = []
 
     class Config:
@@ -1092,21 +1092,19 @@ async def get_candidates_kanban(
     # Ярлыки у имени — одним запросом на всю выдачу.
     headline_map: dict[int, list[dict]] = {}
     try:
-        from ..models.database import EntityTag, entity_tag_association
+        # С 21.09.2026 теги у ФИО — свой справочник, отдельный от меток.
+        from ..models.database import NameTag, entity_name_tag_association
         ids = [e.id for e in display_entities]
         if ids:
             rows = await db.execute(
                 select(
-                    entity_tag_association.c.entity_id,
-                    EntityTag.name,
-                    EntityTag.color,
+                    entity_name_tag_association.c.entity_id,
+                    NameTag.name,
+                    NameTag.color,
                 )
-                .join(EntityTag, EntityTag.id == entity_tag_association.c.tag_id)
-                .where(
-                    entity_tag_association.c.entity_id.in_(ids),
-                    entity_tag_association.c.show_at_name.is_(True),
-                )
-                .order_by(EntityTag.name)
+                .join(NameTag, NameTag.id == entity_name_tag_association.c.tag_id)
+                .where(entity_name_tag_association.c.entity_id.in_(ids))
+                .order_by(NameTag.name)
             )
             for ent_id, name, color in rows.all():
                 headline_map.setdefault(ent_id, []).append({"name": name, "color": color})

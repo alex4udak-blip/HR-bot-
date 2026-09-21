@@ -102,24 +102,21 @@ def _entity_photo(entity, photo_file_map: Optional[dict] = None):
 async def _load_headline_tag_map(db: AsyncSession, entity_ids: list[int]) -> dict:
     """entity_id → яркие ярлыки у ФИО, одним запросом (без N+1).
 
-    Ярлыки переехали в общий справочник меток: ярлык = метка со взведённым
-    show_at_name на связи с этим кандидатом. Раньше лежали свободным текстом в
-    extra_data.headline_tags — своя палитра, своя коллекция, отсюда «перформер»
-    в метках рядом с «перфомер» в тегах.
+    С 21.09.2026 теги у ФИО — свой справочник (entity_name_tags_catalog),
+    отдельный от меток; раньше это были метки с флагом show_at_name, а ещё
+    раньше — свободный текст в extra_data.headline_tags.
     """
     out: dict = {}
     if not entity_ids:
         return out
     try:
-        from ...models.database import EntityTag, entity_tag_association
+        # С 21.09.2026 теги у ФИО — свой справочник, отдельный от меток.
+        from ...models.database import NameTag, entity_name_tag_association
         rows = await db.execute(
-            select(entity_tag_association.c.entity_id, EntityTag.name, EntityTag.color)
-            .join(EntityTag, EntityTag.id == entity_tag_association.c.tag_id)
-            .where(
-                entity_tag_association.c.entity_id.in_(entity_ids),
-                entity_tag_association.c.show_at_name.is_(True),
-            )
-            .order_by(EntityTag.name)
+            select(entity_name_tag_association.c.entity_id, NameTag.name, NameTag.color)
+            .join(NameTag, NameTag.id == entity_name_tag_association.c.tag_id)
+            .where(entity_name_tag_association.c.entity_id.in_(entity_ids))
+            .order_by(NameTag.name)
         )
         for ent_id, name, color in rows.all():
             out.setdefault(ent_id, []).append({"name": name, "color": color})

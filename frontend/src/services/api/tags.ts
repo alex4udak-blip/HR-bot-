@@ -13,15 +13,8 @@ export interface Tag {
   created_at: string | null;
   /** Скрыта из списка выбора, но остаётся на карточках, где уже проставлена. */
   archived_at?: string | null;
-  /** 'sourcer' — тот, кто привёл кандидата; 'general' — обычный ярлык. */
+  /** С 21.09.2026 метки — только сорсеры ('sourcer'); 'general' — старые данные. */
   kind?: TagKind;
-  /**
-   * Показывать ли метку ЯРКИМ ЯРЛЫКОМ у ФИО (бывшие extra_data.headline_tags).
-   * Признак живёт на СВЯЗИ кандидат↔метка, поэтому осмыслен только в выдаче
-   * getEntityTags: одна и та же метка у одного человека ярлык у имени, у
-   * другого обычная. В общем справочнике (getTags) всегда false.
-   */
-  show_at_name?: boolean;
 }
 
 export type TagKind = 'general' | 'sourcer';
@@ -29,20 +22,10 @@ export type TagKind = 'general' | 'sourcer';
 export interface TagCreate {
   name: string;
   color: string;
-  kind?: TagKind;
 }
 
 export const getTags = async (kind?: TagKind): Promise<Tag[]> => {
   const { data } = await api.get<Tag[]>('/tags', { params: kind ? { kind } : undefined });
-  return data;
-};
-
-/** Поменять тип или цвет метки. Имя не меняем — по нему её узнают на карточках. */
-export const updateTag = async (
-  tagId: number,
-  patch: { kind?: TagKind; color?: string },
-): Promise<Tag> => {
-  const { data } = await api.patch<Tag>(`/tags/${tagId}`, patch);
   return data;
 };
 
@@ -79,29 +62,48 @@ export const getEntityTags = async (entityId: number): Promise<Tag[]> => {
   return data;
 };
 
-/**
- * Повесить метку на кандидата. showAtName=true — сразу ярким ярлыком у ФИО.
- * Если метка уже висит обычной, повторный вызов с true поднимает её к имени.
- */
-export const addTagToEntity = async (
-  entityId: number,
-  tagId: number,
-  showAtName = false,
-): Promise<void> => {
-  await api.post(`/tags/entities/${entityId}/tags/${tagId}`, { show_at_name: showAtName });
-};
-
-/** Поднять метку к ФИО или убрать оттуда, НЕ снимая её с кандидата. */
-export const setTagShowAtName = async (
-  entityId: number,
-  tagId: number,
-  showAtName: boolean,
-): Promise<void> => {
-  await api.patch(`/tags/entities/${entityId}/tags/${tagId}/show-at-name`, {
-    show_at_name: showAtName,
-  });
+/** Повесить метку (сорсера) на кандидата. */
+export const addTagToEntity = async (entityId: number, tagId: number): Promise<void> => {
+  await api.post(`/tags/entities/${entityId}/tags/${tagId}`);
 };
 
 export const removeTagFromEntity = async (entityId: number, tagId: number): Promise<void> => {
   await api.delete(`/tags/entities/${entityId}/tags/${tagId}`);
+};
+
+// ============================================================
+// ТЕГИ У ФИО — отдельный справочник, не связанный с метками (21.09.2026)
+// ============================================================
+
+export const getNameTags = async (): Promise<Tag[]> => {
+  const { data } = await api.get<Tag[]>('/tags/name-tags');
+  return data;
+};
+
+export const createNameTag = async (payload: TagCreate): Promise<Tag> => {
+  const { data } = await api.post<Tag>('/tags/name-tags', payload);
+  return data;
+};
+
+export const archiveNameTag = async (tagId: number): Promise<Tag> => {
+  const { data } = await api.post<Tag>(`/tags/name-tags/${tagId}/archive`);
+  return data;
+};
+
+export const restoreNameTag = async (tagId: number): Promise<Tag> => {
+  const { data } = await api.post<Tag>(`/tags/name-tags/${tagId}/restore`);
+  return data;
+};
+
+export const getEntityNameTags = async (entityId: number): Promise<Tag[]> => {
+  const { data } = await api.get<Tag[]>(`/tags/entities/${entityId}/name-tags`);
+  return data;
+};
+
+export const addNameTagToEntity = async (entityId: number, tagId: number): Promise<void> => {
+  await api.post(`/tags/entities/${entityId}/name-tags/${tagId}`);
+};
+
+export const removeNameTagFromEntity = async (entityId: number, tagId: number): Promise<void> => {
+  await api.delete(`/tags/entities/${entityId}/name-tags/${tagId}`);
 };

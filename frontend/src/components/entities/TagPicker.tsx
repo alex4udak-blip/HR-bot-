@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Plus, X, Loader2, Trash2, UserPlus } from 'lucide-react';
+import { Plus, X, Loader2, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   getTags,
   createTag,
   archiveTag,
   restoreTag,
-  updateTag,
   getEntityTags,
   addTagToEntity,
   removeTagFromEntity,
+  getNameTags,
+  createNameTag,
+  archiveNameTag,
+  restoreNameTag,
+  getEntityNameTags,
+  addNameTagToEntity,
+  removeNameTagFromEntity,
   type Tag,
-  type TagKind,
-  setTagShowAtName,
+  type TagCreate,
 } from '@/services/api/tags';
 
 /**
@@ -31,7 +36,42 @@ import {
  *
  * Авто-метки «HR: Имя» сюда не входят: они вычисляются из воронок и живут
  * отдельно (readSystemHrTags), их нельзя ни поставить, ни снять.
+ *
+ * С 21.09.2026 два режима — два РАЗНЫХ справочника:
+ *   • 'labels'   — метки = сорсеры (кто привёл кандидата); всё, что вписали,
+ *                  становится сорсером, выбора типа больше нет;
+ *   • 'headline' — теги у ФИО, свой справочник, с метками не связан.
  */
+
+type Source = {
+  list: () => Promise<Tag[]>;
+  create: (p: TagCreate) => Promise<Tag>;
+  archive: (id: number) => Promise<Tag>;
+  restore: (id: number) => Promise<Tag>;
+  ofEntity: (entityId: number) => Promise<Tag[]>;
+  attach: (entityId: number, tagId: number) => Promise<void>;
+  detach: (entityId: number, tagId: number) => Promise<void>;
+};
+
+const LABELS: Source = {
+  list: () => getTags(),
+  create: createTag,
+  archive: archiveTag,
+  restore: restoreTag,
+  ofEntity: getEntityTags,
+  attach: addTagToEntity,
+  detach: removeTagFromEntity,
+};
+
+const NAME_TAGS: Source = {
+  list: getNameTags,
+  create: createNameTag,
+  archive: archiveNameTag,
+  restore: restoreNameTag,
+  ofEntity: getEntityNameTags,
+  attach: addNameTagToEntity,
+  detach: removeNameTagFromEntity,
+};
 
 export const TAG_PALETTE = [
   { color: 'var(--hf-red-500)', label: 'Красный' },
@@ -55,35 +95,33 @@ export default function TagPicker({
   /** Дёргается после любой правки — чтобы родитель обновил свои производные данные. */
   onChange?: (tags: Tag[]) => void;
   /**
-   * Куда рисуем. Справочник ОДИН на оба режима, различается только признак
-   * связи show_at_name и оформление чипа:
-   *  - 'labels'   — строка «Метки», бледные чипы (как было);
-   *  - 'headline' — яркие ярлыки у ФИО (бывшие extra_data.headline_tags).
-   * Одна и та же метка у одного кандидата может быть ярлыком, у другого — нет.
+   * Куда рисуем (и из какого справочника):
+   *  - 'labels'   — строка «Метки» (сорсеры), бледные чипы;
+   *  - 'headline' — яркие теги у ФИО, свой справочник.
    */
   variant?: 'labels' | 'headline';
 }) {
   const atName = variant === 'headline';
+  const src = atName ? NAME_TAGS : LABELS;
   const [orgTags, setOrgTags] = useState<Tag[]>([]);
   const [entityTags, setEntityTags] = useState<Tag[]>([]);
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(TAG_PALETTE[0].color);
-  const [newKind, setNewKind] = useState<TagKind>('general');
   const [creating, setCreating] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getTags().then(setOrgTags).catch(() => setOrgTags([]));
-  }, []);
+    src.list().then(setOrgTags).catch(() => setOrgTags([]));
+  }, [src]);
 
   useEffect(() => {
     if (!entityId) {
       setEntityTags([]);
       return;
     }
-    getEntityTags(entityId).then(setEntityTags).catch(() => setEntityTags([]));
-  }, [entityId]);
+    src.ofEntity(entityId).then(setEntityTags).catch(() => setEntityTags([]));
+  }, [entityId, src]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,36 +141,18 @@ export default function TagPicker({
     if (!entityId) return;
     setOpen(false);
     try {
-      await addTagToEntity(entityId, tag.id, atName);
-      // Метка могла уже висеть обычной — тогда бэкенд поднял её к имени, и в
-      // списке надо обновить флаг, а не добавлять вторую копию.
-      const already = entityTags.some((t) => t.id === tag.id);
-      publish(
-        already
-          ? entityTags.map((t) => (t.id === tag.id ? { ...t, show_at_name: atName } : t))
-          : [...entityTags, { ...tag, show_at_name: atName }],
-      );
+      await src.attach(entityId, tag.id);
+      if (!entityTags.some((t) => t.id === tag.id)) publish([...entityTags, tag]);
     } catch {
       toast.error(atName ? 'Не удалось добавить тег' : 'Не удалось добавить метку');
     }
   };
 
-  /** Крестик на чипе.
-   *
-   * В «Метках» снимает метку с кандидата целиком, как и раньше. У имени —
-   * только опускает её из ярлыков: сама метка остаётся на кандидате в «Метках».
-   * Снести её насовсем оттуда и так можно, а вот случайно потерять метку,
-   * убирая ярлык, было бы неприятно.
-   */
+  /** Крестик на чипе — снять метку/тег с этого кандидата (в справочнике остаётся). */
   const handleRemoveFromCandidate = async (tagId: number) => {
     if (!entityId) return;
     try {
-      if (atName) {
-        await setTagShowAtName(entityId, tagId, false);
-        publish(entityTags.map((t) => (t.id === tagId ? { ...t, show_at_name: false } : t)));
-        return;
-      }
-      await removeTagFromEntity(entityId, tagId);
+      await src.detach(entityId, tagId);
       publish(entityTags.filter((t) => t.id !== tagId));
     } catch {
       toast.error(atName ? 'Не удалось убрать тег' : 'Не удалось снять метку');
@@ -158,50 +178,25 @@ export default function TagPicker({
       if (onCandidate) {
         setNewName('');
         setOpen(false);
-        // У имени «уже стоит» ещё не значит «уже ярлык»: метка может висеть
-        // обычной. Поднимаем её, иначе кнопка молча ничего не делает.
-        if (atName && !onCandidate.show_at_name) {
-          await handleAdd(onCandidate);
-          return;
-        }
         toast(`«${onCandidate.name}» уже стоит на кандидате`);
         return;
       }
 
       // Есть в справочнике, но на кандидате её нет — просто вешаем.
       const known = orgTags.find(sameName);
-      const tag = known ?? await createTag({ name, color: newColor, kind: newKind });
+      const tag = known ?? await src.create({ name, color: newColor });
 
       // Имя могло существовать среди скрытых — бэкенд вернёт ту же запись,
       // поэтому не плодим дубль в списке, а обновляем по id.
       setOrgTags((prev) => [...prev.filter((t) => t.id !== tag.id), tag]);
       setNewName('');
-      await addTagToEntity(entityId, tag.id, atName);
-      publish([...entityTags, { ...tag, show_at_name: atName }]);
+      await src.attach(entityId, tag.id);
+      publish([...entityTags, tag]);
       setOpen(false);
     } catch {
-      toast.error('Не удалось создать метку');
+      toast.error(atName ? 'Не удалось создать тег' : 'Не удалось создать метку');
     } finally {
       setCreating(false);
-    }
-  };
-
-  /** Пометить существующую метку сорсером и обратно.
-   *
-   * Нужно прежде всего для меток, заведённых до появления типа: они все
-   * 'general', и иначе старого «Сорсера Ивана» пришлось бы заводить заново. */
-  const handleToggleKind = async (tag: Tag) => {
-    const next: TagKind = tag.kind === 'sourcer' ? 'general' : 'sourcer';
-    try {
-      const updated = await updateTag(tag.id, { kind: next });
-      setOrgTags((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-      toast.success(
-        next === 'sourcer'
-          ? `«${tag.name}» — теперь сорсер`
-          : `«${tag.name}» — обычная метка`,
-      );
-    } catch {
-      toast.error('Не удалось изменить тип метки');
     }
   };
 
@@ -212,7 +207,7 @@ export default function TagPicker({
    */
   const handleArchive = async (tag: Tag) => {
     try {
-      await archiveTag(tag.id);
+      await src.archive(tag.id);
       setOrgTags((prev) => prev.filter((t) => t.id !== tag.id));
       toast.success(
         (t) => (
@@ -223,7 +218,7 @@ export default function TagPicker({
               onClick={async () => {
                 toast.dismiss(t.id);
                 try {
-                  const back = await restoreTag(tag.id);
+                  const back = await src.restore(tag.id);
                   setOrgTags((prev) => [...prev.filter((x) => x.id !== back.id), back]);
                 } catch {
                   toast.error('Не удалось вернуть метку');
@@ -242,17 +237,9 @@ export default function TagPicker({
     }
   };
 
-  // Чипы рисуем по признаку связи: у имени — только поднятые, в «Метках» —
-  // только обычные. Одна метка попадает ровно в одно место.
-  const shownTags = entityTags.filter((t) => !!t.show_at_name === atName);
-  // Что предложить в выпадайке. В «Метках» — всё, чего на кандидате нет.
-  // У имени дополнительно предлагаем метки, которые на кандидате ЕСТЬ, но
-  // ярлыком не подняты: иначе поднять уже проставленную метку было бы нечем.
-  const available = orgTags.filter((t) => {
-    const onCandidate = entityTags.find((et) => et.id === t.id);
-    if (!onCandidate) return true;
-    return atName && !onCandidate.show_at_name;
-  });
+  const shownTags = entityTags;
+  // В выпадайке — всё из справочника, чего на кандидате ещё нет.
+  const available = orgTags.filter((t) => !entityTags.some((et) => et.id === t.id));
 
   return (
     <>
@@ -277,9 +264,7 @@ export default function TagPicker({
             <button
               type="button"
               onClick={() => handleRemoveFromCandidate(tag.id)}
-              title={atName
-                ? 'Убрать от имени (метка останется в «Метках»)'
-                : 'Снять метку с этого кандидата'}
+              title={atName ? 'Убрать тег' : 'Снять метку с этого кандидата'}
               className="ml-0.5 hover:opacity-70 transition-opacity"
             >
               <X className="w-3 h-3" />
@@ -323,25 +308,13 @@ export default function TagPicker({
                       />
                       <span className="truncate">{tag.name}</span>
                     </button>
-                    {/* Тип метки. Сорсер — тот, кто привёл кандидата; по этому
-                        признаку аналитика отделяет их от обычных ярлыков. */}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleKind(tag)}
-                      title={tag.kind === 'sourcer'
-                        ? 'Сорсер — снять пометку'
-                        : 'Пометить как сорсера'}
-                      className={tag.kind === 'sourcer'
-                        ? 'text-[var(--hf-cyan-600)]'
-                        : 'opacity-0 group-hover/row:opacity-100 transition-opacity text-[var(--hf-main-500)] hover:text-[var(--hf-cyan-600)]'}
-                    >
-                      <UserPlus className="w-3.5 h-3.5" />
-                    </button>
                     {/* Убрать из списка у всей организации. На карточках остаётся. */}
                     <button
                       type="button"
                       onClick={() => handleArchive(tag)}
-                      title="Убрать метку из списка (у кандидатов останется)"
+                      title={atName
+                        ? 'Убрать тег из списка (у кандидатов останется)'
+                        : 'Убрать метку из списка (у кандидатов останется)'}
                       className="opacity-0 group-hover/row:opacity-100 transition-opacity text-[var(--hf-main-500)] hover:text-[var(--hf-status-red)]"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -356,33 +329,6 @@ export default function TagPicker({
               </div>
 
               <div className="border-t border-[var(--hf-ui-divider)] p-2">
-                {/* «Сорсер» — тот, кто ПРИВЁЛ кандидата: по этому признаку
-                    считается отчёт «Кого привели сорсеры» и строка на «Статусах».
-                    У имени висят ярлыки роли («перформер»), заводить оттуда
-                    сорсера смысла нет — выбор прячем, новая метка будет обычной.
-                    Пометить метку сорсером по-прежнему можно в «Метках». */}
-                {!atName && (
-                <div className="flex items-center gap-1 mb-1.5">
-                  {([
-                    { id: 'general' as TagKind, label: 'Обычная' },
-                    { id: 'sourcer' as TagKind, label: 'Сорсер' },
-                  ]).map((k) => (
-                    <button
-                      key={k.id}
-                      type="button"
-                      onClick={() => setNewKind(k.id)}
-                      className={
-                        'px-2 py-0.5 rounded text-[11px] border transition-colors ' +
-                        (newKind === k.id
-                          ? 'border-[color:var(--hf-cyan-500)] text-[var(--hf-cyan-600)] font-medium'
-                          : 'border-[color:var(--hf-ui-border)] text-[var(--hf-main-500)] hover:text-[var(--hf-main-800)]')
-                      }
-                    >
-                      {k.label}
-                    </button>
-                  ))}
-                </div>
-                )}
                 <div className="flex items-center gap-1.5 mb-1.5">
                   {TAG_PALETTE.map((p) => (
                     <button

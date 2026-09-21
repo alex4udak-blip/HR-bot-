@@ -693,10 +693,16 @@ export {
   deleteTag,
   archiveTag,
   restoreTag,
-  updateTag,
   getEntityTags,
   addTagToEntity,
   removeTagFromEntity,
+  getNameTags,
+  createNameTag,
+  archiveNameTag,
+  restoreNameTag,
+  getEntityNameTags,
+  addNameTagToEntity,
+  removeNameTagFromEntity,
 } from './tags';
 
 export type {

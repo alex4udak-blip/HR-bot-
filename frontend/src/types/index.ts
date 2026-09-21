@@ -637,7 +637,7 @@ export interface VacancyApplication {
   entity_position?: string;
   entity_company?: string;
   entity_photo?: string | null;
-  // Яркие ярлыки у ФИО — метки справочника, поднятые к имени (show_at_name).
+  // Яркие теги у ФИО — свой справочник, отдельный от меток (с 21.09.2026).
   // text оставлен для старых данных из extra_data, пока прод не устаканится.
   entity_headline_tags?: { name?: string; text?: string; color: string }[] | null;
   stage: ApplicationStage;
