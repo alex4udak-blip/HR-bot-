@@ -35,7 +35,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..database import get_db
 from ..models.database import (
     Entity, EntityStatus, EntityFile, EntityFileType,
-    Employee, Organization, User, Department,
+    Employee, Organization, OrgMember, OrgRole, User, Department, DepartmentMember, DeptRole,
     EntityTag, entity_tag_association,
 )
 from ..services.auth import get_current_user, get_user_org
@@ -88,6 +88,9 @@ _K_DIRECTION = "direction"
 _K_PRACTICE = "practice_start_date"
 _K_DEPT_START = "department_transfer_date"
 _K_MANAGER = "manager_name"
+# «Рук-ль» подставлен из руководителей отдела, а не вписан руками. Такой при
+# смене отдела заменяется руководителями нового; вписанный руками — никогда.
+_K_MANAGER_AUTO = "manager_auto"
 _K_W2 = "w2_date"
 _K_M1 = "m1_date"
 _K_M3 = "m3_date"
@@ -352,6 +355,29 @@ def _first_telegram(entity: Entity) -> Optional[str]:
     if isinstance(handles, list) and handles:
         return str(handles[0]).lstrip("@")
     return None
+
+
+async def _dept_lead_names(db: AsyncSession, dept_id: int, org_id: int) -> List[str]:
+    """Имена руководителей отдела (роль lead) — в порядке назначения.
+
+    Владельцы организации числятся руководителями «на всякий случай» (у HR —
+    Мария и Анастасия, у RND — Владимир и Ильнар), а руководитель по факту —
+    не владелец (владелец подтвердил 22.09.2026). Поэтому владельцев
+    пропускаем, если в отделе есть кто-то ещё.
+    """
+    rows = (await db.execute(
+        select(User.name, OrgMember.role)
+        .join(DepartmentMember, DepartmentMember.user_id == User.id)
+        .outerjoin(OrgMember, (OrgMember.user_id == User.id) & (OrgMember.org_id == org_id))
+        .where(
+            DepartmentMember.department_id == dept_id,
+            DepartmentMember.role == DeptRole.lead,
+        )
+        .order_by(DepartmentMember.created_at, DepartmentMember.id)
+    )).all()
+    leads = [(n, r) for n, r in rows if n]
+    not_owners = [n for n, r in leads if r != OrgRole.owner]
+    return not_owners or [n for n, _ in leads]
 
 
 async def _load_sourcers(
@@ -822,8 +848,10 @@ async def update_row(
     if "position" in payload and not locked_sandbox:
         entity.position = (payload["position"] or None)
 
+    dept_changed = False
     if "department_id" in payload and not locked_sandbox:
         dept_id = payload["department_id"]
+        dept_changed = dept_id != entity.department_id
         if dept_id is not None:
             dept = (await db.execute(
                 select(Department).where(
@@ -894,6 +922,25 @@ async def update_row(
             else:
                 ex[key] = str(value).strip()
         touched_extra = True
+
+    # «Рук-ль» — руководители отдела из оргструктуры (роль lead): поставили
+    # человека в отдел — руководитель известен, вбивать его руками не нужно.
+    # Вписанное руками (и перенесённое из ClickUp) не трогаем; подставленное
+    # автоматически при смене отдела меняем на руководителей нового.
+    if "manager" in payload:
+        ex.pop(_K_MANAGER_AUTO, None)
+    elif dept_changed:
+        current = ex.get(_K_MANAGER) or ex.get(_CF_MANAGER)
+        if not current or ex.get(_K_MANAGER_AUTO):
+            leads = await _dept_lead_names(db, entity.department_id, org.id) if entity.department_id else []
+            if leads:
+                ex[_K_MANAGER] = ", ".join(leads)
+                ex[_K_MANAGER_AUTO] = True
+                touched_extra = True
+            elif ex.get(_K_MANAGER_AUTO):
+                ex.pop(_K_MANAGER, None)
+                ex.pop(_K_MANAGER_AUTO, None)
+                touched_extra = True
 
     # Автодата выхода в отдел (см. выше, где сохраняется отдел). От неё
     # считаются все вехи — 2 недели, 1/3/12 месяцев, — так что без неё строка
