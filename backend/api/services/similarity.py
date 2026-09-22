@@ -1207,7 +1207,8 @@ class SimilarityService:
             include_archived: включать ли архив (по умолчанию нет)
             include_text: показывать ли пары, связанные только текстом резюме
         """
-        from .duplicate_matcher import match_entities, keys_of_entity, _dismissed_ids
+        from .duplicate_matcher import match_entities, keys_of_entity
+        from .duplicate_decisions import dismissed_for
 
         if org_id is None:
             org_id = entity.org_id
@@ -1225,7 +1226,7 @@ class SimilarityService:
             org_id,
             keys_of_entity(entity),
             exclude_id=entity.id,
-            dismissed=_dismissed_ids(entity.extra_data),
+            dismissed=await dismissed_for(db, entity),
             include_archived=include_archived,
             include_text=include_text,
             own_extra_data=entity.extra_data if isinstance(entity.extra_data, dict) else {},
@@ -1595,6 +1596,11 @@ class SimilarityService:
         _te.pop("hidden_duplicate_id", None)
         target_entity.extra_data = _te
 
+        # Решения «разные люди» влитой анкеты переезжают на выжившую — ДО удаления,
+        # иначе каскад по внешнему ключу снесёт их, и пары всплывут снова.
+        from .duplicate_decisions import repoint_on_merge
+        await repoint_on_merge(db, source_entity.id, target_entity.id)
+
         # Удаляем исходную сущность
         await db.delete(source_entity)
 
@@ -1863,16 +1869,17 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
     Вызывается на путях создания АКТИВНОГО кандидата (ручное добавление,
     расширение, загрузка резюме), чтобы пометить новый профиль флагом
     extra_data.hidden_duplicate_id. Возвращает id архивного совпадения или None.
-    Исключает self и id из extra_data.dismissed_duplicate_ids.
+    Исключает self и пары, признанные «разными людьми» (duplicate_pair_decisions).
     """
     # Единый матчер (build_dup_keys + find_duplicate_matches) — те же правила,
     # что теперь использует расширение (check-duplicate). Приоритет: сильное
     # совпадение (source/email/telegram/name) в порядке id-desc, иначе первое по
     # телефону — как было в прежней прямой реализации.
-    from .duplicate_matcher import best_match, keys_of_entity, _dismissed_ids
+    from .duplicate_matcher import best_match, keys_of_entity
+    from .duplicate_decisions import dismissed_for
 
     keys = keys_of_entity(entity)
-    dismissed: Set[int] = _dismissed_ids(entity.extra_data)
+    dismissed: Set[int] = await dismissed_for(db, entity)
 
     matches = await find_duplicate_matches(
         db, entity.org_id, keys, exclude_id=entity.id, dismissed=dismissed
@@ -1899,12 +1906,10 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
         dup = (await db.execute(select(Entity).where(Entity.id == match_id))).scalar_one_or_none()
         if dup is not None:
             de = dup.extra_data if isinstance(dup.extra_data, dict) else {}
-            ddis = set()
-            for x in (de.get("dismissed_duplicate_ids") or []):
-                try:
-                    ddis.add(int(x))
-                except (TypeError, ValueError):
-                    pass
+            # Решения пары симметричны (одна строка на пару), и найденный дубль уже
+            # прошёл фильтр dismissed — здесь остаётся только старый список у него.
+            from .duplicate_decisions import legacy_dismissed
+            ddis = legacy_dismissed(de)
             # Слабая пара не вытесняет сильную: «Кирилл Иванов» с точным флагом (имя +
             # телефон) не должен переключаться на однофамильца, совпавшего лишь именем.
             cur_meta = de.get("hidden_duplicate_meta") or {}

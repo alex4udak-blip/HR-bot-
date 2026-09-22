@@ -91,13 +91,9 @@ async def detect_resume_text_twin(db: AsyncSession, entity: Entity) -> Tuple[Opt
     if len(my_sh) < 5:  # слишком короткий текст — не сравниваем (шум)
         return None, 0.0
 
-    dismissed = set()
+    from api.services.duplicate_decisions import dismissed_for
+    dismissed = await dismissed_for(db, entity)
     ed = entity.extra_data if isinstance(entity.extra_data, dict) else {}
-    for x in (ed.get("dismissed_duplicate_ids") or []):
-        try:
-            dismissed.add(int(x))
-        except (TypeError, ValueError):
-            pass
 
     rows = (await db.execute(
         select(Entity.id, Entity.extra_data).where(

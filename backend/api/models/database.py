@@ -1981,6 +1981,30 @@ class DataMigrationMark(Base):
     applied_at = Column(DateTime, default=func.now())
 
 
+class DuplicatePairDecision(Base):
+    """Решение рекрутёра по паре похожих кандидатов: «это разные люди».
+
+    Раньше решение лежало в ``extra_data.dismissed_duplicate_ids`` у каждой из
+    двух анкет и терялось при объединении: выживала ``extra_data`` одной стороны,
+    а ссылки на влитую анкету у соседей указывали в пустоту — пара всплывала снова.
+    Здесь пара хранится один раз (меньший id — в ``entity_a_id``), а при слиянии
+    переписывается на выжившую карточку (``services/duplicate_decisions.py``).
+    """
+    __tablename__ = "duplicate_pair_decisions"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_a_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_b_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    decision = Column(String(20), nullable=False, default="different")
+    decided_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("entity_a_id", "entity_b_id", name="uq_duplicate_pair"),
+    )
+
+
 # ===========================================================================
 # ХАБ ДОСТУПОВ (модуль Enceladus)
 # ---------------------------------------------------------------------------

@@ -417,6 +417,18 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Tags/labels split failed (non-critical): {e}")
 
+    # Решения «разные люди» из extra_data.dismissed_duplicate_ids → таблица
+    # duplicate_pair_decisions (22.09.2026, services/duplicate_decisions.py).
+    # Одноразово (отметка в data_migration_marks); сбой старт не роняет —
+    # старые списки ещё читаются как запасной источник.
+    try:
+        from ..services.duplicate_decisions import import_legacy_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await import_legacy_once(session)
+    except Exception as e:
+        logger.warning(f"Duplicate decisions legacy import failed (non-critical): {e}")
+
     logger.info("=== DATABASE INITIALIZATION COMPLETE ===")
 
 

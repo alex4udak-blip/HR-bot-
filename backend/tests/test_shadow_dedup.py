@@ -402,7 +402,9 @@ async def test_dismiss_clears_flag_and_records_id(
     await db_session.refresh(fresh)
     extra = fresh.extra_data or {}
     assert "hidden_duplicate_id" not in extra
-    assert archived.id in (extra.get("dismissed_duplicate_ids") or [])
+    # Решение — в таблице пар (с 22.09.2026), а не в extra_data анкеты.
+    from api.services.duplicate_decisions import dismissed_for
+    assert archived.id in await dismissed_for(db_session, fresh)
     # повторный детект уже не поднимает этот дубль
     assert await detect_archived_duplicate(db_session, fresh) is None
 

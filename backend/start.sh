@@ -407,6 +407,26 @@ async def ensure_shadow_columns():
         # entities падает 500 (модель ссылается на неё).
         await conn.execute(text('ALTER TABLE entities ADD COLUMN IF NOT EXISTS search_name TEXT'))
 
+        # Решения «разные люди» по парам кандидатов (22.09.2026). Таблицу читает
+        # каждый поиск дубля — в том числе при добавлении кандидата, — а
+        # create_all в init_database() идёт уже ПОСЛЕ старта сервера. Без этого
+        # первые запросы после деплоя падали бы 500 на отсутствующей таблице.
+        await conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS duplicate_pair_decisions (
+                id SERIAL PRIMARY KEY,
+                org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                entity_a_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                entity_b_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                decision VARCHAR(20) NOT NULL DEFAULT 'different',
+                decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT now(),
+                CONSTRAINT uq_duplicate_pair UNIQUE (entity_a_id, entity_b_id)
+            )'''))
+        for col in ('org_id', 'entity_a_id', 'entity_b_id'):
+            await conn.execute(text(
+                f'CREATE INDEX IF NOT EXISTS ix_duplicate_pair_decisions_{col} ON duplicate_pair_decisions ({col})'
+            ))
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection

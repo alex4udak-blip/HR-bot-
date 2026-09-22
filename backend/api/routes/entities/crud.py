@@ -1672,7 +1672,8 @@ async def rescan_active_duplicates(
         raise HTTPException(403, "Только для суперадмина")
     org = await get_user_org(current_user, db)
 
-    from ...services.duplicate_matcher import scan_org_pairs, best_match, _dismissed_ids
+    from ...services.duplicate_matcher import scan_org_pairs, best_match
+    from ...services.duplicate_decisions import different_map, legacy_dismissed
 
     items, pair_matches = await scan_org_pairs(db, org.id if org is not None else None)
     names = {it.entity_id: it.name for it in items}
@@ -1683,6 +1684,7 @@ async def rescan_active_duplicates(
     if org is not None:
         act_q = act_q.where(Entity.org_id == org.id)
     actives = (await db.execute(act_q)).scalars().all()
+    decided = await different_map(db, [e.id for e in actives])
 
     matches = []
     scanned = 0
@@ -1691,7 +1693,7 @@ async def rescan_active_duplicates(
     for e in actives:
         scanned += 1
         extra = e.extra_data if isinstance(e.extra_data, dict) else {}
-        dismissed = _dismissed_ids(extra)
+        dismissed = decided.get(e.id, set()) | legacy_dismissed(extra)
 
         found = [m for m in pair_matches.get(e.id, []) if m.entity_id not in dismissed]
         chosen = best_match(found)
@@ -1759,7 +1761,8 @@ async def find_archive_duplicates(
         raise HTTPException(403, "Только для суперадмина")
     org = await get_user_org(current_user, db)
 
-    from ...services.duplicate_matcher import scan_org_pairs, _dismissed_ids
+    from ...services.duplicate_matcher import scan_org_pairs
+    from ...services.duplicate_decisions import different_map, legacy_dismissed
 
     items, pair_matches = await scan_org_pairs(
         db, org.id if org is not None else None, archived_only=True,
@@ -1815,6 +1818,7 @@ async def find_archive_duplicates(
             select(Entity).where(Entity.id.in_(member_ids))
         )).scalars().all()
         by_id = {e.id: e for e in ents}
+        decided = await different_map(db, by_id.keys())
         changed = False
         for g in groups:
             ids = [m["id"] for m in g]
@@ -1824,7 +1828,10 @@ async def find_archive_duplicates(
                 if ent is None:
                     continue
                 extra = ent.extra_data if isinstance(ent.extra_data, dict) else {}
-                if sibling in _dismissed_ids(extra) or extra.get("hidden_duplicate_id") == sibling:
+                if (
+                    sibling in decided.get(mid, set()) | legacy_dismissed(extra)
+                    or extra.get("hidden_duplicate_id") == sibling
+                ):
                     continue
                 ne = dict(extra)
                 ne["hidden_duplicate_id"] = sibling

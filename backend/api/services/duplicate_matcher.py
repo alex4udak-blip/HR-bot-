@@ -374,16 +374,9 @@ def _text_twin_signal(
     return None
 
 
-def _dismissed_ids(extra: Optional[dict]) -> Set[int]:
-    out: Set[int] = set()
-    if not isinstance(extra, dict):
-        return out
-    for x in (extra.get("dismissed_duplicate_ids") or []):
-        try:
-            out.add(int(x))
-        except (TypeError, ValueError):
-            continue
-    return out
+# Старый список «разные люди» из extra_data. Основное хранилище решений теперь
+# таблица duplicate_pair_decisions — см. services/duplicate_decisions.py.
+from .duplicate_decisions import legacy_dismissed as _dismissed_ids  # noqa: E402
 
 
 async def match_entities(

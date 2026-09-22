@@ -1298,8 +1298,8 @@ async def dismiss_shadow_duplicate(
 ):
     """«Нет, это разные люди»: разорвать связь с теневым дубликатом.
 
-    Добавляет duplicate_id в extra_data.dismissed_duplicate_ids (повторный детект
-    его не поднимет) и снимает флаг hidden_duplicate_id — баннер исчезает навсегда.
+    Пишет пару в duplicate_pair_decisions (повторный детект её не поднимет, решение
+    переживает слияние) и снимает флаг hidden_duplicate_id — баннер исчезает.
     Оба профиля остаются: активный — в работе, архивный — в архиве.
     """
     from .common import broadcast_entity_updated
@@ -1320,30 +1320,32 @@ async def dismiss_shadow_duplicate(
     if not has_access:
         raise HTTPException(403, "No access to this candidate")
 
+    other = (await db.execute(
+        select(Entity).where(Entity.id == request.duplicate_id, Entity.org_id == org.id)
+    )).scalar_one_or_none()
+    if other is None:
+        raise HTTPException(404, "Duplicate candidate not found")
+
+    from ...services.duplicate_decisions import mark_different
+    # Одна строка на пару — решение видно с обеих сторон и переживает слияние.
+    await mark_different(db, org.id, entity.id, other.id, current_user.id)
+    logger.info(
+        f"DUP_DIFFERENT pair {entity.id}<->{other.id} by user {current_user.id}"
+    )
+
     extra = dict(entity.extra_data or {})
-    dismissed = list(extra.get("dismissed_duplicate_ids") or [])
-    if request.duplicate_id not in dismissed:
-        dismissed.append(request.duplicate_id)
-    extra["dismissed_duplicate_ids"] = dismissed
     extra.pop("hidden_duplicate_id", None)
     entity.extra_data = extra
     # Остальные похожие анкеты по-прежнему ждут решения — баннер на следующую.
     next_duplicate_id = await _repoint_duplicate_flag(db, entity)
 
-    # Двусторонне: помечаем пару и у ВТОРОГО профиля, иначе при просмотре его
-    # карточки эта же пара всплыла бы снова как «похожий».
-    other = (await db.execute(
-        select(Entity).where(Entity.id == request.duplicate_id, Entity.org_id == org.id)
-    )).scalar_one_or_none()
-    if other is not None:
-        oextra = dict(other.extra_data or {})
-        odismissed = list(oextra.get("dismissed_duplicate_ids") or [])
-        if entity_id not in odismissed:
-            odismissed.append(entity_id)
-        oextra["dismissed_duplicate_ids"] = odismissed
-        if oextra.get("hidden_duplicate_id") == entity_id:
-            oextra.pop("hidden_duplicate_id", None)
+    # У второго профиля флаг смотрел на нас — переводим его на следующее
+    # нерешённое совпадение (или снимаем), иначе баннер там остался бы.
+    oextra = dict(other.extra_data or {})
+    if oextra.get("hidden_duplicate_id") == entity_id:
+        oextra.pop("hidden_duplicate_id", None)
         other.extra_data = oextra
+        await _repoint_duplicate_flag(db, other)
 
     await db.commit()
 
