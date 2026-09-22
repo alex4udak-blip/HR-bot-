@@ -448,6 +448,15 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Junk telegram cleanup failed (non-critical): {e}")
 
+    # Контакты из шапки уже сохранённых резюме (22.09.2026) — одноразово.
+    try:
+        from ..services.resume_contacts import backfill_resume_contacts_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await backfill_resume_contacts_once(session)
+    except Exception as e:
+        logger.warning(f"Resume contacts backfill failed (non-critical): {e}")
+
     logger.info("=== DATABASE INITIALIZATION COMPLETE ===")
 
 

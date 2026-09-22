@@ -722,6 +722,8 @@ async def upload_entity_file(
     if file_type_enum == EntityFileType.resume:
         try:
             from ...services.resume_text_extract import store_resume_text
+            from ...services.similarity import identity_fingerprint, recheck_duplicates_after_edit
+            before = identity_fingerprint(entity)
             chars, stored = await store_resume_text(
                 db, entity, content, original_name, entity_file.id,
             )
@@ -729,6 +731,9 @@ async def upload_entity_file(
                 # Текст появился — перепроверяем совпадение по тексту резюме.
                 from ...services.resume_text_twin import detect_resume_text_twin
                 await detect_resume_text_twin(db, entity)
+            if identity_fingerprint(entity) != before:
+                # В шапке резюме нашлись телефон/почта/Telegram — сразу ищем по ним.
+                await recheck_duplicates_after_edit(db, entity)
             if chars or stored:
                 await db.commit()
                 await db.refresh(entity)

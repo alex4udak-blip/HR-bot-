@@ -81,6 +81,10 @@ SIGNAL_LABELS: Dict[str, str] = {
     "phone": "Совпадение телефона",
     "company": "Та же компания + похожие навыки",
     "resume_text": "Текст резюме совпадает",
+    # Совпало с контактом из шапки текста резюме (не из полей карточки).
+    "email_resume": "Совпадение email (из текста резюме)",
+    "phone_resume": "Совпадение телефона (из текста резюме)",
+    "telegram_resume": "Совпадение Telegram (из текста резюме)",
 }
 
 
@@ -122,24 +126,31 @@ def compare_key_sets(a: dict, b: dict) -> Tuple[Optional[str], int, List[DupSign
 
     a_emails: Set[str] = a.get("emails") or set()
     b_emails: Set[str] = b.get("emails") or set()
-    full_hit = a_emails & b_emails
+    card_email_hit = a_emails & b_emails
+    # С контактами из шапки резюме (у одной или обеих сторон).
+    full_hit = (a_emails | (a.get("resume_emails") or set())) & (
+        b_emails | (b.get("resume_emails") or set())
+    )
     local_hit = (a.get("email_locals") or email_locals_of(a_emails)) & (
         b.get("email_locals") or email_locals_of(b_emails)
     )
     if full_hit or local_hit:
         # Почта сверяется и по полному адресу, и по локали до «@»: смена домена
         # gmail→mail не уводит от дубля (служебные локали отсеяны email_locals_of).
+        from_resume = not card_email_hit and not local_hit
         signals.append(DupSignal(
-            "email", SIGNAL_LABELS["email"], 100, True,
+            "email", SIGNAL_LABELS["email_resume" if from_resume else "email"], 100, True,
             _first(sorted(full_hit) or sorted(a_emails)),
             _first(sorted(full_hit) or sorted(b_emails)),
         ))
 
-    tg_hit = (a.get("tg_names") or set()) & (b.get("tg_names") or set())
+    a_tg, b_tg = a.get("tg_names") or set(), b.get("tg_names") or set()
+    tg_hit = (a_tg | (a.get("resume_tg") or set())) & (b_tg | (b.get("resume_tg") or set()))
     tg_hit = {t for t in tg_hit if is_matchable_telegram(t)}
     if tg_hit:
+        from_resume = not (a_tg & b_tg & tg_hit)
         signals.append(DupSignal(
-            "telegram", SIGNAL_LABELS["telegram"], 100, True,
+            "telegram", SIGNAL_LABELS["telegram_resume" if from_resume else "telegram"], 100, True,
             "@" + _first(sorted(tg_hit)), "@" + _first(sorted(tg_hit)),
         ))
 
@@ -150,10 +161,16 @@ def compare_key_sets(a: dict, b: dict) -> Tuple[Optional[str], int, List[DupSign
     ):
         signals.append(DupSignal("name", SIGNAL_LABELS["name"], 100, True, a_name, b_name))
 
-    phone_hit = (a.get("phone_keys") or set()) & (b.get("phone_keys") or set())
+    a_ph, b_ph = a.get("phone_keys") or set(), b.get("phone_keys") or set()
+    phone_hit = (a_ph | (a.get("resume_phone_keys") or set())) & (
+        b_ph | (b.get("resume_phone_keys") or set())
+    )
     if phone_hit:
+        from_resume = not (a_ph & b_ph)
         p = _first(sorted(phone_hit))
-        signals.append(DupSignal("phone", SIGNAL_LABELS["phone"], 100, True, p, p))
+        signals.append(DupSignal(
+            "phone", SIGNAL_LABELS["phone_resume" if from_resume else "phone"], 100, True, p, p,
+        ))
 
     # --- Level-2: мягкий скоринг личности --------------------------------------
     # Считаем ВСЕГДА (не только при отсутствии сильных): его компоненты — ФИО, дата
@@ -229,13 +246,13 @@ def identity_block_keys(keys: dict) -> List[str]:
     out: List[str] = []
     if keys.get("source_key"):
         out.append("s:" + keys["source_key"])
-    for e in (keys.get("emails") or set()):
+    for e in (keys.get("emails") or set()) | (keys.get("resume_emails") or set()):
         out.append("e:" + e)
     for loc in (keys.get("email_locals") or set()):
         out.append("el:" + loc)
-    for p in (keys.get("phone_keys") or set()):
+    for p in (keys.get("phone_keys") or set()) | (keys.get("resume_phone_keys") or set()):
         out.append("p:" + p)
-    for t in (keys.get("tg_names") or set()):
+    for t in (keys.get("tg_names") or set()) | (keys.get("resume_tg") or set()):
         if is_matchable_telegram(t):
             out.append("t:" + t)
     if keys.get("name_ok"):

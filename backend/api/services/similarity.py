@@ -1804,6 +1804,21 @@ def build_dup_keys(
     ed = extra_data if isinstance(extra_data, dict) else {}
     skey = normalize_source_url(source_url or ed.get("source_url") or ed.get("source_key") or "")
 
+    # Контакты из ШАПКИ текста резюме (services/resume_contacts.py) — отдельными
+    # наборами: совпадение по ним полноценное, но в окне сравнения подписывается
+    # «из резюме», иначе рекрутёр видел бы «совпал телефон» при разных телефонах
+    # в карточках.
+    rc = ed.get("resume_contacts") if isinstance(ed.get("resume_contacts"), dict) else {}
+    resume_emails: Set[str] = {
+        normalize_email(e) for e in (rc.get("emails") or [])
+        if e and not is_service_email(e)
+    }
+    resume_phone_keys: Set[str] = phone_match_keys(rc.get("phones") or [])
+    resume_tg: Set[str] = {
+        normalize_telegram(t) for t in (rc.get("telegrams") or [])
+        if t and not is_junk_telegram(t)
+    }
+
     # --- Level-2 мягкие ключи (anti-evasion) ---------------------------------
     # Имя/фамилия раздельно, только если значение похоже на ФИО (та же защита от
     # должностей/мусора, что и name_ok). Первое слово трактуем как фамилию, второе
@@ -1852,6 +1867,9 @@ def build_dup_keys(
     return {
         "emails": ek,
         "phone_keys": ph,
+        "resume_emails": resume_emails,
+        "resume_phone_keys": resume_phone_keys,
+        "resume_tg": resume_tg,
         "tg_names": tg,
         "name": " ".join((name or "").strip().lower().split()),
         "name_ok": looks_like_person_name(name or ""),
@@ -1979,7 +1997,7 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
 # (этап, комментарии, зарплата) пересчёта дублей не запускает.
 _IDENTITY_KEY_FIELDS = (
     "emails", "email_locals", "phone_keys", "tg_names", "name", "source_key",
-    "birth_norm", "patronymics",
+    "birth_norm", "patronymics", "resume_emails", "resume_phone_keys", "resume_tg",
 )
 
 

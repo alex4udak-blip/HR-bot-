@@ -97,6 +97,27 @@ async def store_resume_text(
 
     extra["resume_text"] = text
     extra["resume_text_source"] = source
+    set_resume_contacts(extra, text, file_id)
     entity.extra_data = extra
     logger.info(f"RESUME_TEXT: extracted {len(text)} chars from {file_name!r} for entity {entity.id}")
     return len(text), True
+
+
+def set_resume_contacts(extra: dict, text: str, file_id: Optional[int] = None) -> bool:
+    """Положить в extra контакты из шапки текста резюме. True — если они
+    изменились (тогда стоит пересчитать дубли)."""
+    from .resume_contacts import extract_header_contacts
+
+    found = extract_header_contacts(text or "")
+    prev = extra.get("resume_contacts") if isinstance(extra.get("resume_contacts"), dict) else {}
+    same = all(sorted(prev.get(k) or []) == sorted(found[k]) for k in found)
+    if not any(found.values()):
+        if prev:
+            extra.pop("resume_contacts", None)
+            return True
+        return False
+    if same:
+        return False
+    extra["resume_contacts"] = {**found, "file_id": file_id}
+    return True
+
