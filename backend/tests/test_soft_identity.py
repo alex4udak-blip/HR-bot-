@@ -43,8 +43,10 @@ class TestConstants:
     def test_weights_present(self):
         # Новая модель: имя/фамилия — единой связкой full_name (не порознь), +telegram.
         for key in ("full_name", "dob_exact", "age_pm1",
-                    "phone7", "email_local", "telegram", "city"):
+                    "phone7", "email_local", "telegram"):
             assert key in SOFT_WEIGHTS
+        # Город убран из процента 22.09.2026: его вписывают любой.
+        assert "city" not in SOFT_WEIGHTS
 
     def test_name_parts_are_not_scored_separately(self):
         # Заказчик: имя/фамилия НИКОГДА не считаются по отдельности.

@@ -429,6 +429,16 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Duplicate decisions legacy import failed (non-critical): {e}")
 
+    # support@rabota.by и прочие служебные ящики — не почта кандидата (22.09.2026,
+    # services/service_email_cleanup.py). Одноразово, с пересчётом плашек дублей.
+    try:
+        from ..services.service_email_cleanup import remove_service_emails_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await remove_service_emails_once(session)
+    except Exception as e:
+        logger.warning(f"Service email cleanup failed (non-critical): {e}")
+
     logger.info("=== DATABASE INITIALIZATION COMPLETE ===")
 
 

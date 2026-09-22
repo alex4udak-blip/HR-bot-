@@ -48,6 +48,31 @@
 
   const EMAIL_RE = /^[\w.+-]+@[\w-]+\.[a-z]{2,}$/i;
   function isEmail(s) { return typeof s === 'string' && EMAIL_RE.test(s.trim()); }
+
+  // Служебные ящики сайтов вакансий — не почта кандидата. На rabota.by, когда
+  // кандидат почту не указал, в блоке контактов стоит support@rabota.by, и его
+  // сохраняли как почту человека (22.09.2026). Тот же список — на бэкенде,
+  // is_service_email в services/similarity.py.
+  const JOB_SITE_EMAIL_DOMAINS = [
+    'rabota.by', 'hh.ru', 'hh.kz', 'hh.uz', 'hh.by', 'headhunter.ru', 'headhunter.kz',
+    'superjob.ru', 'rabota.ru', 'zarplata.ru', 'trudvsem.ru', 'praca.by',
+    'work.ua', 'robota.ua', 'rabota.ua', 'djinni.co', 'getmatch.ru',
+  ];
+  const SERVICE_EMAIL_LOCALS = [
+    'support', 'noreply', 'no-reply', 'donotreply', 'do-not-reply',
+    'mailer-daemon', 'notifications', 'notification', 'robot',
+  ];
+  function isServiceEmail(s) {
+    const e = String(s || '').trim().toLowerCase();
+    const at = e.indexOf('@');
+    if (at < 0) return false;
+    const local = e.slice(0, at), domain = e.slice(at + 1);
+    if (SERVICE_EMAIL_LOCALS.includes(local)) return true;
+    // Адрес на домене самого сайта, с которого сохраняют анкету, — тоже его.
+    const host = (location.hostname || '').toLowerCase().replace(/^www\./, '');
+    const sameSite = host && (domain === host || host.endsWith('.' + domain) || domain.endsWith('.' + host));
+    return sameSite || JOB_SITE_EMAIL_DOMAINS.some(d => domain === d || domain.endsWith('.' + d));
+  }
   function isPhone(s) {
     if (typeof s !== 'string') return false;
     const d = s.replace(/\D/g, '');
@@ -89,7 +114,7 @@
     const d = Object.assign({}, data);
     for (const f of Object.keys(FIELD_MAX)) {
       if (!(f in d)) continue;
-      if (f === 'email') { const e = cleanText(d.email, FIELD_MAX.email); d.email = isEmail(e) ? e : ''; }
+      if (f === 'email') { const e = cleanText(d.email, FIELD_MAX.email); d.email = isEmail(e) && !isServiceEmail(e) ? e : ''; }
       else if (f === 'phone') { const p = cleanText(d.phone, FIELD_MAX.phone); d.phone = isPhone(p) ? p : ''; }
       else if (f === 'telegram') { d.telegram = normalizeTelegram(d.telegram); }
       else { d[f] = sanitizeStr(d[f], FIELD_MAX[f]); }
@@ -141,6 +166,6 @@
 
   window.__ENC__ = {
     sanitizeRecord, sanitizeStr, cleanText, isGarbage,
-    isEmail, isPhone, normalizeTelegram, extractProfileJson, deepHasKeys,
+    isEmail, isServiceEmail, isPhone, normalizeTelegram, extractProfileJson, deepHasKeys,
   };
 })();

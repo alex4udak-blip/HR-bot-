@@ -173,11 +173,6 @@ def compare_key_sets(a: dict, b: dict) -> Tuple[Optional[str], int, List[DupSign
             _first(sorted(local_hit)), _first(sorted(local_hit)),
         ),
         "Telegram совпал": ("telegram", _first(sorted(tg_hit)), _first(sorted(tg_hit))),
-        "Город совпал": (
-            "city",
-            _first(sorted((a.get("cities") or set()) & (b.get("cities") or set()))),
-            _first(sorted((a.get("cities") or set()) & (b.get("cities") or set()))),
-        ),
     }
     seen_fields = {s.field for s in signals}
     for reason in soft.reasons:

@@ -473,8 +473,6 @@ def score_soft_identity(a: dict, b: dict) -> SoftScore:
     b_tg = {t for t in (b.get("tg_names") or set()) if is_matchable_telegram(t)}
     if a_tg & b_tg:
         _hit("telegram", "Telegram совпал")
-    if (a.get("cities") or set()) & (b.get("cities") or set()):
-        _hit("city", "Город совпал")
 
     return SoftScore(confidence=min(score, 100), components=components,
                      reasons=reasons, detail=detail)
@@ -577,6 +575,35 @@ def normalize_email(email: str) -> str:
 _GENERIC_EMAIL_LOCALS = {"info", "mail", "test", "hello", "admin", "hr", "job",
                          "jobs", "work", "cv", "resume", "noreply", "no-reply"}
 
+# Служебные ящики сайтов вакансий. Расширение сохраняло их как почту кандидата,
+# когда тот свою не указал: на rabota.by в блоке контактов стоит ссылка на
+# support@rabota.by — и у шести разных людей оказалась одна «почта», они
+# считались похожими (прод, 22.09.2026). Такие адреса — не почта человека: в
+# сравнении не участвуют и в карточку не сохраняются.
+JOB_SITE_EMAIL_DOMAINS = frozenset({
+    "rabota.by", "hh.ru", "hh.kz", "hh.uz", "hh.by", "headhunter.ru", "headhunter.kz",
+    "superjob.ru", "rabota.ru", "zarplata.ru", "trudvsem.ru", "praca.by",
+    "work.ua", "robota.ua", "rabota.ua", "djinni.co", "getmatch.ru",
+})
+# Локальные части, которые на ЛЮБОМ домене означают робота или поддержку.
+SERVICE_EMAIL_LOCALS = frozenset({
+    "support", "noreply", "no-reply", "donotreply", "do-not-reply",
+    "mailer-daemon", "notifications", "notification", "robot",
+})
+
+
+def is_service_email(email: Optional[str]) -> bool:
+    """Служебный адрес сайта/робота, а не почта кандидата."""
+    e = normalize_email(email or "")
+    if "@" not in e:
+        return False
+    local, domain = e.split("@", 1)
+    if local in SERVICE_EMAIL_LOCALS:
+        return True
+    return domain in JOB_SITE_EMAIL_DOMAINS or any(
+        domain.endswith("." + d) for d in JOB_SITE_EMAIL_DOMAINS
+    )
+
 
 def email_locals_of(emails) -> Set[str]:
     """Локальные части (до «@») из набора нормализованных адресов — общий ключ
@@ -659,13 +686,14 @@ SOFT_WEIGHTS = {
     "phone7": 35,       # последние 7 цифр телефона совпали
     "email_local": 35,  # локальная часть email (до @) совпала
     "telegram": 35,     # общий личный @хэндл (не мусорный ярлык источника)
-    "city": 8,          # город совпал (слабый — города меняют нарочно)
+    # Город убран (22.09.2026, решение владельца): его вписывают любой, у всех
+    # кандидатов с rabota.by это Минск — процент он только раздувал.
 }
 # Флаг ставим при score >= порога И >=2 независимых компонентах.
 # 65 подобран так, что СВЯЗКА ФИО сама (50) НЕ флажит — полные тёзки «Иванов Иван»
 # существуют, — но связка + любой сильный сигнал (ДР 90 / телефон 85 / email 85 /
 # telegram 85) флажит, как и два контакта без ФИО (email+phone=70) — это ловля
-# «сменил ФИО, но контакты те же». Слабые (возраст 12 / город 8) сами порог не берут.
+# «сменил ФИО, но контакты те же». Слабый возраст (12) сам порог не берёт.
 SOFT_THRESHOLD = 65
 SOFT_MIN_COMPONENTS = 2
 
@@ -1650,7 +1678,7 @@ STRONG_EVIDENCE_FIELDS = frozenset(
 # в одиночку не дотягивает до 100 — сотня только у «точного» уровня.
 EVIDENCE_WEIGHTS = {
     "source": 60, "email": 60, "telegram": 60, "phone": 60, "name": 50,
-    "birth_date": 40, "resume_text": 40, "age": 12, "city": 8,
+    "birth_date": 40, "resume_text": 40, "age": 12,
 }
 PARTIAL_PHONE_WEIGHT = 35  # совпали только последние 7 цифр
 FUZZY_NAME_WEIGHT = 20     # имя похоже лишь нечётко (инициал, мягкий скоринг)
@@ -1733,11 +1761,11 @@ def build_dup_keys(
     сравнивали дубли по ОДНИМ правилам (email/телефон E.164/telegram/ФИО/URL)."""
     ek: Set[str] = set()
     pe = normalize_email(email or "")
-    if pe:
+    if pe and not is_service_email(pe):
         ek.add(pe)
     for e in (emails or []):
         ne = normalize_email(e or "")
-        if ne:
+        if ne and not is_service_email(ne):
             ek.add(ne)
 
     # Телефоны — в международном формате с кодом страны (+ старый ключ «10 цифр»),

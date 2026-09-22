@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy import select, or_, String, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -21,6 +21,17 @@ logger = logging.getLogger("hr-analyzer.magic-button")
 
 router = APIRouter()
 
+
+def _drop_service_email(value: Optional[str]) -> Optional[str]:
+    """Служебный ящик сайта (support@rabota.by и т.п.) — не почта кандидата.
+    Старые версии расширения присылают его, когда кандидат почту не указал."""
+    from ..services.similarity import is_service_email
+    if value and is_service_email(value):
+        logger.info(f"MAGIC_BUTTON: dropped service email {value!r}")
+        return None
+    return value
+
+
 class MagicButtonData(BaseModel):
     # Parsed from resume
     full_name: str
@@ -31,6 +42,11 @@ class MagicButtonData(BaseModel):
     position: Optional[str] = None
     source_url: str
     source: str  # "hh.ru", "linkedin.com", "career.habr.com"
+
+    @field_validator("email")
+    @classmethod
+    def _clean_email(cls, v: Optional[str]) -> Optional[str]:
+        return _drop_service_email(v)
 
     # Extra parsed fields
     city: Optional[str] = None
@@ -98,6 +114,11 @@ class DuplicateCheckRequest(BaseModel):
     phone: Optional[str] = None
     telegram: Optional[str] = None
     source_url: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def _clean_email(cls, v: Optional[str]) -> Optional[str]:
+        return _drop_service_email(v)
 
 class DuplicateCheckResponse(BaseModel):
     is_duplicate: bool

@@ -98,7 +98,8 @@ class TestCompareKeySets:
         fields = {s.field for s in signals}
         # Один факт — одно поле: «ФИО совпало» не должно приезжать и как name,
         # и как full_name (окно сравнения подсвечивает поле, а не имя правила).
-        assert fields == {"email", "name", "phone", "birth_date", "city"}
+        # Город совпал, но в причины не попадает (убран из процента 22.09.2026).
+        assert fields == {"email", "name", "phone", "birth_date"}
         assert len(fields) == len(signals)
 
     def test_different_people_are_not_a_match(self):
@@ -157,7 +158,7 @@ async def test_compare_window_exposes_signals_for_highlighting(db_session, organ
     assert dups, "пара по ФИО+телефону обязана попасть в окно сравнения"
     signals = {s.field: s for s in dups[0].signals}
     assert signals["phone"].identity is True
-    assert signals["city"].identity is False
+    assert "city" not in signals  # город больше не довод «тот же человек»
     assert dups[0].matched_fields["phone"][0]
 
 
