@@ -614,10 +614,15 @@ export interface RescanResult {
   }[];
 }
 
+/** Сверка всей базы: 2 минуты вместо общих 30 секунд. */
+const LONG_SCAN_TIMEOUT = 120_000;
+
 /** Прогнать детект по всем активным кандидатам против архива. Только суперадмин. */
 export const rescanArchiveDuplicates = async (): Promise<RescanResult> => {
+  // Сверка всей базы (тысячи анкет) — дольше обычного запроса: общий лимит 30 с
+  // обрывал её на клиенте, хотя сервер продолжал считать.
   const { data } = await debouncedMutation<RescanResult>(
-    'post', '/entities/archive/rescan', {}
+    'post', '/entities/archive/rescan', {}, { timeout: LONG_SCAN_TIMEOUT }
   );
   return data;
 };
@@ -640,7 +645,7 @@ export interface ArchiveDupGroups {
 /** Найти группы дубликатов внутри архива. Только суперадмин. */
 export const findArchiveDuplicates = async (): Promise<ArchiveDupGroups> => {
   const { data } = await debouncedMutation<ArchiveDupGroups>(
-    'post', '/entities/archive/find-duplicates', {}
+    'post', '/entities/archive/find-duplicates', {}, { timeout: LONG_SCAN_TIMEOUT }
   );
   return data;
 };

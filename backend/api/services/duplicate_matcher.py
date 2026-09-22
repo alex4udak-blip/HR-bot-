@@ -35,8 +35,11 @@ exact: совпало ≥2 признака личности, красный б�
 поэтому «точное совпадение» в баннере превращалось в «30%» на карточке.
 """
 
+import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
+from itertools import combinations
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from sqlalchemy import select
@@ -212,10 +215,16 @@ def compare_key_sets(a: dict, b: dict) -> Tuple[Optional[str], int, List[DupSign
 def identity_block_keys(keys: dict) -> List[str]:
     """Ключи «блокировки» для пере-скана: по ним пара попадает на полное сравнение.
 
-    Намеренно ШИРЕ, чем строгое совпадение: имя даёт ключ по канонической форме
-    каждого слова (первые 4 буквы), поэтому отчества, перестановка «Фамилия Имя»
-    и опечатка в хвосте слова не разводят пару по разным корзинам. Точность всё
-    равно решает :func:`compare_key_sets` — здесь только отбор пар-кандидатов.
+    Имя даёт ключ по ПАРЕ слов ФИО (канонические первые 4 буквы обоих, без учёта
+    порядка): «Иванов Кирилл», «Кирилл Иванов» и «Иванов Кирилл Владимирович»
+    встречаются в корзине «иван|кири». Отчества, перестановка и опечатка в хвосте
+    слова пару не разводят. Точность всё равно решает :func:`compare_key_sets` —
+    здесь только отбор пар-кандидатов.
+
+    Раньше ключом было КАЖДОЕ слово отдельно, и в корзину «алек» падали все
+    Александры, Александровичи и Александровны: на проде (8 тыс. анкет) это
+    ~7,5 млн пар и ~8 минут сверки, во время которых сервер не отвечал никому
+    (22.09.2026). Совпадение ФИО по правилам и так требует фамилию И имя вместе.
     """
     out: List[str] = []
     if keys.get("source_key"):
@@ -230,12 +239,24 @@ def identity_block_keys(keys: dict) -> List[str]:
         if is_matchable_telegram(t):
             out.append("t:" + t)
     if keys.get("name_ok"):
-        for word in (keys.get("name") or "").split():
+        words = (keys.get("name") or "").split()
+        # Отчество в совпадении ФИО не участвует (нужны фамилия и имя), а корзины
+        # «имя|отчество» (Владимир Александрович) — самые большие. Убираем его,
+        # если без него остаётся хотя бы два слова: у фамилии «Петрович» под
+        # правило отчества попадает и сама фамилия.
+        pats = keys.get("patronymics") or set()
+        plain = [w for w in words if w.strip("-_.,") not in pats]
+        if len(plain) >= 2:
+            words = plain
+        stems: List[str] = []
+        for word in words:
             w = fold_yo(fold_homoglyphs(word).lower().strip("-_.,"))
             if len(w) < 2:
                 continue
             canon = w if any("а" <= ch <= "я" or ch == "ё" for ch in w) else transliterate_en_to_ru(w)
-            out.append("n:" + fold_yo(canon)[:4])
+            stems.append(fold_yo(canon)[:4])
+        for x, y in combinations(sorted(set(stems)), 2):
+            out.append(f"n:{x}|{y}")
     # Дедуп обязателен: «Иванов Иван» даёт ключ n:иван дважды, и кандидат попадал в
     # одну корзину два раза — то есть сравнивался сам с собой и всегда «совпадал».
     return sorted(set(out))
@@ -453,6 +474,20 @@ async def scan_org_pairs(
     находил не то же, что баннер.
     """
     items = await load_candidate_keys(db, org_id, archived_only=archived_only)
+    # Перебор пар — чистый CPU. В основном потоке он держал бы весь сервер: пока
+    # считаются пары, сайт не отвечает никому (прод, 22.09.2026 — ~8 минут).
+    # В отдельном потоке цикл событий продолжает обслуживать запросы.
+    matches = await asyncio.to_thread(_scan_pairs, items)
+    return items, matches
+
+
+# Корзина больше этого — общее мусорное значение, а не один человек (см. _scan_pairs).
+MAX_BUCKET_SIZE = 200
+
+
+def _scan_pairs(items: List[CandidateKeys]) -> Dict[int, List[DupMatch]]:
+    """Все пары-совпадения среди items (синхронно; вызывается в отдельном потоке)."""
+    started = time.perf_counter()
     freq = telegram_name_frequency(items)
     by_id = {it.entity_id: it for it in items}
 
@@ -464,8 +499,15 @@ async def scan_org_pairs(
 
     checked: Set[Tuple[int, int]] = set()
     matches: Dict[int, List[DupMatch]] = {}
-    for ids in buckets.values():
+    skipped: List[Tuple[str, int]] = []
+    for bkey, ids in buckets.items():
         if len(ids) < 2:
+            continue
+        if len(ids) > MAX_BUCKET_SIZE:
+            # Сотни анкет с одним «ключом» — это не один человек, а мусорное общее
+            # значение (служебный телефон, заглушка). Перебор такой корзины — это
+            # десятки тысяч пар ради ложных совпадений.
+            skipped.append((bkey, len(ids)))
             continue
         for i, a_id in enumerate(ids):
             for b_id in ids[i + 1:]:
@@ -491,7 +533,12 @@ async def scan_org_pairs(
                 ))
     for lst in matches.values():
         lst.sort(key=lambda m: (-m.confidence, -m.entity_id))
-    return items, matches
+    logger.info(
+        f"DUP_SCAN items={len(items)} buckets={len(buckets)} pairs={len(checked)} "
+        f"with_matches={len(matches)} took={time.perf_counter() - started:.1f}s"
+        + (f" skipped_buckets={skipped[:10]}" if skipped else "")
+    )
+    return matches
 
 
 # Порядок выбора «того самого» совпадения для флага на карточке. Телефон стоит
