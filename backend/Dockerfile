@@ -15,6 +15,11 @@ RUN apt-get update && apt-get install -y \
     # libmagic — нужен python-magic (api/routes/parser.py делает import magic),
     # без него uvicorn падает с ImportError на старте.
     libmagic1 \
+    # Tesseract — распознавание сканов резюме для сравнения дублей (без ИИ,
+    # services/resume_text_extract.py). Только русский и английский.
+    tesseract-ocr \
+    tesseract-ocr-rus \
+    tesseract-ocr-eng \
     # Playwright dependencies
     libnss3 \
     libnspr4 \

@@ -734,6 +734,14 @@ async def upload_entity_file(
             if identity_fingerprint(entity) != before:
                 # В шапке резюме нашлись телефон/почта/Telegram — сразу ищем по ним.
                 await recheck_duplicates_after_edit(db, entity)
+            # Скан или фото — текста нет: распознаём Tesseract'ом ПОСЛЕ ответа
+            # (страница — секунды), загрузка файла не ждёт.
+            from ...services.resume_text_extract import needs_ocr, ocr_and_store
+            if needs_ocr(original_name, chars):
+                background_tasks.add_task(ocr_and_store, entity.id, entity_file.id)
+                file_logger.info(
+                    f"RESUME_OCR: queued for entity {entity_id}, file {entity_file.id} ({original_name!r})"
+                )
             if chars or stored:
                 await db.commit()
                 await db.refresh(entity)

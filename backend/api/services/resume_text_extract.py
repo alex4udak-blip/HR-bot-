@@ -121,3 +121,128 @@ def set_resume_contacts(extra: dict, text: str, file_id: Optional[int] = None) -
     extra["resume_contacts"] = {**found, "file_id": file_id}
     return True
 
+
+
+# --- Распознавание сканов (OCR) — Tesseract, локально, без ИИ (22.09.2026) ------
+#
+# Скан или фото резюме текстового слоя не имеет — раньше такие файлы в сравнение
+# не попадали вовсе. Теперь страницы превращаются в картинки (PyMuPDF — он уже
+# рисует превью) и читаются программой tesseract (rus+eng) на нашем сервере.
+# Claude Vision сюда НЕ подключаем: дорого (сторожит tests/test_dedup_no_ai.py).
+
+import asyncio
+import shutil
+import subprocess
+
+OCR_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+OCR_MAX_PAGES = 4          # резюме длиннее почти не бывает; больше — дольше и дороже
+OCR_DPI = 250              # меньше — хуже читаются мелкие цифры телефона
+OCR_PAGE_TIMEOUT = 60      # секунд на страницу
+
+
+def _ext(file_name: str) -> str:
+    return ("." + file_name.rsplit(".", 1)[-1].lower()) if "." in file_name else ""
+
+
+def needs_ocr(file_name: str, extracted_chars: int) -> bool:
+    """Нужно ли распознавать файл: картинка, или PDF без текстового слоя."""
+    ext = _ext(file_name)
+    if ext in OCR_IMAGE_EXTENSIONS:
+        return True
+    return ext == ".pdf" and extracted_chars < MIN_USEFUL_CHARS
+
+
+def ocr_available() -> bool:
+    return shutil.which("tesseract") is not None
+
+
+def _page_images(file_bytes: bytes, file_name: str) -> list:
+    """PNG-картинки первых страниц (PDF) или сам файл-картинка, приведённый к PNG."""
+    import pymupdf
+
+    ext = _ext(file_name)
+    out = []
+    if ext == ".pdf":
+        doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+        for page in list(doc)[:OCR_MAX_PAGES]:
+            out.append(page.get_pixmap(dpi=OCR_DPI).tobytes("png"))
+    else:
+        doc = pymupdf.open(stream=file_bytes, filetype=ext.lstrip("."))
+        for page in list(doc)[:OCR_MAX_PAGES]:
+            out.append(page.get_pixmap(dpi=OCR_DPI).tobytes("png"))
+    return out
+
+
+def _ocr_sync(file_bytes: bytes, file_name: str) -> str:
+    if not ocr_available():
+        logger.info("RESUME_OCR: tesseract не установлен — распознавание пропущено")
+        return ""
+    parts = []
+    for i, png in enumerate(_page_images(file_bytes, file_name)):
+        try:
+            res = subprocess.run(
+                ["tesseract", "stdin", "stdout", "-l", "rus+eng", "--psm", "3"],
+                input=png, capture_output=True, timeout=OCR_PAGE_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning(f"RESUME_OCR: page {i + 1} of {file_name!r} timed out")
+            continue
+        if res.returncode != 0:
+            logger.warning(f"RESUME_OCR: tesseract failed on {file_name!r}: {res.stderr[:200]!r}")
+            continue
+        parts.append(res.stdout.decode("utf-8", errors="ignore"))
+    text = "\n".join(parts).replace("\xa0", " ").replace("­", "")
+    return "\n".join(line.rstrip() for line in text.splitlines() if line.strip()).strip()
+
+
+async def ocr_resume(file_bytes: bytes, file_name: str) -> str:
+    """Распознать скан. В отдельном потоке: страница — 1–3 с CPU, а сервер один
+    (22.09.2026 тяжёлая работа в цикле событий уже вешала прод)."""
+    try:
+        return await asyncio.to_thread(_ocr_sync, file_bytes, file_name)
+    except Exception as e:  # noqa: BLE001 — best-effort, загрузку не ломаем
+        logger.warning(f"RESUME_OCR: failed for {file_name!r}: {e}")
+        return ""
+
+
+async def ocr_and_store(entity_id: int, file_id: int) -> bool:
+    """Фоновая задача после загрузки: распознать скан, сохранить текст и контакты
+    из шапки, пересчитать дубли. Своя сессия БД. True — текст сохранён."""
+    from ..database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        return await ocr_and_store_in(db, entity_id, file_id)
+
+
+async def ocr_and_store_in(db: AsyncSession, entity_id: int, file_id: int) -> bool:
+    """Тело ocr_and_store на переданной сессии. Коммитит."""
+    from ..models.database import EntityFile
+    from .resume_text_twin import detect_resume_text_twin
+    from .similarity import identity_fingerprint, recheck_duplicates_after_edit
+
+    ef = await db.get(EntityFile, file_id)
+    entity = await db.get(Entity, entity_id)
+    if ef is None or entity is None or not ef.file_data:
+        return False
+    text = await ocr_resume(bytes(ef.file_data), ef.file_name or "")
+    if len(text) < MIN_USEFUL_CHARS:
+        logger.info(f"RESUME_OCR: {ef.file_name!r} (entity {entity_id}) — текста не распознано")
+        return False
+    before = identity_fingerprint(entity)
+    extra = dict(entity.extra_data) if isinstance(entity.extra_data, dict) else {}
+    extra["resume_text"] = text
+    extra["resume_text_source"] = {
+        "file_id": file_id, "file_name": ef.file_name, "chars": len(text), "ocr": True,
+    }
+    set_resume_contacts(extra, text, file_id)
+    entity.extra_data = extra
+    await db.flush()
+    await detect_resume_text_twin(db, entity)
+    if identity_fingerprint(entity) != before:
+        await recheck_duplicates_after_edit(db, entity)
+    await db.commit()
+    logger.info(
+        f"RESUME_OCR: {len(text)} chars from {ef.file_name!r} for entity {entity_id}, "
+        f"contacts={extra.get('resume_contacts')}"
+    )
+    return True
