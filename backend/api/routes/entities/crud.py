@@ -1787,7 +1787,7 @@ async def find_archive_duplicates(
     info: dict = {}
     for it in items:
         parent.setdefault(it.entity_id, it.entity_id)
-        ph = sorted(it.keys.get("phones10") or set())
+        ph = sorted(it.keys.get("phone_keys") or set())
         em = sorted(it.keys.get("emails") or set())
         tg = sorted(it.keys.get("tg_names") or set())
         info[it.entity_id] = {

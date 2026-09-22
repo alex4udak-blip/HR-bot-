@@ -24,7 +24,7 @@
     email   — полный адрес ИЛИ локальная часть до «@»;
     telegram— личный @хэндл (мусорные ярлыки источника отсеяны);
     name    — связка Фамилия+Имя (транслит, отчества, гомоглифы, опечатка ≤1);
-    phone   — последние 10 цифр;
+    phone   — тот же номер с кодом страны (E.164) или те же последние 10 цифр;
     soft    — мягкий скоринг личности (``score_soft_identity`` ≥ порога);
     text    — совпал ТЕКСТ резюме (инфо-сигнал, слияние по нему не предлагаем).
 
@@ -147,7 +147,7 @@ def compare_key_sets(a: dict, b: dict) -> Tuple[Optional[str], int, List[DupSign
     ):
         signals.append(DupSignal("name", SIGNAL_LABELS["name"], 100, True, a_name, b_name))
 
-    phone_hit = (a.get("phones10") or set()) & (b.get("phones10") or set())
+    phone_hit = (a.get("phone_keys") or set()) & (b.get("phone_keys") or set())
     if phone_hit:
         p = _first(sorted(phone_hit))
         signals.append(DupSignal("phone", SIGNAL_LABELS["phone"], 100, True, p, p))
@@ -229,7 +229,7 @@ def identity_block_keys(keys: dict) -> List[str]:
         out.append("e:" + e)
     for loc in (keys.get("email_locals") or set()):
         out.append("el:" + loc)
-    for p in (keys.get("phones10") or set()):
+    for p in (keys.get("phone_keys") or set()):
         out.append("p:" + p)
     for t in (keys.get("tg_names") or set()):
         if is_matchable_telegram(t):

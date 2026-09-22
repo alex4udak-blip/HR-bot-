@@ -1730,7 +1730,7 @@ def build_dup_keys(
 ) -> dict:
     """Нормализованные ключи дедупа из полей кандидата ИЛИ запроса расширения.
     Единый вход для find_duplicate_matches — чтобы веб/парсер и расширение
-    сравнивали дубли по ОДНИМ правилам (email/телефон-10/telegram/ФИО/URL)."""
+    сравнивали дубли по ОДНИМ правилам (email/телефон E.164/telegram/ФИО/URL)."""
     ek: Set[str] = set()
     pe = normalize_email(email or "")
     if pe:
@@ -1740,14 +1740,11 @@ def build_dup_keys(
         if ne:
             ek.add(ne)
 
-    ph: Set[str] = set()
-    pd = normalize_phone(phone or "")
-    if len(pd) >= 10:
-        ph.add(pd[-10:])
-    for p in (phones or []):
-        d = normalize_phone(p or "")
-        if len(d) >= 10:
-            ph.add(d[-10:])
+    # Телефоны — в международном формате с кодом страны (+ старый ключ «10 цифр»),
+    # см. services/phone_keys.py: иначе «+998 90…» и «90 …» не совпадали.
+    from .phone_keys import phone_match_keys, phone_tails7
+    raw_phones = [phone, *(phones or [])]
+    ph: Set[str] = phone_match_keys(raw_phones)
 
     tg: Set[str] = set()
     nt = normalize_telegram(telegram or "")
@@ -1792,7 +1789,7 @@ def build_dup_keys(
     first_names.discard("")
     last_names.discard("")
 
-    phones7: Set[str] = {p[-7:] for p in ph if len(p) >= 7}
+    phones7: Set[str] = phone_tails7(raw_phones)
 
     email_locals: Set[str] = email_locals_of(ek)
 
@@ -1808,7 +1805,7 @@ def build_dup_keys(
 
     return {
         "emails": ek,
-        "phones10": ph,
+        "phone_keys": ph,
         "tg_names": tg,
         "name": " ".join((name or "").strip().lower().split()),
         "name_ok": looks_like_person_name(name or ""),
@@ -1849,7 +1846,7 @@ async def find_duplicate_matches(
     Импорт ленивый: duplicate_matcher импортирует этот модуль на уровне модуля.
     """
     if not (
-        keys.get("emails") or keys.get("phones10") or keys.get("tg_names")
+        keys.get("emails") or keys.get("phone_keys") or keys.get("tg_names")
         or keys.get("name_ok") or keys.get("source_key")
         or keys.get("birth_norm") or keys.get("phones7") or keys.get("email_locals")
     ):

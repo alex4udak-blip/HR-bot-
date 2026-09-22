@@ -31,6 +31,14 @@ def normalize_phone(phone: str) -> str:
     if not phone:
         return phone
 
+    # Номер с однозначной страной — сразу в международный формат (+375…, +998…).
+    # Старое правило ниже дописывало +7 к любому 11-значному номеру на 8 и
+    # превращало белорусское «8 029 …» в несуществующее «+7 029 …».
+    from .phone_keys import to_e164_if_certain
+    certain = to_e164_if_certain(phone)
+    if certain:
+        return certain
+
     # Удаляем всё кроме цифр и +
     cleaned = re.sub(r'[^\d+]', '', phone)
 
