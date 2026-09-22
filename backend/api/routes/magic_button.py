@@ -32,6 +32,15 @@ def _drop_service_email(value: Optional[str]) -> Optional[str]:
     return value
 
 
+def _drop_junk_telegram(value: Optional[str]) -> Optional[str]:
+    """hh_b2b и прочие каналы порталов — не Telegram кандидата."""
+    from ..services.similarity import is_junk_telegram
+    if value and is_junk_telegram(value):
+        logger.info(f"MAGIC_BUTTON: dropped junk telegram {value!r}")
+        return None
+    return value
+
+
 class MagicButtonData(BaseModel):
     # Parsed from resume
     full_name: str
@@ -47,6 +56,11 @@ class MagicButtonData(BaseModel):
     @classmethod
     def _clean_email(cls, v: Optional[str]) -> Optional[str]:
         return _drop_service_email(v)
+
+    @field_validator("telegram")
+    @classmethod
+    def _clean_telegram(cls, v: Optional[str]) -> Optional[str]:
+        return _drop_junk_telegram(v)
 
     # Extra parsed fields
     city: Optional[str] = None
@@ -119,6 +133,11 @@ class DuplicateCheckRequest(BaseModel):
     @classmethod
     def _clean_email(cls, v: Optional[str]) -> Optional[str]:
         return _drop_service_email(v)
+
+    @field_validator("telegram")
+    @classmethod
+    def _clean_telegram(cls, v: Optional[str]) -> Optional[str]:
+        return _drop_junk_telegram(v)
 
 class DuplicateCheckResponse(BaseModel):
     is_duplicate: bool

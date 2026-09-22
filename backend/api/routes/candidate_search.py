@@ -22,6 +22,7 @@ from sqlalchemy import Select, case, cast, func, literal, or_, select, String, t
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_db
+from api.services.similarity import first_real_telegram
 from api.models.database import (
     DepartmentMember,
     DeptRole,
@@ -392,9 +393,7 @@ async def search_candidates(
     # --- build response items ---
     items: List[CandidateItem] = []
     for e in entities:
-        tg_username = None
-        if e.telegram_usernames and len(e.telegram_usernames) > 0:
-            tg_username = e.telegram_usernames[0]
+        tg_username = first_real_telegram(e.telegram_usernames)
 
         source_val = None
         if e.extra_data and isinstance(e.extra_data, dict):
@@ -1118,7 +1117,7 @@ async def get_candidates_kanban(
             status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
             if status_val not in grouped:
                 status_val = OTHER_STATUS
-            tg = e.telegram_usernames[0] if e.telegram_usernames else None
+            tg = first_real_telegram(e.telegram_usernames)
             source_val = None
             ed = e.extra_data if isinstance(e.extra_data, dict) else {}
             source_url_val = None

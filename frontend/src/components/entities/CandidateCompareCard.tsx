@@ -4,6 +4,7 @@ import type { EntityWithRelations } from "@/types";
 import { STATUS_LABELS } from "@/types";
 import { sanitizeHtml } from "@/utils/sanitizeHtml";
 import { CompareResumePreview } from "./CompareResumePreview";
+import { pickTelegram } from "./candidateDetail/model";
 
 /**
  * Презентационная «карточка сравнения кандидата» + её типы, билдеры данных и
@@ -210,7 +211,7 @@ export function sideFromCard(card: KanbanCard, statusKey?: string): Side {
     company: card.company || "",
     phone: card.phone || "",
     email: card.email || "",
-    telegram: card.telegram_username || "",
+    telegram: pickTelegram([card.telegram_username, ...(card.telegram_usernames || [])]) || "",
     age: card.age ? String(card.age) : computeAge(extra.birth_date as string | undefined),
     birthDate: formatBirth(extra.birth_date as string | undefined),
     city: card.city || ((extra.city as string) || ""),
@@ -250,7 +251,7 @@ export function sideFromEntity(e: EntityWithRelations): Side {
     company: e.company || "",
     phone: e.phone || (e.phones && e.phones[0]) || "",
     email: e.email || (e.emails && e.emails[0]) || "",
-    telegram: (e.telegram_usernames && e.telegram_usernames[0]) || "",
+    telegram: pickTelegram(e.telegram_usernames) || "",
     age: (extra.age as string) || computeAge(extra.birth_date as string | undefined),
     birthDate: formatBirth(extra.birth_date as string | undefined),
     city: (ent.city as string) || ((extra.city as string) || ""),

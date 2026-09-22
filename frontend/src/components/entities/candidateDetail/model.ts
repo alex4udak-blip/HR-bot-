@@ -487,6 +487,25 @@ export function readSystemHrTags(
  * Импорт (ClickUp/CSV) кладёт location/birth_date, а шапка карточки показывает
  * city/age — маппим с фолбэком, иначе шапка пустая, хотя данные есть.
  */
+// Каналы порталов и ярлыки источника — не ник человека (тот же список, что
+// JUNK_TELEGRAM_USERNAMES на бэке). Расширение старых версий сохраняло
+// t.me/hh_b2b со страницы hh.ru, и карточка показывала «hh_b2b» вместо ника.
+const JUNK_TELEGRAM = new Set([
+  "telegram", "tg", "telega", "hh", "hh_b2b", "hh_news", "hh_news_hr", "hhnews",
+  "headhunter", "hhru", "vk", "vkontakte", "avito", "superjob", "habr", "linkedin",
+  "email", "mail", "phone", "tel", "resume", "cv", "source", "none", "no",
+  "n/a", "na", "null", "-", "—",
+]);
+
+/** Первый настоящий ник из списка (без каналов порталов). */
+export function pickTelegram(list: readonly (string | null | undefined)[] | null | undefined): string | undefined {
+  for (const t of list || []) {
+    const v = (t || "").trim();
+    if (v && !JUNK_TELEGRAM.has(v.replace(/^@/, "").toLowerCase())) return v;
+  }
+  return undefined;
+}
+
 export function entityToKanbanCard(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   e: any,
@@ -509,7 +528,7 @@ export function entityToKanbanCard(
     name: e.name,
     email: e.email || undefined,
     phone: e.phone || undefined,
-    telegram_username: (e.telegram_usernames && e.telegram_usernames[0]) || undefined,
+    telegram_username: pickTelegram(e.telegram_usernames),
     // Полные списки: у склеенного человека контактов может быть несколько.
     phones: Array.isArray(e.phones) ? e.phones : undefined,
     emails: Array.isArray(e.emails) ? e.emails : undefined,

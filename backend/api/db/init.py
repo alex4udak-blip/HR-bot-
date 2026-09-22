@@ -439,6 +439,15 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Service email cleanup failed (non-critical): {e}")
 
+    # hh_b2b и прочие каналы порталов в telegram_usernames — одноразово (22.09.2026).
+    try:
+        from ..services.service_email_cleanup import remove_junk_telegram_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await remove_junk_telegram_once(session)
+    except Exception as e:
+        logger.warning(f"Junk telegram cleanup failed (non-critical): {e}")
+
     logger.info("=== DATABASE INITIALIZATION COMPLETE ===")
 
 

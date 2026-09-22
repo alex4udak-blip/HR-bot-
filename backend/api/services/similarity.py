@@ -698,6 +698,24 @@ SOFT_THRESHOLD = 65
 SOFT_MIN_COMPONENTS = 2
 
 
+def is_junk_telegram(value: Optional[str]) -> bool:
+    """Ярлык источника/канал портала (hh_b2b, telegram, hh…), а не ник человека.
+    Расширение старых версий брало со страницы hh.ru ссылку t.me/hh_b2b и
+    сохраняло её как Telegram кандидата (у 42 активных, 22.09.2026)."""
+    return normalize_telegram(value or "") in JUNK_TELEGRAM_USERNAMES
+
+
+def first_real_telegram(values) -> Optional[str]:
+    """Первый НАСТОЯЩИЙ ник из списка — для показа. Карточки показывали просто
+    первый, и у «hh_b2b, yrsrss» виден был hh_b2b."""
+    if isinstance(values, str):
+        values = [values]
+    for v in values or []:
+        if v and not is_junk_telegram(v):
+            return v
+    return None
+
+
 def is_matchable_telegram(value: str, freq: Optional[dict] = None) -> bool:
     """Годен ли telegram-username как идентификатор для дедупа: не пустой,
     не из денилиста источников и (если передана частота) не «общий» (≥ порога)."""

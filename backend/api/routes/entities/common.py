@@ -302,6 +302,9 @@ def validate_email(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 
+from ...services.similarity import is_junk_telegram  # noqa: E402
+
+
 def normalize_and_validate_identifiers(
     telegram_usernames: Optional[List[str]] = None,
     emails: Optional[List[str]] = None,
@@ -327,6 +330,8 @@ def normalize_and_validate_identifiers(
         for username in telegram_usernames:
             if username:
                 normalized = normalize_telegram_username(username)
+                if is_junk_telegram(normalized):
+                    continue  # hh_b2b и т.п. — канал портала, не ник кандидата
                 if normalized and normalized not in normalized_usernames:
                     normalized_usernames.append(normalized)
 
