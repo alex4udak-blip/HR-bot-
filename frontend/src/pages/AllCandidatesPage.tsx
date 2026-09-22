@@ -701,6 +701,9 @@ export default function AllCandidatesPage() {
   // зеркало «выбор → ?entity=» молчит, чтобы адрес не уехал на прошлую карточку.
   const deepLinkPendingRef = useRef<number | null>(null);
   const detectTriedRef = useRef<number | null>(null);
+  // id карточки, которой флаг дубля поставил локальный детект (а не сервер в
+  // списке) — только такой флаг переживает рефетч профиля, см. ниже.
+  const detectSetFlagRef = useRef<number | null>(null);
   // Предыдущий выбранный id — чтобы зеркало URL отличало настоящее закрытие
   // (selected->null) от ещё не завершённого диплинка (null->null) и не стирало ?entity=.
   const prevSelectedIdRef = useRef<number | null>(null);
@@ -880,6 +883,7 @@ export default function AllCandidatesPage() {
     detectDuplicate(card.id)
       .then((r) => {
         if (cancelled || !r?.duplicate_id) return;
+        detectSetFlagRef.current = card.id;
         setSelectedCard((prev) =>
           prev && prev.id === card.id
             ? {
@@ -913,6 +917,9 @@ export default function AllCandidatesPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getEntity(id).then((e: any) => {
       if (cancelled || !e?.id || e.id !== id) return;
+      // Отметка детекта одноразовая: она прикрывает только гонку этого открытия.
+      const keepDetectedFlag = detectSetFlagRef.current === id;
+      if (keepDetectedFlag) detectSetFlagRef.current = null;
       setSelectedCard((prev) => {
         if (!prev || prev.id !== id) return prev;
         const prevExtra = (prev.extra_data || {}) as Record<string, unknown>;
@@ -920,8 +927,14 @@ export default function AllCandidatesPage() {
         // hidden_duplicate_id (детект дубля) и is_archived (deep-link архивного,
         // строка ~700) проставляются локально — не теряем их при рефетче.
         // Флаг и мета — парой: рефетч мог прийти раньше, чем детект их записал,
-        // и без меты баннер терял уровень и процент.
-        if (prevExtra.hidden_duplicate_id && !mergedExtra.hidden_duplicate_id) {
+        // и без меты баннер терял уровень и процент. Держимся только за флаг,
+        // который поставил детект этой карточки: флаг из списка мог устареть —
+        // сервер снимает его при правке второй анкеты пары.
+        if (
+          prevExtra.hidden_duplicate_id &&
+          !mergedExtra.hidden_duplicate_id &&
+          keepDetectedFlag
+        ) {
           mergedExtra.hidden_duplicate_id = prevExtra.hidden_duplicate_id;
           if (prevExtra.hidden_duplicate_meta) {
             mergedExtra.hidden_duplicate_meta = prevExtra.hidden_duplicate_meta;
@@ -4386,7 +4399,13 @@ export function EditCandidateModal({
         city: extraData.city,
         source: extraData.source,
         age: extraData.age != null ? String(extraData.age) : undefined,
-        extra_data: extraData,
+        // extra_data — ЦЕЛИКОМ из ответа сервера: он смержил правку с остальным
+        // (заметки, резюме) и пересчитал плашку дубля. Раньше сюда клали только
+        // отредактированные поля, и плашка пропадала до перезагрузки страницы.
+        extra_data: (saved?.extra_data as Record<string, unknown> | undefined) ?? {
+          ...((card.extra_data || {}) as Record<string, unknown>),
+          ...extraData,
+        },
         // Свежая версия с сервера — иначе повторное «Сохранить» без перезагрузки
         // доски ушло бы со старой version и словило ложный 409.
         version: saved?.version,

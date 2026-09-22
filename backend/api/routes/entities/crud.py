@@ -911,6 +911,13 @@ async def update_entity(
     # Remove version from update_data to prevent it from being set directly
     update_data.pop('version', None)
 
+    # Снимок ключей личности ДО правки: изменились ФИО/контакты/дата рождения —
+    # совпадения пересчитываются сразу (иначе новая плашка ждала повторного
+    # открытия, а после исправленной опечатки старая висела бесконечно).
+    from ...services.similarity import identity_fingerprint, recheck_duplicates_after_edit
+    _is_candidate = entity.type == EntityType.candidate
+    _identity_before = identity_fingerprint(entity) if _is_candidate else None
+
     # extra_data: MERGE, не заменять — иначе частичный апдейт (напр. форма правки
     # шлёт только salary/city/...) затрёт notes, merged_from, timeline_reactions,
     # resume_demos и пр. Присланные ключи перекрывают существующие, остальное
@@ -950,6 +957,15 @@ async def update_entity(
             apps[0].stage = new_stage
             apps[0].last_stage_change_at = datetime.utcnow()
             logger.info(f"PUT /entities/{entity_id}: Synchronized status {data.status} -> application {apps[0].id} stage {new_stage}")
+
+    if _is_candidate and identity_fingerprint(entity) != _identity_before:
+        # Сбой пересчёта не должен ронять сохранение карточки: откатываем только
+        # его (savepoint), правка рекрутёра сохраняется.
+        try:
+            async with db.begin_nested():
+                await recheck_duplicates_after_edit(db, entity)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"DUP_RECHECK failed for entity {entity_id}: {e}")
 
     await db.commit()
     await db.refresh(entity)

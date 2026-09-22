@@ -1927,3 +1927,91 @@ async def detect_archived_duplicate(db: AsyncSession, entity: Entity) -> Optiona
                 }
                 dup.extra_data = nde
     return match_id
+
+
+# Поля ключей, от которых зависит «тот же ли это человек». Правка остального
+# (этап, комментарии, зарплата) пересчёта дублей не запускает.
+_IDENTITY_KEY_FIELDS = (
+    "emails", "email_locals", "phone_keys", "tg_names", "name", "source_key",
+    "birth_norm", "patronymics",
+)
+
+
+def identity_fingerprint(entity: Entity) -> tuple:
+    """Снимок ключей личности кандидата — сравнить «до» и «после» правки."""
+    from .duplicate_matcher import keys_of_entity
+    keys = keys_of_entity(entity)
+    out = []
+    for f in _IDENTITY_KEY_FIELDS:
+        v = keys.get(f)
+        out.append(tuple(sorted(v)) if isinstance(v, (set, frozenset, list)) else v)
+    return tuple(out)
+
+
+async def refresh_duplicate_flag(db: AsyncSession, entity: Entity) -> Optional[int]:
+    """Пересчитать флаг «похожий кандидат» у одной анкеты по её ТЕКУЩИМ данным.
+
+    Нашлось совпадение — флаг и мета указывают на него (и вторая сторона получает
+    обратную ссылку). Не нашлось — флаг снимается. Исключение — совпадение по
+    тексту резюме: оно не зависит от ФИО/контактов и правкой карточки не
+    отменяется, если пару не признали «разными людьми». Не коммитит.
+    """
+    from .duplicate_decisions import dismissed_for
+
+    before = dict(entity.extra_data) if isinstance(entity.extra_data, dict) else {}
+    old_meta = before.get("hidden_duplicate_meta") or {}
+    old_id = before.get("hidden_duplicate_id")
+
+    new_id = await detect_archived_duplicate(db, entity)
+    extra = dict(entity.extra_data) if isinstance(entity.extra_data, dict) else {}
+    if new_id:
+        extra["hidden_duplicate_id"] = new_id
+    elif (
+        old_id
+        and old_meta.get("strength") == "text"
+        and old_id not in await dismissed_for(db, entity)
+    ):
+        new_id = old_id  # текстовый дубль остаётся как был
+    else:
+        extra.pop("hidden_duplicate_id", None)
+        extra.pop("hidden_duplicate_meta", None)
+    entity.extra_data = extra
+    return new_id
+
+
+async def recheck_duplicates_after_edit(db: AsyncSession, entity: Entity) -> Set[int]:
+    """Правка ФИО/контактов/даты рождения: пересчитать совпадения сразу.
+
+    1. Сама анкета: новое совпадение — плашка появляется, причина исчезла —
+       снимается.
+    2. Анкеты, чья плашка смотрела на эту: пересчитываются тоже — иначе после
+       исправленной опечатки в телефоне у второй стороны висела бы старая
+       плашка.
+    Возвращает id затронутых ДРУГИХ анкет. Не коммитит.
+    """
+    touched: Set[int] = set()
+    old_id = (entity.extra_data or {}).get("hidden_duplicate_id") if isinstance(entity.extra_data, dict) else None
+    new_id = await refresh_duplicate_flag(db, entity)
+    if new_id:
+        touched.add(new_id)  # получил обратную ссылку
+
+    partners = (await db.execute(
+        select(Entity).where(
+            Entity.org_id == entity.org_id,
+            Entity.type == EntityType.candidate,
+            Entity.id != entity.id,
+            Entity.extra_data["hidden_duplicate_id"].as_integer() == entity.id,
+        )
+    )).scalars().all()
+    for other in partners:
+        prev = (other.extra_data or {}).get("hidden_duplicate_id")
+        now = await refresh_duplicate_flag(db, other)
+        if now != prev:
+            touched.add(other.id)
+
+    logger.info(
+        f"DUP_RECHECK entity {entity.id}: flag {old_id}->{new_id}, "
+        f"partners rechecked={[o.id for o in partners]} touched={sorted(touched)}"
+    )
+    return touched
+
