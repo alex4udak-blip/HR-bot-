@@ -868,7 +868,10 @@ async def update_application(
         next_interview_at=application.next_interview_at,
         applied_at=application.applied_at,
         last_stage_change_at=application.last_stage_change_at,
-        updated_at=application.updated_at
+        updated_at=application.updated_at,
+        # Пересчитанный общий статус — фронту, чтобы переставить карточку в
+        # «Все кандидаты» БЕЗ перезагрузки и ровно туда, где её увидит сервер.
+        entity_status=entity.status.value if entity and entity.status else None,
     )
 
 

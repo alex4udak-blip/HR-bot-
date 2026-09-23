@@ -655,6 +655,10 @@ export interface VacancyApplication {
   is_previous_series?: boolean;
   // Рекрутёр-владелец заявки (кто добавил) — для авто-метки HR.
   created_by?: number | null;
+  // Общий статус кандидата ПОСЛЕ смены этапа (считает сервер по «актуальной»
+  // заявке). Приходит только из PUT /vacancies/applications/{id}; по нему
+  // «Все кандидаты» ставят карточку в колонку, а не по выбранному этапу.
+  entity_status?: string | null;
 }
 
 // === AI Compatibility Scoring ===

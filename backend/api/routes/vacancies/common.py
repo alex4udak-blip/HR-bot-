@@ -697,6 +697,12 @@ class ApplicationResponse(BaseModel):
     is_previous_series: bool = False
     # Рекрутёр-владелец заявки (кто добавил) — нужен фронту для авто-метки HR.
     created_by: Optional[int] = None
+    # Общий статус кандидата ПОСЛЕ этой правки (recompute_entity_status).
+    # Заполняет только update_application: «Все кандидаты» ставят карточку в
+    # колонку по нему, а не по выбранному этапу заявки. Иначе отказ в ОДНОЙ
+    # воронке уводил карточку в колонку «Отказ», хотя сервер держит статус по
+    # живой второй воронке — до F5 список расходился с сервером.
+    entity_status: Optional[str] = None
 
     class Config:
         from_attributes = True

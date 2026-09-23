@@ -273,6 +273,46 @@ async def test_stale_application_id_of_neighbour_is_rejected(
     assert open_app.stage == FIRST, "заявка открытого кандидата тоже не тронута"
 
 
+async def test_update_returns_entity_status_of_live_funnel(
+    client: AsyncClient, db_session: AsyncSession, organization: Organization,
+    department: Department, admin_user: User, org_owner: OrgMember,
+    candidate_entity: Entity, moved_application,
+):
+    """Ответ на смену этапа несёт ОБЩИЙ статус кандидата, а не выбранный этап.
+
+    Кандидат в двух воронках: отказ в одной не должен уводить его карточку в
+    «Все кандидаты» в колонку «Отказ» — общий статус держится по живой второй
+    воронке. Фронт ставит карточку по этому полю, иначе список расходится с
+    сервером до F5 (23.09.2026).
+    """
+    app_live, _initial, _moved = moved_application     # живая воронка, этап SECOND
+    now = datetime.utcnow()
+    second_vacancy = Vacancy(
+        org_id=organization.id, department_id=department.id, created_by=admin_user.id,
+        title="Вторая воронка", status=VacancyStatus.open, salary_currency="RUB",
+        created_at=now, updated_at=now,
+    )
+    db_session.add(second_vacancy)
+    await db_session.commit()
+    app_other = VacancyApplication(
+        vacancy_id=second_vacancy.id, entity_id=candidate_entity.id, stage=FIRST,
+        stage_order=1, created_by=admin_user.id, applied_at=now,
+        last_stage_change_at=now, updated_at=now,
+    )
+    db_session.add(app_other)
+    await db_session.commit()
+
+    r = await client.put(
+        f"/api/vacancies/applications/{app_other.id}",
+        json={"stage": "rejected", "expected_entity_id": candidate_entity.id},
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["stage"] == "rejected"                      # этап самой заявки
+    assert body["entity_status"] == STAGE_SYNC_MAP[SECOND].value  # а статус — по живой воронке
+
+
 async def test_entity_status_follows_live_funnel_not_rejection(
     client: AsyncClient, db_session: AsyncSession, organization: Organization,
     department: Department, admin_user: User, org_owner: OrgMember,

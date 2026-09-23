@@ -2328,14 +2328,21 @@ const InfoTab = memo(function InfoTab({
         // молча и без ошибки. Это не сбой, просто заявке такого этапа нет.
         console.warn('[stage] у статуса нет этапа заявки, двигаем только кандидата:', stage);
       }
+      // Общий статус кандидата ПОСЛЕ правки: его считает сервер по «актуальной»
+      // заявке, и он НЕ всегда равен выбранному этапу. Кандидат в двух воронках:
+      // отказ в одной оставляет общий статус по живой второй — если ставить
+      // карточку в колонку по выбранному этапу, она уезжает в «Отказ», а после
+      // F5 возвращается назад (расхождение списка с сервером).
+      let serverStatus: string | null = null;
       if (appId > 0 && appStage) {
         try {
-          await updateApplication(appId, {
+          const updated = await updateApplication(appId, {
             stage: appStage,
             ...(comment ? { comment } : {}),
             // Страховка: бэк сверит заявку с этим кандидатом.
             expected_entity_id: card.id,
           });
+          serverStatus = updated?.entity_status ?? null;
         } catch (err) {
           // Раньше ошибка тут проглатывалась молча («entity-статус уже
           // обновлён» — но это ДРУГОЕ поле, VacancyApplication.stage мог не
@@ -2359,7 +2366,11 @@ const InfoTab = memo(function InfoTab({
       // только локальная перестановка карточки, без PATCH статуса (он бы
       // выровнял и остальные воронки кандидата).
       if (ok && appId > 0 && appStage) patchFunnelStage(appId, appStage);
-      if (ok) onStatusChange(stage, appId > 0 ? { persist: false } : undefined);
+      if (ok)
+        onStatusChange(
+          serverStatus ?? stage,
+          appId > 0 ? { persist: false } : undefined,
+        );
       await loadActivity();
       return ok;
     },
