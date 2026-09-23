@@ -7452,6 +7452,22 @@ body.performance-mode .glass-card:hover {
   padding: var(--hf-space-l);
 }
 
+/* Плашка «кандидат уже на этом этапе» — вместо поля комментария. */
+.hf-stage-picker-current {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--hf-bg-panel);
+  padding: var(--hf-space-xxl);
+  text-align: center;
+  font-size: var(--hf-fs-xs);
+  font-weight: var(--hf-fw-medium);
+  line-height: var(--hf-lh-primary);
+  color: var(--hf-main-600);
+}
+
 .hf-stage-picker-editor {
   display: flex;
   flex: 1 1 0;
@@ -7912,6 +7928,11 @@ body.performance-mode .glass-card:hover {
 
 .hf-legacy-dark .hf-stage-picker-option-idle:hover {
   background: var(--hf-white-alpha-08);
+}
+
+.hf-legacy-dark .hf-stage-picker-current {
+  background: var(--hf-white-alpha-05);
+  color: var(--hf-white-alpha-45);
 }
 
 .hf-legacy-dark .hf-stage-picker-toolbar {

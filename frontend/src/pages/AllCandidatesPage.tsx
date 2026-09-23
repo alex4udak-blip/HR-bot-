@@ -2294,6 +2294,23 @@ const InfoTab = memo(function InfoTab({
   // (интерактивный) контейнер — его status это статус самого кандидата (entity),
   // поэтому меняем entity-статус через onStatusChange. Если у кандидата есть
   // реальная первичная заявка (appId>0) — синхронизируем и её стадию (воронка).
+  // Чип этапа в СТРОКЕ списка рисуется из card.funnels (данные с сервера).
+  // Без локальной правки строка ещё показывала старый этап, пока не
+  // перезагрузишь доску — карточка справа уже «Перешёл в отдел», а в списке
+  // «Практика» (ровно то расхождение, про которое правило в CLAUDE.md).
+  const patchFunnelStage = useCallback(
+    (appId: number, appStage: string) => {
+      const title = activityBlocks.find(
+        (b) => b.application_id === appId,
+      )?.vacancy_title;
+      if (!title || !Array.isArray(card.funnels)) return;
+      card.funnels = card.funnels.map((f) =>
+        f.vacancy_title === title ? { ...f, stage: appStage } : f,
+      );
+    },
+    [activityBlocks, card],
+  );
+
   const cardChangeStage = useCallback(
     async (appId: number, stage: string, comment?: string) => {
       let ok = true;
@@ -2341,11 +2358,12 @@ const InfoTab = memo(function InfoTab({
       // Заявка есть — её PUT уже подтянул статус кандидата на сервере: здесь
       // только локальная перестановка карточки, без PATCH статуса (он бы
       // выровнял и остальные воронки кандидата).
+      if (ok && appId > 0 && appStage) patchFunnelStage(appId, appStage);
       if (ok) onStatusChange(stage, appId > 0 ? { persist: false } : undefined);
       await loadActivity();
       return ok;
     },
-    [onStatusChange, loadActivity, card.id],
+    [onStatusChange, loadActivity, card.id, patchFunnelStage],
   );
 
   const cardComment = useCallback(
@@ -2440,14 +2458,23 @@ const InfoTab = memo(function InfoTab({
   const cardDeleteHistory = useCallback(
     async (appId: number, historyId: number) => {
       try {
-        await deleteApplicationHistory(appId, historyId);
-        toast.success("Запись удалена");
+        const res = await deleteApplicationHistory(appId, historyId);
+        // Удалили ПОСЛЕДНЮЮ запись = отменили перевод: бэк вернул заявку на
+        // прежний этап и пересчитал общий статус кандидата. Переставляем
+        // карточку на месте (persist: false — на сервере всё уже сделано).
+        if (res?.rolled_back && res.entity_status) {
+          if (res.stage) patchFunnelStage(appId, res.stage);
+          onStatusChange(res.entity_status, { persist: false });
+          toast.success("Перевод отменён — кандидат вернулся на прежний этап");
+        } else {
+          toast.success("Запись удалена");
+        }
       } catch {
         toast.error("Не удалось удалить запись");
       }
       await loadActivity();
     },
-    [loadActivity, onStatusChange],
+    [loadActivity, onStatusChange, patchFunnelStage],
   );
 
   // F-fix: комментарии (extra_data.notes, включая с @-упоминанием) раньше

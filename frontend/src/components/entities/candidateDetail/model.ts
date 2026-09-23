@@ -91,6 +91,34 @@ export const NEUTRAL_STAGE_STATUSES = new Set([
 export const isRejectedStage = (stage: string): boolean =>
   NEUTRAL_STAGE_STATUSES.has(stage);
 
+/** Этапы, после которых «следующего» не бывает: отказ, резерв, архив. */
+export const TERMINAL_STAGE_STATUSES = new Set([
+  ...NEUTRAL_STAGE_STATUSES,
+  "reserve",
+  "withdrawn",
+]);
+
+/**
+ * Какой этап пикер помечает при ОТКРЫТИИ — следующий за текущим (Huntflow:
+ * «переместить» почти всегда значит «на шаг вперёд», рекрутёру остаётся
+ * нажать «Сохранить»). Отказ/резерв/архив пропускаем: подставлять их сам
+ * пикер не должен, такое решение выбирают руками. Если следующего нет
+ * (кандидат уже на последнем или на отказе) — остаётся текущий, и карточка
+ * показывает серую плашку «уже на этом этапе».
+ */
+export function nextStageStatus(
+  options: Array<{ status: string }>,
+  current: string,
+): string {
+  if (TERMINAL_STAGE_STATUSES.has(current)) return current;
+  const idx = options.findIndex((o) => o.status === current);
+  if (idx < 0) return current;
+  const next = options
+    .slice(idx + 1)
+    .find((o) => !TERMINAL_STAGE_STATUSES.has(o.status));
+  return next ? next.status : current;
+}
+
 /** Единые лейблы стадий карточки вакансии (совпадают с воронкой/бэкендом). */
 export const CANDIDATE_VACANCY_STAGE_LABELS: Record<string, string> = {
   applied: "Новый",

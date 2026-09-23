@@ -41,6 +41,7 @@ import {
   matchesTimelineFilter,
   TIMELINE_ACTION_FILTERS,
   isRejectedStage,
+  nextStageStatus,
   type ContainerNote,
   type EntryReaction,
 } from "@/components/entities/candidateDetail/model";
@@ -727,14 +728,24 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   // хотя выглядело, будто всё прошло. Баг был интермиттентным — ловился не
   // на каждой попытке, только если фоновое обновление успевало прилететь
   // ровно в окно между выбором этапа и сохранением.
+  // Этап, который помечен при ОТКРЫТИИ пикера — следующий за текущим
+  // (Huntflow: рекрутёр двигает кандидата вперёд, ему остаётся нажать
+  // «Сохранить»). Отказ/резерв/архив авто-подстановкой не выбираются.
+  const defaultPickerStage = useMemo(
+    () => nextStageStatus(stagePickerOptions, resolvedCurrentStageStatus),
+    [stagePickerOptions, resolvedCurrentStageStatus],
+  );
+  // Помечен этап, на котором кандидат уже стоит (или сам пикер не нашёл
+  // следующего) — переводить некуда.
+  const stageAlreadyCurrent = pendingStage === resolvedCurrentStageStatus;
   const stageDDWasOpenRef = useRef(false);
   useEffect(() => {
     if (showStageDD && !stageDDWasOpenRef.current) {
-      setPendingStage(resolvedCurrentStageStatus);
+      setPendingStage(defaultPickerStage);
       setStageChangeComment("");
     }
     stageDDWasOpenRef.current = showStageDD;
-  }, [showStageDD, resolvedCurrentStageStatus]);
+  }, [showStageDD, defaultPickerStage]);
 
   useEffect(() => {
     if (showActionMenu) {
@@ -892,6 +903,15 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                   })}
                 </div>
                 <div className="hf-stage-picker-editor-wrap">
+                  {/* Выбран этап, на котором кандидат уже стоит: писать тут
+                      нечего — комментарий к «переводу на тот же этап» только
+                      мусорил ленту. Вместо поля — серая плашка (как в
+                      Huntflow), «Сохранить» недоступно. */}
+                  {stageAlreadyCurrent ? (
+                    <div className="hf-stage-picker-current">
+                      Кандидат сейчас находится на этом этапе подбора
+                    </div>
+                  ) : (
                   <div className="hf-stage-picker-editor">
                     <HuntflowRichInput
                       value={stageChangeComment}
@@ -902,12 +922,13 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                       editableClassName="hf-stage-picker-textarea overflow-y-auto"
                     />
                   </div>
+                  )}
                   <div className="hf-stage-picker-footer">
                     <button
                       type="button"
-                      disabled={savingStageChange}
+                      disabled={savingStageChange || stageAlreadyCurrent}
                       onClick={async () => {
-                        if (savingStageChange) return;
+                        if (savingStageChange || stageAlreadyCurrent) return;
                         setSavingStageChange(true);
                         try {
                           const selectedOption = stagePickerOptions.find(

@@ -135,3 +135,22 @@ export function otherActiveParticipants(v: Vacancy, userId: number | undefined |
   if (v.created_by) participants.add(v.created_by);
   return Array.from(participants).filter((id) => !dismissed.has(id) && id !== userId);
 }
+
+/**
+ * Только что перемещённый кандидат остаётся видимым во вкладке, из которой его
+ * увезли (23.09.2026): раньше он мгновенно пропадал из списка, справа сам
+ * открывался СЛЕДУЮЩИЙ человек, и рекрутёр терял из виду того, кого двигал.
+ *
+ * Возвращает список вкладки с «прикреплённым» кандидатом первым; если он и так
+ * подходит под вкладку (или его нет вовсе) — список не меняется.
+ */
+export function pinMovedCandidate<T extends { id: number }>(
+  inTab: T[],
+  all: T[],
+  pinnedId: number | null,
+): T[] {
+  if (pinnedId == null) return inTab;
+  if (inTab.some((c) => c.id === pinnedId)) return inTab;
+  const pinned = all.find((c) => c.id === pinnedId);
+  return pinned ? [pinned, ...inTab] : inTab;
+}

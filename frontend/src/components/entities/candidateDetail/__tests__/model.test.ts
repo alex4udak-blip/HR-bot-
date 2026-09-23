@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { KanbanCard, KanbanColumn } from "@/services/api/candidates";
 import type { EntityFile } from "@/services/api/entities";
 import {
+  nextStageStatus,
   cardMatchesMentor,
   countPracticeMentors,
   PRACTICE_STATUS,
@@ -626,5 +627,34 @@ describe('«Практикуются у» — счётчик по тегам Е�
 
   it('вкладка «Практика» — это probation', () => {
     expect(PRACTICE_STATUS).toBe('probation');
+  });
+});
+
+describe('nextStageStatus — какой этап помечен при открытии пикера', () => {
+  const options = [
+    { status: 'new' },
+    { status: 'practice' },
+    { status: 'tech_practice' },
+    { status: 'offer' },
+    { status: 'rejected' },
+    { status: 'reserve' },
+  ];
+
+  it('помечает следующий этап по порядку', () => {
+    expect(nextStageStatus(options, 'new')).toBe('practice');
+    expect(nextStageStatus(options, 'practice')).toBe('tech_practice');
+  });
+
+  it('отказ/резерв сам не подставляется — после последнего рабочего остаётся текущий', () => {
+    expect(nextStageStatus(options, 'offer')).toBe('offer');
+  });
+
+  it('с отказа/резерва никуда не двигаем', () => {
+    expect(nextStageStatus(options, 'rejected')).toBe('rejected');
+    expect(nextStageStatus(options, 'reserve')).toBe('reserve');
+  });
+
+  it('неизвестный этап — остаётся собой', () => {
+    expect(nextStageStatus(options, 'какой-то_кастом')).toBe('какой-то_кастом');
   });
 });

@@ -2,7 +2,7 @@
 Stage transition history endpoints for vacancy applications.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
@@ -10,9 +10,9 @@ from pydantic import BaseModel
 
 from .common import (
     logger, get_db, VacancyApplication, Vacancy, User,
-    check_vacancy_access, can_access_vacancy
+    check_vacancy_access, can_access_vacancy, recompute_entity_status,
 )
-from ...models.database import StageTransition
+from ...models.database import StageTransition, ApplicationStage, Entity
 from ...services.auth import get_user_org
 
 router = APIRouter()
@@ -96,11 +96,16 @@ async def delete_application_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access),
 ):
-    """Удалить одну запись истории этапов (ошибочная запись).
+    """Удалить запись истории этапов.
 
-    Этап заявки НЕ меняется: удаляют запись из лога, а не отменяют перевод.
-    (2026-09-16, Мария: перенесла кандидата, удалила свою запись о переносе —
-    кандидата возвращало обратно. Кандидат остаётся там, куда его перенесли.)
+    ПОСЛЕДНЯЯ запись = сам перевод, которым кандидат попал на текущий этап:
+    удаляя её, рекрутёр отменяет ошибочный перевод, поэтому заявка едет обратно
+    на from_stage (запрос рекрутёров 2026-09-23; до этого этап оставался на
+    месте, и карточка Махровой висела в «Практике» без единой записи о том, как
+    туда попала).
+
+    СТАРЫЕ записи (выше по ленте) — только чистка лога: этап не трогаем, иначе
+    удаление записи из середины истории отправляло бы кандидата в прошлое.
     """
     org = await get_user_org(current_user, db)
 
@@ -128,13 +133,66 @@ async def delete_application_history(
     if not transition:
         raise HTTPException(status_code=404, detail="History entry not found")
 
-    logger.info(
-        "HISTORY_DELETE: user=%s app=%s entity=%s запись %s (%s -> %s) удалена, "
-        "этап заявки остаётся %s",
-        current_user.id, application.id, application.entity_id, transition.id,
-        transition.from_stage, transition.to_stage,
-        application.stage.value if application.stage else None,
-    )
+    # Самая свежая запись заявки. id вторым ключом: у импортов и быстрых
+    # переводов created_at совпадает до секунды.
+    latest = (await db.execute(
+        select(StageTransition)
+        .where(StageTransition.application_id == application_id)
+        .order_by(StageTransition.created_at.desc(), StageTransition.id.desc())
+        .limit(1)
+    )).scalar()
+
+    current_stage = application.stage.value if application.stage else None
+    rollback_stage: Optional[ApplicationStage] = None
+    if (
+        latest is not None
+        and latest.id == transition.id
+        and transition.from_stage
+        and transition.to_stage == current_stage
+    ):
+        # from_stage мог быть кастомным/устаревшим ключом — тогда отката нет,
+        # просто удаляем запись (лучше оставить этап, чем уронить 500).
+        try:
+            rollback_stage = ApplicationStage(transition.from_stage)
+        except ValueError:
+            rollback_stage = None
+
+    if rollback_stage is not None:
+        max_order = (await db.execute(
+            select(func.max(VacancyApplication.stage_order)).where(
+                VacancyApplication.vacancy_id == application.vacancy_id,
+                VacancyApplication.stage == rollback_stage,
+            )
+        )).scalar() or 0
+        application.stage = rollback_stage
+        application.stage_order = max_order + 1
+        application.last_stage_change_at = datetime.utcnow()
+        await db.flush()
+        await recompute_entity_status(db, application.entity_id)
+        logger.info(
+            "HISTORY_UNDO: user=%s app=%s entity=%s запись %s (%s -> %s) удалена, "
+            "заявка возвращена на %s",
+            current_user.id, application.id, application.entity_id, transition.id,
+            transition.from_stage, transition.to_stage, rollback_stage.value,
+        )
+    else:
+        logger.info(
+            "HISTORY_DELETE: user=%s app=%s entity=%s запись %s (%s -> %s) удалена, "
+            "этап заявки остаётся %s",
+            current_user.id, application.id, application.entity_id, transition.id,
+            transition.from_stage, transition.to_stage, current_stage,
+        )
+
     await db.delete(transition)
     await db.commit()
-    return {"success": True}
+
+    entity_status = (await db.execute(
+        select(Entity.status).where(Entity.id == application.entity_id)
+    )).scalar()
+    return {
+        "success": True,
+        # Фронт по этим полям переставляет карточку НА МЕСТЕ, без перезагрузки.
+        "rolled_back": rollback_stage is not None,
+        "stage": application.stage.value if application.stage else None,
+        "entity_status": entity_status.value if entity_status else None,
+    }

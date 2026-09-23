@@ -1,8 +1,12 @@
-"""Удаление записи истории НЕ трогает этап заявки (2026-09-16).
+"""Удаление записи истории этапов (2026-09-23, разбор видео Huntflow).
 
-Кандидата перенесли, запись о переносе удалили — он остаётся там, куда его
-перенесли. Короткое время (11.09–16.09) удаление последнего перехода возвращало
-заявку на прошлый этап; это оказалось не тем поведением, которое нужно.
+ПОСЛЕДНЯЯ запись — это сам перевод, которым кандидат попал на текущий этап:
+удаляя её, рекрутёр отменяет ошибочный перевод, и заявка едет назад на
+from_stage. СТАРЫЕ записи — чистка лога, этап не трогаем.
+
+История вопроса: 11.09–16.09 откат уже был, 16.09 его выключили (Мария удаляла
+запись и не ожидала переезда), а 23.09 рекрутёры попросили вернуть — но теперь
+только для последней записи, у которой to_stage совпадает с текущим этапом.
 """
 from datetime import datetime, timedelta
 
@@ -12,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.database import (
     ApplicationStage, Department, Entity, EntityStatus, EntityType, OrgMember,
-    Organization, StageTransition, User, Vacancy, VacancyApplication, VacancyStatus,
+    Organization, STAGE_SYNC_MAP, StageTransition, User, Vacancy,
+    VacancyApplication, VacancyStatus,
 )
 from api.services.auth import create_access_token
 from tests.conftest import auth_headers
@@ -57,14 +62,116 @@ def _headers(user: User) -> dict:
     return auth_headers(create_access_token(data={"sub": str(user.id)}))
 
 
-async def test_deleting_latest_transition_keeps_stage(
+async def test_deleting_latest_transition_rolls_back_stage(
     client: AsyncClient, db_session: AsyncSession, admin_user: User, moved_application,
 ):
+    """Удалили запись о переводе — кандидат вернулся на прежний этап."""
     app, _initial, moved = moved_application
     r = await client.delete(
         f"/api/vacancies/applications/{app.id}/history/{moved.id}", headers=_headers(admin_user),
     )
     assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["rolled_back"] is True
+    assert body["stage"] == FIRST.value
+    await db_session.refresh(app)
+    assert app.stage == FIRST
+
+
+async def test_rollback_needs_matching_current_stage(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User, moved_application,
+):
+    """Этап уже сменили руками — запись больше не описывает текущий этап.
+
+    Тогда удаление её только чистит лог: иначе кандидат уехал бы туда, где он
+    точно не должен быть.
+    """
+    app, _initial, moved = moved_application
+    app.stage = FIRST
+    await db_session.commit()
+    r = await client.delete(
+        f"/api/vacancies/applications/{app.id}/history/{moved.id}", headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rolled_back"] is False
+    await db_session.refresh(app)
+    assert app.stage == FIRST
+
+
+async def test_rollback_recomputes_entity_status(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User,
+    candidate_entity: Entity, moved_application,
+):
+    """Общий статус кандидата («Все кандидаты») едет назад вместе с заявкой.
+
+    Иначе карточка справа показывала бы прежний этап, а колонка в списке —
+    тот, откуда его только что вернули.
+    """
+    app, _initial, moved = moved_application
+    r = await client.delete(
+        f"/api/vacancies/applications/{app.id}/history/{moved.id}", headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    expected = STAGE_SYNC_MAP[FIRST]
+    assert r.json()["entity_status"] == expected.value
+    await db_session.refresh(candidate_entity)
+    assert candidate_entity.status == expected
+
+
+async def test_first_transition_without_from_stage_is_only_deleted(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User, moved_application,
+):
+    """У самой первой записи («добавлен в воронку») from_stage пуст.
+
+    Возвращать некуда — запись просто удаляется, этап остаётся.
+    """
+    app, initial, moved = moved_application
+    # Сначала убираем более свежую запись, чтобы первая стала последней.
+    await client.delete(
+        f"/api/vacancies/applications/{app.id}/history/{moved.id}", headers=_headers(admin_user),
+    )
+    r = await client.delete(
+        f"/api/vacancies/applications/{app.id}/history/{initial.id}", headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rolled_back"] is False
+    await db_session.refresh(app)
+    assert app.stage == FIRST  # тот, куда вернул первый откат
+
+
+async def test_same_second_transitions_pick_latest_by_id(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User,
+    candidate_entity: Entity, moved_application,
+):
+    """Два перевода в одну секунду: «последняя» — та, что с большим id.
+
+    created_at у быстрых переводов и у импорта совпадает до секунды, и без
+    второго ключа сортировки откатывалась бы не та запись.
+    """
+    app, _initial, moved = moved_application
+    third = StageTransition(
+        application_id=app.id, entity_id=candidate_entity.id,
+        from_stage=SECOND.value, to_stage=ApplicationStage.offer.value,
+        changed_by=admin_user.id, created_at=moved.created_at,
+    )
+    db_session.add(third)
+    app.stage = ApplicationStage.offer
+    await db_session.commit()
+
+    # Запись с тем же created_at, но меньшим id — уже не последняя.
+    r = await client.delete(
+        f"/api/vacancies/applications/{app.id}/history/{moved.id}", headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rolled_back"] is False
+    await db_session.refresh(app)
+    assert app.stage == ApplicationStage.offer
+
+    r = await client.delete(
+        f"/api/vacancies/applications/{app.id}/history/{third.id}", headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rolled_back"] is True
     await db_session.refresh(app)
     assert app.stage == SECOND
 
@@ -72,11 +179,13 @@ async def test_deleting_latest_transition_keeps_stage(
 async def test_deleting_older_transition_keeps_stage(
     client: AsyncClient, db_session: AsyncSession, admin_user: User, moved_application,
 ):
+    """Старая запись из середины лога — этап остаётся на месте."""
     app, initial, _moved = moved_application
     r = await client.delete(
         f"/api/vacancies/applications/{app.id}/history/{initial.id}", headers=_headers(admin_user),
     )
     assert r.status_code == 200, r.text
+    assert r.json()["rolled_back"] is False
     await db_session.refresh(app)
     assert app.stage == SECOND
 

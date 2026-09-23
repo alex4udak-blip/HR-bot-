@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Vacancy } from '@/types';
-import { getVacancyExitOptions, isExplicitlyAssigned, isRequestVisibleTo } from './vacancy';
+import { getVacancyExitOptions, isExplicitlyAssigned, isRequestVisibleTo, pinMovedCandidate } from './vacancy';
 
 const ME = 3;
 const vac = (over: Partial<Vacancy> & { accepted_by?: number[]; dismissed_by?: number[] }): Vacancy => {
@@ -66,5 +66,30 @@ describe('getVacancyExitOptions', () => {
   });
   it('a non-participant admin can only close', () => {
     expect(getVacancyExitOptions(shared, 77, true)).toMatchObject({ canLeave: false, canClose: true });
+  });
+});
+
+describe('pinMovedCandidate — перемещённый кандидат остаётся во вкладке', () => {
+  const a = { id: 1, stage: 'applied' };
+  const b = { id: 2, stage: 'applied' };
+  const moved = { id: 3, stage: 'phone_screen' }; // уехал из вкладки «Новый»
+  const all = [a, b, moved];
+
+  it('прикрепляет перемещённого первым, если он выпал из вкладки', () => {
+    expect(pinMovedCandidate([a, b], all, 3)).toEqual([moved, a, b]);
+  });
+
+  it('ничего не меняет, если кандидат и так во вкладке', () => {
+    const inTab = [a, b];
+    expect(pinMovedCandidate(inTab, all, 1)).toBe(inTab);
+  });
+
+  it('без закрепления список не трогается', () => {
+    const inTab = [a, b];
+    expect(pinMovedCandidate(inTab, all, null)).toBe(inTab);
+  });
+
+  it('закреплённого уже нет в воронке (сняли) — список не ломается', () => {
+    expect(pinMovedCandidate([a], [a], 999)).toEqual([a]);
   });
 });

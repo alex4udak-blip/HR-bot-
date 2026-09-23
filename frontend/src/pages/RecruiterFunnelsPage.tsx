@@ -39,7 +39,7 @@ import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink } from '@/services/api/entities';
 import TakeCandidateButton from '@/components/entities/TakeCandidateButton';
 import TagPicker from '@/components/entities/TagPicker';
-import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds, getVacancyExitOptions } from '@/utils/vacancy';
+import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds, getVacancyExitOptions, pinMovedCandidate } from '@/utils/vacancy';
 import type { Tag as TagType } from '@/services/api/tags';
 import type { EntityFile } from '@/services/api/entities';
 import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
@@ -353,6 +353,9 @@ export default function RecruiterFunnelsPage() {
   // Master-detail state
   const [selectedTab, setSelectedTab] = useState<string>('all');
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
+  // Заявка, которую только что двигали (или чей перевод отменили): остаётся в
+  // списке текущей вкладки, пока рекрутёр сам не уйдёт с неё.
+  const [stickyCandidateId, setStickyCandidateId] = useState<number | null>(null);
   // Лента активности ПРИВЯЗАНА к кандидату, для которого загружена. Раньше это был
   // голый массив: при переключении кандидата в нём до ответа сервера (или навсегда,
   // если опоздавший ответ прошлого кандидата прилетал позже) лежала лента ДРУГОГО
@@ -1195,7 +1198,7 @@ export default function RecruiterFunnelsPage() {
     // воронки (рекрутёр не должен помнить, в какой колонке лежит кандидат).
     if (candidateSearch.trim()) return filteredCandidates;
     if (selectedTab === 'all') return filteredCandidates;
-    return filteredCandidates.filter(c => {
+    const inTab = filteredCandidates.filter(c => {
       const mapped = stagesConfig.enumToKeys[c.stage];
       // Тот же фолбэк, что в groupedByStage: кандидат без маппинга этапа
       // относится к первой видимой колонке, иначе он невидим в любой вкладке.
@@ -1207,7 +1210,21 @@ export default function RecruiterFunnelsPage() {
             : [];
       return candidateStageKeys.includes(selectedTab);
     });
-  }, [filteredCandidates, selectedTab, stagesConfig, candidateSearch]);
+    // Только что перемещённый кандидат уехал на другой этап, но остаётся
+    // видимым здесь, чтобы его карточка справа не подменилась чужой.
+    return pinMovedCandidate(inTab, filteredCandidates, stickyCandidateId);
+  }, [filteredCandidates, selectedTab, stagesConfig, candidateSearch, stickyCandidateId]);
+
+  // Пин живёт до первого «ухода»: другая вкладка, другая воронка или клик по
+  // другому кандидату.
+  useEffect(() => {
+    setStickyCandidateId(null);
+  }, [selectedTab, selectedVacancyId]);
+  useEffect(() => {
+    if (stickyCandidateId != null && selectedCandidateId !== stickyCandidateId) {
+      setStickyCandidateId(null);
+    }
+  }, [selectedCandidateId, stickyCandidateId]);
 
   // «В предыдущих сериях»: отклики старше последнего переоткрытия вакансии
   // (is_previous_series с бэка) уходят ВНИЗ списка под разделитель. Активные
@@ -1650,11 +1667,15 @@ export default function RecruiterFunnelsPage() {
       // на ~15с. Та же защита, что в handleRemoveFromVacancy (аудит 2026-08-07).
       loadSeqRef.current++;
       // НЕ переключаем вкладку и НЕ «следуем» за кандидатом (требование Маши):
-      // остаёмся на текущем этапе, карточка просто исчезает из текущего списка.
-      // Дальше выбором управляет эффект [selectedCandidateId, tabFilteredCandidates]:
-      // если на этапе никого не осталось — выбор снимается и показывается заглушка
-      // «На этом этапе пока нет кандидатов»; иначе выбирается первый оставшийся.
-      toast.success(`Статус изменён → ${getVacancyStageLabel(newStage)}`);
+      // остаёмся на текущем этапе. Но и не выбрасываем перемещённого из списка
+      // сразу: раньше он пропадал из вкладки, справа открывался СЛЕДУЮЩИЙ
+      // кандидат, и рекрутёр терял из виду того, кого только что двигал
+      // (2026-09-23, разбор видео Huntflow: «мы всё ещё на его карточке, но
+      // этап у него уже другой»). Пин снимается при смене вкладки/воронки или
+      // при выборе другого кандидата.
+      setStickyCandidateId(applicationId);
+      // Тоста о переводе нет намеренно: этап виден прямо в карточке, а
+      // всплывашка на каждый шаг воронки только мешала.
       // Refresh vacancy store for updated counts
       fetchVacancies();
       return true;
@@ -1923,10 +1944,22 @@ export default function RecruiterFunnelsPage() {
   const cardDeleteHistory = useCallback(
     async (appId: number, historyId: number) => {
       if (blockIfArchived()) return;
-      await deleteApplicationHistory(appId, historyId);
+      const res = await deleteApplicationHistory(appId, historyId);
+      // Удалили ПОСЛЕДНЮЮ запись = отменили сам перевод: бэк вернул заявку на
+      // прежний этап. Переставляем карточку на месте, без перезагрузки списка.
+      if (res?.rolled_back && res.stage) {
+        const back = res.stage as ApplicationStage;
+        setCandidates((prev) =>
+          prev.map((c) => (c.id === appId ? { ...c, stage: back } : c)),
+        );
+        loadSeqRef.current++; // in-flight поллинг не должен вернуть старый этап
+        setStickyCandidateId(appId);
+        fetchVacancies();
+        toast.success(`Перевод отменён — кандидат снова на «${getVacancyStageLabel(back)}»`);
+      }
       await refreshActivity();
     },
-    [refreshActivity, blockIfArchived],
+    [refreshActivity, blockIfArchived, fetchVacancies, getVacancyStageLabel],
   );
 
   const cardUploadFile = useCallback(

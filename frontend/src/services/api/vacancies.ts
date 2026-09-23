@@ -499,15 +499,27 @@ export const getApplicationHistory = async (
   return data;
 };
 
-// Удаляется только запись лога: этап заявки не меняется (решение юзера 2026-09-16).
+export interface DeleteHistoryResult {
+  success: boolean;
+  /** Запись была последней — заявка вернулась на from_stage. */
+  rolled_back: boolean;
+  /** Этап заявки ПОСЛЕ удаления (для перестановки карточки без перезагрузки). */
+  stage: string | null;
+  /** Пересчитанный общий статус кандидата (Entity.status). */
+  entity_status: string | null;
+}
+
+// Удаление ПОСЛЕДНЕЙ записи = отмена перевода: заявка едет обратно на from_stage
+// (запрос рекрутёров 2026-09-23). Старые записи удаляются из лога без смены этапа.
 export const deleteApplicationHistory = async (
   applicationId: number,
   historyId: number
-): Promise<void> => {
-  await debouncedMutation<void>(
+): Promise<DeleteHistoryResult> => {
+  const { data } = await debouncedMutation<DeleteHistoryResult>(
     'delete',
     `/vacancies/applications/${applicationId}/history/${historyId}`
   );
+  return data;
 };
 
 // ============================================================
