@@ -9762,6 +9762,10 @@ body.performance-mode .glass-card:hover {
   text-underline-offset: 2px;
 }
 
+/* Скрытый отдел: виден только когда раскрыли «Показать скрытые» */
+.hf-statuses-folder-hidden .hf-statuses-folder-name,
+.hf-statuses-folder-hidden .hf-statuses-folder-count { opacity: 0.55; }
+
 /* Быстрый фильтр «HR: …» рядом с поиском */
 .hf-statuses-hr-filter {
   height: 36px;

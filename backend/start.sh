@@ -427,6 +427,25 @@ async def ensure_shadow_columns():
                 f'CREATE INDEX IF NOT EXISTS ix_duplicate_pair_decisions_{col} ON duplicate_pair_decisions ({col})'
             ))
 
+        # Отделы доски «Статусы» (23.09.2026) — свой справочник, не оргструктура.
+        # Таблицу читает первый же запрос доски, а create_all идёт после старта
+        # сервера, поэтому заводим её здесь.
+        await conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS staff_board_departments (
+                id SERIAL PRIMARY KEY,
+                org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                name VARCHAR(100) NOT NULL,
+                hidden_at TIMESTAMP,
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT now()
+            )'''))
+        await conn.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_staff_board_departments_org_id ON staff_board_departments (org_id)'
+        ))
+        await conn.execute(text(
+            'ALTER TABLE staff_board_departments ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMP'
+        ))
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection

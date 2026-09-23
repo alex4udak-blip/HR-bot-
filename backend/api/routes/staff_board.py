@@ -35,7 +35,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..database import get_db
 from ..models.database import (
     Entity, EntityStatus, EntityFile, EntityFileType,
-    Employee, Organization, User, Department,
+    Employee, Organization, User, BoardDepartment,
     EntityTag, entity_tag_association,
     NameTag, entity_name_tag_association,
 )
@@ -88,6 +88,10 @@ CLICKUP_DEPARTMENTS = [
 _K_DIRECTION = "direction"
 _K_PRACTICE = "practice_start_date"
 _K_DEPT_START = "department_transfer_date"
+# Отдел на доске. СВОЙ справочник (staff_board_departments), не оргструктура
+# Enceladus: там у отдела участники, руководители и права, а здесь просто
+# полка, куда HR раскладывает людей (решение владельца 23.09.2026).
+_K_BOARD_DEPT = "board_department_id"
 _K_MANAGER = "manager_name"
 # «Рук-ль» подставлен из руководителей отдела, а не вписан руками. Такой при
 # смене отдела заменяется руководителями нового; вписанный руками — никогда.
@@ -204,6 +208,23 @@ class BoardRow(BaseModel):
     m1_done: bool = False
     m3_done: bool = False
     y1_done: bool = False
+
+
+class BoardDept(BaseModel):
+    id: int
+    name: str
+    hidden: bool = False
+
+
+class BoardDeptCreate(BaseModel):
+    name: str
+
+
+class BoardDeptUpdate(BaseModel):
+    """Переименовать и/или скрыть-показать. Удаления у отделов доски нет:
+    неактуальный отдел прячут, данные при этом целы."""
+    name: Optional[str] = None
+    hidden: Optional[bool] = None
 
 
 class BoardAssignee(BaseModel):
@@ -364,6 +385,14 @@ def _first_telegram(entity: Entity) -> Optional[str]:
     return None
 
 
+async def _board_dept_names(db: AsyncSession, org_id: int) -> Dict[int, str]:
+    rows = (await db.execute(
+        select(BoardDepartment.id, BoardDepartment.name)
+        .where(BoardDepartment.org_id == org_id)
+    )).all()
+    return {d_id: name for d_id, name in rows}
+
+
 async def _load_mentors(
     db: AsyncSession, entity_ids: List[int]
 ) -> Dict[int, List[str]]:
@@ -423,6 +452,7 @@ def _row_from_entity(
     assignee_names: Optional[Dict[int, str]] = None,
     sourcers_by_entity: Optional[Dict[int, List["BoardSourcer"]]] = None,
     mentors_by_entity: Optional[Dict[int, List[str]]] = None,
+    dept_names: Optional[Dict[int, str]] = None,
 ) -> BoardRow:
     ex = _extra(entity)
     dept_start = _parse_date(_pick(ex, _K_DEPT_START, _CF_DEPT_START))
@@ -453,7 +483,13 @@ def _row_from_entity(
     # «Отдел» из ClickUp — просто текст (связи с нашим справочником нет),
     # поэтому подставляем его только как подпись, department_id остаётся пустым.
     position = entity.position or _pick(ex, _CF_POSITION)
-    dept_name = entity.department.name if entity.department else _pick(ex, _CF_DEPARTMENT)
+    # Отдел доски живёт в extra_data и разыменовывается по своему справочнику;
+    # отдел из ClickUp остаётся просто подписью, пока не выбрали свой.
+    dept_id = _as_int(ex.get(_K_BOARD_DEPT))
+    dept_name = (dept_names or {}).get(dept_id) if dept_id else None
+    if dept_name is None:
+        dept_id = None
+        dept_name = _pick(ex, _CF_DEPARTMENT)
 
     # На практике — всегда «Сандбокс», что бы ни лежало в карточке.
     if status == EntityStatus.probation.value:
@@ -491,7 +527,7 @@ def _row_from_entity(
         status=status,
         direction=ex.get(_K_DIRECTION) or None,
         position=position,
-        department_id=entity.department_id,
+        department_id=dept_id,
         department_name=dept_name,
         telegram=telegram,
         practice_start_date=_iso(_parse_date(_pick(ex, _K_PRACTICE, _CF_PRACTICE))),
@@ -671,6 +707,103 @@ async def delete_folder(
 # Строки доски                                                                  #
 # --------------------------------------------------------------------------- #
 
+# ============================================================
+# ОТДЕЛЫ ДОСКИ
+# ============================================================
+
+
+@router.get("/departments", response_model=List[BoardDept])
+async def list_board_departments(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Отделы доски «Статусы» — свой справочник, не оргструктура Enceladus."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+    rows = (await db.execute(
+        select(BoardDepartment)
+        .where(BoardDepartment.org_id == org.id)
+        .order_by(BoardDepartment.name)
+    )).scalars().all()
+    # Скрытые отдаём тоже: доска показывает их по кнопке «Показать скрытые», а
+    # строка человека из скрытого отдела должна называть отдел, а не пустоту.
+    return [BoardDept(id=d.id, name=d.name, hidden=d.hidden_at is not None) for d in rows]
+
+
+@router.post("/departments", response_model=BoardDept, status_code=201)
+async def create_board_department(
+    data: BoardDeptCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Завести отдел. Название, которое уже есть, второй раз не заводим."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+    name = " ".join((data.name or "").split())
+    if not name:
+        raise HTTPException(400, "Название отдела пустое")
+
+    same = next((
+        d for d in (await db.execute(
+            select(BoardDepartment).where(BoardDepartment.org_id == org.id)
+        )).scalars().all()
+        if d.name.strip().lower() == name.lower()
+    ), None)
+    if same:
+        # Заводят отдел с именем скрытого — значит он снова нужен: показываем.
+        if same.hidden_at is not None:
+            same.hidden_at = None
+            await db.commit()
+        return BoardDept(id=same.id, name=same.name)
+
+    dept = BoardDepartment(org_id=org.id, name=name, created_by=current_user.id)
+    db.add(dept)
+    await db.commit()
+    await db.refresh(dept)
+    logger.info(f"BOARD_DEPT create: «{name}» (id={dept.id}) by user {current_user.id}")
+    return BoardDept(id=dept.id, name=dept.name)
+
+
+@router.patch("/departments/{dept_id}", response_model=BoardDept)
+async def update_board_department(
+    dept_id: int,
+    data: BoardDeptUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+    dept = (await db.execute(
+        select(BoardDepartment).where(
+            BoardDepartment.id == dept_id, BoardDepartment.org_id == org.id
+        )
+    )).scalar_one_or_none()
+    if not dept:
+        raise HTTPException(404, "Отдел не найден")
+
+    if data.name is not None:
+        name = " ".join(data.name.split())
+        if not name:
+            raise HTTPException(400, "Название отдела пустое")
+        dept.name = name
+        logger.info(f"BOARD_DEPT rename: id={dept_id} → «{name}» by user {current_user.id}")
+
+    if data.hidden is not None:
+        dept.hidden_at = datetime.utcnow() if data.hidden else None
+        logger.info(
+            f"BOARD_DEPT {'hide' if data.hidden else 'show'}: id={dept_id} by user {current_user.id}"
+        )
+
+    await db.commit()
+    return BoardDept(id=dept.id, name=dept.name, hidden=dept.hidden_at is not None)
+
+
 @router.get("/positions", response_model=List[str])
 async def list_positions(
     db: AsyncSession = Depends(get_db),
@@ -761,7 +894,6 @@ async def list_rows(
             cast(Entity.status, String).in_([s.value for s in BOARD_STATUSES]),
             Entity.is_archived.is_not(True),
         )
-        .options(selectinload(Entity.department))
         .order_by(Entity.name)
     )).scalars().all()
 
@@ -801,9 +933,12 @@ async def list_rows(
 
     sourcers_by_entity = await _load_sourcers(db, ids)
     mentors_by_entity = await _load_mentors(db, ids)
+    dept_names = await _board_dept_names(db, org.id)
 
     return [
-        _row_from_entity(e, offers.get(e.id), assignee_names, sourcers_by_entity, mentors_by_entity)
+        _row_from_entity(
+            e, offers.get(e.id), assignee_names, sourcers_by_entity, mentors_by_entity, dept_names
+        )
         for e in entities
     ]
 
@@ -824,7 +959,6 @@ async def update_row(
     entity = (await db.execute(
         select(Entity)
         .where(Entity.id == entity_id, Entity.org_id == org.id)
-        .options(selectinload(Entity.department))
     )).scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Кандидат не найден")
@@ -860,23 +994,24 @@ async def update_row(
     if "position" in payload and not locked_sandbox:
         entity.position = (payload["position"] or None)
 
-    dept_changed = False
     if "department_id" in payload and not locked_sandbox:
         dept_id = payload["department_id"]
-        dept_changed = dept_id != entity.department_id
         if dept_id is not None:
             dept = (await db.execute(
-                select(Department).where(
-                    Department.id == dept_id, Department.org_id == org.id
+                select(BoardDepartment).where(
+                    BoardDepartment.id == dept_id, BoardDepartment.org_id == org.id
                 )
             )).scalar_one_or_none()
             if not dept:
                 raise HTTPException(404, "Отдел не найден")
-        entity.department_id = dept_id
+        board_dept_id = dept_id
+        set_board_dept = True
         # Выбрали отдел — значит человек в него вышел. Дату ставим, только если
         # её ещё нет и её не передали в этом же запросе: руками вбитую не трогаем.
         autofill_dept_start = dept_id is not None and "department_start_date" not in payload
     else:
+        set_board_dept = False
+        board_dept_id = None
         autofill_dept_start = False
 
     if "telegram" in payload:
@@ -898,6 +1033,13 @@ async def update_row(
     }
     touched_extra = False
     ex = dict(_extra(entity))
+
+    if set_board_dept:
+        if board_dept_id is None:
+            ex.pop(_K_BOARD_DEPT, None)
+        else:
+            ex[_K_BOARD_DEPT] = board_dept_id
+        touched_extra = True
     # HR: список главнее одиночного поля. Одиночное (старые клиенты) заменяет
     # весь список, иначе второй HR «воскресал» бы после смены первого.
     if "assignee_user_ids" in payload:
@@ -994,7 +1136,6 @@ async def update_row(
     entity = (await db.execute(
         select(Entity)
         .where(Entity.id == entity_id)
-        .options(selectinload(Entity.department))
     )).scalar_one()
 
     offer = (await db.execute(
@@ -1019,6 +1160,7 @@ async def update_row(
     # из ячейки до перезагрузки страницы.
     sourcers = await _load_sourcers(db, [entity.id])
     mentors = await _load_mentors(db, [entity.id])
+    dept_names = await _board_dept_names(db, org.id)
 
     logger.info(f"Board row updated: entity {entity_id} by user {current_user.id}")
-    return _row_from_entity(entity, offer, names, sourcers, mentors)
+    return _row_from_entity(entity, offer, names, sourcers, mentors, dept_names)

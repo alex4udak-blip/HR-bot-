@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, Loader2, Plus, Pencil, Trash2, Check, X,
+  Search, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, Check, X,
   ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
@@ -8,13 +8,10 @@ import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   getBoardRows, updateBoardRow,
-  type BoardRow, type BoardRowUpdate,
+  getBoardDepartments, createBoardDepartment, renameBoardDepartment, setBoardDepartmentHidden,
+  type BoardDepartment, type BoardRow, type BoardRowUpdate,
 } from "@/services/api/staffBoard";
 import { uploadEntityFile, deleteEntityFile, downloadEntityFile } from "@/services/api/entities";
-import {
-  getDepartments, createDepartment, updateDepartment, deleteDepartment,
-  type Department,
-} from "@/services/api/auth";
 import { getBoardPositions, getBoardManagers } from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
 import { removeTagFromEntity } from "@/services/api/tags";
@@ -163,7 +160,7 @@ const cellText = (r: BoardRow, key: FilterKey): string => {
 
 export default function StatusesPage() {
   const [rows, setRows] = useState<BoardRow[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
+  const [departments, setDepartments] = useState<BoardDepartment[]>([]);
   // Справочники для выпадающих списков: должности и руководители собираются
   // из уже существующих значений, HR — из участников организации.
   const [positions, setPositions] = useState<string[]>([]);
@@ -252,7 +249,7 @@ export default function StatusesPage() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    getDepartments(-1).then((d) => setDepartments(d as Department[])).catch(() => setDepartments([]));
+    getBoardDepartments().then(setDepartments).catch(() => setDepartments([]));
     getBoardPositions().then(setPositions).catch(() => setPositions([]));
     getBoardManagers().then(setManagers).catch(() => setManagers([]));
     // Вести сотрудника может только HR. В организации числятся все
@@ -557,10 +554,7 @@ export default function StatusesPage() {
             onSelect={setDept}
             onCreated={(d) => setDepartments((cur) => [...cur, d])}
             onRenamed={(d) => setDepartments((cur) => cur.map((x) => (x.id === d.id ? d : x)))}
-            onDeleted={(id) => {
-              setDepartments((cur) => cur.filter((x) => x.id !== id && x.parent_id !== id));
-              load();
-            }}
+            onHidden={(d) => setDepartments((cur) => cur.map((x) => (x.id === d.id ? d : x)))}
           />
 
           <div className="hf-statuses-table-wrap">
@@ -659,21 +653,23 @@ export default function StatusesPage() {
 
 /** Отделы слева — вместо прежних «направлений» (это были те же отделы).
  *  Сначала отделы, где кто-то есть, потом пустые: пустых в оргструктуре
- *  много, и за ними терялись нужные. «+ Отдел» заводит отдел прямо здесь —
- *  это тот же отдел оргструктуры, он сразу появляется и в колонке «Отдел». */
+ *  много, и за ними терялись нужные. «+ Отдел» заводит отдел прямо здесь; это
+ *  СВОЙ справочник доски, оргструктуру Enceladus он не трогает. */
 function DepartmentSidebar({
-  departments, counts, active, onSelect, onCreated, onRenamed, onDeleted,
+  departments, counts, active, onSelect, onCreated, onRenamed, onHidden,
 }: {
-  departments: Department[];
+  departments: BoardDepartment[];
   counts: Record<string, number>;
   active: string;
   onSelect: (id: string) => void;
-  onCreated: (d: Department) => void;
-  onRenamed: (d: Department) => void;
-  onDeleted: (id: number) => void;
+  onCreated: (d: BoardDepartment) => void;
+  onRenamed: (d: BoardDepartment) => void;
+  onHidden: (d: BoardDepartment) => void;
 }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
+  // Скрытые не выбрасываем из списка совсем: их можно раскрыть и вернуть.
+  const [showHidden, setShowHidden] = useState(false);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -684,7 +680,7 @@ function DepartmentSidebar({
     const clean = name.trim().replace(/\s+/g, " ");
     if (!clean || busy) return;
     // Такой уже есть — не плодим близнецов, просто открываем его
-    const same = departments.find((d) => !d.parent_id && d.name.trim().toLowerCase() === clean.toLowerCase());
+    const same = departments.find((d) => d.name.trim().toLowerCase() === clean.toLowerCase());
     if (same) {
       toast(`Отдел «${same.name}» уже есть`);
       onSelect(String(same.id));
@@ -693,7 +689,7 @@ function DepartmentSidebar({
     }
     setBusy(true);
     try {
-      const d = await createDepartment({ name: clean });
+      const d = await createBoardDepartment(clean);
       onCreated(d);
       onSelect(String(d.id));
       toast.success(`Отдел «${d.name}» создан`);
@@ -709,21 +705,25 @@ function DepartmentSidebar({
     }
   };
 
-  const label = (d: Department) => (d.parent_name ? `${d.parent_name} → ${d.name}` : d.name);
-  const sorted = [...departments].sort((a, b) => {
-    const ca = counts[String(a.id)] ?? 0;
-    const cb = counts[String(b.id)] ?? 0;
-    if ((ca > 0) !== (cb > 0)) return ca > 0 ? -1 : 1;
-    return label(a).localeCompare(label(b), "ru");
-  });
+  const label = (d: BoardDepartment) => d.name;
+  const hiddenCount = departments.filter((d) => d.hidden).length;
+  const sorted = [...departments]
+    .filter((d) => showHidden || !d.hidden || String(d.id) === active)
+    .sort((a, b) => {
+      const ca = counts[String(a.id)] ?? 0;
+      const cb = counts[String(b.id)] ?? 0;
+      if (a.hidden !== b.hidden) return a.hidden ? 1 : -1;
+      if ((ca > 0) !== (cb > 0)) return ca > 0 ? -1 : 1;
+      return label(a).localeCompare(label(b), "ru");
+    });
 
-  const rename = async (d: Department) => {
+  const rename = async (d: BoardDepartment) => {
     const clean = editName.trim().replace(/\s+/g, " ");
     if (!clean || busy) return;
     if (clean === d.name) { setEditing(null); return; }
     setBusy(true);
     try {
-      onRenamed(await updateDepartment(d.id, { name: clean }));
+      onRenamed(await renameBoardDepartment(d.id, clean));
       setEditing(null);
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || "Не удалось переименовать отдел");
@@ -732,22 +732,16 @@ function DepartmentSidebar({
     }
   };
 
-  const remove = async (d: Department) => {
-    const people = counts[String(d.id)] ?? 0;
-    const kids = departments.filter((x) => x.parent_id === d.id).length;
-    const warn = [
-      people ? `${people} чел. останутся без отдела` : null,
-      kids ? `вложенных отделов удалится: ${kids}` : null,
-    ].filter(Boolean).join(", ");
-    if (!confirm(`Удалить отдел «${d.name}»?${warn ? ` ${warn}.` : ""} Сотрудники не удаляются.`)) return;
+  const toggleHidden = async (d: BoardDepartment) => {
+    if (busy) return;
     setBusy(true);
     try {
-      await deleteDepartment(d.id);
-      if (active === String(d.id)) onSelect("all");
-      onDeleted(d.id);
-      toast.success(`Отдел «${d.name}» удалён`);
+      const next = await setBoardDepartmentHidden(d.id, !d.hidden);
+      onHidden(next);
+      if (next.hidden && active === String(d.id)) onSelect("all");
+      toast.success(next.hidden ? `Отдел «${d.name}» скрыт` : `Отдел «${d.name}» снова виден`);
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Не удалось удалить отдел");
+      toast.error(e?.response?.data?.detail || "Не удалось изменить отдел");
     } finally {
       setBusy(false);
     }
@@ -792,7 +786,7 @@ function DepartmentSidebar({
             </button>
           </div>
         ) : (
-          <div key={d.id} className="hf-statuses-folder-row">
+          <div key={d.id} className={clsx("hf-statuses-folder-row", d.hidden && "hf-statuses-folder-hidden")}>
             {item(String(d.id), label(d))}
             <div className="hf-statuses-folder-actions">
               <button
@@ -803,11 +797,11 @@ function DepartmentSidebar({
                 <Pencil size={12} />
               </button>
               <button
-                className="hf-statuses-folder-action hf-statuses-folder-action-danger"
-                title="Удалить отдел"
-                onClick={(e) => { e.stopPropagation(); remove(d); }}
+                className="hf-statuses-folder-action"
+                title={d.hidden ? "Показывать отдел" : "Скрыть отдел (останется у людей)"}
+                onClick={(e) => { e.stopPropagation(); toggleHidden(d); }}
               >
-                <Trash2 size={12} />
+                {d.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
               </button>
             </div>
           </div>
@@ -815,6 +809,13 @@ function DepartmentSidebar({
       )}
 
       {item(UNASSIGNED, "Без отдела")}
+
+      {hiddenCount > 0 && (
+        <button className="hf-statuses-folder-add" onClick={() => setShowHidden((v) => !v)}>
+          {showHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+          {showHidden ? "Спрятать скрытые" : `Показать скрытые · ${hiddenCount}`}
+        </button>
+      )}
 
       {adding ? (
         <div className="hf-statuses-folder-edit">
@@ -855,7 +856,7 @@ function Row({
   row, departments, positions, managers, people, saving, onPatch, onStatus, onReload,
 }: {
   row: BoardRow;
-  departments: Department[];
+  departments: BoardDepartment[];
   positions: string[];
   managers: string[];
   people: { user_id: number; user_name: string | null }[];
@@ -934,9 +935,11 @@ function Row({
             onChange={(e) => onPatch(row, { department_id: e.target.value ? Number(e.target.value) : null })}
           >
             <option value="">—</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>{d.parent_name ? `${d.parent_name} → ${d.name}` : d.name}</option>
-            ))}
+            {departments
+              .filter((d) => !d.hidden || d.id === row.department_id)
+              .map((d) => (
+                <option key={d.id} value={d.id}>{d.name}{d.hidden ? " (скрыт)" : ""}</option>
+              ))}
           </select>
         )}
       </td>

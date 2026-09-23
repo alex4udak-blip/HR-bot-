@@ -129,3 +129,33 @@ export async function importClickUpFolders(): Promise<BoardFolder[]> {
   const { data } = await api.post('/staff-board/folders/import-clickup');
   return data || [];
 }
+
+/** Отдел на доске «Статусы» — свой справочник, не оргструктура Enceladus:
+ *  там у отдела участники, руководители и права, здесь — просто полка. */
+export interface BoardDepartment {
+  id: number;
+  name: string;
+  /** Скрыт с доски: остаётся в базе и у людей, но не мозолит глаза. */
+  hidden: boolean;
+}
+
+export async function getBoardDepartments(): Promise<BoardDepartment[]> {
+  const { data } = await api.get('/staff-board/departments');
+  return data || [];
+}
+
+export async function createBoardDepartment(name: string): Promise<BoardDepartment> {
+  const { data } = await api.post('/staff-board/departments', { name });
+  return data;
+}
+
+export async function renameBoardDepartment(id: number, name: string): Promise<BoardDepartment> {
+  const { data } = await api.patch(`/staff-board/departments/${id}`, { name });
+  return data;
+}
+
+/** Скрыть/показать отдел. Удаления нет намеренно: отдел и люди в нём целы. */
+export async function setBoardDepartmentHidden(id: number, hidden: boolean): Promise<BoardDepartment> {
+  const { data } = await api.patch(`/staff-board/departments/${id}`, { hidden });
+  return data;
+}

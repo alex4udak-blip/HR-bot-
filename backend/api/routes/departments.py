@@ -1,5 +1,4 @@
 """API routes for department management"""
-import logging
 import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -17,7 +16,6 @@ from typing import Union
 from ..services.auth import get_current_user, get_user_org, hash_password
 
 router = APIRouter()
-logger = logging.getLogger("hr-analyzer.departments")
 
 
 # === Pydantic Schemas ===
@@ -99,25 +97,6 @@ class DepartmentMemberResponse(BaseModel):
 
 
 # === Helper Functions ===
-
-async def can_manage_departments(user: User, org: Organization, db: AsyncSession) -> bool:
-    """Кто заводит и удаляет отделы: владельцы, HR-админы и рекрутёры.
-
-    Раньше это мог только владелец организации, и Мария (admin) упиралась в
-    403 прямо на «Статусах» — отделы там теперь создают по ходу работы
-    (встреча 23.09.2026, решение владельца: «обоим»).
-    """
-    if user.role == UserRole.superadmin:
-        return True
-    result = await db.execute(
-        select(OrgMember).where(
-            OrgMember.org_id == org.id,
-            OrgMember.user_id == user.id,
-            OrgMember.role.in_([OrgRole.owner, OrgRole.admin, OrgRole.hr]),
-        )
-    )
-    return result.scalar_one_or_none() is not None
-
 
 async def is_org_owner(user: User, org: Organization, db: AsyncSession) -> bool:
     """Check if user is owner of organization (not admin)"""
@@ -453,7 +432,7 @@ async def create_department(
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
-    is_owner = await can_manage_departments(current_user, org, db)
+    is_owner = await is_org_owner(current_user, org, db)
 
     # Check permissions based on whether it's a sub-department
     if data.parent_id:
@@ -478,10 +457,7 @@ async def create_department(
     else:
         # Creating top-level department - only org owners
         if not is_owner:
-            raise HTTPException(
-                status_code=403,
-                detail="Создавать отделы могут владельцы, HR-админы и рекрутёры",
-            )
+            raise HTTPException(status_code=403, detail="Only owners can create top-level departments")
 
     department = Department(
         org_id=org.id,
@@ -695,12 +671,10 @@ async def update_department(
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
 
-    # Переименовывают те же, кто заводит и сносит: HR-админы и рекрутёры
-    # (встреча 23.09.2026) — плюс руководитель самого отдела, как и раньше.
+    # Check permissions (org owner or dept lead only)
     is_owner = await is_org_owner(current_user, org, db)
-    can_manage = await can_manage_departments(current_user, org, db)
     is_lead = await is_dept_lead(current_user, department_id, db)
-    if not can_manage and not is_lead:
+    if not is_owner and not is_lead:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     if data.name is not None:
@@ -724,22 +698,14 @@ async def delete_department(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Удалить отдел. Люди не теряются — уходят в «Без отдела».
-
-    Раньше отдел с людьми удалить было нельзя (400 «Reassign entities first»),
-    а по встрече 23.09.2026 нужно ровно наоборот: неактуальные отделы сносят и
-    заводят заново, сотрудники при этом просто остаются без отдела.
-    """
+    """Delete department (org owner only)"""
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=403, detail="No organization access")
 
-    if not await can_manage_departments(current_user, org, db):
-        raise HTTPException(
-            status_code=403,
-            detail="Удалять отделы могут владельцы, HR-админы и рекрутёры",
-        )
+    if not await is_org_owner(current_user, org, db):
+        raise HTTPException(status_code=403, detail="Only owners can delete departments")
 
     result = await db.execute(
         select(Department).where(Department.id == department_id, Department.org_id == org.id)
@@ -748,37 +714,33 @@ async def delete_department(
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
 
-    # Связи сняты явно, а не только внешними ключами: у сотрудников и вакансий
-    # отдел обнуляется (ON DELETE SET NULL), участники отдела и вложенные
-    # отделы уходят вместе с ним (ON DELETE CASCADE). Считаем заранее — числа
-    # уходят в ответ и в лог, чтобы было видно, кого затронуло.
+    # Check if department has members
+    members_result = await db.execute(
+        select(DepartmentMember).where(DepartmentMember.department_id == department_id)
+    )
+    members_count = len(list(members_result.scalars().all()))
+    if members_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete department with {members_count} member(s). Remove members first."
+        )
+
+    # Check if department has entities
     from ..models.database import Entity
+    entities_result = await db.execute(
+        select(Entity).where(Entity.department_id == department_id)
+    )
+    entities_count = len(list(entities_result.scalars().all()))
+    if entities_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete department with {entities_count} entity/entities. Reassign entities first."
+        )
 
-    entities_count = len((await db.execute(
-        select(Entity.id).where(Entity.department_id == department_id)
-    )).scalars().all())
-    members_count = len((await db.execute(
-        select(DepartmentMember.id).where(DepartmentMember.department_id == department_id)
-    )).scalars().all())
-    children_count = len((await db.execute(
-        select(Department.id).where(Department.parent_id == department_id)
-    )).scalars().all())
-
-    name = dept.name
     await db.delete(dept)
     await db.commit()
 
-    logger.info(
-        f"DEPARTMENT_DELETE: «{name}» (id={department_id}) удалил user {current_user.id}; "
-        f"без отдела остались {entities_count} чел., снято участников {members_count}, "
-        f"вложенных отделов удалено {children_count}"
-    )
-    return {
-        "success": True,
-        "entities_unassigned": entities_count,
-        "members_removed": members_count,
-        "children_deleted": children_count,
-    }
+    return {"success": True}
 
 
 # === Department Members ===

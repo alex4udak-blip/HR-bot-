@@ -1968,6 +1968,28 @@ class NameTag(Base):
     )
 
 
+class BoardDepartment(Base):
+    """Отдел на доске «Статусы» — СВОЙ справочник, не оргструктура Enceladus.
+
+    Названия совпадают, а сущности разные (решение владельца 23.09.2026):
+    в оргструктуре (``departments``) у отдела есть участники, руководители и
+    права доступа, а здесь — просто список, куда HR раскладывает людей на
+    доске. Поэтому у доски отдельная таблица: правки на доске не должны
+    трогать оргструктуру и наоборот.
+    """
+    __tablename__ = "staff_board_departments"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    # Скрыт с доски: отдел остаётся в базе и у людей, просто не мозолит глаза
+    # в списке и в выборе. Удаления нет намеренно (решение владельца
+    # 23.09.2026): неактуальные отделы прячут, а не сносят.
+    hidden_at = Column(DateTime, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+
 class DataMigrationMark(Base):
     """Отметка «одноразовая правка данных уже выполнена».
 
