@@ -28,6 +28,7 @@ import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import {
+  buildListRowStages,
   buildStageContainers,
   cardMatchesMentor,
   countHiddenByScope,
@@ -1432,9 +1433,19 @@ export default function AllCandidatesPage() {
                       // Этапы по воронкам прямо в строке: «Выполняет ТЗ · Трафик,
                       // Отказ · UAM» (решение юзера 17.09 — видно всё, не открывая
                       // карточку). Больше трёх — прячем под «+N».
-                      const listFunnels = (card.funnels || []).slice(0, 3);
+                      // Кандидат вне воронок раньше оставался в строке БЕЗ чипа
+                      // этапа — по списку было не понять, где человек (запрос
+                      // владельца 23.09.2026). Теперь у таких показываем их
+                      // общий статус, без названия воронки.
+                      const listRowStages = buildListRowStages(
+                        card.funnels,
+                        status,
+                        board?.columns || [],
+                        APPLICATION_STAGE_LABELS as Record<string, string>,
+                      );
+                      const listFunnels = listRowStages.slice(0, 3);
                       const listFunnelsHidden = Math.max(
-                        (card.funnels || []).length - listFunnels.length,
+                        listRowStages.length - listFunnels.length,
                         0,
                       );
                       const listExtraFunnels = Math.max(
@@ -1550,9 +1561,13 @@ export default function AllCandidatesPage() {
                               <div className="mt-[2px] flex flex-wrap items-center gap-x-[6px] gap-y-[2px]">
                                 {listFunnels.map((f, i) => (
                                   <span
-                                    key={`${f.vacancy_title}-${i}`}
+                                    key={`${f.vacancyTitle ?? "own"}-${i}`}
                                     className="inline-flex max-w-full items-center gap-[4px] text-[length:var(--hf-fs-2xs)] text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]"
-                                    title={`${APPLICATION_STAGE_LABELS[f.stage as keyof typeof APPLICATION_STAGE_LABELS] || f.stage} · ${f.vacancy_title}`}
+                                    title={
+                                      f.vacancyTitle
+                                        ? `${f.label} · ${f.vacancyTitle}`
+                                        : `${f.label} · кандидат ни в одной воронке`
+                                    }
                                   >
                                     <span
                                       className={clsx(
@@ -1561,11 +1576,11 @@ export default function AllCandidatesPage() {
                                           "bg-[var(--hf-status-gray)] text-[#111827]",
                                       )}
                                     >
-                                      {APPLICATION_STAGE_LABELS[
-                                        f.stage as keyof typeof APPLICATION_STAGE_LABELS
-                                      ] || f.stage}
+                                      {f.label}
                                     </span>
-                                    <span className="truncate">{f.vacancy_title}</span>
+                                    {f.vacancyTitle && (
+                                      <span className="truncate">{f.vacancyTitle}</span>
+                                    )}
                                   </span>
                                 ))}
                                 {listFunnelsHidden > 0 && (

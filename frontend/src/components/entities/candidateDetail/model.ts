@@ -10,7 +10,7 @@
 // ================================================================
 import type { KanbanCard, KanbanColumn } from "@/services/api/candidates";
 import type { ActivityEvent, EntityFile } from "@/services/api/entities";
-import { STATUS_LABELS } from "@/types";
+import { STATUS_LABELS, STATUS_TO_STAGE_MAP, type EntityStatus } from "@/types";
 
 // ── Types (moved from AllCandidatesPage — the panel's domain shapes) ──
 
@@ -151,6 +151,47 @@ export function resolveContainerStatusLabel(
     CANDIDATE_VACANCY_STAGE_LABELS[status] ||
     status
   );
+}
+
+/** Чип этапа в СТРОКЕ списка «Все кандидаты». */
+export type ListRowStage = {
+  /** Ключ этапа заявки — по нему берётся цвет чипа. */
+  stage: string;
+  label: string;
+  /** Воронка, к которой относится этап; null — кандидат ни в одной воронке. */
+  vacancyTitle: string | null;
+};
+
+/**
+ * Этапы для строки списка: по одному на воронку, а если воронок НЕТ — общий
+ * статус самого кандидата (запрос владельца 23.09.2026: «пусть этап
+ * отображается у всех, для удобства»). Раньше строка кандидата вне воронок
+ * была без чипа вообще, и по списку нельзя было понять, где человек.
+ */
+export function buildListRowStages(
+  funnels: Array<{ vacancy_title: string; stage: string }> | undefined,
+  entityStatus: string | undefined,
+  columns: KanbanColumn[],
+  stageLabels: Record<string, string>,
+): ListRowStage[] {
+  const list = funnels || [];
+  if (list.length > 0) {
+    return list.map((f) => ({
+      stage: f.stage,
+      label: stageLabels[f.stage] || f.stage,
+      vacancyTitle: f.vacancy_title,
+    }));
+  }
+  if (!entityStatus) return [];
+  return [
+    {
+      // Цвет чипа берётся по ЭТАПУ заявки, а статусы кандидата называются
+      // иначе (probation ↔ phone_screen и т.п.) — переводим по общей карте.
+      stage: STATUS_TO_STAGE_MAP[entityStatus as EntityStatus] || entityStatus,
+      label: resolveContainerStatusLabel(entityStatus, columns),
+      vacancyTitle: null,
+    },
+  ];
 }
 
 // ── File classification ──

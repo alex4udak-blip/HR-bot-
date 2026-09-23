@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { KanbanCard, KanbanColumn } from "@/services/api/candidates";
 import type { EntityFile } from "@/services/api/entities";
 import {
+  buildListRowStages,
   nextStageStatus,
   cardMatchesMentor,
   countPracticeMentors,
@@ -656,5 +657,53 @@ describe('nextStageStatus — какой этап помечен при откр
 
   it('неизвестный этап — остаётся собой', () => {
     expect(nextStageStatus(options, 'какой-то_кастом')).toBe('какой-то_кастом');
+  });
+});
+
+describe('buildListRowStages — чипы этапов в строке списка', () => {
+  const columns = [
+    { status: 'probation', label: 'Практика', cards: [], count: 0 },
+    { status: 'new', label: 'Новый', cards: [], count: 0 },
+  ] as unknown as KanbanColumn[];
+  const labels = { screening: 'Выполняет ТЗ', rejected: 'Отказ' };
+
+  it('кандидат в воронках — по чипу на воронку', () => {
+    const stages = buildListRowStages(
+      [
+        { vacancy_title: 'Трафик', stage: 'screening' },
+        { vacancy_title: 'UAM', stage: 'rejected' },
+      ],
+      'screening',
+      columns,
+      labels,
+    );
+    expect(stages).toEqual([
+      { stage: 'screening', label: 'Выполняет ТЗ', vacancyTitle: 'Трафик' },
+      { stage: 'rejected', label: 'Отказ', vacancyTitle: 'UAM' },
+    ]);
+  });
+
+  it('кандидат вне воронок — показываем его общий статус без воронки', () => {
+    const stages = buildListRowStages([], 'probation', columns, labels);
+    // Лейбл — из колонок доски (org-override), ключ — для цвета чипа.
+    expect(stages).toEqual([
+      { stage: 'probation', label: 'Практика', vacancyTitle: null },
+    ]);
+  });
+
+  it('статусы, которые называются иначе, чем этапы, переводятся (practice → phone_screen)', () => {
+    // Иначе чип «Интервью с HR» остался бы серым: в палитре ключ этапа заявки.
+    expect(buildListRowStages([], 'practice', columns, labels)[0].stage).toBe(
+      'phone_screen',
+    );
+  });
+
+  it('воронок нет и статуса нет — чипов нет', () => {
+    expect(buildListRowStages(undefined, undefined, columns, labels)).toEqual([]);
+  });
+
+  it('статус без пары среди этапов заявки — ключ остаётся своим (серый чип)', () => {
+    const stages = buildListRowStages([], 'dismissed', columns, labels);
+    expect(stages[0].stage).toBe('dismissed');
   });
 });
