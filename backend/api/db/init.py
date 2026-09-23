@@ -417,6 +417,16 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Tags/labels split failed (non-critical): {e}")
 
+    # Разовый снос неактуальных отделов (23.09.2026): их заводят заново руками,
+    # см. services/departments_reset.py. Люди при этом остаются без отдела.
+    try:
+        from ..services.departments_reset import reset_stale_departments_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await reset_stale_departments_once(session)
+    except Exception as e:
+        logger.warning(f"Departments reset failed (non-critical): {e}")
+
     # Решения «разные люди» из extra_data.dismissed_duplicate_ids → таблица
     # duplicate_pair_decisions (22.09.2026, services/duplicate_decisions.py).
     # Одноразово (отметка в data_migration_marks); сбой старт не роняет —

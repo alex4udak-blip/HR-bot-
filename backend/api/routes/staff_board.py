@@ -35,8 +35,9 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..database import get_db
 from ..models.database import (
     Entity, EntityStatus, EntityFile, EntityFileType,
-    Employee, Organization, OrgMember, OrgRole, User, Department, DepartmentMember, DeptRole,
+    Employee, Organization, User, Department,
     EntityTag, entity_tag_association,
+    NameTag, entity_name_tag_association,
 )
 from ..services.auth import get_current_user, get_user_org
 
@@ -91,6 +92,12 @@ _K_MANAGER = "manager_name"
 # «Рук-ль» подставлен из руководителей отдела, а не вписан руками. Такой при
 # смене отдела заменяется руководителями нового; вписанный руками — никогда.
 _K_MANAGER_AUTO = "manager_auto"
+
+# Наставники практики: «Рук-ль» — это они, а не руководитель отдела (встреча
+# 23.09.2026). Берём из тегов у ФИО кандидата — их и так проставляют руками;
+# нет тега — нет руководителя. Список тот же, что на вкладке «Практика»
+# (PRACTICE_MENTOR_TAGS в candidateDetail/model.ts).
+MENTOR_TAG_NAMES = ("Егор", "Влад")
 _K_W2 = "w2_date"
 _K_M1 = "m1_date"
 _K_M3 = "m3_date"
@@ -357,27 +364,25 @@ def _first_telegram(entity: Entity) -> Optional[str]:
     return None
 
 
-async def _dept_lead_names(db: AsyncSession, dept_id: int, org_id: int) -> List[str]:
-    """Имена руководителей отдела (роль lead) — в порядке назначения.
-
-    Владельцы организации числятся руководителями «на всякий случай» (у HR —
-    Мария и Анастасия, у RND — Владимир и Ильнар), а руководитель по факту —
-    не владелец (владелец подтвердил 22.09.2026). Поэтому владельцев
-    пропускаем, если в отделе есть кто-то ещё.
-    """
+async def _load_mentors(
+    db: AsyncSession, entity_ids: List[int]
+) -> Dict[int, List[str]]:
+    """Наставники практики по тегам у ФИО — одним запросом на всю доску."""
+    if not entity_ids:
+        return {}
+    wanted = {n.lower() for n in MENTOR_TAG_NAMES}
     rows = (await db.execute(
-        select(User.name, OrgMember.role)
-        .join(DepartmentMember, DepartmentMember.user_id == User.id)
-        .outerjoin(OrgMember, (OrgMember.user_id == User.id) & (OrgMember.org_id == org_id))
-        .where(
-            DepartmentMember.department_id == dept_id,
-            DepartmentMember.role == DeptRole.lead,
-        )
-        .order_by(DepartmentMember.created_at, DepartmentMember.id)
+        select(entity_name_tag_association.c.entity_id, NameTag.name)
+        .select_from(entity_name_tag_association)
+        .join(NameTag, NameTag.id == entity_name_tag_association.c.tag_id)
+        .where(entity_name_tag_association.c.entity_id.in_(entity_ids))
+        .order_by(NameTag.name)
     )).all()
-    leads = [(n, r) for n, r in rows if n]
-    not_owners = [n for n, r in leads if r != OrgRole.owner]
-    return not_owners or [n for n, _ in leads]
+    out: Dict[int, List[str]] = {}
+    for ent_id, name in rows:
+        if (name or "").strip().lower() in wanted:
+            out.setdefault(ent_id, []).append(name.strip())
+    return out
 
 
 async def _load_sourcers(
@@ -417,6 +422,7 @@ def _row_from_entity(
     offer: Optional[EntityFile],
     assignee_names: Optional[Dict[int, str]] = None,
     sourcers_by_entity: Optional[Dict[int, List["BoardSourcer"]]] = None,
+    mentors_by_entity: Optional[Dict[int, List[str]]] = None,
 ) -> BoardRow:
     ex = _extra(entity)
     dept_start = _parse_date(_pick(ex, _K_DEPT_START, _CF_DEPT_START))
@@ -490,7 +496,12 @@ def _row_from_entity(
         telegram=telegram,
         practice_start_date=_iso(_parse_date(_pick(ex, _K_PRACTICE, _CF_PRACTICE))),
         department_start_date=_iso(dept_start),
-        manager=_pick(ex, _K_MANAGER, _CF_MANAGER),
+        # «Рук-ль» = наставник практики из тегов у ФИО. Нет тега — пусто;
+        # вписанное руками остаётся запасным вариантом.
+        manager=(
+            ", ".join((mentors_by_entity or {}).get(entity.id, []))
+            or _pick(ex, _K_MANAGER, _CF_MANAGER)
+        ),
         w2=w2, m1=m1, m3=m3, y1=y1,
         w2_auto=w2_auto, m1_auto=m1_auto, m3_auto=m3_auto, y1_auto=y1_auto,
         assignee_user_id=assignee_id,
@@ -789,9 +800,10 @@ async def list_rows(
         }
 
     sourcers_by_entity = await _load_sourcers(db, ids)
+    mentors_by_entity = await _load_mentors(db, ids)
 
     return [
-        _row_from_entity(e, offers.get(e.id), assignee_names, sourcers_by_entity)
+        _row_from_entity(e, offers.get(e.id), assignee_names, sourcers_by_entity, mentors_by_entity)
         for e in entities
     ]
 
@@ -923,24 +935,8 @@ async def update_row(
                 ex[key] = str(value).strip()
         touched_extra = True
 
-    # «Рук-ль» — руководители отдела из оргструктуры (роль lead): поставили
-    # человека в отдел — руководитель известен, вбивать его руками не нужно.
-    # Вписанное руками (и перенесённое из ClickUp) не трогаем; подставленное
-    # автоматически при смене отдела меняем на руководителей нового.
     if "manager" in payload:
         ex.pop(_K_MANAGER_AUTO, None)
-    elif dept_changed:
-        current = ex.get(_K_MANAGER) or ex.get(_CF_MANAGER)
-        if not current or ex.get(_K_MANAGER_AUTO):
-            leads = await _dept_lead_names(db, entity.department_id, org.id) if entity.department_id else []
-            if leads:
-                ex[_K_MANAGER] = ", ".join(leads)
-                ex[_K_MANAGER_AUTO] = True
-                touched_extra = True
-            elif ex.get(_K_MANAGER_AUTO):
-                ex.pop(_K_MANAGER, None)
-                ex.pop(_K_MANAGER_AUTO, None)
-                touched_extra = True
 
     # Автодата выхода в отдел (см. выше, где сохраняется отдел). От неё
     # считаются все вехи — 2 недели, 1/3/12 месяцев, — так что без неё строка
@@ -1022,6 +1018,7 @@ async def update_row(
     # Сорсеры тоже: без них после любой правки строки метки-кружки пропадали
     # из ячейки до перезагрузки страницы.
     sourcers = await _load_sourcers(db, [entity.id])
+    mentors = await _load_mentors(db, [entity.id])
 
     logger.info(f"Board row updated: entity {entity_id} by user {current_user.id}")
-    return _row_from_entity(entity, offer, names, sourcers)
+    return _row_from_entity(entity, offer, names, sourcers, mentors)

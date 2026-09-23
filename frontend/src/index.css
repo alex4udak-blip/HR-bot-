@@ -9427,17 +9427,30 @@ body.performance-mode .glass-card:hover {
   border-collapse: collapse;
   font-size: var(--hf-fs-2xs);
 }
+/* Названия колонок: жирнее и темнее — по ним ориентируются в 19 колонках,
+   а блёклый мелкий шрифт читался хуже строк (встреча 23.09.2026). */
 .hf-statuses-th {
   padding: var(--hf-space-m) var(--hf-space-m) var(--hf-space-s);
   border-bottom: var(--hf-border-xs) solid var(--hf-ui-divider);
-  color: var(--hf-main-600);
-  font-size: var(--hf-fs-5xs);
-  font-weight: var(--hf-fw-medium);
+  color: var(--hf-main-800);
+  font-size: var(--hf-fs-4xs);
+  font-weight: var(--hf-fw-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   text-align: left;
   white-space: nowrap;
 }
+/* Сортировка по дате — клик по заголовку */
+.hf-statuses-th-sortable { cursor: pointer; user-select: none; }
+.hf-statuses-th-sortable:hover { color: var(--hf-main-900); }
+.hf-statuses-th-arrow {
+  margin-left: 4px;
+  font-size: var(--hf-fs-5xs);
+  color: var(--hf-main-400);
+}
+.hf-statuses-th-sorted { color: var(--hf-main-900); }
+.hf-statuses-th-sorted .hf-statuses-th-arrow { color: var(--hf-cyan-500); }
+
 .hf-statuses-th-filter {
   padding: 0 var(--hf-space-s) var(--hf-space-s);
   border-bottom: var(--hf-border-xs) solid var(--hf-ui-divider);
@@ -9707,7 +9720,9 @@ body.performance-mode .glass-card:hover {
 /* Узкие колонки: отметки, оффер, аватар */
 .hf-statuses-td-narrow { width: 44px; text-align: center; }
 /* Колонка «HR»: 44px хватало на аватарку, но не на метки сорсеров рядом. */
-.hf-statuses-td-assignee { min-width: 132px; text-align: center; }
+/* HR: содержимое по левому краю, как заголовок колонки и соседние ячейки —
+   по центру колонка «ехала» относительно остальных. */
+.hf-statuses-td-assignee { min-width: 132px; }
 
 .hf-statuses-pill {
   display: inline-block;
@@ -9774,9 +9789,17 @@ body.performance-mode .glass-card:hover {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 4px;
-  flex-wrap: wrap;
+}
+/* Трое и больше в ячейке — кружки наезжают друг на друга, а при наведении
+   на ячейку разъезжаются. Двое помещаются рядом, их не трогаем. */
+.hf-statuses-assignee[data-many="true"] .hf-statuses-avatar + .hf-statuses-avatar {
+  margin-left: -10px;
+  box-shadow: 0 0 0 2px var(--hf-white);
+}
+.hf-statuses-assignee .hf-statuses-avatar { transition: margin-left 0.12s ease; }
+.hf-statuses-assignee[data-many="true"]:hover .hf-statuses-avatar + .hf-statuses-avatar {
+  margin-left: 0;
 }
 /* Кружок HR/сорсера — кнопка: при наведении инициалы сменяются на «×». */
 .hf-statuses-avatar.hf-statuses-avatar-removable {

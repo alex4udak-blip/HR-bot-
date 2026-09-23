@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, Loader2, Plus, Trash2, Check, X,
+  Search, Loader2, Plus, Pencil, Trash2, Check, X,
   ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
@@ -11,7 +11,10 @@ import {
   type BoardRow, type BoardRowUpdate,
 } from "@/services/api/staffBoard";
 import { uploadEntityFile, deleteEntityFile, downloadEntityFile } from "@/services/api/entities";
-import { getDepartments, createDepartment, type Department } from "@/services/api/auth";
+import {
+  getDepartments, createDepartment, updateDepartment, deleteDepartment,
+  type Department,
+} from "@/services/api/auth";
 import { getBoardPositions, getBoardManagers } from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
 import { removeTagFromEntity } from "@/services/api/tags";
@@ -108,6 +111,13 @@ const FILTERABLE = COLUMNS.filter((c) => c.filter) as { key: FilterKey; label: s
 
 const FILTERS_STORAGE_KEY = "hf-statuses-rules";
 
+/** Колонки, по которым можно сортировать кликом по заголовку: даты выходов.
+ *  Мария смотрит, кто вышел последним, — без сортировки приходилось искать
+ *  глазами (встреча 23.09.2026). */
+type SortKey = "practice_start_date" | "department_start_date" | "dismissal_date";
+const SORTABLE: SortKey[] = ["practice_start_date", "department_start_date", "dismissal_date"];
+type SortDir = "asc" | "desc";
+
 /** Операторы как в конструкторе фильтров ClickUp. */
 type FilterOp = "is" | "is_not" | "contains" | "set" | "not_set";
 
@@ -190,6 +200,13 @@ export default function StatusesPage() {
     return [];
   });
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Сортировка по дате: клик по заголовку — сначала новые, второй — старые,
+  // третий возвращает обычный порядок.
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(null);
+  const toggleSort = (key: SortKey) =>
+    setSort((cur) =>
+      cur?.key !== key ? { key, dir: "desc" } : cur.dir === "desc" ? { key, dir: "asc" } : null
+    );
 
   useEffect(() => {
     try {
@@ -367,11 +384,22 @@ export default function StatusesPage() {
   const activeCount = rules.length;
 
   const grouped = useMemo(
-    () => STATUSES.map((s) => ({
-      ...s,
-      items: visible.filter((r) => (s.members as readonly string[]).includes(r.status)),
-    })),
-    [visible]
+    () => STATUSES.map((s) => {
+      const items = visible.filter((r) => (s.members as readonly string[]).includes(r.status));
+      if (!sort) return { ...s, items };
+      // Пустая дата — всегда в конце, в любую сторону: строка без даты не
+      // «самая старая», про неё просто ничего не известно.
+      const val = (r: BoardRow) => r[sort.key] || "";
+      return {
+        ...s,
+        items: [...items].sort((a, b) => {
+          const x = val(a), y = val(b);
+          if (!x || !y) return x ? -1 : y ? 1 : 0;
+          return sort.dir === "asc" ? x.localeCompare(y) : y.localeCompare(x);
+        }),
+      };
+    }),
+    [visible, sort]
   );
 
   return (
@@ -528,6 +556,11 @@ export default function StatusesPage() {
             active={dept}
             onSelect={setDept}
             onCreated={(d) => setDepartments((cur) => [...cur, d])}
+            onRenamed={(d) => setDepartments((cur) => cur.map((x) => (x.id === d.id ? d : x)))}
+            onDeleted={(id) => {
+              setDepartments((cur) => cur.filter((x) => x.id !== id && x.parent_id !== id));
+              load();
+            }}
           />
 
           <div className="hf-statuses-table-wrap">
@@ -537,15 +570,34 @@ export default function StatusesPage() {
               </colgroup>
               <thead>
                 <tr>
-                  {COLUMNS.map((c) => (
-                    <th
-                      key={c.key}
-                      className={clsx("hf-statuses-th", c.key === "name" && "hf-statuses-sticky")}
-                      title={FILTER_LABELS[c.key as FilterKey] || c.label}
-                    >
-                      {c.label}
-                    </th>
-                  ))}
+                  {COLUMNS.map((c) => {
+                    const sortable = SORTABLE.includes(c.key as SortKey);
+                    const on = sort?.key === c.key;
+                    return (
+                      <th
+                        key={c.key}
+                        className={clsx(
+                          "hf-statuses-th",
+                          c.key === "name" && "hf-statuses-sticky",
+                          sortable && "hf-statuses-th-sortable",
+                          on && "hf-statuses-th-sorted"
+                        )}
+                        title={
+                          sortable
+                            ? `${c.label} — сортировать по дате`
+                            : FILTER_LABELS[c.key as FilterKey] || c.label
+                        }
+                        onClick={sortable ? () => toggleSort(c.key as SortKey) : undefined}
+                      >
+                        {c.label}
+                        {sortable && (
+                          <span className="hf-statuses-th-arrow">
+                            {on ? (sort!.dir === "desc" ? "↓" : "↑") : "↕"}
+                          </span>
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
 
@@ -610,14 +662,18 @@ export default function StatusesPage() {
  *  много, и за ними терялись нужные. «+ Отдел» заводит отдел прямо здесь —
  *  это тот же отдел оргструктуры, он сразу появляется и в колонке «Отдел». */
 function DepartmentSidebar({
-  departments, counts, active, onSelect, onCreated,
+  departments, counts, active, onSelect, onCreated, onRenamed, onDeleted,
 }: {
   departments: Department[];
   counts: Record<string, number>;
   active: string;
   onSelect: (id: string) => void;
   onCreated: (d: Department) => void;
+  onRenamed: (d: Department) => void;
+  onDeleted: (id: number) => void;
 }) {
+  const [editing, setEditing] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -661,6 +717,42 @@ function DepartmentSidebar({
     return label(a).localeCompare(label(b), "ru");
   });
 
+  const rename = async (d: Department) => {
+    const clean = editName.trim().replace(/\s+/g, " ");
+    if (!clean || busy) return;
+    if (clean === d.name) { setEditing(null); return; }
+    setBusy(true);
+    try {
+      onRenamed(await updateDepartment(d.id, { name: clean }));
+      setEditing(null);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Не удалось переименовать отдел");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (d: Department) => {
+    const people = counts[String(d.id)] ?? 0;
+    const kids = departments.filter((x) => x.parent_id === d.id).length;
+    const warn = [
+      people ? `${people} чел. останутся без отдела` : null,
+      kids ? `вложенных отделов удалится: ${kids}` : null,
+    ].filter(Boolean).join(", ");
+    if (!confirm(`Удалить отдел «${d.name}»?${warn ? ` ${warn}.` : ""} Сотрудники не удаляются.`)) return;
+    setBusy(true);
+    try {
+      await deleteDepartment(d.id);
+      if (active === String(d.id)) onSelect("all");
+      onDeleted(d.id);
+      toast.success(`Отдел «${d.name}» удалён`);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Не удалось удалить отдел");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const item = (id: string, text: string) => (
     <button
       key={id}
@@ -676,7 +768,52 @@ function DepartmentSidebar({
   return (
     <div className="hf-statuses-sidebar">
       {item("all", "Все")}
-      {sorted.map((d) => item(String(d.id), label(d)))}
+
+      {sorted.map((d) =>
+        editing === d.id ? (
+          <div key={d.id} className="hf-statuses-folder-edit">
+            <input
+              autoFocus
+              className="hf-statuses-folder-input"
+              value={editName}
+              maxLength={100}
+              disabled={busy}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") rename(d);
+                if (e.key === "Escape") setEditing(null);
+              }}
+            />
+            <button className="hf-statuses-folder-action" onClick={() => rename(d)} title="Сохранить">
+              <Check size={14} />
+            </button>
+            <button className="hf-statuses-folder-action" onClick={() => setEditing(null)} title="Отмена">
+              <X size={14} />
+            </button>
+          </div>
+        ) : (
+          <div key={d.id} className="hf-statuses-folder-row">
+            {item(String(d.id), label(d))}
+            <div className="hf-statuses-folder-actions">
+              <button
+                className="hf-statuses-folder-action"
+                title="Переименовать"
+                onClick={(e) => { e.stopPropagation(); setEditing(d.id); setEditName(d.name); }}
+              >
+                <Pencil size={12} />
+              </button>
+              <button
+                className="hf-statuses-folder-action hf-statuses-folder-action-danger"
+                title="Удалить отдел"
+                onClick={(e) => { e.stopPropagation(); remove(d); }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
+        )
+      )}
+
       {item(UNASSIGNED, "Без отдела")}
 
       {adding ? (
@@ -1191,7 +1328,7 @@ function AssigneeCell({
   const options = people.filter((p) => !ids.includes(p.user_id));
 
   return (
-    <div className="hf-statuses-assignee">
+    <div className="hf-statuses-assignee" data-many={assignees.length + sourcers.length > 2}>
       {assignees.map((a) => {
         const name = a.name || `#${a.user_id}`;
         return (
