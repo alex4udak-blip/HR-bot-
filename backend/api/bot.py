@@ -2088,7 +2088,7 @@ async def cmd_blocker(message: types.Message):
 
                     # DM-пинг ассайни
                     import os as _os
-                    frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
+                    frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus.site")
                     for t in created_tasks:
                         assignee_id = t.get("assignee_id")
                         creator_id = t.get("creator_id")
@@ -2285,7 +2285,7 @@ async def cmd_vacancy(message: types.Message):
                 logger.error(f"/vacancy notify_new_request failed: {notify_err}")
 
             import os as _os
-            frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
+            frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus.site")
 
             # Сформировать читаемое summary
             salary = ""
@@ -2596,7 +2596,7 @@ async def collect_group_message(message: types.Message):
 
                             # DM-пинг каждому ассайни (кроме автора сообщения)
                             import os as _os
-                            frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
+                            frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus.site")
                             for t in created_tasks:
                                 assignee_id = t.get("assignee_id")
                                 creator_id = t.get("creator_id")

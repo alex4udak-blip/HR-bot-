@@ -43,7 +43,7 @@ async def _notify_mentions(
 
     notified: set[int] = set(already_notified_ids or set())
     newly_notified: set[int] = set()
-    frontend_url = os.getenv("FRONTEND_URL", "https://enceladus-7oylzk.saturn.ac")
+    frontend_url = os.getenv("FRONTEND_URL", "https://enceladus.site")
 
     for raw_name in names:
         name = raw_name.strip()

@@ -39,18 +39,24 @@ cd frontend && npx tsc --noEmit -p . && npx vitest run          # типы + т�
 Панель: https://saturn.ac → проект Enceladus. Сервисы: **frontend**, **backend**,
 **app**, postgresql-db, redis-cache. Всё на сервере saturn2.
 
-- Рабочий адрес: **https://enceladus-7oylzk.saturn.ac** (бэк —
-  `enceladus-ns9s2o.saturn.ac`, nginx фронта проксирует на него `/api`).
-- `enceladus.site` — в петле редиректов, DNS смотрит не на тот сервер. Пока не
-  починят, каноническим считается адрес saturn.ac (расширение переключено на
-  него временно, см. `backend/chrome-extension/background.js`).
+- Рабочий адрес: **https://enceladus.site** (бэк — `enceladus-ns9s2o.saturn.ac`,
+  nginx фронта проксирует на него `/api`). С 10.09 по 24.09.2026 каноном был
+  временно `enceladus-7oylzk.saturn.ac`: `enceladus.site` уходил в петлю
+  редиректов из-за DNS. Починили — вернули.
+- Старый адрес `enceladus-7oylzk.saturn.ac` ведёт в ТОТ ЖЕ контейнер фронта
+  (два имени у одного nginx). Его страницы отдают 301 на `enceladus.site`
+  (`map $host $is_legacy_host` в `frontend/nginx.conf`), а `/api` и `/miniapp`
+  редиректа НЕ имеют намеренно: расширения прошлых версий ходят на старый
+  `/api`, а при кросс-доменном редиректе браузер выбрасывает `Authorization` и
+  превращает POST в GET — кнопка ломалась бы молча. Адрес мини-аппа прописан в
+  BotFather, его переключают вместе с ним.
 - **Деплой запускает человек** кнопкой Deploy в Saturn, автодеплой по пушу
   срабатывает не всегда. Бывало, что сборка «успешна», а сайт отдаёт старую:
   проверяй по факту, а не по статусу.
 
 Проверка, что на проде реально новый код:
 ```bash
-base=https://enceladus-7oylzk.saturn.ac
+base=https://enceladus.site
 idx=$(curl -s "$base/?r=$RANDOM" | grep -o '/assets/index-[^"]*\.js' | head -1)
 curl -sI "$base/?r=$RANDOM" | grep -i last-modified
 curl -s "$base$idx" | grep -o 'assets/RecruiterFunnelsPage-[^"]*\.js' | head -1

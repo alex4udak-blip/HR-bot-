@@ -38,8 +38,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // поэтому всегда подставляем канонический сервер, кроме локальной разработки.
   // Канонический домен — enceladus.site (тот же бэк, что старый saturn.ac-сабдомен;
   // старый оставлен в host_permissions как фолбэк для уже залогиненных).
-  // ВРЕМЕННО (2026-09-10): enceladus.site в петле редиректов — пока через saturn.ac.
-  const DEFAULT_SERVER_URL = 'https://enceladus-7oylzk.saturn.ac';
+  // 24.09.2026: DNS починили, вернули канон (с 10.09 временно был saturn.ac).
+  const DEFAULT_SERVER_URL = 'https://enceladus.site';
   const storedServer = stored.serverUrl || '';
   const isLocalDev = /localhost|127\.0\.0\.1/.test(storedServer);
   serverUrl = isLocalDev ? storedServer : DEFAULT_SERVER_URL;
