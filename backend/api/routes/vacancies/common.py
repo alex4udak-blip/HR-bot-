@@ -26,7 +26,7 @@ logger = logging.getLogger("hr-analyzer.vacancies")
 from ...database import get_db
 from ...models.database import (
     Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
-    Entity, EntityType, User, Organization, Department, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
+    Entity, EntityType, EntityStatus, User, Organization, Department, STAGE_SYNC_MAP, STATUS_SYNC_MAP,
     UserRole, OrgMember, OrgRole, DepartmentMember, DeptRole
 )
 from ...services.auth import get_current_user, get_user_org, has_full_database_access as auth_has_full_database_access
@@ -757,6 +757,20 @@ def pick_primary_application(apps: List[VacancyApplication]):
     return max(pool, key=lambda a: (_when(a) is not None, _when(a), a.id))
 
 
+# Куда можно уйти из «Перешёл в отдел», оставаясь сотрудником: практика,
+# оффер и принятый оффер (новая роль внутри компании). Любой другой этап —
+# «Отказ», «Отозван», «Резерв», возврат в начало воронки — означает, что
+# человек ушёл: на доске «Статусы» он должен оказаться в «Уволен».
+# Статуса «уволен» в воронке нет, поэтому HR нажимает «Отказ», а доска сама
+# переводит человека в уволенные (встреча с владельцем 24.09.2026).
+STAYS_EMPLOYED_AFTER_TRANSFER = {
+    EntityStatus.probation,
+    EntityStatus.offer,
+    EntityStatus.hired,
+    EntityStatus.transferred,
+}
+
+
 async def recompute_entity_status(db: AsyncSession, entity_id: int) -> None:
     """Пересчитать Entity.status по «актуальной» заявке кандидата (см.
     pick_primary_application). Раньше общий статус просто НЕ обновлялся, если
@@ -780,6 +794,18 @@ async def recompute_entity_status(db: AsyncSession, entity_id: int) -> None:
     entity = (await db.execute(
         select(Entity).where(Entity.id == entity_id)
     )).scalar()
+    # Уже оформленного в отдел «Отказ» в воронке не возвращает в кандидаты —
+    # он увольняется (см. STAYS_EMPLOYED_AFTER_TRANSFER).
+    if (
+        entity is not None
+        and entity.status == EntityStatus.transferred
+        and new_status not in STAYS_EMPLOYED_AFTER_TRANSFER
+    ):
+        logger.info(
+            "DISMISS_AFTER_TRANSFER: entity=%s этап %s -> статус dismissed (заявка %s)",
+            entity_id, primary.stage.value, primary.id,
+        )
+        new_status = EntityStatus.dismissed
     if entity is not None and entity.status != new_status:
         entity.status = new_status
         entity.updated_at = datetime.utcnow()

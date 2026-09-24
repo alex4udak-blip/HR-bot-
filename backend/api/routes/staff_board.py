@@ -35,7 +35,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..database import get_db
 from ..models.database import (
     Entity, EntityStatus, EntityFile, EntityFileType,
-    Employee, Organization, User, BoardDepartment,
+    Employee, Organization, User, BoardDepartment, BoardDepartmentOrder,
     EntityTag, entity_tag_association,
     NameTag, entity_name_tag_association,
 )
@@ -218,6 +218,10 @@ class BoardDept(BaseModel):
 
 class BoardDeptCreate(BaseModel):
     name: str
+
+
+class BoardDeptOrder(BaseModel):
+    ids: List[int]
 
 
 class BoardDeptUpdate(BaseModel):
@@ -727,9 +731,47 @@ async def list_board_departments(
         .where(BoardDepartment.org_id == org.id)
         .order_by(BoardDepartment.name)
     )).scalars().all()
+    # Порядок — личный: каждый HR раскладывает отделы под себя. Чего нет в
+    # сохранённом списке (новые отделы), идёт в конец по алфавиту.
+    saved = await db.get(BoardDepartmentOrder, current_user.id)
+    order = {d_id: i for i, d_id in enumerate(saved.dept_ids or [])} if saved else {}
+    rows = sorted(rows, key=lambda d: (order.get(d.id, len(order)), d.name.lower()))
     # Скрытые отдаём тоже: доска показывает их по кнопке «Показать скрытые», а
     # строка человека из скрытого отдела должна называть отдел, а не пустоту.
     return [BoardDept(id=d.id, name=d.name, hidden=d.hidden_at is not None) for d in rows]
+
+
+@router.put("/departments/order", response_model=List[BoardDept])
+async def save_board_department_order(
+    data: BoardDeptOrder,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Сохранить СВОЙ порядок отделов. У каждого HR он свой."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    known = {
+        d_id for (d_id,) in (await db.execute(
+            select(BoardDepartment.id).where(BoardDepartment.org_id == org.id)
+        )).all()
+    }
+    ids: List[int] = []
+    for i in data.ids:
+        if i in known and i not in ids:
+            ids.append(i)
+
+    saved = await db.get(BoardDepartmentOrder, current_user.id)
+    if saved is None:
+        saved = BoardDepartmentOrder(user_id=current_user.id, org_id=org.id, dept_ids=ids)
+        db.add(saved)
+    else:
+        saved.org_id = org.id
+        saved.dept_ids = ids
+    await db.commit()
+    return await list_board_departments(db=db, current_user=current_user)
 
 
 @router.post("/departments", response_model=BoardDept, status_code=201)

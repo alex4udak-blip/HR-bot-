@@ -159,3 +159,9 @@ export async function setBoardDepartmentHidden(id: number, hidden: boolean): Pro
   const { data } = await api.patch(`/staff-board/departments/${id}`, { hidden });
   return data;
 }
+
+/** Свой порядок отделов: у каждого HR он собственный, живёт в базе. */
+export async function saveBoardDepartmentOrder(ids: number[]): Promise<BoardDepartment[]> {
+  const { data } = await api.put('/staff-board/departments/order', { ids });
+  return data || [];
+}

@@ -1990,6 +1990,22 @@ class BoardDepartment(Base):
     created_at = Column(DateTime, default=func.now())
 
 
+class BoardDepartmentOrder(Base):
+    """Порядок отделов в колонке слева — СВОЙ у каждого пользователя.
+
+    Мария раскладывает отделы так, как ей удобно смотреть, и этот порядок
+    должен пережить перезагрузку и не мешать другим HR (решение владельца
+    24.09.2026). Храним просто список id: отделы приходят и уходят, а
+    «дырки» в списке безопасны — неизвестные id игнорируются.
+    """
+    __tablename__ = "staff_board_department_order"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    dept_ids = Column(JSON, default=list)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
 class DataMigrationMark(Base):
     """Отметка «одноразовая правка данных уже выполнена».
 

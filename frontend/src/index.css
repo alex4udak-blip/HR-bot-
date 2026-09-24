@@ -9279,7 +9279,14 @@ body.performance-mode .glass-card:hover {
    иначе в тёмной теме карточки стали бы тёмными на светлом фоне.
    ============================================ */
 
+/* Страница занимает экран целиком, прокручивается только таблица: так шапка
+   с названиями колонок держится сверху, а список идёт до самого низа экрана и
+   не обрезается лишней высотой (замечание владельца 24.09.2026). */
 .hf-statuses-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   padding: var(--hf-space-xxl);
   color: var(--hf-main-900);
 }
@@ -9340,11 +9347,15 @@ body.performance-mode .glass-card:hover {
 /* ── Раскладка ───────────────────────────── */
 .hf-statuses-body {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
   gap: var(--hf-space-xl);
 }
 .hf-statuses-sidebar {
   flex: 0 0 220px;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--hf-space-xxs);
@@ -9440,7 +9451,6 @@ body.performance-mode .glass-card:hover {
 .hf-statuses-table-wrap {
   flex: 1;
   min-width: 0;
-  max-height: calc(100vh - 190px);
   overflow: auto;
   border: var(--hf-border-xs) solid var(--hf-ui-divider);
   border-radius: var(--hf-radius-m);
@@ -9791,6 +9801,43 @@ body.performance-mode .glass-card:hover {
   color: var(--hf-cyan-500);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* Перетаскивание отделов: порядок у каждого HR свой */
+.hf-statuses-folder-row { cursor: grab; }
+.hf-statuses-folder-dragging { opacity: 0.5; }
+.hf-statuses-folder-over .hf-statuses-folder {
+  border-color: var(--hf-cyan-500);
+  box-shadow: 0 -2px 0 var(--hf-cyan-500) inset;
+}
+
+/* Диапазон дат в фильтре: «с … по …» вместо операторов */
+.hf-statuses-rule-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--hf-fs-5xs);
+  color: var(--hf-main-600);
+}
+.hf-statuses-rule-date {
+  flex: 1;
+  min-width: 0;
+  padding: var(--hf-space-xs) var(--hf-space-s);
+  border: var(--hf-border-xs) solid var(--hf-main-200);
+  border-radius: var(--hf-radius-xs);
+  background: var(--hf-white);
+  color: var(--hf-main-900);
+  font-size: var(--hf-fs-4xs);
+}
+
+/* «Все» всегда на виду: отделов может стать много, а к полному списку
+   возвращаются чаще всего (владелец, 24.09.2026). */
+.hf-statuses-folder-all {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 /* Скрытый отдел: виден только когда раскрыли «Показать скрытые» */

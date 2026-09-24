@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 import {
   getBoardRows, updateBoardRow,
   getBoardDepartments, createBoardDepartment, renameBoardDepartment, setBoardDepartmentHidden,
+  saveBoardDepartmentOrder,
   type BoardDepartment, type BoardRow, type BoardRowUpdate,
 } from "@/services/api/staffBoard";
 import { uploadEntityFile, deleteEntityFile, downloadEntityFile } from "@/services/api/entities";
@@ -115,10 +116,25 @@ type SortKey = "practice_start_date" | "department_start_date" | "dismissal_date
 const SORTABLE: SortKey[] = ["practice_start_date", "department_start_date", "dismissal_date"];
 type SortDir = "asc" | "desc";
 
-/** Операторы как в конструкторе фильтров ClickUp. */
-type FilterOp = "is" | "is_not" | "contains" | "set" | "not_set";
+/** Операторы как в конструкторе фильтров ClickUp; для дат — «с … по …». */
+type FilterOp = "is" | "is_not" | "contains" | "set" | "not_set" | "range";
+
+/** Колонки с датами: у них вместо «равно/содержит» два поля — с и по.
+ *  «Выгрузить всех, кто вышел в отдел в сентябре» через «содержит» было
+ *  невозможно (владелец, 24.09.2026). */
+const DATE_KEYS: FilterKey[] = [
+  "practice_start_date", "department_start_date", "w2", "m1", "m3", "y1", "dismissal_date",
+];
+const isDateKey = (k: FilterKey) => DATE_KEYS.includes(k);
+
+/** Значение правила-диапазона: «с|по», любая половина может быть пустой. */
+const splitRange = (v: string): [string, string] => {
+  const [from = "", to = ""] = (v || "").split("|");
+  return [from, to];
+};
 
 const OPS: { value: FilterOp; label: string; needsValue: boolean }[] = [
+  { value: "range",    label: "с … по",        needsValue: true },
   { value: "is",       label: "равно",         needsValue: true },
   { value: "is_not",   label: "не равно",      needsValue: true },
   { value: "contains", label: "содержит",      needsValue: true },
@@ -213,6 +229,10 @@ export default function StatusesPage() {
 
   const addRule = () =>
     setRules((cur) => [...cur, { id: newRuleId(), key: "department", op: "is", value: "" }]);
+
+  /** Смена колонки в правиле: у дат свой оператор-диапазон, у остальных — «равно». */
+  const changeRuleKey = (id: string, key: FilterKey) =>
+    patchRule(id, { key, value: "", op: isDateKey(key) ? "range" : "is" });
 
   const patchRule = (id: string, patch: Partial<FilterRule>) =>
     setRules((cur) => cur.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -309,7 +329,19 @@ export default function StatusesPage() {
       // Правило без выбранного значения ничего не отбирает: иначе только что
       // добавленная строка мгновенно обнуляла бы таблицу.
       if (spec?.needsValue && !rule.value) continue;
+      // Диапазон без обеих границ ничего не отбирает
+      if (rule.op === "range" && splitRange(rule.value).every((v) => !v)) continue;
       out = out.filter((r) => {
+        // Диапазон сравниваем по «сырой» дате (YYYY-MM-DD), а не по видимой
+        // «дд.мм.гггг»: так работает обычное строковое сравнение.
+        if (rule.op === "range") {
+          const [from, to] = splitRange(rule.value);
+          const iso = ((r[rule.key as keyof BoardRow] as string | null) || "").slice(0, 10);
+          if (!iso) return false;
+          if (from && iso < from) return false;
+          if (to && iso > to) return false;
+          return true;
+        }
         const cell = cellText(r, rule.key).trim();
         switch (rule.op) {
           case "set": return !isBlank(cell);
@@ -475,9 +507,7 @@ export default function StatusesPage() {
                         <select
                           className="hf-statuses-rule-field"
                           value={rule.key}
-                          onChange={(e) =>
-                            patchRule(rule.id, { key: e.target.value as FilterKey, value: "" })
-                          }
+                          onChange={(e) => changeRuleKey(rule.id, e.target.value as FilterKey)}
                         >
                           {FILTERABLE.map((c) => (
                             <option key={c.key} value={c.key}>
@@ -486,19 +516,48 @@ export default function StatusesPage() {
                           ))}
                         </select>
 
-                        <select
-                          className="hf-statuses-rule-op"
-                          value={rule.op}
-                          onChange={(e) =>
-                            patchRule(rule.id, { op: e.target.value as FilterOp })
-                          }
-                        >
-                          {OPS.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
+                        {!isDateKey(rule.key) && (
+                          <select
+                            className="hf-statuses-rule-op"
+                            value={rule.op}
+                            onChange={(e) =>
+                              patchRule(rule.id, { op: e.target.value as FilterOp })
+                            }
+                          >
+                            {OPS.filter((o) => o.value !== "range").map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        )}
 
-                        {spec?.needsValue ? (
+                        {isDateKey(rule.key) ? (
+                          <div className="hf-statuses-rule-range">
+                            <span>с</span>
+                            <input
+                              type="date"
+                              className="hf-statuses-rule-date"
+                              value={splitRange(rule.value)[0]}
+                              onChange={(e) =>
+                                patchRule(rule.id, {
+                                  op: "range",
+                                  value: `${e.target.value}|${splitRange(rule.value)[1]}`,
+                                })
+                              }
+                            />
+                            <span>по</span>
+                            <input
+                              type="date"
+                              className="hf-statuses-rule-date"
+                              value={splitRange(rule.value)[1]}
+                              onChange={(e) =>
+                                patchRule(rule.id, {
+                                  op: "range",
+                                  value: `${splitRange(rule.value)[0]}|${e.target.value}`,
+                                })
+                              }
+                            />
+                          </div>
+                        ) : spec?.needsValue ? (
                           <>
                             {/* Обычное текстовое поле. Подсказки через datalist:
                                 значения из таблицы под рукой, но вписать можно
@@ -555,6 +614,7 @@ export default function StatusesPage() {
             onCreated={(d) => setDepartments((cur) => [...cur, d])}
             onRenamed={(d) => setDepartments((cur) => cur.map((x) => (x.id === d.id ? d : x)))}
             onHidden={(d) => setDepartments((cur) => cur.map((x) => (x.id === d.id ? d : x)))}
+            onReorder={setDepartments}
           />
 
           <div className="hf-statuses-table-wrap">
@@ -656,7 +716,7 @@ export default function StatusesPage() {
  *  много, и за ними терялись нужные. «+ Отдел» заводит отдел прямо здесь; это
  *  СВОЙ справочник доски, оргструктуру Enceladus он не трогает. */
 function DepartmentSidebar({
-  departments, counts, active, onSelect, onCreated, onRenamed, onHidden,
+  departments, counts, active, onSelect, onCreated, onRenamed, onHidden, onReorder,
 }: {
   departments: BoardDepartment[];
   counts: Record<string, number>;
@@ -665,7 +725,11 @@ function DepartmentSidebar({
   onCreated: (d: BoardDepartment) => void;
   onRenamed: (d: BoardDepartment) => void;
   onHidden: (d: BoardDepartment) => void;
+  onReorder: (list: BoardDepartment[]) => void;
 }) {
+  // Перетаскивание отделов: порядок личный и сохраняется в базе.
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   // Скрытые не выбрасываем из списка совсем: их можно раскрыть и вернуть.
@@ -707,15 +771,30 @@ function DepartmentSidebar({
 
   const label = (d: BoardDepartment) => d.name;
   const hiddenCount = departments.filter((d) => d.hidden).length;
-  const sorted = [...departments]
+  // Порядок задаёт сам пользователь перетаскиванием — сервер отдаёт список уже
+  // в его порядке, поэтому здесь только отодвигаем скрытые в конец.
+  const sorted = departments
     .filter((d) => showHidden || !d.hidden || String(d.id) === active)
-    .sort((a, b) => {
-      const ca = counts[String(a.id)] ?? 0;
-      const cb = counts[String(b.id)] ?? 0;
-      if (a.hidden !== b.hidden) return a.hidden ? 1 : -1;
-      if ((ca > 0) !== (cb > 0)) return ca > 0 ? -1 : 1;
-      return label(a).localeCompare(label(b), "ru");
-    });
+    .slice()
+    .sort((a, b) => (a.hidden === b.hidden ? 0 : a.hidden ? 1 : -1));
+
+  const drop = async (target: BoardDepartment) => {
+    setOverId(null);
+    const from = departments.findIndex((d) => d.id === dragId);
+    const to = departments.findIndex((d) => d.id === target.id);
+    setDragId(null);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...departments];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onReorder(next);  // сразу показываем новый порядок, не дожидаясь сервера
+    try {
+      onReorder(await saveBoardDepartmentOrder(next.map((d) => d.id)));
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Не удалось сохранить порядок отделов");
+      onReorder(departments);
+    }
+  };
 
   const rename = async (d: BoardDepartment) => {
     const clean = editName.trim().replace(/\s+/g, " ");
@@ -751,7 +830,11 @@ function DepartmentSidebar({
     <button
       key={id}
       onClick={() => onSelect(id)}
-      className={clsx("hf-statuses-folder", active === id && "hf-statuses-folder-active")}
+      className={clsx(
+        "hf-statuses-folder",
+        id === "all" && "hf-statuses-folder-all",
+        active === id && "hf-statuses-folder-active"
+      )}
       title={text}
     >
       <span className="hf-statuses-folder-name">{text}</span>
@@ -786,7 +869,21 @@ function DepartmentSidebar({
             </button>
           </div>
         ) : (
-          <div key={d.id} className={clsx("hf-statuses-folder-row", d.hidden && "hf-statuses-folder-hidden")}>
+          <div
+            key={d.id}
+            className={clsx(
+              "hf-statuses-folder-row",
+              d.hidden && "hf-statuses-folder-hidden",
+              dragId === d.id && "hf-statuses-folder-dragging",
+              overId === d.id && dragId !== d.id && "hf-statuses-folder-over"
+            )}
+            draggable={editing === null}
+            onDragStart={() => setDragId(d.id)}
+            onDragEnd={() => { setDragId(null); setOverId(null); }}
+            onDragOver={(e) => { e.preventDefault(); setOverId(d.id); }}
+            onDrop={(e) => { e.preventDefault(); drop(d); }}
+            title="Потяните, чтобы переставить отдел"
+          >
             {item(String(d.id), label(d))}
             <div className="hf-statuses-folder-actions">
               <button

@@ -8,7 +8,7 @@ from datetime import datetime
 import pytest
 
 from api.models.database import (
-    BoardDepartment, Department, Entity, EntityStatus, EntityType,
+    BoardDepartment, Department, Entity, EntityStatus, EntityType, OrgMember, OrgRole,
 )
 from api.services.auth import create_access_token
 
@@ -143,3 +143,50 @@ async def test_no_delete_endpoint(client, db_session, organization, admin_user, 
     )).json()
     r = await client.delete(f"/api/staff-board/departments/{dept['id']}", headers=_h(admin_user))
     assert r.status_code in (404, 405)
+
+
+@pytest.mark.asyncio
+async def test_order_is_personal(client, db_session, organization, admin_user, second_user, org_owner):
+    """Порядок отделов — личный: Мария разложила под себя, у других не поехало."""
+    db_session.add(OrgMember(
+        org_id=organization.id, user_id=second_user.id, role=OrgRole.hr, created_at=datetime.utcnow()
+    ))
+    await db_session.commit()
+    names = ["А отдел", "Б отдел", "В отдел"]
+    ids = [
+        (await client.post("/api/staff-board/departments", json={"name": n}, headers=_h(admin_user))).json()["id"]
+        for n in names
+    ]
+
+    mine = (await client.get("/api/staff-board/departments", headers=_h(admin_user))).json()
+    assert [d["name"] for d in mine] == names  # по умолчанию по алфавиту
+
+    r = await client.put(
+        "/api/staff-board/departments/order",
+        json={"ids": [ids[2], ids[0], ids[1]]},
+        headers=_h(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert [d["name"] for d in r.json()] == ["В отдел", "А отдел", "Б отдел"]
+
+    # перезагрузка страницы порядок не теряет
+    again = (await client.get("/api/staff-board/departments", headers=_h(admin_user))).json()
+    assert [d["name"] for d in again] == ["В отдел", "А отдел", "Б отдел"]
+
+    # у другого HR — свой порядок, по умолчанию алфавитный
+    other = (await client.get("/api/staff-board/departments", headers=_h(second_user))).json()
+    assert [d["name"] for d in other] == names
+
+
+@pytest.mark.asyncio
+async def test_new_department_goes_last(client, db_session, organization, admin_user, org_owner):
+    """Отдел, которого не было в сохранённом порядке, встаёт в конец."""
+    a = (await client.post("/api/staff-board/departments", json={"name": "Альфа"}, headers=_h(admin_user))).json()
+    b = (await client.post("/api/staff-board/departments", json={"name": "Бета"}, headers=_h(admin_user))).json()
+    await client.put(
+        "/api/staff-board/departments/order", json={"ids": [b["id"], a["id"]]}, headers=_h(admin_user)
+    )
+    await client.post("/api/staff-board/departments", json={"name": "Ааа новый"}, headers=_h(admin_user))
+
+    listed = (await client.get("/api/staff-board/departments", headers=_h(admin_user))).json()
+    assert [d["name"] for d in listed] == ["Бета", "Альфа", "Ааа новый"]

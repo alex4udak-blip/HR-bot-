@@ -446,6 +446,15 @@ async def ensure_shadow_columns():
             'ALTER TABLE staff_board_departments ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMP'
         ))
 
+        # Свой порядок отделов у каждого HR (24.09.2026)
+        await conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS staff_board_department_order (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                dept_ids JSON DEFAULT '[]',
+                updated_at TIMESTAMP DEFAULT now()
+            )'''))
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection
