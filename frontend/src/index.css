@@ -9434,10 +9434,14 @@ body.performance-mode .glass-card:hover {
 .hf-statuses-folder-input:focus { border-color: var(--hf-cyan-500); }
 
 /* ── Таблица ─────────────────────────────── */
+/* Прокрутка живёт ВНУТРИ таблицы, а не у страницы: иначе шапка с названиями
+   колонок не может прилипнуть — sticky считается от ближайшего прокручиваемого
+   родителя. Теперь при прокрутке видно и названия колонок, и имена слева. */
 .hf-statuses-table-wrap {
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
+  max-height: calc(100vh - 190px);
+  overflow: auto;
   border: var(--hf-border-xs) solid var(--hf-ui-divider);
   border-radius: var(--hf-radius-m);
   background: var(--hf-white);
@@ -9451,7 +9455,13 @@ body.performance-mode .glass-card:hover {
 /* Названия колонок: жирнее и темнее — по ним ориентируются в 19 колонках,
    а блёклый мелкий шрифт читался хуже строк (встреча 23.09.2026). */
 .hf-statuses-th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--hf-white);
   padding: var(--hf-space-m) var(--hf-space-m) var(--hf-space-s);
+  /* border у sticky-ячейки не рисуется при прокрутке — держим линию тенью */
+  box-shadow: inset 0 -1px 0 var(--hf-ui-divider);
   border-bottom: var(--hf-border-xs) solid var(--hf-ui-divider);
   color: var(--hf-main-800);
   font-size: var(--hf-fs-4xs);
@@ -10065,6 +10075,12 @@ body.performance-mode .glass-card:hover {
 .hf-statuses-th { padding-left: var(--hf-space-s); padding-right: var(--hf-space-s); }
 .hf-statuses-td { padding-left: var(--hf-space-s); padding-right: var(--hf-space-s); }
 
+/* Угловая ячейка «СОТРУДНИК» закреплена сразу и сверху, и слева */
+.hf-statuses-th.hf-statuses-sticky {
+  z-index: 4;
+  box-shadow: inset 0 -1px 0 var(--hf-ui-divider),
+    1px 0 0 var(--hf-ui-divider), 6px 0 8px -6px rgba(16, 24, 40, .12);
+}
 .hf-statuses-sticky {
   position: sticky;
   left: 0;
