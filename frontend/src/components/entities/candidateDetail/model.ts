@@ -10,7 +10,12 @@
 // ================================================================
 import type { KanbanCard, KanbanColumn } from "@/services/api/candidates";
 import type { ActivityEvent, EntityFile } from "@/services/api/entities";
-import { STATUS_LABELS, STATUS_TO_STAGE_MAP, type EntityStatus } from "@/types";
+import {
+  STATUS_LABELS,
+  STATUS_TO_STAGE_MAP,
+  BOARD_OTHER_STATUS,
+  type EntityStatus,
+} from "@/types";
 
 // ── Types (moved from AllCandidatesPage — the panel's domain shapes) ──
 
@@ -97,6 +102,22 @@ export const TERMINAL_STAGE_STATUSES = new Set([
   "reserve",
   "withdrawn",
 ]);
+
+/**
+ * Варианты для окна «Сменить этап подбора» на «Все кандидаты». Колонки доски —
+ * это статусы кандидата, и среди них есть служебная «Вне воронки»
+ * (BOARD_OTHER_STATUS): она значит «кандидат не в воронке», а не этап. У заявки
+ * такого этапа нет — выбрать её было можно, но сохранить некуда: заявка не
+ * менялась, а карточка на доске всё равно переезжала (жалоба Марии, Гром
+ * Виктор, 24.09.2026). Поэтому в пикер она не попадает вовсе.
+ */
+export function buildStagePickerOptions(
+  columns: Array<{ status: string; label: string }>,
+): Array<{ status: string; label: string; isRealStage: true }> {
+  return columns
+    .filter((c) => c.status !== BOARD_OTHER_STATUS)
+    .map((c) => ({ status: c.status, label: c.label, isRealStage: true as const }));
+}
 
 /**
  * Какой этап пикер помечает при ОТКРЫТИИ — следующий за текущим (Huntflow:

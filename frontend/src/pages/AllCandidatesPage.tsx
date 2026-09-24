@@ -30,6 +30,7 @@ import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import {
   buildListRowStages,
   buildStageContainers,
+  buildStagePickerOptions,
   cardMatchesMentor,
   countHiddenByScope,
   countPracticeMentors,
@@ -2123,13 +2124,14 @@ const InfoTab = memo(function InfoTab({
       .then((r) => setAnketaCount(card.id, r.count))
       .catch(() => {});
   }, [card.id, setAnketaCount]);
-  const stagePickerOptions = useMemo(() => {
-    return columns.map((column) => ({
-      label: column.label,
-      status: column.status,
-      isRealStage: true,
-    }));
-  }, [columns]);
+  // Пикер собран из колонок доски, но «Вне воронки» (BOARD_OTHER_STATUS) —
+  // НЕ этап: это служебная колонка «кандидат не в воронке». У заявки такого
+  // этапа нет, поэтому её выбор ничего не сохранял, а карточка на экране всё
+  // равно переезжала — «перевёл, а он остался на месте» (жалоба Марии,
+  // Гром Виктор, 24.09.2026). Пикер её вообще не предлагает: после «Перешёл в
+  // отдел» следующего этапа больше нет, и окно помечает текущий с плашкой
+  // «Кандидат сейчас находится на этом этапе подбора».
+  const stagePickerOptions = useMemo(() => buildStagePickerOptions(columns), [columns]);
 
   // ── Стек карточек по вакансиям: после слияния дубля у выжившего несколько
   // заявок. Тянем сквозную ленту активности (по заявке) и рендерим ОТДЕЛЬНУЮ
@@ -2339,9 +2341,17 @@ const InfoTab = memo(function InfoTab({
       // совпадают по имени и работали случайно.
       const appStage = STATUS_TO_STAGE_MAP[stage as EntityStatus];
       if (appId > 0 && !appStage) {
-        // У статуса нет пары среди этапов заявки — двигаем только кандидата,
-        // молча и без ошибки. Это не сбой, просто заявке такого этапа нет.
-        console.warn('[stage] у статуса нет этапа заявки, двигаем только кандидата:', stage);
+        // Кандидат В ВОРОНКЕ, а у выбранного статуса нет пары среди этапов
+        // заявки (например «Вне воронки»): применить такой перевод некуда.
+        // Раньше отсюда просто выходили с console.warn, заявку не трогали, а
+        // карточку на доске всё равно переставляли — человек видел перевод,
+        // которого не было, и после F5 всё откатывалось (жалоба Марии, Гром
+        // Виктор, 24.09.2026). Теперь — честная ошибка и НИКАКОГО движения.
+        console.warn('[stage] у статуса нет этапа заявки, перевод не применён:', stage);
+        toast.error(
+          `«${getStackStageLabel(stage)}» нельзя поставить заявке — кандидат остался на прежнем этапе`,
+        );
+        return false;
       }
       // Общий статус кандидата ПОСЛЕ правки: его считает сервер по «актуальной»
       // заявке, и он НЕ всегда равен выбранному этапу. Кандидат в двух воронках:
@@ -2389,7 +2399,7 @@ const InfoTab = memo(function InfoTab({
       await loadActivity();
       return ok;
     },
-    [onStatusChange, loadActivity, card.id, patchFunnelStage],
+    [onStatusChange, loadActivity, card.id, patchFunnelStage, getStackStageLabel],
   );
 
   const cardComment = useCallback(
