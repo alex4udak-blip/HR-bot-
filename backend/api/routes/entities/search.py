@@ -299,6 +299,10 @@ class ActivityEventResponse(BaseModel):
     comment: Optional[str] = None
     changed_by_name: Optional[str] = None
     created_at: datetime
+    # Правка комментария к переводу: пометка «Изменено» + подсказка «кто и
+    # когда правил». Автор и время написания в строке не меняются.
+    edited_at: Optional[datetime] = None
+    edited_by_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -313,6 +317,8 @@ class VacancyActivityBlockResponse(BaseModel):
     applied_at: datetime
     last_stage_change_at: datetime
     events: List[ActivityEventResponse] = []
+    # Закреплённая запись этой воронки («e:<id>» / «n:<uuid>») — одна на блок.
+    pinned_entry_key: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -467,7 +473,10 @@ async def get_entity_activity(
         .order_by(StageTransition.created_at.desc())
     )).scalars().all()
 
-    user_ids = list({t.changed_by for t in transitions if t.changed_by})
+    user_ids = list(
+        {t.changed_by for t in transitions if t.changed_by}
+        | {t.edited_by for t in transitions if t.edited_by}
+    )
     user_names = {}
     if user_ids:
         user_names = {
@@ -483,6 +492,8 @@ async def get_entity_activity(
                 id=t.id, from_stage=t.from_stage, to_stage=t.to_stage,
                 comment=t.comment, changed_by_name=user_names.get(t.changed_by),
                 created_at=t.created_at,
+                edited_at=t.edited_at,
+                edited_by_name=user_names.get(t.edited_by),
             )
         )
 
@@ -497,6 +508,7 @@ async def get_entity_activity(
             applied_at=a.applied_at,
             last_stage_change_at=a.last_stage_change_at,
             events=events_by_app.get(a.id, []),
+            pinned_entry_key=a.pinned_entry_key,
         ))
     return blocks
 

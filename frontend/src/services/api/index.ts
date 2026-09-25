@@ -330,6 +330,8 @@ export {
   // History
   getApplicationHistory,
   deleteApplicationHistory,
+  updateApplicationHistory,
+  setPinnedEntry,
   // Stats
   getVacancyStats,
   // Entity-Vacancy

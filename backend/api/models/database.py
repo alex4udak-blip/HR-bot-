@@ -1005,6 +1005,10 @@ class VacancyApplication(Base):
     last_stage_change_at = Column(DateTime, default=func.now())
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    # Закреплённая запись ленты этой воронки (24.09.2026): ключ строки —
+    # "e:<id>" (перевод) или "n:<uuid>" (комментарий). ОДИН закреп на воронку:
+    # кандидат в двух воронках получает два, каждый в своём блоке карточки.
+    pinned_entry_key = Column(String(64), nullable=True)
 
     __table_args__ = (
         # One application per candidate per vacancy
@@ -1869,10 +1873,16 @@ class StageTransition(Base):
     changed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+    # Правка комментария к переводу (24.09.2026). В строке ленты остаётся тот,
+    # кто написал, и время написания; кто и когда правил — показывается
+    # подсказкой при наведении, поэтому нужны ОБА поля, а не только время.
+    edited_at = Column(DateTime, nullable=True)
+    edited_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     application = relationship("VacancyApplication")
     entity = relationship("Entity")
     changed_by_user = relationship("User", foreign_keys=[changed_by])
+    edited_by_user = relationship("User", foreign_keys=[edited_by])
 
 
 # ============================================================

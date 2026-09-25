@@ -478,6 +478,21 @@ async def ensure_shadow_columns():
                 updated_at TIMESTAMP DEFAULT now()
             )'''))
 
+        # Лента карточки кандидата (24.09.2026): правка комментария к переводу
+        # («Изменено» + кто и когда правил в подсказке) и закреплённая запись —
+        # одна на воронку. Читаются первым же открытием карточки, поэтому
+        # колонки заводим ДО старта сервера, а не полагаемся на миграции.
+        await conn.execute(text(
+            'ALTER TABLE stage_transitions ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP'
+        ))
+        await conn.execute(text(
+            'ALTER TABLE stage_transitions ADD COLUMN IF NOT EXISTS edited_by INTEGER '
+            'REFERENCES users(id) ON DELETE SET NULL'
+        ))
+        await conn.execute(text(
+            'ALTER TABLE vacancy_applications ADD COLUMN IF NOT EXISTS pinned_entry_key VARCHAR(64)'
+        ))
+
         print('All columns verified')
 
     # ALTER TYPE ADD VALUE cannot run inside a transaction — use raw connection

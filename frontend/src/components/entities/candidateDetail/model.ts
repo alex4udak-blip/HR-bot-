@@ -31,6 +31,8 @@ export type ContainerNote = {
   author_id?: number;
   author_name?: string;
   edited_at?: string;
+  /** Кто правил комментарий — для подсказки у пометки «Изменено». */
+  edited_by_name?: string;
   // Дописка коммента к прошлой статусной записи: reactionKey родителя +
   // метка этапа на момент написания (плашка «оставлен на этапе X»).
   parent_key?: string;
@@ -64,6 +66,8 @@ export type StageContainer = {
   events?: ActivityEvent[];
   fileIds?: number[];
   files?: EntityFile[];
+  /** Закреплённая запись ленты ЭТОЙ воронки («e:<id>» / «n:<uuid>»). */
+  pinnedEntryKey?: string | null;
   /** Импортированное прохождение (ClickUp-архив): рекрутёр (текст) + анкета (Q&A). Read-only. */
   recruiter?: string;
   anketa?: Array<{ question: string; answer: string }>;
@@ -215,6 +219,25 @@ export function buildListRowStages(
   ];
 }
 
+/**
+ * Убирает ПУСТОЙ хвост богатого текста: `<br>`, `<div><br></div>`, `<p></p>`
+ * и пробелы в конце. Редактор оставляет их после Enter, и строка ленты
+ * раздувалась на лишнюю строку — из-за этого подсказка «Изменено» висела
+ * далеко под текстом (замечание владельца 24.09.2026).
+ */
+export function trimTrailingEmptyHtml(html: string): string {
+  let out = (html || "").trim();
+  let prev = "";
+  while (out !== prev) {
+    prev = out;
+    out = out
+      .replace(/(?:\s|&nbsp;|<br\s*\/?>)+$/i, "")
+      .replace(/<(div|p)>(?:\s|&nbsp;|<br\s*\/?>)*<\/\1>$/i, "")
+      .trim();
+  }
+  return out;
+}
+
 // ── File classification ──
 
 /**
@@ -299,8 +322,11 @@ export function buildStageContainers(params: {
     vacancy_title?: string | null;
     current_stage?: string | null;
     events?: ActivityEvent[];
+    pinned_entry_key?: string | null;
   }>;
   allEntityFiles: EntityFile[];
+  /** Закреп живой заявки, когда блоков ленты не передают (страница воронки). */
+  livePinnedEntryKey?: string | null;
 }): StageContainer[] {
   const {
     card,
@@ -310,6 +336,7 @@ export function buildStageContainers(params: {
     liveVacancyTitle,
     liveBlocks,
     allEntityFiles,
+    livePinnedEntryKey,
   } = params;
 
   const mergedRaw = Array.isArray(
@@ -375,6 +402,7 @@ export function buildStageContainers(params: {
         vacancyTitle: b.vacancy_title ?? null,
         addedAt: i === 0 ? card.created_at : undefined,
         events: b.events,
+        pinnedEntryKey: b.pinned_entry_key ?? null,
       }))
     : [
         {
@@ -387,6 +415,7 @@ export function buildStageContainers(params: {
           vacancyTitle: liveVacancyTitle,
           addedAt: card.created_at,
           events: liveEvents,
+          pinnedEntryKey: livePinnedEntryKey ?? null,
         },
       ];
   const liveContainer = liveContainers[0];

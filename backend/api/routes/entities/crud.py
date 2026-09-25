@@ -1054,6 +1054,13 @@ class NoteUpdate(BaseModel):
     text: str
 
 
+class PinnedEntryUpdate(BaseModel):
+    """Закреп записи ленты у кандидата БЕЗ заявок. У кандидата в воронке закреп
+    живёт на заявке (одна воронка — один закреп); вне воронок хранить негде,
+    поэтому кладём на саму карточку (24.09.2026)."""
+    entry_key: Optional[str] = None
+
+
 def _note_org_check(entity, current_user, org):
     """Общая проверка: org-scope доступа к entity для notes-эндпоинтов."""
     if current_user.role != UserRole.superadmin:
@@ -1249,6 +1256,47 @@ def _find_note_index(notes: list, note_id: str) -> int:
     return -1
 
 
+@router.put("/{entity_id}/pin")
+async def set_entity_pinned_entry(
+    entity_id: int,
+    data: PinnedEntryUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Закрепить запись ленты кандидата вне воронок (entry_key = null — снять).
+
+    Закреп общий для всех, кто видит карточку, как и у воронок.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+
+    # FOR UPDATE — extra_data перезаписывается целиком: без блокировки
+    # параллельная заметка затёрла бы закреп (та же причина, что в notes).
+    result = await db.execute(
+        select(Entity).where(Entity.id == entity_id).with_for_update()
+    )
+    entity = result.scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Entity not found")
+    _note_org_check(entity, current_user, org)
+
+    key = (data.entry_key or "").strip() or None
+    if key and len(key) > 64:
+        raise HTTPException(400, "Слишком длинный ключ записи")
+
+    extra = dict(entity.extra_data or {})
+    if key:
+        extra["pinned_entry_key"] = key
+    else:
+        extra.pop("pinned_entry_key", None)
+    entity.extra_data = extra
+    await db.commit()
+    logger.info(
+        "ENTRY_PIN entity=%s user=%s -> %s", entity_id, current_user.id, key or "снят",
+    )
+    return {"success": True, "pinned_entry_key": key}
+
+
 @router.patch("/{entity_id}/notes/{note_id}")
 async def update_entity_note(
     entity_id: int,
@@ -1291,6 +1339,11 @@ async def update_entity_note(
 
     note["text"] = text_clean
     note["edited_at"] = datetime.now(_tz.utc).isoformat()
+    # Кто правил — для подсказки «Изменено: Настя, сегодня 09:36»: в строке
+    # ленты остаётся автор комментария, а правившего видно при наведении
+    # (24.09.2026). Раньше писали только время, и автор правки терялся.
+    note["edited_by"] = current_user.id
+    note["edited_by_name"] = current_user.name
     notes[idx] = note
     extra["notes"] = notes
     entity.extra_data = extra

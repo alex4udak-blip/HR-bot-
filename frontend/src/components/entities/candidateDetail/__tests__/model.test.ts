@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { KanbanCard, KanbanColumn } from "@/services/api/candidates";
 import type { EntityFile } from "@/services/api/entities";
+import { STATUS_TO_STAGE_MAP, type EntityStatus } from "@/types";
 import {
+  trimTrailingEmptyHtml,
   buildListRowStages,
   nextStageStatus,
   cardMatchesMentor,
@@ -747,5 +749,25 @@ describe('buildStagePickerOptions', () => {
   it('на середине воронки подстановка следующего этапа работает как раньше', () => {
     const options = buildStagePickerOptions(columns);
     expect(nextStageStatus(options, 'new')).toBe('transferred');
+  });
+});
+
+describe('trimTrailingEmptyHtml — пустой хвост редактора', () => {
+  it('режет пустые блоки и переносы в конце', () => {
+    expect(trimTrailingEmptyHtml('текст<div><br></div>')).toBe('текст');
+    expect(trimTrailingEmptyHtml('текст<br><br>')).toBe('текст');
+    expect(trimTrailingEmptyHtml('текст<p>&nbsp;</p>')).toBe('текст');
+    expect(trimTrailingEmptyHtml('текст   ')).toBe('текст');
+  });
+
+  it('не трогает содержательный хвост', () => {
+    expect(trimTrailingEmptyHtml('строка<div>вторая</div>')).toBe(
+      'строка<div>вторая</div>',
+    );
+  });
+
+  it('пустой текст остаётся пустым', () => {
+    expect(trimTrailingEmptyHtml('<div><br></div>')).toBe('');
+    expect(trimTrailingEmptyHtml('')).toBe('');
   });
 });

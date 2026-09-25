@@ -499,6 +499,35 @@ export const getApplicationHistory = async (
   return data;
 };
 
+// Правка комментария к переводу. Этап не меняется — это исправление текста.
+// Бэкенд сам проставит «кто и когда правил» (edited_by/edited_at).
+export const updateApplicationHistory = async (
+  applicationId: number,
+  historyId: number,
+  comment: string,
+): Promise<{ comment: string | null; edited_at: string; edited_by_name: string | null }> => {
+  const { data } = await debouncedMutation<{
+    comment: string | null;
+    edited_at: string;
+    edited_by_name: string | null;
+  }>('patch', `/vacancies/applications/${applicationId}/history/${historyId}`, { comment });
+  return data;
+};
+
+// Закрепить запись ленты наверху (или снять закреп: entryKey = null).
+// Закреп ОДИН на воронку и общий для всех, кто эту воронку видит.
+export const setPinnedEntry = async (
+  applicationId: number,
+  entryKey: string | null,
+): Promise<{ pinned_entry_key: string | null }> => {
+  const { data } = await debouncedMutation<{ pinned_entry_key: string | null }>(
+    'put',
+    `/vacancies/applications/${applicationId}/pin`,
+    { entry_key: entryKey },
+  );
+  return data;
+};
+
 export interface DeleteHistoryResult {
   success: boolean;
   /** Запись была последней — заявка вернулась на from_stage. */

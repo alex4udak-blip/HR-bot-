@@ -510,7 +510,24 @@ export interface ActivityEvent {
   comment: string | null;
   changed_by_name: string | null;
   created_at: string;
+  /** Комментарий правили: в строке остаётся автор и время написания, а эти
+   *  два поля дают пометку «Изменено» и подсказку «кто и когда правил». */
+  edited_at?: string | null;
+  edited_by_name?: string | null;
 }
+
+// Закреп записи ленты у кандидата БЕЗ заявок: у воронки закреп лежит на
+// заявке, а вне воронок хранить негде — кладём на саму карточку.
+export const setEntityPinnedEntry = async (
+  entityId: number,
+  entryKey: string | null,
+): Promise<{ pinned_entry_key: string | null }> => {
+  const { data } = await api.put<{ pinned_entry_key: string | null }>(
+    `/entities/${entityId}/pin`,
+    { entry_key: entryKey },
+  );
+  return data;
+};
 
 export interface VacancyActivityBlock {
   application_id: number;
@@ -520,6 +537,9 @@ export interface VacancyActivityBlock {
   applied_at: string;
   last_stage_change_at: string;
   events: ActivityEvent[];
+  /** Закреплённая запись этой воронки: «e:<id>» (перевод) или «n:<uuid>»
+   *  (комментарий). Одна на воронку — у кандидата в двух воронках их две. */
+  pinned_entry_key?: string | null;
 }
 
 export const getEntityActivity = async (

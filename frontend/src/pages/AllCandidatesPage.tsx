@@ -76,12 +76,13 @@ import {
   createCandidateShareLink,
   toggleTimelineReaction,
   getEntityActivity,
+  setEntityPinnedEntry,
   archiveEntity,
 } from "@/services/api/entities";
 import type { VacancyActivityBlock, ActivityEvent, HiddenDuplicateMeta } from "@/services/api/entities";
 import type { ApplicationStage } from "@/types";
 import { STATUS_LABELS, APPLICATION_STAGE_LABELS, STATUS_TO_STAGE_MAP, type EntityStatus } from "@/types";
-import { getAllVacancies, createApplication, updateApplication, deleteApplication, deleteApplicationHistory } from "@/services/api/vacancies";
+import { getAllVacancies, createApplication, updateApplication, deleteApplication, deleteApplicationHistory, updateApplicationHistory, setPinnedEntry } from "@/services/api/vacancies";
 import SendEmailModal from "@/components/entities/SendEmailModal";
 import DatePickerFactorial from "@/factorial/components/DatePickerFactorial";
 import type { EntityFile } from "@/services/api/entities";
@@ -1979,6 +1980,8 @@ type StageContainer = {
   fileIds?: number[];
   // Реальные EntityFile для этого контейнера (резолв по fileIds, см. useMemo).
   files?: EntityFile[];
+  // Закреплённая запись ленты ЭТОЙ воронки («e:<id>» / «n:<uuid>»).
+  pinnedEntryKey?: string | null;
   // Импортированное прохождение (ClickUp-архив): рекрутёр (текст) + анкета (Q&A). Read-only.
   recruiter?: string;
   anketa?: Array<{ question: string; answer: string }>;
@@ -2260,6 +2263,9 @@ const InfoTab = memo(function InfoTab({
         // смена этапа меняла только одну заявку (2026-09-17, Мария).
         liveBlocks: activityBlocks,
         allEntityFiles: allEntityFiles || [],
+        // Кандидат вне воронок: закреп лежит на самой карточке.
+        livePinnedEntryKey:
+          (card.extra_data?.pinned_entry_key as string | undefined) ?? null,
       }),
     // notesVersion — форс-пересчёт после мутаций card.extra_data.notes (add/edit/delete),
     // которые меняют данные in-place без смены ссылки card.
@@ -2328,6 +2334,18 @@ const InfoTab = memo(function InfoTab({
     [activityBlocks, card],
   );
 
+  // cardComment объявлен ниже по файлу — держим на него ссылку, чтобы смена
+  // этапа могла сохранить комментарий заметкой, когда заявке его отдать нельзя.
+  const cardCommentRef = useRef<
+    | ((
+        appId: number,
+        stage: string,
+        stageLabel: string,
+        text: string,
+      ) => Promise<void>)
+    | null
+  >(null);
+
   const cardChangeStage = useCallback(
     async (appId: number, stage: string, comment?: string) => {
       let ok = true;
@@ -2381,6 +2399,17 @@ const InfoTab = memo(function InfoTab({
               : "Не удалось изменить этап заявки",
           );
         }
+      }
+      // Заявки нет (кандидат вне воронок) или у статуса нет пары среди этапов
+      // заявки — переводу негде хранить комментарий. Чтобы текст не пропал,
+      // сохраняем его отдельной заметкой, как было раньше.
+      if (ok && comment && !(appId > 0 && appStage)) {
+        await cardCommentRef.current?.(
+          appId,
+          stage,
+          getStackStageLabel(stage),
+          comment,
+        );
       }
       // Статус самого кандидата (entity) двигаем ТОЛЬКО если заявка реально
       // переехала. Раньше onStatusChange шёл ПЕРВЫМ и уже сохранял статус на
@@ -2466,6 +2495,10 @@ const InfoTab = memo(function InfoTab({
     [card, loadActivity, bumpNotes, activityBlocks, primaryBlock],
   );
 
+  useEffect(() => {
+    cardCommentRef.current = cardComment;
+  }, [cardComment]);
+
   const cardReact = useCallback(
     async (
       entryKey: string,
@@ -2511,6 +2544,49 @@ const InfoTab = memo(function InfoTab({
       await loadActivity();
     },
     [loadActivity, onStatusChange, patchFunnelStage],
+  );
+
+  // Правка комментария у записи о переводе: текст живёт в самой истории, а не
+  // в заметке (с 24.09.2026 смена этапа и её комментарий — одна строка).
+  const cardEditHistory = useCallback(
+    async (appId: number, historyId: number, text: string) => {
+      try {
+        await updateApplicationHistory(appId, historyId, text);
+        toast.success("Комментарий обновлён");
+      } catch (err) {
+        const resp = (err as { response?: { status?: number } })?.response;
+        toast.error(
+          resp?.status === 403
+            ? "Редактировать можно только свою запись"
+            : "Не удалось отредактировать запись",
+        );
+      }
+      await loadActivity();
+    },
+    [loadActivity],
+  );
+
+  // Закреп записи наверху ленты — один на воронку, общий для всех.
+  const cardPinEntry = useCallback(
+    async (appId: number, entryKey: string | null) => {
+      try {
+        if (appId > 0) {
+          await setPinnedEntry(appId, entryKey);
+        } else {
+          // Кандидат вне воронок: заявки нет, закреп живёт на самой карточке.
+          await setEntityPinnedEntry(card.id, entryKey);
+          const extra = (card.extra_data ||= {});
+          if (entryKey) extra.pinned_entry_key = entryKey;
+          else delete extra.pinned_entry_key;
+          bumpNotes();
+        }
+        toast.success(entryKey ? "Закреплено" : "Откреплено");
+      } catch {
+        toast.error("Не удалось закрепить запись");
+      }
+      await loadActivity();
+    },
+    [loadActivity, card, bumpNotes],
   );
 
   // F-fix: комментарии (extra_data.notes, включая с @-упоминанием) раньше
@@ -3353,6 +3429,9 @@ const InfoTab = memo(function InfoTab({
           onChangeStage={cardChangeStage}
           onComment={cardComment}
           onDeleteHistory={cardDeleteHistory}
+          onEditHistory={cardEditHistory}
+          onPin={cardPinEntry}
+          pinnedEntryKey={c.pinnedEntryKey}
           onDeleteNote={cardDeleteNote}
           onEditNote={cardEditNote}
           onUploadFile={cardUploadFile}

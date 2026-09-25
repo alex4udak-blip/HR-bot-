@@ -172,7 +172,7 @@ describe("Пикер этапа: сохранение перевода", () => {
     await user.click(screen.getByRole("button", { name: "Сохранить" }));
 
     await waitFor(() =>
-      expect(props.onChangeStage).toHaveBeenCalledWith(42, "practice"),
+      expect(props.onChangeStage).toHaveBeenCalledWith(42, "practice", undefined),
     );
     expect(props.onComment).not.toHaveBeenCalled();
     await waitFor(() =>
@@ -180,7 +180,9 @@ describe("Пикер этапа: сохранение перевода", () => {
     );
   });
 
-  it("написанный комментарий уходит вместе с переводом", async () => {
+  it("комментарий уходит ВМЕСТЕ с переводом, отдельной заметкой не сохраняется", async () => {
+    // Раньше он писался отдельной заметкой, и в ленте появлялись ДВЕ строки об
+    // одном событии — на это и жаловались рекрутёры (24.09.2026).
     const user = userEvent.setup();
     const props = renderCard();
     await openPicker(user);
@@ -188,13 +190,9 @@ describe("Пикер этапа: сохранение перевода", () => {
     await user.click(screen.getByRole("button", { name: "Сохранить" }));
 
     await waitFor(() =>
-      expect(props.onComment).toHaveBeenCalledWith(
-        42,
-        "practice",
-        "Интервью с HR",
-        "ок",
-      ),
+      expect(props.onChangeStage).toHaveBeenCalledWith(42, "practice", "ок"),
     );
+    expect(props.onComment).not.toHaveBeenCalled();
   });
 
   it("перевод не применился — комментарий не сохраняется, пикер остаётся открытым", async () => {
@@ -210,14 +208,86 @@ describe("Пикер этапа: сохранение перевода", () => {
   });
 });
 
-describe("История этапов: корзина", () => {
+describe("Строка ленты: статус, комментарий и меню", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("зовёт onDeleteHistory с id записи (откат этапа делает бэкенд)", async () => {
+  const openRowMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getAllByTitle("Действия с записью")[0]);
+  };
+
+  it("показывает статус и комментарий одной строкой, без стрелок", () => {
+    renderCard({
+      events: [{ ...moveEvent, comment: "созвон в четверг" }],
+    });
+    expect(screen.getByText("созвон в четверг")).toBeInTheDocument();
+    // Ни стрелки «Новый → Выполняет ТЗ», ни приставки «Этап:» в ленте нет.
+    expect(screen.queryByText(/→/)).toBeNull();
+    expect(screen.queryByText(/Этап:/)).toBeNull();
+  });
+
+  it("прежний этап не пропал — он в подсказке при наведении", () => {
+    renderCard();
+    expect(screen.getByTitle("Перевели из этапа «Новый»")).toBeInTheDocument();
+  });
+
+  it("«Изменено» и своя подсказка с автором и временем правки", () => {
+    // Подсказка СВОЯ, а не нативный title: браузерная всплывает через секунду,
+    // а рекрутёру нужно сразу (24.09.2026).
+    renderCard({
+      events: [
+        {
+          ...moveEvent,
+          comment: "правленый текст",
+          edited_at: "2026-09-24T10:15:00",
+          edited_by_name: "Настя",
+        },
+      ],
+    });
+    expect(screen.getByText("· Изменено")).toBeInTheDocument();
+    const tip = screen.getByText(/Изменено: Настя/);
+    expect(tip.textContent).toContain("GMT");
+    expect(tip.className).toContain("group-hover/timeline:block");
+  });
+
+  it("удаление живёт в меню по шеврону", async () => {
     const user = userEvent.setup();
     const props = renderCard();
-
-    await user.click(screen.getByTitle("Удалить запись"));
+    await openRowMenu(user);
+    await user.click(screen.getByRole("button", { name: /Удалить/ }));
     expect(props.onDeleteHistory).toHaveBeenCalledWith(42, 555);
+  });
+
+  it("закрепляет запись", async () => {
+    const user = userEvent.setup();
+    const props = renderCard({ onPin: vi.fn(), pinnedEntryKey: null });
+    await openRowMenu(user);
+    await user.click(screen.getByRole("button", { name: /Закрепить/ }));
+    expect(props.onPin).toHaveBeenCalledWith(42, "e:555");
+  });
+
+  it("закреплённая помечена и откреплается тем же пунктом меню", async () => {
+    const user = userEvent.setup();
+    const props = renderCard({ onPin: vi.fn(), pinnedEntryKey: "e:555" });
+    expect(screen.getByText("Закреплено")).toBeInTheDocument();
+    await openRowMenu(user);
+    await user.click(screen.getByRole("button", { name: /Открепить/ }));
+    expect(props.onPin).toHaveBeenCalledWith(42, null);
+  });
+
+  it("правка записи о переводе уходит в onEditHistory", async () => {
+    const user = userEvent.setup();
+    const props = renderCard({
+      onEditHistory: vi.fn(),
+      events: [{ ...moveEvent, comment: "созвон в четверг" }],
+    });
+    await openRowMenu(user);
+    await user.click(screen.getByRole("button", { name: /Редактировать/ }));
+    const editor = screen.getByLabelText("Текст комментария");
+    await user.clear(editor);
+    await user.type(editor, "созвон в пятницу");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(props.onEditHistory).toHaveBeenCalledWith(42, 555, "созвон в пятницу"),
+    );
   });
 });

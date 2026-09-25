@@ -34,7 +34,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, getEntityFiles, getEntity, uploadEntityFile, declineVacancy } from '@/services/api';
+import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, updateApplicationHistory, setPinnedEntry, getEntityFiles, getEntity, uploadEntityFile, declineVacancy } from '@/services/api';
 import { getOrgStages } from '@/services/api/auth';
 import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink } from '@/services/api/entities';
 import TakeCandidateButton from '@/components/entities/TakeCandidateButton';
@@ -1962,6 +1962,41 @@ export default function RecruiterFunnelsPage() {
     [refreshActivity, blockIfArchived, fetchVacancies, getVacancyStageLabel],
   );
 
+  // Правка комментария у записи о переводе (текст живёт в самой истории).
+  const cardEditHistory = useCallback(
+    async (appId: number, historyId: number, text: string) => {
+      if (blockIfArchived()) return;
+      try {
+        await updateApplicationHistory(appId, historyId, text);
+        toast.success('Комментарий обновлён');
+      } catch (err) {
+        const resp = (err as { response?: { status?: number } })?.response;
+        toast.error(
+          resp?.status === 403
+            ? 'Редактировать можно только свою запись'
+            : 'Не удалось отредактировать запись',
+        );
+      }
+      await refreshActivity();
+    },
+    [refreshActivity, blockIfArchived],
+  );
+
+  // Закреп записи наверху ленты — один на воронку, общий для всех.
+  const cardPinEntry = useCallback(
+    async (appId: number, entryKey: string | null) => {
+      if (blockIfArchived()) return;
+      try {
+        await setPinnedEntry(appId, entryKey);
+        toast.success(entryKey ? 'Закреплено' : 'Откреплено');
+      } catch {
+        toast.error('Не удалось закрепить запись');
+      }
+      await refreshActivity();
+    },
+    [refreshActivity, blockIfArchived],
+  );
+
   const cardUploadFile = useCallback(
     async (entityId: number, file: File) => {
       if (blockIfArchived()) return;
@@ -2050,6 +2085,7 @@ export default function RecruiterFunnelsPage() {
       liveEvents: primaryBlock?.events,
       liveVacancyTitle: primaryBlock?.vacancy_title ?? null,
       allEntityFiles: entityFiles,
+      livePinnedEntryKey: primaryBlock?.pinned_entry_key ?? null,
     });
   }, [funnelCard, selectedCandidate?.stage, selectedCandidate?.id, selectedCandidate?.vacancy_id, selectedVacancyId, primaryBlock, entityFiles]);
 
@@ -3518,6 +3554,9 @@ export default function RecruiterFunnelsPage() {
                                       onChangeStage={cardChangeStage}
                                       onComment={cardComment}
                                       onDeleteHistory={cardDeleteHistory}
+                                      onEditHistory={cardEditHistory}
+                                      onPin={cardPinEntry}
+                                      pinnedEntryKey={c.pinnedEntryKey}
                                       onDeleteNote={cardDeleteNote}
                                       onEditNote={cardEditNote}
                                       onUploadFile={cardUploadFile}
