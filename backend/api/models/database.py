@@ -1372,6 +1372,12 @@ class ProjectTask(Base):
     parent_task_id = Column(Integer, ForeignKey("project_tasks.id", ondelete="CASCADE"), nullable=True, index=True)
     blocker_id = Column(Integer, ForeignKey("blockers.id", ondelete="SET NULL"), nullable=True, index=True)  # Если задача создана из блокера — ссылка на него
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Откуда задача: бот из сообщения в чате или человек руками. Без этого
+    # нельзя было ни отличить «наработки бота» от настоящих задач, ни понять,
+    # из какого сообщения он их выдумал (жалоба владельца 25.09.2026).
+    created_by_bot = Column(Boolean, default=False, server_default="false", index=True)
+    source_chat_id = Column(BigInteger, nullable=True)      # telegram chat id
+    source_message = Column(Text, nullable=True)            # текст-первоисточник
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -1389,6 +1395,29 @@ class ProjectTask(Base):
     parent_task = relationship("ProjectTask", remote_side=[id], back_populates="subtasks")
     comments = relationship("TaskComment", back_populates="task", cascade="all, delete-orphan", order_by="TaskComment.created_at")
     attachments = relationship("TaskAttachment", back_populates="task", cascade="all, delete-orphan", order_by="TaskAttachment.created_at")
+
+
+class PendingTaskSuggestion(Base):
+    """Задачи, которые бот предложил создать и ждёт «Создать» в чате.
+
+    Бот больше не заводит задачи молча: он присылает разбор сообщения с
+    кнопками. Готовый разбор хранится здесь, потому что в callback_data
+    Telegram помещается только 64 байта (решение владельца 25.09.2026).
+    Отклонённые не удаляем — это материал для настройки распознавания.
+    """
+    __tablename__ = "pending_task_suggestions"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    chat_id = Column(BigInteger, nullable=True, index=True)   # telegram chat id
+    message_text = Column(Text, nullable=False)
+    payload = Column(JSON, default=dict)                      # разобранные задачи
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # pending → created / rejected / expired
+    status = Column(String(20), default="pending", index=True)
+    decided_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now())
 
 
 class TaskTimeLog(Base):

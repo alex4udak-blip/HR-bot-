@@ -209,6 +209,62 @@ _NEGATIVE_PATTERNS = [
 ]
 NEGATIVE_REGEX = re.compile('|'.join(_NEGATIVE_PATTERNS), re.IGNORECASE)
 
+# ── Отчёт о работе, а не постановка задачи ─────────────────────────
+# Самые частые промахи на проде (выгрузка 3600 сообщений из RND-чатов,
+# 25.09.2026): «продолжаю работу», «отчет за сегодня», «вчера сделал».
+# «Отчёт за …» — отчёт любой длины. А «продолжаю работу» часто идёт просто
+# приветствием, после которого следует план дня («продолжаю работу. По
+# планам: 1. Доделать кнопку…») — поэтому такие режем только в КОРОТКИХ
+# сообщениях, где кроме этой фразы ничего нет.
+_REPORT_ANY_LEN = re.compile(r'^\s*отч[её]т\s+за\b|напишу\s+отч[её]т', re.IGNORECASE)
+_REPORT_PHRASE = re.compile(
+    r'продолжаю\s+работ(?:у|ать)(?:\s+над\s+\w+)?'
+    r'|^\s*(?:вчера|сегодня)\s+(?:сделал|доделал|закончил|завершил|починил|залил|выкатил)'
+    r'|^\s*(?:готово|сделано|залил|выкатил|задеплоил)\b',
+    re.IGNORECASE,
+)
+_GREETING = re.compile(
+    r'^\s*(?:доброе утро|добрый день|добрый вечер|доброго времени|привет(?:ы|ики)?(?: всем)?|хай(?:юшки)?|здравствуйте|так,? если что|пока|всем привет)[\s,!)(-]*',
+    re.IGNORECASE,
+)
+# Сколько «своего» текста должно остаться после приветствия и дежурной фразы,
+# чтобы считать сообщение планом, а не докладом о ходе дел.
+REPORT_REST_MAX = 40
+
+
+def is_work_report(text: str) -> bool:
+    """Сообщение рассказывает о ходе работы, а не ставит задачу.
+
+    «Продолжаю работу» — чаще всего дежурная фраза: у одних это всё сообщение
+    (доклад), у других — приветствие перед планом дня («продолжаю работу. По
+    планам: 1. Доделать кнопку…»). Поэтому смотрим, что осталось в сообщении
+    после приветствия и самой фразы: почти ничего — доклад, есть содержание —
+    отдаём модели.
+    """
+    t = text.strip()
+    if _REPORT_ANY_LEN.search(t):
+        return True
+    if not _REPORT_PHRASE.search(t):
+        return False
+    rest = _REPORT_PHRASE.sub(' ', _GREETING.sub('', t))
+    rest = re.sub(r'[\s,.!)(–—-]+', ' ', rest).strip()
+    return len(rest) <= REPORT_REST_MAX
+
+
+# Короткие реплики в диалоге («принял, ща займусь», «да, сейчас переделаю»)
+# задачами не считаем: это ответ собеседнику, а не план работ.
+_CHATTER_PREFIX = re.compile(
+    r'^\s*(?:да|нет|ок|окей|хорошо|принял|понял|ага|угу|спасибо|щас|ща|сейчас)\b',
+    re.IGNORECASE,
+)
+CHATTER_MAX_LEN = 60
+
+
+def is_chatter(text: str) -> bool:
+    """Короткая реплика в диалоге — не постановка задачи."""
+    t = text.strip()
+    return len(t) <= CHATTER_MAX_LEN and bool(_CHATTER_PREFIX.match(t))
+
 
 def _is_question(text: str) -> bool:
     """Check if message is a question (ends with ? or starts with question words)."""
@@ -236,64 +292,104 @@ def should_trigger(text: str) -> bool:
     return True
 
 
-async def should_trigger_ai(text: str) -> bool:
-    """Use Claude Haiku to determine if a message contains tasks/plans.
+# Порог уверенности модели: ниже — не беспокоим чат.
+AI_CONFIDENCE_MIN = 0.7
 
-    Falls back to regex if AI is unavailable.
-    """
-    if len(text.strip()) < 10:
-        return False
+_AI_DECIDE_PROMPT = """Ты разбираешь сообщения из рабочего чата разработчиков.
 
-    # Negative patterns always reject — even before AI check
-    if NEGATIVE_REGEX.search(text):
-        logger.info(f"🚫 Negative pattern matched, skipping AI: {text[:60]}...")
-        return False
+Реши, ставит ли автор КОНКРЕТНУЮ задачу или описывает план работ, который
+имеет смысл завести в трекер.
 
-    # Short questions are almost never tasks
-    if _is_question(text) and len(text.strip()) < 120:
-        logger.info(f"🚫 Short question rejected: {text[:60]}...")
-        return False
+НЕ задача:
+- отчёт о сделанном: «вчера доделал», «отчёт за сегодня», «продолжаю работу»
+- короткая реплика в диалоге: «принял, ща займусь», «да, сейчас переделаю»
+- обсуждение, оценка, размышление: «надо наверное развернуть ещё сервак»,
+  «может уже микро тест запустим», «и ещё мало людей будут писать текстом»
+- анализ, сравнение, пересказ («конкуренты и их минусы: 1… 2…»)
+- вопрос или предложение обсудить
 
-    # Fast regex check — if it matches, verify with AI for borderline cases
-    if should_trigger(text):
-        logger.info(f"🔍 Regex trigger matched, skipping AI check")
-        return True
+Задача:
+- «сегодня по плану разобраться, почему адс павер умирает, плюс пофиксить размер картинок»
+- «Сегодня займусь двумя вещами: умной буферизацией сообщений и …»
+- «Твоя задача пинговать этого баера»
+- «Нужно переписать браузер для обхода клоаки»
 
+Ответь ТОЛЬКО JSON: {"is_task": true|false, "confidence": 0.0-1.0, "reason": "коротко"}
+
+Сообщение:
+"""
+
+
+async def ai_decide(text: str) -> dict:
+    """Спросить модель, есть ли в сообщении задача. Возвращает решение и причину."""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return False
-
+        return {"is_task": None, "confidence": 0.0, "reason": "no api key"}
     try:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=api_key)
-
         response = await client.messages.create(
             model="claude-haiku-4-5",
-            max_tokens=10,
-            messages=[{"role": "user", "content": f"""Это сообщение из рабочего чата. Содержит ли оно КОНКРЕТНУЮ постановку задач или план работ?
-
-Отвечай НЕТ если:
-- Это вопрос или предложение ("мб сделать?", "а что если?")
-- Это обсуждение того, что БЫЛО сделано или ДОЛЖНО БЫЛО быть сделано
-- Это просто разговор/обсуждение без конкретного поручения
-- Человек рассуждает, а не ставит задачу
-
-Отвечай ДА только если человек ЯВНО ставит задачу, даёт поручение, или описывает свой план действий.
-
-Сообщение:
-{text}
-
-Ответь ТОЛЬКО одним словом: ДА или НЕТ"""}],
+            max_tokens=120,
+            messages=[{"role": "user", "content": _AI_DECIDE_PROMPT + text}],
         )
-
-        answer = response.content[0].text.strip().upper()
-        result = answer.startswith("ДА") or answer == "YES"
-        logger.info(f"🤖 AI trigger check: '{answer}' -> {result} for: {text[:60]}...")
-        return result
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        data = json.loads(raw.strip())
+        return {
+            "is_task": bool(data.get("is_task")),
+            "confidence": float(data.get("confidence") or 0),
+            "reason": str(data.get("reason") or "")[:200],
+        }
     except Exception as e:
-        logger.error(f"AI trigger check failed: {e}")
-        # Fallback to regex
+        logger.error(f"AI decide failed: {e}")
+        return {"is_task": None, "confidence": 0.0, "reason": f"error: {e}"}
+
+
+async def should_trigger_ai(text: str) -> bool:
+    """Есть ли в сообщении задача.
+
+    Раньше решала регулярка: совпало — задача, модель даже не спрашивалась.
+    Регулярка же ловит любые «надо … проверить», «сегодня:», списки «1. 2.» —
+    на проде срабатывала на 14% ВСЕХ сообщений рабочих чатов, из-за чего
+    трекер зарастал мусором. Теперь регулярка — только дешёвый предварительный
+    отбор, а решает модель (владелец, 25.09.2026).
+    """
+    stripped = text.strip()
+    if len(stripped) < 10:
         return False
+    if is_work_report(stripped):
+        logger.info(f"🚫 Отчёт о работе, не задача: {stripped[:60]}...")
+        return False
+    if is_chatter(stripped):
+        logger.info(f"🚫 Короткая реплика, не задача: {stripped[:60]}...")
+        return False
+    if NEGATIVE_REGEX.search(stripped):
+        logger.info(f"🚫 Прошедшее время/предположение: {stripped[:60]}...")
+        return False
+    if _is_question(stripped) and len(stripped) < 120:
+        logger.info(f"🚫 Короткий вопрос: {stripped[:60]}...")
+        return False
+
+    # Предварительный отбор: без единого признака задачи модель не зовём
+    if not TRIGGER_REGEX.search(stripped) and not BLOCKER_REGEX.search(stripped):
+        return False
+
+    decision = await ai_decide(stripped)
+    if decision["is_task"] is None:
+        # Модель недоступна — старое поведение регулярки, но об этом видно в логах
+        logger.warning("⚠️ Модель недоступна, решает регулярка")
+        return bool(TRIGGER_REGEX.search(stripped))
+
+    ok = decision["is_task"] and decision["confidence"] >= AI_CONFIDENCE_MIN
+    logger.info(
+        f"🤖 Решение модели: is_task={decision['is_task']} "
+        f"conf={decision['confidence']:.2f} ({decision['reason']}) → {ok}"
+    )
+    return ok
 
 
 def _extract_project_hint(text: str) -> Optional[str]:
@@ -512,6 +608,30 @@ async def update_projects_from_status(
     return updated
 
 
+# Порог схожести заголовков: 0.82 ловит «Очистить кеш Cloudflare для домена X»
+# против «Очистить кэш Cloudflare домена X», но не склеивает разные задачи.
+TITLE_SIMILARITY_MIN = 0.82
+
+
+def _norm_title(t: str) -> str:
+    t = (t or "").lower().replace("ё", "е")
+    return re.sub(r'[^a-zа-я0-9 ]+', ' ', t).strip()
+
+
+def _find_similar_title(title: str, existing: list[str]) -> Optional[str]:
+    """Вернуть похожий заголовок из уже открытых задач проекта."""
+    a = _norm_title(title)
+    if not a:
+        return None
+    for e in existing:
+        b = _norm_title(e)
+        if not b:
+            continue
+        if a == b or difflib.SequenceMatcher(None, a, b).ratio() >= TITLE_SIMILARITY_MIN:
+            return e
+    return None
+
+
 async def parse_message_to_tasks(text: str, user_name: str, existing_tasks: list[dict]) -> list[dict]:
     """Use Claude AI to parse a chat message into structured tasks."""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
@@ -590,14 +710,23 @@ async def create_tasks_from_message(
     chat_id: Optional[int],
     telegram_username: Optional[str] = None,
     blocker_id: Optional[int] = None,
+    dry_run: bool = False,
 ) -> list[dict]:
-    """Full pipeline: detect trigger -> parse -> create tasks -> return results."""
+    """Разбор сообщения → задачи.
+
+    dry_run=True возвращает РАЗБОР, ничего не создавая: бот показывает его в
+    чате с кнопкой «Создать» (владелец, 25.09.2026). Создание — потом, через
+    create_tasks_from_preview.
+    """
     from ..models.database import (
         Project, ProjectTask, ProjectMember, ProjectStatus, ProjectRole, User, Chat, OrgMember,
     )
 
     blocker_mode = is_blocker(message_text)
-    is_task = blocker_mode or await should_trigger_ai(message_text)
+    # Раньше слова «не работает / падает / сломал» создавали задачи в обход
+    # любой проверки — в рабочем чате это самые частые слова. Теперь блокер
+    # только повышает приоритет, а решение всё равно за моделью.
+    is_task = await should_trigger_ai(message_text)
     if not is_task:
         logger.info(f"⏭️ No trigger (regex+AI) for {user_name}: {message_text[:80]}...")
         return []
@@ -759,10 +888,12 @@ async def create_tasks_from_message(
         .where(ProjectTask.project_id == project.id)
         .where(ProjectTask.status.notin_(['done', 'cancelled']))
     )
+    existing_rows = list(existing_result.scalars().all())
     existing_tasks = [
         {"title": t.title, "status": t.status if isinstance(t.status, str) else t.status.value}
-        for t in existing_result.scalars().all()
+        for t in existing_rows
     ]
+    existing_titles = [t.title or "" for t in existing_rows]
 
     # Parse message with AI
     parsed_tasks = await parse_message_to_tasks(message_text, user_name, existing_tasks)
@@ -775,6 +906,13 @@ async def create_tasks_from_message(
 
     for task_data in parsed_tasks:
         if task_data.get("is_duplicate"):
+            continue
+        # Дубли ловим и сами: модель сверяет только заголовки и промахивается,
+        # когда ту же задачу на следующий день пишет другой человек (на проде
+        # «Очистить кеш Cloudflare…» завели дважды, 16 и 17 сентября).
+        similar = _find_similar_title(task_data.get("title", ""), existing_titles)
+        if similar:
+            logger.info(f"🔁 Похожая задача уже есть, пропускаю: «{task_data.get('title')}» ≈ «{similar}»")
             continue
 
         # Resolve project from hint
@@ -897,6 +1035,24 @@ async def create_tasks_from_message(
         if blocker_mode:
             priority = 3
 
+        if dry_run:
+            # Разбор для подтверждения в чате: ничего не пишем в базу
+            created.append({
+                "title": task_data.get("title"),
+                "description": task_data.get("description"),
+                "priority": priority,
+                "estimated_hours": task_data.get("estimated_hours"),
+                "assignee": assignee_display,
+                "assignee_id": assignee_id,
+                "project": target_project.name,
+                "project_id": target_project.id,
+                "is_blocker": blocker_mode,
+                "creator_id": user.id,
+                "blocker_id": blocker_id if blocker_mode else None,
+            })
+            existing_titles.append(task_data.get("title") or "")
+            continue
+
         # Increment project task counter
         target_project.task_counter = (target_project.task_counter or 0) + 1
 
@@ -912,6 +1068,9 @@ async def create_tasks_from_message(
             due_date=today,
             created_by=user.id,
             blocker_id=blocker_id if blocker_mode else None,
+            created_by_bot=True,
+            source_chat_id=chat_id,
+            source_message=message_text[:4000],
         )
         db.add(task)
         await db.flush()
@@ -929,8 +1088,52 @@ async def create_tasks_from_message(
             "creator_id": user.id,
         })
 
-    if created:
+    if created and not dry_run:
         await db.commit()
         logger.info(f"Created {len(created)} tasks from chat message by {user_name}")
 
+    return created
+
+
+async def create_tasks_from_preview(
+    db: AsyncSession,
+    preview: list[dict],
+    message_text: str,
+    chat_id: Optional[int],
+) -> list[dict]:
+    """Создать задачи из разбора, который человек подтвердил кнопкой в чате."""
+    from ..models.database import Project, ProjectTask
+
+    created = []
+    today = datetime.utcnow().replace(hour=23, minute=59, second=59)
+    for item in preview:
+        project = await db.get(Project, item["project_id"])
+        if not project:
+            logger.warning(f"Проект {item['project_id']} исчез, пропускаю задачу «{item['title']}»")
+            continue
+        project.task_counter = (project.task_counter or 0) + 1
+        task = ProjectTask(
+            project_id=project.id,
+            task_number=project.task_counter,
+            title=item.get("title") or "Без названия",
+            description=item.get("description"),
+            status="todo",
+            priority=item.get("priority", 1),
+            estimated_hours=item.get("estimated_hours"),
+            assignee_id=item.get("assignee_id"),
+            due_date=today,
+            created_by=item.get("creator_id"),
+            blocker_id=item.get("blocker_id"),
+            created_by_bot=True,
+            source_chat_id=chat_id,
+            source_message=(message_text or "")[:4000],
+        )
+        db.add(task)
+        await db.flush()
+        task_key = f"{project.prefix}-{project.task_counter}" if project.prefix else f"#{project.task_counter}"
+        created.append({**item, "task_key": task_key, "task_id": task.id})
+
+    if created:
+        await db.commit()
+        logger.info(f"TASK_CONFIRMED: создано {len(created)} задач после подтверждения в чате")
     return created

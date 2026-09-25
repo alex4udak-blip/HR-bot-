@@ -22,7 +22,9 @@ from .services.transcription import transcription_service
 from .utils.db_url import get_database_url
 from .services.documents import document_parser
 from .services.external_links import external_link_processor, LinkType
-from .services.task_trigger import create_tasks_from_message, update_projects_from_status
+from .services.task_trigger import (
+    create_tasks_from_message, create_tasks_from_preview, update_projects_from_status,
+)
 from .services.ai import ai_service
 
 # Bot logging
@@ -1099,6 +1101,93 @@ async def cmd_help(message: types.Message):
             "📖 Полный список команд — в личке: открой меня и напиши /help.\n"
             "Часто используемые здесь: /timeoff, /blocker, /vacancy"
         )
+
+
+@dp.callback_query(F.data.startswith("tasks:"))
+async def cb_task_suggestion(callback: CallbackQuery):
+    """«Создать» / «Не надо» под разбором сообщения на задачи."""
+    from datetime import datetime as _dt
+    from .models.database import PendingTaskSuggestion, User as _User
+
+    try:
+        _, action, raw_id = callback.data.split(":", 2)
+        suggestion_id = int(raw_id)
+    except ValueError:
+        await callback.answer("Не понял кнопку")
+        return
+
+    async with async_session() as session:
+        suggestion = await session.get(PendingTaskSuggestion, suggestion_id)
+        if not suggestion:
+            await callback.answer("Предложение не найдено")
+            return
+        if suggestion.status != "pending":
+            await callback.answer("Уже решено")
+            return
+
+        decided_by = (await session.execute(
+            select(_User).where(_User.telegram_id == callback.from_user.id)
+        )).scalar_one_or_none()
+        suggestion.decided_by = decided_by.id if decided_by else None
+        suggestion.decided_at = _dt.utcnow()
+
+        if action == "no":
+            # Отказы храним: по ним видно, на чём распознавание промахивается
+            suggestion.status = "rejected"
+            await session.commit()
+            logger.info(f"TASK_SUGGESTION rejected: id={suggestion_id} by {callback.from_user.id}")
+            await callback.message.edit_text("\u274c Не создаю.")
+            await callback.answer()
+            return
+
+        tasks = (suggestion.payload or {}).get("tasks") or []
+        created = await create_tasks_from_preview(
+            db=session,
+            preview=tasks,
+            message_text=suggestion.message_text,
+            chat_id=suggestion.chat_id,
+        )
+        suggestion.status = "created"
+        # Отметка «в этом чате сегодня был стендап» — по ней бот не дёргает
+        # напоминаниями тех, кто уже отписался.
+        if suggestion.chat_id:
+            from sqlalchemy import update as _update
+            await session.execute(
+                _update(Chat).where(Chat.telegram_chat_id == suggestion.chat_id)
+                .values(last_standup_at=_dt.utcnow())
+            )
+        await session.commit()
+
+    if not created:
+        await callback.message.edit_text("\u26a0\ufe0f Не получилось создать задачи, попробуйте вручную.")
+        await callback.answer()
+        return
+
+    lines = ["\u2705 Задачи созданы:"]
+    for t in created:
+        prefix = "\U0001f6a8 " if t.get("is_blocker") else "\u2022 "
+        lines.append(f"  {prefix}{t['task_key']} \"{t['title']}\" \u2192 {t['assignee']}")
+    await callback.message.edit_text("\n".join(lines))
+    await callback.answer("Готово")
+
+    # DM-пинг каждому ассайни (кроме того, кто нажал кнопку)
+    import os as _os
+    frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus.site")
+    for t in created:
+        assignee_id = t.get("assignee_id")
+        if not assignee_id or assignee_id == t.get("creator_id"):
+            continue
+        blocker_tag = "\U0001f6a8 <b>БЛОКЕР</b>\n" if t.get("is_blocker") else ""
+        text = (
+            f"{blocker_tag}\U0001f4cb <b>Новая задача назначена на вас</b>\n\n"
+            f"\U0001f4dd {t['title']}\n"
+            f"\U0001f4c2 Проект: {t['project']}\n"
+            f'\U0001f517 <a href="{frontend_url}/projects/{t["project_id"]}/tasks/{t["task_id"]}">Открыть</a>'
+        )
+        try:
+            await send_telegram_notification(assignee_id, text)
+        except Exception as e:
+            _dbg(f"DM to assignee {assignee_id} failed: {type(e).__name__}: {e}")
 
 
 @dp.callback_query(F.data == "menu:main")
@@ -2567,52 +2656,51 @@ async def collect_group_message(message: types.Message):
                 except Exception as e:
                     logger.error(f"Status report error: {e}")
 
-                # 2. If not a status report, try task trigger
+                # 2. Не отчёт — разбираем на задачи, но НЕ создаём молча:
+                #    показываем разбор с кнопками «Создать / Не надо».
+                #    Раньше бот заводил задачи сам и промахивался — трекер
+                #    зарастал мусором (владелец, 25.09.2026).
                 if not is_status:
                     try:
-                        created_tasks = await create_tasks_from_message(
+                        preview = await create_tasks_from_message(
                             db=session,
                             message_text=content,
                             user_name=message.from_user.full_name,
                             telegram_user_id=message.from_user.id,
                             chat_id=message.chat.id,
                             telegram_username=message.from_user.username,
+                            dry_run=True,
                         )
-                        _dbg(f"Tasks created: {len(created_tasks)} for {message.from_user.full_name}")
-                        if created_tasks:
-                            # Mark this chat as having received a standup today
-                            from datetime import datetime as dt
-                            from sqlalchemy import update
-                            await session.execute(
-                                update(Chat).where(Chat.id == chat_db_id).values(last_standup_at=dt.utcnow())
+                        _dbg(f"Разбор дал {len(preview)} задач для {message.from_user.full_name}")
+                        if preview:
+                            from .models.database import PendingTaskSuggestion
+
+                            suggestion = PendingTaskSuggestion(
+                                org_id=org_id,
+                                chat_id=message.chat.id,
+                                message_text=content[:4000],
+                                payload={"tasks": preview},
+                                created_by=preview[0].get("creator_id"),
+                                status="pending",
                             )
+                            session.add(suggestion)
                             await session.commit()
 
-                            lines = ["\u2705 Задачи созданы из плана:"]
-                            for t in created_tasks:
+                            lines = ["\U0001f4dd Похоже на задачи. Создать?"]
+                            for t in preview:
                                 prefix = "\U0001f6a8 " if t.get("is_blocker") else "\u2022 "
-                                lines.append(f"  {prefix}{t['task_key']} \"{t['title']}\" \u2192 {t['assignee']}")
-                            await message.reply("\n".join(lines))
-
-                            # DM-пинг каждому ассайни (кроме автора сообщения)
-                            import os as _os
-                            frontend_url = _os.getenv("FRONTEND_URL", "https://enceladus.site")
-                            for t in created_tasks:
-                                assignee_id = t.get("assignee_id")
-                                creator_id = t.get("creator_id")
-                                if not assignee_id or assignee_id == creator_id:
-                                    continue
-                                blocker_tag = "\U0001f6a8 <b>БЛОКЕР</b>\n" if t.get("is_blocker") else ""
-                                text = (
-                                    f"{blocker_tag}\U0001f4cb <b>Новая задача назначена на вас</b>\n\n"
-                                    f"\U0001f4dd {t['title']}\n"
-                                    f"\U0001f4c2 Проект: {t['project']}\n"
-                                    f'\U0001f517 <a href="{frontend_url}/projects/{t["project_id"]}/tasks/{t["task_id"]}">Открыть</a>'
-                                )
-                                try:
-                                    await send_telegram_notification(assignee_id, text)
-                                except Exception as e:
-                                    _dbg(f"DM to assignee {assignee_id} failed: {type(e).__name__}: {e}")
+                                lines.append(f"  {prefix}{t['title']} \u2192 {t['assignee']} ({t['project']})")
+                            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                                InlineKeyboardButton(
+                                    text=f"\u2705 Создать ({len(preview)})",
+                                    callback_data=f"tasks:ok:{suggestion.id}",
+                                ),
+                                InlineKeyboardButton(
+                                    text="\u274c Не надо",
+                                    callback_data=f"tasks:no:{suggestion.id}",
+                                ),
+                            ]])
+                            await message.reply("\n".join(lines), reply_markup=kb)
                     except Exception as e:
                         _dbg(f"Task trigger ERROR: {type(e).__name__}: {e}")
                         logger.error(f"Task trigger error: {e}", exc_info=True)

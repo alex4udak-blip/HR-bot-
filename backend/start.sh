@@ -446,6 +446,29 @@ async def ensure_shadow_columns():
             'ALTER TABLE staff_board_departments ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMP'
         ))
 
+        # Задачи из чата: пометка «создал бот» и первоисточник (25.09.2026)
+        for _sql in (
+            "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS created_by_bot BOOLEAN DEFAULT false",
+            "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS source_chat_id BIGINT",
+            "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS source_message TEXT",
+        ):
+            await conn.execute(text(_sql))
+
+        # Предложенные ботом задачи ждут кнопки «Создать» в чате (25.09.2026)
+        await conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS pending_task_suggestions (
+                id SERIAL PRIMARY KEY,
+                org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                chat_id BIGINT,
+                message_text TEXT NOT NULL,
+                payload JSON DEFAULT '{}',
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                status VARCHAR(20) DEFAULT 'pending',
+                decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                decided_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT now()
+            )'''))
+
         # Свой порядок отделов у каждого HR (24.09.2026)
         await conn.execute(text('''
             CREATE TABLE IF NOT EXISTS staff_board_department_order (
