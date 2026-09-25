@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, Check, X,
+  Search, Loader2, Plus, Pencil, Eye, EyeOff, Check, X,
   ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
@@ -107,7 +107,8 @@ const fmt = (iso: string | null) => {
 /** Колонки, по которым можно фильтровать. */
 const FILTERABLE = COLUMNS.filter((c) => c.filter) as { key: FilterKey; label: string }[];
 
-const FILTERS_STORAGE_KEY = "hf-statuses-rules";
+// v2: вместо правил «поле/оператор/значение» — выбор значений галочками
+const FILTERS_STORAGE_KEY = "hf-statuses-filters-v2";
 
 /** Колонки, по которым можно сортировать кликом по заголовку: даты выходов.
  *  Мария смотрит, кто вышел последним, — без сортировки приходилось искать
@@ -116,41 +117,37 @@ type SortKey = "practice_start_date" | "department_start_date" | "dismissal_date
 const SORTABLE: SortKey[] = ["practice_start_date", "department_start_date", "dismissal_date"];
 type SortDir = "asc" | "desc";
 
-/** Операторы как в конструкторе фильтров ClickUp; для дат — «с … по …». */
-type FilterOp = "is" | "is_not" | "contains" | "set" | "not_set" | "range";
-
-/** Колонки с датами: у них вместо «равно/содержит» два поля — с и по.
- *  «Выгрузить всех, кто вышел в отдел в сентябре» через «содержит» было
- *  невозможно (владелец, 24.09.2026). */
+/** Колонки с датами: у них «с … по …» вместо выбора значений.
+ *  «Выгрузить всех, кто вышел в отдел в сентябре» иначе невозможно. */
 const DATE_KEYS: FilterKey[] = [
   "practice_start_date", "department_start_date", "w2", "m1", "m3", "y1", "dismissal_date",
 ];
 const isDateKey = (k: FilterKey) => DATE_KEYS.includes(k);
 
-/** Значение правила-диапазона: «с|по», любая половина может быть пустой. */
-const splitRange = (v: string): [string, string] => {
-  const [from = "", to = ""] = (v || "").split("|");
-  return [from, to];
-};
+/** Колонки-галочки: у них всего два варианта. */
+const DONE_KEYS: FilterKey[] = ["dept_done", "w2_done", "m1_done", "m3_done", "y1_done"];
+const isDoneKey = (k: FilterKey) => DONE_KEYS.includes(k);
 
-const OPS: { value: FilterOp; label: string; needsValue: boolean }[] = [
-  { value: "range",    label: "с … по",        needsValue: true },
-  { value: "is",       label: "равно",         needsValue: true },
-  { value: "is_not",   label: "не равно",      needsValue: true },
-  { value: "contains", label: "содержит",      needsValue: true },
-  { value: "set",      label: "заполнено",     needsValue: false },
-  { value: "not_set",  label: "не заполнено",  needsValue: false },
-];
+/** «Пусто» — такой же вариант выбора, как остальные значения колонки. */
+const BLANK = "\u0000blank";
+const valueLabel = (key: FilterKey, v: string) =>
+  v === BLANK ? "Пусто" : isDoneKey(key) ? (v === "✓" ? "Отмечено" : "Не отмечено") : v;
 
-interface FilterRule {
-  id: string;
-  key: FilterKey;
-  op: FilterOp;
-  value: string;
+/** Фильтры доски. Никаких «равно/не равно»: у обычных колонок отмечают
+ *  галочками нужные значения (как автофильтр в таблицах), у дат — «с» и «по»
+ *  (Мария: «как-то всё очень сложно», встреча 24.09.2026). */
+interface BoardFilters {
+  /** колонка → выбранные значения; пусто = колонка не фильтрует */
+  values: Partial<Record<FilterKey, string[]>>;
+  /** колонка-дата → границы «с» и «по» */
+  dates: Partial<Record<FilterKey, { from: string; to: string }>>;
 }
 
-let ruleSeq = 0;
-const newRuleId = () => `r${(ruleSeq += 1)}`;
+const EMPTY_FILTERS: BoardFilters = { values: {}, dates: {} };
+
+const countActive = (f: BoardFilters) =>
+  Object.values(f.values).filter((v) => v && v.length).length +
+  Object.values(f.dates).filter((d) => d && (d.from || d.to)).length;
 
 /** Пустая ячейка рисуется как «—», поэтому прочерк тоже считаем пустотой. */
 const isBlank = (v: string) => !v.trim() || v.trim() === "—";
@@ -199,19 +196,55 @@ export default function StatusesPage() {
     } catch { /* без хранилища просто не запоминаем */ }
   }, [hrFilter]);
 
-  // Конструктор фильтров повторяет ClickUp: список правил
-  // «поле → оператор → значение», которые применяются вместе.
-  const [rules, setRules] = useState<FilterRule[]>(() => {
+  const [filters, setFilters] = useState<BoardFilters>(() => {
     try {
       const raw = localStorage.getItem(FILTERS_STORAGE_KEY);
       if (raw) {
-        return (JSON.parse(raw) as FilterRule[])
-          .filter((r) => FILTERABLE.some((c) => c.key === r.key) && OPS.some((o) => o.value === r.op))
-          .map((r) => ({ ...r, id: newRuleId() }));
+        const parsed = JSON.parse(raw) as BoardFilters;
+        if (parsed && typeof parsed === "object") {
+          return { values: parsed.values || {}, dates: parsed.dates || {} };
+        }
       }
     } catch { /* повреждённое значение — начинаем без фильтров */ }
-    return [];
+    return EMPTY_FILTERS;
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    } catch { /* приватный режим — переживём без сохранения */ }
+  }, [filters]);
+
+  /** Отметить/снять значение колонки. */
+  const toggleValue = (key: FilterKey, value: string) =>
+    setFilters((f) => {
+      const cur = f.values[key] || [];
+      const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
+      const values = { ...f.values };
+      if (next.length) values[key] = next;
+      else delete values[key];
+      return { ...f, values };
+    });
+
+  const setDateBound = (key: FilterKey, side: "from" | "to", value: string) =>
+    setFilters((f) => {
+      const cur = f.dates[key] || { from: "", to: "" };
+      const next = { ...cur, [side]: value };
+      const dates = { ...f.dates };
+      if (next.from || next.to) dates[key] = next;
+      else delete dates[key];
+      return { ...f, dates };
+    });
+
+  const clearKey = (key: FilterKey) =>
+    setFilters((f) => {
+      const values = { ...f.values };
+      const dates = { ...f.dates };
+      delete values[key];
+      delete dates[key];
+      return { values, dates };
+    });
+
   const [pickerOpen, setPickerOpen] = useState(false);
   // Сортировка по дате: клик по заголовку — сначала новые, второй — старые,
   // третий возвращает обычный порядок.
@@ -220,24 +253,6 @@ export default function StatusesPage() {
     setSort((cur) =>
       cur?.key !== key ? { key, dir: "desc" } : cur.dir === "desc" ? { key, dir: "asc" } : null
     );
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(rules));
-    } catch { /* приватный режим — переживём без сохранения */ }
-  }, [rules]);
-
-  const addRule = () =>
-    setRules((cur) => [...cur, { id: newRuleId(), key: "department", op: "is", value: "" }]);
-
-  /** Смена колонки в правиле: у дат свой оператор-диапазон, у остальных — «равно». */
-  const changeRuleKey = (id: string, key: FilterKey) =>
-    patchRule(id, { key, value: "", op: isDateKey(key) ? "range" : "is" });
-
-  const patchRule = (id: string, patch: Partial<FilterRule>) =>
-    setRules((cur) => cur.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-
-  const dropRule = (id: string) => setRules((cur) => cur.filter((r) => r.id !== id));
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -321,40 +336,29 @@ export default function StatusesPage() {
       const uid = Number(hrFilter);
       out = out.filter((r) => rowAssignees(r).some((a) => a.user_id === uid));
     }
-    // Отмеченная колонка = условие «у человека она заполнена». Несколько
-    // отмеченных требуют заполненности КАЖДОЙ.
-    // Правила применяются вместе (И) — как в ClickUp.
-    for (const rule of rules) {
-      const spec = OPS.find((o) => o.value === rule.op);
-      // Правило без выбранного значения ничего не отбирает: иначе только что
-      // добавленная строка мгновенно обнуляла бы таблицу.
-      if (spec?.needsValue && !rule.value) continue;
-      // Диапазон без обеих границ ничего не отбирает
-      if (rule.op === "range" && splitRange(rule.value).every((v) => !v)) continue;
+    // Колонки фильтруются вместе (И), значения внутри колонки — «или»:
+    // отметили SEO и Push — видно и тех, и других.
+    for (const [key, chosen] of Object.entries(filters.values) as [FilterKey, string[]][]) {
+      if (!chosen?.length) continue;
       out = out.filter((r) => {
-        // Диапазон сравниваем по «сырой» дате (YYYY-MM-DD), а не по видимой
-        // «дд.мм.гггг»: так работает обычное строковое сравнение.
-        if (rule.op === "range") {
-          const [from, to] = splitRange(rule.value);
-          const iso = ((r[rule.key as keyof BoardRow] as string | null) || "").slice(0, 10);
-          if (!iso) return false;
-          if (from && iso < from) return false;
-          if (to && iso > to) return false;
-          return true;
-        }
-        const cell = cellText(r, rule.key).trim();
-        switch (rule.op) {
-          case "set": return !isBlank(cell);
-          case "not_set": return isBlank(cell);
-          case "is": return cell.toLowerCase() === rule.value.trim().toLowerCase();
-          case "is_not": return cell.toLowerCase() !== rule.value.trim().toLowerCase();
-          case "contains": return cell.toLowerCase().includes(rule.value.toLowerCase());
-          default: return true;
-        }
+        const cell = cellText(r, key).trim();
+        return chosen.includes(isBlank(cell) ? BLANK : cell);
+      });
+    }
+
+    for (const [key, range] of Object.entries(filters.dates) as [FilterKey, { from: string; to: string }][]) {
+      if (!range || (!range.from && !range.to)) continue;
+      out = out.filter((r) => {
+        // Сравниваем «сырую» дату (ГГГГ-ММ-ДД), а не видимую «дд.мм.гггг».
+        const iso = ((r[key as keyof BoardRow] as string | null) || "").slice(0, 10);
+        if (!iso) return false;
+        if (range.from && iso < range.from) return false;
+        if (range.to && iso > range.to) return false;
+        return true;
       });
     }
     return out;
-  }, [rows, q, rules, hrFilter]);
+  }, [rows, q, filters, hrFilter]);
 
   /** HR для быстрого фильтра — только те, у кого на доске кто-то есть. */
   const hrOptions = useMemo(() => {
@@ -396,21 +400,25 @@ export default function StatusesPage() {
     (key: FilterKey): { value: string; count: number }[] => {
       const needle = q.trim().toLowerCase();
       const map = new Map<string, number>();
+      let blank = 0;
       for (const r of rows) {
         if (needle && ![r.name, r.position, r.department_name, r.telegram, r.manager]
           .filter(Boolean).some((v) => String(v).toLowerCase().includes(needle))) continue;
         const v = cellText(r, key).trim();
-        if (isBlank(v)) continue;
+        if (isBlank(v)) { blank += 1; continue; }
         map.set(v, (map.get(v) || 0) + 1);
       }
-      return [...map.entries()]
+      const list = [...map.entries()]
         .map(([value, count]) => ({ value, count }))
         .sort((a, b) => a.value.localeCompare(b.value, "ru"));
+      // «Пусто» — внизу: по нему находят незаполненные ячейки
+      if (blank) list.push({ value: BLANK, count: blank });
+      return list;
     },
     [rows, q]
   );
 
-  const activeCount = rules.length;
+  const activeCount = countActive(filters);
 
   const grouped = useMemo(
     () => STATUSES.map((s) => {
@@ -487,118 +495,55 @@ export default function StatusesPage() {
                 <div className="hf-statuses-picker">
                   <div className="hf-statuses-picker-head">
                     <span>Фильтры</span>
-                    {rules.length > 0 && (
+                    {activeCount > 0 && (
                       <div className="hf-statuses-picker-actions">
-                        <button onClick={() => setRules([])}>очистить</button>
+                        <button onClick={() => setFilters(EMPTY_FILTERS)}>очистить всё</button>
                       </div>
                     )}
                   </div>
 
-                  {rules.length === 0 && (
-                    <div className="hf-statuses-rule-empty">
-                      Фильтров нет — показаны все сотрудники
-                    </div>
-                  )}
+                  <div className="hf-statuses-filter-hint">
+                    Отметьте, что показывать. Ничего не отмечено — показаны все.
+                  </div>
 
-                  {rules.map((rule) => {
-                    const spec = OPS.find((o) => o.value === rule.op);
-                    return (
-                      <div key={rule.id} className="hf-statuses-rule">
-                        <select
-                          className="hf-statuses-rule-field"
-                          value={rule.key}
-                          onChange={(e) => changeRuleKey(rule.id, e.target.value as FilterKey)}
-                        >
-                          {FILTERABLE.map((c) => (
-                            <option key={c.key} value={c.key}>
-                              {FILTER_LABELS[c.key] || c.label}
-                            </option>
-                          ))}
-                        </select>
-
-                        {!isDateKey(rule.key) && (
-                          <select
-                            className="hf-statuses-rule-op"
-                            value={rule.op}
-                            onChange={(e) =>
-                              patchRule(rule.id, { op: e.target.value as FilterOp })
-                            }
-                          >
-                            {OPS.filter((o) => o.value !== "range").map((o) => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                          </select>
-                        )}
-
-                        {isDateKey(rule.key) ? (
-                          <div className="hf-statuses-rule-range">
-                            <span>с</span>
-                            <input
-                              type="date"
-                              className="hf-statuses-rule-date"
-                              value={splitRange(rule.value)[0]}
-                              onChange={(e) =>
-                                patchRule(rule.id, {
-                                  op: "range",
-                                  value: `${e.target.value}|${splitRange(rule.value)[1]}`,
-                                })
-                              }
-                            />
-                            <span>по</span>
-                            <input
-                              type="date"
-                              className="hf-statuses-rule-date"
-                              value={splitRange(rule.value)[1]}
-                              onChange={(e) =>
-                                patchRule(rule.id, {
-                                  op: "range",
-                                  value: `${splitRange(rule.value)[0]}|${e.target.value}`,
-                                })
-                              }
-                            />
-                          </div>
-                        ) : spec?.needsValue ? (
-                          <>
-                            {/* Обычное текстовое поле. Подсказки через datalist:
-                                значения из таблицы под рукой, но вписать можно
-                                что угодно, включая ещё не встречавшееся. */}
-                            <input
-                              className="hf-statuses-rule-value"
-                              list={`vals-${rule.id}`}
-                              value={rule.value}
-                              placeholder="значение"
-                              onChange={(e) => patchRule(rule.id, { value: e.target.value })}
-                            />
-                            <datalist id={`vals-${rule.id}`}>
-                              {valuesFor(rule.key).map((v) => (
-                                <option key={v.value} value={v.value} />
-                              ))}
-                            </datalist>
-                          </>
-                        ) : (
-                          <span className="hf-statuses-rule-value hf-statuses-rule-value-off" />
-                        )}
-
-                        <button
-                          className="hf-statuses-rule-drop"
-                          onClick={() => dropRule(rule.id)}
-                          title="Удалить фильтр"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    );
-                  })}
-
-                  <button className="hf-statuses-rule-add" onClick={addRule}>
-                    <Plus size={14} /> Добавить фильтр
-                  </button>
+                  {FILTERABLE.map((c) => (
+                    <FilterSection
+                      key={c.key}
+                      label={FILTER_LABELS[c.key] || c.label}
+                      column={c.key}
+                      values={filters.values[c.key] || []}
+                      range={filters.dates[c.key]}
+                      options={isDateKey(c.key) ? [] : valuesFor(c.key)}
+                      onToggle={(v) => toggleValue(c.key, v)}
+                      onDate={(side, v) => setDateBound(c.key, side, v)}
+                      onClear={() => clearKey(c.key)}
+                    />
+                  ))}
                 </div>
               </>
             )}
           </div>
         </div>
       </div>
+
+      {activeCount > 0 && (
+        <div className="hf-statuses-fchips">
+          {(Object.entries(filters.values) as [FilterKey, string[]][]).map(([key, vals]) => (
+            <button key={key} className="hf-statuses-fchip" onClick={() => clearKey(key)} title="Снять фильтр">
+              <b>{FILTER_LABELS[key] || COLUMNS.find((c) => c.key === key)?.label}:</b>{" "}
+              {vals.map((v) => valueLabel(key, v)).join(", ")}
+              <X size={12} />
+            </button>
+          ))}
+          {(Object.entries(filters.dates) as [FilterKey, { from: string; to: string }][]).map(([key, r]) => (
+            <button key={key} className="hf-statuses-fchip" onClick={() => clearKey(key)} title="Снять фильтр">
+              <b>{FILTER_LABELS[key] || COLUMNS.find((c) => c.key === key)?.label}:</b>{" "}
+              {r.from ? `с ${fmt(r.from)}` : ""}{r.to ? ` по ${fmt(r.to)}` : ""}
+              <X size={12} />
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="hf-statuses-loading">
@@ -710,6 +655,86 @@ export default function StatusesPage() {
 // ============================================================
 // SIDEBAR
 // ============================================================
+
+/** Одна колонка в панели фильтров: раскрывается, внутри — галочки со
+ *  значениями и их количеством, у дат — «с» и «по». Ни операторов, ни
+ *  «равно/содержит»: отмечаешь то, что хочешь видеть. */
+function FilterSection({
+  label, column, values, range, options, onToggle, onDate, onClear,
+}: {
+  label: string;
+  column: FilterKey;
+  values: string[];
+  range?: { from: string; to: string };
+  options: { value: string; count: number }[];
+  onToggle: (v: string) => void;
+  onDate: (side: "from" | "to", v: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const isDate = isDateKey(column);
+  const active = isDate ? !!(range && (range.from || range.to)) : values.length > 0;
+  const shown = q
+    ? options.filter((o) => valueLabel(column, o.value).toLowerCase().includes(q.toLowerCase()))
+    : options;
+
+  const summary = isDate
+    ? `${range?.from ? `с ${fmt(range.from)}` : ""}${range?.to ? ` по ${fmt(range.to)}` : ""}`.trim()
+    : values.map((v) => valueLabel(column, v)).join(", ");
+
+  return (
+    <div className={clsx("hf-statuses-filter-section", active && "is-active")}>
+      <button className="hf-statuses-filter-head" onClick={() => setOpen((v) => !v)}>
+        <ChevronRight
+          size={13}
+          className={clsx("hf-statuses-filter-caret", open && "is-open")}
+        />
+        <span className="hf-statuses-filter-name">{label}</span>
+        {active && <span className="hf-statuses-filter-summary">{summary}</span>}
+        {active && (
+          <span
+            className="hf-statuses-filter-clear"
+            title="Снять фильтр"
+            onClick={(e) => { e.stopPropagation(); onClear(); }}
+          >
+            <X size={12} />
+          </span>
+        )}
+      </button>
+
+      {open && (isDate ? (
+        <div className="hf-statuses-filter-dates">
+          <label>с<input type="date" value={range?.from || ""} onChange={(e) => onDate("from", e.target.value)} /></label>
+          <label>по<input type="date" value={range?.to || ""} onChange={(e) => onDate("to", e.target.value)} /></label>
+        </div>
+      ) : (
+        <div className="hf-statuses-filter-values">
+          {options.length > 8 && (
+            <input
+              className="hf-statuses-filter-search"
+              value={q}
+              placeholder="найти значение…"
+              onChange={(e) => setQ(e.target.value)}
+            />
+          )}
+          {shown.length === 0 && <div className="hf-statuses-filter-empty">Нет значений</div>}
+          {shown.map((o) => (
+            <label key={o.value} className="hf-statuses-filter-option">
+              <input
+                type="checkbox"
+                checked={values.includes(o.value)}
+                onChange={() => onToggle(o.value)}
+              />
+              <span className="hf-statuses-filter-option-name">{valueLabel(column, o.value)}</span>
+              <span className="hf-statuses-filter-option-count">{o.count}</span>
+            </label>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** Отделы слева — вместо прежних «направлений» (это были те же отделы).
  *  Сначала отделы, где кто-то есть, потом пустые: пустых в оргструктуре
