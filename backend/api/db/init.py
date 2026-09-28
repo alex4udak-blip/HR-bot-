@@ -179,6 +179,19 @@ async def init_database():
          "stage_transitions.edited_by"),
         ("ALTER TABLE vacancy_applications ADD COLUMN IF NOT EXISTS pinned_entry_key VARCHAR(64)",
          "vacancy_applications.pinned_entry_key"),
+        # Задачи из чата (25.09.2026, соседняя ветка работ). Их ALTER-ы лежали
+        # в том же хвосте start.sh и на прод не доехали: 28.09 проверка
+        # SCHEMA_DRIFT показала, что колонок нет, хотя модель их требует —
+        # значит, запросы к задачам падали так же, как вчера падали заявки.
+        # Сами таблицы спаслись через create_all, колонки в существующих — нет.
+        ("ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS created_by_bot BOOLEAN DEFAULT false",
+         "project_tasks.created_by_bot"),
+        ("CREATE INDEX IF NOT EXISTS ix_project_tasks_created_by_bot ON project_tasks (created_by_bot)",
+         "индекс project_tasks.created_by_bot"),
+        ("ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS source_chat_id BIGINT",
+         "project_tasks.source_chat_id"),
+        ("ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS source_message TEXT",
+         "project_tasks.source_message"),
     ):
         await run_migration(engine, sql, description)
 
