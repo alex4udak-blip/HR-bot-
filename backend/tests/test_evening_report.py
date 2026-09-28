@@ -210,3 +210,29 @@ async def test_stale_readiness_is_reported(db_session, organization, admin_user)
 
     block = ev.format_readiness_block(stale)
     assert "Забытый" in block and "не ставили ни разу" in block
+
+
+# ── Редактирование отчёта ──────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_edited_report_updates_same_record(db_session, organization, admin_user):
+    """Отчёт правят в Telegram — обновляем ту же запись и ту же выжимку."""
+    first = await ev.save_report(
+        db=db_session, org_id=organization.id, user_id=admin_user.id, chat_id=-100,
+        author_name="Миша", source_type="text", text="сделал А",
+        summary={"done": ["А"]}, tg_message_id=555, reply_message_id=556,
+    )
+    assert first.tg_message_id == 555 and first.reply_message_id == 556
+
+    found = await ev.find_report_by_message(db_session, -100, 555)
+    assert found is not None and found.id == first.id
+    assert await ev.find_report_by_message(db_session, -100, 999) is None
+
+    updated = await ev.save_report(
+        db=db_session, org_id=organization.id, user_id=admin_user.id, chat_id=-100,
+        author_name="Миша", source_type="text", text="сделал А и Б",
+        summary={"done": ["А", "Б"]}, tg_message_id=555, reply_message_id=556,
+    )
+    assert updated.id == first.id
+    assert updated.summary["done"] == ["А", "Б"]
+    assert "и Б" in updated.raw_text

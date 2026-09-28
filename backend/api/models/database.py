@@ -2069,6 +2069,10 @@ class EveningReport(Base):
     source_type = Column(String(20), nullable=False)            # text / voice / video / document
     raw_text = Column(Text, nullable=False)                     # расшифровка или текст файла
     summary = Column(JSON, default=dict)                        # выжимка: сделано, проблемы, план
+    # Сообщение-отчёт и ответ бота: отчёт правят прямо в Telegram, и бот
+    # пересобирает выжимку в своём же сообщении (просьба команды 28.09.2026).
+    tg_message_id = Column(BigInteger, nullable=True, index=True)
+    reply_message_id = Column(BigInteger, nullable=True)
     created_at = Column(DateTime, default=func.now())
 
 

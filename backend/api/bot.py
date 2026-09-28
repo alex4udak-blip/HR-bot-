@@ -3726,6 +3726,72 @@ async def _handle_readiness(session, message, text: str, org_id) -> bool:
     return True
 
 
+@dp.edited_message(F.chat.type.in_({"group", "supergroup"}))
+async def handle_edited_message(message: Message):
+    """Отчёт поправили в Telegram — пересобираем выжимку в том же ответе.
+
+    Команда попросила «редактирование отчёта» (28.09.2026): человек дописывает
+    строчку в своём сообщении, и бот обновляет свою выжимку, а не плодит новую.
+    """
+    from .services import evening_report as ev
+
+    text = f"{message.caption or ''}\n{message.text or ''}".strip()
+    if not ev.has_report_tag(text):
+        return
+
+    async with async_session() as session:
+        chat = (await session.execute(
+            select(Chat).where(Chat.telegram_chat_id == message.chat.id)
+        )).scalar_one_or_none()
+        if not chat or not chat.org_id:
+            return
+
+        report = await ev.find_report_by_message(session, message.chat.id, message.message_id)
+        body = ev.strip_tag(text)
+        if len(body) < 15:
+            return
+
+        summary = await ev.summarize_report(body)
+        author = message.from_user.full_name
+        new_text = ev.format_summary(summary, author) + "\n\n<i>отчёт обновлён</i>"
+
+        reply_id = report.reply_message_id if report else None
+        edited_ok = False
+        if reply_id:
+            try:
+                await get_bot().edit_message_text(
+                    chat_id=message.chat.id, message_id=reply_id, text=new_text,
+                    parse_mode="HTML", disable_web_page_preview=True,
+                )
+                edited_ok = True
+            except Exception as e:
+                # Telegram не даёт править старые сообщения — тогда ответим новым
+                _dbg(f"Выжимку не удалось обновить на месте: {e}")
+
+        if not edited_ok:
+            sent = await message.reply(
+                new_text, parse_mode="HTML", disable_web_page_preview=True
+            )
+            reply_id = sent.message_id
+
+        user = (await session.execute(
+            select(User).where(User.telegram_id == message.from_user.id)
+        )).scalar_one_or_none()
+        await ev.save_report(
+            db=session,
+            org_id=chat.org_id,
+            user_id=user.id if user else None,
+            chat_id=message.chat.id,
+            author_name=author,
+            source_type="text",
+            text=body,
+            summary=summary,
+            tg_message_id=message.message_id,
+            reply_message_id=reply_id,
+        )
+        logger.info(f"EVENING_REPORT edited: чат {message.chat.id}, сообщение {message.message_id}")
+
+
 async def _handle_evening_report(session, message, content_type: str, tagged_text: str, org_id) -> bool:
     """Вечерний отчёт из чата: выжимка вместо трёх минут чтения.
 
@@ -3753,6 +3819,12 @@ async def _handle_evening_report(session, message, content_type: str, tagged_tex
     )).scalar_one_or_none()
 
     summary = await ev.summarize_report(body)
+    reply = await message.reply(
+        ev.format_summary(summary, message.from_user.full_name),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+    # id сообщений нужны, чтобы при правке отчёта обновить ТУ ЖЕ выжимку
     await ev.save_report(
         db=session,
         org_id=org_id,
@@ -3762,11 +3834,8 @@ async def _handle_evening_report(session, message, content_type: str, tagged_tex
         source_type=content_type,
         text=body,
         summary=summary,
-    )
-    await message.reply(
-        ev.format_summary(summary, message.from_user.full_name),
-        parse_mode="HTML",
-        disable_web_page_preview=True,
+        tg_message_id=message.message_id,
+        reply_message_id=reply.message_id if reply else None,
     )
     return True
 

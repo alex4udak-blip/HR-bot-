@@ -517,6 +517,13 @@ async def ensure_shadow_columns():
                 created_at TIMESTAMP DEFAULT now()
             )'''))
 
+        # Отчёт правят в Telegram — помним id сообщения и ответа (28.09.2026)
+        for _sql in (
+            'ALTER TABLE evening_reports ADD COLUMN IF NOT EXISTS tg_message_id BIGINT',
+            'ALTER TABLE evening_reports ADD COLUMN IF NOT EXISTS reply_message_id BIGINT',
+        ):
+            await conn.execute(text(_sql))
+
         # Готовность продукта: кто и когда оценивал (28.09.2026)
         for _sql in (
             'ALTER TABLE projects ADD COLUMN IF NOT EXISTS progress_updated_at TIMESTAMP',

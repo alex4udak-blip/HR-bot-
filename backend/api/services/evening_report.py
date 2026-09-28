@@ -134,6 +134,8 @@ async def save_report(
     source_type: str,
     text: str,
     summary: dict,
+    tg_message_id: Optional[int] = None,
+    reply_message_id: Optional[int] = None,
 ) -> "EveningReport":
     """Сохранить отчёт за сегодня. Повторный отчёт за день заменяет прежний."""
     from ..models.database import EveningReport
@@ -154,6 +156,10 @@ async def save_report(
         existing.summary = summary
         existing.source_type = source_type
         existing.chat_id = chat_id
+        if tg_message_id:
+            existing.tg_message_id = tg_message_id
+        if reply_message_id:
+            existing.reply_message_id = reply_message_id
         report = existing
     else:
         report = EveningReport(
@@ -165,6 +171,8 @@ async def save_report(
             source_type=source_type,
             raw_text=text[:20000],
             summary=summary,
+            tg_message_id=tg_message_id,
+            reply_message_id=reply_message_id,
         )
         db.add(report)
     await db.commit()
@@ -173,6 +181,20 @@ async def save_report(
         f"{len(text)} символов"
     )
     return report
+
+
+async def find_report_by_message(
+    db: AsyncSession, chat_id: int, tg_message_id: int
+) -> Optional[object]:
+    """Найти отчёт по сообщению, которое сейчас отредактировали."""
+    from ..models.database import EveningReport
+
+    return (await db.execute(
+        select(EveningReport).where(
+            EveningReport.chat_id == chat_id,
+            EveningReport.tg_message_id == tg_message_id,
+        ).limit(1)
+    )).scalars().first()
 
 
 async def report_exists_today(db: AsyncSession, chat_id: int) -> bool:
