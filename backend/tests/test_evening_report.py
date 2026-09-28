@@ -138,3 +138,75 @@ def test_comment_ping_has_task_link():
     )
     assert "Миша" in text and "Saturn" in text and "SAT-1" in text
     assert "/projects/2/tasks/5" in text
+
+
+# ── Готовность продукта ────────────────────────────────────────────
+
+@pytest.mark.parametrize("text,expected", [
+    ("готовность Saturn 70", ("Saturn", 70)),
+    ("Готовность ZavodCamp 45%", ("ZavodCamp", 45)),
+    ("готовность Partner Analytics 5", ("Partner Analytics", 5)),
+])
+def test_readiness_is_parsed(text, expected):
+    assert ev.parse_readiness(text) == expected
+
+
+@pytest.mark.parametrize("text", [
+    "готовность 70",                    # без проекта
+    "какая готовность у Saturn?",       # вопрос
+    "готовность Saturn 300",            # процент вне диапазона
+    "сегодня доделал парсер",
+])
+def test_not_readiness(text):
+    assert ev.parse_readiness(text) is None
+
+
+@pytest.mark.asyncio
+async def test_readiness_is_set_by_hand_and_stops_autocount(db_session, organization, admin_user):
+    project = Project(
+        org_id=organization.id, name="Saturn", prefix="SAT", status="active",
+        progress_percent=12, progress_mode="auto",
+        created_by=admin_user.id, created_at=datetime.utcnow(),
+    )
+    db_session.add(project)
+    await db_session.commit()
+
+    updated = await ev.set_readiness(db_session, organization.id, "сатурн", 70, admin_user.id)
+    assert updated is not None and updated.progress_percent == 70
+    # авто-пересчёт по задачам больше не перетрёт оценку человека
+    assert updated.progress_mode == "manual"
+    assert updated.progress_updated_by == admin_user.id
+    assert updated.progress_updated_at is not None
+
+    assert await ev.set_readiness(db_session, organization.id, "Несуществующий", 50, admin_user.id) is None
+
+
+@pytest.mark.asyncio
+async def test_stale_readiness_is_reported(db_session, organization, admin_user):
+    fresh = Project(
+        org_id=organization.id, name="Свежий", status="active", progress_percent=80,
+        progress_updated_at=datetime.utcnow(), created_by=admin_user.id, created_at=datetime.utcnow(),
+    )
+    never = Project(
+        org_id=organization.id, name="Забытый", status="active", progress_percent=0,
+        created_by=admin_user.id, created_at=datetime.utcnow(),
+    )
+    db_session.add_all([fresh, never])
+    await db_session.commit()
+    await db_session.refresh(fresh)
+    await db_session.refresh(never)
+
+    for p in (fresh, never):
+        db_session.add(ProjectTask(
+            project_id=p.id, title=f"Задача {p.name}", status="todo", sort_order=0,
+            source_chat_id=-100, created_by=admin_user.id,
+            created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+        ))
+    await db_session.commit()
+
+    stale = await ev.stale_readiness(db_session, -100)
+    names = [p["name"] for p in stale]
+    assert "Забытый" in names and "Свежий" not in names
+
+    block = ev.format_readiness_block(stale)
+    assert "Забытый" in block and "не ставили ни разу" in block

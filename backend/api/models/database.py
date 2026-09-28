@@ -1251,6 +1251,11 @@ class Project(Base):
     client_name = Column(String(300), nullable=True)
     progress_percent = Column(Integer, default=0)  # 0-100
     progress_mode = Column(String(10), default="auto")  # "auto" or "manual"
+    # Готовность продукта ставит РУКАМИ разработчик (решение владельца
+    # 28.09.2026): доля закрытых задач врёт — можно закрыть двадцать мелких и
+    # не сдвинуться. Помним, кто и когда оценивал, чтобы напоминать про старые.
+    progress_updated_at = Column(DateTime, nullable=True)
+    progress_updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     start_date = Column(DateTime, nullable=True)
     target_date = Column(DateTime, nullable=True)
     predicted_date = Column(DateTime, nullable=True)

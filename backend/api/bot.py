@@ -2635,6 +2635,11 @@ async def collect_group_message(message: types.Message):
             session.add(db_message)
             await session.commit()
 
+            # Готовность продукта ставит разработчик руками: «готовность Saturn 70»
+            if content_type == "text" and content and org_id:
+                if await _handle_readiness(session, message, content, org_id):
+                    return
+
             # Вечерний отчёт: текстом, голосом, кружком или видео. Тег ищем и в
             # подписи к медиа — под видео-демо его пишут именно там.
             if await _handle_evening_report(
@@ -3688,6 +3693,39 @@ async def cmd_ai_digest(message: types.Message):
     await _send_long(message, answer)
 
 
+async def _handle_readiness(session, message, text: str, org_id) -> bool:
+    """«Готовность Saturn 70» — оценка продукта руками разработчика.
+
+    Доля закрытых задач врёт: можно закрыть двадцать мелких и не сдвинуться,
+    поэтому цифру ставит человек (владелец, 28.09.2026).
+    """
+    from .services import evening_report as ev
+
+    parsed = ev.parse_readiness(text)
+    if not parsed:
+        return False
+    project_hint, percent = parsed
+
+    user = (await session.execute(
+        select(User).where(User.telegram_id == message.from_user.id)
+    )).scalar_one_or_none()
+
+    project = await ev.set_readiness(
+        db=session, org_id=org_id, project_hint=project_hint,
+        percent=percent, user_id=user.id if user else None,
+    )
+    if not project:
+        await message.reply(f"Не нашёл проект «{project_hint}». Проверьте название.")
+        return True
+
+    await message.reply(
+        f"📊 Готовность <b>{project.name}</b> — {percent}%\n"
+        f"<i>оценка {message.from_user.full_name}</i>",
+        parse_mode="HTML",
+    )
+    return True
+
+
 async def _handle_evening_report(session, message, content_type: str, tagged_text: str, org_id) -> bool:
     """Вечерний отчёт из чата: выжимка вместо трёх минут чтения.
 
@@ -3815,6 +3853,9 @@ async def evening_digest_task():
                             text = ev.format_digest(
                                 chat.custom_name or chat.title or "чат",
                                 report, author, comments,
+                            )
+                            text += ev.format_readiness_block(
+                                await ev.stale_readiness(session, tg_id)
                             )
                             if not has_report:
                                 text += "\n\n📝 Вечернего отчёта сегодня не было — пришлите с тегом «вечерний отчёт»."

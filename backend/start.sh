@@ -517,6 +517,13 @@ async def ensure_shadow_columns():
                 created_at TIMESTAMP DEFAULT now()
             )'''))
 
+        # Готовность продукта: кто и когда оценивал (28.09.2026)
+        for _sql in (
+            'ALTER TABLE projects ADD COLUMN IF NOT EXISTS progress_updated_at TIMESTAMP',
+            'ALTER TABLE projects ADD COLUMN IF NOT EXISTS progress_updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL',
+        ):
+            await conn.execute(text(_sql))
+
         # Вечерние отчёты сотрудников (28.09.2026)
         await conn.execute(text('''
             CREATE TABLE IF NOT EXISTS evening_reports (

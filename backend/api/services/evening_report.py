@@ -278,3 +278,104 @@ def format_digest(
         lines.append("\n💬 Комментариев по задачам сегодня не было.")
 
     return "\n".join(lines)
+
+
+# ── Готовность продукта ────────────────────────────────────────────
+# Ставит руками разработчик: «готовность Saturn 70». Доля закрытых задач врёт
+# (можно закрыть двадцать мелких и не сдвинуться), поэтому спрашиваем человека.
+READINESS_REGEX = re.compile(
+    r'\bготовност[ьи]\s+(?P<project>[^\d]{2,60}?)\s+(?P<percent>\d{1,3})\s*%?',
+    re.IGNORECASE,
+)
+# Через сколько дней без обновления напоминаем, что оценка протухла
+READINESS_STALE_DAYS = 7
+
+
+def _norm_name(value: str) -> str:
+    """Название проекта без регистра, пробелов и кириллицы: «Сатурн» = «Saturn».
+
+    Та же нотация, что при поиске проекта для задач из чата — пишут и так, и так.
+    """
+    from .task_trigger import _CYR_TO_LAT
+
+    low = (value or "").lower()
+    lat = ''.join(_CYR_TO_LAT.get(c, c) for c in low)
+    return re.sub(r'[^a-z0-9]+', '', lat)
+
+
+def parse_readiness(text: str) -> Optional[tuple[str, int]]:
+    """Достать из сообщения «готовность <проект> <процент>»."""
+    m = READINESS_REGEX.search(text or "")
+    if not m:
+        return None
+    percent = int(m.group("percent"))
+    if percent > 100:
+        return None
+    return m.group("project").strip(" :-—"), percent
+
+
+async def set_readiness(
+    db: AsyncSession, org_id: int, project_hint: str, percent: int, user_id: Optional[int]
+) -> Optional[object]:
+    """Проставить готовность проекту. Название ищем как и в задачах — нестрого."""
+    from ..models.database import Project
+
+    projects = (await db.execute(
+        select(Project).where(Project.org_id == org_id)
+    )).scalars().all()
+
+    hint = _norm_name(project_hint)
+    match = None
+    for p in projects:
+        name = _norm_name(p.name)
+        if not name or not hint:
+            continue
+        if name == hint or hint in name or name in hint:
+            match = p
+            break
+    if not match:
+        return None
+
+    match.progress_percent = max(0, min(100, percent))
+    match.progress_mode = "manual"   # авто-пересчёт по задачам больше не трогает
+    match.progress_updated_at = datetime.utcnow()
+    match.progress_updated_by = user_id
+    await db.commit()
+    logger.info(f"READINESS: {match.name} → {percent}% (user {user_id})")
+    return match
+
+
+async def stale_readiness(db: AsyncSession, chat_id: int) -> list[dict]:
+    """Проекты этого чата, чью готовность давно не обновляли.
+
+    Берём проекты, по задачам которых в чате шла работа: именно про них
+    вечером уместно спросить «на сколько продукт готов?».
+    """
+    from ..models.database import Project, ProjectTask
+
+    rows = (await db.execute(
+        select(Project.id, Project.name, Project.progress_percent, Project.progress_updated_at)
+        .join(ProjectTask, ProjectTask.project_id == Project.id)
+        .where(ProjectTask.source_chat_id == chat_id)
+        .distinct()
+    )).all()
+
+    stale = []
+    now = datetime.utcnow()
+    for pid, name, percent, updated_at in rows:
+        days = (now - updated_at).days if updated_at else None
+        if days is None or days >= READINESS_STALE_DAYS:
+            stale.append({"id": pid, "name": name, "percent": percent or 0, "days": days})
+    return stale
+
+
+def format_readiness_block(stale: list[dict]) -> str:
+    """Напоминание в итоге дня: у каких проектов оценка протухла."""
+    if not stale:
+        return ""
+    lines = ["\n📊 <b>Готовность продукта</b>"]
+    for p in stale:
+        when = "не ставили ни разу" if p["days"] is None else f"обновляли {p['days']} дн. назад"
+        lines.append(f"  • {p['name']} — {p['percent']}%, {when}")
+    lines.append("  Обновить: «готовность Saturn 70»")
+    return "\n".join(lines)
