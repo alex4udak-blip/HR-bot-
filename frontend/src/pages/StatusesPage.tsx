@@ -61,7 +61,10 @@ type FilterKey =
   | "dept_done" | "w2" | "w2_done" | "m1" | "m1_done"
   | "m3" | "m3_done" | "y1" | "y1_done" | "dismissal_date";
 
-/** Порядок и состав повторяют доску «Сотрудники» в ClickUp: после каждой
+/** Ширины колонок с датами рассчитаны так, чтобы «дд.мм.гггг» помещалась
+ *  целиком: в узких колонках дата обрезалась и год было не прочитать
+ *  (Мария, 28.09.2026).
+ *  Порядок и состав повторяют доску «Сотрудники» в ClickUp: после каждой
  *  вехи идёт колонка-отметка «пройдено» (в ClickUp она называлась так же,
  *  но в скобках). «2 недели» — наша дополнительная веха, в ClickUp её нет. */
 /** Ширина в px задана у каждой колонки: без неё 19 колонок растягивались как
@@ -73,20 +76,20 @@ const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narro
   { key: "position",              label: "Должность",         filter: true, width: 160 },
   { key: "department",            label: "Отдел",             filter: true, width: 150 },
   { key: "telegram",              label: "Telegram",          filter: true, width: 140 },
-  { key: "practice_start_date",   label: "Выход на практику", filter: true, width: 104 },
+  { key: "practice_start_date",   label: "Выход на практику", filter: true, width: 120 },
   { key: "manager",               label: "Рук-ль",            filter: true, width: 110 },
   { key: "offer",                 label: "Оффер",             filter: false, narrow: true, width: 64 },
-  { key: "department_start_date", label: "Выход в отдел",     filter: true, width: 104 },
+  { key: "department_start_date", label: "Выход в отдел",     filter: true, width: 120 },
   { key: "dept_done",             label: "✓",                 filter: true, narrow: true, width: 40 },
-  { key: "w2",                    label: "2 недели",          filter: true, width: 96 },
+  { key: "w2",                    label: "2 недели",          filter: true, width: 116 },
   { key: "w2_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
-  { key: "m1",                    label: "1 мес",             filter: true, width: 96 },
+  { key: "m1",                    label: "1 мес",             filter: true, width: 116 },
   { key: "m1_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
-  { key: "m3",                    label: "3 мес",             filter: true, width: 96 },
+  { key: "m3",                    label: "3 мес",             filter: true, width: 116 },
   { key: "m3_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
-  { key: "y1",                    label: "1 год",             filter: true, width: 96 },
+  { key: "y1",                    label: "1 год",             filter: true, width: 116 },
   { key: "y1_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
-  { key: "dismissal_date",        label: "Дата увольнения",   filter: true, width: 110 },
+  { key: "dismissal_date",        label: "Дата увольнения",   filter: true, width: 124 },
 ];
 
 /** Подписи для списка «Фильтры»: там «✓» ничего не сказало бы. */
@@ -248,7 +251,11 @@ export default function StatusesPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   // Сортировка по дате: клик по заголовку — сначала новые, второй — старые,
   // третий возвращает обычный порядок.
-  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(null);
+  // По умолчанию сортируем по выходу в отдел: сверху те, кто вышел недавно,
+  // ниже — давние (Мария, 28.09.2026). Заголовок колонки переключает порядок.
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(
+    { key: "department_start_date", dir: "desc" }
+  );
   const toggleSort = (key: SortKey) =>
     setSort((cur) =>
       cur?.key !== key ? { key, dir: "desc" } : cur.dir === "desc" ? { key, dir: "asc" } : null
