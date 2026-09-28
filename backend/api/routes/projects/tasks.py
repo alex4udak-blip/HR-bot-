@@ -106,13 +106,16 @@ def serialize_task(t: ProjectTask) -> dict:
         title=t.title,
         description=t.description,
         status=t.status if isinstance(t.status, str) else t.status.value,
-        priority=t.priority,
+        priority=t.priority if t.priority is not None else 1,
         assignee_id=t.assignee_id,
         assignee_name=t.assignee.name if t.assignee else None,
         estimated_hours=t.estimated_hours,
         due_date=t.due_date,
         completed_at=t.completed_at,
-        sort_order=t.sort_order,
+        # NULL в БД у задач, заведённых мимо ORM (импорт, ручные вставки):
+        # схема ждёт число, и один такой ряд ронял весь список задач в 500
+        # (/api/projects/all-tasks, 28.09.2026).
+        sort_order=t.sort_order or 0,
         tags=t.tags or [],
         total_hours_logged=total_hours,
         parent_task_id=t.parent_task_id,

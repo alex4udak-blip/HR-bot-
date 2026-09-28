@@ -485,6 +485,15 @@ async def ensure_shadow_columns():
             'ALTER TABLE staff_board_departments ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMP'
         ))
 
+        # Пустой sort_order у задач (импорт, ручные вставки) ронял общий
+        # список задач в 500 — схема ответа ждёт число (28.09.2026).
+        await conn.execute(text(
+            'UPDATE project_tasks SET sort_order = 0 WHERE sort_order IS NULL'
+        ))
+        await conn.execute(text(
+            'UPDATE project_tasks SET priority = 1 WHERE priority IS NULL'
+        ))
+
         # Задачи из чата: пометка «создал бот» и первоисточник (25.09.2026)
         for _sql in (
             "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS created_by_bot BOOLEAN DEFAULT false",
