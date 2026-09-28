@@ -81,6 +81,20 @@ async def _close_linked_blocker_on_done(
             logger.warning(f"Telegram DM about resolved blocker failed: {e}")
 
 
+def _safe_creator_name(t) -> Optional[str]:
+    """Имя автора задачи, не роняя ответ.
+
+    hasattr на незагруженной связи в async-сессии кидает MissingGreenlet и
+    убивает ВЕСЬ список задач (прод, 28.09.2026). Связь грузим заранее, но
+    подстраховываемся: лучше без имени, чем 500 на всю страницу.
+    """
+    try:
+        creator = t.creator
+    except Exception:
+        return None
+    return creator.name if creator else None
+
+
 def serialize_task(t: ProjectTask) -> dict:
     total_hours = sum(tl.hours for tl in t.time_logs) if t.time_logs else 0
     subtask_count = len(t.subtasks) if t.subtasks else 0
@@ -125,7 +139,7 @@ def serialize_task(t: ProjectTask) -> dict:
         comment_count=comment_count,
         attachment_count=attachment_count,
         created_by=t.created_by,
-        creator_name=t.creator.name if hasattr(t, 'creator') and t.creator else None,
+        creator_name=_safe_creator_name(t),
         created_by_bot=bool(getattr(t, 'created_by_bot', False)),
         source_message=getattr(t, 'source_message', None),
         created_at=t.created_at,
@@ -578,6 +592,9 @@ async def get_all_tasks(
             selectinload(ProjectTask.subtasks),
             selectinload(ProjectTask.comments),
             selectinload(ProjectTask.attachments),
+            # Без автора обращение к t.creator уходило в ленивую подгрузку и
+            # роняло весь список (MissingGreenlet в async, прод 28.09.2026)
+            selectinload(ProjectTask.creator),
         )
     )
 
