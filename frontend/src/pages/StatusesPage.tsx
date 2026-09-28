@@ -80,15 +80,15 @@ const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narro
   { key: "manager",               label: "Рук-ль",            filter: true, width: 110 },
   { key: "offer",                 label: "Оффер",             filter: false, narrow: true, width: 64 },
   { key: "department_start_date", label: "Выход в отдел",     filter: true, width: 120 },
-  { key: "dept_done",             label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "dept_done",             label: "✓",                 filter: true, narrow: true, width: 124 },
   { key: "w2",                    label: "2 недели",          filter: true, width: 116 },
-  { key: "w2_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "w2_done",               label: "✓",                 filter: true, narrow: true, width: 124 },
   { key: "m1",                    label: "1 мес",             filter: true, width: 116 },
-  { key: "m1_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "m1_done",               label: "✓",                 filter: true, narrow: true, width: 124 },
   { key: "m3",                    label: "3 мес",             filter: true, width: 116 },
-  { key: "m3_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "m3_done",               label: "✓",                 filter: true, narrow: true, width: 124 },
   { key: "y1",                    label: "1 год",             filter: true, width: 116 },
-  { key: "y1_done",               label: "✓",                 filter: true, narrow: true, width: 40 },
+  { key: "y1_done",               label: "✓",                 filter: true, narrow: true, width: 124 },
   { key: "dismissal_date",        label: "Дата увольнения",   filter: true, width: 124 },
 ];
 
@@ -165,11 +165,11 @@ const cellText = (r: BoardRow, key: FilterKey): string => {
     case "manager": return r.manager || "";
     // Отметки — «заполнено» значит «отмечено», чтобы фильтр по колонке
     // отвечал на вопрос «у кого веха пройдена».
-    case "dept_done": return r.dept_done ? "✓" : "";
-    case "w2_done": return r.w2_done ? "✓" : "";
-    case "m1_done": return r.m1_done ? "✓" : "";
-    case "m3_done": return r.m3_done ? "✓" : "";
-    case "y1_done": return r.y1_done ? "✓" : "";
+    case "dept_done": return r.dept_done || "";
+    case "w2_done": return r.w2_done || "";
+    case "m1_done": return r.m1_done || "";
+    case "m3_done": return r.m3_done || "";
+    case "y1_done": return r.y1_done || "";
     default: return fmt(r[key] as string | null);
   }
 };
@@ -1090,35 +1090,35 @@ function Row({
         <DateCell value={row.department_start_date} onSave={(v) => onPatch(row, { department_start_date: v })} />
       </td>
       <td className="hf-statuses-td hf-statuses-td-narrow">
-        <DoneCell on={row.dept_done} onToggle={(v) => onPatch(row, { dept_done: v })} />
+        <MarkCell value={row.dept_done} onSave={(v) => onPatch(row, { dept_done: v })} />
       </td>
 
       <td className="hf-statuses-td">
         <DateCell value={row.w2} auto={row.w2_auto} onSave={(v) => onPatch(row, { w2: v })} />
       </td>
       <td className="hf-statuses-td hf-statuses-td-narrow">
-        <DoneCell on={row.w2_done} onToggle={(v) => onPatch(row, { w2_done: v })} />
+        <MarkCell value={row.w2_done} onSave={(v) => onPatch(row, { w2_done: v })} />
       </td>
 
       <td className="hf-statuses-td">
         <DateCell value={row.m1} auto={row.m1_auto} onSave={(v) => onPatch(row, { m1: v })} />
       </td>
       <td className="hf-statuses-td hf-statuses-td-narrow">
-        <DoneCell on={row.m1_done} onToggle={(v) => onPatch(row, { m1_done: v })} />
+        <MarkCell value={row.m1_done} onSave={(v) => onPatch(row, { m1_done: v })} />
       </td>
 
       <td className="hf-statuses-td">
         <DateCell value={row.m3} auto={row.m3_auto} onSave={(v) => onPatch(row, { m3: v })} />
       </td>
       <td className="hf-statuses-td hf-statuses-td-narrow">
-        <DoneCell on={row.m3_done} onToggle={(v) => onPatch(row, { m3_done: v })} />
+        <MarkCell value={row.m3_done} onSave={(v) => onPatch(row, { m3_done: v })} />
       </td>
 
       <td className="hf-statuses-td">
         <DateCell value={row.y1} auto={row.y1_auto} onSave={(v) => onPatch(row, { y1: v })} />
       </td>
       <td className="hf-statuses-td hf-statuses-td-narrow">
-        <DoneCell on={row.y1_done} onToggle={(v) => onPatch(row, { y1_done: v })} />
+        <MarkCell value={row.y1_done} onSave={(v) => onPatch(row, { y1_done: v })} />
       </td>
 
       <td className="hf-statuses-td">
@@ -1599,14 +1599,46 @@ function AssigneeCell({
 }
 
 /** Отметка «веха пройдена» — в ClickUp это колонки в скобках. */
-function DoneCell({ on, onToggle }: { on: boolean; onToggle: (v: boolean) => void }) {
+/** Отметка у вехи. В ClickUp это не просто галочка: там ставили ✓, ✗, месяц
+ *  («Сентябрь») или «Бонус сотруднику» — Мария попросила так же (28.09.2026). */
+const MONTHS = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
+const BONUS_MARK = "Бонус сотруднику";
+const MARK_OPTIONS = ["✓", "✗", ...MONTHS, BONUS_MARK];
+
+/** Цвет отметки: галочка зелёная, крестик красный, месяц синий, бонус тёмный. */
+function markStyle(value: string): React.CSSProperties {
+  if (value === "✓") return { background: "#dcfce7", color: "#166534", borderColor: "#bbf7d0" };
+  if (value === "✗") return { background: "#fee2e2", color: "#991b1b", borderColor: "#fecaca" };
+  if (value === BONUS_MARK) return { background: "#166534", color: "#fff", borderColor: "#166534" };
+  return { background: "#e0e7ff", color: "#3730a3", borderColor: "#c7d2fe" };
+}
+
+function MarkCell({
+  value, onSave,
+}: { value: string | null; onSave: (v: string | null) => void }) {
   return (
-    <button
-      className={clsx("hf-statuses-done", on && "hf-statuses-done-on")}
-      onClick={() => onToggle(!on)}
-      title={on ? "Пройдено" : "Не отмечено"}
-    >
-      {on ? "✓" : ""}
-    </button>
+    <div className="hf-statuses-mark">
+      {value ? (
+        <span className="hf-statuses-mark-pill" style={markStyle(value)} title={value}>
+          {value}
+        </span>
+      ) : (
+        <span className="hf-statuses-empty-cell">—</span>
+      )}
+      <select
+        className="hf-statuses-mark-select"
+        value={value || ""}
+        title={value || "Поставить отметку"}
+        onChange={(e) => onSave(e.target.value || null)}
+      >
+        <option value="">—</option>
+        {MARK_OPTIONS.map((o) => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
+    </div>
   );
 }

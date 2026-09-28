@@ -42,11 +42,11 @@ export interface BoardRow {
   sourcers?: { id: number; name: string; color: string }[];
   dismissal_date: string | null;
   /** отметки «веха пройдена» — парные колонки в скобках из ClickUp */
-  dept_done: boolean;
-  w2_done: boolean;
-  m1_done: boolean;
-  m3_done: boolean;
-  y1_done: boolean;
+  dept_done: string | null;
+  w2_done: string | null;
+  m1_done: string | null;
+  m3_done: string | null;
+  y1_done: string | null;
   offer_file_id: number | null;
   offer_file_name: string | null;
 }
@@ -68,11 +68,11 @@ export interface BoardRowUpdate {
   /** Полный список HR; [] — очистить. */
   assignee_user_ids?: number[];
   dismissal_date?: string | null;
-  dept_done?: boolean;
-  w2_done?: boolean;
-  m1_done?: boolean;
-  m3_done?: boolean;
-  y1_done?: boolean;
+  dept_done?: string | null;
+  w2_done?: string | null;
+  m1_done?: string | null;
+  m3_done?: string | null;
+  y1_done?: string | null;
 }
 
 // ─── Папки-направления ──────────────────────────────────────

@@ -9944,6 +9944,29 @@ body.performance-mode .glass-card:hover {
 .hf-statuses-fchip:hover { border-color: var(--hf-main-400); }
 .hf-statuses-fchip b { font-weight: var(--hf-fw-semibold); }
 
+/* Отметка у вехи: цветная пилюля (✓ / ✗ / месяц / бонус) + выбор поверх */
+.hf-statuses-mark { position: relative; display: flex; align-items: center; min-width: 0; }
+.hf-statuses-mark-pill {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px var(--hf-space-xs);
+  border: var(--hf-border-xs) solid transparent;
+  border-radius: 999px;
+  font-size: var(--hf-fs-4xs);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hf-statuses-mark-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
 /* Отдел: цветная пилюля, поверх — прозрачный select для правки */
 .hf-statuses-dept { position: relative; display: flex; align-items: center; min-width: 0; }
 .hf-statuses-dept .hf-statuses-pill {

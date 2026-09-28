@@ -146,6 +146,18 @@ _CF_DONE = {
     "y1_done": "cf:(1 год)",
 }
 
+# Отметка у вехи — не только галочка: в ClickUp в этих колонках ставили ещё
+# крестик, месяц и «Бонус сотруднику» (Мария, 28.09.2026). Храним текстом.
+MONTHS = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+BONUS_MARK = "Бонус сотруднику"
+MARK_OPTIONS = ["✓", "✗", *MONTHS, BONUS_MARK]
+_MARK_LOOKUP = {m.lower(): m for m in MARK_OPTIONS}
+# Импорт из ClickUp и старые булевы значения читаем как галочку
+_LEGACY_TRUE = ("true", "1", "да", "v", "✔", "✅", "yes")
+
 
 # --------------------------------------------------------------------------- #
 # Схемы                                                                         #
@@ -203,11 +215,11 @@ class BoardRow(BaseModel):
     sourcers: List["BoardSourcer"] = []
     dismissal_date: Optional[str] = None
     # Отметки «пройдено» рядом с каждой вехой
-    dept_done: bool = False
-    w2_done: bool = False
-    m1_done: bool = False
-    m3_done: bool = False
-    y1_done: bool = False
+    dept_done: Optional[str] = None
+    w2_done: Optional[str] = None
+    m1_done: Optional[str] = None
+    m3_done: Optional[str] = None
+    y1_done: Optional[str] = None
 
 
 class BoardDept(BaseModel):
@@ -282,11 +294,11 @@ class BoardRowUpdate(BaseModel):
     # Полный список ведущих HR; перекрывает assignee_user_id. [] — очистить.
     assignee_user_ids: Optional[List[int]] = None
     dismissal_date: Optional[str] = None
-    dept_done: Optional[bool] = None
-    w2_done: Optional[bool] = None
-    m1_done: Optional[bool] = None
-    m3_done: Optional[bool] = None
-    y1_done: Optional[bool] = None
+    dept_done: Optional[str] = None
+    w2_done: Optional[str] = None
+    m1_done: Optional[str] = None
+    m3_done: Optional[str] = None
+    y1_done: Optional[str] = None
 
     model_config = {"extra": "forbid"}
 
@@ -362,24 +374,29 @@ def _as_int(v) -> Optional[int]:
         return None
 
 
-def _as_done(ex: dict, key: str) -> bool:
-    """Отметка «веха пройдена».
+def _normalize_mark(raw: Any) -> Optional[str]:
+    """Привести значение отметки к одному из MARK_OPTIONS."""
+    if raw is None or isinstance(raw, bool):
+        return "✓" if raw is True else None
+    text = str(raw).strip()
+    if not text or text.lower() in ("false", "0", "нет", "-", "—"):
+        return None
+    if text.lower() in _LEGACY_TRUE:
+        return "✓"
+    return _MARK_LOOKUP.get(text.lower(), text[:40])
 
-    Наш ключ — булев. Импортированное из ClickUp приходит текстом: там в
-    колонке стояла галочка или название месяца, и любое непустое значение
-    означало «пройдено».
+
+def _as_done(ex: dict, key: str) -> Optional[str]:
+    """Отметка у вехи: галочка, крестик, месяц или «Бонус сотруднику».
+
+    Раньше это была галочка (bool). Старые значения и импорт из ClickUp
+    читаем как есть: True → «✓», текст месяца остаётся месяцем.
     """
-    own = ex.get(_K_DONE[key])
-    if isinstance(own, bool):
-        return own
+    own = _normalize_mark(ex.get(_K_DONE[key]))
     if own is not None:
-        return str(own).strip().lower() not in ("", "false", "0", "нет", "-", "—")
+        return own
     cf = _CF_DONE.get(key)
-    if cf:
-        raw = ex.get(cf)
-        if raw is not None:
-            return str(raw).strip().lower() not in ("", "false", "0", "нет", "-", "—")
-    return False
+    return _normalize_mark(ex.get(cf)) if cf else None
 
 
 def _first_telegram(entity: Entity) -> Optional[str]:
@@ -1129,13 +1146,17 @@ async def update_row(
         ex[_K_DEPT_START] = date.today().isoformat()
         touched_extra = True
 
-    # Отметки «пройдено» — булевы, отдельно от дат: пустое значение здесь
-    # означает «снять галочку», а не «не трогать».
+    # Отметки у вех — текст (галочка, крестик, месяц, бонус). Пустое значение
+    # здесь означает «снять отметку», а не «не трогать».
     for field, key in _K_DONE.items():
         if field not in payload:
             continue
-        if payload[field]:
-            ex[key] = True
+        value = payload[field]
+        if value:
+            mark = _normalize_mark(value)
+            if mark not in MARK_OPTIONS:
+                raise HTTPException(400, f"Недопустимая отметка «{value}»")
+            ex[key] = mark
         else:
             ex.pop(key, None)
             # Импортированное из ClickUp значение перебило бы снятую галочку —
