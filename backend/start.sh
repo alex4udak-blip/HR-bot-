@@ -496,9 +496,9 @@ async def ensure_shadow_columns():
 
         # Задачи из чата: пометка «создал бот» и первоисточник (25.09.2026)
         for _sql in (
-            "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS created_by_bot BOOLEAN DEFAULT false",
-            "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS source_chat_id BIGINT",
-            "ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS source_message TEXT",
+            'ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS created_by_bot BOOLEAN DEFAULT false',
+            'ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS source_chat_id BIGINT',
+            'ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS source_message TEXT',
         ):
             await conn.execute(text(_sql))
 
