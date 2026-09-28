@@ -477,7 +477,61 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Resume contacts backfill failed (non-critical): {e}")
 
+    # Последним шагом сверяем модели с базой: если какая-то колонка так и не
+    # доехала, это видно в логе деплоя сразу, а не по жалобам рекрутёров.
+    await check_schema_drift(engine)
+
     logger.info("=== DATABASE INITIALIZATION COMPLETE ===")
+
+
+async def check_schema_drift(engine) -> list[str]:
+    """Сверить колонки моделей с тем, что реально есть в базе.
+
+    28.09.2026: код с новой колонкой уехал на прод, а колонки в базе не
+    оказалось — SQLAlchemy перечисляет ВСЕ поля модели в каждом SELECT, поэтому
+    любой запрос к заявкам падал целиком, и у рекрутёров перестали открываться
+    карточки и двигаться кандидаты. В логе деплоя при этом было тихо.
+
+    Теперь при старте пишем явное «в таблице X нет колонок: …» с маркером
+    SCHEMA_DRIFT. Ничего не чиним и не роняем приложение: задача — чтобы такая
+    рассинхронизация была видна в логе деплоя, а не в чате с рекрутёрами.
+    """
+    from api.models.database import Base
+
+    missing: list[str] = []
+    try:
+        async with engine.begin() as conn:
+            rows = await conn.execute(text(
+                "SELECT table_name, column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public'"
+            ))
+            actual: dict[str, set[str]] = {}
+            for table_name, column_name in rows:
+                actual.setdefault(table_name, set()).add(column_name)
+
+        for table in Base.metadata.sorted_tables:
+            have = actual.get(table.name)
+            # Таблицы вообще нет — это другой случай (её заводит create_all),
+            # и отдельная строка в логе тут только зашумит.
+            if not have:
+                continue
+            gone = [c.name for c in table.columns if c.name not in have]
+            if gone:
+                missing.append(f"{table.name}: {', '.join(sorted(gone))}")
+
+        if missing:
+            for row in missing:
+                logger.error("SCHEMA_DRIFT: в базе нет колонок — %s", row)
+            logger.error(
+                "SCHEMA_DRIFT: таблиц с расхождением — %s. Запросы к ним будут "
+                "падать целиком (UndefinedColumnError), пока колонки не заведут.",
+                len(missing),
+            )
+        else:
+            logger.info("SCHEMA_DRIFT: расхождений нет, все колонки моделей есть в базе")
+    except Exception as e:
+        logger.warning(f"SCHEMA_DRIFT: проверку выполнить не удалось: {e}")
+    return missing
 
 
 def run_alembic_migrations_sync():
