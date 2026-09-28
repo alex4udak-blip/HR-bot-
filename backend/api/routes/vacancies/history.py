@@ -307,6 +307,16 @@ async def delete_application_history(
             transition.from_stage, transition.to_stage, current_stage,
         )
 
+    # Закреп должен уйти вместе с записью: иначе pinned_entry_key указывает в
+    # пустоту (прод 28.09.2026 — «закрепил, удалил не открепив»), а закрепить
+    # что-то другое уже не получится, пока не тронешь закреп руками.
+    if application.pinned_entry_key == f"e:{transition.id}":
+        application.pinned_entry_key = None
+        logger.info(
+            "ENTRY_PIN снят вместе с записью: app=%s entry=e:%s",
+            application.id, transition.id,
+        )
+
     await db.delete(transition)
     await db.commit()
 

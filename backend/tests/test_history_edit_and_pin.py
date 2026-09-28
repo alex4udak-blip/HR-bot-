@@ -201,3 +201,51 @@ async def test_pin_for_candidate_without_applications(
     assert r.status_code == 200, r.text
     await db_session.refresh(candidate_entity)
     assert "pinned_entry_key" not in (candidate_entity.extra_data or {})
+
+
+async def test_deleting_pinned_entry_clears_pin(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User,
+    application_with_comment,
+):
+    """Удалили закреплённую запись — закреп уходит вместе с ней.
+
+    Прод 28.09.2026: «закрепил запись, удалил не открепив» — ключ оставался
+    указывать в пустоту, и было не понять, что закреплено.
+    """
+    app, transition = application_with_comment
+    await client.put(
+        f"/api/vacancies/applications/{app.id}/pin",
+        json={"entry_key": f"e:{transition.id}"}, headers=_headers(admin_user),
+    )
+    r = await client.delete(
+        f"/api/vacancies/applications/{app.id}/history/{transition.id}",
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    await db_session.refresh(app)
+    assert app.pinned_entry_key is None
+
+
+async def test_deleting_pinned_comment_clears_pin(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User,
+    organization: Organization, org_owner: OrgMember, candidate_entity: Entity,
+):
+    """То же для комментария: закреп на карточке снимается при его удалении."""
+    r = await client.post(
+        f"/api/entities/{candidate_entity.id}/notes",
+        json={"text": "закреплённый комментарий"}, headers=_headers(admin_user),
+    )
+    assert r.status_code in (200, 201), r.text
+    note_id = r.json()["note"]["id"]
+
+    await client.put(
+        f"/api/entities/{candidate_entity.id}/pin",
+        json={"entry_key": f"n:{note_id}"}, headers=_headers(admin_user),
+    )
+    r = await client.delete(
+        f"/api/entities/{candidate_entity.id}/notes/{note_id}",
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    await db_session.refresh(candidate_entity)
+    assert "pinned_entry_key" not in (candidate_entity.extra_data or {})

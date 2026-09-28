@@ -1384,9 +1384,30 @@ async def delete_entity_note(
     if not await _note_can_modify(notes[idx], current_user, org, db):
         raise HTTPException(403, "You can only delete your own comments")
 
-    notes.pop(idx)
+    removed = notes.pop(idx)
     extra["notes"] = notes
+    # Закреп должен уйти вместе с комментарием. Иначе ключ указывает в пустоту
+    # (прод 28.09.2026: «закрепил, удалил не открепив») — закреп висит на
+    # несуществующей записи и мешает понять, что вообще закреплено.
+    pin_key = f"n:{removed.get('id') or note_id}"
+    if extra.get("pinned_entry_key") == pin_key:
+        extra.pop("pinned_entry_key", None)
+        logger.info("ENTRY_PIN снят вместе с комментарием: entity=%s %s", entity_id, pin_key)
     entity.extra_data = extra
+
+    # Тот же комментарий мог быть закреплён в воронке — там закреп живёт на
+    # заявке, и его надо снять отдельно.
+    from ...models.database import VacancyApplication
+    apps = (await db.execute(
+        select(VacancyApplication).where(
+            VacancyApplication.entity_id == entity_id,
+            VacancyApplication.pinned_entry_key == pin_key,
+        )
+    )).scalars().all()
+    for app in apps:
+        app.pinned_entry_key = None
+        logger.info("ENTRY_PIN снят вместе с комментарием: app=%s %s", app.id, pin_key)
+
     await db.commit()
     return {"success": True, "total_notes": len(notes)}
 
