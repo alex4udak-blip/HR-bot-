@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, Loader2, Plus, Pencil, Eye, EyeOff, Check, X,
+  Search, Loader2, Plus, Pencil, Eye, EyeOff, Check, Copy, X,
   ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
@@ -74,7 +74,7 @@ const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narro
   { key: "name",                  label: "Сотрудник",         filter: true, width: 250 },
   { key: "assignee",              label: "HR",                filter: true, width: 130 },
   { key: "position",              label: "Должность",         filter: true, width: 160 },
-  { key: "department",            label: "Отдел",             filter: true, width: 150 },
+  { key: "department",            label: "Отдел",             filter: true, width: 190 },
   { key: "telegram",              label: "Telegram",          filter: true, width: 140 },
   { key: "practice_start_date",   label: "Выход на практику", filter: true, width: 120 },
   { key: "manager",               label: "Рук-ль",            filter: true, width: 110 },
@@ -1058,23 +1058,16 @@ function Row({
             {SANDBOX_LABEL}
           </span>
         ) : (
-          <select
-            className="hf-statuses-select"
-            value={row.department_id ?? ""}
-            onChange={(e) => onPatch(row, { department_id: e.target.value ? Number(e.target.value) : null })}
-          >
-            <option value="">—</option>
-            {departments
-              .filter((d) => !d.hidden || d.id === row.department_id)
-              .map((d) => (
-                <option key={d.id} value={d.id}>{d.name}{d.hidden ? " (скрыт)" : ""}</option>
-              ))}
-          </select>
+          <DepartmentCell
+            row={row}
+            departments={departments}
+            onSave={(id) => onPatch(row, { department_id: id })}
+          />
         )}
       </td>
 
       <td className="hf-statuses-td">
-        <TextCell value={row.telegram} prefix="@" onSave={(v) => onPatch(row, { telegram: v })} />
+        <TelegramCell value={row.telegram} onSave={(v) => onPatch(row, { telegram: v })} />
       </td>
 
       <td className="hf-statuses-td">
@@ -1317,6 +1310,88 @@ const MAX_HR = 5;
 
 const initialsOf = (name: string | null | undefined) =>
   (name || "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+
+/** Отдел — цветная пилюля, как должность: так строки читаются глазами, а не
+ *  вычитываются (Мария, 28.09.2026). Под пилюлей прозрачный select — правка
+ *  осталась в один клик, а длинное название видно целиком в подсказке. */
+function DepartmentCell({
+  row, departments, onSave,
+}: {
+  row: BoardRow;
+  departments: BoardDepartment[];
+  onSave: (id: number | null) => void;
+}) {
+  const name = row.department_name || "";
+  const hue = pillHue(name);
+  const options = departments.filter((d) => !d.hidden || d.id === row.department_id);
+
+  return (
+    <div className="hf-statuses-dept">
+      {name ? (
+        <span
+          className="hf-statuses-pill"
+          title={name}
+          style={{
+            background: `hsl(${hue} 70% 94%)`,
+            color: `hsl(${hue} 55% 32%)`,
+            borderColor: `hsl(${hue} 60% 84%)`,
+          }}
+        >
+          {name}
+        </span>
+      ) : (
+        <span className="hf-statuses-empty-cell">—</span>
+      )}
+      <select
+        className="hf-statuses-dept-select"
+        value={row.department_id ?? ""}
+        title={name}
+        onChange={(e) => onSave(e.target.value ? Number(e.target.value) : null)}
+      >
+        <option value="">—</option>
+        {options.map((d) => (
+          <option key={d.id} value={d.id}>{d.name}{d.hidden ? " (скрыт)" : ""}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/** Telegram с кнопкой «скопировать»: ник выделяли мышкой вручную, а он ещё и
+ *  обрезан в узкой колонке (Мария, 28.09.2026). */
+function TelegramCell({
+  value, onSave,
+}: { value: string | null; onSave: (v: string | null) => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const handle = `@${(value || "").replace(/^@/, "")}`;
+    try {
+      await navigator.clipboard.writeText(handle);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Браузер не дал скопировать");
+    }
+  };
+
+  return (
+    <div className="hf-statuses-tg">
+      <TextCell value={value} prefix="@" onSave={onSave} />
+      {value && (
+        <button
+          className="hf-statuses-tg-copy"
+          onClick={copy}
+          title={copied ? "Скопировано" : `Скопировать @${value.replace(/^@/, "")}`}
+          aria-label="Скопировать ник"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function pillHue(value: string): number {
   let h = 0;
