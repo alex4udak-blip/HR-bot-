@@ -319,3 +319,49 @@ async def test_stage_note_does_not_roll_back_when_stage_moved_by_hand(
     assert r.json()["rolled_back"] is False
     await db_session.refresh(candidate_entity)
     assert candidate_entity.status == EntityStatus.hired
+
+
+async def test_stage_note_without_text_is_allowed_and_rolls_back(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User,
+    organization: Organization, org_owner: OrgMember, candidate_entity: Entity,
+):
+    """Перевод БЕЗ комментария у кандидата вне воронок тоже оставляет строку.
+
+    В воронке любой перевод пишется в историю — вне воронки лента должна вести
+    себя так же, иначе этап меняется молча и следа перемещения нет (прод
+    28.09.2026). Пустой ОБЫЧНЫЙ комментарий по-прежнему не принимаем.
+    """
+    was = candidate_entity.status.value
+    r = await client.post(
+        f"/api/entities/{candidate_entity.id}/notes",
+        json={
+            "text": "", "stage": EntityStatus.transferred.value,
+            "stage_label": "Перешёл в отдел", "from_status": was,
+        },
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    note_id = r.json()["note"]["id"]
+    candidate_entity.status = EntityStatus.transferred
+    await db_session.commit()
+
+    r = await client.delete(
+        f"/api/entities/{candidate_entity.id}/notes/{note_id}",
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rolled_back"] is True
+    await db_session.refresh(candidate_entity)
+    assert candidate_entity.status.value == was
+
+
+async def test_plain_comment_still_requires_text(
+    client: AsyncClient, admin_user: User, organization: Organization,
+    org_owner: OrgMember, candidate_entity: Entity,
+):
+    """Обычный комментарий без текста — по-прежнему 400."""
+    r = await client.post(
+        f"/api/entities/{candidate_entity.id}/notes",
+        json={"text": "   "}, headers=_headers(admin_user),
+    )
+    assert r.status_code == 400, r.text

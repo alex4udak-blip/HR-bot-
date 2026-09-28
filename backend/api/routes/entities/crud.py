@@ -1127,7 +1127,11 @@ async def add_entity_note(
     _note_org_check(entity, current_user, org)
 
     text_clean = (data.text or "").strip()
-    if not text_clean:
+    # Запись о СМЕНЕ ЭТАПА у кандидата вне воронок может быть без текста: в
+    # воронке такой перевод всегда оставляет строку в истории, и здесь лента
+    # должна вести себя так же (28.09.2026). Обычный комментарий без текста
+    # по-прежнему не принимаем.
+    if not text_clean and not data.stage:
         raise HTTPException(400, "Comment text cannot be empty")
     if len(text_clean) > NOTE_TEXT_MAX_LENGTH:
         raise HTTPException(400, f"Comment too long (max {NOTE_TEXT_MAX_LENGTH})")
