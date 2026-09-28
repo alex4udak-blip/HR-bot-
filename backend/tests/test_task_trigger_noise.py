@@ -104,3 +104,32 @@ def test_similar_titles_are_duplicates():
     same = tt._find_similar_title("Очистить кэш Cloudflare для домена pwa-proj-9y5yau.saturn.ac", existing)
     assert same == existing[0]
     assert tt._find_similar_title("Поднять новый сервер под бота", existing) is None
+
+
+# Настоящие постановки задач, которые бот пропускал: в них нет модального
+# слова («надо», «нужно»), а список — из одного пункта (владелец, 28.09.2026)
+DIRECT_TASKS = [
+    "ZavodCamp:\n1. Проверить качество поиска по API для блока Assets Search",
+    "Saturn: 1. Поднять новый сервер под бота",
+    "- Добавить фильтр по датам на доске",
+    "Проверить прод после выкатки",
+]
+
+
+@pytest.mark.parametrize("text", DIRECT_TASKS)
+def test_direct_task_lines_pass_prefilter(text):
+    assert tt.TRIGGER_REGEX.search(text), "предварительный отбор не увидел задачу"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", DIRECT_TASKS)
+async def test_direct_task_lines_reach_model(text, monkeypatch):
+    calls = []
+
+    async def _yes(t):
+        calls.append(t)
+        return {"is_task": True, "confidence": 0.9, "reason": "явная задача"}
+
+    monkeypatch.setattr(tt, "ai_decide", _yes)
+    assert await tt.should_trigger_ai(text) is True
+    assert calls, "модель должна была получить сообщение"

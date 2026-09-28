@@ -101,7 +101,24 @@ _MODAL_ACTION_PATTERNS = [
     for action in _ACTIONS
 ]
 
+# Строка-задача без модального слова: «1. Проверить качество поиска по API»,
+# «- Добавить фильтр», «Проверить прод». Раньше такие сообщения не проходили
+# даже предварительный отбор: глаголы в неопределённой форме учитывались только
+# в связке «надо … проверить», а список из ОДНОГО пункта за список не считался
+# (жалоба владельца 28.09.2026 — сообщение по ZavodCamp бот пропустил).
+_LIST_MARK = r'(?:\d+[.)]|[-–—•*])\s*'
+_ACTION_LINE_PATTERNS = [
+    rf'^\s*(?:{_LIST_MARK})?{action}\b'
+    for action in _ACTIONS
+]
+
 TRIGGER_PATTERNS = [
+    # Пункт списка — сам по себе заявка на задачу; в том числе в одну строку
+    # после названия проекта: «Saturn: 1. Поднять сервер»
+    rf'^\s*{_LIST_MARK}\S',
+    rf':\s*{_LIST_MARK}\S',
+    *_ACTION_LINE_PATTERNS,
+
     # ── Прямая постановка задачи ──────────────────────────────────
     r'задач[уаие]',                         # задача, задачу, задачи, задаче
     r'ставлю задач', r'поставь задач',
@@ -181,7 +198,7 @@ TRIGGER_PATTERNS = [
     *_MODAL_ACTION_PATTERNS,
 ]
 
-TRIGGER_REGEX = re.compile('|'.join(TRIGGER_PATTERNS), re.IGNORECASE)
+TRIGGER_REGEX = re.compile('|'.join(TRIGGER_PATTERNS), re.IGNORECASE | re.MULTILINE)
 
 # ── Блокеры: явно сигнализируют о срочной задаче разработчику ──────
 BLOCKER_REGEX = re.compile(r'\bблокер\w*|\bblock(?:er|ing)?\b|\bне\s+работает\b|\bсломал\w*\b|\bпадает\b|\bкрит(?:ично|ичный)?\b', re.IGNORECASE)
