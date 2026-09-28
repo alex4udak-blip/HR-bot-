@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
+  Bot,
   ListTodo,
   ChevronRight,
   ChevronDown,
@@ -88,6 +89,19 @@ function TaskRow({ task, onClick }: { task: ProjectTask; onClick?: () => void })
         {task.estimated_hours && (
           <span className="text-[10px] text-white/15 flex-shrink-0">{task.estimated_hours}ч</span>
         )}
+        {task.created_by_bot && (
+          <span
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-500/15 border border-purple-500/25 text-[10px] text-purple-200 flex-shrink-0"
+            title={
+              task.source_message
+                ? `Бот завёл задачу из сообщения:\n\n${task.source_message.slice(0, 400)}`
+                : 'Задачу завёл бот из сообщения в чате'
+            }
+          >
+            <Bot className="w-3 h-3" />
+            бот
+          </span>
+        )}
       </div>
 
       {/* Assignee */}
@@ -138,6 +152,9 @@ export default function AllTasksPage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
   const [collapsedProjects, setCollapsedProjects] = useState<Record<number, boolean>>({});
   const [collapsedStatuses, setCollapsedStatuses] = useState<Record<string, boolean>>({});
+  // «Создано ботом»: бот заводит задачи из чата по кнопке «Создать», и иногда
+  // нужно посмотреть только их — например, разобрать, что он нанёс за неделю.
+  const [botOnly, setBotOnly] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -145,6 +162,7 @@ export default function AllTasksPage() {
       const filters: AllTasksFilters = {};
       if (statusFilter !== 'all') filters.status = statusFilter;
       if (searchQuery) filters.search = searchQuery;
+      if (botOnly) filters.created_by_bot = true;
       const data = await api.getAllTasks(filters);
       setGroups(data);
     } catch (err) {
@@ -156,7 +174,7 @@ export default function AllTasksPage() {
 
   useEffect(() => {
     fetchData();
-  }, [statusFilter]);
+  }, [statusFilter, botOnly]);
 
   useEffect(() => {
     const timeout = setTimeout(() => { fetchData(); }, 300);
@@ -215,6 +233,19 @@ export default function AllTasksPage() {
             <option key={s} value={s}>{TASK_STATUS_LABELS[s]}</option>
           ))}
         </select>
+        <button
+          onClick={() => setBotOnly((v) => !v)}
+          title="Показать только задачи, которые завёл бот из чата"
+          className={clsx(
+            'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors',
+            botOnly
+              ? 'bg-purple-500/20 border-purple-500/40 text-purple-200'
+              : 'bg-white/[0.04] border-white/[0.08] text-white/50 hover:text-white/80'
+          )}
+        >
+          <Bot className="w-3.5 h-3.5" />
+          Создано ботом
+        </button>
       </div>
 
       {/* Loading */}

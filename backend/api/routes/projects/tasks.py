@@ -126,6 +126,8 @@ def serialize_task(t: ProjectTask) -> dict:
         attachment_count=attachment_count,
         created_by=t.created_by,
         creator_name=t.creator.name if hasattr(t, 'creator') and t.creator else None,
+        created_by_bot=bool(getattr(t, 'created_by_bot', False)),
+        source_message=getattr(t, 'source_message', None),
         created_at=t.created_at,
         updated_at=t.updated_at,
     ).model_dump()
@@ -553,6 +555,7 @@ async def get_all_tasks(
     status: Optional[str] = Query(None),
     assignee_id: Optional[int] = Query(None),
     search: Optional[str] = Query(None),
+    created_by_bot: bool = Query(False, description="только задачи, заведённые ботом из чата"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -584,6 +587,8 @@ async def get_all_tasks(
         query = query.where(ProjectTask.assignee_id == assignee_id)
     if search:
         query = query.where(ProjectTask.title.ilike(f"%{search}%"))
+    if created_by_bot:
+        query = query.where(ProjectTask.created_by_bot.is_(True))
 
     # Only non-cancelled tasks by default
     query = query.where(ProjectTask.status != TaskStatus.cancelled)

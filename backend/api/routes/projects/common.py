@@ -165,6 +165,10 @@ class TaskResponse(BaseModel):
     attachment_count: int = 0
     created_by: Optional[int] = None
     creator_name: Optional[str] = None
+    # Задачу завёл бот из сообщения в чате (по кнопке «Создать»): показываем
+    # это в списке, чтобы «наработки бота» было видно и можно было отобрать.
+    created_by_bot: bool = False
+    source_message: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

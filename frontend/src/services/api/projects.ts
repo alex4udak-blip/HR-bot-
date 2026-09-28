@@ -72,6 +72,10 @@ export interface ProjectTask {
   attachment_count: number;
   created_by?: number;
   creator_name?: string;
+  /** Задачу завёл бот из сообщения в чате (по кнопке «Создать») */
+  created_by_bot?: boolean;
+  /** Сообщение, из которого бот её достал */
+  source_message?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -383,6 +387,8 @@ export interface AllTasksFilters {
   status?: TaskStatus;
   assignee_id?: number;
   search?: string;
+  /** только задачи, заведённые ботом из чата */
+  created_by_bot?: boolean;
 }
 
 export const getAllTasks = async (filters?: AllTasksFilters): Promise<AllTasksProjectGroup[]> => {
@@ -390,6 +396,7 @@ export const getAllTasks = async (filters?: AllTasksFilters): Promise<AllTasksPr
   if (filters?.status) params.status = filters.status;
   if (filters?.assignee_id) params.assignee_id = String(filters.assignee_id);
   if (filters?.search) params.search = filters.search;
+  if (filters?.created_by_bot) params.created_by_bot = 'true';
   const { data } = await deduplicatedGet<AllTasksProjectGroup[]>('/projects/all-tasks', { params });
   return data;
 };
