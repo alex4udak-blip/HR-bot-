@@ -162,6 +162,26 @@ async def init_database():
         logger.error(f"Error creating tables: {e}")
         return
 
+    # Step 3.0: КОЛОНКИ, БЕЗ КОТОРЫХ ПАДАЕТ ВЕСЬ HR-РАЗДЕЛ.
+    # create_all выше заводит только недостающие ТАБЛИЦЫ, колонки в уже
+    # существующих он не добавляет. 28.09.2026 из-за этого лёг прод: код с
+    # vacancy_applications.pinned_entry_key уехал, а колонки не было — SELECT по
+    # заявкам валился с UndefinedColumnError, и карточка кандидата, смена этапа
+    # и лента перестали работать у всех. ALTER-ы были в start.sh, но в самом
+    # конце общего блока: любая ошибка выше — и до них дело не доходило.
+    # Здесь каждый идёт своей транзакцией (run_migration), поэтому сосед по
+    # списку упасть им не мешает.
+    for sql, description in (
+        ("ALTER TABLE stage_transitions ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP",
+         "stage_transitions.edited_at"),
+        ("ALTER TABLE stage_transitions ADD COLUMN IF NOT EXISTS edited_by INTEGER "
+         "REFERENCES users(id) ON DELETE SET NULL",
+         "stage_transitions.edited_by"),
+        ("ALTER TABLE vacancy_applications ADD COLUMN IF NOT EXISTS pinned_entry_key VARCHAR(64)",
+         "vacancy_applications.pinned_entry_key"),
+    ):
+        await run_migration(engine, sql, description)
+
     # Step 3.1: Convert existing uppercase role values to lowercase (critical fix)
     for sql, description in ROLE_CONVERSIONS:
         await run_migration(engine, sql, description)

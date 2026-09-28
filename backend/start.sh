@@ -52,6 +52,45 @@ async def ensure_enums():
 asyncio.run(ensure_enums())
 " || echo "Enum check completed or skipped"
 
+# Колонки, без которых падает ВЕСЬ HR-раздел, — отдельным маленьким блоком.
+# 28.09.2026 прод лёг именно из-за того, что они стояли в конце общего блока
+# ниже: тот падает целиком на первой же ошибке, и до них дело не доходило
+# («column vacancy_applications.pinned_entry_key does not exist» на каждом
+# запросе заявок). Здесь каждый ALTER в своей транзакции и со своим try.
+echo "Ensuring candidate feed columns exist..."
+python -c "
+import os, asyncio
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+SQLS = [
+    'ALTER TABLE stage_transitions ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP',
+    'ALTER TABLE stage_transitions ADD COLUMN IF NOT EXISTS edited_by INTEGER REFERENCES users(id) ON DELETE SET NULL',
+    'ALTER TABLE vacancy_applications ADD COLUMN IF NOT EXISTS pinned_entry_key VARCHAR(64)',
+]
+
+async def ensure_feed_columns():
+    db_url = os.environ.get('DATABASE_URL', '')
+    if not db_url:
+        print('No DATABASE_URL, skipping feed columns')
+        return
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
+    elif db_url.startswith('postgresql://'):
+        db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+    engine = create_async_engine(db_url)
+    for sql in SQLS:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(sql))
+            print('OK: ' + sql[:60])
+        except Exception as e:
+            print('FAILED: ' + sql[:60] + ' -> ' + str(e))
+    await engine.dispose()
+
+asyncio.run(ensure_feed_columns())
+" || echo "Feed columns check completed or skipped"
+
 # Ensure critical columns exist (fallback for broken migration chain)
 echo "Ensuring shadow users columns exist..."
 python -c "
@@ -477,21 +516,6 @@ async def ensure_shadow_columns():
                 dept_ids JSON DEFAULT '[]',
                 updated_at TIMESTAMP DEFAULT now()
             )'''))
-
-        # Лента карточки кандидата (24.09.2026): правка комментария к переводу
-        # («Изменено» + кто и когда правил в подсказке) и закреплённая запись —
-        # одна на воронку. Читаются первым же открытием карточки, поэтому
-        # колонки заводим ДО старта сервера, а не полагаемся на миграции.
-        await conn.execute(text(
-            'ALTER TABLE stage_transitions ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP'
-        ))
-        await conn.execute(text(
-            'ALTER TABLE stage_transitions ADD COLUMN IF NOT EXISTS edited_by INTEGER '
-            'REFERENCES users(id) ON DELETE SET NULL'
-        ))
-        await conn.execute(text(
-            'ALTER TABLE vacancy_applications ADD COLUMN IF NOT EXISTS pinned_entry_key VARCHAR(64)'
-        ))
 
         print('All columns verified')
 
