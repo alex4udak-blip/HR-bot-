@@ -1044,6 +1044,12 @@ class NoteCreate(BaseModel):
     # datetime.now(), чтобы дата всегда = момент написания.
     parent_key: Optional[str] = None
     stage_at_write_label: Optional[str] = None
+    # Прежний статус кандидата — только для записей о смене этапа У КАНДИДАТА
+    # ВНЕ ВОРОНОК. Заявки у него нет, историю (StageTransition) писать некуда,
+    # и такая запись живёт комментарием. Чтобы её удаление возвращало кандидата
+    # назад — как корзина у записи истории в воронке (28.09.2026) — запоминаем,
+    # откуда перевели.
+    from_status: Optional[str] = None
     # Воронка (вакансия), в которой написан коммент. Один кандидат может быть в
     # НЕСКОЛЬКИХ воронках — каждая показывает только свои комменты (по vacancy_id).
     # None = «Общий» коммент (написан вне контекста конкретной воронки / легаси).
@@ -1143,6 +1149,8 @@ async def add_entity_note(
         note["parent_key"] = data.parent_key
     if data.stage_at_write_label:
         note["stage_at_write_label"] = data.stage_at_write_label
+    if data.from_status:
+        note["from_status"] = data.from_status
     # Метка воронки — чтобы в каждой вакансии показывать только её комменты.
     if data.vacancy_id is not None:
         note["vacancy_id"] = data.vacancy_id
@@ -1386,6 +1394,25 @@ async def delete_entity_note(
 
     removed = notes.pop(idx)
     extra["notes"] = notes
+
+    # Удалили запись о переводе у кандидата ВНЕ воронок — возвращаем его на
+    # прежний статус, как это делает корзина у записи истории в воронке. Без
+    # этого поведение разъезжалось: в воронке кандидат откатывался, а вне её
+    # запись просто пропадала, и он оставался на новом этапе (владелец,
+    # 28.09.2026). Откатываем ТОЛЬКО если запись описывает текущий статус —
+    # этап уже подвинули руками, значит, она его больше не описывает.
+    from_status = removed.get("from_status")
+    current_status = entity.status.value if entity.status else None
+    if from_status and removed.get("stage") and removed.get("stage") == current_status:
+        try:
+            entity.status = EntityStatus(from_status)
+            entity.updated_at = datetime.utcnow()
+            logger.info(
+                "NOTE_STAGE_UNDO: entity=%s %s -> %s (удалена запись о переводе)",
+                entity_id, current_status, from_status,
+            )
+        except ValueError:
+            logger.warning("NOTE_STAGE_UNDO: неизвестный статус %s", from_status)
     # Закреп должен уйти вместе с комментарием. Иначе ключ указывает в пустоту
     # (прод 28.09.2026: «закрепил, удалил не открепив») — закреп висит на
     # несуществующей записи и мешает понять, что вообще закреплено.
@@ -1409,7 +1436,15 @@ async def delete_entity_note(
         logger.info("ENTRY_PIN снят вместе с комментарием: app=%s %s", app.id, pin_key)
 
     await db.commit()
-    return {"success": True, "total_notes": len(notes)}
+    await db.refresh(entity)
+    return {
+        "success": True,
+        "total_notes": len(notes),
+        # Фронт по этим полям переставляет карточку на месте, без перезагрузки.
+        "rolled_back": bool(from_status) and entity.status is not None
+        and entity.status.value == from_status,
+        "entity_status": entity.status.value if entity.status else None,
+    }
 
 
 @router.patch("/{entity_id}/status")

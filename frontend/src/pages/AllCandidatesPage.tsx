@@ -2342,6 +2342,7 @@ const InfoTab = memo(function InfoTab({
         stage: string,
         stageLabel: string,
         text: string,
+        opts?: { from_status?: string },
       ) => Promise<void>)
     | null
   >(null);
@@ -2409,6 +2410,10 @@ const InfoTab = memo(function InfoTab({
           stage,
           getStackStageLabel(stage),
           comment,
+          // Запоминаем, ОТКУДА перевели: по этому полю удаление записи вернёт
+          // кандидата назад — так же, как корзина у записи истории в воронке
+          // (требование владельца 28.09.2026: «неважно, воронка это или нет»).
+          { from_status: status },
         );
       }
       // Статус самого кандидата (entity) двигаем ТОЛЬКО если заявка реально
@@ -2437,7 +2442,11 @@ const InfoTab = memo(function InfoTab({
       stage: string,
       stageLabel: string,
       text: string,
-      opts?: { parent_key?: string; stage_at_write_label?: string },
+      opts?: {
+        parent_key?: string;
+        stage_at_write_label?: string;
+        from_status?: string;
+      },
     ) => {
       // Воронка, в которой написан коммент. Карточка тут рендерится ПО ВАКАНСИИ
       // (у неё свой applicationId и заголовок вакансии), но vacancy_id раньше не
@@ -2458,6 +2467,7 @@ const InfoTab = memo(function InfoTab({
           // Дописка к прошлой статусной записи (parent_key) + этап-на-момент-написания.
           parent_key: opts?.parent_key,
           stage_at_write_label: opts?.stage_at_write_label,
+          from_status: opts?.from_status,
           vacancy_id: commentVacancyId ?? undefined,
         });
         if (!card.extra_data) card.extra_data = {};
@@ -2596,7 +2606,13 @@ const InfoTab = memo(function InfoTab({
   const cardDeleteNote = useCallback(
     async (entityId: number, noteId: string) => {
       try {
-        await deleteEntityNote(entityId, noteId);
+        const res = await deleteEntityNote(entityId, noteId);
+        // Удалили запись о переводе у кандидата вне воронок — сервер вернул его
+        // на прежний этап; переставляем карточку на месте, как после отката
+        // записи истории в воронке.
+        if (res?.rolled_back && res.entity_status) {
+          onStatusChange(res.entity_status, { persist: false });
+        }
         if (card.extra_data && Array.isArray(card.extra_data.notes)) {
           card.extra_data.notes = (
             card.extra_data.notes as Array<Record<string, unknown>>
@@ -2620,7 +2636,7 @@ const InfoTab = memo(function InfoTab({
       // уже обновлённый card.extra_data.notes. Тот же приём, что и в cardComment.
       await loadActivity();
     },
-    [card, loadActivity, bumpNotes],
+    [card, loadActivity, bumpNotes, onStatusChange],
   );
 
   // Редактирование текста заметки — бэк (PATCH /entities/{id}/notes/{id}) уже

@@ -841,6 +841,10 @@ export const addEntityNote = async (
     // + метка этапа на момент написания (для плашки «оставлен на этапе X»).
     parent_key?: string | null;
     stage_at_write_label?: string | null;
+    // Прежний этап — только для записи о смене этапа у кандидата ВНЕ воронок:
+    // заявки нет, историю писать некуда, и удаление такой записи должно
+    // возвращать кандидата назад так же, как корзина в воронке.
+    from_status?: string | null;
     // Воронка (вакансия), в которой написан коммент — чтобы каждая воронка
     // показывала только свои комменты. null/undefined = «Общий».
     vacancy_id?: number | null;
@@ -862,7 +866,14 @@ export const updateEntityNote = async (
 export const deleteEntityNote = async (
   entityId: number,
   noteId: string
-): Promise<{ success: boolean; total_notes: number }> => {
+): Promise<{
+  success: boolean;
+  total_notes: number;
+  /** Удалили запись о переводе у кандидата вне воронок — он вернулся назад. */
+  rolled_back?: boolean;
+  /** Статус кандидата ПОСЛЕ удаления (для перестановки карточки без F5). */
+  entity_status?: string | null;
+}> => {
   const { data } = await api.delete(`/entities/${entityId}/notes/${encodeURIComponent(noteId)}`);
   return data;
 };

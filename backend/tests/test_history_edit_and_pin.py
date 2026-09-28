@@ -12,8 +12,9 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.database import (
-    ApplicationStage, Department, Entity, OrgMember, OrgRole, Organization,
-    StageTransition, User, Vacancy, VacancyApplication, VacancyStatus,
+    ApplicationStage, Department, Entity, EntityStatus, OrgMember, OrgRole,
+    Organization, StageTransition, User, Vacancy, VacancyApplication,
+    VacancyStatus,
 )
 from api.services.auth import create_access_token
 from tests.conftest import auth_headers
@@ -249,3 +250,72 @@ async def test_deleting_pinned_comment_clears_pin(
     assert r.status_code == 200, r.text
     await db_session.refresh(candidate_entity)
     assert "pinned_entry_key" not in (candidate_entity.extra_data or {})
+
+
+async def _add_stage_note(client, user, entity_id, *, stage, from_status, text="перевёл"):
+    """Запись о переводе у кандидата ВНЕ воронок — так её пишет фронт."""
+    r = await client.post(
+        f"/api/entities/{entity_id}/notes",
+        json={
+            "text": text, "stage": stage, "stage_label": stage,
+            "from_status": from_status,
+        },
+        headers=_headers(user),
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["note"]["id"]
+
+
+async def test_deleting_stage_note_rolls_back_candidate_without_funnel(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User,
+    organization: Organization, org_owner: OrgMember, candidate_entity: Entity,
+):
+    """Кандидат вне воронок: удаление записи о переводе возвращает его назад.
+
+    «Неважно, воронка это или нет, мы же его двигаем по этапам» (владелец,
+    28.09.2026). В воронке за откат отвечает StageTransition, а тут заявки нет
+    и запись живёт комментарием — значит, откат должен уметь и он.
+    """
+    was = candidate_entity.status.value
+    note_id = await _add_stage_note(
+        client, admin_user, candidate_entity.id,
+        stage=EntityStatus.offer.value, from_status=was,
+    )
+    candidate_entity.status = EntityStatus.offer
+    await db_session.commit()
+
+    r = await client.delete(
+        f"/api/entities/{candidate_entity.id}/notes/{note_id}",
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["rolled_back"] is True
+    assert body["entity_status"] == was
+    await db_session.refresh(candidate_entity)
+    assert candidate_entity.status.value == was
+
+
+async def test_stage_note_does_not_roll_back_when_stage_moved_by_hand(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User,
+    organization: Organization, org_owner: OrgMember, candidate_entity: Entity,
+):
+    """Этап уже подвинули руками — запись его больше не описывает, откат не нужен.
+
+    То же правило, что и у записи истории в воронке.
+    """
+    note_id = await _add_stage_note(
+        client, admin_user, candidate_entity.id,
+        stage=EntityStatus.offer.value, from_status=candidate_entity.status.value,
+    )
+    candidate_entity.status = EntityStatus.hired
+    await db_session.commit()
+
+    r = await client.delete(
+        f"/api/entities/{candidate_entity.id}/notes/{note_id}",
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rolled_back"] is False
+    await db_session.refresh(candidate_entity)
+    assert candidate_entity.status == EntityStatus.hired
