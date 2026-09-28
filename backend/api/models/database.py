@@ -1,7 +1,7 @@
 from datetime import datetime, time
 from typing import Optional
 from sqlalchemy import (
-    BigInteger, Boolean, Column, DateTime, Enum as SQLEnum,
+    BigInteger, Boolean, Column, Date, DateTime, Enum as SQLEnum,
     ForeignKey, Index, Integer, LargeBinary, String, Table, Text, JSON, Time, func, text, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -2043,6 +2043,28 @@ class BoardDepartmentOrder(Base):
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     dept_ids = Column(JSON, default=list)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class EveningReport(Base):
+    """Вечерний отчёт сотрудника за день.
+
+    Присылается в рабочий чат с тегом «вечерний отчёт» в любом виде: текстом,
+    файлом, голосовым, кружком или видео-демо. Голос и видео бот расшифровывает,
+    файл разбирает — а дальше модель делает выжимку, чтобы владелец не читал
+    три минуты сплошного текста (решение владельца 28.09.2026).
+    """
+    __tablename__ = "evening_reports"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    chat_id = Column(BigInteger, nullable=True, index=True)     # telegram chat id
+    author_name = Column(String(255), nullable=True)            # как подписан в Telegram
+    report_date = Column(Date, nullable=False, index=True)      # за какой день
+    source_type = Column(String(20), nullable=False)            # text / voice / video / document
+    raw_text = Column(Text, nullable=False)                     # расшифровка или текст файла
+    summary = Column(JSON, default=dict)                        # выжимка: сделано, проблемы, план
+    created_at = Column(DateTime, default=func.now())
 
 
 class DataMigrationMark(Base):

@@ -2541,6 +2541,12 @@ async def collect_group_message(message: types.Message):
                 )
                 session.add(db_message)
                 await session.commit()
+
+                # Вечерний отчёт файлом: текст уже разобран парсером
+                await _handle_evening_report(
+                    session, message, content_type,
+                    f"{message.caption or ''}\n{content or ''}", org_id,
+                )
                 return  # Early return since we've already saved
 
             elif message.photo:
@@ -2628,6 +2634,14 @@ async def collect_group_message(message: types.Message):
 
             session.add(db_message)
             await session.commit()
+
+            # Вечерний отчёт: текстом, голосом, кружком или видео. Тег ищем и в
+            # подписи к медиа — под видео-демо его пишут именно там.
+            if await _handle_evening_report(
+                session, message, content_type,
+                f"{message.caption or ''}\n{content or ''}", org_id,
+            ):
+                return
 
             # Auto-detect and process external links (Fireflies, Google Docs/Sheets/Forms)
             if content_type == "text" and content and org_id:
@@ -3672,6 +3686,152 @@ async def cmd_ai_digest(message: types.Message):
         return
 
     await _send_long(message, answer)
+
+
+async def _handle_evening_report(session, message, content_type: str, tagged_text: str, org_id) -> bool:
+    """Вечерний отчёт из чата: выжимка вместо трёх минут чтения.
+
+    Тег ищем и в тексте, и в подписи к файлу/видео — присылают по-разному.
+    Возвращает True, если сообщение было отчётом (тогда задачи из него не
+    вытаскиваем: это доклад о сделанном, а не план).
+    """
+    from .services import evening_report as ev
+
+    if not org_id:
+        return False
+    if not ev.has_report_tag(tagged_text or ""):
+        return False
+
+    body = ev.strip_tag(tagged_text or "")
+    if len(body) < 15:
+        await message.reply(
+            "📝 Вижу тег вечернего отчёта, но текста нет. "
+            "Пришлите текстом, файлом, голосовым или видео — я сделаю выжимку."
+        )
+        return True
+
+    user = (await session.execute(
+        select(User).where(User.telegram_id == message.from_user.id)
+    )).scalar_one_or_none()
+
+    summary = await ev.summarize_report(body)
+    await ev.save_report(
+        db=session,
+        org_id=org_id,
+        user_id=user.id if user else None,
+        chat_id=message.chat.id,
+        author_name=message.from_user.full_name,
+        source_type=content_type,
+        text=body,
+        summary=summary,
+    )
+    await message.reply(
+        ev.format_summary(summary, message.from_user.full_name),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+    return True
+
+
+async def notify_comment_to_chat(
+    chat_id: int, author: str, project_name: str, task_key: str,
+    task_title: str, content: str, project_id: int, task_id: int,
+) -> None:
+    """Пинг в рабочий чат: под задачей появился комментарий.
+
+    Шлём туда же, откуда задача родилась: утром человек написал план, бот завёл
+    задачи — и обсуждение по ним идёт в том же чате (владелец, 28.09.2026).
+    """
+    from .services import evening_report as ev
+
+    try:
+        await get_bot().send_message(
+            chat_id=chat_id,
+            text=ev.format_comment_ping(
+                author, project_name, task_key, task_title, content, project_id, task_id
+            ),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        logger.info(f"COMMENT_PING: чат {chat_id}, задача {task_key}")
+    except Exception as e:
+        logger.warning(f"COMMENT_PING не доставлен в чат {chat_id}: {e}")
+
+
+async def evening_digest_task():
+    """Итог дня в 18:00 по Москве по каждому рабочему чату.
+
+    Отчёта нет — пингуем сотрудника, что его ждут (владелец, 28.09.2026).
+    """
+    from datetime import datetime as _dt
+    from .services import evening_report as ev
+    from .models.database import Chat as _Chat
+
+    await asyncio.sleep(180)  # даём подняться базе и боту
+    sent_on: dict[int, str] = {}
+
+    while True:
+        try:
+            now = _dt.now(ev.MSK)
+            if now.hour == ev.DIGEST_HOUR_MSK:
+                today = now.date().isoformat()
+                async with async_session() as session:
+                    chats = (await session.execute(
+                        select(_Chat).where(
+                            _Chat.is_active.is_(True),
+                            _Chat.deleted_at.is_(None),
+                            _Chat.auto_tasks_enabled.is_(True),
+                        )
+                    )).scalars().all()
+
+                    for chat in chats:
+                        if sent_on.get(chat.id) == today:
+                            continue
+                        tg_id = chat.telegram_chat_id
+                        comments = await ev.comments_of_day(session, tg_id)
+                        has_report = await ev.report_exists_today(session, tg_id)
+
+                        if not has_report and not comments:
+                            # Тихий день: незачем слать пустой итог, но про отчёт напомним
+                            text = (
+                                "🌙 День закончился, а вечернего отчёта нет.\n"
+                                "Пришлите его с тегом «вечерний отчёт» — текстом, файлом, "
+                                "голосовым или видео, я сделаю выжимку."
+                            )
+                        else:
+                            report = None
+                            author = None
+                            if has_report:
+                                from .models.database import EveningReport
+                                row = (await session.execute(
+                                    select(EveningReport).where(
+                                        EveningReport.chat_id == tg_id,
+                                        EveningReport.report_date == now.date(),
+                                    ).order_by(EveningReport.id.desc()).limit(1)
+                                )).scalars().first()
+                                if row:
+                                    report = row.summary or {}
+                                    author = row.author_name
+                            text = ev.format_digest(
+                                chat.custom_name or chat.title or "чат",
+                                report, author, comments,
+                            )
+                            if not has_report:
+                                text += "\n\n📝 Вечернего отчёта сегодня не было — пришлите с тегом «вечерний отчёт»."
+
+                        try:
+                            await get_bot().send_message(
+                                chat_id=tg_id, text=text, parse_mode="HTML",
+                                disable_web_page_preview=True,
+                            )
+                            sent_on[chat.id] = today
+                            logger.info(f"EVENING_DIGEST: чат {tg_id}, комментариев {len(comments)}, отчёт={has_report}")
+                        except Exception as e:
+                            logger.warning(f"Итог дня не доставлен в чат {tg_id}: {e}")
+        except Exception as e:
+            logger.error(f"evening_digest_task: {e}", exc_info=True)
+
+        await asyncio.sleep(600)  # проверяем каждые 10 минут
 
 
 async def start_bot():

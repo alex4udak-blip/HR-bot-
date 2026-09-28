@@ -230,6 +230,30 @@ async def create_comment(
     await db.commit()
     await db.refresh(comment)
 
+    # Пинг в рабочий чат, откуда родилась задача: утром человек написал план,
+    # бот завёл задачи, а обсуждение идёт там же (владелец, 28.09.2026).
+    source_chat_id = getattr(task, "source_chat_id", None)
+    if source_chat_id:
+        try:
+            from ...bot import notify_comment_to_chat
+
+            task_key = (
+                f"{project.prefix}-{task.task_number}"
+                if project.prefix and task.task_number else f"#{task.id}"
+            )
+            await notify_comment_to_chat(
+                chat_id=source_chat_id,
+                author=current_user.name or "—",
+                project_name=project.name,
+                task_key=task_key,
+                task_title=task.title,
+                content=content,
+                project_id=project.id,
+                task_id=task.id,
+            )
+        except Exception as e:
+            logger.warning(f"Пинг о комментарии не ушёл в чат {source_chat_id}: {e}")
+
     # Reload with user relationship
     result = await db.execute(
         select(TaskComment)

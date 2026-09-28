@@ -521,6 +521,15 @@ async def lifespan(app: FastAPI):
         saturn_sync_task = asyncio.create_task(saturn_auto_sync_task())
         logger.info("Saturn auto-sync task started (every 5 min)")
 
+    # Итог дня в 18:00 МСК: отчёт + комментарии по задачам (28.09.2026)
+    evening_digest_bg_task = None
+    try:
+        from api.bot import evening_digest_task
+        evening_digest_bg_task = asyncio.create_task(evening_digest_task())
+        logger.info("Evening digest task started (18:00 MSK)")
+    except Exception as e:
+        logger.warning(f"Evening digest task not started: {e}")
+
     # Start employee reminders task (daily)
     employee_reminders_bg_task = asyncio.create_task(employee_reminders_task())
     logger.info("Employee reminders task started (daily)")

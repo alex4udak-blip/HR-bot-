@@ -517,6 +517,26 @@ async def ensure_shadow_columns():
                 created_at TIMESTAMP DEFAULT now()
             )'''))
 
+        # Вечерние отчёты сотрудников (28.09.2026)
+        await conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS evening_reports (
+                id SERIAL PRIMARY KEY,
+                org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                chat_id BIGINT,
+                author_name VARCHAR(255),
+                report_date DATE NOT NULL,
+                source_type VARCHAR(20) NOT NULL,
+                raw_text TEXT NOT NULL,
+                summary JSON DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT now()
+            )'''))
+        for _sql in (
+            'CREATE INDEX IF NOT EXISTS ix_evening_reports_chat ON evening_reports (chat_id)',
+            'CREATE INDEX IF NOT EXISTS ix_evening_reports_date ON evening_reports (report_date)',
+        ):
+            await conn.execute(text(_sql))
+
         # Свой порядок отделов у каждого HR (24.09.2026)
         await conn.execute(text('''
             CREATE TABLE IF NOT EXISTS staff_board_department_order (
