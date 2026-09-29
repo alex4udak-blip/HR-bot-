@@ -1,9 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, Loader2, Plus, Pencil, Eye, EyeOff, Check, Copy, X,
+  Search, Loader2, Plus, Pencil, Eye, EyeOff, Check, Copy, Download, X,
   ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
 } from "lucide-react";
 import clsx from "clsx";
+import * as XLSX from "xlsx";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -489,6 +490,45 @@ export default function StatusesPage() {
 
   const activeCount = countActive(filters);
 
+  /** Выгрузка в Excel того, что сейчас отобрано.
+   *
+   *  «А мы можем эти фильтры в табличку выгружать?» (Мария, 29.09.2026): она
+   *  отбирает людей за месяц или по сорсеру и дальше считает выплаты в
+   *  таблице. Выгружаем РОВНО видимое — с учётом поиска, фильтров, выбранного
+   *  отдела и сортировки, плюс колонку статуса: в файле групп нет. */
+  const exportToExcel = () => {
+    const cols = COLUMNS.filter((c) => c.key !== "offer");
+    const header = ["Статус", ...cols.map((c) => FILTER_LABELS[c.key as FilterKey] || c.label)];
+    const body: (string | number)[][] = [];
+
+    for (const group of grouped) {
+      for (const r of group.items) {
+        body.push([
+          group.label,
+          ...cols.map((c) => {
+            if (c.key === "sourcer") return (r.sourcers ?? []).map((t) => t.name).join(", ");
+            return cellText(r, c.key as FilterKey);
+          }),
+        ]);
+      }
+    }
+
+    if (!body.length) {
+      toast("Выгружать нечего — под фильтры никто не подошёл");
+      return;
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    ws["!cols"] = header.map((h, i) => ({
+      wch: Math.min(40, Math.max(h.length + 2, ...body.map((row) => String(row[i] ?? "").length + 2))),
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Статусы");
+    const today = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `statuses-${today}.xlsx`);
+    toast.success(`Выгружено строк: ${body.length}`);
+  };
+
   const grouped = useMemo(
     () => STATUSES.map((s) => {
       const items = visible.filter((r) => (s.members as readonly string[]).includes(r.status));
@@ -562,6 +602,15 @@ export default function StatusesPage() {
               <option value={SOURCER_NONE}>Без сорсера · {sourcerOptions.none}</option>
             )}
           </select>
+
+          <button
+            className="hf-statuses-export-btn"
+            onClick={exportToExcel}
+            title="Выгрузить в Excel то, что сейчас отобрано фильтрами"
+          >
+            <Download size={15} />
+            Выгрузить
+          </button>
 
           <div className="hf-statuses-filters-picker">
             <button

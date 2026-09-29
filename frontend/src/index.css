@@ -9645,6 +9645,23 @@ body.performance-mode .glass-card:hover {
 
 .hf-statuses-filters-picker { position: relative; flex-shrink: 0; }
 
+/* Выгрузка отобранного в Excel */
+.hf-statuses-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hf-space-xxs);
+  height: 36px;
+  padding: 0 var(--hf-space-s);
+  background: var(--hf-white);
+  border: var(--hf-border-xs) solid var(--hf-main-200);
+  border-radius: var(--hf-radius-s);
+  font-size: var(--hf-fs-3xs);
+  color: var(--hf-main-800);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hf-statuses-export-btn:hover { border-color: var(--hf-main-400); }
+
 .hf-statuses-filters-btn {
   display: inline-flex;
   align-items: center;
