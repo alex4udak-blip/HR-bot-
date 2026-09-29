@@ -149,6 +149,27 @@ interface BoardFilters {
 
 const EMPTY_FILTERS: BoardFilters = { values: {}, dates: {} };
 
+/** Границы месяца в формате ГГГГ-ММ-ДД. */
+function monthRange(year: number, month: number): { from: string; to: string } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const last = new Date(year, month + 1, 0).getDate();
+  return { from: `${year}-${pad(month + 1)}-01`, to: `${year}-${pad(month + 1)}-${pad(last)}` };
+}
+
+/** Последние 12 месяцев для выбора одним кликом: «Сентябрь 2026».
+ *  Мария набирала «01.09.2026 — 01.10.2026» руками и промахивалась в цифрах
+ *  (встреча 29.09.2026), а выгрузка за месяц нужна каждый месяц. */
+function recentMonths(now = new Date()): { label: string; from: string; to: string }[] {
+  const out: { label: string; from: string; to: string }[] = [];
+  for (let i = 0; i < 12; i += 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const { from, to } = monthRange(d.getFullYear(), d.getMonth());
+    const name = d.toLocaleDateString("ru-RU", { month: "long" });
+    out.push({ label: `${name[0].toUpperCase()}${name.slice(1)} ${d.getFullYear()}`, from, to });
+  }
+  return out;
+}
+
 const countActive = (f: BoardFilters) =>
   Object.values(f.values).filter((v) => v && v.length).length +
   Object.values(f.dates).filter((d) => d && (d.from || d.to)).length;
@@ -251,6 +272,10 @@ export default function StatusesPage() {
       else delete dates[key];
       return { ...f, dates };
     });
+
+  /** Поставить обе границы разом — кнопки «Этот месяц» и список месяцев. */
+  const setDateRange = (key: FilterKey, from: string, to: string) =>
+    setFilters((f) => ({ ...f, dates: { ...f.dates, [key]: { from, to } } }));
 
   const clearKey = (key: FilterKey) =>
     setFilters((f) => {
@@ -580,6 +605,7 @@ export default function StatusesPage() {
                       options={isDateKey(c.key) ? [] : valuesFor(c.key)}
                       onToggle={(v) => toggleValue(c.key, v)}
                       onDate={(side, v) => setDateBound(c.key, side, v)}
+                      onRange={(from, to) => setDateRange(c.key, from, to)}
                       onClear={() => clearKey(c.key)}
                     />
                   ))}
@@ -724,7 +750,7 @@ export default function StatusesPage() {
  *  значениями и их количеством, у дат — «с» и «по». Ни операторов, ни
  *  «равно/содержит»: отмечаешь то, что хочешь видеть. */
 function FilterSection({
-  label, column, values, range, options, onToggle, onDate, onClear,
+  label, column, values, range, options, onToggle, onDate, onRange, onClear,
 }: {
   label: string;
   column: FilterKey;
@@ -733,10 +759,12 @@ function FilterSection({
   options: { value: string; count: number }[];
   onToggle: (v: string) => void;
   onDate: (side: "from" | "to", v: string) => void;
+  onRange: (from: string, to: string) => void;
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const months = useMemo(() => recentMonths(), []);
   const isDate = isDateKey(column);
   const active = isDate ? !!(range && (range.from || range.to)) : values.length > 0;
   const shown = q
@@ -768,9 +796,39 @@ function FilterSection({
       </button>
 
       {open && (isDate ? (
-        <div className="hf-statuses-filter-dates">
-          <label>с<input type="date" value={range?.from || ""} onChange={(e) => onDate("from", e.target.value)} /></label>
-          <label>по<input type="date" value={range?.to || ""} onChange={(e) => onDate("to", e.target.value)} /></label>
+        <div className="hf-statuses-filter-daterange">
+          <div className="hf-statuses-filter-dates">
+            <label>с<input type="date" value={range?.from || ""} onChange={(e) => onDate("from", e.target.value)} /></label>
+            <label>по<input type="date" value={range?.to || ""} onChange={(e) => onDate("to", e.target.value)} /></label>
+          </div>
+          <div className="hf-statuses-filter-presets">
+            {months.slice(0, 2).map((m, i) => (
+              <button
+                key={m.label}
+                type="button"
+                className={clsx(
+                  "hf-statuses-preset",
+                  range?.from === m.from && range?.to === m.to && "is-on"
+                )}
+                onClick={() => onRange(m.from, m.to)}
+              >
+                {i === 0 ? "Этот месяц" : "Прошлый месяц"}
+              </button>
+            ))}
+            <select
+              className="hf-statuses-preset hf-statuses-preset-select"
+              value={months.find((m) => m.from === range?.from && m.to === range?.to)?.label || ""}
+              onChange={(e) => {
+                const m = months.find((x) => x.label === e.target.value);
+                if (m) onRange(m.from, m.to);
+              }}
+            >
+              <option value="">Месяц…</option>
+              {months.map((m) => (
+                <option key={m.label} value={m.label}>{m.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
       ) : (
         <div className="hf-statuses-filter-values">
