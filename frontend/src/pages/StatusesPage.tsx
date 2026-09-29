@@ -56,7 +56,7 @@ const SANDBOX_LABEL = "Сандбокс";
 const UNASSIGNED = "__none__";
 
 type FilterKey =
-  | "name" | "assignee" | "position" | "department" | "telegram"
+  | "name" | "assignee" | "sourcer" | "position" | "department" | "telegram"
   | "practice_start_date" | "manager" | "department_start_date"
   | "dept_done" | "w2" | "w2_done" | "m1" | "m1_done"
   | "m3" | "m3_done" | "y1" | "y1_done" | "dismissal_date";
@@ -73,6 +73,7 @@ type FilterKey =
 const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narrow?: boolean; width: number }[] = [
   { key: "name",                  label: "Сотрудник",         filter: true, width: 250 },
   { key: "assignee",              label: "HR",                filter: true, width: 130 },
+  { key: "sourcer",               label: "Сорсер",            filter: true, width: 150 },
   { key: "position",              label: "Должность",         filter: true, width: 160 },
   { key: "department",            label: "Отдел",             filter: true, width: 190 },
   { key: "telegram",              label: "Telegram",          filter: true, width: 140 },
@@ -159,6 +160,7 @@ const cellText = (r: BoardRow, key: FilterKey): string => {
   switch (key) {
     case "name": return r.name || "";
     case "assignee": return rowAssignees(r).map((a) => a.name || "").filter(Boolean).join(", ");
+    case "sourcer": return (r.sourcers ?? []).map((t) => t.name).filter(Boolean).join(", ");
     case "position": return r.position || "";
     case "department": return r.department_name || "";
     case "telegram": return r.telegram || "";
@@ -198,6 +200,17 @@ export default function StatusesPage() {
       else localStorage.removeItem(HR_FILTER_STORAGE_KEY);
     } catch { /* без хранилища просто не запоминаем */ }
   }, [hrFilter]);
+
+  // Сорсер: «нажать Лиза и увидеть, скольких она вывела» (Мария, 29.09.2026)
+  const [sourcerFilter, setSourcerFilter] = useState<string>(() => {
+    try { return localStorage.getItem(SOURCER_FILTER_STORAGE_KEY) || ""; } catch { return ""; }
+  });
+  useEffect(() => {
+    try {
+      if (sourcerFilter) localStorage.setItem(SOURCER_FILTER_STORAGE_KEY, sourcerFilter);
+      else localStorage.removeItem(SOURCER_FILTER_STORAGE_KEY);
+    } catch { /* без хранилища просто не запоминаем */ }
+  }, [sourcerFilter]);
 
   const [filters, setFilters] = useState<BoardFilters>(() => {
     try {
@@ -343,6 +356,12 @@ export default function StatusesPage() {
       const uid = Number(hrFilter);
       out = out.filter((r) => rowAssignees(r).some((a) => a.user_id === uid));
     }
+    if (sourcerFilter === SOURCER_NONE) {
+      out = out.filter((r) => (r.sourcers ?? []).length === 0);
+    } else if (sourcerFilter) {
+      out = out.filter((r) => (r.sourcers ?? []).some((t) => String(t.id) === sourcerFilter));
+    }
+
     // Колонки фильтруются вместе (И), значения внутри колонки — «или»:
     // отметили SEO и Push — видно и тех, и других.
     for (const [key, chosen] of Object.entries(filters.values) as [FilterKey, string[]][]) {
@@ -365,7 +384,25 @@ export default function StatusesPage() {
       });
     }
     return out;
-  }, [rows, q, filters, hrFilter]);
+  }, [rows, q, filters, hrFilter, sourcerFilter]);
+
+  /** Сорсеры для быстрого фильтра — с количеством выведённых людей. */
+  const sourcerOptions = useMemo(() => {
+    const map = new Map<number, { name: string; color: string; count: number }>();
+    let none = 0;
+    for (const r of rows) {
+      const list = r.sourcers ?? [];
+      if (!list.length) none += 1;
+      for (const t of list) {
+        const cur = map.get(t.id);
+        map.set(t.id, { name: t.name, color: t.color, count: (cur?.count || 0) + 1 });
+      }
+    }
+    const list = [...map.entries()]
+      .map(([id, v]) => ({ id, ...v }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    return { list, none };
+  }, [rows]);
 
   /** HR для быстрого фильтра — только те, у кого на доске кто-то есть. */
   const hrOptions = useMemo(() => {
@@ -479,6 +516,26 @@ export default function StatusesPage() {
               <option value={hrFilter}>HR #{hrFilter} · 0</option>
             )}
             {hrOptions.none > 0 && <option value={HR_NONE}>Без HR · {hrOptions.none}</option>}
+          </select>
+
+          <select
+            className={clsx("hf-statuses-hr-filter", sourcerFilter && "hf-statuses-hr-filter-on")}
+            value={sourcerFilter}
+            onChange={(e) => setSourcerFilter(e.target.value)}
+            title="Показать, кого вывел конкретный сорсер"
+          >
+            <option value="">Сорсер: все</option>
+            {sourcerOptions.list.map((t) => (
+              <option key={t.id} value={String(t.id)}>{t.name} · {t.count}</option>
+            ))}
+            {/* выбранный сорсер мог исчезнуть с доски — выбор не сбрасываем молча */}
+            {sourcerFilter && sourcerFilter !== SOURCER_NONE
+              && !sourcerOptions.list.some((t) => String(t.id) === sourcerFilter) && (
+              <option value={sourcerFilter}>Сорсер #{sourcerFilter} · 0</option>
+            )}
+            {sourcerOptions.none > 0 && (
+              <option value={SOURCER_NONE}>Без сорсера · {sourcerOptions.none}</option>
+            )}
           </select>
 
           <div className="hf-statuses-filters-picker">
@@ -1034,8 +1091,11 @@ function Row({
           row={row}
           people={people}
           onSave={(ids) => onPatch(row, { assignee_user_ids: ids })}
-          onReload={onReload}
         />
+      </td>
+
+      <td className="hf-statuses-td">
+        <SourcerCell row={row} onReload={onReload} />
       </td>
 
       <td className="hf-statuses-td">
@@ -1296,6 +1356,9 @@ const rowAssignees = (r: BoardRow) =>
 /** Быстрый фильтр «кандидаты Лизы»: id HR или «без HR». */
 const HR_NONE = "none";
 const HR_FILTER_STORAGE_KEY = "hf-statuses-hr";
+/** Быстрый фильтр «кого вывела Катя»: сорсеров считают отдельно от HR. */
+const SOURCER_NONE = "none";
+const SOURCER_FILTER_STORAGE_KEY = "hf-statuses-sourcer";
 
 /** Кого можно добавить в колонку HR через «+». Решение владельца 21.09.2026:
  *  доску «Статусы» ведут только Мария и Эльвира, остальные HR в списке
@@ -1474,13 +1537,54 @@ function PillCell({
  * справа — добавить HR. HR после правки хранятся на доске (метки воронки их
  * больше не перебивают); сорсер снимается с самой карточки — это та же метка.
  */
+/** Сорсеры человека — СВОЯ колонка, а не довесок к HR.
+ *
+ *  «Это же не HR, это sourcing»: Мария считает по сорсерам выплаты и хочет
+ *  нажать на имя и увидеть всех, кого он вывел (встреча 29.09.2026). Сорсер —
+ *  это метка на кандидате, поэтому крестик снимает её с карточки.
+ */
+function SourcerCell({ row, onReload }: { row: BoardRow; onReload: () => void }) {
+  const sourcers = row.sourcers ?? [];
+
+  const remove = async (tagId: number, name: string) => {
+    try {
+      await removeTagFromEntity(row.entity_id, tagId);
+      onReload();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || `Не удалось снять «${name}»`);
+    }
+  };
+
+  if (!sourcers.length) return <span className="hf-statuses-empty-cell">—</span>;
+
+  return (
+    <div className="hf-statuses-sourcers">
+      {sourcers.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          className="hf-statuses-pill hf-statuses-sourcer-pill"
+          style={{
+            backgroundColor: `color-mix(in srgb, ${t.color} 14%, transparent)`,
+            color: t.color,
+            borderColor: `color-mix(in srgb, ${t.color} 30%, transparent)`,
+          }}
+          title={`Сорсер: ${t.name} — нажмите, чтобы снять`}
+          onClick={() => remove(t.id, t.name)}
+        >
+          {t.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function AssigneeCell({
-  row, people, onSave, onReload,
+  row, people, onSave,
 }: {
   row: BoardRow;
   people: { user_id: number; user_name: string | null }[];
   onSave: (ids: number[]) => void;
-  onReload: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -1489,7 +1593,6 @@ function AssigneeCell({
 
   const assignees = rowAssignees(row);
   const ids = assignees.map((a) => a.user_id);
-  const sourcers = row.sourcers ?? [];
 
   useEffect(() => {
     if (!open) return;
@@ -1523,19 +1626,10 @@ function AssigneeCell({
     onSave([...ids, uid]);
   };
 
-  const removeSourcer = async (tagId: number, name: string) => {
-    try {
-      await removeTagFromEntity(row.entity_id, tagId);
-      onReload();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || `Не удалось снять «${name}»`);
-    }
-  };
-
   const options = people.filter((p) => !ids.includes(p.user_id));
 
   return (
-    <div className="hf-statuses-assignee" data-many={assignees.length + sourcers.length > 2}>
+    <div className="hf-statuses-assignee" data-many={assignees.length > 2}>
       {assignees.map((a) => {
         const name = a.name || `#${a.user_id}`;
         return (
@@ -1553,20 +1647,6 @@ function AssigneeCell({
           </button>
         );
       })}
-      {sourcers.map((t) => (
-        <button
-          key={`src-${t.id}`}
-          type="button"
-          className="hf-statuses-avatar hf-statuses-avatar-removable"
-          style={{ background: t.color }}
-          title={`Сорсер: ${t.name} — убрать`}
-          aria-label={`Убрать сорсера ${t.name}`}
-          onClick={() => removeSourcer(t.id, t.name)}
-        >
-          <span className="hf-statuses-avatar-text">{initialsOf(t.name)}</span>
-          <X className="hf-statuses-avatar-x" size={13} />
-        </button>
-      ))}
       <button
         ref={plusRef}
         type="button"

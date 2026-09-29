@@ -9967,6 +9967,23 @@ body.performance-mode .glass-card:hover {
   cursor: pointer;
 }
 
+/* Сорсеры: своя колонка, метки в строку, клик снимает метку */
+.hf-statuses-sourcers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.hf-statuses-sourcer-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hf-statuses-sourcer-pill:hover { filter: brightness(0.92); }
+
 /* Отдел: цветная пилюля, поверх — прозрачный select для правки */
 .hf-statuses-dept { position: relative; display: flex; align-items: center; min-width: 0; }
 .hf-statuses-dept .hf-statuses-pill {
