@@ -937,19 +937,22 @@ function FilterSection({
             <label>по<input type="date" value={range?.to || ""} onChange={(e) => onDate("to", e.target.value)} /></label>
           </div>
           <div className="hf-statuses-filter-presets">
-            {months.slice(0, 2).map((m, i) => (
-              <button
-                key={m.label}
-                type="button"
-                className={clsx(
-                  "hf-statuses-preset",
-                  range?.from === m.from && range?.to === m.to && "is-on"
-                )}
-                onClick={() => onRange(m.from, m.to)}
-              >
-                {i === 0 ? "Этот месяц" : "Прошлый месяц"}
-              </button>
-            ))}
+            {months.slice(0, 2).map((m, i) => {
+              const on = range?.from === m.from && range?.to === m.to;
+              return (
+                <button
+                  key={m.label}
+                  type="button"
+                  className={clsx("hf-statuses-preset", on && "is-on")}
+                  // Повторный клик по выбранному месяцу снимает фильтр — как у
+                  // чипов наставников в «Все кандидаты»: нажал — отобрал,
+                  // нажал ещё раз — вернул всех.
+                  onClick={() => (on ? onClear() : onRange(m.from, m.to))}
+                >
+                  {i === 0 ? "Этот месяц" : "Прошлый месяц"}
+                </button>
+              );
+            })}
             <select
               className="hf-statuses-preset hf-statuses-preset-select"
               value={months.find((m) => m.from === range?.from && m.to === range?.to)?.label || ""}

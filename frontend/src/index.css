@@ -10053,6 +10053,41 @@ body.performance-mode .glass-card:hover {
   font-size: var(--hf-fs-4xs);
 }
 
+/* Месяц одной кнопкой. Классы были, а стилей — нет: три кнопки слипались в
+   строку текста «Этот месяцПрошлый месяцМесяц…» и вылезали за край панели.
+   Делаем чипами с переносом — ряд видно, и он всегда внутри панели. */
+.hf-statuses-filter-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hf-space-xs);
+  padding: 0 var(--hf-space-s) var(--hf-space-s);
+}
+.hf-statuses-preset {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: var(--hf-space-xxs) var(--hf-space-s);
+  border: var(--hf-border-xs) solid var(--hf-ui-border);
+  border-radius: 999px;
+  background: var(--hf-white);
+  color: var(--hf-main-700);
+  font-size: var(--hf-fs-5xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.hf-statuses-preset:hover { background: var(--hf-ui-hover); color: var(--hf-main-900); }
+.hf-statuses-preset.is-on {
+  border-color: var(--hf-main-900);
+  background: var(--hf-main-900);
+  color: var(--hf-white);
+}
+/* «Месяц…» — тот же чип, но это select: убираем системный вид. */
+.hf-statuses-preset-select {
+  appearance: none;
+  padding-right: var(--hf-space-m);
+  cursor: pointer;
+}
+
 /* Применённые фильтры — видимой строкой под шапкой, клик снимает */
 .hf-statuses-fchips {
   display: flex;
