@@ -71,7 +71,9 @@ def test_nick_conditions_cover_resume_contacts():
     sql = " ".join(_sql(c) for c in conds)
     assert "telegram_usernames" in sql
     assert "notes" in sql
-    assert "resume_contacts" in sql
+    # Именно список ников из шапки, а не объект resume_contacts целиком: в тексте
+    # объекта есть имена ключей, и «id»/«mail» цепляли бы всех подряд.
+    assert "resume_contacts" in sql and "telegrams" in sql
 
 
 def test_nick_conditions_ignore_at_sign():
@@ -92,6 +94,16 @@ def test_broad_conditions_tags_only_where_asked():
     )
     assert "tags" not in without
     assert "tags" in with_tags
+
+
+def test_contact_conditions_match_values_not_json_keys():
+    from api.services.search_index import contact_search_conditions
+
+    sql = " ".join(_sql(c) for c in contact_search_conditions("id"))
+    # Поиск идёт по спискам (emails/phones/telegrams), а не по объекту целиком —
+    # иначе «id» совпадал бы с ключом "file_id" у каждого, у кого есть резюме.
+    assert "'emails'" in sql and "'phones'" in sql and "'telegrams'" in sql
+    assert "'resume_contacts' AS" not in sql.replace("->", " ")
 
 
 @pytest.mark.asyncio

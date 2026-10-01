@@ -324,7 +324,7 @@ export const isObserverBlocked = (method?: string, url?: string): boolean => {
   const path = (url || '')
     .replace(/^https?:\/\/[^/]+/, '')
     .replace(/[?#].*$/, '')
-    .replace(/^\/api/, '');
+    .replace(/^\/api(?=\/)/, '');
   const normalized = path.startsWith('/') ? path : `/${path}`;
   return !OBSERVER_WRITABLE_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 };
