@@ -877,6 +877,11 @@ export default function AllCandidatesPage() {
   useEffect(() => {
     const card = selectedCard;
     if (!card) return;
+    // Наблюдателю эту проверку не запускаем: она ПИШЕТ найденного дубля в
+    // карточку (hidden_duplicate_id), ему запись запрещена — и на каждое
+    // открытие карточки он получал отказ (01.10.2026). Уже найденные дубли он
+    // по-прежнему видит: они лежат в карточке.
+    if (observer) return;
     const extra = (card.extra_data || {}) as Record<string, unknown>;
     // Флаг с уровнем — баннер покажется и так. Флаг без level записан старым
     // правилом («одно совпадение = точный дубль») — пересчитываем его.
@@ -909,7 +914,7 @@ export default function AllCandidatesPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCard?.id]);
+  }, [selectedCard?.id, observer]);
 
   // Свежесть профиля при ОТКРЫТИИ: карточка берётся из доски, которая могла
   // устареть (статус/этап/коммент сменили в другом месте — напр. в воронке, или

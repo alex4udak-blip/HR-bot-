@@ -14,7 +14,9 @@ vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-import { isObserverBlocked, setObserverMode } from '../client';
+import toast from 'react-hot-toast';
+
+import { OBSERVER_BLOCK_MESSAGE, isObserverBlocked, setObserverMode } from '../client';
 
 afterEach(() => setObserverMode(false));
 
@@ -64,5 +66,28 @@ describe('isObserverBlocked', () => {
     // «/api» срезается только как целый сегмент: иначе «/apiary» превратилось бы
     // в «ary» и не совпало ни с одним префиксом.
     expect(isObserverBlocked('post', '/api/projects/2/tasks')).toBe(false);
+  });
+});
+
+describe('Плашка — только на то, что человек нажал', () => {
+  // Карточка при открытии сама просит проверку дублей (POST), и наблюдателю
+  // сыпались плашки без единого клика — жалоба владельца 01.10.2026.
+  it('фоновый запрос режется молча', async () => {
+    setObserverMode(true);
+    const api = (await import('../client')).default;
+    await expect(api.post('/entities/9/detect-duplicate', {})).rejects.toThrow(
+      OBSERVER_BLOCK_MESSAGE,
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('после нажатия — объясняем, иначе «нажал, ничего не произошло»', async () => {
+    setObserverMode(true);
+    document.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    const api = (await import('../client')).default;
+    await expect(api.post('/entities/9/notes', { text: 'x' })).rejects.toThrow(
+      OBSERVER_BLOCK_MESSAGE,
+    );
+    expect(toast.error).toHaveBeenCalledWith(OBSERVER_BLOCK_MESSAGE);
   });
 });

@@ -329,12 +329,25 @@ export const isObserverBlocked = (method?: string, url?: string): boolean => {
   return !OBSERVER_WRITABLE_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 };
 
+// Когда человек последний раз что-то нажимал. Нужно, чтобы отличить КЛИК от
+// фонового запроса: наблюдателю сыпались плашки на ровном месте — карточка при
+// открытии сама просит проверку дублей, а это запись (замечание владельца
+// 01.10.2026). На фоновое молчим, на нажатое — объясняем, иначе получится
+// «нажал, ничего не произошло».
+let lastGestureAt = 0;
+if (typeof document !== 'undefined') {
+  const mark = () => { lastGestureAt = Date.now(); };
+  document.addEventListener('pointerdown', mark, true);
+  document.addEventListener('keydown', mark, true);
+}
+
 let lastObserverToast = 0;
 
 const rejectObserverWrite = (): Error => {
-  // Один тост на серию: клик по строке статуса может дёрнуть несколько запросов.
   const now = Date.now();
-  if (now - lastObserverToast > 1500) {
+  const byUser = now - lastGestureAt < 2000;
+  // Один тост на серию: одно нажатие может дёрнуть несколько запросов.
+  if (byUser && now - lastObserverToast > 1500) {
     lastObserverToast = now;
     toast.error(OBSERVER_BLOCK_MESSAGE);
   }
