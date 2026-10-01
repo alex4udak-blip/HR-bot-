@@ -51,6 +51,13 @@ async def list_vacancies(
     # Base query - filter by organization
     query = select(Vacancy).where(Vacancy.org_id == org.id if org else True)
 
+    # Скоуп по воронкам (01.10.2026): наблюдателю-ментору видны только его
+    # воронки — и в сайдбаре, и в «Заявках», и в выпадающих списках.
+    from ...services.vacancy_scope import get_scope_vacancy_ids, vacancy_scope_filter
+    _scope_ids = await get_scope_vacancy_ids(current_user, db)
+    if _scope_ids:
+        query = query.where(vacancy_scope_filter(_scope_ids))
+
     # Мягкое удаление: по умолчанию удалённые скрыты; фильтр «Удалённые» — только они.
     if deleted:
         query = query.where(Vacancy.deleted_at.isnot(None))
@@ -325,6 +332,10 @@ async def get_vacancy(
     current_user: User = Depends(check_vacancy_access)
 ):
     """Get a single vacancy by ID (with access control)."""
+    # Скоуп по воронкам: чужая воронка не открывается и по прямой ссылке.
+    from ...services.vacancy_scope import ensure_vacancy_visible
+    await ensure_vacancy_visible(vacancy_id, current_user, db)
+
     org = await get_user_org(current_user, db)
 
     result = await db.execute(

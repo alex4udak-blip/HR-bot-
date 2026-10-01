@@ -179,6 +179,10 @@ async def init_database():
          "stage_transitions.edited_by"),
         ("ALTER TABLE vacancy_applications ADD COLUMN IF NOT EXISTS pinned_entry_key VARCHAR(64)",
          "vacancy_applications.pinned_entry_key"),
+        # Скоуп наблюдателя по воронкам (01.10.2026): пусто = ограничения нет,
+        # поэтому для всех существующих участников поведение не меняется.
+        ("ALTER TABLE org_members ADD COLUMN IF NOT EXISTS scope_vacancy_ids JSON",
+         "org_members.scope_vacancy_ids"),
         # Задачи из чата (25.09.2026, соседняя ветка работ). Их ALTER-ы лежали
         # в том же хвосте start.sh и на прод не доехали: 28.09 проверка
         # SCHEMA_DRIFT показала, что колонок нет, хотя модель их требует —

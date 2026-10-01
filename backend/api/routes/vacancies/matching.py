@@ -26,8 +26,17 @@ async def get_vacancies_stats(
     current_user: User = Depends(check_vacancy_access)
 ):
     """Get overview statistics for vacancies."""
+    from sqlalchemy import and_ as _and
+
+    from ...services.vacancy_scope import get_scope_vacancy_ids
+
     org = await get_user_org(current_user, db)
     org_filter = Vacancy.org_id == org.id if org else True
+    # Скоуп по воронкам: сводка считается только по разрешённым воронкам, иначе
+    # наблюдатель видел бы объёмы найма по всей компании.
+    _scope_ids = await get_scope_vacancy_ids(current_user, db)
+    if _scope_ids:
+        org_filter = _and(org_filter, Vacancy.id.in_(list(_scope_ids)))
 
     # Total vacancies by status
     status_counts = await db.execute(
@@ -112,6 +121,12 @@ async def get_matching_candidates(
         List of CandidateMatchResponse objects sorted by match_score descending
     """
     from ...services.vacancy_recommender import vacancy_recommender
+    from ...services.vacancy_scope import (
+        ensure_vacancy_visible, entity_in_scope, get_scope_vacancy_ids,
+    )
+
+    # Скоуп по воронкам: чужая воронка — 404, как и везде.
+    await ensure_vacancy_visible(vacancy_id, current_user, db)
 
     # Get user's organization
     org = await get_user_org(current_user, db)
@@ -143,6 +158,15 @@ async def get_matching_candidates(
 
     # Filter by min_score
     filtered_matches = [m for m in matches if m.match_score >= min_score]
+
+    # Подбор ходит по ВСЕМУ пулу кандидатов организации — человеку, допущенному
+    # до отдельных воронок, чужих предлагать нельзя.
+    _scope_ids = await get_scope_vacancy_ids(current_user, db)
+    if _scope_ids is not None:
+        filtered_matches = [
+            m for m in filtered_matches
+            if await entity_in_scope(m.entity_id, _scope_ids, db)
+        ]
 
     return [
         CandidateMatchResponse(

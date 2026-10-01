@@ -283,6 +283,12 @@ class OrgMember(Base):
     # не-GET запросы → 403 в get_current_user). Ортогонален роли: admin+readonly =
     # видит всё, но ничего не меняет. Для менторов, которым нужен только просмотр.
     is_readonly = Column(Boolean, default=False, nullable=False)
+    # Скоуп по воронкам (01.10.2026, запрос Марии): список id вакансий, которыми
+    # ограничена видимость кандидатов у этого человека. Пусто/NULL — ограничения
+    # НЕТ (видит весь пул орга, как и раньше); непустой список — видны только
+    # кандидаты с заявкой в этих воронках, и сами воронки тоже только эти.
+    # Задумано для наблюдателя-ментора из другого отдела: «вижу только Трафик».
+    scope_vacancy_ids = Column(JSON, nullable=True)
     invited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=func.now())
 

@@ -9,6 +9,9 @@ export interface User {
   role: UserRole;
   org_role?: OrgRole;
   is_readonly?: boolean; // «Наблюдатель»: видит всё, но ничего не может менять
+  // Скоуп по воронкам: если список непустой, человеку видны кандидаты только
+  // этих вакансий (и сами вакансии тоже). Пусто — ограничения нет.
+  scope_vacancy_ids?: number[];
   department_id?: number;
   department_name?: string;
   department_role?: DeptRole;

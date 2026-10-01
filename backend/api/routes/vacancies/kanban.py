@@ -33,6 +33,10 @@ async def get_kanban_board(
 
     Supports filtering by recruiter (created_by) and date range (applied_after/applied_before).
     """
+    # Скоуп по воронкам: чужая воронка не открывается и по прямой ссылке.
+    from ...services.vacancy_scope import ensure_vacancy_visible
+    await ensure_vacancy_visible(vacancy_id, current_user, db)
+
     org = await get_user_org(current_user, db)
 
     # Verify vacancy exists
@@ -253,6 +257,10 @@ async def get_kanban_column(
 
     This endpoint is used for loading more candidates in a column (infinite scroll).
     """
+    # Скоуп по воронкам: чужая воронка не открывается и по прямой ссылке.
+    from ...services.vacancy_scope import ensure_vacancy_visible
+    await ensure_vacancy_visible(vacancy_id, current_user, db)
+
     org = await get_user_org(current_user, db)
 
     # Verify vacancy exists

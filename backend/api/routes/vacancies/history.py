@@ -63,6 +63,10 @@ async def get_application_history(
         select(VacancyApplication).where(VacancyApplication.id == application_id)
     )
     application = app_result.scalar()
+    # Скоуп по воронкам: история заявки из чужой воронки не читается.
+    if application is not None:
+        from ...services.vacancy_scope import ensure_vacancy_visible
+        await ensure_vacancy_visible(application.vacancy_id, current_user, db)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 

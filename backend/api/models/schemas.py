@@ -116,6 +116,9 @@ class UserUpdate(BaseModel):
     telegram_username: Optional[str] = None
     is_active: Optional[bool] = None
     department_id: Optional[int] = None
+    # Скоуп по воронкам (01.10.2026): какие вакансии видит наблюдатель. Пустой
+    # список снимает ограничение (видит весь пул, как раньше).
+    scope_vacancy_ids: Optional[List[int]] = None
 
 
 class UserProfileUpdate(BaseModel):
@@ -133,6 +136,8 @@ class UserResponse(BaseModel):
     role: UserRole  # Use enum for consistency with database
     org_role: Optional[str] = None  # owner, admin, member
     is_readonly: bool = False  # «Наблюдатель»: видит всё, но не может ничего менять
+    # Воронки, которыми ограничена видимость кандидатов (пусто — не ограничена).
+    scope_vacancy_ids: List[int] = []
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     department_role: Optional[str] = None  # lead, sub_admin, member

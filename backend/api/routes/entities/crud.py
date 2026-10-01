@@ -152,6 +152,13 @@ async def list_entities(
     # Теневая база: архивные кандидаты скрыты из активного списка
     query = query.where(Entity.is_archived.is_not(True))
 
+    # Скоуп по воронкам (01.10.2026): человеку, допущенному только до отдельных
+    # воронок, список кандидатов режется так же, как доска и поиск.
+    from ...services.vacancy_scope import entity_scope_filter, get_scope_vacancy_ids
+    _scope_ids = await get_scope_vacancy_ids(current_user, db)
+    if _scope_ids:
+        query = query.where(entity_scope_filter(_scope_ids))
+
     if type:
         query = query.where(Entity.type == type)
     if status:

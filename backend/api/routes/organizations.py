@@ -23,7 +23,7 @@ from ..models.database import (
     Entity, Chat, CallRecording, AnalysisHistory,
     AIConversation, EntityTransfer, Invitation, CriteriaPreset,
     Department, DepartmentMember, DeptRole, SharedAccess,
-    UserCustomRole, CustomRole, ReportSubscription, EntityAIConversation
+    UserCustomRole, CustomRole, ReportSubscription, EntityAIConversation, Vacancy
 )
 from ..services.auth import get_current_user, get_user_org, get_user_org_role, hash_password
 
@@ -85,6 +85,9 @@ class InviteMemberRequest(BaseModel):
 class UpdateMemberRoleRequest(BaseModel):
     role: str  # owner, admin, member
     is_readonly: Optional[bool] = None  # «Наблюдатель»: видит всё, ничего не меняет
+    # Скоуп по воронкам (01.10.2026): список id вакансий, которыми ограничена
+    # видимость кандидатов. Пустой список — ограничения нет (видит весь пул).
+    scope_vacancy_ids: Optional[List[int]] = None
 
 
 # Helper to check org access
@@ -483,9 +486,24 @@ async def update_member_role(
     membership.role = new_role
     if data.is_readonly is not None:
         membership.is_readonly = bool(data.is_readonly)
+    if data.scope_vacancy_ids is not None:
+        # Чужие вакансии в скоуп не берём: иначе галочкой можно было бы выдать
+        # доступ к воронке другой организации.
+        allowed = (await db.execute(
+            select(Vacancy.id).where(
+                Vacancy.org_id == org.id,
+                Vacancy.id.in_([int(v) for v in data.scope_vacancy_ids]),
+            )
+        )).scalars().all() if data.scope_vacancy_ids else []
+        membership.scope_vacancy_ids = [int(v) for v in allowed] or None
     await db.commit()
 
-    return {"success": True, "role": new_role.value, "is_readonly": membership.is_readonly}
+    return {
+        "success": True,
+        "role": new_role.value,
+        "is_readonly": membership.is_readonly,
+        "scope_vacancy_ids": membership.scope_vacancy_ids or [],
+    }
 
 
 @router.put("/current/members/{user_id}/full-access")

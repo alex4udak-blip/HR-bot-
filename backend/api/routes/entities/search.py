@@ -456,6 +456,13 @@ async def get_entity_activity(
         .where(VacancyApplication.entity_id == entity_id)
         .order_by(VacancyApplication.last_stage_change_at.desc())
     )).scalars().all()
+    # Скоуп по воронкам (01.10.2026): кандидат может быть в двух воронках, а
+    # человек допущен до одной. Сам кандидат ему открыт, но блок чужой воронки
+    # (этап, переписка, история) — нет.
+    from ...services.vacancy_scope import get_scope_vacancy_ids
+    _scope_ids = await get_scope_vacancy_ids(current_user, db)
+    if _scope_ids:
+        apps = [a for a in apps if a.vacancy_id in _scope_ids]
     if not apps:
         return []
 
@@ -703,13 +710,16 @@ async def get_recommended_vacancies(
     Get vacancy recommendations for a candidate.
 
     SECURITY: Results are filtered by user's accessible vacancies.
+    Скоуп по воронкам: по чужому кандидату не отвечаем (01.10.2026).
     Users only see recommendations for vacancies they own, have shared access to,
     or are in their department (if lead/admin).
     """
     from ...services.vacancy_recommender import vacancy_recommender
     from ...services.permissions import PermissionService
+    from ...services.vacancy_scope import ensure_entity_visible
 
     current_user = await db.merge(current_user)
+    await ensure_entity_visible(entity_id, current_user, db)
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(403, "No organization access")
