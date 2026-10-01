@@ -15,6 +15,7 @@ import {
 } from '@/services/api/forms';
 import type { FormTemplate } from '@/services/api/forms';
 import { FormBuilder, nextFieldId, fieldWord, submissionWord } from '@/features/forms/FormBuilder';
+import { useAuthStore } from '@/stores/authStore';
 
 // ============================================================
 // List mode component
@@ -22,6 +23,8 @@ import { FormBuilder, nextFieldId, fieldWord, submissionWord } from '@/features/
 
 function FormListView() {
   const navigate = useNavigate();
+  // Наблюдатель: анкеты видит, но не создаёт и не удаляет.
+  const observer = !!useAuthStore((state) => state.user?.is_readonly);
   const [forms, setForms] = useState<FormTemplate[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -111,6 +114,7 @@ function FormListView() {
             Шаблоны анкет для кандидатов — создайте заранее и отправляйте из карточки кандидата
           </p>
         </div>
+        {!observer && (
         <button
           onClick={handleCreate}
           className="flex items-center gap-2 px-4 py-2.5 bg-accent-500 hover:bg-accent-600 text-white rounded-xl font-medium transition-colors"
@@ -118,6 +122,7 @@ function FormListView() {
           <Plus className="w-4 h-4" />
           Создать шаблон
         </button>
+        )}
       </div>
 
       {(() => {
@@ -160,7 +165,7 @@ function FormListView() {
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 {/* «Скопировать ссылку» убрана: публичный slug-сабмит намеренно
                     отключён (403) — анкеты уходят персональной token-ссылкой. */}
-                {!form.is_template && (
+                {!form.is_template && !observer && (
                   <button
                     onClick={(e) => handlePromote(form.id, e)}
                     className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-accent-500/15 text-accent-500 hover:bg-accent-500/25 transition-colors"
@@ -169,6 +174,7 @@ function FormListView() {
                     В шаблоны
                   </button>
                 )}
+                {!observer && (
                 <button
                   onClick={(e) => handleDelete(form.id, e)}
                   className="p-2 rounded-lg hover:bg-red-500/20 text-dark-400 hover:text-red-400 transition-colors"
@@ -176,6 +182,7 @@ function FormListView() {
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
+                )}
               </div>
             </div>
           </motion.div>

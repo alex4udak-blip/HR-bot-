@@ -248,6 +248,9 @@ export default function VacanciesPage() {
   // Auth state for role-based UI
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'superadmin' || user?.org_role === 'owner' || user?.org_role === 'admin';
+  // Наблюдатель (is_readonly) обычно с правами админа — без этого флага ему
+  // показывались «Назначить», «Взять в работу», «Удалить» и т.д. (01.10.2026).
+  const observer = !!user?.is_readonly;
 
   // Task 9: "My vacancies" filter — non-admin users see only their vacancies by default
   const [showOnlyMine, setShowOnlyMine] = useState(false);
@@ -727,7 +730,9 @@ export default function VacanciesPage() {
             Заявки
           </h1>
 
-          {/* Создание заявок доступно всем, включая рекрутёров (гейт снят 2026-07-02). */}
+          {/* Создание заявок доступно всем, включая рекрутёров (гейт снят 2026-07-02),
+              кроме наблюдателя. */}
+          {!observer && (
           <button
             onClick={() => {
               setShowCreateModal(true);
@@ -739,6 +744,7 @@ export default function VacanciesPage() {
             <Plus className="hf-funnels-primary-icon" strokeWidth={2.5} />
             Новая заявка
           </button>
+          )}
         </div>
 
         <div className="hf-vacancies-toolbar">
@@ -963,7 +969,7 @@ export default function VacanciesPage() {
             <EmptyVacancies
               variant={searchQuery ? 'search' : activeFilterCount > 0 ? 'filter' : 'primary'}
               query={searchQuery}
-              onCreate={() => setShowCreateModal(true)}
+              onCreate={observer ? undefined : () => setShowCreateModal(true)}
             />
           </div>
         ) : (
@@ -981,13 +987,13 @@ export default function VacanciesPage() {
                 const isRequestForMe = !!user && vacancy.created_by !== user.id &&
                   (isAdmin ? isExplicitlyAssigned(vacancy, user.id) : isAssignedToMe(vacancy));
                 const isAlreadyAssigned = vacancy.assigned_to_all || (vacancy.assigned_to && vacancy.assigned_to.length > 0);
-                const showAdminAssign = isAdmin && (
+                const showAdminAssign = isAdmin && !observer && (
                   vacancy.status === 'pending_review' ||
                   vacancy.status === 'draft' ||
                   (vacancy.status === 'open' && !isAlreadyAssigned)
                 );
-                const showAdminReassign = isAdmin && vacancy.status === 'open' && isAlreadyAssigned;
-                const showTakeBtn = isRequestForMe && !hasAlreadyTaken(vacancy);
+                const showAdminReassign = isAdmin && !observer && vacancy.status === 'open' && isAlreadyAssigned;
+                const showTakeBtn = isRequestForMe && !observer && !hasAlreadyTaken(vacancy);
                 const exitOptions = getVacancyExitOptions(vacancy, user?.id, isAdmin);
                 const isLive = vacancy.status === 'open' || vacancy.status === 'paused';
                 const acceptedCount = vacancy.stage_counts.hired || 0;
@@ -1169,6 +1175,7 @@ export default function VacanciesPage() {
                               )}
                             </button>
                           )}
+                        {!observer && (
                         <div className="hf-vacancies-row-actions">
                           <button
                             type="button"
@@ -1236,6 +1243,7 @@ export default function VacanciesPage() {
                             </button>
                           )}
                         </div>
+                        )}
                     </div>
                   </article>
                 </ContextMenu>

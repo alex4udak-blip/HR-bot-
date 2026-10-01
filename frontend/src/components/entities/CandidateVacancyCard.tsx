@@ -194,6 +194,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   addedAt,
   readonly,
   dimmed,
+  snapshot = false,
   stageOptions,
   getStageLabel,
   onChangeStage,
@@ -235,6 +236,12 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   // Серым красим только реально неактивное: merged-снапшот/архив. Если не передан
   // — падаем на readonly (старое поведение для воронок/архива не меняется).
   dimmed?: boolean;
+  // СНАПШОТ влитого дубля (merged): его лог — только собственные заметки, без
+  // переходов живой заявки и без синтетического «Кандидат добавлен». Отдельно от
+  // readonly: у НАБЛЮДАТЕЛЯ readonly=true, но лента у него должна быть ПОЛНАЯ —
+  // он «видит всё». Раньше это был один флаг, и наблюдатель открывал карточку с
+  // пустой историей (01.10.2026).
+  snapshot?: boolean;
   stageOptions: Array<{ status: string; label: string }>;
   getStageLabel: (stage: string) => string;
   // Возвращает false при неудачной смене этапа (или ничего/true — старые
@@ -462,7 +469,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           : null,
       }));
 
-    const eventRows = (!readonly && Array.isArray(events) ? events : []).map(
+    const eventRows = (!snapshot && Array.isArray(events) ? events : []).map(
       (ev) => {
         const to = getStageLabel(ev.to_stage);
         const from = ev.from_stage ? getStageLabel(ev.from_stage) : null;
@@ -504,7 +511,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       // Влитые (read-only) контейнеры без заметок/событий НЕ показывают
       // синтетическое «Кандидат добавлен»: иначе каждый объединённый дубль
       // плодит свой зелёный «new», и лента засоряется N одинаковыми записями.
-      if (readonly) return [];
+      if (snapshot) return [];
       return [
         {
           date: addedAt || card.created_at,
@@ -517,7 +524,7 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       ];
     }
     return base;
-  }, [notes, events, readonly, getStageLabel, addedAt, card.created_at, card.recruiter_name, resolveNoteVacancyLabel]);
+  }, [notes, events, snapshot, getStageLabel, addedAt, card.created_at, card.recruiter_name, resolveNoteVacancyLabel]);
 
   const filteredTimelineItems = useMemo(() => {
     if (!timelineActionFilter) return timelineItems;
@@ -1032,7 +1039,10 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
       )}
 
       {/* ---- Action chips (Huntflow: Письмо | Интервью | Комментарий | Оффер | Файл) — только живой контейнер ---- */}
-      {!readonly && (
+      {/* Весь ряд пишущий: «Файл», «Удалить с воронки», а «Анкета» открывает
+          дровер СОЗДАНИЯ/отправки анкеты (ответы кандидата читаются во вкладке
+          «Анкета» под карточкой). Наблюдателю ряд не показываем. */}
+      {!snapshot && !readonly && (
       <div className="px-[var(--hf-space-xxl)] pb-hf-l flex items-center gap-[var(--hf-space-s)] border-b border-[color:var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-06)] flex-wrap">
         {!isCommentComposerOpen && (
           <>
@@ -1064,8 +1074,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
 
       {/* ---- История: лог контейнера (notes + переходы для живого) ---- */}
       <div className="px-[var(--hf-space-xxl)] pt-[7px]">
-        {/* Фильтр «Действия» — интерактивный, только живой контейнер. */}
-        {!readonly && (
+        {/* Фильтр «Действия» — он только ФИЛЬТРУЕТ ленту, ничего не меняет,
+            поэтому наблюдателю нужен; нет его лишь у снапшота влитого дубля. */}
+        {!snapshot && (
         <div className="relative mb-hf-l inline-block" ref={actionMenuRef}>
           <button
             type="button"
@@ -1214,23 +1225,23 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                       Закреплено
                     </span>
                   )}
+                  {/* Смайлик-реакция у наблюдателя не рендерим вовсе: раньше
+                      кнопка оставалась, но без обработчика — «нажимаю, ничего не
+                      происходит». Уже поставленные реакции он видит ниже. */}
+                  {!readonly && onReact && (
                   <button
                     type="button"
-                    onClick={
-                      !readonly && onReact
-                        ? () =>
-                            setReactionPickerKey((k) =>
-                              k === event.reactionKey ? null : event.reactionKey,
-                            )
-                        : undefined
+                    onClick={() =>
+                      setReactionPickerKey((k) =>
+                        k === event.reactionKey ? null : event.reactionKey,
+                      )
                     }
-                    title={
-                      !readonly && onReact ? "Поставить реакцию" : undefined
-                    }
+                    title="Поставить реакцию"
                     className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
                   >
                     <TimelineMetaIcon />
                   </button>
+                  )}
                   {reactionPickerKey === event.reactionKey && (
                     <>
                       <div
@@ -1540,7 +1551,9 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
           ) : (
             <div className="relative text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
               <TimelineDot />
-              Нет действий по выбранным фильтрам
+              {timelineActionFilter
+                ? "Нет действий по выбранным фильтрам"
+                : "Пока нет записей"}
             </div>
           )}
         </div>

@@ -20,6 +20,42 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 
+# ============================================================
+# «НАБЛЮДАТЕЛЬ» (OrgMember.is_readonly)
+# ============================================================
+# Ментор (Егор, Влад — запрос владельца 01.10.2026): видит ВЕСЬ HR, но ничего в
+# нём не меняет. Проверка одна на все роуты (см. get_current_user), поэтому
+# забытая кнопка на фронте даёт 403, а не тихую правку.
+#
+# Свой рабочий домен наблюдатель МЕНЯЕТ как обычный сотрудник/лид: практик-лид с
+# этим флагом наблюдает HR, но работает в Практике. Этот же список продублирован
+# на клиенте (OBSERVER_WRITABLE_PREFIXES в frontend/src/services/api/client.ts) —
+# правите здесь, правьте и там, иначе человек останется без своего раздела.
+OBSERVER_WRITABLE_PREFIXES = (
+    "/api/auth/",           # выход, рефреш, смена своего пароля
+    "/api/chats",           # чаты практики (+ messages/ai под этим префиксом)
+    "/api/calls",           # созвоны
+    "/api/interns",         # практиканты
+    "/api/criteria",        # критерии AI-анализа чатов
+    "/api/projects",        # проекты
+    "/api/project-statuses",
+    "/api/timeoff",         # отпуска
+    "/api/blockers",        # блокеры
+    "/api/notifications",   # отметить свои уведомления прочитанными
+)
+
+
+def observer_check_needed(method: str, path: str) -> bool:
+    """Нужно ли для этого запроса проверять флаг «Наблюдатель».
+
+    True = запрос изменяющий и бьёт по HR/админке. На чтении (GET/HEAD/OPTIONS)
+    лишний запрос в базу не делаем.
+    """
+    if (method or "GET").upper() in ("GET", "HEAD", "OPTIONS"):
+        return False
+    return not any((path or "").startswith(prefix) for prefix in OBSERVER_WRITABLE_PREFIXES)
+
+
 def _truncate_password(password: str, max_bytes: int = 72) -> str:
     """Truncate password to max_bytes for bcrypt compatibility."""
     password_bytes = password.encode('utf-8')
@@ -166,30 +202,8 @@ async def get_current_user(
     # точка = гарантия «ничего не может нажать/поменять». Проверяем только не-GET
     # (на чтении лишний запрос не делаем). Auth-операции (logout/refresh/смена своего
     # пароля) не режем — иначе read-only юзер не смог бы даже выйти. Суперадмин — мимо.
-    if request.method not in ("GET", "HEAD", "OPTIONS"):
-        _path = request.url.path or ""
-        # Наблюдатель = read-only ТОЛЬКО по HR/админке. Свой рабочий домен (Практика:
-        # чаты/созвоны/практиканты; проекты/задачи/отпуска/блокеры; свои уведомления)
-        # он МЕНЯЕТ как обычный сотрудник/лид — иначе практик-лид с флагом наблюдателя
-        # (наблюдает HR, но работает в Практике) не мог ничего делать в своём отделе.
-        # Домены синхронны фронтовому getBlockForPath (practice/projects) и баннеру.
-        _ro_writable_prefixes = (
-            "/api/chats",           # чаты практики (+ messages/ai под этим префиксом)
-            "/api/calls",           # созвоны
-            "/api/interns",         # практиканты
-            "/api/criteria",        # критерии AI-анализа чатов
-            "/api/projects",        # проекты
-            "/api/project-statuses",
-            "/api/timeoff",         # отпуска
-            "/api/blockers",        # блокеры
-            "/api/notifications",   # отметить свои уведомления прочитанными
-        )
-        _ro_writable = any(_path.startswith(p) for p in _ro_writable_prefixes)
-        if (
-            user.role != UserRole.superadmin
-            and not _path.startswith("/api/auth/")
-            and not _ro_writable
-        ):
+    if observer_check_needed(request.method, request.url.path or ""):
+        if user.role != UserRole.superadmin:
             from ..models.database import OrgMember
             try:
                 _ro = (await db.execute(

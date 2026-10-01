@@ -2349,8 +2349,9 @@ export default function RecruiterFunnelsPage() {
             {isHrAdmin ? 'Рекрутеры' : 'Мои вакансии'}
           </span>
           <div className="flex items-center gap-1">
-            {/* Создание доступно всем, включая рекрутёров (гейт снят 2026-07-02). */}
-            {(
+            {/* Создание доступно всем, включая рекрутёров (гейт снят 2026-07-02),
+                кроме наблюдателя — он ничего не создаёт. */}
+            {!hlReadonly && (
               <button
                 onClick={() => setShowCreateModal(true)}
                 className="hf-recruiter-sidebar-icon-btn"
@@ -2637,7 +2638,7 @@ export default function RecruiterFunnelsPage() {
                   {/* «Перенос кандидатов» — справа от фильтра рекрутёров. Уходит
                       сотрудник → передать его воронки и кандидатов другому. Только
                       админ/суперадмин (isHrAdmin). */}
-                  {isHrAdmin && (
+                  {isHrAdmin && !hlReadonly && (
                     <button
                       type="button"
                       onClick={() => setShowHandover(true)}
@@ -2650,8 +2651,9 @@ export default function RecruiterFunnelsPage() {
                   )}
                 </div>
 
-                {/* Создание доступно всем, включая рекрутёров (гейт снят 2026-07-02). */}
-                {(
+                {/* Создание доступно всем, включая рекрутёров (гейт снят 2026-07-02),
+                    кроме наблюдателя. */}
+                {!hlReadonly && (
                   <button
                     type="button"
                     onClick={() => setShowCreateModal(true)}
@@ -2684,7 +2686,7 @@ export default function RecruiterFunnelsPage() {
                           {search ? 'Измените поиск или фильтр статуса' : 'Создайте первую вакансию для начала работы'}
                         </p>
                       </div>
-                      {!search && (
+                      {!search && !hlReadonly && (
                         <button
                           onClick={() => setShowCreateModal(true)}
                           className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-400)] text-[var(--hf-white)] text-sm font-medium rounded-lg transition-colors"
@@ -2738,6 +2740,7 @@ export default function RecruiterFunnelsPage() {
                               {count} кандидатов
                             </span>
                             <div className="flex items-center gap-2">
+                              {!hlReadonly && (
                               <button
                                 type="button"
                                 onClick={(event) => {
@@ -2749,7 +2752,8 @@ export default function RecruiterFunnelsPage() {
                               >
                                 <Pencil className="hf-vacancies-search-action-icon" />
                               </button>
-                              {v.status !== 'closed' && getVacancyExitOptions(v, user?.id, isHrAdmin).canLeave && (
+                              )}
+                              {!hlReadonly && v.status !== 'closed' && getVacancyExitOptions(v, user?.id, isHrAdmin).canLeave && (
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -2762,7 +2766,7 @@ export default function RecruiterFunnelsPage() {
                                   <LogOut className="hf-vacancies-search-action-icon" />
                                 </button>
                               )}
-                              {v.status !== 'closed' && getVacancyExitOptions(v, user?.id, isHrAdmin).canClose && (
+                              {!hlReadonly && v.status !== 'closed' && getVacancyExitOptions(v, user?.id, isHrAdmin).canClose && (
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -2775,7 +2779,7 @@ export default function RecruiterFunnelsPage() {
                                   <Archive className="hf-vacancies-search-action-icon" />
                                 </button>
                               )}
-                              {user?.role === 'superadmin' && (
+                              {user?.role === 'superadmin' && !hlReadonly && (
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -3148,7 +3152,7 @@ export default function RecruiterFunnelsPage() {
                         Прячем, пока открыта модалка перемещения, иначе плашка
                         перекрывает её футер с кнопкой «Добавить». */}
                     <BulkSelectionBar
-                      open={anySelected && !showBulkMove}
+                      open={anySelected && !showBulkMove && !hlReadonly}
                       count={selectedIds.size}
                       avatars={candidates
                         .filter((c) => selectedIds.has(c.id))
@@ -3236,7 +3240,7 @@ export default function RecruiterFunnelsPage() {
                                     <Users className="hf-profile-action-icon" /> Открыть профиль
                                   </button>
                                 )}
-                                {selectedCandidate.entity_id && (
+                                {selectedCandidate.entity_id && !hlReadonly && (
                                   <div className="relative" ref={addToVacancyRef}>
                                     <button
                                       onClick={() => setShowAddToVacancy(!showAddToVacancy)}
@@ -3271,7 +3275,7 @@ export default function RecruiterFunnelsPage() {
                                     )}
                                   </div>
                                 )}
-                                {selectedCandidate.entity_id && (
+                                {selectedCandidate.entity_id && !hlReadonly && (
                                   <TakeCandidateButton
                                     entityId={selectedCandidate.entity_id}
                                     onDone={({ vacancyId, recruiterId }) => {
@@ -3301,7 +3305,9 @@ export default function RecruiterFunnelsPage() {
                                     }}
                                   />
                                 )}
-                                {selectedCandidate.entity_id && (
+                                {/* «Поделиться» создаёт публичную ссылку (запись) —
+                                    наблюдателю нельзя. */}
+                                {selectedCandidate.entity_id && !hlReadonly && (
                                   <button
                                     onClick={async () => {
                                       try {
@@ -3318,18 +3324,22 @@ export default function RecruiterFunnelsPage() {
                                     <ExternalLink className="hf-profile-action-icon" /> Поделиться
                                   </button>
                                 )}
+                                {!hlReadonly && (
                                 <button
                                   onClick={() => setEditingCandidateCard(buildCandidateEditCard(selectedCandidate))}
                                   className="hf-profile-action-btn"
                                 >
                                   <Pencil className="hf-profile-action-icon" /> Редактировать
                                 </button>
+                                )}
+                                {!hlReadonly && (
                                 <button
                                   onClick={handleRemoveFromVacancy}
                                   className="hf-profile-action-btn"
                                 >
                                   <X className="hf-profile-action-icon" /> Удалить с воронки
                                 </button>
+                                )}
                               </div>
 
                               {/* Name + large photo (Huntflow / AllCandidatesPage style) */}
@@ -3506,6 +3516,7 @@ export default function RecruiterFunnelsPage() {
                                   <TagPicker
                                     entityId={selectedCandidate?.entity_id}
                                     onChange={setEntityTags}
+                                    disabled={hlReadonly}
                                   />
                                 </div>
                               </div>
@@ -3545,7 +3556,11 @@ export default function RecruiterFunnelsPage() {
                                       /* Архивная (закрытая) вакансия — карточка визуально
                                          read-only, как merged: не должна выглядеть
                                          активной, если менять всё равно нельзя. */
-                                      readonly={c.origin === 'merged' || vacancyArchived}
+                                      readonly={c.origin === 'merged' || vacancyArchived || hlReadonly}
+                                      /* Наблюдатель: карточка цветная и лента полная,
+                                         только без кнопок (dimmed/snapshot — нет). */
+                                      dimmed={c.origin === 'merged' || vacancyArchived}
+                                      snapshot={c.origin === 'merged'}
                                       /* Серая карточка этапа — только живой контейнер
                                          и только пока отклик в «предыдущих сериях». */
                                       isPreviousSeries={c.origin === 'live' && !!selectedCandidate?.is_previous_series}
@@ -3568,7 +3583,7 @@ export default function RecruiterFunnelsPage() {
                                       anketaCount={anketaCount}
                                       onReact={c.origin === 'live' ? cardReact : undefined}
                                       files={c.files}
-                                      onDeleteFile={c.origin === 'live' && !vacancyArchived ? cardDeleteFile : undefined}
+                                      onDeleteFile={c.origin === 'live' && !vacancyArchived && !hlReadonly ? cardDeleteFile : undefined}
                                     />
                                   ))
                                 )}
