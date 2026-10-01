@@ -187,6 +187,9 @@ export interface KanbanColumn {
 export interface KanbanBoardResponse {
   columns: KanbanColumn[];
   total: number;
+  // Искали «@ник», совпадений по нику нет → сервер вернул обычный поиск
+  // (имя/контакты). Окно подписывает это строкой под вкладками.
+  nick_fallback?: boolean;
 }
 
 /**

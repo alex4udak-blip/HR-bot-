@@ -9,6 +9,7 @@ import {
   logoutAllDevices as apiLogoutAllDevices,
   revokeSession as apiRevokeSession
 } from '@/services/api';
+import { setObserverMode } from '@/services/api/client';
 
 // Polling interval for feature updates (30 seconds)
 const FEATURE_POLL_INTERVAL = 30000;
@@ -523,3 +524,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return user.department_id === departmentId;
   },
 }));
+
+// «Наблюдатель» (is_readonly): клиент сам не отправляет изменяющие запросы в
+// HR/админке — иначе кнопка «работала», а сервер молча отвечал 403 (см.
+// isObserverBlocked). Подписка, а не вызов в setUser: пользователь ставится ещё
+// и при логине и при имперсонации, мимо setUser.
+useAuthStore.subscribe((state) => {
+  setObserverMode(!!state.user?.is_readonly && state.user?.role !== 'superadmin');
+});

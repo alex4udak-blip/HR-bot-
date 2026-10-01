@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import toast from 'react-hot-toast';
 
 // ============================================================
 // CSRF TOKEN MANAGEMENT
@@ -276,6 +277,72 @@ export const getPendingRequestsCount = (): number => pendingRequests.size;
  */
 export const getActiveStreamsCount = (): number => activeStreamControllers.size;
 
+// ============================================================
+// «НАБЛЮДАТЕЛЬ» (is_readonly) — ЗАПРЕТ ЗАПИСИ НА КЛИЕНТЕ
+// ============================================================
+
+/**
+ * Наблюдатель (ментор): видит весь HR, но ничего не меняет. Сервер режет любой
+ * не-GET (403 «Режим Наблюдатель…»), но тихий 403 на КЛИЕНТЕ выглядел как
+ * «кнопка сломалась»: комментарий отправлялся в никуда, этап «менялся» и
+ * возвращался после F5 (жалоба владельца 01.10.2026). Поэтому запись
+ * останавливаем до запроса — одним понятным сообщением.
+ *
+ * Список доменов, где наблюдатель ПИШЕТ как обычный сотрудник (Практика,
+ * проекты, свои уведомления), повторяет `_ro_writable_prefixes` в
+ * backend/api/services/auth.py — расходиться им нельзя.
+ */
+let observerMode = false;
+
+export const setObserverMode = (on: boolean): void => {
+  observerMode = on;
+};
+
+export const OBSERVER_WRITABLE_PREFIXES = [
+  '/auth/',            // выход, рефреш, свой пароль
+  '/chats',
+  '/calls',
+  '/interns',
+  '/criteria',
+  '/projects',
+  '/project-statuses',
+  '/timeoff',
+  '/blockers',
+  '/notifications',
+] as const;
+
+/** Сообщение, которое видит наблюдатель вместо молчаливого 403. */
+export const OBSERVER_BLOCK_MESSAGE =
+  'Режим наблюдателя — только просмотр, изменения запрещены';
+
+export const isObserverBlocked = (method?: string, url?: string): boolean => {
+  if (!observerMode) return false;
+  const verb = (method || 'get').toUpperCase();
+  if (verb === 'GET' || verb === 'HEAD' || verb === 'OPTIONS') return false;
+  // url приходит и абсолютным, и относительным (baseURL = /api) — приводим к
+  // одному виду, иначе префиксы не совпадут.
+  const path = (url || '')
+    .replace(/^https?:\/\/[^/]+/, '')
+    .replace(/[?#].*$/, '')
+    .replace(/^\/api/, '');
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return !OBSERVER_WRITABLE_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+};
+
+let lastObserverToast = 0;
+
+const rejectObserverWrite = (): Error => {
+  // Один тост на серию: клик по строке статуса может дёрнуть несколько запросов.
+  const now = Date.now();
+  if (now - lastObserverToast > 1500) {
+    lastObserverToast = now;
+    toast.error(OBSERVER_BLOCK_MESSAGE);
+  }
+  const error = new Error(OBSERVER_BLOCK_MESSAGE);
+  (error as Error & { isObserverBlock?: boolean }).isObserverBlock = true;
+  return error;
+};
+
 const api = axios.create({
   baseURL: '/api',
   headers: {
@@ -288,6 +355,11 @@ const api = axios.create({
 // Request interceptor - add CSRF token and retry metadata
 api.interceptors.request.use(
   (config) => {
+    // Наблюдатель: до сети. См. isObserverBlocked.
+    if (isObserverBlocked(config.method, config.url)) {
+      return Promise.reject(rejectObserverWrite());
+    }
+
     // Add request timestamp for debugging
     (config as AxiosRequestConfig & { metadata?: { startTime: number } }).metadata = { startTime: Date.now() };
 

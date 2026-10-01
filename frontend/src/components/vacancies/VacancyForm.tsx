@@ -450,7 +450,11 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   // Админа, которого ЯВНО назначили, считаем участником наравне с рекрутёром:
   // он тоже может отказаться (2026-09-10).
   const isExplicitlyAssignedToMe = !!(user && vacancy && isExplicitlyAssigned(vacancy, user.id));
-  const canEditVacancy = isAdmin || isMineByOwnership || isAssignedToMe;
+  // Наблюдатель (is_readonly) обычно сидит с правами админа, поэтому форма
+  // открывалась ему полностью редактируемой: поля вводились, «Сохранить» молча
+  // отбивал сервер. Для него форма — просмотр (01.10.2026).
+  const isObserver = !!user?.is_readonly;
+  const canEditVacancy = (isAdmin || isMineByOwnership || isAssignedToMe) && !isObserver;
   const isReadOnlyRequest = !!vacancy && !canEditVacancy;
 
   // Уже ли ЭТОТ юзер лично принял заявку (extra_data.accepted_by, 2026-07-08) —
@@ -1244,7 +1248,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               >
                 Закрыть
               </button>
-              {!alreadyTaken && (
+              {!alreadyTaken && !isObserver && (
               <button
                 onClick={handleTake}
                 disabled={taking}
@@ -1254,6 +1258,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 {taking ? 'Беру...' : 'Взять в работу'}
               </button>
               )}
+              {!isObserver && (
               <button
                 type="button"
                 onClick={handleDecline}
@@ -1263,6 +1268,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               >
                 {declining ? 'Отказ...' : 'Отказаться'}
               </button>
+              )}
             </>
           ) : (
             <>

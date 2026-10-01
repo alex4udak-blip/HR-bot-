@@ -1375,6 +1375,9 @@ export default function Layout() {
   // Полный админ сайдбара: owner/admin/superadmin. hr (HR Рекрутер) СЮДА НЕ
   // входит — он ограниченный рекрутёр (видит только свои/назначенные заявки,
   // «Отказаться», без удаления и без /users). Откат hr=админ, 2026-07-07.
+  // Наблюдатель (is_readonly): HR смотрит, но ничего не создаёт — кнопки
+  // добавления в сайдбаре ему не показываем (01.10.2026).
+  const isObserverUser = user?.is_readonly === true;
   const isHrSidebarAdmin =
     user?.role === "superadmin" ||
     user?.org_role === "owner" ||
@@ -1977,6 +1980,7 @@ export default function Layout() {
                 ref={hrFabActionsRef}
                 className="hf-hr-fab-wrap"
               >
+                {!isObserverUser && (
                 <AnimatePresence>
                   {showHrFabActions && (
                     <motion.div
@@ -2019,6 +2023,8 @@ export default function Layout() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+                )}
+                {!isObserverUser && (
                 <button
                   type="button"
                   onClick={() => setShowHrFabActions((open) => !open)}
@@ -2027,6 +2033,7 @@ export default function Layout() {
                 >
                   <Plus className="hf-hr-fab-icon" />
                 </button>
+                )}
                 {/* Кнопка уведомлений + peek входящих рядом с «+» */}
                 <NotifPeek />
               </div>

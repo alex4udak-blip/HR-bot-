@@ -434,6 +434,8 @@ export default function AllCandidatesPage() {
   const [showNewCandidateModal, setShowNewCandidateModal] = useState(false);
   const [showParserModal, setShowParserModal] = useState(false);
   const { user } = useAuthStore();
+  // Наблюдатель: список открыт весь, но массовых действий у него нет.
+  const observer = !!user?.is_readonly;
   const [board, setBoard] = useState<KanbanBoardResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -1357,6 +1359,15 @@ export default function AllCandidatesPage() {
         ) : null}
       </div>
 
+      {/* Искали «@ник», по нику пусто — список показывает обычный поиск. Без
+          подписи это читается как «нашёлся не тот человек» (01.10.2026). */}
+      {board?.nick_fallback && debouncedSearch.trim() && (
+        <div className="mx-[var(--hf-space-xxl)] mt-[6px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)]">
+          По нику «{debouncedSearch.trim()}» ничего не нашли — показываем
+          совпадения по имени и контактам.
+        </div>
+      )}
+
       {/* ===== MASTER-DETAIL (huntflow style) ===== */}
       {loading && !board ? (
         <HfCandidatesLoadingLayout />
@@ -1732,7 +1743,7 @@ export default function AllCandidatesPage() {
 
       {/* ===== BULK ACTIONS DRAWER ===== */}
       <BulkSelectionBar
-        open={anySelected && !showBulkAddToVacancy && !showBulkDeleteConfirm}
+        open={anySelected && !showBulkAddToVacancy && !showBulkDeleteConfirm && !observer}
         count={selectedIds.size}
         avatars={selectedBulkCards.map((card) => ({
           id: card.id,
@@ -3103,9 +3114,13 @@ const InfoTab = memo(function InfoTab({
         >
           <Send className="hf-profile-action-icon" /> Отправить
         </button>
+        {/* «Поделиться» ВЫДАЁТ публичную ссылку (создаёт её на сервере) — это
+            запись, наблюдателю недоступна. */}
         <button
           onClick={handleShareCandidate}
           className="hf-profile-action-btn"
+          disabled={readonly}
+          style={roStyle}
           title="Скопировать публичную ссылку предпросмотра для заказчика (действует 30 дней)"
         >
           <ExternalLink className="hf-profile-action-icon" /> Поделиться
@@ -3444,6 +3459,8 @@ const InfoTab = memo(function InfoTab({
           recruiter={c.recruiter}
           readonly={c.origin === "merged" || readonly}
           dimmed={c.origin === "merged"}
+          // Лента наблюдателя — ПОЛНАЯ: snapshot только у влитого дубля.
+          snapshot={c.origin === "merged"}
           stageOptions={stagePickerOptions}
           getStageLabel={getStackStageLabel}
           onChangeStage={cardChangeStage}
@@ -3458,7 +3475,7 @@ const InfoTab = memo(function InfoTab({
           onAnketa={c.origin === "live" ? () => setAnketaOpen(true) : undefined}
           onReact={c.origin === "live" ? cardReact : undefined}
           files={c.files}
-          onDeleteFile={c.origin === "live" ? cardDeleteFile : undefined}
+          onDeleteFile={c.origin === "live" && !readonly ? cardDeleteFile : undefined}
           // Карточка теперь одна НА ВОРОНКУ, поэтому в шапке — её собственный
           // этап и название воронки. Список «этапы по воронкам» и бейдж воронки
           // у комментария остаются только в запасном виде (заявок нет).
