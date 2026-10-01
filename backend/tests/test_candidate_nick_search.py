@@ -4,8 +4,8 @@
 Чисто функциональные — без БД. Проверяют:
 - «@»-запрос детектится как ник-запрос;
 - обычные запросы (в т.ч. email с «@» не в начале) — нет;
-- nick_search_conditions даёт ровно два условия (telegram + комментарии) для
-  валидного ника и пусто для пустого/бессмысленного запроса;
+- nick_search_conditions даёт ровно три условия (telegram + комментарии +
+  контакты из шапки резюме, добавлены 01.10.2026) и пусто для пустого запроса;
 - notes_search_conditions (прицельный поиск по extra_data.notes) даёт ровно
   одно условие для непустого запроса и пусто для пустого.
 """
@@ -30,7 +30,9 @@ def test_is_nick_query(q, expected):
 
 def test_nick_search_conditions_valid_nick():
     conds = nick_search_conditions("@shblsn")
-    assert len(conds) == 2
+    # 3-е условие — ник из шапки резюме (extra_data.resume_contacts): в поля
+    # карточки его часто не переносят, см. test_nick_search_fallback.py.
+    assert len(conds) == 3
 
 
 def test_nick_search_conditions_bare_at():

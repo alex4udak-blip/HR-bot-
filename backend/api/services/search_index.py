@@ -15,7 +15,7 @@
 """
 import re
 from typing import Optional, List
-from sqlalchemy import cast, event, func, or_, and_, text, String
+from sqlalchemy import cast, event, func, or_, and_, select, text, String
 from sqlalchemy.sql.elements import ColumnElement
 
 from ..models.database import Entity
@@ -267,6 +267,10 @@ def contact_search_conditions(q: str) -> List:
     tg = q.lstrip("@")
     if tg:
         conds.append(cast(Entity.telegram_usernames, String).ilike(f"%{tg}%"))
+    # Контакты из ШАПКИ резюме (extra_data.resume_contacts) — почта/телефон/ник,
+    # которые рекрутёр в поля карточки не переносил. Прицельно по этому ключу, а
+    # не по всему extra_data-блобу (он самый шумный источник ложных совпадений).
+    conds.append(cast(Entity.extra_data["resume_contacts"], String).ilike(like))
     # Телефон по одним цифрам — форматы («+7 (999)…» vs «999…») не совпадают.
     digits = re.sub(r"\D", "", q)
     if len(digits) >= 4:
@@ -291,7 +295,61 @@ def nick_search_conditions(q: str) -> List:
     return [
         cast(Entity.telegram_usernames, String).ilike(f"%{tg}%"),
         cast(Entity.extra_data["notes"], String).ilike(f"%{tg}%"),
+        # Ник из ШАПКИ резюме: в поля карточки его часто не переносят (а если
+        # переносят — бывает обрезанным), и по «@полный_ник» карточка не находилась.
+        cast(Entity.extra_data["resume_contacts"], String).ilike(f"%{tg}%"),
     ]
+
+
+def broad_search_conditions(q: str, include_tags: bool = False) -> List:
+    """Обычный («не-ник») поиск: имя + контакты + должность/компания + комментарии.
+
+    Собрано в одном месте, потому что раньше три окна поиска (/search, /kanban,
+    /ids) повторяли список руками и разъезжались. `include_tags` — только для
+    /search: в «Все кандидаты» метки в поиск не входили, и менять это заодно не
+    стали.
+    """
+    q = (q or "").strip()
+    if not q:
+        return []
+    like = f"%{q.lower()}%"
+    conds: List = [
+        # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
+        *name_search_conditions(q),
+        *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + контакты из резюме
+        Entity.position.ilike(like),
+        Entity.company.ilike(like),
+    ]
+    if include_tags:
+        conds.append(cast(Entity.tags, String).ilike(like))
+    # Текст комментариев (extra_data.notes) — прицельно, не весь extra_data-блоб.
+    conds.extend(notes_search_conditions(q))
+    return conds
+
+
+async def apply_text_search(db, query, q: str, include_tags: bool = False):
+    """Вешает поиск на запрос. Возвращает (запрос, откатились_ли_с_ника).
+
+    «@ник» ищется СТРОГО (telegram + комментарии + контакты из резюме): нечёткий
+    матч по имени тащил на ник кучу чужих карточек. Но если по нику в этой
+    выборке НЕТ НИЧЕГО, строгий режим превращался в тупик «кандидатов нет» —
+    хотя тот же текст без «@» человека находил (ник в карточке сохранён другим,
+    например обрезанным: `shaffer_a` вместо `shaffer_art`, 01.10.2026). Поэтому
+    на пустом результате откатываемся к обычному поиску и говорим об этом окну.
+    """
+    q = (q or "").strip()
+    if not q:
+        return query, False
+    await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может не быть — откат на ILIKE
+    if is_nick_query(q):
+        strict = query.where(or_(*nick_search_conditions(q)))
+        found = (await db.execute(
+            select(func.count()).select_from(strict.order_by(None).subquery())
+        )).scalar() or 0
+        if found:
+            return strict, False
+        return query.where(or_(*broad_search_conditions(q, include_tags))), True
+    return query.where(or_(*broad_search_conditions(q, include_tags))), False
 
 
 def notes_search_conditions(q: str) -> List:

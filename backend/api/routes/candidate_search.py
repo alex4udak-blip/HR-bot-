@@ -258,32 +258,12 @@ async def search_candidates(
 
     # --- full-text search ---
     if q and q.strip():
-        term = f"%{q.strip()}%"
-        from ..services.search_index import (
-            name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions,
-            is_nick_query, nick_search_conditions, notes_search_conditions,
-        )
-        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
-        if is_nick_query(q):
-            # «@ник» — строго telegram + текст комментариев, без имени/должности/тегов/
-            # остального extra_data (нечёткий матч по нику тащит кучу чужих карточек —
-            # жалоба рекрутёров).
-            base = base.where(or_(*nick_search_conditions(q)))
-        else:
-            base = base.where(
-                or_(
-                    # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
-                    *name_search_conditions(q),
-                    *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки emails[]/phones[]
-                    Entity.position.ilike(term),
-                    Entity.company.ilike(term),
-                    cast(Entity.tags, String).ilike(term),
-                    *notes_search_conditions(q),  # текст комментариев (extra_data.notes) — прицельно
-                    # extra_data целиком (весь JSON-блоб) НАМЕРЕННО убран — самый шумный
-                    # ложноположительный источник (матчит запрос где угодно внутри
-                    # чужого extra_data, включая ники в system_hr_tags и т.п.).
-                )
-            )
+        # Один помощник на все три окна поиска: условия + откат со строгого «@ник»,
+        # если по нику ничего нет (см. apply_text_search). extra_data целиком (весь
+        # JSON-блоб) в поиск НАМЕРЕННО не входит — самый шумный источник ложных
+        # совпадений (матчит запрос где угодно внутри чужого extra_data).
+        from ..services.search_index import apply_text_search
+        base, _nick_fallback = await apply_text_search(db, base, q, include_tags=True)
 
     # --- stats (on the filtered base, before pagination) ---
     stats_base = base.with_only_columns(
@@ -891,6 +871,10 @@ class KanbanColumn(BaseModel):
 class KanbanBoardResponse(BaseModel):
     columns: List[KanbanColumn]
     total: int
+    # true — искали «@ник», по нему НИЧЕГО не нашлось, и список показывает
+    # совпадения обычного поиска (имя/контакты). Окно подписывает это строкой,
+    # иначе рекрутёр думает, что нашёлся «не тот» человек.
+    nick_fallback: bool = False
 
 
 @router.get("/kanban", response_model=KanbanBoardResponse)
@@ -916,32 +900,16 @@ async def get_candidates_kanban(
         org_id, current_user, isolated_ids, include_archived=bool(q and q.strip())
     )
 
-    # Optional text search
-    if q and q.strip():
-        search_term = f"%{q.strip().lower()}%"
-        from ..services.search_index import (
-            name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions,
-            is_nick_query, nick_search_conditions, notes_search_conditions,
-        )
-        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
-        if is_nick_query(q):
-            # «@ник» — строго telegram + комментарии, без имени/должности (см. /search).
-            base_q = base_q.where(or_(*nick_search_conditions(q)))
-        else:
-            base_q = base_q.where(
-                or_(
-                    # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
-                    *name_search_conditions(q),
-                    *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки
-                    Entity.position.ilike(search_term),
-                    Entity.company.ilike(search_term),
-                    *notes_search_conditions(q),  # текст комментариев (extra_data.notes) — прицельно
-                )
-            )
-
-    # Recruiter filter
+    # Recruiter filter — ДО поиска: откат со строгого «@ник» смотрит, есть ли
+    # совпадения в ЭТОЙ выборке, и чужие карточки учитывать нельзя.
     if recruiter_id:
         base_q = base_q.where(Entity.created_by == recruiter_id)
+
+    # Optional text search
+    nick_fallback = False
+    if q and q.strip():
+        from ..services.search_index import apply_text_search
+        base_q, nick_fallback = await apply_text_search(db, base_q, q)
 
     # Фильтра по статусу НЕТ: кандидат с нестандартным статусом попадает в колонку
     # «Вне воронки», а не исчезает из «Все кандидаты» вместе с поиском.
@@ -1191,7 +1159,7 @@ async def get_candidates_kanban(
             count=col_count,
         ))
 
-    return KanbanBoardResponse(columns=columns, total=total)
+    return KanbanBoardResponse(columns=columns, total=total, nick_fallback=nick_fallback)
 
 
 @router.get("/ids")
@@ -1218,27 +1186,13 @@ async def get_candidate_ids(
         org_id, current_user, isolated_ids, include_archived=bool(q and q.strip())
     )
 
-    if q and q.strip():
-        term = f"%{q.strip().lower()}%"
-        from ..services.search_index import (
-            name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions,
-            is_nick_query, nick_search_conditions, notes_search_conditions,
-        )
-        await ensure_pg_trgm_checked(db)  # без superuser pg_trgm может отсутствовать — тогда откат на ILIKE
-        if is_nick_query(q):
-            # «@ник» — строго telegram + комментарии, без имени/должности (см. /search).
-            base_q = base_q.where(or_(*nick_search_conditions(q)))
-        else:
-            base_q = base_q.where(or_(
-                # pg_trgm (транслит + любой порядок слов + опечатки) + транслит-ILIKE + Ё≡Е
-                *name_search_conditions(q),
-                *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки
-                Entity.position.ilike(term),
-                Entity.company.ilike(term),
-                *notes_search_conditions(q),  # текст комментариев (extra_data.notes) — прицельно
-            ))
     if recruiter_id:
         base_q = base_q.where(Entity.created_by == recruiter_id)
+    if q and q.strip():
+        # «Выбрать всех» обязан отбирать ТЕХ ЖЕ людей, что показал список, —
+        # поэтому и условия, и откат с ника здесь те же (apply_text_search).
+        from ..services.search_index import apply_text_search
+        base_q, _ = await apply_text_search(db, base_q, q)
 
     # Статус: конкретная вкладка (если валидна) либо все kanban-статусы.
     status_enums = []

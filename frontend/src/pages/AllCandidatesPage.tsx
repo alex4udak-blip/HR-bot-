@@ -1359,6 +1359,15 @@ export default function AllCandidatesPage() {
         ) : null}
       </div>
 
+      {/* Искали «@ник», по нику пусто — список показывает обычный поиск. Без
+          подписи это читается как «нашёлся не тот человек» (01.10.2026). */}
+      {board?.nick_fallback && debouncedSearch.trim() && (
+        <div className="mx-[var(--hf-space-xxl)] mt-[6px] text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)]">
+          По нику «{debouncedSearch.trim()}» ничего не нашли — показываем
+          совпадения по имени и контактам.
+        </div>
+      )}
+
       {/* ===== MASTER-DETAIL (huntflow style) ===== */}
       {loading && !board ? (
         <HfCandidatesLoadingLayout />
