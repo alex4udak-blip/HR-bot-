@@ -42,6 +42,9 @@ from api.models.database import (
 )
 from api.services.auth import get_current_user, get_user_org, has_full_database_access
 from api.services.shadow_filter import get_isolated_creator_ids
+from api.services.vacancy_scope import (
+    entity_scope_filter, filter_extra_for_scope, get_scope_vacancy_ids,
+)
 
 logger = logging.getLogger("hr-analyzer.candidate-search")
 
@@ -123,6 +126,7 @@ def _base_candidate_query(
     current_user: User,
     isolated_ids: list,
     include_archived: bool = False,
+    scope_ids: Optional[set] = None,
 ) -> Select:
     """Return a base SELECT for Entity filtered to candidates + org scoping.
 
@@ -148,6 +152,11 @@ def _base_candidate_query(
             q = q.where(~Entity.created_by.in_(isolated_ids))
     elif org_id:
         q = q.where(Entity.org_id == org_id)
+    # Скоуп по воронкам (наблюдатель «только Трафик», 01.10.2026): и список, и
+    # счётчики, и «Выбрать всех» считаются из ОДНОГО запроса — поэтому фильтр
+    # стоит здесь, а не в каждом эндпоинте отдельно.
+    if scope_ids:
+        q = q.where(entity_scope_filter(scope_ids))
     return q
 
 
@@ -224,8 +233,10 @@ async def search_candidates(
     isolated_ids = await get_isolated_creator_ids(current_user, db) if current_user.role == UserRole.superadmin else []
 
     # Как и на доске: архив подмешиваем только когда реально ищут.
+    scope_ids = await get_scope_vacancy_ids(current_user, db)
     base = _base_candidate_query(
-        org_id, current_user, isolated_ids, include_archived=bool(q and q.strip())
+        org_id, current_user, isolated_ids,
+        include_archived=bool(q and q.strip()), scope_ids=scope_ids,
     )
 
     # --- filters ---
@@ -684,6 +695,13 @@ async def get_candidate_stage_history(
     # `if org_id and ...` схлопывалось в false и отдавало историю ЧУЖОГО кандидата.
     if current_user.role != UserRole.superadmin and (org_id is None or entity.org_id != org_id):
         raise HTTPException(404, "Candidate not found")
+    # Скоуп по воронкам: сквозная история — это этапы, даты, рекрутёры и
+    # комментарии. Кандидата вне своих воронок человек не читает и здесь.
+    _scope_ids = await get_scope_vacancy_ids(current_user, db)
+    if _scope_ids is not None:
+        from ..services.vacancy_scope import entity_in_scope
+        if not await entity_in_scope(entity_id, _scope_ids, db):
+            raise HTTPException(404, "Candidate not found")
 
     rows = (await db.execute(
         select(StageTransition, Vacancy.title)
@@ -896,8 +914,10 @@ async def get_candidates_kanban(
     # При ПОИСКЕ подмешиваем теневую базу: человека, который уже проходил у нас,
     # надо находить прямо здесь, а не в отдельном разделе. Без запроса архив
     # скрыт — иначе доска утонет в тысячах импортных карточек.
+    scope_ids = await get_scope_vacancy_ids(current_user, db)
     base_q = _base_candidate_query(
-        org_id, current_user, isolated_ids, include_archived=bool(q and q.strip())
+        org_id, current_user, isolated_ids,
+        include_archived=bool(q and q.strip()), scope_ids=scope_ids,
     )
 
     # Recruiter filter — ДО поиска: откат со строгого «@ник» смотрит, есть ли
@@ -1015,7 +1035,13 @@ async def get_candidates_kanban(
                     VacancyApplication.rejection_reason,
                 ).select_from(VacancyApplication)
                 .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
-                .where(VacancyApplication.entity_id.in_(entity_ids))
+                .where(
+                    VacancyApplication.entity_id.in_(entity_ids),
+                    # Скоуп по воронкам: чипы этапов и подпись воронки в строке
+                    # списка считаются ТОЛЬКО по разрешённым воронкам — иначе у
+                    # кандидата из двух воронок светилось название чужой.
+                    *([VacancyApplication.vacancy_id.in_(list(scope_ids))] if scope_ids else []),
+                )
             )
             from .vacancies.common import INACTIVE_STAGES as _INACTIVE
             _by_entity: dict = {}
@@ -1123,7 +1149,7 @@ async def get_candidates_kanban(
                 funnels=funnels_map.get(e.id, []),
                 rejection_reason=rejection_map.get(e.id),
                 is_archived=bool(getattr(e, "is_archived", False)),
-                extra_data=ed if ed else None,
+                extra_data=filter_extra_for_scope(ed, scope_ids) if ed else None,
                 version=getattr(e, "version", None) or 1,
                 headline_tags=headline_map.get(e.id, []),
             ))
@@ -1182,8 +1208,10 @@ async def get_candidate_ids(
 
     # Набор ДОЛЖЕН совпадать с доской (иначе «Выбрать всех» выделит не то):
     # там при поиске архив подмешивается — значит и здесь.
+    scope_ids = await get_scope_vacancy_ids(current_user, db)
     base_q = _base_candidate_query(
-        org_id, current_user, isolated_ids, include_archived=bool(q and q.strip())
+        org_id, current_user, isolated_ids,
+        include_archived=bool(q and q.strip()), scope_ids=scope_ids,
     )
 
     if recruiter_id:

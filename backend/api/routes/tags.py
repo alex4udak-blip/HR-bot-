@@ -259,6 +259,9 @@ async def get_entity_tags(
     current_user: User = Depends(get_current_user),
 ):
     """Get all tags for an entity."""
+    # Скоуп по воронкам: чужой кандидат не отвечает ничем, даже метками.
+    from ..services.vacancy_scope import ensure_entity_visible
+    await ensure_entity_visible(entity_id, current_user, db)
     org_id = await _get_org_id(db, current_user)
 
     # Verify entity belongs to org
@@ -481,6 +484,9 @@ async def get_entity_name_tags(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Скоуп по воронкам: чужой кандидат не отвечает ничем, даже метками.
+    from ..services.vacancy_scope import ensure_entity_visible
+    await ensure_entity_visible(entity_id, current_user, db)
     org_id = await _get_org_id(db, current_user)
     await _check_entity(db, entity_id, org_id)
     rows = await db.execute(

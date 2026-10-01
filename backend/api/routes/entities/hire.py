@@ -217,6 +217,11 @@ async def entity_staff_status(
     org = await get_user_org(current_user, db)
     if not org:
         return StaffStatusResponse()
+    # Скоуп по воронкам: про чужого кандидата не отвечаем ничего, даже «в штате».
+    from ...services.vacancy_scope import entity_in_scope, get_scope_vacancy_ids
+    _scope_ids = await get_scope_vacancy_ids(current_user, db)
+    if _scope_ids is not None and not await entity_in_scope(entity_id, _scope_ids, db):
+        raise HTTPException(status_code=404, detail="Entity not found")
     emp = (await db.execute(
         select(Employee)
         .where(Employee.entity_id == entity_id, Employee.org_id == org.id)

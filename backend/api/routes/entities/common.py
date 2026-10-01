@@ -391,6 +391,16 @@ async def check_entity_access(
     if is_superadmin(user):
         return True
 
+    # 1.5 СКОУП ПО ВОРОНКАМ (01.10.2026). Если человеку разрешены только
+    # отдельные воронки (наблюдатель-ментор «только Трафик»), кандидат вне них
+    # не открывается ВООБЩЕ — ни карточкой, ни файлом, ни по прямой ссылке.
+    # Проверка стоит выше всех остальных правил намеренно: ниже начинаются
+    # «общий пул» и роли, которые иначе пустили бы его к любому кандидату орга.
+    from ...services.vacancy_scope import get_scope_vacancy_ids, entity_in_scope
+    scope_ids = await get_scope_vacancy_ids(user, db)
+    if scope_ids is not None and not await entity_in_scope(entity.id, scope_ids, db):
+        return False
+
     # 2. OWNER - has access to everything in organization, EXCEPT private content created by SUPERADMIN
     if await is_owner(user, org_id, db):
         # Check if entity was created by SUPERADMIN (private content restriction)

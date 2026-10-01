@@ -247,6 +247,16 @@ def _phone_digits_sql(col):
     return expr
 
 
+def _resume_contact_conditions(like: str) -> List:
+    """Контакты из шапки резюме — по каждому списку отдельно (см. вызов)."""
+    resume = Entity.extra_data["resume_contacts"]
+    return [
+        cast(resume["emails"], String).ilike(like),
+        cast(resume["phones"], String).ilike(like),
+        cast(resume["telegrams"], String).ilike(like),
+    ]
+
+
 def contact_search_conditions(q: str) -> List:
     """OR-условия поиска кандидата по КОНТАКТАМ для ЛЮБОГО окна поиска: почта
     (email + emails[]), телефон (phone + phones[], с нормализацией по цифрам:
@@ -268,9 +278,10 @@ def contact_search_conditions(q: str) -> List:
     if tg:
         conds.append(cast(Entity.telegram_usernames, String).ilike(f"%{tg}%"))
     # Контакты из ШАПКИ резюме (extra_data.resume_contacts) — почта/телефон/ник,
-    # которые рекрутёр в поля карточки не переносил. Прицельно по этому ключу, а
-    # не по всему extra_data-блобу (он самый шумный источник ложных совпадений).
-    conds.append(cast(Entity.extra_data["resume_contacts"], String).ilike(like))
+    # которые рекрутёр в поля карточки не переносил. По КАЖДОМУ списку отдельно,
+    # а не по объекту целиком: в тексте объекта есть имена ключей, и запрос «id»
+    # или «mail» цеплял бы каждого, у кого эти контакты вообще посчитаны.
+    conds.extend(_resume_contact_conditions(like))
     # Телефон по одним цифрам — форматы («+7 (999)…» vs «999…») не совпадают.
     digits = re.sub(r"\D", "", q)
     if len(digits) >= 4:
@@ -297,7 +308,7 @@ def nick_search_conditions(q: str) -> List:
         cast(Entity.extra_data["notes"], String).ilike(f"%{tg}%"),
         # Ник из ШАПКИ резюме: в поля карточки его часто не переносят (а если
         # переносят — бывает обрезанным), и по «@полный_ник» карточка не находилась.
-        cast(Entity.extra_data["resume_contacts"], String).ilike(f"%{tg}%"),
+        cast(Entity.extra_data["resume_contacts"]["telegrams"], String).ilike(f"%{tg}%"),
     ]
 
 

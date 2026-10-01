@@ -164,6 +164,10 @@ async def list_applications(
     конкретному рекрутёру через created_by (селектор «Вакансии: <рекрутёр>» в
     левом сайдбаре /my-funnels).
     """
+    # Скоуп по воронкам: чужая воронка не открывается и по прямой ссылке.
+    from ...services.vacancy_scope import ensure_vacancy_visible
+    await ensure_vacancy_visible(vacancy_id, current_user, db)
+
     org = await get_user_org(current_user, db)
 
     # Verify vacancy exists

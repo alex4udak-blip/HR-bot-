@@ -209,16 +209,38 @@ async def get_users(
         for owner_id, count in count_result.all():
             chat_counts[owner_id] = count
 
-    return [
-        UserResponse(
+    # Членство в организации — одним запросом: странице «Пользователи» нужны и
+    # роль, и флаг наблюдателя, и его скоуп по воронкам (галочки), иначе
+    # выставленные воронки не на чем показать.
+    memberships = {}
+    if users:
+        rows = (await db.execute(
+            select(OrgMember).where(OrgMember.user_id.in_([u.id for u in users]))
+        )).scalars().all()
+        for m in rows:
+            memberships[m.user_id] = m
+
+    def _member_bits(user_id: int):
+        m = memberships.get(user_id)
+        if not m:
+            return None, False, []
+        role_value = m.role.value if hasattr(m.role, "value") else m.role
+        scope = [int(v) for v in (m.scope_vacancy_ids or []) if str(v).lstrip("-").isdigit()]
+        return role_value, bool(m.is_readonly), scope
+
+    result_list = []
+    for u in users:
+        org_role, is_readonly, scope = _member_bits(u.id)
+        result_list.append(UserResponse(
             id=u.id, email=u.email, name=u.name, role=u.role.value,
+            org_role=org_role, is_readonly=is_readonly, scope_vacancy_ids=scope,
             telegram_id=u.telegram_id, telegram_username=u.telegram_username,
             additional_emails=u.additional_emails or [],
             additional_telegram_usernames=u.additional_telegram_usernames or [],
             is_active=u.is_active, created_at=u.created_at,
             chats_count=chat_counts.get(u.id, 0)
-        ) for u in users
-    ]
+        ))
+    return result_list
 
 
 @router.post("", response_model=UserResponse, status_code=201)
@@ -448,6 +470,21 @@ async def update_user(
                 )
                 db.add(new_member)
 
+    # Скоуп по воронкам (01.10.2026). Ставится отдельно от роли: Мария меняет
+    # галочки, не трогая саму роль. Пустой список снимает ограничение. Чужие id
+    # отсекаем по организации участника — галочкой нельзя выдать доступ в чужой орг.
+    if data.scope_vacancy_ids is not None:
+        from ..models.database import Vacancy
+        member = (await db.execute(
+            select(OrgMember).where(OrgMember.user_id == user_id)
+        )).scalar_one_or_none()
+        if member:
+            wanted = [int(v) for v in data.scope_vacancy_ids]
+            allowed = (await db.execute(
+                select(Vacancy.id).where(Vacancy.org_id == member.org_id, Vacancy.id.in_(wanted))
+            )).scalars().all() if wanted else []
+            member.scope_vacancy_ids = [int(v) for v in allowed] or None
+
     # Also sync department role when system role changes (не перетираем explicit dept_role)
     if new_role is not None and not data.department_id and explicit_dept_role is None:
         dept_member_result = await db.execute(
@@ -499,6 +536,8 @@ async def update_user(
     return UserResponse(
         id=user.id, email=user.email, name=user.name, role=user.role.value,
         org_role=org_role_value,
+        is_readonly=bool(org_member.is_readonly) if org_member else False,
+        scope_vacancy_ids=[int(v) for v in ((org_member.scope_vacancy_ids if org_member else None) or [])],
         department_id=dept_id,
         department_name=dept_name,
         department_role=dept_role_value,

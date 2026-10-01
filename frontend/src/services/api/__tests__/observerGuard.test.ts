@@ -61,5 +61,8 @@ describe('isObserverBlocked', () => {
     expect(isObserverBlocked('post', '/api/entities/9/notes')).toBe(true);
     expect(isObserverBlocked('post', 'https://enceladus.site/api/projects/2/tasks')).toBe(false);
     expect(isObserverBlocked('post', '/vacancies?dry_run=true')).toBe(true);
+    // «/api» срезается только как целый сегмент: иначе «/apiary» превратилось бы
+    // в «ary» и не совпало ни с одним префиксом.
+    expect(isObserverBlocked('post', '/api/projects/2/tasks')).toBe(false);
   });
 });

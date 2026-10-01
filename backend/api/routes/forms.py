@@ -957,6 +957,9 @@ async def delete_dispatch(
 # ============================================================
 
 async def _assert_entity_access(entity_id: int, current_user: User, db: AsyncSession) -> Entity:
+    # Скоуп по воронкам: анкеты и ответы чужого кандидата не отдаём.
+    from ..services.vacancy_scope import ensure_entity_visible
+    await ensure_entity_visible(entity_id, current_user, db)
     entity = (await db.execute(select(Entity).where(Entity.id == entity_id))).scalar_one_or_none()
     if not entity:
         raise HTTPException(status_code=404, detail="Candidate not found")

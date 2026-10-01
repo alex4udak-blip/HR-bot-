@@ -28,6 +28,7 @@ import {
 import { getUsers, createUser, deleteUser, adminResetPassword, adminUpdateUser, getOrgMembers, removeMember, updateMemberRole, toggleMemberFullAccess, getCurrentOrganization, getMyOrgRole, getDepartments, getMyDepartments, getMyManagedUserIds, createInvitation, getInvitations, revokeInvitation, addDepartmentMember, type Department, type DeptRole, type Invitation } from '@/services/api';
 import type { OrgMember, OrgRole, Organization } from '@/services/api';
 import type { User } from '@/types';
+import { getVacancies } from '@/services/api/vacancies';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
 import { getErrorDetail } from '@/utils';
@@ -1361,6 +1362,18 @@ function EditUserModal({
   const [telegramUsername, setTelegramUsername] = useState(user.telegram_username || '');
   const [departmentId, setDepartmentId] = useState<number | ''>('');
   const [saving, setSaving] = useState(false);
+  // Скоуп наблюдателя по воронкам (01.10.2026, запрос Марии): «мы им нанимаем в
+  // трафик, значит доступ только к трафику». Пусто = ограничения нет.
+  const [scopeIds, setScopeIds] = useState<number[]>(user.scope_vacancy_ids || []);
+  const [vacancies, setVacancies] = useState<{ id: number; title: string }[]>([]);
+  const isObserver = orgRole === 'observer' || (!orgRole && !!user.is_readonly);
+
+  useEffect(() => {
+    if (!isObserver || vacancies.length) return;
+    getVacancies()
+      .then((list) => setVacancies(list.map((v) => ({ id: v.id, title: v.title }))))
+      .catch(() => setVacancies([]));
+  }, [isObserver, vacancies.length]);
 
   // Try to determine the user's current department from departments list
   // The user object doesn't carry department_id directly, so we leave it as ''
@@ -1382,6 +1395,10 @@ function EditUserModal({
 
       if (departmentId) payload.department_id = departmentId;
       if (orgRole) payload.org_role = orgRole;
+      const prevScope = [...(user.scope_vacancy_ids || [])].sort().join(',');
+      if (isObserver && scopeIds.slice().sort().join(',') !== prevScope) {
+        payload.scope_vacancy_ids = scopeIds;
+      }
       if (deptRole) payload.dept_role = deptRole;
 
       if (Object.keys(payload).length === 0) {
@@ -1484,6 +1501,46 @@ function EditUserModal({
               «Наблюдатель» — видит всё как админ, но ничего не может менять.
             </p>
           </div>
+
+          {/* Воронки наблюдателя. Пока не отмечено ничего — он видит весь пул,
+              как раньше; отмеченные воронки сужают видимость и в списке
+              кандидатов, и в поиске, и по прямой ссылке на карточку. */}
+          {isObserver && (
+            <div>
+              <label className="block text-sm text-dark-400 mb-1">Какие воронки видит</label>
+              <div className="max-h-44 overflow-y-auto rounded-xl glass-light p-2 space-y-1">
+                {vacancies.length === 0 ? (
+                  <p className="text-xs text-white/30 px-2 py-1">Вакансий нет</p>
+                ) : (
+                  vacancies.map((v) => {
+                    const checked = scopeIds.includes(v.id);
+                    return (
+                      <label
+                        key={v.id}
+                        className="flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer hover:bg-white/5"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setScopeIds((prev) =>
+                              checked ? prev.filter((id) => id !== v.id) : [...prev, v.id],
+                            )
+                          }
+                        />
+                        <span className="text-sm text-white/80 truncate">{v.title}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              <p className="text-xs text-white/30 mt-1">
+                {scopeIds.length === 0
+                  ? 'Ничего не отмечено — видит всех кандидатов организации.'
+                  : `Видит только кандидатов этих воронок (${scopeIds.length}), остальные не откроются даже по ссылке.`}
+              </p>
+            </div>
+          )}
 
           {departments.length > 0 && (
             <>

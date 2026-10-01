@@ -321,6 +321,9 @@ async def get_entity_email_history(
     current_user: User = Depends(get_current_user),
 ):
     """Get email history for a specific candidate."""
+    # Скоуп по воронкам: переписка с чужим кандидатом не читается.
+    from ...services.vacancy_scope import ensure_entity_visible
+    await ensure_entity_visible(entity_id, current_user, db)
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
