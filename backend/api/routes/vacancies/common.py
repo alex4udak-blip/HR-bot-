@@ -813,6 +813,18 @@ async def recompute_entity_status(db: AsyncSession, entity_id: int) -> None:
             "ENTITY_STATUS recompute: entity=%s -> %s (по заявке %s, воронка %s)",
             entity_id, new_status.value, primary.id, primary.vacancy_id,
         )
+        # Вышел на практику — ставим в песочницу, которую выбрали у вакансии.
+        # Не выбрана — человек появится на доске «без отдела» и песочницу ему
+        # укажут руками: их несколько, и угадывать нельзя.
+        if new_status == EntityStatus.probation:
+            try:
+                from ...services.board_placements import ensure_sandbox_placement
+                vacancy = (await db.execute(
+                    select(Vacancy).where(Vacancy.id == primary.vacancy_id)
+                )).scalar_one_or_none()
+                await ensure_sandbox_placement(db, entity_id, vacancy)
+            except Exception:
+                logger.exception("Не удалось поставить entity=%s в песочницу", entity_id)
 
 
 async def has_single_active_application(db: AsyncSession, entity_id: int) -> bool:

@@ -35,8 +35,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..database import get_db
 from ..models.database import (
     Entity, EntityStatus, EntityFile, EntityFileType,
-    Employee, Organization, User, BoardDepartment, BoardDepartmentOrder,
-    EntityTag, entity_tag_association,
+    Employee, Organization, User, BoardDepartment, BoardDepartmentOrder, BoardPlacement,
+    EntityTag, entity_tag_association, OrgMember, OrgRole, UserRole,
     NameTag, entity_name_tag_association,
 )
 from ..services.auth import get_current_user, get_user_org
@@ -61,11 +61,10 @@ BOARD_STATUSES: List[EntityStatus] = [
 
 _SETTINGS_KEY = "staff_directions"
 
-# Пока человек на практике, отдела и должности у него ещё нет — обе колонки
-# показывают «Сандбокс» и не редактируются. Значение вычисляем на бэкенде, а
-# не на фронте: иначе фильтр по должности искал бы по пустому полю, хотя в
-# таблице видно «Сандбокс».
-SANDBOX_LABEL = "Сандбокс"
+# Раньше у практикантов отдел и должность были подписью «Сандбокс», которую
+# нельзя было править. С 30.09.2026 песочницы — РЕАЛЬНЫЕ отделы (SANDBOX,
+# SANDBOX MOBILE, SANDBOX R&D) с kind='sandbox': практикант стоит в песочнице
+# назначением, и отдел в строке — её название, а не выдуманная подпись.
 
 # Справочники, перенесённые с доски ClickUp «Сотрудники». Нужны, чтобы
 # выпадающие списки не были пустыми на старте: своих значений в базе ещё нет,
@@ -92,6 +91,16 @@ _K_DEPT_START = "department_transfer_date"
 # Enceladus: там у отдела участники, руководители и права, а здесь просто
 # полка, куда HR раскладывает людей (решение владельца 23.09.2026).
 _K_BOARD_DEPT = "board_department_id"
+
+# Поля, которые принадлежат НАЗНАЧЕНИЮ (человек в конкретном отделе), а не
+# самому человеку: в песочнице живут даты практики, в отделе — выход в отдел и
+# вехи от него (решение владельца 30.09.2026). Остальное — должность, HR,
+# сорсер, Telegram, статус — одно на человека и одинаково во всех отделах.
+PLACEMENT_KEYS = (
+    "practice_start_date", "department_transfer_date",
+    "w2_date", "m1_date", "m3_date", "y1_date",
+    "department_start_done", "w2_done", "m1_done", "m3_done", "y1_done",
+)
 _K_MANAGER = "manager_name"
 # «Рук-ль» подставлен из руководителей отдела, а не вписан руками. Такой при
 # смене отдела заменяется руководителями нового; вписанный руками — никогда.
@@ -178,12 +187,24 @@ class Folder(BaseModel):
 
 class BoardRow(BaseModel):
     entity_id: int
+    # Строка доски = НАЗНАЧЕНИЕ человека в отдел (staff_board_placements).
+    # Один человек может стоять в нескольких отделах сразу: в песочнице и в
+    # команде, куда его забрали с практики. Карточка кандидата при этом одна,
+    # поэтому entity_id у таких строк совпадает. placement_id пустой у тех,
+    # кто ещё ни в одном отделе («Без отдела»).
+    placement_id: Optional[int] = None
     name: str
     status: str
     direction: Optional[str] = None
     position: Optional[str] = None
     department_id: Optional[int] = None
     department_name: Optional[str] = None
+    # Песочница, которой принадлежит отдел строки (у самой песочницы пусто).
+    parent_department_id: Optional[int] = None
+    parent_department_name: Optional[str] = None
+    # Отдел строки — песочница: выбор отдела из такой строки ДОБАВЛЯЕТ
+    # назначение (человек остаётся на практике), а не переносит.
+    department_is_sandbox: bool = False
     telegram: Optional[str] = None
     practice_start_date: Optional[str] = None
     department_start_date: Optional[str] = None
@@ -226,10 +247,25 @@ class BoardDept(BaseModel):
     id: int
     name: str
     hidden: bool = False
+    # sandbox — родительский отдел-песочница (SANDBOX, SANDBOX MOBILE…),
+    # team — команда внутри песочницы (Facebook, Google, SEO…).
+    kind: str = "team"
+    parent_id: Optional[int] = None
+    # all — отдел видят все HR; custom — только те, кто перечислен в visible_to.
+    visibility: str = "all"
+    visible_to: List[int] = []
+
+
+DEPT_KINDS = ("sandbox", "team")
+DEPT_VISIBILITY = ("all", "custom")
 
 
 class BoardDeptCreate(BaseModel):
     name: str
+    kind: str = "team"
+    parent_id: Optional[int] = None
+    visibility: str = "all"
+    visible_to: Optional[List[int]] = None
 
 
 class BoardDeptOrder(BaseModel):
@@ -241,6 +277,10 @@ class BoardDeptUpdate(BaseModel):
     неактуальный отдел прячут, данные при этом целы."""
     name: Optional[str] = None
     hidden: Optional[bool] = None
+    kind: Optional[str] = None
+    parent_id: Optional[int] = None
+    visibility: Optional[str] = None
+    visible_to: Optional[List[int]] = None
 
 
 class BoardAssignee(BaseModel):
@@ -278,6 +318,10 @@ class BoardRowUpdate(BaseModel):
     Разница между «не передали» и «очистили»: не переданное поле не трогаем,
     переданный null — очищаем.
     """
+    # Какое назначение правим (даты отдела и вехи у каждого свои). Не передали
+    # — берём единственное назначение человека, а если их нет, пишем в карточку,
+    # как было до назначений.
+    placement_id: Optional[int] = None
     status: Optional[str] = None
     direction: Optional[str] = None
     position: Optional[str] = None
@@ -301,6 +345,15 @@ class BoardRowUpdate(BaseModel):
     y1_done: Optional[str] = None
 
     model_config = {"extra": "forbid"}
+
+
+class BoardPlacementCreate(BaseModel):
+    """Поставить человека в отдел. Из практики это ДОБАВЛЕНИЕ: в песочнице он
+    остаётся, в отделе появляется ещё одна строка на ту же карточку."""
+    entity_id: int
+    department_id: int
+    # Перенести: убрать человека из этого отдела и поставить в новый.
+    replace_placement_id: Optional[int] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -406,12 +459,96 @@ def _first_telegram(entity: Entity) -> Optional[str]:
     return None
 
 
-async def _board_dept_names(db: AsyncSession, org_id: int) -> Dict[int, str]:
+def _dept_out(d: BoardDepartment) -> "BoardDept":
+    return BoardDept(
+        id=d.id,
+        name=d.name,
+        hidden=d.hidden_at is not None,
+        kind=(d.kind or "team"),
+        parent_id=d.parent_id,
+        visibility=(d.visibility or "all"),
+        visible_to=[v for v in ([_as_int(x) for x in (d.visible_to or [])]) if v is not None],
+    )
+
+
+async def _dept_role_fields(
+    db: AsyncSession,
+    org_id: int,
+    kind: Optional[str],
+    parent_id: Optional[int],
+    visibility: Optional[str],
+    visible_to: Optional[List[int]],
+    self_id: Optional[int] = None,
+):
+    """Проверить роль отдела и его видимость, вернуть готовые значения.
+
+    Песочница — верхний уровень: вложить её в другую песочницу нельзя. Команда
+    может висеть без песочницы (так заведены старые отделы) — это допустимо,
+    перевод между отделами мы не ограничиваем.
+    """
+    kind = (kind or "team").strip().lower()
+    if kind not in DEPT_KINDS:
+        raise HTTPException(400, f"Неизвестная роль отдела: {kind}")
+
+    if kind == "sandbox":
+        parent_id = None
+    elif parent_id is not None:
+        if parent_id == self_id:
+            raise HTTPException(400, "Отдел не может быть песочницей для себя")
+        parent = (await db.execute(
+            select(BoardDepartment).where(
+                BoardDepartment.id == parent_id, BoardDepartment.org_id == org_id
+            )
+        )).scalar_one_or_none()
+        if parent is None:
+            raise HTTPException(404, "Песочница не найдена")
+        if (parent.kind or "team") != "sandbox":
+            raise HTTPException(400, "Родителем может быть только песочница")
+
+    visibility = (visibility or "all").strip().lower()
+    if visibility not in DEPT_VISIBILITY:
+        raise HTTPException(400, f"Неизвестная видимость: {visibility}")
+    ids: List[int] = []
+    for v in (visible_to or []):
+        i = _as_int(v)
+        if i is not None and i not in ids:
+            ids.append(i)
+    if visibility != "custom":
+        ids = []
+    return kind, parent_id, visibility, ids
+
+
+async def _board_depts(db: AsyncSession, org_id: int) -> Dict[int, BoardDepartment]:
+    """Справочник отделов доски целиком: имя, роль (песочница/команда),
+    песочница-родитель и видимость — всё это нужно каждой строке."""
     rows = (await db.execute(
-        select(BoardDepartment.id, BoardDepartment.name)
-        .where(BoardDepartment.org_id == org_id)
-    )).all()
-    return {d_id: name for d_id, name in rows}
+        select(BoardDepartment).where(BoardDepartment.org_id == org_id)
+    )).scalars().all()
+    return {d.id: d for d in rows}
+
+
+async def _is_board_admin(db: AsyncSession, user: User, org_id: int) -> bool:
+    """Админ HR-сегмента: superadmin, owner или admin организации.
+
+    Админы видят все отделы доски, включая юниты «не для всех»; рекрутёрам
+    видны только отделы с visibility='all' и те, где их назвали персонально.
+    """
+    if user.role == UserRole.superadmin:
+        return True
+    return bool((await db.execute(
+        select(OrgMember.id).where(
+            OrgMember.user_id == user.id,
+            OrgMember.org_id == org_id,
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin]),
+        ).limit(1)
+    )).scalar_one_or_none())
+
+
+def _dept_visible(dept: BoardDepartment, user_id: int, is_admin: bool) -> bool:
+    if is_admin or (dept.visibility or "all") != "custom":
+        return True
+    allowed = dept.visible_to if isinstance(dept.visible_to, list) else []
+    return user_id in [_as_int(v) for v in allowed]
 
 
 async def _load_mentors(
@@ -473,10 +610,15 @@ def _row_from_entity(
     assignee_names: Optional[Dict[int, str]] = None,
     sourcers_by_entity: Optional[Dict[int, List["BoardSourcer"]]] = None,
     mentors_by_entity: Optional[Dict[int, List[str]]] = None,
-    dept_names: Optional[Dict[int, str]] = None,
+    depts: Optional[Dict[int, BoardDepartment]] = None,
+    placement: Optional["BoardPlacement"] = None,
+    parents: Optional[Dict[int, Optional[int]]] = None,
 ) -> BoardRow:
     ex = _extra(entity)
-    dept_start = _parse_date(_pick(ex, _K_DEPT_START, _CF_DEPT_START))
+    # Даты отдела берём у назначения; у карточек, которые ещё не перевели на
+    # назначения, — из самой карточки, как раньше.
+    pex = dict(placement.extra or {}) if placement is not None else ex
+    dept_start = _parse_date(_pick(pex, _K_DEPT_START, _CF_DEPT_START))
 
     def milestone(key: str, cf_key: Optional[str], days: int = 0, months: int = 0):
         """Значение вехи + признак «посчитано автоматически».
@@ -485,7 +627,7 @@ def _row_from_entity(
         выхода в отдел. Импортированное считаем ФАКТОМ (auto=False), а не
         расчётом: это реальная дата из старой системы.
         """
-        manual = _parse_date(_pick(ex, key, cf_key) if cf_key else ex.get(key))
+        manual = _parse_date(_pick(pex, key, cf_key) if cf_key else pex.get(key))
         if manual:
             return _iso(manual), False
         if dept_start:
@@ -504,18 +646,23 @@ def _row_from_entity(
     # «Отдел» из ClickUp — просто текст (связи с нашим справочником нет),
     # поэтому подставляем его только как подпись, department_id остаётся пустым.
     position = entity.position or _pick(ex, _CF_POSITION)
-    # Отдел доски живёт в extra_data и разыменовывается по своему справочнику;
-    # отдел из ClickUp остаётся просто подписью, пока не выбрали свой.
-    dept_id = _as_int(ex.get(_K_BOARD_DEPT))
-    dept_name = (dept_names or {}).get(dept_id) if dept_id else None
-    if dept_name is None:
+    # Отдел строки = отдел назначения. У карточек без назначений смотрим в
+    # extra_data (так отдел хранился до 30.09.2026), а отдел из ClickUp
+    # остаётся просто подписью, пока не выбрали свой.
+    dept_id = placement.department_id if placement is not None else _as_int(ex.get(_K_BOARD_DEPT))
+    dept = (depts or {}).get(dept_id) if dept_id else None
+    dept_name = dept.name if dept is not None else None
+    parent_id = parent_name = None
+    is_sandbox = False
+    if dept is None:
         dept_id = None
         dept_name = _pick(ex, _CF_DEPARTMENT)
+    else:
+        is_sandbox = (dept.kind or "team") == "sandbox"
+        parent = (depts or {}).get(dept.parent_id) if dept.parent_id else None
+        if parent is not None:
+            parent_id, parent_name = parent.id, parent.name
 
-    # На практике — всегда «Сандбокс», что бы ни лежало в карточке.
-    if status == EntityStatus.probation.value:
-        position = SANDBOX_LABEL
-        dept_name = SANDBOX_LABEL
     telegram = _first_telegram(entity) or (str(_pick(ex, _CF_TELEGRAM) or "").lstrip("@") or None)
 
     # HR: сначала выбранные руками, иначе — из меток «HR: …» кандидата. Они
@@ -544,14 +691,18 @@ def _row_from_entity(
 
     return BoardRow(
         entity_id=entity.id,
+        placement_id=placement.id if placement is not None else None,
         name=entity.name,
         status=status,
         direction=ex.get(_K_DIRECTION) or None,
         position=position,
         department_id=dept_id,
         department_name=dept_name,
+        parent_department_id=parent_id,
+        parent_department_name=parent_name,
+        department_is_sandbox=is_sandbox,
         telegram=telegram,
-        practice_start_date=_iso(_parse_date(_pick(ex, _K_PRACTICE, _CF_PRACTICE))),
+        practice_start_date=_iso(_parse_date(_pick(pex, _K_PRACTICE, _CF_PRACTICE))),
         department_start_date=_iso(dept_start),
         # «Рук-ль» = наставник практики из тегов у ФИО. Нет тега — пусто;
         # вписанное руками остаётся запасным вариантом.
@@ -567,11 +718,11 @@ def _row_from_entity(
         assignees=assignees,
         sourcers=(sourcers_by_entity or {}).get(entity.id, []),
         dismissal_date=_iso(_parse_date(_pick(ex, _K_DISMISSAL, _CF_DISMISSAL))),
-        dept_done=_as_done(ex, "dept_done"),
-        w2_done=_as_done(ex, "w2_done"),
-        m1_done=_as_done(ex, "m1_done"),
-        m3_done=_as_done(ex, "m3_done"),
-        y1_done=_as_done(ex, "y1_done"),
+        dept_done=_as_done(pex, "dept_done"),
+        w2_done=_as_done(pex, "w2_done"),
+        m1_done=_as_done(pex, "m1_done"),
+        m3_done=_as_done(pex, "m3_done"),
+        y1_done=_as_done(pex, "y1_done"),
         offer_file_id=offer.id if offer else None,
         offer_file_name=offer.file_name if offer else None,
     )
@@ -748,6 +899,10 @@ async def list_board_departments(
         .where(BoardDepartment.org_id == org.id)
         .order_by(BoardDepartment.name)
     )).scalars().all()
+    # Отдел «не для всех» рекрутёру не показываем: юниты ведут Мария и Настя,
+    # а рекрутёрам в списке нужны только песочницы (решение владельца 30.09.2026).
+    is_admin = await _is_board_admin(db, current_user, org.id)
+    rows = [d for d in rows if _dept_visible(d, current_user.id, is_admin)]
     # Порядок — личный: каждый HR раскладывает отделы под себя. Чего нет в
     # сохранённом списке (новые отделы), идёт в конец по алфавиту.
     saved = await db.get(BoardDepartmentOrder, current_user.id)
@@ -755,7 +910,7 @@ async def list_board_departments(
     rows = sorted(rows, key=lambda d: (order.get(d.id, len(order)), d.name.lower()))
     # Скрытые отдаём тоже: доска показывает их по кнопке «Показать скрытые», а
     # строка человека из скрытого отдела должна называть отдел, а не пустоту.
-    return [BoardDept(id=d.id, name=d.name, hidden=d.hidden_at is not None) for d in rows]
+    return [_dept_out(d) for d in rows]
 
 
 @router.put("/departments/order", response_model=List[BoardDept])
@@ -817,14 +972,24 @@ async def create_board_department(
         if same.hidden_at is not None:
             same.hidden_at = None
             await db.commit()
-        return BoardDept(id=same.id, name=same.name)
+        return _dept_out(same)
 
-    dept = BoardDepartment(org_id=org.id, name=name, created_by=current_user.id)
+    kind, parent_id, visibility, visible_to = await _dept_role_fields(
+        db, org.id, data.kind, data.parent_id, data.visibility, data.visible_to
+    )
+    dept = BoardDepartment(
+        org_id=org.id, name=name, created_by=current_user.id,
+        kind=kind, parent_id=parent_id,
+        visibility=visibility, visible_to=visible_to,
+    )
     db.add(dept)
     await db.commit()
     await db.refresh(dept)
-    logger.info(f"BOARD_DEPT create: «{name}» (id={dept.id}) by user {current_user.id}")
-    return BoardDept(id=dept.id, name=dept.name)
+    logger.info(
+        f"BOARD_DEPT create: «{name}» (id={dept.id}, {kind}, parent={parent_id}, "
+        f"visibility={visibility}) by user {current_user.id}"
+    )
+    return _dept_out(dept)
 
 
 @router.patch("/departments/{dept_id}", response_model=BoardDept)
@@ -859,8 +1024,170 @@ async def update_board_department(
             f"BOARD_DEPT {'hide' if data.hidden else 'show'}: id={dept_id} by user {current_user.id}"
         )
 
+    if any(v is not None for v in (data.kind, data.parent_id, data.visibility, data.visible_to)):
+        kind, parent_id, visibility, visible_to = await _dept_role_fields(
+            db, org.id,
+            data.kind if data.kind is not None else (dept.kind or "team"),
+            data.parent_id if data.parent_id is not None else dept.parent_id,
+            data.visibility if data.visibility is not None else (dept.visibility or "all"),
+            data.visible_to if data.visible_to is not None else (dept.visible_to or []),
+            self_id=dept.id,
+        )
+        dept.kind, dept.parent_id = kind, parent_id
+        dept.visibility, dept.visible_to = visibility, visible_to
+        logger.info(
+            f"BOARD_DEPT role: id={dept_id} → {kind}, parent={parent_id}, "
+            f"visibility={visibility} by user {current_user.id}"
+        )
+
     await db.commit()
-    return BoardDept(id=dept.id, name=dept.name, hidden=dept.hidden_at is not None)
+    return _dept_out(dept)
+
+
+async def _single_row(
+    db: AsyncSession,
+    org_id: int,
+    entity: Entity,
+    placement: Optional[BoardPlacement],
+) -> BoardRow:
+    """Одна строка доски в ответе на правку — со всем, что в ней показано."""
+    offer = (await db.execute(
+        select(EntityFile)
+        .where(
+            EntityFile.entity_id == entity.id,
+            cast(EntityFile.file_type, String) == EntityFileType.offer.value,
+        )
+        .order_by(EntityFile.id.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    names: Dict[int, str] = {}
+    a_ids = _manual_assignee_ids(_extra(entity)) or []
+    if a_ids:
+        names = dict((await db.execute(
+            select(User.id, User.name).where(User.id.in_(a_ids))
+        )).all())
+    return _row_from_entity(
+        entity, offer, names,
+        await _load_sourcers(db, [entity.id]),
+        await _load_mentors(db, [entity.id]),
+        await _board_depts(db, org_id),
+        placement=placement,
+    )
+
+
+# ============================================================
+# НАЗНАЧЕНИЯ (человек в отделе)
+# ============================================================
+
+
+@router.post("/placements", response_model=BoardRow, status_code=201)
+async def create_placement(
+    data: BoardPlacementCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Поставить человека в отдел.
+
+    С практики это ДОБАВЛЕНИЕ, а не переезд: в песочнице человек остаётся, в
+    отделе появляется вторая строка на ту же карточку кандидата (решение
+    владельца 30.09.2026 — «как в ООП: песочница родитель, Facebook дочерний,
+    а человек один объект»). Поэтому дубликата кандидата в базе не возникает.
+    Чтобы именно перенести, фронт передаёт replace_placement_id.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    entity = (await db.execute(
+        select(Entity).where(Entity.id == data.entity_id, Entity.org_id == org.id)
+    )).scalar_one_or_none()
+    if not entity:
+        raise HTTPException(404, "Кандидат не найден")
+
+    dept = (await db.execute(
+        select(BoardDepartment).where(
+            BoardDepartment.id == data.department_id, BoardDepartment.org_id == org.id
+        )
+    )).scalar_one_or_none()
+    if not dept:
+        raise HTTPException(404, "Отдел не найден")
+
+    placements = (await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.entity_id == entity.id, BoardPlacement.org_id == org.id
+        )
+    )).scalars().all()
+
+    exists = next((pl for pl in placements if pl.department_id == dept.id), None)
+    if exists is not None:
+        # Повторное нажатие не должно ругаться: отдаём ту же строку.
+        return await _single_row(db, org.id, entity, exists)
+
+    old: Optional[BoardPlacement] = None
+    if data.replace_placement_id is not None:
+        old = next((pl for pl in placements if pl.id == data.replace_placement_id), None)
+        if old is None:
+            raise HTTPException(404, "Назначение не найдено")
+
+    placement = BoardPlacement(
+        org_id=org.id, entity_id=entity.id, department_id=dept.id,
+        extra={}, created_by=current_user.id,
+    )
+    # Переезд в отдел — это выход в отдел: ставим дату, от неё считаются вехи.
+    if (dept.kind or "team") != "sandbox":
+        placement.extra = {_K_DEPT_START: date.today().isoformat()}
+    db.add(placement)
+
+    if old is not None:
+        await db.delete(old)
+
+    await db.commit()
+    await db.refresh(placement)
+    logger.info(
+        f"BOARD_PLACEMENT add: entity {entity.id} → отдел «{dept.name}» (id={dept.id})"
+        + (f", вместо назначения {data.replace_placement_id}" if old is not None else "")
+        + f" by user {current_user.id}"
+    )
+    return await _single_row(db, org.id, entity, placement)
+
+
+@router.delete("/placements/{placement_id}")
+async def delete_placement(
+    placement_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Убрать человека из отдела. Строка в песочнице так не снимается: практика
+    — начало пути, и убрать её может только админ."""
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    placement = (await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.id == placement_id, BoardPlacement.org_id == org.id
+        )
+    )).scalar_one_or_none()
+    if not placement:
+        raise HTTPException(404, "Назначение не найдено")
+
+    dept = (await db.execute(
+        select(BoardDepartment).where(BoardDepartment.id == placement.department_id)
+    )).scalar_one_or_none()
+    if dept is not None and (dept.kind or "team") == "sandbox":
+        if not await _is_board_admin(db, current_user, org.id):
+            raise HTTPException(403, "Из песочницы убирает только админ")
+
+    entity_id = placement.entity_id
+    await db.delete(placement)
+    await db.commit()
+    logger.info(
+        f"BOARD_PLACEMENT remove: entity {entity_id} из отдела "
+        f"«{dept.name if dept else '—'}» by user {current_user.id}"
+    )
+    return {"success": True}
 
 
 @router.get("/positions", response_model=List[str])
@@ -992,14 +1319,42 @@ async def list_rows(
 
     sourcers_by_entity = await _load_sourcers(db, ids)
     mentors_by_entity = await _load_mentors(db, ids)
-    dept_names = await _board_dept_names(db, org.id)
+    depts = await _board_depts(db, org.id)
 
-    return [
-        _row_from_entity(
-            e, offers.get(e.id), assignee_names, sourcers_by_entity, mentors_by_entity, dept_names
-        )
-        for e in entities
-    ]
+    # Назначения: человек в отделе. Одна строка доски = одно назначение,
+    # поэтому у того, кто с практики вышел в команду, строк две — в песочнице и
+    # в команде, — но карточка кандидата одна (entity_id совпадает).
+    is_admin = await _is_board_admin(db, current_user, org.id)
+    placements = (await db.execute(
+        select(BoardPlacement)
+        .where(BoardPlacement.org_id == org.id, BoardPlacement.entity_id.in_(ids))
+    )).scalars().all()
+    by_entity: Dict[int, List[BoardPlacement]] = {}
+    for pl in placements:
+        dept = depts.get(pl.department_id)
+        # Отдел «не для всех» рекрутёру не показываем: доска — то же правило
+        # видимости, что и список отделов.
+        if dept is None or not _dept_visible(dept, current_user.id, is_admin):
+            continue
+        by_entity.setdefault(pl.entity_id, []).append(pl)
+
+    def dept_sort_key(pl: BoardPlacement):
+        dept = depts.get(pl.department_id)
+        kind = (dept.kind or "team") if dept else "team"
+        # Песочница идёт первой: практика — начало пути, команды после неё.
+        return (0 if kind == "sandbox" else 1, (dept.name.lower() if dept else ""))
+
+    rows: List[BoardRow] = []
+    for e in entities:
+        mine = sorted(by_entity.get(e.id, []), key=dept_sort_key)
+        # Нет назначений (или все в скрытых от этого HR отделах) — одна строка
+        # «без отдела»: человек не должен пропадать с доски.
+        for pl in (mine or [None]):
+            rows.append(_row_from_entity(
+                e, offers.get(e.id), assignee_names, sourcers_by_entity,
+                mentors_by_entity, depts, placement=pl,
+            ))
+    return rows
 
 
 @router.patch("/rows/{entity_id}", response_model=BoardRow)
@@ -1023,6 +1378,23 @@ async def update_row(
         raise HTTPException(404, "Кандидат не найден")
 
     payload = data.model_dump(exclude_unset=True)
+    payload.pop("placement_id", None)
+
+    # Какое назначение правим: указанное фронтом, иначе единственное. Даты
+    # отдела и вехи у каждого назначения свои, поэтому без этого правка
+    # «выхода в отдел» в команде перезаписала бы даты практики в песочнице.
+    placements = (await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.entity_id == entity.id, BoardPlacement.org_id == org.id
+        )
+    )).scalars().all()
+    target: Optional[BoardPlacement] = None
+    if data.placement_id is not None:
+        target = next((pl for pl in placements if pl.id == data.placement_id), None)
+        if target is None:
+            raise HTTPException(404, "Назначение не найдено")
+    elif len(placements) == 1:
+        target = placements[0]
 
     # --- Поля самой карточки ---
     dismissal_triggered = False
@@ -1046,15 +1418,15 @@ async def update_row(
         )
         entity.status = new_status
 
-    # На практике должность и отдел зафиксированы как «Сандбокс» — правку
-    # молча игнорируем, чтобы значение нельзя было перебить в обход интерфейса.
-    locked_sandbox = entity.status == EntityStatus.probation
-
-    if "position" in payload and not locked_sandbox:
+    if "position" in payload:
         entity.position = (payload["position"] or None)
 
-    if "department_id" in payload and not locked_sandbox:
-        dept_id = payload["department_id"]
+    # Отдел в строке — это отдел НАЗНАЧЕНИЯ. Передали другой — переносим строку
+    # (чтобы человек остался и в песочнице, фронт вместо этого добавляет новое
+    # назначение: POST /placements). Передали null — убираем из отдела.
+    autofill_dept_start = False
+    if "department_id" in payload:
+        dept_id = payload.pop("department_id")
         if dept_id is not None:
             dept = (await db.execute(
                 select(BoardDepartment).where(
@@ -1063,15 +1435,27 @@ async def update_row(
             )).scalar_one_or_none()
             if not dept:
                 raise HTTPException(404, "Отдел не найден")
-        board_dept_id = dept_id
-        set_board_dept = True
-        # Выбрали отдел — значит человек в него вышел. Дату ставим, только если
-        # её ещё нет и её не передали в этом же запросе: руками вбитую не трогаем.
-        autofill_dept_start = dept_id is not None and "department_start_date" not in payload
-    else:
-        set_board_dept = False
-        board_dept_id = None
-        autofill_dept_start = False
+            if any(pl.department_id == dept_id and pl is not target for pl in placements):
+                raise HTTPException(400, "Человек уже в этом отделе")
+            if target is not None:
+                target.department_id = dept_id
+            elif len(placements) > 1:
+                raise HTTPException(400, "Укажите, какое назначение переносить (placement_id)")
+            else:
+                target = BoardPlacement(
+                    org_id=org.id, entity_id=entity.id, department_id=dept_id,
+                    extra={}, created_by=current_user.id,
+                )
+                db.add(target)
+                placements.append(target)
+            # Выбрали отдел — значит человек в него вышел. Дату ставим, только
+            # если её ещё нет и её не передали в этом же запросе: вбитую руками
+            # не трогаем.
+            autofill_dept_start = "department_start_date" not in payload
+        elif target is not None:
+            await db.delete(target)
+            placements = [pl for pl in placements if pl is not target]
+            target = None
 
     if "telegram" in payload:
         handle = (payload["telegram"] or "").strip().lstrip("@")
@@ -1092,13 +1476,16 @@ async def update_row(
     }
     touched_extra = False
     ex = dict(_extra(entity))
+    # Даты отдела и отметки вех принадлежат назначению: в песочнице это даты
+    # практики, в команде — выход в отдел и вехи от него. Нет назначения (строка
+    # «без отдела») — пишем в карточку, как было до 30.09.2026.
+    # None — назначения нет, всё пишем в карточку (и тогда bucket() всегда
+    # отдаёт ex, а проверка «store is pex» ничего не ловит).
+    pex = dict(target.extra or {}) if target is not None else None
+    touched_placement = False
 
-    if set_board_dept:
-        if board_dept_id is None:
-            ex.pop(_K_BOARD_DEPT, None)
-        else:
-            ex[_K_BOARD_DEPT] = board_dept_id
-        touched_extra = True
+    def bucket(key: str) -> Dict[str, Any]:
+        return pex if (pex is not None and key in PLACEMENT_KEYS) else ex
     # HR: список главнее одиночного поля. Одиночное (старые клиенты) заменяет
     # весь список, иначе второй HR «воскресал» бы после смены первого.
     if "assignee_user_ids" in payload:
@@ -1123,18 +1510,22 @@ async def update_row(
         if field not in payload:
             continue
         value = payload[field]
+        store = bucket(key)
         if value in (None, ""):
-            ex.pop(key, None)
+            store.pop(key, None)
         else:
             # даты нормализуем к YYYY-MM-DD
             if key in (_K_PRACTICE, _K_DEPT_START, _K_W2, _K_M1, _K_M3, _K_Y1, _K_DISMISSAL):
                 parsed = _parse_date(value)
                 if not parsed:
                     raise HTTPException(400, f"Некорректная дата в поле {field}")
-                ex[key] = parsed.isoformat()
+                store[key] = parsed.isoformat()
             else:
-                ex[key] = str(value).strip()
-        touched_extra = True
+                store[key] = str(value).strip()
+        if store is pex:
+            touched_placement = True
+        else:
+            touched_extra = True
 
     if "manager" in payload:
         ex.pop(_K_MANAGER_AUTO, None)
@@ -1142,9 +1533,14 @@ async def update_row(
     # Автодата выхода в отдел (см. выше, где сохраняется отдел). От неё
     # считаются все вехи — 2 недели, 1/3/12 месяцев, — так что без неё строка
     # оставалась бы без плана проверок.
-    if autofill_dept_start and not ex.get(_K_DEPT_START) and not ex.get(_CF_DEPT_START):
-        ex[_K_DEPT_START] = date.today().isoformat()
-        touched_extra = True
+    if autofill_dept_start:
+        store = bucket(_K_DEPT_START)
+        if not store.get(_K_DEPT_START) and not store.get(_CF_DEPT_START):
+            store[_K_DEPT_START] = date.today().isoformat()
+            if store is pex:
+                touched_placement = True
+            else:
+                touched_extra = True
 
     # Отметки у вех — текст (галочка, крестик, месяц, бонус). Пустое значение
     # здесь означает «снять отметку», а не «не трогать».
@@ -1152,23 +1548,30 @@ async def update_row(
         if field not in payload:
             continue
         value = payload[field]
+        store = bucket(key)
         if value:
             mark = _normalize_mark(value)
             if mark not in MARK_OPTIONS:
                 raise HTTPException(400, f"Недопустимая отметка «{value}»")
-            ex[key] = mark
+            store[key] = mark
         else:
-            ex.pop(key, None)
+            store.pop(key, None)
             # Импортированное из ClickUp значение перебило бы снятую галочку —
             # гасим и его, иначе отметку невозможно было бы убрать.
             cf = _CF_DONE.get(field)
-            if cf and cf in ex:
-                ex[cf] = ""
-        touched_extra = True
+            if cf and cf in store:
+                store[cf] = ""
+        if store is pex:
+            touched_placement = True
+        else:
+            touched_extra = True
 
     if touched_extra:
         entity.extra_data = ex
         flag_modified(entity, "extra_data")
+    if touched_placement and target is not None:
+        target.extra = pex
+        flag_modified(target, "extra")
 
     if dismissal_triggered:
         # Закрываем запись сотрудника и запускаем тот же оркестратор, что и
@@ -1195,35 +1598,20 @@ async def update_row(
 
     # НЕ db.refresh(): он сбрасывает уже загруженную связь department, и
     # следующее обращение к entity.department.name ушло бы в ленивую подгрузку —
-    # в async-сессии это падает (MissingGreenlet). Перечитываем явно с selectinload.
+    # в async-сессии это падает (MissingGreenlet). Перечитываем явно.
     entity = (await db.execute(
         select(Entity)
         .where(Entity.id == entity_id)
     )).scalar_one()
 
-    offer = (await db.execute(
-        select(EntityFile)
-        .where(
-            EntityFile.entity_id == entity.id,
-            cast(EntityFile.file_type, String) == EntityFileType.offer.value,
-        )
-        .order_by(EntityFile.id.desc())
-        .limit(1)
-    )).scalar_one_or_none()
+    fresh = None
+    if target is not None:
+        fresh = (await db.execute(
+            select(BoardPlacement).where(BoardPlacement.id == target.id)
+        )).scalar_one_or_none()
 
-    # Имя ведущего HR — иначе после сохранения в ячейке осталось бы пусто
-    names: Dict[int, str] = {}
-    a_ids = _manual_assignee_ids(_extra(entity)) or []
-    if a_ids:
-        names = dict((await db.execute(
-            select(User.id, User.name).where(User.id.in_(a_ids))
-        )).all())
-
-    # Сорсеры тоже: без них после любой правки строки метки-кружки пропадали
-    # из ячейки до перезагрузки страницы.
-    sourcers = await _load_sourcers(db, [entity.id])
-    mentors = await _load_mentors(db, [entity.id])
-    dept_names = await _board_dept_names(db, org.id)
-
-    logger.info(f"Board row updated: entity {entity_id} by user {current_user.id}")
-    return _row_from_entity(entity, offer, names, sourcers, mentors, dept_names)
+    logger.info(
+        f"Board row updated: entity {entity_id}, placement "
+        f"{fresh.id if fresh else '—'} by user {current_user.id}"
+    )
+    return await _single_row(db, org.id, entity, fresh)

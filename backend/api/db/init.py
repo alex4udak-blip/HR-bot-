@@ -196,6 +196,36 @@ async def init_database():
          "project_tasks.source_chat_id"),
         ("ALTER TABLE project_tasks ADD COLUMN IF NOT EXISTS source_message TEXT",
          "project_tasks.source_message"),
+        # Иерархия и видимость отделов доски (30.09.2026): песочницы —
+        # родительские, команды — дочерние; юниты видны не всем.
+        ("ALTER TABLE staff_board_departments ADD COLUMN IF NOT EXISTS kind VARCHAR(10) DEFAULT 'team'",
+         "staff_board_departments.kind"),
+        ("ALTER TABLE staff_board_departments ADD COLUMN IF NOT EXISTS parent_id INTEGER "
+         "REFERENCES staff_board_departments(id) ON DELETE SET NULL",
+         "staff_board_departments.parent_id"),
+        ("ALTER TABLE staff_board_departments ADD COLUMN IF NOT EXISTS visibility VARCHAR(10) DEFAULT 'all'",
+         "staff_board_departments.visibility"),
+        ("ALTER TABLE staff_board_departments ADD COLUMN IF NOT EXISTS visible_to JSON DEFAULT '[]'",
+         "staff_board_departments.visible_to"),
+        # Назначения: человек в отделе. Строка доски = назначение, поэтому без
+        # таблицы доска не открывается вообще — заводим её здесь, не надеясь
+        # на create_all.
+        ("""CREATE TABLE IF NOT EXISTS staff_board_placements (
+                id SERIAL PRIMARY KEY,
+                org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                department_id INTEGER NOT NULL REFERENCES staff_board_departments(id) ON DELETE CASCADE,
+                extra JSON DEFAULT '{}',
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                CONSTRAINT uq_placement_entity_dept UNIQUE (entity_id, department_id)
+            )""", "Create staff_board_placements table"),
+        ("CREATE INDEX IF NOT EXISTS ix_staff_board_placements_org_id ON staff_board_placements (org_id)",
+         "индекс staff_board_placements.org_id"),
+        ("CREATE INDEX IF NOT EXISTS ix_staff_board_placements_entity_id ON staff_board_placements (entity_id)",
+         "индекс staff_board_placements.entity_id"),
+        ("CREATE INDEX IF NOT EXISTS ix_staff_board_placements_department_id ON staff_board_placements (department_id)",
+         "индекс staff_board_placements.department_id"),
     ):
         await run_migration(engine, sql, description)
 
@@ -484,6 +514,18 @@ async def init_database():
             await remove_junk_telegram_once(session)
     except Exception as e:
         logger.warning(f"Junk telegram cleanup failed (non-critical): {e}")
+
+    # Отдел из карточки → назначения на доске «Статусы» (30.09.2026,
+    # services/board_placements.py). Одноразово: строки доски теперь строятся
+    # по назначениям, и без переноса у всех, кто уже стоял в отделе, отдел
+    # пропал бы из таблицы. Старые ключи в extra_data остаются на месте.
+    try:
+        from ..services.board_placements import migrate_board_departments_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await migrate_board_departments_once(session)
+    except Exception as e:
+        logger.warning(f"Board placements migration failed (non-critical): {e}")
 
     # Контакты из шапки уже сохранённых резюме (22.09.2026) — одноразово.
     try:

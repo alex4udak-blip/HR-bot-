@@ -9431,6 +9431,124 @@ body.performance-mode .glass-card:hover {
   font-size: var(--hf-fs-2xs);
 }
 .hf-statuses-folder-add:hover { color: var(--hf-main-900); background: var(--hf-white); }
+
+/* Команда внутри песочницы — со сдвигом и полоской слева: иерархия отделов
+   должна читаться глазами (решение владельца 30.09.2026). */
+.hf-statuses-folder-child {
+  margin-left: var(--hf-space-m);
+  border-left: var(--hf-border-xs) solid var(--hf-ui-border);
+  padding-left: var(--hf-space-xxs);
+}
+
+/* Окно отдела: название, роль, кому виден. */
+.hf-statuses-modal-back {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--hf-space-l);
+  background: rgba(15, 23, 42, 0.45);
+}
+.hf-statuses-modal {
+  width: min(460px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hf-space-m);
+  padding: var(--hf-space-l);
+  border-radius: var(--hf-radius-m);
+  background: var(--hf-white);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.22);
+}
+.hf-statuses-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.hf-statuses-modal-head h3 {
+  margin: 0;
+  font-size: var(--hf-fs-m);
+  font-weight: 650;
+  color: var(--hf-main-900);
+}
+.hf-statuses-modal-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hf-space-s);
+  font-size: var(--hf-fs-2xs);
+  font-weight: 600;
+  color: var(--hf-main-700);
+}
+.hf-statuses-modal-input {
+  width: 100%;
+  padding: var(--hf-space-s) var(--hf-space-m);
+  border: var(--hf-border-xs) solid var(--hf-ui-border);
+  border-radius: var(--hf-radius-s);
+  background: var(--hf-white);
+  font-size: var(--hf-fs-2xs);
+  font-weight: 400;
+  color: var(--hf-main-900);
+}
+.hf-statuses-modal-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hf-space-s);
+  font-weight: 400;
+  color: var(--hf-main-900);
+  cursor: pointer;
+}
+.hf-statuses-modal-radio em {
+  display: block;
+  font-style: normal;
+  font-size: var(--hf-fs-3xs);
+  color: var(--hf-main-600);
+}
+.hf-statuses-modal-people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hf-space-xxs);
+  max-height: 180px;
+  overflow: auto;
+  padding: var(--hf-space-s);
+  border: var(--hf-border-xs) solid var(--hf-ui-border);
+  border-radius: var(--hf-radius-s);
+}
+.hf-statuses-modal-check {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-s);
+  font-weight: 400;
+  color: var(--hf-main-900);
+  cursor: pointer;
+}
+.hf-statuses-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--hf-space-s);
+}
+.hf-statuses-modal-cancel,
+.hf-statuses-modal-save {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hf-space-xxs);
+  padding: var(--hf-space-s) var(--hf-space-l);
+  border-radius: var(--hf-radius-s);
+  font-size: var(--hf-fs-2xs);
+  font-weight: 600;
+}
+.hf-statuses-modal-cancel {
+  border: var(--hf-border-xs) solid var(--hf-ui-border);
+  color: var(--hf-main-700);
+  background: var(--hf-white);
+}
+.hf-statuses-modal-save {
+  color: var(--hf-white);
+  background: var(--hf-main-900);
+}
+.hf-statuses-modal-save:disabled { opacity: 0.6; }
 .hf-statuses-folder-input {
   flex: 1;
   min-width: 0;
@@ -10016,6 +10134,31 @@ body.performance-mode .glass-card:hover {
   height: 100%;
   opacity: 0;
   cursor: pointer;
+}
+/* Крестик «убрать из отдела» лежит ПОВЕРХ прозрачного select: иначе клик по
+   нему открывал бы список отделов вместо снятия. */
+.hf-statuses-dept-remove {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--hf-muted, #94a3b8);
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.hf-statuses-row:hover .hf-statuses-dept-remove { opacity: 1; }
+.hf-statuses-dept-remove:hover {
+  color: #b91c1c;
+  background: #fee2e2;
+  border-color: #fecaca;
 }
 
 /* Telegram: ник и кнопка «скопировать» рядом */

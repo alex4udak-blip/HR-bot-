@@ -11,12 +11,23 @@ export interface BoardFolder {
 
 export interface BoardRow {
   entity_id: number;
+  /** Строка доски = НАЗНАЧЕНИЕ человека в отдел. Один человек может стоять в
+   *  нескольких отделах сразу (песочница + команда), карточка кандидата при
+   *  этом одна — у таких строк совпадает entity_id. Пусто у тех, кто ещё не
+   *  поставлен ни в один отдел. */
+  placement_id: number | null;
   name: string;
   status: string;
   direction: string | null;
   position: string | null;
   department_id: number | null;
   department_name: string | null;
+  /** Песочница, которой принадлежит отдел строки (у самой песочницы пусто). */
+  parent_department_id: number | null;
+  parent_department_name: string | null;
+  /** Отдел строки — песочница: выбор отдела ДОБАВЛЯЕТ назначение (человек
+   *  остаётся на практике), а не переносит. */
+  department_is_sandbox: boolean;
   telegram: string | null;
   practice_start_date: string | null;
   department_start_date: string | null;
@@ -52,6 +63,8 @@ export interface BoardRow {
 }
 
 export interface BoardRowUpdate {
+  /** Какое назначение правим: даты отдела и вехи у каждого свои. */
+  placement_id?: number | null;
   status?: string;
   direction?: string | null;
   position?: string | null;
@@ -137,6 +150,22 @@ export interface BoardDepartment {
   name: string;
   /** Скрыт с доски: остаётся в базе и у людей, но не мозолит глаза. */
   hidden: boolean;
+  /** sandbox — песочница (родительский отдел), team — команда внутри неё. */
+  kind: 'sandbox' | 'team';
+  /** Песочница, к которой относится команда. */
+  parent_id: number | null;
+  /** all — видят все HR; custom — только перечисленные в visible_to. */
+  visibility: 'all' | 'custom';
+  visible_to: number[];
+}
+
+export interface BoardDepartmentInput {
+  name?: string;
+  kind?: 'sandbox' | 'team';
+  parent_id?: number | null;
+  visibility?: 'all' | 'custom';
+  visible_to?: number[];
+  hidden?: boolean;
 }
 
 export async function getBoardDepartments(): Promise<BoardDepartment[]> {
@@ -144,13 +173,26 @@ export async function getBoardDepartments(): Promise<BoardDepartment[]> {
   return data || [];
 }
 
-export async function createBoardDepartment(name: string): Promise<BoardDepartment> {
-  const { data } = await api.post('/staff-board/departments', { name });
+export async function createBoardDepartment(
+  name: string,
+  rest: Omit<BoardDepartmentInput, 'name' | 'hidden'> = {}
+): Promise<BoardDepartment> {
+  const { data } = await api.post('/staff-board/departments', { name, ...rest });
   return data;
 }
 
 export async function renameBoardDepartment(id: number, name: string): Promise<BoardDepartment> {
   const { data } = await api.patch(`/staff-board/departments/${id}`, { name });
+  return data;
+}
+
+/** Правка отдела: название, роль (песочница/команда), песочница-родитель,
+ *  видимость. Передаём только то, что меняем. */
+export async function updateBoardDepartment(
+  id: number,
+  patch: BoardDepartmentInput
+): Promise<BoardDepartment> {
+  const { data } = await api.patch(`/staff-board/departments/${id}`, patch);
   return data;
 }
 
@@ -164,4 +206,31 @@ export async function setBoardDepartmentHidden(id: number, hidden: boolean): Pro
 export async function saveBoardDepartmentOrder(ids: number[]): Promise<BoardDepartment[]> {
   const { data } = await api.put('/staff-board/departments/order', { ids });
   return data || [];
+}
+
+// ─── Назначения (человек в отделе) ──────────────────────────
+
+/** Поставить человека в отдел.
+ *
+ *  С практики это ДОБАВЛЕНИЕ, а не переезд: в песочнице человек остаётся, в
+ *  отделе появляется вторая строка на ту же карточку кандидата (решение
+ *  владельца 30.09.2026). Чтобы именно перенести строку между отделами,
+ *  передаём replacePlacementId.
+ */
+export async function addBoardPlacement(
+  entityId: number,
+  departmentId: number,
+  replacePlacementId?: number | null
+): Promise<BoardRow> {
+  const { data } = await api.post('/staff-board/placements', {
+    entity_id: entityId,
+    department_id: departmentId,
+    replace_placement_id: replacePlacementId ?? null,
+  });
+  return data;
+}
+
+/** Убрать человека из отдела. Песочницу снимает только админ. */
+export async function removeBoardPlacement(placementId: number): Promise<void> {
+  await api.delete(`/staff-board/placements/${placementId}`);
 }

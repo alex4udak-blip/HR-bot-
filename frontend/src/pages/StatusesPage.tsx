@@ -8,8 +8,8 @@ import * as XLSX from "xlsx";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
-  getBoardRows, updateBoardRow,
-  getBoardDepartments, createBoardDepartment, renameBoardDepartment, setBoardDepartmentHidden,
+  getBoardRows, updateBoardRow, addBoardPlacement, removeBoardPlacement,
+  getBoardDepartments, createBoardDepartment, updateBoardDepartment, setBoardDepartmentHidden,
   saveBoardDepartmentOrder,
   type BoardDepartment, type BoardRow, type BoardRowUpdate,
 } from "@/services/api/staffBoard";
@@ -49,10 +49,6 @@ const STATUSES = [
 /** В какую группу попадает статус строки. */
 const groupOf = (status: string) =>
   STATUSES.find((g) => (g.members as readonly string[]).includes(status))?.key ?? status;
-
-/** Пока человек на практике, отдела и должности нет — обе колонки
- *  показывают «Сандбокс» и не редактируются. */
-const SANDBOX_LABEL = "Сандбокс";
 
 const UNASSIGNED = "__none__";
 
@@ -198,6 +194,10 @@ const cellText = (r: BoardRow, key: FilterKey): string => {
   }
 };
 
+/** Ключ строки доски: назначение, а у тех, кто ещё не в отделе, — человек. */
+const rowKey = (r: BoardRow) =>
+  r.placement_id != null ? `p${r.placement_id}` : `e${r.entity_id}`;
+
 export default function StatusesPage() {
   const [rows, setRows] = useState<BoardRow[]>([]);
   const [departments, setDepartments] = useState<BoardDepartment[]>([]);
@@ -206,6 +206,7 @@ export default function StatusesPage() {
   const [positions, setPositions] = useState<string[]>([]);
   const [managers, setManagers] = useState<string[]>([]);
   const [people, setPeople] = useState<{ user_id: number; user_name: string | null }[]>([]);
+  const [orgHr, setOrgHr] = useState<{ user_id: number; user_name: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   // Отдел слева живёт в URL (?dept=) — работают браузерные «Назад/Вперёд».
   // Раньше тут были «направления» — отдельный список папок, но это те же
@@ -301,7 +302,10 @@ export default function StatusesPage() {
     );
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [savingId, setSavingId] = useState<number | null>(null);
+  // Строка = назначение (человек в отделе), поэтому у одного человека их может
+  // быть несколько: в песочнице и в команде. Ключ — назначение, иначе правка
+  // даты в отделе подсвечивала и перерисовывала бы строку практики.
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   /** Смена статуса. Перевод в «Уволен»/«Уволился» на бэкенде запускает
    *  оффбординг: гасит аккаунт, отзывает сессии и отвязывает Telegram.
@@ -347,19 +351,82 @@ export default function StatusesPage() {
         )
       )
       .catch(() => setPeople([]));
+    // Кому показывать отдел — выбирают из всех, кто вообще работает в HR, а не
+    // из двух ведущих доску: юнит Марии может быть нужен и рекрутёру.
+    getOrgMembers()
+      .then((m) =>
+        setOrgHr(
+          m
+            .filter((x) => x.role === "owner" || x.role === "admin" || x.role === "hr")
+            .map((x) => ({ user_id: x.user_id, user_name: x.user_name }))
+            .sort((a, b) => (a.user_name || "").localeCompare(b.user_name || "", "ru"))
+        )
+      )
+      .catch(() => setOrgHr([]));
   }, []);
 
-  /** Патч строки: оптимистично + откат при ошибке. */
+  /** Патч строки: оптимистично + откат при ошибке.
+   *
+   *  Даты отдела и вехи принадлежат НАЗНАЧЕНИЮ, поэтому всегда говорим серверу,
+   *  какое правим: без этого правка «выхода в отдел» в команде переписала бы
+   *  даты практики в песочнице. Статус — у человека, он один на все строки,
+   *  поэтому его правка обновляет их все.
+   */
   const patch = async (row: BoardRow, body: BoardRowUpdate) => {
     const prev = rows;
-    setSavingId(row.entity_id);
-    setRows((cur) => cur.map((x) => (x.entity_id === row.entity_id ? { ...x, ...body } as BoardRow : x)));
+    const personWide = "status" in body;
+    const mine = (x: BoardRow) =>
+      personWide ? x.entity_id === row.entity_id : rowKey(x) === rowKey(row);
+    setSavingId(rowKey(row));
+    setRows((cur) => cur.map((x) => (mine(x) ? { ...x, ...body } as BoardRow : x)));
     try {
-      const fresh = await updateBoardRow(row.entity_id, body);
-      setRows((cur) => cur.map((x) => (x.entity_id === fresh.entity_id ? fresh : x)));
+      const fresh = await updateBoardRow(row.entity_id, { ...body, placement_id: row.placement_id });
+      setRows((cur) => cur.map((x) => {
+        if (!mine(x)) return x;
+        // Строке, которую правили, отдаём ответ сервера целиком; остальным
+        // строкам того же человека — только то, что у них общее.
+        return rowKey(x) === rowKey(row) ? fresh : { ...x, status: fresh.status } as BoardRow;
+      }));
     } catch (e: any) {
       setRows(prev);
       toast.error(e?.response?.data?.detail || "Не удалось сохранить");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  /** Поставить человека в отдел.
+   *
+   *  Из песочницы это ДОБАВЛЕНИЕ: человек остаётся на практике, а в отделе
+   *  появляется ещё одна строка на ту же карточку (решение владельца
+   *  30.09.2026). Из строки отдела — перенос. Поэтому список перезагружаем:
+   *  строк становится больше или меньше.
+   */
+  const placeInDept = async (row: BoardRow, deptId: number) => {
+    setSavingId(rowKey(row));
+    try {
+      await addBoardPlacement(
+        row.entity_id, deptId,
+        row.department_is_sandbox ? null : row.placement_id,
+      );
+      setRows(await getBoardRows());
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Не удалось поставить в отдел");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  /** Убрать человека из отдела (× у пилюли). Строку практики так не снять —
+   *  сервер разрешает это только админу. */
+  const removeFromDept = async (row: BoardRow) => {
+    if (row.placement_id == null) return;
+    setSavingId(rowKey(row));
+    try {
+      await removeBoardPlacement(row.placement_id);
+      setRows(await getBoardRows());
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Не удалось убрать из отдела");
     } finally {
       setSavingId(null);
     }
@@ -449,7 +516,10 @@ export default function StatusesPage() {
   }, [rows]);
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: searched.length, [UNASSIGNED]: 0 };
+    // У отдела — сколько в нём строк, у «Все» — сколько ЛЮДЕЙ: человек в
+    // песочнице и в команде занимает две строки, но человек-то один, и бейдж
+    // не должен расходиться со списком.
+    const c: Record<string, number> = { all: new Set(searched.map((r) => r.entity_id)).size, [UNASSIGNED]: 0 };
     for (const r of searched) {
       const key = r.department_id != null ? String(r.department_id) : UNASSIGNED;
       c[key] = (c[key] || 0) + 1;
@@ -458,9 +528,22 @@ export default function StatusesPage() {
   }, [searched]);
 
   const visible = useMemo(() => {
-    if (dept === "all") return searched;
+    // В отделе — только его строки. «Без отдела» — те, кого ещё никуда не
+    // поставили.
     if (dept === UNASSIGNED) return searched.filter((r) => r.department_id == null);
-    return searched.filter((r) => String(r.department_id) === dept);
+    if (dept !== "all") return searched.filter((r) => String(r.department_id) === dept);
+    // «Все» — каждый человек ОДИН раз (решение владельца 30.09.2026): у того,
+    // кто вышел с практики в команду, строк две, и обе здесь — это путаница.
+    // Оставляем строку команды: она свежее и в ней вехи, по которым и смотрят.
+    const best = new Map<number, BoardRow>();
+    for (const r of searched) {
+      const cur = best.get(r.entity_id);
+      if (!cur || (cur.department_is_sandbox && !r.department_is_sandbox) ||
+          (cur.department_id == null && r.department_id != null)) {
+        best.set(r.entity_id, r);
+      }
+    }
+    return searched.filter((r) => best.get(r.entity_id) === r);
   }, [searched, dept]);
 
   /** Значения для выбора в правиле — те, что реально есть в таблице.
@@ -692,6 +775,7 @@ export default function StatusesPage() {
         <div className="hf-statuses-body">
           <DepartmentSidebar
             departments={departments}
+            orgHr={orgHr}
             counts={counts}
             active={dept}
             onSelect={setDept}
@@ -761,15 +845,17 @@ export default function StatusesPage() {
 
                       {!isCollapsed && g.items.map((r) => (
                         <Row
-                          key={r.entity_id}
+                          key={rowKey(r)}
                           row={r}
                           departments={departments}
                           positions={positions}
                           managers={managers}
                           people={people}
-                          saving={savingId === r.entity_id}
+                          saving={savingId === rowKey(r)}
                           onPatch={patch}
                           onStatus={changeStatus}
+                          onPlace={placeInDept}
+                          onUnplace={removeFromDept}
                           onReload={load}
                         />
                       ))}
@@ -912,9 +998,10 @@ function FilterSection({
  *  много, и за ними терялись нужные. «+ Отдел» заводит отдел прямо здесь; это
  *  СВОЙ справочник доски, оргструктуру Enceladus он не трогает. */
 function DepartmentSidebar({
-  departments, counts, active, onSelect, onCreated, onRenamed, onHidden, onReorder,
+  departments, orgHr, counts, active, onSelect, onCreated, onRenamed, onHidden, onReorder,
 }: {
   departments: BoardDepartment[];
+  orgHr: { user_id: number; user_name: string | null }[];
   counts: Record<string, number>;
   active: string;
   onSelect: (id: string) => void;
@@ -926,44 +1013,13 @@ function DepartmentSidebar({
   // Перетаскивание отделов: порядок личный и сохраняется в базе.
   const [dragId, setDragId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
-  const [editing, setEditing] = useState<number | null>(null);
-  const [editName, setEditName] = useState("");
   // Скрытые не выбрасываем из списка совсем: их можно раскрыть и вернуть.
   const [showHidden, setShowHidden] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState("");
+  // Отдел заводят и правят в окне: у него есть не только название, но и роль
+  // (песочница или команда внутри неё) и видимость (решение владельца
+  // 30.09.2026). В строке сайдбара это уже не поместилось бы.
+  const [modal, setModal] = useState<{ dept: BoardDepartment | null } | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const cancel = () => { setAdding(false); setName(""); };
-
-  const create = async () => {
-    const clean = name.trim().replace(/\s+/g, " ");
-    if (!clean || busy) return;
-    // Такой уже есть — не плодим близнецов, просто открываем его
-    const same = departments.find((d) => d.name.trim().toLowerCase() === clean.toLowerCase());
-    if (same) {
-      toast(`Отдел «${same.name}» уже есть`);
-      onSelect(String(same.id));
-      cancel();
-      return;
-    }
-    setBusy(true);
-    try {
-      const d = await createBoardDepartment(clean);
-      onCreated(d);
-      onSelect(String(d.id));
-      toast.success(`Отдел «${d.name}» создан`);
-      cancel();
-    } catch (e: any) {
-      toast.error(
-        e?.response?.status === 403
-          ? "Создавать отделы может только владелец организации"
-          : e?.response?.data?.detail || "Не удалось создать отдел"
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const label = (d: BoardDepartment) => d.name;
   const hiddenCount = departments.filter((d) => d.hidden).length;
@@ -973,6 +1029,22 @@ function DepartmentSidebar({
     .filter((d) => showHidden || !d.hidden || String(d.id) === active)
     .slice()
     .sort((a, b) => (a.hidden === b.hidden ? 0 : a.hidden ? 1 : -1));
+
+  // Команды показываем под их песочницей: иерархия должна быть видна глазами,
+  // а не угадываться по названиям. Личный порядок перетаскиванием сохраняется —
+  // внутри песочницы команды идут в том же порядке, что в общем списке.
+  const tree: { d: BoardDepartment; child: boolean }[] = [];
+  const sandboxIds = new Set(sorted.filter((d) => d.kind === "sandbox").map((d) => d.id));
+  for (const d of sorted) {
+    // Команду, у которой песочница есть в списке, нарисуем под ней.
+    if (d.kind === "team" && d.parent_id && sandboxIds.has(d.parent_id)) continue;
+    tree.push({ d, child: false });
+    if (d.kind === "sandbox") {
+      for (const t of sorted) {
+        if (t.parent_id === d.id) tree.push({ d: t, child: true });
+      }
+    }
+  }
 
   const drop = async (target: BoardDepartment) => {
     setOverId(null);
@@ -989,21 +1061,6 @@ function DepartmentSidebar({
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || "Не удалось сохранить порядок отделов");
       onReorder(departments);
-    }
-  };
-
-  const rename = async (d: BoardDepartment) => {
-    const clean = editName.trim().replace(/\s+/g, " ");
-    if (!clean || busy) return;
-    if (clean === d.name) { setEditing(null); return; }
-    setBusy(true);
-    try {
-      onRenamed(await renameBoardDepartment(d.id, clean));
-      setEditing(null);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Не удалось переименовать отдел");
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -1042,38 +1099,17 @@ function DepartmentSidebar({
     <div className="hf-statuses-sidebar">
       {item("all", "Все")}
 
-      {sorted.map((d) =>
-        editing === d.id ? (
-          <div key={d.id} className="hf-statuses-folder-edit">
-            <input
-              autoFocus
-              className="hf-statuses-folder-input"
-              value={editName}
-              maxLength={100}
-              disabled={busy}
-              onChange={(e) => setEditName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") rename(d);
-                if (e.key === "Escape") setEditing(null);
-              }}
-            />
-            <button className="hf-statuses-folder-action" onClick={() => rename(d)} title="Сохранить">
-              <Check size={14} />
-            </button>
-            <button className="hf-statuses-folder-action" onClick={() => setEditing(null)} title="Отмена">
-              <X size={14} />
-            </button>
-          </div>
-        ) : (
+      {tree.map(({ d, child }) => (
           <div
             key={d.id}
             className={clsx(
               "hf-statuses-folder-row",
+              child && "hf-statuses-folder-child",
               d.hidden && "hf-statuses-folder-hidden",
               dragId === d.id && "hf-statuses-folder-dragging",
               overId === d.id && dragId !== d.id && "hf-statuses-folder-over"
             )}
-            draggable={editing === null}
+            draggable
             onDragStart={() => setDragId(d.id)}
             onDragEnd={() => { setDragId(null); setOverId(null); }}
             onDragOver={(e) => { e.preventDefault(); setOverId(d.id); }}
@@ -1084,8 +1120,8 @@ function DepartmentSidebar({
             <div className="hf-statuses-folder-actions">
               <button
                 className="hf-statuses-folder-action"
-                title="Переименовать"
-                onClick={(e) => { e.stopPropagation(); setEditing(d.id); setEditName(d.name); }}
+                title="Название, роль, кому виден"
+                onClick={(e) => { e.stopPropagation(); setModal({ dept: d }); }}
               >
                 <Pencil size={12} />
               </button>
@@ -1098,8 +1134,7 @@ function DepartmentSidebar({
               </button>
             </div>
           </div>
-        )
-      )}
+      ))}
 
       {item(UNASSIGNED, "Без отдела")}
 
@@ -1110,33 +1145,208 @@ function DepartmentSidebar({
         </button>
       )}
 
-      {adding ? (
-        <div className="hf-statuses-folder-edit">
-          <input
-            autoFocus
-            className="hf-statuses-folder-input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") create();
-              if (e.key === "Escape") cancel();
-            }}
-            placeholder="Название отдела"
-            maxLength={100}
-            disabled={busy}
-          />
-          <button className="hf-statuses-folder-action" onClick={create} disabled={busy} title="Создать">
-            {busy ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />}
-          </button>
-          <button className="hf-statuses-folder-action" onClick={cancel} disabled={busy} title="Отмена">
-            <X size={14} />
+      <button className="hf-statuses-folder-add" onClick={() => setModal({ dept: null })}>
+        <Plus size={14} /> Отдел
+      </button>
+
+      {modal && (
+        <DepartmentModal
+          dept={modal.dept}
+          departments={departments}
+          orgHr={orgHr}
+          onClose={() => setModal(null)}
+          onSaved={(d, created) => {
+            if (created) {
+              onCreated(d);
+              onSelect(String(d.id));
+            } else {
+              onRenamed(d);
+            }
+            setModal(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Окно отдела: название, роль и кому он виден.
+ *
+ *  Роль — песочница или команда внутри неё (решение владельца 30.09.2026):
+ *  песочницы (SANDBOX, SANDBOX MOBILE, SANDBOX R&D) — это практика, команды
+ *  (Facebook, Google, SEO…) живут внутри них. Видимость: админы видят все
+ *  отделы всегда, рекрутёрам — только «виден всем» и те, где их назвали. */
+function DepartmentModal({
+  dept, departments, orgHr, onClose, onSaved,
+}: {
+  dept: BoardDepartment | null;
+  departments: BoardDepartment[];
+  orgHr: { user_id: number; user_name: string | null }[];
+  onClose: () => void;
+  onSaved: (d: BoardDepartment, created: boolean) => void;
+}) {
+  const [name, setName] = useState(dept?.name ?? "");
+  const [kind, setKind] = useState<"sandbox" | "team">(dept?.kind ?? "team");
+  const [parentId, setParentId] = useState<number | null>(dept?.parent_id ?? null);
+  const [visibility, setVisibility] = useState<"all" | "custom">(dept?.visibility ?? "all");
+  const [visibleTo, setVisibleTo] = useState<number[]>(dept?.visible_to ?? []);
+  const [busy, setBusy] = useState(false);
+
+  const sandboxes = departments.filter((d) => d.kind === "sandbox" && d.id !== dept?.id);
+
+  const toggle = (id: number) =>
+    setVisibleTo((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+
+  const save = async () => {
+    const clean = name.trim().replace(/\s+/g, " ");
+    if (!clean || busy) return;
+    const same = departments.find(
+      (d) => d.id !== dept?.id && d.name.trim().toLowerCase() === clean.toLowerCase()
+    );
+    if (same) {
+      toast(`Отдел «${same.name}» уже есть`);
+      return;
+    }
+    const body = {
+      kind,
+      parent_id: kind === "sandbox" ? null : parentId,
+      visibility,
+      visible_to: visibility === "custom" ? visibleTo : [],
+    };
+    setBusy(true);
+    try {
+      if (dept) {
+        onSaved(await updateBoardDepartment(dept.id, { name: clean, ...body }), false);
+        toast.success(`Отдел «${clean}» сохранён`);
+      } else {
+        onSaved(await createBoardDepartment(clean, body), true);
+        toast.success(`Отдел «${clean}» создан`);
+      }
+    } catch (e: any) {
+      toast.error(
+        e?.response?.status === 403
+          ? "Менять отделы может только владелец организации"
+          : e?.response?.data?.detail || "Не удалось сохранить отдел"
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="hf-statuses-modal-back" onClick={onClose}>
+      <div className="hf-statuses-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="hf-statuses-modal-head">
+          <h3>{dept ? "Отдел" : "Новый отдел"}</h3>
+          <button className="hf-statuses-folder-action" onClick={onClose} title="Закрыть">
+            <X size={16} />
           </button>
         </div>
-      ) : (
-        <button className="hf-statuses-folder-add" onClick={() => setAdding(true)}>
-          <Plus size={14} /> Отдел
-        </button>
-      )}
+
+        <label className="hf-statuses-modal-label">
+          Название
+          <input
+            autoFocus
+            className="hf-statuses-modal-input"
+            value={name}
+            maxLength={100}
+            placeholder="Например, Facebook или SANDBOX MOBILE"
+            disabled={busy}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+          />
+        </label>
+
+        <div className="hf-statuses-modal-label">
+          Роль
+          <label className="hf-statuses-modal-radio">
+            <input
+              type="radio"
+              checked={kind === "sandbox"}
+              disabled={busy}
+              onChange={() => setKind("sandbox")}
+            />
+            <span>
+              Песочница — практика
+              <em>Сюда попадают с практики; из неё людей добавляют в команды.</em>
+            </span>
+          </label>
+          <label className="hf-statuses-modal-radio">
+            <input
+              type="radio"
+              checked={kind === "team"}
+              disabled={busy}
+              onChange={() => setKind("team")}
+            />
+            <span>
+              Отдел внутри песочницы
+              <em>Facebook, Google, SEO — команда, куда выходят с практики.</em>
+            </span>
+          </label>
+          {kind === "team" && (
+            <select
+              className="hf-statuses-modal-input"
+              value={parentId ?? ""}
+              disabled={busy}
+              onChange={(e) => setParentId(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Песочница не выбрана</option>
+              {sandboxes.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div className="hf-statuses-modal-label">
+          Кому виден
+          <label className="hf-statuses-modal-radio">
+            <input
+              type="radio"
+              checked={visibility === "all"}
+              disabled={busy}
+              onChange={() => setVisibility("all")}
+            />
+            <span>Всем HR</span>
+          </label>
+          <label className="hf-statuses-modal-radio">
+            <input
+              type="radio"
+              checked={visibility === "custom"}
+              disabled={busy}
+              onChange={() => setVisibility("custom")}
+            />
+            <span>
+              Только выбранным
+              <em>Админы и владелец видят отдел всегда.</em>
+            </span>
+          </label>
+          {visibility === "custom" && (
+            <div className="hf-statuses-modal-people">
+              {orgHr.length === 0 && <span className="hf-statuses-empty-cell">Список HR не загрузился</span>}
+              {orgHr.map((p) => (
+                <label key={p.user_id} className="hf-statuses-modal-check">
+                  <input
+                    type="checkbox"
+                    checked={visibleTo.includes(p.user_id)}
+                    disabled={busy}
+                    onChange={() => toggle(p.user_id)}
+                  />
+                  {p.user_name || `#${p.user_id}`}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="hf-statuses-modal-foot">
+          <button className="hf-statuses-modal-cancel" onClick={onClose} disabled={busy}>Отмена</button>
+          <button className="hf-statuses-modal-save" onClick={save} disabled={busy || !name.trim()}>
+            {busy ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />}
+            {dept ? "Сохранить" : "Создать"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1146,7 +1356,8 @@ function DepartmentSidebar({
 // ============================================================
 
 function Row({
-  row, departments, positions, managers, people, saving, onPatch, onStatus, onReload,
+  row, departments, positions, managers, people, saving,
+  onPatch, onStatus, onPlace, onUnplace, onReload,
 }: {
   row: BoardRow;
   departments: BoardDepartment[];
@@ -1156,9 +1367,10 @@ function Row({
   saving: boolean;
   onPatch: (row: BoardRow, body: BoardRowUpdate) => Promise<void>;
   onStatus: (row: BoardRow, status: string) => Promise<void>;
+  onPlace: (row: BoardRow, deptId: number) => Promise<void>;
+  onUnplace: (row: BoardRow) => Promise<void>;
   onReload: () => void;
 }) {
-  const sandbox = row.status === "probation";
 
   return (
     <tr className={clsx("hf-statuses-row", saving && "hf-statuses-row-saving")}>
@@ -1206,31 +1418,22 @@ function Row({
       </td>
 
       <td className="hf-statuses-td">
-        {sandbox ? (
-          <span className="hf-statuses-pill hf-statuses-pill-locked" title="Назначается автоматически на практике">
-            {SANDBOX_LABEL}
-          </span>
-        ) : (
-          <PillCell
-            value={row.position}
-            options={positions}
-            onSave={(v) => onPatch(row, { position: v })}
-          />
-        )}
+        {/* Должность вписывает HR — и на практике тоже: раньше здесь стояла
+            несъёмная подпись «Сандбокс», а песочница теперь настоящий отдел. */}
+        <PillCell
+          value={row.position}
+          options={positions}
+          onSave={(v) => onPatch(row, { position: v })}
+        />
       </td>
 
       <td className="hf-statuses-td">
-        {sandbox ? (
-          <span className="hf-statuses-pill hf-statuses-pill-locked" title="Назначается автоматически на практике">
-            {SANDBOX_LABEL}
-          </span>
-        ) : (
-          <DepartmentCell
-            row={row}
-            departments={departments}
-            onSave={(id) => onPatch(row, { department_id: id })}
-          />
-        )}
+        <DepartmentCell
+          row={row}
+          departments={departments}
+          onPlace={(id) => onPlace(row, id)}
+          onUnplace={() => onUnplace(row)}
+        />
       </td>
 
       <td className="hf-statuses-td">
@@ -1483,24 +1686,42 @@ const initialsOf = (name: string | null | undefined) =>
 
 /** Отдел — цветная пилюля, как должность: так строки читаются глазами, а не
  *  вычитываются (Мария, 28.09.2026). Под пилюлей прозрачный select — правка
- *  осталась в один клик, а длинное название видно целиком в подсказке. */
+ *  осталась в один клик, а длинное название видно целиком в подсказке.
+ *
+ *  В строке ПЕСОЧНИЦЫ выбор отдела ДОБАВЛЯЕТ человека в команду: на практике
+ *  он остаётся, в команде появляется ещё одна строка (решение владельца
+ *  30.09.2026 — «песочница родительский отдел, Facebook дочерний, а человек
+ *  один объект»). В строке команды выбор переносит её в другой отдел, а «×»
+ *  убирает человека из отдела; из песочницы «×» не предлагаем. */
 function DepartmentCell({
-  row, departments, onSave,
+  row, departments, onPlace, onUnplace,
 }: {
   row: BoardRow;
   departments: BoardDepartment[];
-  onSave: (id: number | null) => void;
+  onPlace: (id: number) => void;
+  onUnplace: () => void;
 }) {
   const name = row.department_name || "";
   const hue = pillHue(name);
-  const options = departments.filter((d) => !d.hidden || d.id === row.department_id);
+  const options = departments.filter(
+    (d) =>
+      (!d.hidden || d.id === row.department_id) &&
+      d.id !== row.department_id &&
+      // Из песочницы добавляют в команду, а не в другую песочницу.
+      (!row.department_is_sandbox || d.kind === "team")
+  );
+  const hint = row.department_is_sandbox
+    ? "Добавить в отдел (на практике останется)"
+    : row.department_id
+      ? "Перевести в другой отдел"
+      : "Поставить в отдел";
 
   return (
     <div className="hf-statuses-dept">
       {name ? (
         <span
           className="hf-statuses-pill"
-          title={name}
+          title={row.parent_department_name ? `${name} · песочница ${row.parent_department_name}` : name}
           style={{
             background: `hsl(${hue} 70% 94%)`,
             color: `hsl(${hue} 55% 32%)`,
@@ -1514,15 +1735,25 @@ function DepartmentCell({
       )}
       <select
         className="hf-statuses-dept-select"
-        value={row.department_id ?? ""}
-        title={name}
-        onChange={(e) => onSave(e.target.value ? Number(e.target.value) : null)}
+        value=""
+        title={hint}
+        onChange={(e) => { if (e.target.value) onPlace(Number(e.target.value)); }}
       >
-        <option value="">—</option>
+        <option value="">{hint}</option>
         {options.map((d) => (
           <option key={d.id} value={d.id}>{d.name}{d.hidden ? " (скрыт)" : ""}</option>
         ))}
       </select>
+      {row.placement_id != null && !row.department_is_sandbox && (
+        <button
+          type="button"
+          className="hf-statuses-dept-remove"
+          title={`Убрать из отдела «${name}»`}
+          onClick={(e) => { e.stopPropagation(); onUnplace(); }}
+        >
+          <X size={11} />
+        </button>
+      )}
     </div>
   );
 }

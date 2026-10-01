@@ -13,6 +13,8 @@ import { useAuthStore } from '@/stores/authStore';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { getAssignableUsers, assignVacancy, takeVacancy, declineVacancy } from '@/services/api';
 import type { AssignableUser } from '@/services/api';
+import { getBoardDepartments } from '@/services/api/staffBoard';
+import type { BoardDepartment } from '@/services/api/staffBoard';
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
 import { isVacancyParticipant, hasPersonallyAccepted, isExplicitlyAssigned, getVacancyExitOptions } from '@/utils/vacancy';
 
@@ -562,6 +564,19 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     () => vacancy?.hiring_manager_name || String(vacancy?.extra_data?.customer_name || ''),
   );
   const [showCustomerDD, setShowCustomerDD] = useState(false);
+  // Песочница воронки: куда человек попадёт на доске «Статусы», выйдя на
+  // практику. Список берём с доски — это её справочник, а не оргструктура.
+  const [sandboxId, setSandboxId] = useState<string>(
+    () => (vacancy?.extra_data?.board_sandbox_id != null
+      ? String(vacancy.extra_data.board_sandbox_id)
+      : ''),
+  );
+  const [sandboxes, setSandboxes] = useState<BoardDepartment[]>([]);
+  useEffect(() => {
+    getBoardDepartments()
+      .then((list) => setSandboxes(list.filter((d) => d.kind === 'sandbox' && !d.hidden)))
+      .catch(() => setSandboxes([]));
+  }, []);
   const customerRef = useRef<HTMLDivElement>(null);
 
   // Ранее введённые заказчики — собираем по всем вакансиям орга
@@ -688,6 +703,8 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
         extra_data: {
           ...(vacancy?.extra_data || {}),
           customer_name: customerText.trim() || undefined,
+          // Песочница воронки: с практики человек попадёт именно в неё.
+          board_sandbox_id: sandboxId ? Number(sandboxId) : undefined,
         },
       };
 
@@ -1137,6 +1154,24 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                       { value: "private", label: "Скрыта от коллег", icon: <HuntflowEyeOffIcon className="hf-vacancy-select-icon-svg" /> },
                     ]}
                     onChange={(value) => setFormData({ ...formData, visible_to_all: value === "all" })}
+                  />
+                </div>
+                <div>
+                  {/* Куда человек попадает, выйдя на практику. Песочниц
+                      несколько (SANDBOX, SANDBOX MOBILE, SANDBOX R&D), угадать
+                      нельзя — поэтому её выбирают у воронки (Мария,
+                      30.09.2026). Не выбрана — человек появится на доске
+                      «Статусы» без отдела, и песочницу укажут руками. */}
+                  <label className={hfLabelClass}>Песочница на практике</label>
+                  <HfSelect
+                    id="board-sandbox"
+                    value={sandboxId}
+                    options={[
+                      { value: "", label: "Спросить потом" },
+                      ...sandboxes.map((d) => ({ value: String(d.id), label: d.name })),
+                    ]}
+                    onChange={(value) => setSandboxId(String(value))}
+                    disabled={isReadOnlyRequest}
                   />
                 </div>
                 <div>

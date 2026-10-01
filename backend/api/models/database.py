@@ -2036,8 +2036,58 @@ class BoardDepartment(Base):
     # в списке и в выборе. Удаления нет намеренно (решение владельца
     # 23.09.2026): неактуальные отделы прячут, а не сносят.
     hidden_at = Column(DateTime, nullable=True)
+    # Иерархия отделов (решение владельца 30.09.2026). Родительские — это
+    # песочницы (SANDBOX, SANDBOX MOBILE, SANDBOX R&D): туда попадают с
+    # практики. Дочерние — команды (Facebook, Google, SEO…), куда человека
+    # переводят ИЗ песочницы, оставаясь в ней же.
+    # sandbox — песочница (родительский отдел), team — команда внутри неё.
+    # Роль отдела задаётся явно: «команда без выбранной песочницы» и песочница
+    # по одному пустому parent_id не отличаются.
+    kind = Column(String(10), default="team", server_default="team")
+    # sandbox — песочница (родительский отдел), team — команда внутри неё.
+    # Роль задаётся явно: «команду без выбранной песочницы» и песочницу по
+    # одному пустому parent_id не отличить.
+    kind = Column(String(10), default="team", server_default="team")
+    parent_id = Column(Integer, ForeignKey("staff_board_departments.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Кому отдел виден: all — всем HR, admins — только владельцам и админам,
+    # custom — перечисленным в visible_to. Юниты видят Мария и Настя, а
+    # рекрутёрам нужны только песочницы (Мария, 30.09.2026).
+    visibility = Column(String(10), default="all", server_default="all")
+    visible_to = Column(JSON, default=list)   # user_id, когда visibility = custom
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=func.now())
+
+
+class BoardPlacement(Base):
+    """Человек в отделе на доске «Статусы».
+
+    Кандидат в базе ОДИН, а мест у него может быть несколько: пришёл на
+    практику в SANDBOX, перешёл в Facebook — и остался в обоих (решение
+    владельца 30.09.2026). Поэтому дублируем не карточку кандидата, а ссылку
+    на него: строка доски = назначение.
+
+    Что принадлежит человеку (статус, HR, сорсер, должность, Telegram), живёт
+    в самой карточке и одинаково во всех отделах: уволили в Facebook — уволен
+    и в песочнице, потому что это один и тот же объект. Что принадлежит
+    отделу — дата выхода в него и вехи 2 недели / 1 / 3 / 12 месяцев — лежит
+    здесь, в extra, у каждого назначения своё.
+    """
+    __tablename__ = "staff_board_placements"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    department_id = Column(Integer, ForeignKey("staff_board_departments.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Даты и отметки ЭТОГО отдела: ключи те же, что раньше лежали в карточке
+    # кандидата (department_transfer_date, w2_date, m1_done…) — так код доски
+    # читает их одинаково и для старых карточек, и для новых назначений.
+    extra = Column(JSON, default=dict)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("entity_id", "department_id", name="uq_placement_entity_dept"),
+    )
 
 
 class BoardDepartmentOrder(Base):
