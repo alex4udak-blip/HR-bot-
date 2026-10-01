@@ -9524,6 +9524,12 @@ body.performance-mode .glass-card:hover {
   color: var(--hf-main-900);
   cursor: pointer;
 }
+.hf-statuses-modal-note {
+  margin-left: var(--hf-space-xxs);
+  font-style: normal;
+  font-size: var(--hf-fs-3xs);
+  color: var(--hf-main-600);
+}
 .hf-statuses-modal-foot {
   display: flex;
   justify-content: flex-end;

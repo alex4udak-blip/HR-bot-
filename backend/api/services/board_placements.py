@@ -108,35 +108,67 @@ async def migrate_board_departments_once(db) -> int:
 
 # --- Практика ведёт в песочницу вакансии -------------------------------------
 
-SANDBOX_KEY = "board_sandbox_id"   # Vacancy.extra_data
+SANDBOX_KEY = "board_sandbox_id"        # Vacancy.extra_data
+DEFAULT_SANDBOX_KEY = "board_default_sandbox_id"   # Organization.settings
 
 
-async def ensure_sandbox_placement(db, entity_id: int, vacancy) -> bool:
-    """Поставить человека в песочницу вакансии, когда он вышел на практику.
+async def resolve_sandbox(db, org_id: int, vacancy=None):
+    """Какая песочница ждёт человека, вышедшего на практику.
 
-    Какая у воронки песочница, HR задаёт в самой вакансии
-    (``extra_data["board_sandbox_id"]``). Не задана — человек появляется на
-    доске «без отдела», и песочницу ему выберут руками: угадывать нельзя, их
-    несколько (решение владельца 30.09.2026).
+    По порядку: выбранная у ВОРОНКИ → песочница организации «по умолчанию» →
+    единственная песочница, если она в организации одна. Ничего не нашлось —
+    человек появится на доске «без отдела», и песочницу ему укажут руками.
 
-    Ничего не делает, если человек уже стоит хоть в одном отделе: доска —
-    не место для автоматических переездов. Не коммитит.
+    Поле у воронки появилось 30.09.2026, и по умолчанию оно пустое: без
+    запасных вариантов автоподстановка не срабатывала вообще, пока HR не
+    пройдёт по каждой воронке (владелец, 01.10.2026).
     """
-    if vacancy is None:
-        return False
-    extra = vacancy.extra_data if isinstance(vacancy.extra_data, dict) else {}
-    try:
-        dept_id = int(extra.get(SANDBOX_KEY))
-    except (TypeError, ValueError):
-        return False
+    from ..models.database import Organization
 
-    dept = (await db.execute(
+    extra = vacancy.extra_data if (vacancy is not None and isinstance(vacancy.extra_data, dict)) else {}
+    candidates = []
+    try:
+        candidates.append(int(extra.get(SANDBOX_KEY)))
+    except (TypeError, ValueError):
+        pass
+
+    org = await db.get(Organization, org_id)
+    settings = org.settings if (org is not None and isinstance(org.settings, dict)) else {}
+    try:
+        candidates.append(int(settings.get(DEFAULT_SANDBOX_KEY)))
+    except (TypeError, ValueError):
+        pass
+
+    for dept_id in candidates:
+        dept = (await db.execute(
+            select(BoardDepartment).where(
+                BoardDepartment.id == dept_id, BoardDepartment.org_id == org_id
+            )
+        )).scalar_one_or_none()
+        if dept is not None:
+            return dept
+
+    # Песочница одна — выбирать не из чего, ставим в неё.
+    only = (await db.execute(
         select(BoardDepartment).where(
-            BoardDepartment.id == dept_id, BoardDepartment.org_id == vacancy.org_id
+            BoardDepartment.org_id == org_id,
+            BoardDepartment.kind == "sandbox",
+            BoardDepartment.hidden_at.is_(None),
         )
-    )).scalar_one_or_none()
-    if dept is None:
-        return False
+    )).scalars().all()
+    return only[0] if len(only) == 1 else None
+
+
+async def ensure_sandbox_placement(db, entity_id: int, vacancy=None, org_id: int = None) -> bool:
+    """Поставить человека в песочницу, когда он вышел на практику.
+
+    Ничего не делает, если человек уже стоит хоть в одном отделе: доска — не
+    место для автоматических переездов. Не коммитит.
+    """
+    if org_id is None:
+        if vacancy is None:
+            return False
+        org_id = vacancy.org_id
 
     already = (await db.execute(
         select(BoardPlacement.id).where(BoardPlacement.entity_id == entity_id).limit(1)
@@ -144,11 +176,49 @@ async def ensure_sandbox_placement(db, entity_id: int, vacancy) -> bool:
     if already is not None:
         return False
 
+    dept = await resolve_sandbox(db, org_id, vacancy)
+    if dept is None:
+        return False
+
     db.add(BoardPlacement(
-        org_id=vacancy.org_id, entity_id=entity_id, department_id=dept.id, extra={},
+        org_id=org_id, entity_id=entity_id, department_id=dept.id, extra={},
     ))
     logger.info(
-        f"BOARD_PLACEMENT auto: entity {entity_id} → песочница «{dept.name}» "
-        f"(вакансия {vacancy.id})"
+        f"BOARD_PLACEMENT auto: entity {entity_id} → песочница «{dept.name}»"
+        + (f" (вакансия {vacancy.id})" if vacancy is not None else "")
     )
     return True
+
+
+async def place_current_practice(db, org_id: int, dept_id: int) -> int:
+    """Поставить в песочницу всех, кто уже на практике и ни в каком отделе.
+
+    Нужно в момент, когда песочницу помечают «сюда ведёт практика по
+    умолчанию»: у тех, кто вышел на практику РАНЬШЕ, отдела нет, и доска
+    показывает их пустыми (владелец, 01.10.2026). Тех, кто уже стоит хоть
+    где-то, не трогаем. Не коммитит. Возвращает, скольких поставили.
+    """
+    from ..models.database import Entity, EntityStatus
+
+    placed_ids = set((await db.execute(
+        select(BoardPlacement.entity_id).where(BoardPlacement.org_id == org_id)
+    )).scalars().all())
+    rows = (await db.execute(
+        select(Entity.id).where(
+            Entity.org_id == org_id,
+            Entity.status == EntityStatus.probation,
+            Entity.is_archived.is_not(True),
+        )
+    )).scalars().all()
+
+    added = 0
+    for ent_id in rows:
+        if ent_id in placed_ids:
+            continue
+        db.add(BoardPlacement(
+            org_id=org_id, entity_id=ent_id, department_id=dept_id, extra={},
+        ))
+        added += 1
+    if added:
+        logger.info(f"BOARD_PLACEMENT backfill: {added} практикантов → отдел {dept_id}")
+    return added

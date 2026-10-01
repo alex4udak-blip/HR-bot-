@@ -386,3 +386,120 @@ async def test_practice_without_sandbox_stays_unassigned(
     assert await ensure_sandbox_placement(db_session, e.id, vac) is False
     row = (await _rows(client, admin_user, e.id))[0]
     assert row["department_id"] is None and row["placement_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_default_sandbox_used_when_vacancy_has_none(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Песочницы у воронки нет — берём песочницу организации «по умолчанию».
+
+    Поле у воронки появилось 30.09.2026 и у всех пустое: без запасного варианта
+    отдел не проставлялся вообще (владелец, 01.10.2026).
+    """
+    from api.models.database import Vacancy, VacancyStatus
+    from api.services.board_placements import ensure_sandbox_placement
+
+    main = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    await _dept(client, admin_user, "SANDBOX MOBILE", kind="sandbox")  # их несколько
+    r = await client.patch(
+        f"/api/staff-board/departments/{main['id']}", json={"is_default": True},
+        headers=_h(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["is_default"] is True
+
+    vac = Vacancy(
+        org_id=organization.id, title="Трафик", status=VacancyStatus.open,
+        created_by=admin_user.id, created_at=datetime.utcnow(), extra_data={},
+    )
+    db_session.add(vac)
+    e = await _person(db_session, organization, admin_user)
+    await db_session.commit()
+    await db_session.refresh(vac)
+
+    assert await ensure_sandbox_placement(db_session, e.id, vac, org_id=organization.id) is True
+    await db_session.commit()
+    assert (await _rows(client, admin_user, e.id))[0]["department_name"] == "SANDBOX"
+
+    # Флаг один на организацию: он виден в списке ровно у одной песочницы.
+    listed = (await client.get("/api/staff-board/departments", headers=_h(admin_user))).json()
+    assert [d["name"] for d in listed if d["is_default"]] == ["SANDBOX"]
+
+
+@pytest.mark.asyncio
+async def test_single_sandbox_is_used_without_any_setting(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Песочница в организации одна — выбирать не из чего, ставим в неё."""
+    from api.services.board_placements import ensure_sandbox_placement
+
+    await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    e = await _person(db_session, organization, admin_user)
+
+    assert await ensure_sandbox_placement(db_session, e.id, None, org_id=organization.id) is True
+    await db_session.commit()
+    assert (await _rows(client, admin_user, e.id))[0]["department_name"] == "SANDBOX"
+
+
+@pytest.mark.asyncio
+async def test_many_sandboxes_without_default_leave_unassigned(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Песочниц несколько и по умолчанию не выбрана — угадывать не будем."""
+    from api.services.board_placements import ensure_sandbox_placement
+
+    await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    await _dept(client, admin_user, "SANDBOX R&D", kind="sandbox")
+    e = await _person(db_session, organization, admin_user)
+
+    assert await ensure_sandbox_placement(db_session, e.id, None, org_id=organization.id) is False
+    assert (await _rows(client, admin_user, e.id))[0]["department_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_status_change_from_card_places_into_sandbox(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Перевод в «Практику» из карточки тоже ставит в песочницу."""
+    await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    e = await _person(db_session, organization, admin_user, status=EntityStatus.hired)
+
+    r = await client.patch(
+        f"/api/entities/{e.id}/status",
+        json={"status": EntityStatus.probation.value}, headers=_h(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    row = (await _rows(client, admin_user, e.id))[0]
+    assert row["department_name"] == "SANDBOX"
+
+
+@pytest.mark.asyncio
+async def test_marking_default_places_current_practice(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Назвали песочницу «по умолчанию» — те, кто уже на практике, встают в неё.
+
+    До этого отдел проставлялся только новым: вышедшие на практику раньше
+    оставались пустыми, и доска показывала «Практика» без отдела (владелец,
+    01.10.2026).
+    """
+    sand = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    team = await _dept(client, admin_user, "Facebook", kind="team", parent_id=sand["id"])
+    old_hand = await _person(db_session, organization, admin_user, name="Старый Практикант")
+    in_team = await _person(db_session, organization, admin_user, name="Уже В Отделе")
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": in_team.id, "department_id": team["id"]}, headers=_h(admin_user),
+    )
+
+    r = await client.patch(
+        f"/api/staff-board/departments/{sand['id']}", json={"is_default": True},
+        headers=_h(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["placed_now"] == 1   # только тот, кто был без отдела
+
+    assert (await _rows(client, admin_user, old_hand.id))[0]["department_name"] == "SANDBOX"
+    # Стоявшего в команде не трогаем: доска — не место для самовольных переездов.
+    assert [x["department_name"] for x in await _rows(client, admin_user, in_team.id)] == ["Facebook"]

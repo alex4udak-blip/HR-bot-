@@ -1532,6 +1532,26 @@ async def update_entity_status(
             apps[0].last_stage_change_at = datetime.utcnow()
             logger.info(f"Synchronized entity {entity_id} status {data.status} to application {apps[0].id} stage {new_stage}")
 
+    # Практика ведёт в песочницу: статус меняют и отсюда (drag&drop на «Все
+    # кандидаты»), а не только переводом по воронке.
+    if data.status == EntityStatus.probation:
+        try:
+            from ...services.board_placements import ensure_sandbox_placement
+            single = (await db.execute(
+                select(Vacancy)
+                .join(VacancyApplication, VacancyApplication.vacancy_id == Vacancy.id)
+                .where(
+                    VacancyApplication.entity_id == entity_id,
+                    Vacancy.status != VacancyStatus.closed,
+                )
+                .limit(2)
+            )).scalars().all()
+            await ensure_sandbox_placement(
+                db, entity_id, single[0] if len(single) == 1 else None, org_id=org.id
+            )
+        except Exception:
+            logger.exception("Не удалось поставить entity=%s в песочницу", entity_id)
+
     await db.commit()
     await db.refresh(entity)
 

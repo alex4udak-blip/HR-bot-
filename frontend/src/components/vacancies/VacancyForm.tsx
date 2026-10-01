@@ -1167,7 +1167,14 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     id="board-sandbox"
                     value={sandboxId}
                     options={[
-                      { value: "", label: "Спросить потом" },
+                      {
+                        value: "",
+                        // Пусто — сработает песочница организации «по умолчанию»;
+                        // её и показываем, чтобы было видно, куда попадёт человек.
+                        label: sandboxes.find((d) => d.is_default)
+                          ? `По умолчанию: ${sandboxes.find((d) => d.is_default)!.name}`
+                          : "Спросить потом",
+                      },
                       ...sandboxes.map((d) => ({ value: String(d.id), label: d.name })),
                     ]}
                     onChange={(value) => setSandboxId(String(value))}

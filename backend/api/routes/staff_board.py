@@ -40,6 +40,7 @@ from ..models.database import (
     NameTag, entity_name_tag_association,
 )
 from ..services.auth import get_current_user, get_user_org
+from ..services.board_placements import DEFAULT_SANDBOX_KEY, place_current_practice
 
 logger = logging.getLogger("hr-analyzer.staff-board")
 
@@ -254,6 +255,12 @@ class BoardDept(BaseModel):
     # all — отдел видят все HR; custom — только те, кто перечислен в visible_to.
     visibility: str = "all"
     visible_to: List[int] = []
+    # Песочница по умолчанию: сюда попадают вышедшие на практику, если у их
+    # воронки своя песочница не выбрана. Одна на организацию.
+    is_default: bool = False
+    # Скольких практикантов без отдела только что поставили сюда (ответ на
+    # включение «по умолчанию»); в остальных ответах пусто.
+    placed_now: Optional[int] = None
 
 
 DEPT_KINDS = ("sandbox", "team")
@@ -266,6 +273,7 @@ class BoardDeptCreate(BaseModel):
     parent_id: Optional[int] = None
     visibility: str = "all"
     visible_to: Optional[List[int]] = None
+    is_default: Optional[bool] = None
 
 
 class BoardDeptOrder(BaseModel):
@@ -281,6 +289,7 @@ class BoardDeptUpdate(BaseModel):
     parent_id: Optional[int] = None
     visibility: Optional[str] = None
     visible_to: Optional[List[int]] = None
+    is_default: Optional[bool] = None
 
 
 class BoardAssignee(BaseModel):
@@ -459,7 +468,22 @@ def _first_telegram(entity: Entity) -> Optional[str]:
     return None
 
 
-def _dept_out(d: BoardDepartment) -> "BoardDept":
+def _default_sandbox_id(org: Organization) -> Optional[int]:
+    settings = org.settings if isinstance(org.settings, dict) else {}
+    return _as_int(settings.get(DEFAULT_SANDBOX_KEY))
+
+
+def _set_default_sandbox(org: Organization, dept_id: Optional[int]) -> None:
+    settings = dict(org.settings) if isinstance(org.settings, dict) else {}
+    if dept_id is None:
+        settings.pop(DEFAULT_SANDBOX_KEY, None)
+    else:
+        settings[DEFAULT_SANDBOX_KEY] = dept_id
+    org.settings = settings
+    flag_modified(org, "settings")
+
+
+def _dept_out(d: BoardDepartment, default_id: Optional[int] = None) -> "BoardDept":
     return BoardDept(
         id=d.id,
         name=d.name,
@@ -468,6 +492,7 @@ def _dept_out(d: BoardDepartment) -> "BoardDept":
         parent_id=d.parent_id,
         visibility=(d.visibility or "all"),
         visible_to=[v for v in ([_as_int(x) for x in (d.visible_to or [])]) if v is not None],
+        is_default=(default_id is not None and d.id == default_id),
     )
 
 
@@ -910,7 +935,8 @@ async def list_board_departments(
     rows = sorted(rows, key=lambda d: (order.get(d.id, len(order)), d.name.lower()))
     # Скрытые отдаём тоже: доска показывает их по кнопке «Показать скрытые», а
     # строка человека из скрытого отдела должна называть отдел, а не пустоту.
-    return [_dept_out(d) for d in rows]
+    default_id = _default_sandbox_id(org)
+    return [_dept_out(d, default_id) for d in rows]
 
 
 @router.put("/departments/order", response_model=List[BoardDept])
@@ -972,7 +998,7 @@ async def create_board_department(
         if same.hidden_at is not None:
             same.hidden_at = None
             await db.commit()
-        return _dept_out(same)
+        return _dept_out(same, _default_sandbox_id(org))
 
     kind, parent_id, visibility, visible_to = await _dept_role_fields(
         db, org.id, data.kind, data.parent_id, data.visibility, data.visible_to
@@ -983,13 +1009,16 @@ async def create_board_department(
         visibility=visibility, visible_to=visible_to,
     )
     db.add(dept)
+    await db.flush()
+    if data.is_default and kind == "sandbox":
+        _set_default_sandbox(org, dept.id)
     await db.commit()
     await db.refresh(dept)
     logger.info(
         f"BOARD_DEPT create: «{name}» (id={dept.id}, {kind}, parent={parent_id}, "
         f"visibility={visibility}) by user {current_user.id}"
     )
-    return _dept_out(dept)
+    return _dept_out(dept, _default_sandbox_id(org))
 
 
 @router.patch("/departments/{dept_id}", response_model=BoardDept)
@@ -1040,8 +1069,26 @@ async def update_board_department(
             f"visibility={visibility} by user {current_user.id}"
         )
 
+    placed_now: Optional[int] = None
+    if data.is_default is not None:
+        if data.is_default:
+            if (data.kind or dept.kind or "team") != "sandbox":
+                raise HTTPException(400, "По умолчанию можно назначить только песочницу")
+            _set_default_sandbox(org, dept.id)
+            # Те, кто вышел на практику РАНЬШЕ, стоят без отдела — доска
+            # показывает их пустыми. Раз песочницу назвали, ставим их в неё.
+            placed_now = await place_current_practice(db, org.id, dept.id)
+        elif _default_sandbox_id(org) == dept.id:
+            _set_default_sandbox(org, None)
+        logger.info(
+            f"BOARD_DEPT default sandbox: {'id=' + str(dept.id) if data.is_default else 'снята'} "
+            f"by user {current_user.id}"
+        )
+
     await db.commit()
-    return _dept_out(dept)
+    out = _dept_out(dept, _default_sandbox_id(org))
+    out.placed_now = placed_now
+    return out
 
 
 async def _single_row(

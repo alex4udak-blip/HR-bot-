@@ -157,6 +157,12 @@ export interface BoardDepartment {
   /** all — видят все HR; custom — только перечисленные в visible_to. */
   visibility: 'all' | 'custom';
   visible_to: number[];
+  /** Песочница по умолчанию: сюда попадают вышедшие на практику, если у их
+   *  воронки своя песочница не выбрана. Одна на организацию. */
+  is_default: boolean;
+  /** Скольких практикантов без отдела поставили сюда при включении «по
+   *  умолчанию». Приходит только в ответе на это включение. */
+  placed_now?: number | null;
 }
 
 export interface BoardDepartmentInput {
@@ -166,6 +172,7 @@ export interface BoardDepartmentInput {
   visibility?: 'all' | 'custom';
   visible_to?: number[];
   hidden?: boolean;
+  is_default?: boolean;
 }
 
 export async function getBoardDepartments(): Promise<BoardDepartment[]> {

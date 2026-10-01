@@ -783,6 +783,7 @@ export default function StatusesPage() {
             onRenamed={(d) => setDepartments((cur) => cur.map((x) => (x.id === d.id ? d : x)))}
             onHidden={(d) => setDepartments((cur) => cur.map((x) => (x.id === d.id ? d : x)))}
             onReorder={setDepartments}
+            onRows={load}
           />
 
           <div className="hf-statuses-table-wrap">
@@ -1002,6 +1003,7 @@ function FilterSection({
  *  СВОЙ справочник доски, оргструктуру Enceladus он не трогает. */
 function DepartmentSidebar({
   departments, orgHr, counts, active, onSelect, onCreated, onRenamed, onHidden, onReorder,
+  onRows,
 }: {
   departments: BoardDepartment[];
   orgHr: { user_id: number; user_name: string | null }[];
@@ -1012,6 +1014,9 @@ function DepartmentSidebar({
   onRenamed: (d: BoardDepartment) => void;
   onHidden: (d: BoardDepartment) => void;
   onReorder: (list: BoardDepartment[]) => void;
+  /** Перечитать строки доски: включение песочницы «по умолчанию» ставит в неё
+   *  тех, кто уже на практике, — таблица должна это показать сразу. */
+  onRows: () => void;
 }) {
   // Перетаскивание отделов: порядок личный и сохраняется в базе.
   const [dragId, setDragId] = useState<number | null>(null);
@@ -1165,6 +1170,10 @@ function DepartmentSidebar({
             } else {
               onRenamed(d);
             }
+            if (d.placed_now) {
+              toast.success(`Практиканты без отдела переехали в «${d.name}»: ${d.placed_now}`);
+              onRows();
+            }
             setModal(null);
           }}
         />
@@ -1193,9 +1202,14 @@ function DepartmentModal({
   const [parentId, setParentId] = useState<number | null>(dept?.parent_id ?? null);
   const [visibility, setVisibility] = useState<"all" | "custom">(dept?.visibility ?? "all");
   const [visibleTo, setVisibleTo] = useState<number[]>(dept?.visible_to ?? []);
+  // Песочница по умолчанию: куда вести с практики, если у воронки своя не
+  // выбрана. Без этого отдел не проставлялся никому, пока HR не пройдёт по
+  // всем воронкам (владелец, 01.10.2026).
+  const [isDefault, setIsDefault] = useState(dept?.is_default ?? false);
   const [busy, setBusy] = useState(false);
 
   const sandboxes = departments.filter((d) => d.kind === "sandbox" && d.id !== dept?.id);
+  const defaultName = departments.find((d) => d.is_default && d.id !== dept?.id)?.name;
 
   const toggle = (id: number) =>
     setVisibleTo((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
@@ -1215,6 +1229,7 @@ function DepartmentModal({
       parent_id: kind === "sandbox" ? null : parentId,
       visibility,
       visible_to: visibility === "custom" ? visibleTo : [],
+      is_default: kind === "sandbox" ? isDefault : false,
     };
     setBusy(true);
     try {
@@ -1298,6 +1313,20 @@ function DepartmentModal({
                 <option key={d.id} value={d.id}>{d.name}</option>
               ))}
             </select>
+          )}
+          {kind === "sandbox" && (
+            <label className="hf-statuses-modal-check">
+              <input
+                type="checkbox"
+                checked={isDefault}
+                disabled={busy}
+                onChange={() => setIsDefault((v) => !v)}
+              />
+              Сюда ведёт практика по умолчанию
+              {defaultName && !isDefault && (
+                <em className="hf-statuses-modal-note">сейчас это «{defaultName}»</em>
+              )}
+            </label>
           )}
         </div>
 
