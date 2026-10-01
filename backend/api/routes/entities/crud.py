@@ -747,6 +747,11 @@ async def get_entity(
         )
         transferred_to_name = transferred_to_result.scalar()
 
+    # Скоуп по воронкам: из карточки убираем следы чужих воронок (метки
+    # «HR: Имя · Воронка» и заметки, привязанные к ним).
+    from ...services.vacancy_scope import filter_extra_for_scope, get_scope_vacancy_ids
+    _scope_ids = await get_scope_vacancy_ids(current_user, db)
+
     return {
         "id": entity.id,
         "type": entity.type,
@@ -761,7 +766,7 @@ async def get_entity(
         "company": entity.company,
         "position": entity.position,
         "tags": entity.tags or [],
-        "extra_data": entity.extra_data or {},
+        "extra_data": filter_extra_for_scope(entity.extra_data or {}, _scope_ids),
         "created_by": entity.created_by,
         "department_id": entity.department_id,
         "department_name": department_name,

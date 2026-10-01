@@ -42,7 +42,9 @@ from api.models.database import (
 )
 from api.services.auth import get_current_user, get_user_org, has_full_database_access
 from api.services.shadow_filter import get_isolated_creator_ids
-from api.services.vacancy_scope import entity_scope_filter, get_scope_vacancy_ids
+from api.services.vacancy_scope import (
+    entity_scope_filter, filter_extra_for_scope, get_scope_vacancy_ids,
+)
 
 logger = logging.getLogger("hr-analyzer.candidate-search")
 
@@ -1033,7 +1035,13 @@ async def get_candidates_kanban(
                     VacancyApplication.rejection_reason,
                 ).select_from(VacancyApplication)
                 .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
-                .where(VacancyApplication.entity_id.in_(entity_ids))
+                .where(
+                    VacancyApplication.entity_id.in_(entity_ids),
+                    # Скоуп по воронкам: чипы этапов и подпись воронки в строке
+                    # списка считаются ТОЛЬКО по разрешённым воронкам — иначе у
+                    # кандидата из двух воронок светилось название чужой.
+                    *([VacancyApplication.vacancy_id.in_(list(scope_ids))] if scope_ids else []),
+                )
             )
             from .vacancies.common import INACTIVE_STAGES as _INACTIVE
             _by_entity: dict = {}
@@ -1141,7 +1149,7 @@ async def get_candidates_kanban(
                 funnels=funnels_map.get(e.id, []),
                 rejection_reason=rejection_map.get(e.id),
                 is_archived=bool(getattr(e, "is_archived", False)),
-                extra_data=ed if ed else None,
+                extra_data=filter_extra_for_scope(ed, scope_ids) if ed else None,
                 version=getattr(e, "version", None) or 1,
                 headline_tags=headline_map.get(e.id, []),
             ))

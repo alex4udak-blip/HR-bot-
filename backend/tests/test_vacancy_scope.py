@@ -21,6 +21,7 @@ from api.services.vacancy_scope import (
     _as_ids,
     ensure_vacancy_visible,
     entity_scope_filter,
+    filter_extra_for_scope,
     get_scope_vacancy_ids,
     vacancy_scope_filter,
 )
@@ -139,3 +140,36 @@ async def test_own_vacancy_passes():
 async def test_user_without_scope_sees_every_vacancy():
     db = _FakeDB(None)
     await ensure_vacancy_visible(999, _user(), db)  # не бросает
+
+
+def test_extra_hides_foreign_funnel_traces():
+    """Метка «HR: Имя · Воронка» выдавала НАЗВАНИЕ чужой воронки.
+
+    Кандидат из двух воронок наблюдателю виден (он есть и в разрешённой), но
+    узнавать из его карточки, что он проходит ещё и в «Product Analyst», ему
+    незачем — поймали на скриншоте 01.10.2026.
+    """
+    extra = {
+        "system_hr_tags": [
+            {"name": "Мария", "vacancy_id": 125, "vacancy_title": "Трафик"},
+            {"name": "Мария", "vacancy_id": 156, "vacancy_title": "Product Analyst"},
+            {"name": "Мария"},  # без воронки — общая метка, остаётся
+        ],
+        "notes": [
+            {"text": "по трафику", "vacancy_id": 125},
+            {"text": "по аналитике", "vacancy_id": 156},
+            {"text": "общий комментарий"},
+        ],
+        "city": "Минск",
+    }
+    cleaned = filter_extra_for_scope(extra, {125})
+    assert [t.get("vacancy_title") for t in cleaned["system_hr_tags"]] == ["Трафик", None]
+    assert [n["text"] for n in cleaned["notes"]] == ["по трафику", "общий комментарий"]
+    assert cleaned["city"] == "Минск"
+    # Исходный словарь не трогаем — он лежит в объекте SQLAlchemy.
+    assert len(extra["system_hr_tags"]) == 3
+
+
+def test_extra_untouched_without_scope():
+    extra = {"system_hr_tags": [{"vacancy_id": 156}]}
+    assert filter_extra_for_scope(extra, None) is extra

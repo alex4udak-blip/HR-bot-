@@ -142,3 +142,35 @@ async def ensure_entity_visible(entity_id: int, user: Optional[User], db: AsyncS
     if not await entity_in_scope(entity_id, scope_ids, db):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Кандидат не найден")
+
+
+def filter_extra_for_scope(extra: Optional[dict], scope_ids: Optional[Iterable[int]]) -> Optional[dict]:
+    """Убрать из extra_data следы чужих воронок (метки «HR: Имя · Воронка»).
+
+    Карточку кандидата из «своей» воронки человек видит целиком, и вместе с ней
+    видел названия ОСТАЛЬНЫХ воронок, в которых тот состоит, — через системные
+    метки `system_hr_tags` и подписи к заметкам. Для скоупа это лишнее: сам факт
+    чужой воронки (и её название) — тоже информация.
+    """
+    if not scope_ids or not isinstance(extra, dict):
+        return extra
+    allowed = {int(v) for v in scope_ids}
+    tags = extra.get("system_hr_tags")
+    notes = extra.get("notes")
+    if not isinstance(tags, list) and not isinstance(notes, list):
+        return extra
+    cleaned = dict(extra)
+    if isinstance(tags, list):
+        cleaned["system_hr_tags"] = [
+            t for t in tags
+            if not isinstance(t, dict) or t.get("vacancy_id") is None
+            or int(t.get("vacancy_id")) in allowed
+        ]
+    if isinstance(notes, list):
+        # Заметка, привязанная к чужой воронке, тоже не показывается.
+        cleaned["notes"] = [
+            n for n in notes
+            if not isinstance(n, dict) or n.get("vacancy_id") is None
+            or int(n.get("vacancy_id")) in allowed
+        ]
+    return cleaned
