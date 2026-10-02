@@ -88,16 +88,18 @@ function renderModal(props: Partial<React.ComponentProps<typeof ParserModal>> = 
   const onClose = vi.fn();
   const onParsed = vi.fn();
   const onAttachedToEntity = vi.fn();
+  const onCreated = vi.fn();
   const utils = render(
     <ParserModal
       type="resume"
       onClose={onClose}
       onParsed={onParsed}
       onAttachedToEntity={onAttachedToEntity}
+      onCreated={onCreated}
       {...props}
     />,
   );
-  return { ...utils, onClose, onParsed, onAttachedToEntity };
+  return { ...utils, onClose, onParsed, onAttachedToEntity, onCreated };
 }
 
 function chooseFile(file: File) {
@@ -219,6 +221,17 @@ describe('ParserModal — загрузка резюме файлом', () => {
       expect(toast.success).toHaveBeenCalledWith('Кандидат добавлен');
       expect(createApplication).not.toHaveBeenCalled();
       expect(addEntityNote).not.toHaveBeenCalled();
+    });
+
+    it('отдаёт id созданного — страница открывает ЕГО карточку', async () => {
+      // Просьба Эльвиры 02.10.2026: после добавления по резюме справа оставался
+      // кандидат, открытый ДО добавления, — «можно на бегу не тому статусы
+      // поменять». Окно теперь говорит наверх, кого именно создало.
+      const { onCreated } = renderModal();
+      await uploadAndParse();
+      fireEvent.click(screen.getByText('Создать нового кандидата'));
+
+      await waitFor(() => expect(onCreated).toHaveBeenCalledWith(501));
     });
 
     it('без имени кандидата не создаёт', async () => {

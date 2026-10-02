@@ -1641,6 +1641,11 @@ export default function Layout() {
                 <div className="hf-hr-nav-list">
                   <NavLink
                     to="/all-candidates"
+                    // Метка «это переход из меню»: страница по ней сбрасывает
+                    // свой поиск и возвращается на вкладку «Все». Повторный клик
+                    // по пункту должен срабатывать, а не упираться в забытое
+                    // слово в строке поиска (Эльвира, 02.10.2026).
+                    state={{ resetSearch: true }}
                     data-tour={pathToTourAttribute["/all-candidates"]}
                     className={({ isActive }) =>
                       clsx(
@@ -2511,6 +2516,12 @@ export default function Layout() {
                             key={item.path}
                             to={item.path}
                             end={item.path.includes("?")}
+                            // Метка «это переход из меню» — страница по ней
+                            // сбрасывает свой поиск и возвращается на «Все»
+                            // (просьба Эльвиры 02.10.2026: повторный клик по
+                            // пункту должен срабатывать, а не упираться в
+                            // забытое слово в строке поиска).
+                            state={{ resetSearch: true }}
                             data-tour={pathToTourAttribute[item.path]}
                             className={({ isActive }) =>
                               clsx(
