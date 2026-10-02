@@ -535,6 +535,13 @@ export default function AllCandidatesPage() {
     user?.org_role === "admin";
   const anySelected = selectedIds.size > 0;
 
+  // «Поиска нет» = пустой запрос И убранная строка (владелец, 02.10.2026):
+  // пустое поле не должно занимать место под этапами.
+  const closeSearch = useCallback(() => {
+    setSearchText("");
+    setShowTopSearch(false);
+  }, []);
+
   // Открыть карточку конкретного кандидата (после добавления или прикрепления
   // резюме к существующему). Просьба Эльвиры 02.10.2026: «чтобы мы оказывались
   // после добавления на этом же кандидате» — раньше справа оставался тот, кто
@@ -542,7 +549,7 @@ export default function AllCandidatesPage() {
   // Поиск и вкладку этапа сбрасываем: новый кандидат — «Новый», и при активном
   // фильтре его бы просто не было видно в списке.
   const openCandidateCard = useCallback((entityId: number) => {
-    setSearchText("");
+    closeSearch();
     setActiveTabState("all");
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -562,7 +569,7 @@ export default function AllCandidatesPage() {
   const navState = location.state as { resetSearch?: boolean } | null;
   useEffect(() => {
     if (!navState?.resetSearch) return;
-    setSearchText("");
+    closeSearch();
     setActiveTabState("all");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
@@ -869,11 +876,23 @@ export default function AllCandidatesPage() {
     // затирается id прошлой открытой карточки, и ссылка начинает вести на чужого.
     if (deepLinkPendingRef.current != null) return;
     const curId = selectedCard?.id ?? null;
-    const next = computeEntityParamUpdate(searchParams, curId, prevSelectedIdRef.current);
+    const prevId = prevSelectedIdRef.current;
+    const next = computeEntityParamUpdate(searchParams, curId, prevId);
     prevSelectedIdRef.current = curId;
     // URL-запись — НЕ срочная: startTransition, чтобы ререндер от смены searchParams не
     // блокировал мгновенный отклик на клик (selectedCard уже обновлён синхронно).
-    if (next) startTransition(() => setSearchParams(next, { replace: true }));
+    // Пишем ФУНКЦИЕЙ от текущих параметров, а не заранее собранным объектом:
+    // снимок «до» мог затереть то, что в этот же момент поставил другой обработчик
+    // (например ?stage= при клике по вкладке). Само по себе поведения не меняет —
+    // страховка от гонки.
+    if (next) {
+      startTransition(() =>
+        setSearchParams(
+          (prev) => computeEntityParamUpdate(prev, curId, prevId) ?? prev,
+          { replace: true },
+        ),
+      );
+    }
   }, [selectedCard, searchParams, setSearchParams]);
 
   // Архивный кандидат (?archived=1): на доске его нет (отфильтрован is_archived),
@@ -1184,21 +1203,14 @@ export default function AllCandidatesPage() {
           ref={topStageScrollRef}
           className={clsx(
             "hf-top-stage-tabs no-scrollbar",
-            !showTopSearch && "hf-top-stage-tabs-padded",
+            "hf-top-stage-tabs-padded",
           )}
         >
           <motion.button
             layout="position"
             transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
             type="button"
-            onClick={() =>
-              setShowTopSearch((value) => {
-                // Свернули поле — забираем и запрос: в свёрнутом виде набранного
-                // не видно, а список продолжал молча резаться (Эльвира, 02.10.2026).
-                if (value) setSearchText("");
-                return !value;
-              })
-            }
+            onClick={() => (showTopSearch ? closeSearch() : setShowTopSearch(true))}
             className={clsx(
               "hf-top-stage-search-toggle",
               (showTopSearch || searchText) && "hf-top-stage-search-toggle-active",
@@ -1209,50 +1221,16 @@ export default function AllCandidatesPage() {
             <Search className="h-[var(--hf-candidates-search-icon)] w-[var(--hf-candidates-search-icon)]" />
           </motion.button>
 
-          {showTopSearch ? (
-            <div className="hf-top-stage-search">
-              <input
-                ref={topSearchRef}
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    if (searchText) setSearchText("");
-                    else setShowTopSearch(false);
-                  }
-                }}
-                placeholder="Поиск по имени, должности..."
-                className="hf-top-stage-search-input"
-              />
-              {searchText && loading ? (
-                <span className="hf-top-stage-search-action">
-                  <HfLoadingSpinner />
-                </span>
-              ) : searchText ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchText("");
-                    topSearchRef.current?.focus();
-                  }}
-                  className="hf-top-stage-search-action hf-top-stage-search-clear"
-                  title="Очистить поиск"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              ) : null}
-            </div>
-          ) : (
+          {(
             <>
               <motion.button
                 layout="position"
                 transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
                 onClick={() => {
-                  // Клик по вкладке очищает строку поиска (просьба Эльвиры
-                  // 02.10.2026): набранное имя висело в свёрнутом поле, человек
-                  // про него забывал, и переходы «не работали» — список молча
-                  // продолжал резаться по старому запросу.
-                  setSearchText("");
+                  // Клик по вкладке убирает поиск целиком (просьба Эльвиры
+                  // 02.10.2026): набранное имя висело незаметно, и переходы «не
+                  // работали» — список молча резался по старому запросу.
+                  closeSearch();
                   setActiveTab("all");
                   setSelectedCard(null);
                 }}
@@ -1315,7 +1293,7 @@ export default function AllCandidatesPage() {
                             transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
                             type="button"
                             onClick={() => {
-                              setSearchText("");
+                              closeSearch();
                               setActiveTab(col.status);
                               setSelectedCard(null);
                             }}
@@ -1350,7 +1328,7 @@ export default function AllCandidatesPage() {
                     transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
                     type="button"
                     onClick={() => {
-                      setSearchText("");
+                      closeSearch();
                       setActiveTab(col.status);
                       setSelectedCard(null);
                     }}
@@ -1386,7 +1364,7 @@ export default function AllCandidatesPage() {
             <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
           </button>
         </div>
-        {!showTopSearch && topStageCanScrollLeft ? (
+        {topStageCanScrollLeft ? (
           <button
             type="button"
             onClick={scrollTopStagesLeft}
@@ -1396,7 +1374,7 @@ export default function AllCandidatesPage() {
             <ChevronLeft className="hf-top-stage-arrow-icon" />
           </button>
         ) : null}
-        {!showTopSearch && topStageCanScrollRight ? (
+        {topStageCanScrollRight ? (
           <button
             type="button"
             onClick={scrollTopStagesRight}
@@ -1410,6 +1388,39 @@ export default function AllCandidatesPage() {
           </button>
         ) : null}
       </div>
+
+      {/* Поиск — ОТДЕЛЬНОЙ строкой ПОД этапами (предложение владельца
+          02.10.2026). Раньше поле вставало НА место полосы этапов: пока ищешь —
+          вкладок не видно, а чтобы вернуться к ним, поле надо свернуть, и
+          набранное оставалось висеть незаметно. */}
+      {showTopSearch && (
+        <div className="relative mr-[var(--hf-space-s)] mb-[var(--hf-space-s)] flex min-h-[var(--hf-candidates-stagebar-h)] min-w-0 items-center rounded-[var(--hf-radius-l)] bg-[var(--hf-white)] pl-[var(--hf-space-xxl)] pr-[var(--hf-space-xl)]">
+          <input
+            ref={topSearchRef}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") closeSearch();
+            }}
+            placeholder="Поиск по имени, должности..."
+            className="hf-top-stage-search-input"
+          />
+          {searchText && loading ? (
+            <span className="hf-top-stage-search-action">
+              <HfLoadingSpinner />
+            </span>
+          ) : searchText ? (
+            <button
+              type="button"
+              onClick={closeSearch}
+              className="hf-top-stage-search-action hf-top-stage-search-clear"
+              title="Убрать поиск"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          ) : null}
+        </div>
+      )}
 
       {/* Искали «@ник», по нику пусто — список показывает обычный поиск. Без
           подписи это читается как «нашёлся не тот человек» (01.10.2026). */}
