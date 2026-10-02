@@ -755,7 +755,13 @@ async def parse_resume_from_file(file_content: bytes, filename: str) -> ParsedRe
         raise ValueError(f"Failed to parse document: {parse_result.error}")
 
     if not parse_result.content or not parse_result.content.strip():
-        raise ValueError("Document appears to be empty or unreadable")
+        # Сюда доходим, только если и распознавание картинок внутри файла
+        # ничего не дало (см. DocumentParser: нет текста → OCR вложенных
+        # картинок). Сообщение читает рекрутёр, поэтому по-русски и с советом.
+        raise ValueError(
+            "В файле не нашлось текста. Если резюме вставлено картинкой, "
+            "сохраните его как JPG или PNG и загрузите снова"
+        )
 
     # Use AI to extract structured data
     data = await parse_with_ai(parse_result.content, "resume")
@@ -871,7 +877,10 @@ async def parse_vacancy_from_file(file_content: bytes, filename: str) -> ParsedV
         raise ValueError(f"Failed to parse document: {parse_result.error}")
 
     if not parse_result.content or not parse_result.content.strip():
-        raise ValueError("Document appears to be empty or unreadable")
+        raise ValueError(
+            "В файле не нашлось текста. Если он вставлен картинкой, "
+            "сохраните его как JPG или PNG и загрузите снова"
+        )
 
     # Use AI to extract structured vacancy data
     data = await parse_with_ai(parse_result.content, "vacancy")

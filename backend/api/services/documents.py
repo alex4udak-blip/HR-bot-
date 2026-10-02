@@ -31,6 +31,13 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 MAX_PDF_PAGES = 50
 MAX_ARCHIVE_FILES = 10
 PARSE_TIMEOUT = 60
+# Распознавание документов без текстового слоя (резюме-картинка в Word/PDF):
+# сколько картинок берём и с какого размера считаем картинку содержательной.
+OCR_MAX_IMAGES = 4
+OCR_MIN_IMAGE_BYTES = 30 * 1024
+# Vision не принимает картинку больше ~5 МБ и сам ужимает сторону до ~1568 px.
+OCR_MAX_IMAGE_BYTES = 3 * 1024 * 1024
+OCR_MAX_IMAGE_SIDE = 1600
 
 # Async Anthropic client for non-blocking OCR calls
 _async_anthropic_client: anthropic.AsyncAnthropic | None = None
@@ -158,7 +165,13 @@ class DocumentParser:
     # ========== PDF ==========
     async def _parse_pdf(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._parse_pdf_sync, file_bytes, filename)
+        result = await loop.run_in_executor(None, self._parse_pdf_sync, file_bytes, filename)
+        if result.content.strip():
+            return result
+        # Текстового слоя нет — это скан/картинка в PDF. Рендерим страницы и
+        # распознаём тем же Vision, что и обычные JPG (02.10.2026).
+        pages = await loop.run_in_executor(None, self._render_pdf_pages, file_bytes)
+        return await self._ocr_images(pages, filename, kind="pdf", fallback=result)
 
     def _parse_pdf_sync(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
         text_parts = []
@@ -207,7 +220,14 @@ class DocumentParser:
     # ========== DOCX ==========
     async def _parse_docx(self, file_bytes: bytes, filename: str) -> DocumentParseResult:
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._parse_docx_sync, file_bytes)
+        result = await loop.run_in_executor(None, self._parse_docx_sync, file_bytes)
+        if result.content.strip():
+            return result
+        # Текста нет вовсе — резюме вставлено в Word КАРТИНКОЙ (сделали в Canva,
+        # сохранили png/jpg и вставили; Диана Булатова, 02.10.2026). Достаём
+        # вложенные картинки и распознаём их тем же Vision, что и обычные JPG.
+        images = await loop.run_in_executor(None, self._extract_docx_images, file_bytes)
+        return await self._ocr_images(images, filename, kind="docx", fallback=result)
 
     def _parse_docx_sync(self, file_bytes: bytes) -> DocumentParseResult:
         doc = DocxDocument(io.BytesIO(file_bytes))
@@ -236,6 +256,105 @@ class DocumentParser:
                 "paragraphs_count": len(doc.paragraphs),
                 "tables_count": tables_count
             }
+        )
+
+    # ========== Файл без текста = картинка внутри документа ==========
+    # Резюме часто делают в Canva и вставляют в Word/PDF одной картинкой: текста
+    # в файле ноль, и разбор падал с «Document appears to be empty or
+    # unreadable», хотя та же картинка, загруженная как JPG, читалась отлично.
+    # Поэтому: нет текста → достаём картинки и отправляем в то же распознавание.
+    # Платный запрос к Vision уходит ТОЛЬКО для таких файлов.
+
+    def _extract_docx_images(self, file_bytes: bytes) -> list:
+        """Картинки из word/media в порядке убывания размера (крупная = скан)."""
+        images: list = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                for info in zf.infolist():
+                    name = info.filename.lower()
+                    if not name.startswith("word/media/"):
+                        continue
+                    if not name.endswith((".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".gif", ".webp")):
+                        continue
+                    # Мелочь (иконки, логотипы, подписи) не распознаём.
+                    if info.file_size < OCR_MIN_IMAGE_BYTES:
+                        continue
+                    images.append((Path(info.filename).suffix.lower(), zf.read(info.filename)))
+        except Exception as e:
+            logger.warning(f"docx: не удалось достать картинки: {e}")
+        images.sort(key=lambda pair: len(pair[1]), reverse=True)
+        return images[:OCR_MAX_IMAGES]
+
+    def _render_pdf_pages(self, file_bytes: bytes) -> list:
+        """Страницы PDF без текстового слоя → PNG (для распознавания)."""
+        pages: list = []
+        try:
+            import pymupdf
+
+            with pymupdf.open(stream=file_bytes, filetype="pdf") as doc:
+                for page in doc[:OCR_MAX_IMAGES]:
+                    # 200 dpi: мелкий шрифт резюме читается, вес картинки терпимый.
+                    pix = page.get_pixmap(dpi=200)
+                    pages.append((".png", pix.tobytes("png")))
+        except Exception as e:
+            logger.warning(f"pdf: не удалось отрисовать страницы для OCR: {e}")
+        return pages
+
+    def _shrink_for_vision(self, data: bytes, suffix: str) -> Tuple[str, bytes]:
+        """Ужать картинку под Vision: он не берёт больше ~5 МБ и всё равно
+        масштабирует сторону до ~1568 px — платить за лишние пиксели незачем.
+        Не получилось ужать (экзотический формат) — отдаём как есть."""
+        if len(data) <= OCR_MAX_IMAGE_BYTES:
+            try:
+                if max(Image.open(io.BytesIO(data)).size) <= OCR_MAX_IMAGE_SIDE:
+                    return suffix, data
+            except Exception:
+                return suffix, data
+        try:
+            img = Image.open(io.BytesIO(data))
+            img.thumbnail((OCR_MAX_IMAGE_SIDE, OCR_MAX_IMAGE_SIDE), Image.LANCZOS)
+            out = io.BytesIO()
+            img.convert("RGB").save(out, format="JPEG", quality=85)
+            return ".jpg", out.getvalue()
+        except Exception as e:
+            logger.warning(f"не удалось ужать картинку для OCR: {e}")
+            return suffix, data
+
+    async def _ocr_images(
+        self, images: list, filename: str, *, kind: str,
+        fallback: DocumentParseResult,
+    ) -> DocumentParseResult:
+        """Распознать картинки документа и собрать из них текст."""
+        if not images:
+            return fallback
+
+        loop = asyncio.get_event_loop()
+        images = [
+            await loop.run_in_executor(None, self._shrink_for_vision, data, suffix)
+            for suffix, data in images
+        ]
+
+        parts = []
+        for idx, (suffix, data) in enumerate(images, start=1):
+            res = await self._ocr_with_vision(data, f"{Path(filename).stem}{suffix or '.png'}")
+            if res.content and res.content.strip():
+                parts.append(res.content.strip() if len(images) == 1
+                             else f"--- {idx} ---\n{res.content.strip()}")
+            else:
+                logger.warning(f"{kind}: распознавание картинки {idx} не дало текста: {res.error}")
+
+        if not parts:
+            return fallback
+
+        logger.info(
+            "DOC_OCR %s: текста в файле нет, распознано картинок %s/%s (%s)",
+            kind, len(parts), len(images), filename,
+        )
+        return DocumentParseResult(
+            content="\n\n".join(parts),
+            status="parsed",
+            metadata={"ocr_method": "claude_vision", "ocr_source": kind,
+                      "images_recognized": len(parts)},
         )
 
     # ========== DOC/ODT (convert to DOCX) ==========

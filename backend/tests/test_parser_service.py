@@ -487,7 +487,9 @@ class TestPDFParsing:
             with pytest.raises(ValueError) as exc_info:
                 await parse_resume_from_pdf(b"empty pdf", "empty.pdf")
 
-            assert "empty" in str(exc_info.value).lower()
+            # Сообщение читает рекрутёр: по-русски и с советом, что делать
+            # (раньше было английское «Document appears to be empty…»).
+            assert "не нашлось текста" in str(exc_info.value)
 
 
 # ============================================================================
