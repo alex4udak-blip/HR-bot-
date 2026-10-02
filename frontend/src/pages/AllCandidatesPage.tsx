@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense, startTransition } from "react";
 import type { ReactNode } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -461,6 +461,7 @@ export default function AllCandidatesPage() {
   // — на проде вкладки не переключались, поэтому вернулись к стейту. Клик = стейт +
   // push ?stage= + снятие открытого кандидата (иначе авто-селект по ?entity= off-tab
   // отбрасывал вкладку обратно на «Все»). push:false — программный/деплинк-переход.
+  const location = useLocation();
   const [activeTab, setActiveTabState] = useState<string>(() => searchParams.get("stage") || "all");
   const setActiveTab = useCallback(
     (status: string, opts?: { push?: boolean }) => {
@@ -533,6 +534,38 @@ export default function AllCandidatesPage() {
     user?.org_role === "owner" ||
     user?.org_role === "admin";
   const anySelected = selectedIds.size > 0;
+
+  // Открыть карточку конкретного кандидата (после добавления или прикрепления
+  // резюме к существующему). Просьба Эльвиры 02.10.2026: «чтобы мы оказывались
+  // после добавления на этом же кандидате» — раньше справа оставался тот, кто
+  // был открыт ДО добавления, и статусы на бегу меняли не тому человеку.
+  // Поиск и вкладку этапа сбрасываем: новый кандидат — «Новый», и при активном
+  // фильтре его бы просто не было видно в списке.
+  const openCandidateCard = useCallback((entityId: number) => {
+    setSearchText("");
+    setActiveTabState("all");
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("stage");
+      next.delete("edit");
+      next.delete("archived");
+      next.delete("tab");
+      next.set("entity", String(entityId));
+      return next;
+    });
+  }, [setSearchParams]);
+
+  // Переход по пункту меню (в т.ч. ПОВТОРНЫЙ клик по «Все кандидаты», когда мы
+  // уже здесь) — начинаем с чистого листа: пустой поиск и вкладка «Все».
+  // location.key меняется на каждый переход, даже на тот же адрес, а метка в
+  // state отличает клик по меню от наших же правок адреса (?entity=…).
+  const navState = location.state as { resetSearch?: boolean } | null;
+  useEffect(() => {
+    if (!navState?.resetSearch) return;
+    setSearchText("");
+    setActiveTabState("all");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
 
   const fetchBoard = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -1158,7 +1191,14 @@ export default function AllCandidatesPage() {
             layout="position"
             transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
             type="button"
-            onClick={() => setShowTopSearch((value) => !value)}
+            onClick={() =>
+              setShowTopSearch((value) => {
+                // Свернули поле — забираем и запрос: в свёрнутом виде набранного
+                // не видно, а список продолжал молча резаться (Эльвира, 02.10.2026).
+                if (value) setSearchText("");
+                return !value;
+              })
+            }
             className={clsx(
               "hf-top-stage-search-toggle",
               (showTopSearch || searchText) && "hf-top-stage-search-toggle-active",
@@ -1208,6 +1248,11 @@ export default function AllCandidatesPage() {
                 layout="position"
                 transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
                 onClick={() => {
+                  // Клик по вкладке очищает строку поиска (просьба Эльвиры
+                  // 02.10.2026): набранное имя висело в свёрнутом поле, человек
+                  // про него забывал, и переходы «не работали» — список молча
+                  // продолжал резаться по старому запросу.
+                  setSearchText("");
                   setActiveTab("all");
                   setSelectedCard(null);
                 }}
@@ -1270,6 +1315,7 @@ export default function AllCandidatesPage() {
                             transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
                             type="button"
                             onClick={() => {
+                              setSearchText("");
                               setActiveTab(col.status);
                               setSelectedCard(null);
                             }}
@@ -1304,6 +1350,7 @@ export default function AllCandidatesPage() {
                     transition={{ layout: HUNTFLOW_STAGE_LAYOUT_TRANSITION }}
                     type="button"
                     onClick={() => {
+                      setSearchText("");
                       setActiveTab(col.status);
                       setSelectedCard(null);
                     }}
@@ -1855,11 +1902,16 @@ export default function AllCandidatesPage() {
             onParsed={() => {
               setShowParserModal(false);
               fetchBoard();
-              toast.success("Кандидат добавлен");
             }}
-            onAttachedToEntity={() => {
+            onCreated={(entityId) => {
               setShowParserModal(false);
               fetchBoard();
+              openCandidateCard(entityId);
+            }}
+            onAttachedToEntity={(entityId) => {
+              setShowParserModal(false);
+              fetchBoard();
+              openCandidateCard(entityId);
             }}
           />
         )}

@@ -27,11 +27,15 @@ interface ParserModalProps {
   onJobStarted?: (jobId: number, fileName: string) => void;
   /** Callback when resume is attached to existing entity */
   onAttachedToEntity?: (entityId: number) => void;
+  /** id созданного кандидата — чтобы страница открыла ИМЕННО его карточку
+   *  (просьба Эльвиры 02.10.2026: после добавления по резюме справа оставался
+   *  прошлый человек, и статусы на бегу меняли не тому). */
+  onCreated?: (entityId: number) => void;
 }
 
 
 
-export default function ParserModal({ type, onClose, onParsed, onJobStarted: _onJobStarted, onAttachedToEntity }: ParserModalProps) {
+export default function ParserModal({ type, onClose, onParsed, onJobStarted: _onJobStarted, onAttachedToEntity, onCreated }: ParserModalProps) {
   const [loading, setLoading] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   // Фейковый прогресс во время AI-анализа (не быстрее, чем реальный parse, медленно идёт к 100%)
@@ -338,6 +342,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         toast.success('Кандидат добавлен');
       }
 
+      onCreated?.(createdEntityId);
       onParsed(parsedData);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Ошибка создания кандидата';
