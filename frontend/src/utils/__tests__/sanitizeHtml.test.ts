@@ -107,3 +107,34 @@ describe("sanitizeHtml", () => {
     });
   });
 });
+
+describe('Ссылки в тексте становятся кликабельными', () => {
+  // Просьба Марии 05.10.2026: «вставлять ссылки без доп действий». Делаем это
+  // при ПОКАЗЕ, поэтому оживают и старые комментарии, где адрес сохранён текстом.
+  it('голый адрес в тексте превращается в <a>', () => {
+    const out = sanitizeHtml('<div>резюме https://hh.ru/resume/1 посмотри</div>');
+    expect(out).toContain('<a href="https://hh.ru/resume/1"');
+    expect(out).toContain('target="_blank"');
+    expect(out).toContain('rel="noopener noreferrer"');
+  });
+
+  it('адрес без схемы получает https в href, но показывается как написан', () => {
+    const out = sanitizeHtml('<div>hh.ru/resume/1</div>');
+    expect(out).toContain('href="https://hh.ru/resume/1"');
+    expect(out).toContain('>hh.ru/resume/1<');
+  });
+
+  it('внутрь существующей ссылки не лезем', () => {
+    const out = sanitizeHtml('<a href="https://hh.ru">https://hh.ru</a>');
+    expect(out.match(/<a /g)?.length).toBe(1);
+  });
+
+  it('обычный текст с точками ссылкой не становится', () => {
+    expect(sanitizeHtml('<div>и.т.д, версия 2.5</div>')).not.toContain('<a ');
+  });
+
+  it('javascript: в тексте ссылкой не становится', () => {
+    const out = sanitizeHtml('<div>javascript:alert(1)</div>');
+    expect(out).not.toContain('<a ');
+  });
+});
