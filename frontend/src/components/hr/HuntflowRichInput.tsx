@@ -3,6 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { HuntflowEditorIcon } from './HuntflowControls';
+import { isUrl, linkifyToHtml, toHref } from '@/utils/linkify';
 import { getOrgMembers } from '@/services/api/auth';
 
 /**
@@ -319,11 +320,68 @@ export function HuntflowRichInput({
     refreshActive();
   };
 
+  // Кнопка «Ссылка». Если выделен сам адрес — спрашивать нечего, делаем ссылкой
+  // сразу (просьба Марии 05.10.2026 — «без доп действий»). Окно остаётся только
+  // для случая «выделил слово, хочу повесить на него произвольный адрес».
   const insertLink = () => {
+    const selected = window.getSelection()?.toString() || '';
+    if (isUrl(selected)) {
+      exec('createLink', toHref(selected.trim()));
+      return;
+    }
     const url = window.prompt('Введите ссылку (URL):');
     if (!url) return;
-    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-    exec('createLink', href);
+    exec('createLink', toHref(url.trim()));
+  };
+
+  /** Вставить HTML в место курсора (ссылки собираем сами, чужой HTML не пускаем). */
+  const insertHtmlAtCaret = (html: string) => {
+    try {
+      document.execCommand('insertHTML', false, html);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Набрали адрес и поставили пробел/Enter — превращаем его в ссылку.
+   * Смотрим только слово ПЕРЕД курсором в текущем текстовом узле: так не трогаем
+   * уже оформленные ссылки и не переписываем весь ввод.
+   */
+  const linkifyWordBeforeCaret = () => {
+    const sel = window.getSelection();
+    const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (!range || !range.collapsed) return;
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return;
+    if ((node as Text).parentElement?.closest('a')) return;
+    const text = (node as Text).nodeValue || '';
+    const before = text.slice(0, range.startOffset);
+    // Пробел, которым отделили адрес, уже в тексте — отступаем от него назад,
+    // иначе «словом перед курсором» оказывается пустая строка.
+    const trimmed = before.replace(/\s+$/, '');
+    const spaces = before.length - trimmed.length;
+    const word = trimmed.split(/\s/).pop() || '';
+    if (!word || !isUrl(word)) return;
+    const end = range.startOffset - spaces;
+    const start = end - word.length;
+    // Собираем ссылку РУКАМИ: execCommand('createLink') на программно
+    // выставленном выделении внутри обработчика ввода в Chrome не срабатывает —
+    // текст оставался текстом, а курсор уезжал перед пробел.
+    const textNode = node as Text;
+    const tail = textNode.splitText(start);
+    tail.nodeValue = (tail.nodeValue || '').slice(word.length);
+    const anchor = textNode.ownerDocument.createElement('a');
+    anchor.setAttribute('href', toHref(word));
+    anchor.textContent = word;
+    tail.parentNode?.insertBefore(anchor, tail);
+    // Курсор — за пробелом после ссылки, иначе дальнейший ввод продолжает её текст.
+    const caret = document.createRange();
+    caret.setStart(tail, Math.min(spaces, (tail.nodeValue || '').length));
+    caret.collapse(true);
+    sel!.removeAllRanges();
+    sel!.addRange(caret);
   };
 
   // «@» в тулбаре: вставляем символ и сразу открываем выпадашку упоминаний.
@@ -418,7 +476,12 @@ export function HuntflowRichInput({
         role="textbox"
         aria-multiline="true"
         data-placeholder={placeholder}
-        onInput={() => {
+        onInput={(e) => {
+          // Набрали адрес и отделили его пробелом — он сразу становится ссылкой
+          // (просьба Марии 05.10.2026). Enter обрабатывается в onKeyDown ниже:
+          // там он может ещё и отправлять комментарий.
+          const data = (e.nativeEvent as InputEvent).data;
+          if (data === ' ') linkifyWordBeforeCaret();
           emit();
           detectMention();
         }}
@@ -439,10 +502,22 @@ export function HuntflowRichInput({
           // Вставляем как простой текст — без чужого мусорного HTML из Word и т.п.
           e.preventDefault();
           const text = e.clipboardData.getData('text/plain');
-          try {
-            document.execCommand('insertText', false, text);
-          } catch {
-            /* noop */
+          const selected = window.getSelection()?.toString() || '';
+          // Вставили адрес поверх выделенного слова — вешаем ссылку на слово.
+          if (selected && isUrl(text)) {
+            exec('createLink', toHref(text.trim()));
+            emit();
+            return;
+          }
+          // В тексте есть адреса — вставляем их сразу ссылками (Мария, 05.10.2026).
+          const html = linkifyToHtml(text);
+          const inserted = html.includes('<a ') ? insertHtmlAtCaret(html) : false;
+          if (!inserted) {
+            try {
+              document.execCommand('insertText', false, text);
+            } catch {
+              /* noop */
+            }
           }
           emit();
         }}
@@ -475,6 +550,9 @@ export function HuntflowRichInput({
               return;
             }
           }
+          // Перед отправкой и перед переводом строки добираем адрес, если он
+          // остался последним словом: иначе комментарий уедет с «голым» текстом.
+          if (e.key === 'Enter') linkifyWordBeforeCaret();
           if (onEnterSubmit && e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             onEnterSubmit();

@@ -1,3 +1,5 @@
+import { replaceUrls, escapeHtml } from "./linkify";
+
 // Минимальный санитайзер для rich-text (WYSIWYG из contentEditable).
 // Разрешаем только безопасные теги форматирования и ссылки (http/https).
 // Без внешних зависимостей — DOMPurify в проекте нет.
@@ -60,5 +62,38 @@ export function sanitizeHtml(html: string | null | undefined): string {
     });
   };
   clean(doc.body);
+  linkifyTextNodes(doc.body);
   return doc.body.innerHTML;
+}
+
+/**
+ * Голый адрес в тексте → кликабельная ссылка (просьба Марии 05.10.2026:
+ * «вставлять ссылки без доп действий»). Делаем это ПРИ ПОКАЗЕ, поэтому
+ * кликабельными становятся и уже сохранённые комментарии, где ссылка осталась
+ * простым текстом. Внутрь существующих <a> не лезем — там адрес уже оформлен.
+ */
+function linkifyTextNodes(root: HTMLElement): void {
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const texts: Text[] = [];
+  let node = walker.nextNode();
+  while (node) {
+    texts.push(node as Text);
+    node = walker.nextNode();
+  }
+  texts.forEach((textNode) => {
+    const value = textNode.nodeValue || "";
+    if (!value.trim()) return;
+    if (textNode.parentElement?.closest("a")) return;
+    const html = replaceUrls(
+      value,
+      (url, href) =>
+        `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`,
+      escapeHtml,
+    );
+    // Ничего не нашли — узел не трогаем (иначе зря плодим элементы).
+    if (!html.includes("<a ")) return;
+    const holder = root.ownerDocument.createElement("span");
+    holder.innerHTML = html;
+    textNode.replaceWith(...Array.from(holder.childNodes));
+  });
 }
