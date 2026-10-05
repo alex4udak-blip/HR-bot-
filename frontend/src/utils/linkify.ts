@@ -82,6 +82,30 @@ export function replaceUrls(
   return out;
 }
 
+/** Все адреса, которые нашлись в тексте (буфер обмена, вставленная строка). */
+export function extractUrls(text: string): string[] {
+  const found: string[] = [];
+  replaceUrls(text || '', (url) => {
+    found.push(url);
+    return '';
+  });
+  return found;
+}
+
+/**
+ * Единственный адрес в тексте — или null.
+ *
+ * Нужно кнопке «Ссылка»: в буфере у рекрутёра обычно не голый адрес, а
+ * «вот ссылка https://hh.ru/resume/1» или адрес с хвостовым пробелом и точкой
+ * (владелец 05.10.2026: «а если ссылка с ещё одним словом или буквой»). Один
+ * адрес среди слов — понятно, что имели в виду; несколько — уже гадание, такой
+ * текст уходит в окно, где человек выбирает сам.
+ */
+export function extractUrl(text: string): string | null {
+  const urls = extractUrls(text);
+  return urls.length === 1 ? urls[0] : null;
+}
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')

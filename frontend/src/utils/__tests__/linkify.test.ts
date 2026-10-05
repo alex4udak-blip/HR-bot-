@@ -7,7 +7,15 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { autoLinkify, isUrl, linkifyToHtml, toHref, trimTrailingPunctuation } from '../linkify';
+import {
+  autoLinkify,
+  extractUrl,
+  extractUrls,
+  isUrl,
+  linkifyToHtml,
+  toHref,
+  trimTrailingPunctuation,
+} from '../linkify';
 
 describe('isUrl — что считаем адресом', () => {
   it.each([
@@ -92,5 +100,25 @@ describe('autoLinkify (старые описания вакансий)', () => {
 
   it('простой текст превращает в HTML со ссылкой', () => {
     expect(autoLinkify('тут https://hh.ru')).toContain('<a href="https://hh.ru"');
+  });
+});
+
+describe('extractUrl — адрес из буфера обмена для кнопки «Ссылка»', () => {
+  it('адрес среди слов находится («ссылка с ещё одним словом»)', () => {
+    expect(extractUrl('вот ссылка https://hh.ru/resume/1 посмотри')).toBe('https://hh.ru/resume/1');
+  });
+
+  it('хвостовая точка и пробелы не мешают', () => {
+    expect(extractUrl('  hh.ru/resume/1.  ')).toBe('hh.ru/resume/1');
+  });
+
+  it('в буфере не адрес — null, спросим в окне', () => {
+    expect(extractUrl('Иванов Иван, 2.5 года опыта')).toBeNull();
+    expect(extractUrl('')).toBeNull();
+  });
+
+  it('несколько адресов — null: гадать, какой из них имели в виду, нельзя', () => {
+    expect(extractUrl('hh.ru/1 и rabota.by/2')).toBeNull();
+    expect(extractUrls('hh.ru/1 и rabota.by/2')).toEqual(['hh.ru/1', 'rabota.by/2']);
   });
 });

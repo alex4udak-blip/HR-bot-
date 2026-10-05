@@ -3,7 +3,8 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { HuntflowEditorIcon } from './HuntflowControls';
-import { isUrl, linkifyToHtml, toHref } from '@/utils/linkify';
+import { escapeHtml, isUrl, linkifyToHtml, toHref } from '@/utils/linkify';
+import { useLinkPrompt, wrapRangeWithLink } from './LinkPrompt';
 import { getOrgMembers } from '@/services/api/auth';
 
 /**
@@ -320,18 +321,43 @@ export function HuntflowRichInput({
     refreshActive();
   };
 
-  // Кнопка «Ссылка». Если выделен сам адрес — спрашивать нечего, делаем ссылкой
-  // сразу (просьба Марии 05.10.2026 — «без доп действий»). Окно остаётся только
-  // для случая «выделил слово, хочу повесить на него произвольный адрес».
-  const insertLink = () => {
-    const selected = window.getSelection()?.toString() || '';
-    if (isUrl(selected)) {
-      exec('createLink', toHref(selected.trim()));
-      return;
+  // Кнопка «Ссылка» (владелец 05.10.2026: «без подтверждения модального окна
+  // браузера»). Порядок — в LinkPrompt: выделенный адрес → адрес из буфера →
+  // наше окно. Сюда приходит уже готовый href.
+  //
+  // Выделение сохраняем ДО вопроса: пока читается буфер и человек печатает в
+  // окне, фокус уходит, а без выделения вешать ссылку не на что.
+  const savedRangeRef = useRef<Range | null>(null);
+
+  const applyLink = (href: string) => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    const range = savedRangeRef.current;
+    if (range) {
+      sel?.removeAllRanges();
+      sel?.addRange(range);
     }
-    const url = window.prompt('Введите ссылку (URL):');
-    if (!url) return;
-    exec('createLink', toHref(url.trim()));
+    if (range && !range.collapsed) {
+      // Собираем <a> сами: execCommand('createLink') на восстановленном
+      // выделении в Chrome не срабатывает (см. linkifyWordBeforeCaret).
+      wrapRangeWithLink(range, href);
+    } else {
+      // Ничего не выделено — вставляем сам адрес ссылкой.
+      insertHtmlAtCaret(`<a href="${escapeHtml(href)}">${escapeHtml(href)}</a>`);
+    }
+    savedRangeRef.current = null;
+    emit();
+    refreshActive();
+  };
+
+  const { requestLink, linkModal } = useLinkPrompt(applyLink);
+
+  const insertLink = () => {
+    const sel = window.getSelection();
+    savedRangeRef.current = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    void requestLink(sel?.toString() || '');
   };
 
   /** Вставить HTML в место курсора (ссылки собираем сами, чужой HTML не пускаем). */
@@ -405,6 +431,7 @@ export function HuntflowRichInput({
 
   return (
     <>
+      {linkModal}
       <div className={toolbarClassName}>
         <button
           type="button"

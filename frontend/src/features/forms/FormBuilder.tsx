@@ -33,6 +33,8 @@ import {
   getForm,
   updateForm,
 } from '@/services/api/forms';
+import { escapeHtml } from '@/utils/linkify';
+import { useLinkPrompt, wrapRangeWithLink } from '@/components/hr/LinkPrompt';
 import type { FormField } from '@/services/api/forms';
 import { FieldRenderer } from './FieldRenderer';
 
@@ -133,25 +135,39 @@ function DescriptionEditor({
     setIsEmpty(!ref.current?.textContent?.trim());
   };
 
-  const addLink = () => {
-    const url = (window.prompt('Ссылка (URL):', 'https://') || '').trim();
-    if (!url) return;
-    if (!/^https?:\/\//i.test(url)) {
-      toast.error('Ссылка должна начинаться с http:// или https://');
-      return;
-    }
+  // Кнопка «Ссылка» без браузерного окна — общий порядок в LinkPrompt
+  // (выделенный адрес → адрес из буфера → наше окно), владелец 05.10.2026.
+  const savedRangeRef = useRef<Range | null>(null);
+
+  const applyLink = (href: string) => {
     ref.current?.focus();
     const selection = window.getSelection();
-    if (selection && !selection.isCollapsed) {
-      document.execCommand('createLink', false, url);
-    } else {
-      document.execCommand('insertHTML', false, `<a href="${url}">${url}</a>`);
+    const range = savedRangeRef.current;
+    if (range) {
+      selection?.removeAllRanges();
+      selection?.addRange(range);
     }
+    if (range && !range.collapsed) {
+      wrapRangeWithLink(range, href);
+    } else {
+      document.execCommand('insertHTML', false, `<a href="${escapeHtml(href)}">${escapeHtml(href)}</a>`);
+    }
+    savedRangeRef.current = null;
     sync();
+  };
+
+  const { requestLink, linkModal } = useLinkPrompt(applyLink);
+
+  const addLink = () => {
+    const selection = window.getSelection();
+    savedRangeRef.current =
+      selection && selection.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+    void requestLink(selection?.toString() || '');
   };
 
   return (
     <div className="border border-gray-300 rounded-lg focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-colors overflow-hidden">
+      {linkModal}
       <div className="flex items-center px-2 py-1.5 border-b border-gray-200 bg-gray-50">
         <button
           type="button"
