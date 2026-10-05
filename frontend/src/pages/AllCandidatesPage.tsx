@@ -238,13 +238,27 @@ function HuntflowChevronDown24Icon({ className }: { className?: string }) {
 // TIMELINE_ACTION_FILTERS + matchesTimelineFilter вынесены в
 // candidateDetail/model (с unit-тестами) — импортируются выше.
 
-function useDebounce<T>(value: T, delay: number): T {
+/**
+ * Задержанное значение + возможность выставить его НЕМЕДЛЕННО.
+ *
+ * Немедленный сброс нужен при смене вкладки с активным поиском: иначе запрос к
+ * серверу и фильтр списка ещё 400 мс живут со старым словом, и человек видит
+ * мигание «кандидатов нет» (владелец, 05.10.2026).
+ */
+function useDebounce<T>(value: T, delay: number): [T, (next: T) => void] {
   const [debounced, setDebounced] = useState(value);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(t);
+    timer.current = setTimeout(() => setDebounced(value), delay);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
   }, [value, delay]);
-  return debounced;
+  const setNow = useCallback((next: T) => {
+    if (timer.current) clearTimeout(timer.current);
+    setDebounced(next);
+  }, []);
+  return [debounced, setNow];
 }
 
 function getInitials(name: string): string {
@@ -437,10 +451,17 @@ export default function AllCandidatesPage() {
   // Наблюдатель: список открыт весь, но массовых действий у него нет.
   const observer = !!user?.is_readonly;
   const [board, setBoard] = useState<KanbanBoardResponse | null>(null);
+  // Запрос, под который получена текущая доска (см. fetchBoard).
+  const [boardQuery, setBoardQuery] = useState("");
+  // Последняя доска БЕЗ поиска. Сбросили поиск — возвращаем её мгновенно, и
+  // человек сразу видит нормальные счётчики и список, пока с сервера едет
+  // свежая. Без этого между сбросом и ответом мелькали нули и «кандидатов нет»
+  // (владелец, 05.10.2026).
+  const fullBoardRef = useRef<KanbanBoardResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [searchText, setSearchText] = useState("");
-  const debouncedSearch = useDebounce(searchText, 400);
+  const [debouncedSearch, setSearchNow] = useDebounce(searchText, 400);
   const [showTopSearch, setShowTopSearch] = useState(false);
   const topSearchRef = useRef<HTMLInputElement>(null);
   // Горизонтальный скролл табов этапов — единый хук useHorizontalScroll:
@@ -539,8 +560,17 @@ export default function AllCandidatesPage() {
   // пустое поле не должно занимать место под этапами.
   const closeSearch = useCallback(() => {
     setSearchText("");
+    // И для данных тоже СРАЗУ, не дожидаясь задержки: иначе доска ещё успевает
+    // сходить на сервер со старым словом и мигает «кандидатов нет».
+    setSearchNow("");
     setShowTopSearch(false);
-  }, []);
+    // Возвращаем последнюю доску без поиска — список и счётчики верны сразу, а
+    // свежая придёт следом (fetchBoard сработает на смену запроса).
+    if (fullBoardRef.current) {
+      setBoard(fullBoardRef.current);
+      setBoardQuery("");
+    }
+  }, [setSearchNow]);
 
   // Открыть карточку конкретного кандидата (после добавления или прикрепления
   // резюме к существующему). Просьба Эльвиры 02.10.2026: «чтобы мы оказывались
@@ -574,6 +604,14 @@ export default function AllCandidatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
 
+  // Доска получена под ДРУГОЙ запрос, чем сейчас: выбор карточки на ней не
+  // пересчитываем — иначе справа мелькает чужой человек (владелец, 05.10.2026).
+  const boardStale = boardQuery !== debouncedSearch;
+  // А прятать список нужно, только когда устаревшая доска ОТФИЛЬТРОВАНА поиском:
+  // это она и мигала «кандидатов нет» при смене вкладки. Пока набирают первый
+  // запрос, доска полная — она не врёт, и гасить список незачем.
+  const staleFiltered = boardStale && boardQuery !== "";
+
   const fetchBoard = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -588,6 +626,10 @@ export default function AllCandidatesPage() {
         per_column: debouncedSearch ? 500 : 2000,
       });
       setBoard(data);
+      // Под какой запрос эта доска. Пока не совпадает с текущим — показывать её
+      // нельзя: это она и мигала «кандидатов нет» при смене вкладки с поиском.
+      setBoardQuery(debouncedSearch);
+      if (!debouncedSearch) fullBoardRef.current = data;
     } catch {
       /* ignore */
     } finally {
@@ -763,7 +805,7 @@ export default function AllCandidatesPage() {
   // и следующий тик поллинга закрывал карточку «сам по себе».
   const prevSelectionCtxRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!board) return;
+    if (!board || boardStale) return;
     // Гонка «клик vs URL»: клик ставит selectedCard напрямую (мгновенный UI), зеркало
     // дописывает ?entity= на тик позже. selChanged=true → менялся ВЫБОР (клик), а URL ещё
     // старый → НЕ возвращаем фокус на прошлую карточку; адоптим entity из URL только при
@@ -1432,7 +1474,7 @@ export default function AllCandidatesPage() {
       )}
 
       {/* ===== MASTER-DETAIL (huntflow style) ===== */}
-      {loading && !board ? (
+      {(loading && !board) || staleFiltered ? (
         <HfCandidatesLoadingLayout />
       ) : (
         <div className="hf-candidates-master">
