@@ -506,15 +506,16 @@ async def test_marking_default_places_current_practice(
 
 
 @pytest.mark.asyncio
-async def test_placed_person_stays_on_board_at_any_status(
+async def test_board_shows_only_own_people(
     client, db_session, organization, admin_user, org_owner
 ):
-    """Поставили в отдел — человек оттуда не пропадает ни при каком статусе.
+    """Доска — про своих: практика, штат и уход из него, и ничего больше.
 
-    Владелец (01.10.2026): «кандидат, попавший в родительский отдел, не
-    исчезает: он просто перемещается по статусам, но остаётся в этом отделе».
-    Раньше практикант, которому отказали в воронке (rejected), пропадал из
-    песочницы вместе с датами практики.
+    Владелец (06.10.2026): «нам нужны только те, кто на практике, кто принял
+    оффер, кто перешёл в штат и кого уволили или он ушёл после этого». Отказ,
+    резерв, ранний этап и высланный оффер — работа воронки, на доске их нет,
+    даже если человека когда-то поставили в отдел. Назначение при этом живёт:
+    вернулся в практику — появился со своим отделом.
     """
     sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
     e = await _person(db_session, organization, admin_user)
@@ -523,34 +524,17 @@ async def test_placed_person_stays_on_board_at_any_status(
         json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
     )
 
-    for status in (EntityStatus.rejected, EntityStatus.reserve, EntityStatus.screening):
+    for status in (EntityStatus.rejected, EntityStatus.reserve,
+                   EntityStatus.screening, EntityStatus.offer):
+        e.status = status
+        await db_session.commit()
+        assert await _rows(client, admin_user, e.id) == [], f"лишняя строка: {status.value}"
+
+    for status in (EntityStatus.hired, EntityStatus.probation,
+                   EntityStatus.transferred, EntityStatus.dismissed, EntityStatus.quit):
         e.status = status
         await db_session.commit()
         rows = await _rows(client, admin_user, e.id)
         assert len(rows) == 1, f"пропал со статусом {status.value}"
+        # Отдел не теряется, пока человек гулял по этапам воронки.
         assert rows[0]["department_name"] == "SANDBOX"
-        assert rows[0]["status"] == status.value
-
-    # А вот без отдела кандидат в таком статусе на доске и не нужен.
-    other = await _person(db_session, organization, admin_user, name="Без Отдела")
-    other.status = EntityStatus.rejected
-    await db_session.commit()
-    assert await _rows(client, admin_user, other.id) == []
-
-
-@pytest.mark.asyncio
-async def test_archived_but_placed_still_visible(
-    client, db_session, organization, admin_user, org_owner
-):
-    """Архив карточки тоже не стирает человека из отдела."""
-    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
-    e = await _person(db_session, organization, admin_user)
-    await client.post(
-        "/api/staff-board/placements",
-        json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
-    )
-    e.is_archived = True
-    await db_session.commit()
-
-    rows = await _rows(client, admin_user, e.id)
-    assert len(rows) == 1 and rows[0]["department_name"] == "SANDBOX"
