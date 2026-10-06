@@ -503,3 +503,54 @@ async def test_marking_default_places_current_practice(
     assert (await _rows(client, admin_user, old_hand.id))[0]["department_name"] == "SANDBOX"
     # Стоявшего в команде не трогаем: доска — не место для самовольных переездов.
     assert [x["department_name"] for x in await _rows(client, admin_user, in_team.id)] == ["Facebook"]
+
+
+@pytest.mark.asyncio
+async def test_placed_person_stays_on_board_at_any_status(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Поставили в отдел — человек оттуда не пропадает ни при каком статусе.
+
+    Владелец (01.10.2026): «кандидат, попавший в родительский отдел, не
+    исчезает: он просто перемещается по статусам, но остаётся в этом отделе».
+    Раньше практикант, которому отказали в воронке (rejected), пропадал из
+    песочницы вместе с датами практики.
+    """
+    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    e = await _person(db_session, organization, admin_user)
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
+    )
+
+    for status in (EntityStatus.rejected, EntityStatus.reserve, EntityStatus.screening):
+        e.status = status
+        await db_session.commit()
+        rows = await _rows(client, admin_user, e.id)
+        assert len(rows) == 1, f"пропал со статусом {status.value}"
+        assert rows[0]["department_name"] == "SANDBOX"
+        assert rows[0]["status"] == status.value
+
+    # А вот без отдела кандидат в таком статусе на доске и не нужен.
+    other = await _person(db_session, organization, admin_user, name="Без Отдела")
+    other.status = EntityStatus.rejected
+    await db_session.commit()
+    assert await _rows(client, admin_user, other.id) == []
+
+
+@pytest.mark.asyncio
+async def test_archived_but_placed_still_visible(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Архив карточки тоже не стирает человека из отдела."""
+    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    e = await _person(db_session, organization, admin_user)
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
+    )
+    e.is_archived = True
+    await db_session.commit()
+
+    rows = await _rows(client, admin_user, e.id)
+    assert len(rows) == 1 and rows[0]["department_name"] == "SANDBOX"

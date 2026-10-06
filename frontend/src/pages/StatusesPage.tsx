@@ -18,6 +18,7 @@ import { getBoardPositions, getBoardManagers } from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
 import { removeTagFromEntity } from "@/services/api/tags";
 import { useUrlTab } from "@/hooks/useUrlTab";
+import { STATUS_LABELS } from "@/types";
 
 /**
  * Страница «Статусы» — доска жизненного цикла сотрудника внутри направления.
@@ -33,6 +34,9 @@ import { useUrlTab } from "@/hooks/useUrlTab";
 
 /** Порядок групп повторяет доску ClickUp: там сверху «Перевёлся», а
  *  «Практика» замыкает список. */
+/** Группа «всё остальное»: статусы, которых нет в жизненном цикле доски. */
+const OTHER_GROUP = "other";
+
 const STATUSES = [
   { key: "transferred", label: "ПЕРЕВЁЛСЯ",          members: ["transferred"] },
   // «Уволен» и «Уволился» — одна группа: HR неважно, кто инициатор, а две
@@ -44,11 +48,22 @@ const STATUSES = [
   // на доску сами, как только рекрутёр двигает их в воронке.
   { key: "offer",       label: "ОФФЕР ВЫСЛАН",       members: ["offer"] },
   { key: "hired",       label: "ОФФЕР ПРИНЯТ",       members: ["hired"] },
+  // Ловушка для всех прочих статусов: сюда попадают те, кто стоит в отделе, а
+  // по воронке уехал в отказ, резерв или обратно на ранний этап. Раньше такая
+  // строка просто пропадала с доски — отдел молча терял человека вместе с его
+  // датами (владелец, 01.10.2026: «попавший в отдел не исчезает, он просто
+  // перемещается по статусам»).
+  { key: OTHER_GROUP,   label: "ВНЕ НАЙМА",          members: [] },
 ] as const;
 
 /** В какую группу попадает статус строки. */
 const groupOf = (status: string) =>
-  STATUSES.find((g) => (g.members as readonly string[]).includes(status))?.key ?? status;
+  STATUSES.find((g) => (g.members as readonly string[]).includes(status))?.key ?? OTHER_GROUP;
+
+/** Текущий статус словами — для тех, кого на доску привёл отдел, а не этап
+ *  жизненного цикла: «Отказ», «Резерв», «Выполняет ТЗ». */
+const statusLabel = (status: string) =>
+  (STATUS_LABELS as Record<string, string>)[status] || status;
 
 const UNASSIGNED = "__none__";
 
@@ -614,7 +629,11 @@ export default function StatusesPage() {
 
   const grouped = useMemo(
     () => STATUSES.map((s) => {
-      const items = visible.filter((r) => (s.members as readonly string[]).includes(r.status));
+      const items = visible.filter((r) =>
+        s.key === OTHER_GROUP
+          ? groupOf(r.status) === OTHER_GROUP
+          : (s.members as readonly string[]).includes(r.status)
+      );
       if (!sort) return { ...s, items };
       // Пустая дата — всегда в конце, в любую сторону: строка без даты не
       // «самая старая», про неё просто ничего не известно.
@@ -1424,15 +1443,22 @@ function Row({
           <select
             className={clsx("hf-statuses-status", `hf-statuses-status-${groupOf(row.status)}`)}
             value={groupOf(row.status)}
+            title={statusLabel(row.status)}
             onChange={(e) => {
               // Уже в объединённой группе — повторный выбор ничего не меняет,
               // иначе «уволился» молча переписался бы в «уволен».
               if (e.target.value !== groupOf(row.status)) onStatus(row, e.target.value);
             }}
           >
-            {STATUSES.map((st) => (
+            {STATUSES.filter((st) => st.key !== OTHER_GROUP).map((st) => (
               <option key={st.key} value={st.key}>{st.label}</option>
             ))}
+            {/* Человек в отделе, но по воронке он в отказе/резерве/на этапе:
+                показываем, где он на самом деле, и не даём «выбрать» это
+                обратно — такого перевода у доски нет. */}
+            {groupOf(row.status) === OTHER_GROUP && (
+              <option value={OTHER_GROUP} disabled>{statusLabel(row.status)}</option>
+            )}
           </select>
         </div>
       </td>

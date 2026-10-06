@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import String, cast, select
+from sqlalchemy import String, and_, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -1317,15 +1317,30 @@ async def list_rows(
     if not org:
         raise HTTPException(403, "No organization access")
 
+    # Кто попадает на доску:
+    #  1) карточки в статусах жизненного цикла — как было;
+    #  2) ВСЕ, кого поставили в отдел, какой бы у них ни был статус.
+    # Второе — требование владельца (01.10.2026): «кандидат, попавший в
+    # родительский отдел, не исчезает: он просто перемещается по статусам, но
+    # остаётся в этом отделе». Раньше практикант, которому отказали в воронке
+    # (статус rejected) или которого вернули на ранний этап, пропадал из
+    # песочницы вместе со своими датами практики — отдел терял человека молча.
+    #
     # Статус сравниваем как ТЕКСТ, а не как enum: если значения dismissed/quit
     # ещё не доехали в pg-enum (ALTER TYPE в start.sh не отработал), обычный
     # IN по enum-у уронил бы весь запрос. С cast доска грузится всегда.
+    placed_ids = set((await db.execute(
+        select(BoardPlacement.entity_id).where(BoardPlacement.org_id == org.id)
+    )).scalars().all())
+    lifecycle = and_(
+        cast(Entity.status, String).in_([s.value for s in BOARD_STATUSES]),
+        Entity.is_archived.is_not(True),
+    )
     entities = (await db.execute(
         select(Entity)
         .where(
             Entity.org_id == org.id,
-            cast(Entity.status, String).in_([s.value for s in BOARD_STATUSES]),
-            Entity.is_archived.is_not(True),
+            lifecycle if not placed_ids else or_(lifecycle, Entity.id.in_(placed_ids)),
         )
         .order_by(Entity.name)
     )).scalars().all()

@@ -9658,6 +9658,9 @@ body.performance-mode .glass-card:hover {
 .hf-statuses-chip-transferred { background: var(--hf-green-100); color: var(--hf-green-800); }
 .hf-statuses-chip-dismissed   { background: var(--hf-red-100); color: var(--hf-red-800); }
 .hf-statuses-chip-quit        { background: var(--hf-cyan-100); color: var(--hf-cyan-800); }
+/* «Вне найма» — те, кто стоит в отделе, а по воронке уехал в отказ, резерв или
+   назад на этап. Серый: это не этап жизненного цикла, а состояние «не у нас». */
+.hf-statuses-chip-other       { background: var(--hf-main-100); color: var(--hf-main-700); }
 .hf-statuses-group-count { font-size: var(--hf-fs-4xs); color: var(--hf-main-500); }
 
 /* Строки */
@@ -10477,6 +10480,7 @@ body.performance-mode .glass-card:hover {
 .hf-statuses-status-transferred { background: #dcfce7; color: #166534; }
 .hf-statuses-status-dismissed   { background: #fee2e2; color: #991b1b; }
 .hf-statuses-status-quit        { background: #e0f2fe; color: #075985; }
+.hf-statuses-status-other       { background: #f1f5f9; color: #475569; }
 
 .hf-statuses-name-controls {
   display: flex;
