@@ -595,3 +595,58 @@ async def test_status_change_from_board_writes_timeline_note(
     )
     await db_session.refresh(e)
     assert len((e.extra_data or {}).get("notes") or []) == 1
+
+
+@pytest.mark.asyncio
+async def test_move_between_sandboxes(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Песочница у человека ОДНА: выбрал другую — переехал, а не раздвоился.
+
+    Владелец (06.10.2026): «нельзя выбрать другой сендбокс, если человек уже в
+    сендбоксе — это неверно».
+    """
+    first = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    second = await _dept(client, admin_user, "SANDBOX MOBILE", kind="sandbox")
+    e = await _person(db_session, organization, admin_user)
+    start = (await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": first["id"]}, headers=_h(admin_user),
+    )).json()
+
+    r = await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": second["id"],
+              "replace_placement_id": start["placement_id"]},
+        headers=_h(admin_user),
+    )
+    assert r.status_code == 201, r.text
+    assert [x["department_name"] for x in await _rows(client, admin_user, e.id)] == ["SANDBOX MOBILE"]
+
+
+@pytest.mark.asyncio
+async def test_move_onto_existing_placement_just_drops_the_old_row(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Переносим туда, где человек уже стоит, — остаётся одна строка, не ошибка."""
+    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    team = await _dept(client, admin_user, "Facebook", kind="team", parent_id=sandbox["id"])
+    e = await _person(db_session, organization, admin_user)
+    in_sandbox = (await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
+    )).json()
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": team["id"]}, headers=_h(admin_user),
+    )
+
+    # «Перевести из песочницы в Facebook», где он уже есть: песочница снимается.
+    r = await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": team["id"],
+              "replace_placement_id": in_sandbox["placement_id"]},
+        headers=_h(admin_user),
+    )
+    assert r.status_code == 201, r.text
+    assert [x["department_name"] for x in await _rows(client, admin_user, e.id)] == ["Facebook"]

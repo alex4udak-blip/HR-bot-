@@ -404,17 +404,23 @@ export default function StatusesPage() {
 
   /** Поставить человека в отдел.
    *
-   *  Из песочницы это ДОБАВЛЕНИЕ: человек остаётся на практике, а в отделе
-   *  появляется ещё одна строка на ту же карточку (решение владельца
-   *  30.09.2026). Из строки отдела — перенос. Поэтому список перезагружаем:
-   *  строк становится больше или меньше.
+   *  ДОБАВЛЯЕМ только в одном случае: из песочницы в команду — человек
+   *  остаётся на практике, а в команде появляется ещё одна строка на ту же
+   *  карточку (решение владельца 30.09.2026). Во всех остальных случаях —
+   *  ПЕРЕНОС: песочница у человека одна, поэтому выбор другой песочницы
+   *  переводит его туда (владелец 06.10.2026: «нельзя выбрать другой сендбокс,
+   *  если человек уже в сендбоксе — это неверно»), а смена команды на команду
+   *  всегда была переездом. Список перезагружаем: строк становится больше или
+   *  меньше.
    */
   const placeInDept = async (row: BoardRow, deptId: number) => {
+    const target = departments.find((d) => d.id === deptId);
+    const addition = row.department_is_sandbox && target?.kind === "team";
     setSavingId(rowKey(row));
     try {
       await addBoardPlacement(
         row.entity_id, deptId,
-        row.department_is_sandbox ? null : row.placement_id,
+        addition ? null : row.placement_id,
       );
       setRows(await getBoardRows());
     } catch (e: any) {
@@ -1746,17 +1752,14 @@ function DepartmentCell({
   const name = row.department_name || "";
   const hue = pillHue(name);
   const options = departments.filter(
-    (d) =>
-      (!d.hidden || d.id === row.department_id) &&
-      d.id !== row.department_id &&
-      // Из песочницы добавляют в команду, а не в другую песочницу.
-      (!row.department_is_sandbox || d.kind === "team")
+    (d) => (!d.hidden || d.id === row.department_id) && d.id !== row.department_id
   );
-  const hint = row.department_is_sandbox
-    ? "Добавить в отдел (на практике останется)"
-    : row.department_id
-      ? "Перевести в другой отдел"
-      : "Поставить в отдел";
+  // Песочница у человека одна: выбрал другую — переехал. Команда из песочницы —
+  // наоборот, добавление: практика остаётся.
+  const sandboxes = options.filter((d) => d.kind === "sandbox");
+  const teams = options.filter((d) => d.kind === "team");
+  const teamsAdd = row.department_is_sandbox;
+  const hint = row.department_id ? "Перевести или добавить в отдел" : "Поставить в отдел";
 
   return (
     <div className="hf-statuses-dept">
@@ -1782,9 +1785,20 @@ function DepartmentCell({
         onChange={(e) => { if (e.target.value) onPlace(Number(e.target.value)); }}
       >
         <option value="">{hint}</option>
-        {options.map((d) => (
-          <option key={d.id} value={d.id}>{d.name}{d.hidden ? " (скрыт)" : ""}</option>
-        ))}
+        {sandboxes.length > 0 && (
+          <optgroup label={row.department_is_sandbox ? "Песочницы — перевести" : "Песочницы — вернуть на практику"}>
+            {sandboxes.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}{d.hidden ? " (скрыт)" : ""}</option>
+            ))}
+          </optgroup>
+        )}
+        {teams.length > 0 && (
+          <optgroup label={teamsAdd ? "Отделы — добавить (практика останется)" : "Отделы — перевести"}>
+            {teams.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}{d.hidden ? " (скрыт)" : ""}</option>
+            ))}
+          </optgroup>
+        )}
       </select>
       {row.placement_id != null && !row.department_is_sandbox && (
         <button

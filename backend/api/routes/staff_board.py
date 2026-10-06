@@ -1220,16 +1220,25 @@ async def create_placement(
         )
     )).scalars().all()
 
-    exists = next((pl for pl in placements if pl.department_id == dept.id), None)
-    if exists is not None:
-        # Повторное нажатие не должно ругаться: отдаём ту же строку.
-        return await _single_row(db, org.id, entity, exists)
-
     old: Optional[BoardPlacement] = None
     if data.replace_placement_id is not None:
         old = next((pl for pl in placements if pl.id == data.replace_placement_id), None)
         if old is None:
             raise HTTPException(404, "Назначение не найдено")
+
+    exists = next((pl for pl in placements if pl.department_id == dept.id), None)
+    if exists is not None:
+        # Повторное нажатие не должно ругаться: отдаём ту же строку. Если при
+        # этом просили перенести из другого отдела — переносим: человек там уже
+        # есть, значит «перенос» сводится к тому, чтобы убрать прежнюю строку.
+        if old is not None and old.id != exists.id:
+            await db.delete(old)
+            await db.commit()
+            logger.info(
+                f"BOARD_PLACEMENT move: entity {entity.id} → «{dept.name}» "
+                f"(строка уже была, убрали назначение {old.id}) by user {current_user.id}"
+            )
+        return await _single_row(db, org.id, entity, exists)
 
     placement = BoardPlacement(
         org_id=org.id, entity_id=entity.id, department_id=dept.id,
