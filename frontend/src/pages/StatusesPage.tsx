@@ -18,6 +18,7 @@ import { getBoardPositions, getBoardManagers } from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
 import { removeTagFromEntity } from "@/services/api/tags";
 import { useUrlTab } from "@/hooks/useUrlTab";
+import { STATUS_LABELS } from "@/types";
 
 /**
  * Страница «Статусы» — доска жизненного цикла сотрудника внутри направления.
@@ -38,7 +39,12 @@ const STATUSES = [
   // «Уволен» и «Уволился» — одна группа: HR неважно, кто инициатор, а две
   // полупустые секции только удлиняли доску. В базе различие остаётся
   // (dismissed / quit) — объединяем только показ, данные не трогаем.
-  { key: "dismissed",   label: "УВОЛЕН / УВОЛИЛСЯ",  members: ["dismissed", "quit"] },
+  // Сюда же — «Отказ» и «Отозван» у тех, кто уже был в отделе: для доски это
+  // уход, а не работа воронки (владелец, 06.10.2026: «поменял статус на
+  // отозван — он просто исчез из статусов, это неверно»). Кандидата без отдела
+  // с такими статусами сервер на доску не отдаёт вовсе.
+  { key: "dismissed",   label: "УВОЛЕН / УВОЛИЛСЯ",
+    members: ["dismissed", "quit", "rejected", "withdrawn"] },
   { key: "probation",   label: "ПРАКТИКА",           members: ["probation"] },
   // «Оффер принят» приходит с этапа воронки hired — своего статуса доска не
   // заводит. «Оффер выслан» и прочие этапы подбора здесь не показываются:
@@ -1425,6 +1431,9 @@ function Row({
           <select
             className={clsx("hf-statuses-status", `hf-statuses-status-${groupOf(row.status)}`)}
             value={groupOf(row.status)}
+            // Группа «Уволен / Уволился» объединяет увольнение, уход, отказ и
+            // «отозван» — точный статус показываем подсказкой.
+            title={(STATUS_LABELS as Record<string, string>)[row.status] || ""}
             onChange={(e) => {
               // Уже в объединённой группе — повторный выбор ничего не меняет,
               // иначе «уволился» молча переписался бы в «уволен».

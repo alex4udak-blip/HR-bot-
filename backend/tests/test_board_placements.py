@@ -524,11 +524,19 @@ async def test_board_shows_only_own_people(
         json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
     )
 
-    for status in (EntityStatus.rejected, EntityStatus.reserve,
-                   EntityStatus.screening, EntityStatus.offer):
+    for status in (EntityStatus.reserve, EntityStatus.screening, EntityStatus.offer):
         e.status = status
         await db_session.commit()
         assert await _rows(client, admin_user, e.id) == [], f"лишняя строка: {status.value}"
+
+    # Отказ и «отозван» у того, кто УЖЕ был в отделе, — это уход: строка
+    # остаётся и попадает в «Уволен / Уволился».
+    for status in (EntityStatus.rejected, EntityStatus.withdrawn):
+        e.status = status
+        await db_session.commit()
+        rows = await _rows(client, admin_user, e.id)
+        assert len(rows) == 1, f"пропал со статусом {status.value}"
+        assert rows[0]["department_name"] == "SANDBOX"
 
     for status in (EntityStatus.hired, EntityStatus.probation,
                    EntityStatus.transferred, EntityStatus.dismissed, EntityStatus.quit):
@@ -538,3 +546,52 @@ async def test_board_shows_only_own_people(
         assert len(rows) == 1, f"пропал со статусом {status.value}"
         # Отдел не теряется, пока человек гулял по этапам воронки.
         assert rows[0]["department_name"] == "SANDBOX"
+
+
+@pytest.mark.asyncio
+async def test_departed_without_department_not_on_board(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Отказ у кандидата БЕЗ отдела — работа воронки, доске он не нужен."""
+    e = await _person(db_session, organization, admin_user)
+    e.status = EntityStatus.withdrawn
+    await db_session.commit()
+    assert await _rows(client, admin_user, e.id) == []
+
+
+@pytest.mark.asyncio
+async def test_status_change_from_board_writes_timeline_note(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Перевод с доски виден в ленте карточки.
+
+    Владелец (06.10.2026): «нету логов, что он перешёл в отдел — я поменял
+    статус через страницу Статусы». Лента кандидата показывает переводы
+    записями в extra_data.notes (их же пишет «Все кандидаты»), и доска теперь
+    добавляет такую же: статус, откуда перевели и кто.
+    """
+    e = await _person(db_session, organization, admin_user)
+
+    r = await client.patch(
+        f"/api/staff-board/rows/{e.id}",
+        json={"status": EntityStatus.transferred.value}, headers=_h(admin_user),
+    )
+    assert r.status_code == 200, r.text
+
+    await db_session.refresh(e)
+    notes = (e.extra_data or {}).get("notes") or []
+    assert len(notes) == 1, notes
+    note = notes[0]
+    assert note["stage"] == EntityStatus.transferred.value
+    assert note["stage_label"] == "Перешёл в отдел"
+    assert note["from_status"] == EntityStatus.probation.value
+    assert note["author_id"] == admin_user.id
+    assert note["text"] == ""
+
+    # Повторный PATCH тем же статусом строк в ленту не плодит.
+    await client.patch(
+        f"/api/staff-board/rows/{e.id}",
+        json={"status": EntityStatus.transferred.value}, headers=_h(admin_user),
+    )
+    await db_session.refresh(e)
+    assert len((e.extra_data or {}).get("notes") or []) == 1

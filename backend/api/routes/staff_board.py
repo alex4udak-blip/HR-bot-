@@ -22,12 +22,12 @@ PracticeListPage, так что уже введённые данные подх�
 """
 import logging
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import String, cast, select
+from sqlalchemy import String, and_, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -60,6 +60,27 @@ BOARD_STATUSES: List[EntityStatus] = [
     EntityStatus.dismissed,
     EntityStatus.quit,
 ]
+
+# Ушёл сам или не прошёл: отказ и «отозван» ПОСЛЕ того, как человек уже был в
+# отделе, — это уход, а не работа воронки. Такие строки остаются на доске и
+# показываются в группе «Уволен / Уволился» (владелец, 06.10.2026: «поменял
+# статус на отозван — он просто исчез из статусов, это неверно»). У кандидата
+# без отдела те же статусы на доску по-прежнему не попадают.
+DEPARTED_STATUSES: List[EntityStatus] = [
+    EntityStatus.rejected,
+    EntityStatus.withdrawn,
+]
+
+# Подписи статусов для записи в ленте карточки — те же слова, что видит HR.
+STATUS_LABELS_RU = {
+    EntityStatus.hired.value: "Оффер принят",
+    EntityStatus.probation.value: "Практика",
+    EntityStatus.transferred.value: "Перешёл в отдел",
+    EntityStatus.dismissed.value: "Уволен",
+    EntityStatus.quit.value: "Уволился",
+    EntityStatus.rejected.value: "Отказ",
+    EntityStatus.withdrawn.value: "Отозван",
+}
 
 _SETTINGS_KEY = "staff_directions"
 
@@ -297,6 +318,38 @@ class BoardAssignee(BaseModel):
     user_id: int
     name: Optional[str] = None
     auto: bool = False
+
+
+def _stage_note(
+    entity: Entity,
+    old_status: EntityStatus,
+    new_status: EntityStatus,
+    user: User,
+) -> Optional[Dict[str, Any]]:
+    """Запись о переводе для ленты карточки — та же, что пишет «Все кандидаты».
+
+    Лента кандидата вне воронок хранит переводы комментарием в
+    ``extra_data.notes`` (поля ``stage`` + ``from_status``), и её корзина
+    возвращает прежний статус (маркер ``NOTE_STAGE_UNDO``). Доска пишет такую
+    же запись, чтобы перевод отсюда не был невидимым. Текста нет: в ленте это
+    одна строка со статусом.
+
+    Возвращает готовую запись или None, если статус не менялся.
+    """
+    old = old_status.value if hasattr(old_status, "value") else str(old_status)
+    new = new_status.value if hasattr(new_status, "value") else str(new_status)
+    if old == new:
+        return None
+    return {
+        "id": str(uuid.uuid4()),
+        "text": "",
+        "date": datetime.now(timezone.utc).isoformat(),
+        "stage": new,
+        "stage_label": STATUS_LABELS_RU.get(new, new),
+        "from_status": old,
+        "author_id": user.id,
+        "author_name": user.name,
+    }
 
 
 def _manual_assignee_ids(ex: Dict[str, Any]) -> Optional[List[int]]:
@@ -1318,21 +1371,26 @@ async def list_rows(
     if not org:
         raise HTTPException(403, "No organization access")
 
-    # На доске — только статусы из BOARD_STATUSES (см. выше): назначение в
-    # отдел человека здесь НЕ удерживает. Ушёл в отказ или резерв — пропал с
-    # доски, вернулся в практику/штат — появился снова со своим отделом:
-    # назначение при этом никуда не девается, оно живёт отдельно от статуса.
+    # Кто на доске: статусы жизненного цикла (BOARD_STATUSES) плюс те, кто уже
+    # стоял в отделе и ушёл — отказ/«отозван» у человека с назначением
+    # (DEPARTED_STATUSES). Кандидат без отдела с теми же статусами сюда не
+    # попадает: это работа воронки.
     #
     # Статус сравниваем как ТЕКСТ, а не как enum: если значения dismissed/quit
     # ещё не доехали в pg-enum (ALTER TYPE в start.sh не отработал), обычный
     # IN по enum-у уронил бы весь запрос. С cast доска грузится всегда.
+    placed_ids = set((await db.execute(
+        select(BoardPlacement.entity_id).where(BoardPlacement.org_id == org.id)
+    )).scalars().all())
+    on_board = cast(Entity.status, String).in_([s.value for s in BOARD_STATUSES])
+    if placed_ids:
+        on_board = or_(on_board, and_(
+            Entity.id.in_(placed_ids),
+            cast(Entity.status, String).in_([s.value for s in DEPARTED_STATUSES]),
+        ))
     entities = (await db.execute(
         select(Entity)
-        .where(
-            Entity.org_id == org.id,
-            cast(Entity.status, String).in_([s.value for s in BOARD_STATUSES]),
-            Entity.is_archived.is_not(True),
-        )
+        .where(Entity.org_id == org.id, on_board, Entity.is_archived.is_not(True))
         .order_by(Entity.name)
     )).scalars().all()
 
@@ -1451,6 +1509,7 @@ async def update_row(
 
     # --- Поля самой карточки ---
     dismissal_triggered = False
+    status_note: Optional[Dict[str, Any]] = None
     if "status" in payload:
         raw = payload["status"]
         try:
@@ -1459,7 +1518,7 @@ async def update_row(
             raise HTTPException(400, f"Неизвестный статус: {raw}")
         # Только статусы доски: иначе строка с «отказом» молча пропала бы
         # отсюда, и HR не понял бы, куда делся человек.
-        if new_status not in BOARD_STATUSES:
+        if new_status not in BOARD_STATUSES and new_status not in DEPARTED_STATUSES:
             raise HTTPException(400, f"Статус «{raw}» не относится к доске «Статусы»")
         # Перевод в «Уволен»/«Уволился» — это ВТОРАЯ дверь увольнения (первая —
         # DELETE /employees). Раньше доска меняла только статус карточки, а
@@ -1469,6 +1528,11 @@ async def update_row(
             new_status in (EntityStatus.dismissed, EntityStatus.quit)
             and entity.status not in (EntityStatus.dismissed, EntityStatus.quit)
         )
+        # Перевод с доски должен оставлять след в ленте карточки — как перевод
+        # из «Все кандидаты» (владелец, 06.10.2026: «нету логов, что он перешёл
+        # в отдел»). Раньше доска меняла статус молча: в ленте было видно всё,
+        # кроме переводов, сделанных здесь.
+        status_note = _stage_note(entity, entity.status, new_status, current_user)
         entity.status = new_status
 
     if "position" in payload:
@@ -1618,6 +1682,16 @@ async def update_row(
             touched_placement = True
         else:
             touched_extra = True
+
+    if status_note is not None:
+        notes = list(ex.get("notes") or [])
+        notes.append(status_note)
+        ex["notes"] = notes
+        touched_extra = True
+        logger.info(
+            "BOARD_STATUS_NOTE: entity %s %s → %s by user %s",
+            entity.id, status_note["from_status"], status_note["stage"], current_user.id,
+        )
 
     if touched_extra:
         entity.extra_data = ex
