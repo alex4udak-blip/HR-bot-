@@ -8,8 +8,8 @@
  * неудача выглядела как удача: текст исчезал из поля, в ленте его не было, а
  * восстановить набранное было уже неоткуда.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
 
 import CandidateVacancyCard from "../CandidateVacancyCard";
 import type { KanbanCard } from "@/services/api/candidates";
@@ -38,12 +38,26 @@ const card = {
   extra_data: {},
 } as unknown as KanbanCard;
 
+// Черновик комментария живёт по ключу «кандидат:заявка» и переживает перемонтаж
+// (в этом весь смысл, см. CandidateVacancyCard). Поэтому каждому тесту — своя
+// заявка, иначе соседний тест открывал бы поле с чужим текстом.
+let nextApplicationId = 1000;
+
+beforeEach(() => {
+  nextApplicationId += 1;
+  try {
+    localStorage.clear();
+  } catch {
+    /* jsdom без хранилища */
+  }
+});
+
 function renderCard(onComment: ReturnType<typeof vi.fn>) {
   render(
     <CandidateVacancyCard
       {...({
         card,
-        applicationId: 42,
+        applicationId: nextApplicationId,
         vacancyTitle: "Трафик",
         currentStage: "screening",
         notes: [],
@@ -107,5 +121,39 @@ describe("Комментарий в карточке воронки", () => {
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
 
     await waitFor(() => expect(box.innerHTML).toBe(""));
+  });
+});
+
+describe("Черновик комментария", () => {
+  it("переживает уход на другого кандидата и возврат", async () => {
+    // Случай Влады 07.10.2026: набранный текст исчезал молча, стоило уйти с
+    // карточки (а на сервер он и не уходил — в логах прода запроса нет вовсе).
+    const onComment = vi.fn().mockResolvedValue(true);
+    renderCard(onComment);
+    const box = await typeComment("Собес прошёл хорошо");
+
+    cleanup(); // ушли с карточки
+    renderCard(onComment); // вернулись к тому же кандидату и той же воронке
+
+    const restored = document.querySelector(
+      '[role="textbox"][contenteditable="true"]',
+    ) as HTMLElement;
+    expect(restored.innerHTML).toContain("Собес прошёл хорошо");
+    expect(box).not.toBe(restored); // это уже другой узел, текст поднят из черновика
+  });
+
+  it("после успешного сохранения черновик не возвращается", async () => {
+    const onComment = vi.fn().mockResolvedValue(true);
+    renderCard(onComment);
+    await typeComment("Разовый комментарий");
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(onComment).toHaveBeenCalled());
+
+    cleanup();
+    renderCard(onComment);
+    expect(
+      (screen.getByPlaceholderText("Написать комментарий") as HTMLTextAreaElement)
+        .value,
+    ).toBe("");
   });
 });

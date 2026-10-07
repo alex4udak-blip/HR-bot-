@@ -184,7 +184,41 @@ const REACTION_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👀", "✅", "😂"
 // (история переходов именно этой заявки) в той же avatar/«Действия»-таймлайн-
 // разметке, что и исходная карточка.
 // ================================================================
-const CandidateVacancyCard = memo(function CandidateVacancyCard({
+/**
+ * Черновики комментариев: ключ — «кандидат:заявка».
+ *
+ * Держим и в памяти, и в localStorage: память переживает переключение карточек
+ * внутри вкладки, localStorage — случайную перезагрузку. Любая осечка хранилища
+ * (приватное окно, запрет на данные сайта) не должна ронять редактор, поэтому
+ * обе операции в try/catch, а память — источник правды.
+ */
+const COMMENT_DRAFT_PREFIX = "hf-comment-draft:";
+const commentDrafts = new Map<string, string>();
+
+function readCommentDraft(key: string): string {
+  const inMemory = commentDrafts.get(key);
+  if (inMemory !== undefined) return inMemory;
+  try {
+    return localStorage.getItem(COMMENT_DRAFT_PREFIX + key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeCommentDraft(key: string, value: string): void {
+  if (value) commentDrafts.set(key, value);
+  else commentDrafts.delete(key);
+  try {
+    if (value) localStorage.setItem(COMMENT_DRAFT_PREFIX + key, value);
+    else localStorage.removeItem(COMMENT_DRAFT_PREFIX + key);
+  } catch {
+    /* приватное окно — хватит памяти */
+  }
+}
+
+
+const CandidateVacancyCard = memo(
+function CandidateVacancyCard({
   card,
   applicationId,
   vacancyTitle,
@@ -356,7 +390,28 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
   const [savingNoteEdit, setSavingNoteEdit] = useState(false);
   // Меню строки ленты (шеврон): Редактировать / Закрепить / Удалить.
   const [rowMenuKey, setRowMenuKey] = useState<string | null>(null);
-  const [comment, setComment] = useState("");
+  // Черновик комментария живёт ДОЛЬШЕ открытой карточки.
+  //
+  // Разбор случая Влады (07.10.2026): по логам прода её комментарий на сервер
+  // не уходил вовсе — ни запроса, ни ошибки. Воспроизвелось просто: набрал
+  // текст, переключился на другого кандидата (или ушёл добавить метку) — и
+  // набранное исчезло молча, без предупреждения и без следа. Теперь черновик
+  // привязан к паре «кандидат + воронка», переживает переключение карточек,
+  // перезагрузку вкладки и стирается только после успешного сохранения.
+  const draftKey = `${card.id}:${applicationId}`;
+  const [comment, setCommentState] = useState(() => readCommentDraft(draftKey));
+  const setComment = useCallback(
+    (next: string) => {
+      setCommentState(next);
+      writeCommentDraft(draftKey, next);
+    },
+    [draftKey],
+  );
+  // Открытая карточка сменилась (тот же компонент, другой кандидат) — показываем
+  // черновик нового, а не текст предыдущего.
+  useEffect(() => {
+    setCommentState(readCommentDraft(draftKey));
+  }, [draftKey]);
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   // Гейт от даблклика/медленной сети: без него «Сохранить» в дропдауне смены
