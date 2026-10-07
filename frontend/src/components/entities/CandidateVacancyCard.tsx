@@ -260,7 +260,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     // Дописка коммента к прошлой статусной записи: parent_key = reactionKey
     // родителя, stage_at_write_label = метка текущего этапа (плашка).
     opts?: { parent_key?: string; stage_at_write_label?: string },
-  ) => Promise<void> | void;
+    // false = сервер комментарий НЕ принял: поле очищать нельзя.
+  ) => Promise<boolean | void> | boolean | void;
   onDeleteHistory: (
     applicationId: number,
     historyId: number,
@@ -779,26 +780,38 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
     }
     setSendingComment(true);
     try {
-      await onComment(applicationId, currentStage, statusLabel, comment.trim());
-      setComment("");
+      const ok = await onComment(
+        applicationId,
+        currentStage,
+        statusLabel,
+        comment.trim(),
+      );
+      // Поле чистим ТОЛЬКО когда сервер подтвердил. Раньше текст стирался
+      // всегда, и неудачное сохранение выглядело как удачное: комментарий
+      // исчезал из поля, в ленте его не было, набранное пропадало совсем
+      // (жалоба Влады 07.10.2026: «написала коммент, сохранила… он исчез»).
+      if (ok !== false) setComment("");
     } finally {
       setSendingComment(false);
     }
   };
 
-  const saveStageChangeComment = async () => {
+  const saveStageChangeComment = async (): Promise<boolean> => {
     const text = stageChangeComment.trim();
-    if (!text) return;
+    if (!text) return true;
     const targetOption = stagePickerOptions.find(
       (option) => option.status === pendingStage,
     );
-    await onComment(
+    const ok = await onComment(
       applicationId,
       pendingStage,
       targetOption?.label || statusLabel,
       text,
     );
+    // Не сохранилось — текст в окне остаётся, окно не закрываем.
+    if (ok === false) return false;
     setStageChangeComment("");
+    return true;
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -982,7 +995,8 @@ const CandidateVacancyCard = memo(function CandidateVacancyCard({
                               return; // дропдаун остаётся открытым, текст коммента не теряется
                             }
                           } else if (text) {
-                            await saveStageChangeComment();
+                            const saved = await saveStageChangeComment();
+                            if (!saved) return; // текст остаётся в окне
                           }
                           setStageChangeComment("");
                           setShowStageDD(false);

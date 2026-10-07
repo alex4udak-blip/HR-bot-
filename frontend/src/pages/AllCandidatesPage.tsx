@@ -2464,7 +2464,7 @@ const InfoTab = memo(function InfoTab({
         stageLabel: string,
         text: string,
         opts?: { from_status?: string },
-      ) => Promise<void>)
+      ) => Promise<boolean>)
     | null
   >(null);
 
@@ -2582,6 +2582,9 @@ const InfoTab = memo(function InfoTab({
         primaryBlock?.vacancy_id;
       // Комментарий пишем на entity (тот же кандидат во всех заявках) через
       // POST /entities/{id}/notes — рекрутёру достаточно view-доступа.
+      // saved=false уедет наверх: карточка не станет чистить поле, и набранный
+      // текст не пропадёт вместе с неудачным запросом (07.10.2026).
+      let saved = true;
       try {
         const resp = await addEntityNote(card.id, {
           // Пустой текст допустим только у записи о переводе (есть stage):
@@ -2605,6 +2608,7 @@ const InfoTab = memo(function InfoTab({
         bumpNotes(); // мгновенно показать коммент (мутация card не триггерит ре-рендер)
         toast.success("Комментарий сохранён");
       } catch (err) {
+        saved = false;
         console.error("Failed to save comment:", err);
         // Бэкенд (add_entity_note) отдаёт 400 «Comment too long» при превышении
         // NOTE_TEXT_MAX_LENGTH — без этой проверки юзер видел generic ошибку и
@@ -2626,6 +2630,7 @@ const InfoTab = memo(function InfoTab({
         /* ignore */
       }
       await loadActivity();
+      return saved;
     },
     [card, loadActivity, bumpNotes, activityBlocks, primaryBlock],
   );

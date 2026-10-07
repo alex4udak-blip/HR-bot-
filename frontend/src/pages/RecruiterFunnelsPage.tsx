@@ -1783,10 +1783,17 @@ export default function RecruiterFunnelsPage() {
     text: string,
     stage?: string | null,
     stageLabel?: string | null,
-  ) => {
-    if (blockIfArchived()) return;
-    if (!selectedCandidate?.entity_id || !text.trim()) return;
+  ): Promise<boolean> => {
+    if (blockIfArchived()) return false;
+    if (!text.trim()) return false;
+    if (!selectedCandidate?.entity_id) {
+      // Раньше тут был молчаливый выход: карточка всё равно чистила поле, и
+      // набранный комментарий пропадал без единого сообщения (07.10.2026).
+      toast.error('Кандидат не выбран — обновите страницу и повторите');
+      return false;
+    }
     setCommentSaving(true);
+    let saved = true;
     try {
       // Через POST /entities/{id}/notes — рекрутёру достаточно view-доступа.
       // vacancy_id — привязка коммента к ЭТОЙ воронке: один кандидат в нескольких
@@ -1807,6 +1814,7 @@ export default function RecruiterFunnelsPage() {
       toast.success('Комментарий сохранён');
       if (commentRef.current) commentRef.current.value = '';
     } catch (err) {
+      saved = false;
       console.error('Failed to save comment:', err);
       // Бэкенд (add_entity_note) отдаёт 400 «Comment too long» при превышении
       // NOTE_TEXT_MAX_LENGTH — без этой проверки юзер видел generic «Не удалось
@@ -1833,6 +1841,7 @@ export default function RecruiterFunnelsPage() {
       }
       setCommentSaving(false);
     }
+    return saved;
   }, [selectedCandidate?.entity_id, blockIfArchived]);
 
   // Этапы для пикера — тот же список и лейблы, что были в StageDropdown.
@@ -1871,8 +1880,9 @@ export default function RecruiterFunnelsPage() {
     async (_appId: number, stage: string, stageLabel: string, text: string) => {
       // saveEntityNote привязан к selectedCandidate.entity_id — это ТОТ ЖЕ
       // кандидат во всех его заявках, поэтому подходит для любой карточки.
-      await saveEntityNote(text, stage, stageLabel);
+      const saved = await saveEntityNote(text, stage, stageLabel);
       await refreshActivity();
+      return saved;
     },
     [saveEntityNote, refreshActivity],
   );
