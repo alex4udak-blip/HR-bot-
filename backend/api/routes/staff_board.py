@@ -36,6 +36,7 @@ from ..database import get_db
 from ..models.database import (
     Entity, EntityStatus, EntityFile, EntityFileType,
     Employee, Organization, User, BoardDepartment, BoardDepartmentOrder, BoardPlacement,
+    BoardStatusView,
     EntityTag, entity_tag_association, OrgMember, OrgRole, UserRole,
     NameTag, entity_name_tag_association,
 )
@@ -1370,6 +1371,112 @@ async def delete_placement(
         f"«{dept.name if dept else '—'}» by user {current_user.id}"
     )
     return {"success": True}
+
+
+# ============================================================
+# ЛИЧНЫЕ НАБОРЫ СЕКЦИЙ (конструктор статусов)
+# ============================================================
+
+class BoardStatusViewOut(BaseModel):
+    """Какие секции доски показывать на одной вкладке. Пусто — все."""
+    scope_key: str
+    statuses: List[str]
+
+
+class BoardStatusViewUpdate(BaseModel):
+    scope_key: str
+    # Пустой список = сбросить настройку: вкладка снова показывает все секции.
+    statuses: List[str]
+
+
+# Ключи секций доски — те же, что у фронта (STATUSES в StatusesPage).
+BOARD_SECTIONS = ("transferred", "dismissed", "probation", "hired")
+
+
+def _clean_scope(raw: str) -> str:
+    key = (raw or "").strip()
+    if not key or len(key) > 32:
+        raise HTTPException(400, "Некорректная вкладка")
+    return key
+
+
+@router.get("/status-views", response_model=List[BoardStatusViewOut])
+async def list_status_views(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Наборы секций ТЕКУЩЕГО пользователя — по одной записи на вкладку.
+
+    Мит 07.10.2026: «у Маши в отделе SANDBOX видны „Перевёлся“ и „Практика“, а
+    у Насти только „Уволился“». Чужие наборы не отдаём и не трогаем.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+    rows = (await db.execute(
+        select(BoardStatusView).where(
+            BoardStatusView.user_id == current_user.id,
+            BoardStatusView.org_id == org.id,
+        )
+    )).scalars().all()
+    return [
+        BoardStatusViewOut(
+            scope_key=r.scope_key,
+            statuses=[s for s in (r.statuses or []) if s in BOARD_SECTIONS],
+        )
+        for r in rows
+    ]
+
+
+@router.put("/status-views", response_model=List[BoardStatusViewOut])
+async def save_status_view(
+    data: BoardStatusViewUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Сохранить СВОЙ набор секций для одной вкладки.
+
+    Пустой список и «отмечено всё» одинаково означают «показывать все»: запись
+    удаляется, чтобы новая секция в будущем не оказалась молча скрытой.
+    """
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+
+    scope = _clean_scope(data.scope_key)
+    wanted = [s for s in data.statuses if s in BOARD_SECTIONS]
+    row = (await db.execute(
+        select(BoardStatusView).where(
+            BoardStatusView.user_id == current_user.id,
+            BoardStatusView.scope_key == scope,
+        )
+    )).scalar_one_or_none()
+
+    if not wanted or len(set(wanted)) == len(BOARD_SECTIONS):
+        if row is not None:
+            await db.delete(row)
+            logger.info(
+                f"BOARD_SECTIONS reset: вкладка {scope} by user {current_user.id}"
+            )
+    elif row is None:
+        db.add(BoardStatusView(
+            user_id=current_user.id, scope_key=scope, org_id=org.id, statuses=wanted,
+        ))
+        logger.info(
+            f"BOARD_SECTIONS set: вкладка {scope} → {wanted} by user {current_user.id}"
+        )
+    else:
+        row.statuses = wanted
+        row.org_id = org.id
+        flag_modified(row, "statuses")
+        logger.info(
+            f"BOARD_SECTIONS set: вкладка {scope} → {wanted} by user {current_user.id}"
+        )
+
+    await db.commit()
+    return await list_status_views(db=db, current_user=current_user)
 
 
 @router.get("/positions", response_model=List[str])

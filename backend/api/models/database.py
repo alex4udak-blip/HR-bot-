@@ -2090,6 +2090,27 @@ class BoardPlacement(Base):
     )
 
 
+class BoardStatusView(Base):
+    """Какие секции доски «Статусы» показывать — СВОИ у каждого и у отдела.
+
+    Мит 07.10.2026: «у Маши в отделе SANDBOX видны „Перевёлся“ и „Практика“, а
+    у Насти только „Уволился“ — они сами выбрали эти статусы». Поэтому ключ
+    составной: пользователь + вкладка доски (``scope_key`` — ``all``, ``none``
+    для «Без отдела» или id отдела строкой).
+
+    Записи нет — показываем ВСЕ секции: так ведут себя все, кто ничего не
+    настраивал, и новый отдел не открывается пустым.
+    """
+    __tablename__ = "staff_board_status_views"
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    # «all» | «none» | id отдела строкой — вкладка, к которой относится набор.
+    scope_key = Column(String(32), primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    statuses = Column(JSON, default=list)   # ключи секций: transferred, probation…
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
 class BoardDepartmentOrder(Base):
     """Порядок отделов в колонке слева — СВОЙ у каждого пользователя.
 

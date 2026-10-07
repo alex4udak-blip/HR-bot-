@@ -226,6 +226,18 @@ async def init_database():
          "индекс staff_board_placements.entity_id"),
         ("CREATE INDEX IF NOT EXISTS ix_staff_board_placements_department_id ON staff_board_placements (department_id)",
          "индекс staff_board_placements.department_id"),
+        # Личные наборы секций доски (07.10.2026): у каждого свой и для каждой
+        # вкладки свой. Нет записи — показываем все секции.
+        ("""CREATE TABLE IF NOT EXISTS staff_board_status_views (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                scope_key VARCHAR(32) NOT NULL,
+                org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                statuses JSON DEFAULT '[]',
+                updated_at TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (user_id, scope_key)
+            )""", "Create staff_board_status_views table"),
+        ("CREATE INDEX IF NOT EXISTS ix_staff_board_status_views_org_id ON staff_board_status_views (org_id)",
+         "индекс staff_board_status_views.org_id"),
     ):
         await run_migration(engine, sql, description)
 

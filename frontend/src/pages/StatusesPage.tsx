@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search, Loader2, Plus, Pencil, Eye, EyeOff, Check, Copy, Download, X,
-  ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal,
+  ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal, ListChecks,
 } from "lucide-react";
 import clsx from "clsx";
 import * as XLSX from "xlsx";
@@ -14,7 +14,10 @@ import {
   type BoardDepartment, type BoardRow, type BoardRowUpdate,
 } from "@/services/api/staffBoard";
 import { uploadEntityFile, deleteEntityFile, downloadEntityFile } from "@/services/api/entities";
-import { getBoardPositions, getBoardManagers } from "@/services/api/staffBoard";
+import {
+  getBoardPositions, getBoardManagers,
+  getBoardStatusViews, saveBoardStatusView,
+} from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
 import { removeTagFromEntity } from "@/services/api/tags";
 import { useUrlTab } from "@/hooks/useUrlTab";
@@ -360,6 +363,13 @@ export default function StatusesPage() {
     );
 
   const months = useMemo(() => recentMonths(), []);
+  // Какие секции показывать: СВОЙ набор у каждого и на каждой вкладке (мит
+  // 07.10.2026 — «у Маши в SANDBOX видны „Перевёлся“ и „Практика“, а у Насти
+  // только „Уволился“»). Ключ — та же строка, что у вкладки: «all», «__none__»
+  // или id отдела. Нет записи — показываем все секции.
+  const [statusViews, setStatusViews] = useState<Record<string, string[]>>({});
+  const [showSections, setShowSections] = useState(false);
+  const [savingSections, setSavingSections] = useState(false);
   // Окно выгрузки: месяцы и вехи стажа выбирают галочками, книга собирается
   // листами (Мария, 07.10.2026 — «выгрузка за сентябрь, октябрь и декабрь»).
   const [showExport, setShowExport] = useState(false);
@@ -398,6 +408,11 @@ export default function StatusesPage() {
   useEffect(() => {
     getBoardDepartments().then(setDepartments).catch(() => setDepartments([]));
     getBoardPositions().then(setPositions).catch(() => setPositions([]));
+    getBoardStatusViews()
+      .then((list) => setStatusViews(
+        Object.fromEntries(list.map((v) => [v.scope_key, v.statuses]))
+      ))
+      .catch(() => setStatusViews({}));
     getBoardManagers().then(setManagers).catch(() => setManagers([]));
     // Вести сотрудника может только HR. В организации числятся все
     // работники, и без фильтра в список попадали бы полсотни человек,
@@ -586,17 +601,35 @@ export default function StatusesPage() {
     return { list, none };
   }, [rows]);
 
+  /** Видны ли секции этой вкладки у ЭТОГО пользователя. Нет записи — все. */
+  const sectionsOf = useCallback(
+    (scope: string) => statusViews[scope],
+    [statusViews],
+  );
+  const sectionShown = useCallback(
+    (scope: string, row: BoardRow) => {
+      const set = sectionsOf(scope);
+      return !set || !set.length || set.includes(groupOf(row.status));
+    },
+    [sectionsOf],
+  );
+  const mySections = statusViews[dept];
+
   const counts = useMemo(() => {
     // У отдела — сколько в нём строк, у «Все» — сколько ЛЮДЕЙ: человек в
     // песочнице и в команде занимает две строки, но человек-то один, и бейдж
-    // не должен расходиться со списком.
-    const c: Record<string, number> = { all: new Set(searched.map((r) => r.entity_id)).size, [UNASSIGNED]: 0 };
+    // не должен расходиться со списком. Скрытые секции не считаем — иначе
+    // бейдж покажет больше, чем видно (правило «бейдж и список не расходятся»).
+    const c: Record<string, number> = { [UNASSIGNED]: 0 };
+    const people = new Set<number>();
     for (const r of searched) {
+      if (sectionShown("all", r)) people.add(r.entity_id);
       const key = r.department_id != null ? String(r.department_id) : UNASSIGNED;
-      c[key] = (c[key] || 0) + 1;
+      if (sectionShown(key, r)) c[key] = (c[key] || 0) + 1;
     }
+    c.all = people.size;
     return c;
-  }, [searched]);
+  }, [searched, sectionShown]);
 
   const visible = useMemo(() => {
     // В отделе — только его строки. «Без отдела» — те, кого ещё никуда не
@@ -698,7 +731,7 @@ export default function StatusesPage() {
   };
 
   const grouped = useMemo(
-    () => STATUSES.map((s) => {
+    () => STATUSES.filter((s) => !mySections || !mySections.length || mySections.includes(s.key)).map((s) => {
       const items = visible.filter((r) => (s.members as readonly string[]).includes(r.status));
       if (!sort) return { ...s, items };
       // Пустая дата — всегда в конце, в любую сторону: строка без даты не
@@ -713,7 +746,7 @@ export default function StatusesPage() {
         }),
       };
     }),
-    [visible, sort]
+    [visible, sort, mySections]
   );
 
   return (
@@ -770,6 +803,18 @@ export default function StatusesPage() {
               <option value={SOURCER_NONE}>Без сорсера · {sourcerOptions.none}</option>
             )}
           </select>
+
+          <button
+            className={clsx("hf-statuses-export-btn", mySections?.length && "hf-statuses-filters-btn-on")}
+            onClick={() => setShowSections(true)}
+            title="Какие секции показывать на этой вкладке — только у вас"
+          >
+            <ListChecks size={15} />
+            Секции
+            {!!mySections?.length && (
+              <span className="hf-statuses-filters-badge">{mySections.length}</span>
+            )}
+          </button>
 
           <button
             className="hf-statuses-export-btn"
@@ -858,6 +903,31 @@ export default function StatusesPage() {
         </div>
       ) : (
         <div className="hf-statuses-body">
+          {showSections && (
+            <SectionsModal
+              scopeLabel={
+                dept === "all" ? "Все"
+                  : dept === UNASSIGNED ? "Без отдела"
+                    : (departments.find((d) => String(d.id) === dept)?.name || "вкладке")
+              }
+              picked={mySections ?? STATUSES.map((s) => s.key)}
+              busy={savingSections}
+              onClose={() => setShowSections(false)}
+              onSave={async (keys) => {
+                setSavingSections(true);
+                try {
+                  const list = await saveBoardStatusView(dept, keys);
+                  setStatusViews(Object.fromEntries(list.map((v) => [v.scope_key, v.statuses])));
+                  setShowSections(false);
+                } catch (e: any) {
+                  toast.error(e?.response?.data?.detail || "Не удалось сохранить набор секций");
+                } finally {
+                  setSavingSections(false);
+                }
+              }}
+            />
+          )}
+
           {showExport && (
             <ExportModal
               months={months}
@@ -1272,6 +1342,72 @@ function DepartmentSidebar({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** Окно «Секции»: какие статусы показывать на этой вкладке — лично у себя.
+ *
+ *  Мит 07.10.2026: «разные лист-вью под каждого пользователя и под каждый
+ *  отдел — у Маши в SANDBOX видны „Перевёлся“ и „Практика“, а у Насти только
+ *  „Уволился“». Набор привязан к паре «человек + вкладка»: у соседа и на
+ *  другой вкладке он свой. Снял все галочки — показываются все секции. */
+function SectionsModal({
+  scopeLabel, picked, busy, onClose, onSave,
+}: {
+  scopeLabel: string;
+  picked: string[];
+  busy: boolean;
+  onClose: () => void;
+  onSave: (keys: string[]) => void;
+}) {
+  const [keys, setKeys] = useState<string[]>(picked);
+  const toggle = (k: string) =>
+    setKeys((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
+
+  return (
+    <div className="hf-statuses-modal-back" onClick={onClose}>
+      <div className="hf-statuses-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="hf-statuses-modal-head">
+          <h3>Секции на вкладке «{scopeLabel}»</h3>
+          <button className="hf-statuses-folder-action" onClick={onClose} title="Закрыть">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="hf-statuses-modal-label">
+          Что показывать
+          <span className="hf-statuses-modal-note">
+            Набор только ваш и только для этой вкладки: у коллег и в других отделах — свой.
+          </span>
+          {STATUSES.map((st) => (
+            <label key={st.key} className="hf-statuses-modal-check">
+              <input
+                type="checkbox"
+                checked={keys.includes(st.key)}
+                disabled={busy}
+                onChange={() => toggle(st.key)}
+              />
+              {st.label}
+            </label>
+          ))}
+        </div>
+
+        <div className="hf-statuses-modal-foot">
+          <button
+            className="hf-statuses-modal-cancel"
+            onClick={() => onSave([])}
+            disabled={busy}
+            title="Показывать все секции"
+          >
+            Показать все
+          </button>
+          <button className="hf-statuses-modal-save" onClick={() => onSave(keys)} disabled={busy}>
+            {busy ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />}
+            Сохранить
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

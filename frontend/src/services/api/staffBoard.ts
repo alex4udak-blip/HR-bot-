@@ -245,3 +245,32 @@ export async function addBoardPlacement(
 export async function removeBoardPlacement(placementId: number): Promise<void> {
   await api.delete(`/staff-board/placements/${placementId}`);
 }
+
+// ─── Личные наборы секций доски ─────────────────────────────
+
+/** Какие секции доски показывать на одной вкладке. Своё у каждого человека и у
+ *  каждого отдела (мит 07.10.2026: «у Маши в SANDBOX видны „Перевёлся“ и
+ *  „Практика“, а у Насти только „Уволился“»). Нет записи — показываем все. */
+export interface BoardStatusView {
+  /** 'all' | 'none' (без отдела) | id отдела строкой */
+  scope_key: string;
+  statuses: string[];
+}
+
+export async function getBoardStatusViews(): Promise<BoardStatusView[]> {
+  const { data } = await api.get('/staff-board/status-views');
+  return data || [];
+}
+
+/** Сохранить СВОЙ набор для вкладки. Пустой список или «отмечено всё» —
+ *  сбросить: вкладка снова показывает все секции. */
+export async function saveBoardStatusView(
+  scopeKey: string,
+  statuses: string[]
+): Promise<BoardStatusView[]> {
+  const { data } = await api.put('/staff-board/status-views', {
+    scope_key: scopeKey,
+    statuses,
+  });
+  return data || [];
+}
