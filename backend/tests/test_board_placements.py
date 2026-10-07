@@ -728,3 +728,38 @@ async def test_practice_date_visible_in_department_row(
     # Своя дата отдела в песочницу не протекает.
     assert rows["Facebook"]["department_start_date"] == date.today().isoformat()
     assert rows["SANDBOX"]["department_start_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_admins_only_department(
+    client, db_session, organization, admin_user, second_user, org_owner
+):
+    """«Только администраторам»: рекрутёр отдела не видит, админ видит.
+
+    Мария (07.10.2026): «не будет всего этого списка, а будет либо всем, либо
+    только вам» — выбирать конкретных людей больше не нужно.
+    """
+    db_session.add(OrgMember(
+        org_id=organization.id, user_id=second_user.id, role=OrgRole.hr,
+        created_at=datetime.utcnow(),
+    ))
+    await db_session.commit()
+    open_dept = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    secret = await _dept(client, admin_user, "Юнит Насти", visibility="admins")
+    assert secret["visibility"] == "admins"
+    assert secret["visible_to"] == []
+
+    mine = (await client.get("/api/staff-board/departments", headers=_h(admin_user))).json()
+    assert {d["name"] for d in mine} == {"SANDBOX", "Юнит Насти"}
+    theirs = (await client.get("/api/staff-board/departments", headers=_h(second_user))).json()
+    assert [d["name"] for d in theirs] == ["SANDBOX"]
+
+    # Человек из закрытого отдела у рекрутёра показывается без отдела, а не пропадает.
+    e = await _person(db_session, organization, admin_user)
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": secret["id"]}, headers=_h(admin_user),
+    )
+    rows = await _rows(client, second_user, e.id)
+    assert len(rows) == 1 and rows[0]["department_id"] is None
+    assert (await _rows(client, admin_user, e.id))[0]["department_name"] == "Юнит Насти"

@@ -174,6 +174,57 @@ function recentMonths(now = new Date()): { label: string; from: string; to: stri
   return out;
 }
 
+/** Вехи стажа для выгрузки: «месяц работы», «испытательный срок», «год». */
+const MILESTONES = [
+  { key: "m1", label: "1 месяц работы", sheet: "1 месяц" },
+  { key: "m3", label: "Испытательный срок (3 мес)", sheet: "Испытательный срок" },
+  { key: "y1", label: "Год работы", sheet: "Год работы" },
+] as const;
+type MilestoneKey = (typeof MILESTONES)[number]["key"];
+
+export type ExportPlan = { months: string[]; marks: MilestoneKey[] };
+
+/** Какие листы попадут в книгу и кто в каждом.
+ *
+ *  Ничего не отмечено — один лист с тем, что на экране (так кнопка работала
+ *  раньше). Иначе лист на каждый выбранный месяц — по дате ВЫХОДА В ОТДЕЛ — и
+ *  лист на каждую веху стажа: «выгрузка за сентябрь, за октябрь и за декабрь…
+ *  как месяц работы сотрудника, как закрытие испытательного срока и как год
+ *  работы» (Мария, 07.10.2026). Вехи считаются внутри выбранных месяцев, а
+ *  если месяцы не отмечены — за всё время.
+ */
+export function buildExportSheets(
+  rows: BoardRow[],
+  months: { label: string; from: string; to: string }[],
+  plan?: ExportPlan,
+): { title: string; items: BoardRow[] }[] {
+  const inRange = (iso: string | null | undefined, from: string, to: string) =>
+    !!iso && iso.slice(0, 10) >= from && iso.slice(0, 10) <= to;
+
+  const picked = plan ? months.filter((m) => plan.months.includes(m.label)) : [];
+  const marks = plan?.marks ?? [];
+  if (!picked.length && !marks.length) return [{ title: "Статусы", items: rows }];
+
+  const sheets: { title: string; items: BoardRow[] }[] = [];
+  for (const m of picked) {
+    sheets.push({
+      title: m.label,
+      items: rows.filter((r) => inRange(r.department_start_date, m.from, m.to)),
+    });
+  }
+  // Месяцы идут от свежего к старому, поэтому границы берём с краёв списка.
+  const from = picked.length ? picked[picked.length - 1].from : "0000-01-01";
+  const to = picked.length ? picked[0].to : "9999-12-31";
+  for (const key of marks) {
+    const mark = MILESTONES.find((x) => x.key === key)!;
+    sheets.push({
+      title: mark.sheet,
+      items: rows.filter((r) => inRange(r[mark.key] as string | null, from, to)),
+    });
+  }
+  return sheets;
+}
+
 const countActive = (f: BoardFilters) =>
   Object.values(f.values).filter((v) => v && v.length).length +
   Object.values(f.dates).filter((d) => d && (d.from || d.to)).length;
@@ -308,6 +359,10 @@ export default function StatusesPage() {
       cur?.key !== key ? { key, dir: "desc" } : cur.dir === "desc" ? { key, dir: "asc" } : null
     );
 
+  const months = useMemo(() => recentMonths(), []);
+  // Окно выгрузки: месяцы и вехи стажа выбирают галочками, книга собирается
+  // листами (Мария, 07.10.2026 — «выгрузка за сентябрь, октябрь и декабрь»).
+  const [showExport, setShowExport] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Строка = назначение (человек в отделе), поэтому у одного человека их может
   // быть несколько: в песочнице и в команде. Ключ — назначение, иначе правка
@@ -595,37 +650,51 @@ export default function StatusesPage() {
    *  отбирает людей за месяц или по сорсеру и дальше считает выплаты в
    *  таблице. Выгружаем РОВНО видимое — с учётом поиска, фильтров, выбранного
    *  отдела и сортировки, плюс колонку статуса: в файле групп нет. */
-  const exportToExcel = () => {
+  /** Строки → лист: шапка как в таблице, плюс колонка со статусом. */
+  const sheetFrom = (items: BoardRow[]) => {
     const cols = COLUMNS.filter((c) => c.key !== "offer");
     const header = ["Статус", ...cols.map((c) => FILTER_LABELS[c.key as FilterKey] || c.label)];
-    const body: (string | number)[][] = [];
-
-    for (const group of grouped) {
-      for (const r of group.items) {
-        body.push([
-          group.label,
-          ...cols.map((c) => {
-            if (c.key === "sourcer") return (r.sourcers ?? []).map((t) => t.name).join(", ");
-            return cellText(r, c.key as FilterKey);
-          }),
-        ]);
-      }
-    }
-
-    if (!body.length) {
-      toast("Выгружать нечего — под фильтры никто не подошёл");
-      return;
-    }
-
+    const body: (string | number)[][] = items.map((r) => [
+      STATUSES.find((s2) => (s2.members as readonly string[]).includes(r.status))?.label || r.status,
+      ...cols.map((c) => {
+        if (c.key === "sourcer") return (r.sourcers ?? []).map((t) => t.name).join(", ");
+        return cellText(r, c.key as FilterKey);
+      }),
+    ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
     ws["!cols"] = header.map((h, i) => ({
       wch: Math.min(40, Math.max(h.length + 2, ...body.map((row) => String(row[i] ?? "").length + 2))),
     }));
+    return { ws, count: body.length };
+  };
+
+  /** Выгрузка в Excel.
+   *
+   *  Простой клик отдаёт то, что на экране. Окно «Выгрузить» собирает КНИГУ:
+   *  лист на каждый выбранный месяц и лист на каждую веху стажа — «выгрузку за
+   *  сентябрь, за октябрь и за декабрь… как месяц работы сотрудника, как
+   *  закрытие испытательного срока и как год работы» (Мария, 07.10.2026).
+   *  Период считается по дате ВЫХОДА В ОТДЕЛ, веха — по её собственной дате.
+   */
+  const exportToExcel = (plan?: ExportPlan) => {
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Статусы");
+    let total = 0;
+    for (const sheet of buildExportSheets(grouped.flatMap((g) => g.items), months, plan)) {
+      if (!sheet.items.length) continue;
+      const { ws, count } = sheetFrom(sheet.items);
+      // Excel не принимает в имени листа : \ / ? * [ ] и больше 31 символа.
+      XLSX.utils.book_append_sheet(wb, ws, sheet.title.replace(/[:\\/?*[\]]/g, " ").slice(0, 31));
+      total += count;
+    }
+
+    
+    if (!total) {
+      toast("Выгружать нечего — под выбранные периоды никто не подошёл");
+      return;
+    }
     const today = new Date().toISOString().slice(0, 10);
     XLSX.writeFile(wb, `statuses-${today}.xlsx`);
-    toast.success(`Выгружено строк: ${body.length}`);
+    toast.success(`Выгружено строк: ${total}`);
   };
 
   const grouped = useMemo(
@@ -704,8 +773,8 @@ export default function StatusesPage() {
 
           <button
             className="hf-statuses-export-btn"
-            onClick={exportToExcel}
-            title="Выгрузить в Excel то, что сейчас отобрано фильтрами"
+            onClick={() => setShowExport(true)}
+            title="Выгрузить в Excel: то, что на экране, или сразу несколько периодов"
           >
             <Download size={15} />
             Выгрузить
@@ -789,6 +858,15 @@ export default function StatusesPage() {
         </div>
       ) : (
         <div className="hf-statuses-body">
+          {showExport && (
+            <ExportModal
+              months={months}
+              onClose={() => setShowExport(false)}
+              onExport={(plan) => { exportToExcel(plan); setShowExport(false); }}
+              onExportScreen={() => { exportToExcel(); setShowExport(false); }}
+            />
+          )}
+
           <DepartmentSidebar
             departments={departments}
             orgHr={orgHr}
@@ -1198,6 +1276,86 @@ function DepartmentSidebar({
   );
 }
 
+/** Окно выгрузки: что именно класть в книгу.
+ *
+ *  «Как на экране» — один лист с текущим отбором (так работала кнопка раньше).
+ *  Месяцы и вехи — по листу на каждый: «мне бы хотелось за месяц, за два
+ *  месяца, за три месяца работы, за год работы» (Мария, 07.10.2026). */
+function ExportModal({
+  months, onClose, onExport, onExportScreen,
+}: {
+  months: { label: string; from: string; to: string }[];
+  onClose: () => void;
+  onExport: (plan: ExportPlan) => void;
+  onExportScreen: () => void;
+}) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const [marks, setMarks] = useState<MilestoneKey[]>([]);
+  const toggle = <T,>(list: T[], v: T) =>
+    list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
+
+  return (
+    <div className="hf-statuses-modal-back" onClick={onClose}>
+      <div className="hf-statuses-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="hf-statuses-modal-head">
+          <h3>Выгрузить в Excel</h3>
+          <button className="hf-statuses-folder-action" onClick={onClose} title="Закрыть">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="hf-statuses-modal-label">
+          Месяцы выхода в отдел
+          <span className="hf-statuses-modal-note">Каждый — отдельным листом книги.</span>
+          <div className="hf-statuses-export-months">
+            {months.map((m) => (
+              <button
+                key={m.label}
+                type="button"
+                className={clsx("hf-statuses-preset", picked.includes(m.label) && "is-on")}
+                onClick={() => setPicked((cur) => toggle(cur, m.label))}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="hf-statuses-modal-label">
+          Вехи стажа
+          <span className="hf-statuses-modal-note">
+            Кто доходит до вехи в выбранные месяцы; месяцы не отмечены — за всё время.
+          </span>
+          {MILESTONES.map((m) => (
+            <label key={m.key} className="hf-statuses-modal-check">
+              <input
+                type="checkbox"
+                checked={marks.includes(m.key)}
+                onChange={() => setMarks((cur) => toggle(cur, m.key))}
+              />
+              {m.label}
+            </label>
+          ))}
+        </div>
+
+        <div className="hf-statuses-modal-foot">
+          <button className="hf-statuses-modal-cancel" onClick={onExportScreen}>
+            Как на экране
+          </button>
+          <button
+            className="hf-statuses-modal-save"
+            onClick={() => onExport({ months: picked, marks })}
+            disabled={!picked.length && !marks.length}
+          >
+            <Download size={14} />
+            Выгрузить
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Окно отдела: название, роль и кому он виден.
  *
  *  Роль — песочница или команда внутри неё (решение владельца 30.09.2026):
@@ -1216,7 +1374,7 @@ function DepartmentModal({
   const [name, setName] = useState(dept?.name ?? "");
   const [kind, setKind] = useState<"sandbox" | "team">(dept?.kind ?? "team");
   const [parentId, setParentId] = useState<number | null>(dept?.parent_id ?? null);
-  const [visibility, setVisibility] = useState<"all" | "custom">(dept?.visibility ?? "all");
+  const [visibility, setVisibility] = useState<"all" | "admins" | "custom">(dept?.visibility ?? "all");
   const [visibleTo, setVisibleTo] = useState<number[]>(dept?.visible_to ?? []);
   // Песочница по умолчанию: куда вести с практики, если у воронки своя не
   // выбрана. Без этого отдел не проставлялся никому, пока HR не пройдёт по
@@ -1357,18 +1515,35 @@ function DepartmentModal({
             />
             <span>Всем HR</span>
           </label>
+          {/* Выбор из двух: списка людей больше нет (Мария, 07.10.2026 — «не
+              будет всего этого списка, а будет либо всем, либо только вам»).
+              Третий вариант показываем, только если он уже стоял у отдела. */}
           <label className="hf-statuses-modal-radio">
             <input
               type="radio"
-              checked={visibility === "custom"}
+              checked={visibility === "admins"}
               disabled={busy}
-              onChange={() => setVisibility("custom")}
+              onChange={() => setVisibility("admins")}
             />
             <span>
-              Только выбранным
-              <em>Админы и владелец видят отдел всегда.</em>
+              Только администраторам
+              <em>Настя и Мария видят все отделы всегда.</em>
             </span>
           </label>
+          {dept?.visibility === "custom" && (
+            <label className="hf-statuses-modal-radio">
+              <input
+                type="radio"
+                checked={visibility === "custom"}
+                disabled={busy}
+                onChange={() => setVisibility("custom")}
+              />
+              <span>
+                Выбранным сотрудникам
+                <em>Старая настройка этого отдела.</em>
+              </span>
+            </label>
+          )}
           {visibility === "custom" && (
             <div className="hf-statuses-modal-people">
               {orgHr.length === 0 && <span className="hf-statuses-empty-cell">Список HR не загрузился</span>}

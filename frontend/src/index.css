@@ -9506,6 +9506,12 @@ body.performance-mode .glass-card:hover {
   font-size: var(--hf-fs-3xs);
   color: var(--hf-main-600);
 }
+.hf-statuses-export-months {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hf-space-xs);
+  font-weight: 400;
+}
 .hf-statuses-modal-people {
   display: flex;
   flex-direction: column;

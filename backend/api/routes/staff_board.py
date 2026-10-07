@@ -279,7 +279,8 @@ class BoardDept(BaseModel):
     # team — команда внутри песочницы (Facebook, Google, SEO…).
     kind: str = "team"
     parent_id: Optional[int] = None
-    # all — отдел видят все HR; custom — только те, кто перечислен в visible_to.
+    # all — видят все HR; admins — только владелец и админы; custom — те, кто
+    # перечислен в visible_to (старые отделы).
     visibility: str = "all"
     visible_to: List[int] = []
     # Песочница по умолчанию: сюда попадают вышедшие на практику, если у их
@@ -291,7 +292,11 @@ class BoardDept(BaseModel):
 
 
 DEPT_KINDS = ("sandbox", "team")
-DEPT_VISIBILITY = ("all", "custom")
+# Кому виден отдел. Выбор из ДВУХ (Мария, 07.10.2026: «не будет всего этого
+# списка, а будет либо всем, либо только вам»): all — всем HR, admins — только
+# владельцу и админам (Настя и Мария). Старое custom со списком людей оставлено
+# для уже заведённых отделов и API, в интерфейсе его не предлагают.
+DEPT_VISIBILITY = ("all", "admins", "custom")
 
 
 class BoardDeptCreate(BaseModel):
@@ -629,8 +634,11 @@ async def _is_board_admin(db: AsyncSession, user: User, org_id: int) -> bool:
 
 
 def _dept_visible(dept: BoardDepartment, user_id: int, is_admin: bool) -> bool:
-    if is_admin or (dept.visibility or "all") != "custom":
+    mode = dept.visibility or "all"
+    if is_admin or mode == "all":
         return True
+    if mode == "admins":
+        return False
     allowed = dept.visible_to if isinstance(dept.visible_to, list) else []
     return user_id in [_as_int(v) for v in allowed]
 

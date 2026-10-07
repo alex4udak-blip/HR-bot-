@@ -157,8 +157,9 @@ export interface BoardDepartment {
   kind: 'sandbox' | 'team';
   /** Песочница, к которой относится команда. */
   parent_id: number | null;
-  /** all — видят все HR; custom — только перечисленные в visible_to. */
-  visibility: 'all' | 'custom';
+  /** all — видят все HR; admins — только владелец и админы (Настя и Мария);
+   *  custom — перечисленные в visible_to (старые отделы, в окне не предлагается). */
+  visibility: 'all' | 'admins' | 'custom';
   visible_to: number[];
   /** Песочница по умолчанию: сюда попадают вышедшие на практику, если у их
    *  воронки своя песочница не выбрана. Одна на организацию. */
@@ -172,7 +173,7 @@ export interface BoardDepartmentInput {
   name?: string;
   kind?: 'sandbox' | 'team';
   parent_id?: number | null;
-  visibility?: 'all' | 'custom';
+  visibility?: 'all' | 'admins' | 'custom';
   visible_to?: number[];
   hidden?: boolean;
   is_default?: boolean;
