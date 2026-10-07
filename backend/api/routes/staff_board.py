@@ -234,6 +234,9 @@ class BoardRow(BaseModel):
     # рабочий, песочница под ним (Мария, 07.10.2026: «sandbox уходит на нижний
     # план, а новый отдел выпирает, но видно, что он ещё из sandbox»).
     sandbox_name: Optional[str] = None
+    # Рабочий отдел человека — чтобы и СТРОКА ПЕСОЧНИЦЫ показывала отдел, а не
+    # саму себя: «нужно видеть отделы везде, даже на сендбоксе».
+    team_name: Optional[str] = None
     telegram: Optional[str] = None
     practice_start_date: Optional[str] = None
     department_start_date: Optional[str] = None
@@ -764,11 +767,15 @@ def _row_from_entity(
     # Берём её у песочницы этого же человека, если в самой строке пусто.
     practice = _iso(_parse_date(_pick(pex, _K_PRACTICE, _CF_PRACTICE)))
     sandbox_name = None
+    team_name = None
     if person_sandbox:
         if not practice:
             practice = person_sandbox.get("practice")
-        # В самой песочнице подпись «из SANDBOX» не нужна — это она и есть.
-        if not is_sandbox:
+        if is_sandbox:
+            # В строке песочницы главным будет рабочий отдел, а подписью — она
+            # сама (её имя фронт берёт из department_name).
+            team_name = person_sandbox.get("team")
+        else:
             sandbox_name = person_sandbox.get("name")
 
     # HR: сначала выбранные руками, иначе — из меток «HR: …» кандидата. Они
@@ -808,6 +815,7 @@ def _row_from_entity(
         parent_department_name=parent_name,
         department_is_sandbox=is_sandbox,
         sandbox_name=sandbox_name,
+        team_name=team_name,
         telegram=telegram,
         practice_start_date=practice,
         department_start_date=_iso(dept_start),
@@ -1177,23 +1185,30 @@ def _person_sandboxes(
     placements: List[BoardPlacement],
     depts: Dict[int, BoardDepartment],
 ) -> Dict[int, Dict[str, Any]]:
-    """По каждому человеку — его песочница и дата выхода на практику.
+    """По каждому человеку — его песочница, дата практики и рабочий отдел.
 
-    Нужно строкам ОТДЕЛОВ: практика лежит у назначения в песочнице, и без неё
-    жизненный цикл в строке отдела обрывался (Мария, 07.10.2026). Песочница
-    там же показывается вторым планом.
+    Нужно ОБЕИМ сторонам. Строке отдела — дата практики (она лежит у назначения
+    в песочнице, без неё жизненный цикл обрывался) и имя песочницы для подписи.
+    Строке ПЕСОЧНИЦЫ — имя рабочего отдела: «нужно видеть отделы везде, даже на
+    сендбоксе» (Мария, 07.10.2026), то есть и там главным показывается отдел, а
+    песочница уходит подписью.
     """
     out: Dict[int, Dict[str, Any]] = {}
     for pl in placements:
         dept = depts.get(pl.department_id)
-        if dept is None or (dept.kind or "team") != "sandbox":
+        if dept is None:
             continue
-        extra = pl.extra if isinstance(pl.extra, dict) else {}
-        practice = _iso(_parse_date(_pick(extra, _K_PRACTICE, _CF_PRACTICE)))
-        prev = out.get(pl.entity_id)
-        # Песочница у человека одна; если их всё же две, берём ту, где есть дата.
-        if prev is None or (practice and not prev.get("practice")):
-            out[pl.entity_id] = {"name": dept.name, "practice": practice}
+        row = out.setdefault(pl.entity_id, {"name": None, "practice": None, "team": None})
+        if (dept.kind or "team") == "sandbox":
+            extra = pl.extra if isinstance(pl.extra, dict) else {}
+            practice = _iso(_parse_date(_pick(extra, _K_PRACTICE, _CF_PRACTICE)))
+            # Песочница у человека одна; если их всё же две, берём ту, где есть дата.
+            if row["name"] is None or (practice and not row["practice"]):
+                row["name"] = dept.name
+                row["practice"] = practice
+        elif row["team"] is None:
+            # Рабочий отдел тоже один (см. create_placement); первый и берём.
+            row["team"] = dept.name
     return out
 
 

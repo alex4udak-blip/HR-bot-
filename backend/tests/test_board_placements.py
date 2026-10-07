@@ -722,8 +722,12 @@ async def test_practice_date_visible_in_department_row(
     rows = {r["department_name"]: r for r in await _rows(client, admin_user, e.id)}
     assert rows["SANDBOX"]["practice_start_date"] == "2026-09-01"
     assert rows["Facebook"]["practice_start_date"] == "2026-09-01"   # подтянулась
-    # В строке отдела видно, из какой он песочницы; в самой песочнице подписи нет.
+    # В строке отдела видно, из какой он песочницы…
     assert rows["Facebook"]["sandbox_name"] == "SANDBOX"
+    assert rows["Facebook"]["team_name"] is None
+    # …а в строке песочницы главным показывается РАБОЧИЙ отдел: «нужно видеть
+    # отделы везде, даже на сендбоксе» (Мария, 07.10.2026).
+    assert rows["SANDBOX"]["team_name"] == "Facebook"
     assert rows["SANDBOX"]["sandbox_name"] is None
     # Своя дата отдела в песочницу не протекает.
     assert rows["Facebook"]["department_start_date"] == date.today().isoformat()
@@ -763,3 +767,19 @@ async def test_admins_only_department(
     rows = await _rows(client, second_user, e.id)
     assert len(rows) == 1 and rows[0]["department_id"] is None
     assert (await _rows(client, admin_user, e.id))[0]["department_name"] == "Юнит Насти"
+
+
+@pytest.mark.asyncio
+async def test_sandbox_row_without_department_keeps_itself(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Отдела ещё нет — в строке песочницы остаётся сама песочница."""
+    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    e = await _person(db_session, organization, admin_user)
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
+    )
+    row = (await _rows(client, admin_user, e.id))[0]
+    assert row["department_name"] == "SANDBOX"
+    assert row["team_name"] is None

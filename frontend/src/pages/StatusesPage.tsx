@@ -2063,11 +2063,18 @@ function DepartmentCell({
   onPlace: (id: number) => void;
   onUnplace: () => void;
 }) {
-  const name = row.department_name || "";
+  // Главным в ячейке всегда рабочий отдел — даже в строке песочницы: «нужно
+  // видеть отделы везде, даже на сендбоксе» (Мария, 07.10.2026). Песочница
+  // уходит подписью под ним; если отдела ещё нет, показываем саму песочницу.
+  const own = row.department_name || "";
+  const name = (row.department_is_sandbox ? row.team_name : null) || own;
+  const from = row.department_is_sandbox
+    ? (row.team_name ? own : null)
+    : row.sandbox_name;
   const hue = pillHue(name);
   const options = departments.filter(
     (d) => (!d.hidden || d.id === row.department_id) && d.id !== row.department_id
-  );
+  );   // сравниваем с отделом САМОЙ строки, а не с тем, что показано главным
   // Песочница у человека одна: выбрал другую — переехал. Команда из песочницы —
   // наоборот, добавление: практика остаётся.
   const sandboxes = options.filter((d) => d.kind === "sandbox");
@@ -2083,7 +2090,7 @@ function DepartmentCell({
         <span className="hf-statuses-dept-stack">
           <span
             className="hf-statuses-pill"
-            title={row.sandbox_name ? `${name} · пришёл из ${row.sandbox_name}` : name}
+            title={from ? `${name} · пришёл из ${from}` : name}
             style={{
               background: `hsl(${hue} 70% 94%)`,
               color: `hsl(${hue} 55% 32%)`,
@@ -2092,9 +2099,9 @@ function DepartmentCell({
           >
             {name}
           </span>
-          {row.sandbox_name && (
-            <span className="hf-statuses-dept-from" title={`Остаётся в песочнице ${row.sandbox_name}`}>
-              из {row.sandbox_name}
+          {from && (
+            <span className="hf-statuses-dept-from" title={`Остаётся в песочнице ${from}`}>
+              из {from}
             </span>
           )}
         </span>

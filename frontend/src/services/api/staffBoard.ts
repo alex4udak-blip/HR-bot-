@@ -31,6 +31,9 @@ export interface BoardRow {
   /** Песочница, в которой человек стоит, — подпись вторым планом в строке
    *  отдела («Facebook · из SANDBOX»). У самой песочницы пусто. */
   sandbox_name: string | null;
+  /** Рабочий отдел человека — им подписана и СТРОКА ПЕСОЧНИЦЫ: отделы видно
+   *  везде, а песочница уходит подписью. Пусто, если отдела ещё нет. */
+  team_name: string | null;
   telegram: string | null;
   practice_start_date: string | null;
   department_start_date: string | null;
