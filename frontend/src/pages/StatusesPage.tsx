@@ -415,6 +415,9 @@ export default function StatusesPage() {
    */
   const placeInDept = async (row: BoardRow, deptId: number) => {
     const target = departments.find((d) => d.id === deptId);
+    // Из песочницы в команду не передаём «что заменить»: сервер сам переносит
+    // человека из прежнего РАБОЧЕГО отдела, если он там был, и оставляет
+    // песочницу. Иначе отделы копились (Мария, 07.10.2026).
     const addition = row.department_is_sandbox && target?.kind === "team";
     setSavingId(rowKey(row));
     try {
@@ -1764,16 +1767,25 @@ function DepartmentCell({
   return (
     <div className="hf-statuses-dept">
       {name ? (
-        <span
-          className="hf-statuses-pill"
-          title={row.parent_department_name ? `${name} · песочница ${row.parent_department_name}` : name}
-          style={{
-            background: `hsl(${hue} 70% 94%)`,
-            color: `hsl(${hue} 55% 32%)`,
-            borderColor: `hsl(${hue} 60% 84%)`,
-          }}
-        >
-          {name}
+        /* Главный — рабочий отдел, песочница под ним вторым планом: «видно,
+           что он ещё из sandbox» (Мария, 07.10.2026). */
+        <span className="hf-statuses-dept-stack">
+          <span
+            className="hf-statuses-pill"
+            title={row.sandbox_name ? `${name} · пришёл из ${row.sandbox_name}` : name}
+            style={{
+              background: `hsl(${hue} 70% 94%)`,
+              color: `hsl(${hue} 55% 32%)`,
+              borderColor: `hsl(${hue} 60% 84%)`,
+            }}
+          >
+            {name}
+          </span>
+          {row.sandbox_name && (
+            <span className="hf-statuses-dept-from" title={`Остаётся в песочнице ${row.sandbox_name}`}>
+              из {row.sandbox_name}
+            </span>
+          )}
         </span>
       ) : (
         <span className="hf-statuses-empty-cell">—</span>

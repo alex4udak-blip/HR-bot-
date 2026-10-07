@@ -228,6 +228,11 @@ class BoardRow(BaseModel):
     # Отдел строки — песочница: выбор отдела из такой строки ДОБАВЛЯЕТ
     # назначение (человек остаётся на практике), а не переносит.
     department_is_sandbox: bool = False
+    # Песочница, в которой человек стоит (его назначение), — показывается
+    # вторым планом в строке отдела: «Facebook · из SANDBOX». Главный отдел —
+    # рабочий, песочница под ним (Мария, 07.10.2026: «sandbox уходит на нижний
+    # план, а новый отдел выпирает, но видно, что он ещё из sandbox»).
+    sandbox_name: Optional[str] = None
     telegram: Optional[str] = None
     practice_start_date: Optional[str] = None
     department_start_date: Optional[str] = None
@@ -691,7 +696,7 @@ def _row_from_entity(
     mentors_by_entity: Optional[Dict[int, List[str]]] = None,
     depts: Optional[Dict[int, BoardDepartment]] = None,
     placement: Optional["BoardPlacement"] = None,
-    parents: Optional[Dict[int, Optional[int]]] = None,
+    person_sandbox: Optional[Dict[str, Any]] = None,
 ) -> BoardRow:
     ex = _extra(entity)
     # Даты отдела берём у назначения; у карточек, которые ещё не перевели на
@@ -744,6 +749,19 @@ def _row_from_entity(
 
     telegram = _first_telegram(entity) or (str(_pick(ex, _CF_TELEGRAM) or "").lstrip("@") or None)
 
+    # Жизненный цикл не должен обрываться при выходе в отдел. Дата практики
+    # лежит у назначения в ПЕСОЧНИЦЕ, поэтому в строке отдела её не было —
+    # «был весь жизненный цикл практика, а теперь нет» (Мария, 07.10.2026).
+    # Берём её у песочницы этого же человека, если в самой строке пусто.
+    practice = _iso(_parse_date(_pick(pex, _K_PRACTICE, _CF_PRACTICE)))
+    sandbox_name = None
+    if person_sandbox:
+        if not practice:
+            practice = person_sandbox.get("practice")
+        # В самой песочнице подпись «из SANDBOX» не нужна — это она и есть.
+        if not is_sandbox:
+            sandbox_name = person_sandbox.get("name")
+
     # HR: сначала выбранные руками, иначе — из меток «HR: …» кандидата. Они
     # лежат в extra_data.system_hr_tags (их считает services/hr_tags по
     # активным заявкам), поэтому лишних запросов не нужно. Правка руками
@@ -780,8 +798,9 @@ def _row_from_entity(
         parent_department_id=parent_id,
         parent_department_name=parent_name,
         department_is_sandbox=is_sandbox,
+        sandbox_name=sandbox_name,
         telegram=telegram,
-        practice_start_date=_iso(_parse_date(_pick(pex, _K_PRACTICE, _CF_PRACTICE))),
+        practice_start_date=practice,
         department_start_date=_iso(dept_start),
         # «Рук-ль» = наставник практики из тегов у ФИО. Нет тега — пусто;
         # вписанное руками остаётся запасным вариантом.
@@ -1145,6 +1164,30 @@ async def update_board_department(
     return out
 
 
+def _person_sandboxes(
+    placements: List[BoardPlacement],
+    depts: Dict[int, BoardDepartment],
+) -> Dict[int, Dict[str, Any]]:
+    """По каждому человеку — его песочница и дата выхода на практику.
+
+    Нужно строкам ОТДЕЛОВ: практика лежит у назначения в песочнице, и без неё
+    жизненный цикл в строке отдела обрывался (Мария, 07.10.2026). Песочница
+    там же показывается вторым планом.
+    """
+    out: Dict[int, Dict[str, Any]] = {}
+    for pl in placements:
+        dept = depts.get(pl.department_id)
+        if dept is None or (dept.kind or "team") != "sandbox":
+            continue
+        extra = pl.extra if isinstance(pl.extra, dict) else {}
+        practice = _iso(_parse_date(_pick(extra, _K_PRACTICE, _CF_PRACTICE)))
+        prev = out.get(pl.entity_id)
+        # Песочница у человека одна; если их всё же две, берём ту, где есть дата.
+        if prev is None or (practice and not prev.get("practice")):
+            out[pl.entity_id] = {"name": dept.name, "practice": practice}
+    return out
+
+
 async def _single_row(
     db: AsyncSession,
     org_id: int,
@@ -1167,12 +1210,19 @@ async def _single_row(
         names = dict((await db.execute(
             select(User.id, User.name).where(User.id.in_(a_ids))
         )).all())
+    depts = await _board_depts(db, org_id)
+    mine = (await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.entity_id == entity.id, BoardPlacement.org_id == org_id
+        )
+    )).scalars().all()
     return _row_from_entity(
         entity, offer, names,
         await _load_sourcers(db, [entity.id]),
         await _load_mentors(db, [entity.id]),
-        await _board_depts(db, org_id),
+        depts,
         placement=placement,
+        person_sandbox=_person_sandboxes(mine, depts).get(entity.id),
     )
 
 
@@ -1225,6 +1275,20 @@ async def create_placement(
         old = next((pl for pl in placements if pl.id == data.replace_placement_id), None)
         if old is None:
             raise HTTPException(404, "Назначение не найдено")
+
+    # Рабочий отдел у человека ОДИН: песочница + текущая команда. Поэтому
+    # выбор команды переносит его из прежней, даже если жмут из строки
+    # песочницы. Иначе отделы копились: у тестовой карточки на проде вышло
+    # четыре строки сразу — SANDBOX, ASA, Facebook и iOS Product (Мария,
+    # 07.10.2026: «он не должен быть в сэндбоксе, он должен быть в отделе»).
+    if old is None and (dept.kind or "team") != "sandbox":
+        depts_all = await _board_depts(db, org.id)
+        teams = [
+            pl for pl in placements
+            if ((depts_all.get(pl.department_id).kind if depts_all.get(pl.department_id) else "team") or "team") != "sandbox"
+        ]
+        if len(teams) == 1:
+            old = teams[0]
 
     exists = next((pl for pl in placements if pl.department_id == dept.id), None)
     if exists is not None:
@@ -1464,6 +1528,8 @@ async def list_rows(
         # Песочница идёт первой: практика — начало пути, команды после неё.
         return (0 if kind == "sandbox" else 1, (dept.name.lower() if dept else ""))
 
+    sandbox_of = _person_sandboxes(placements, depts)
+
     rows: List[BoardRow] = []
     for e in entities:
         mine = sorted(by_entity.get(e.id, []), key=dept_sort_key)
@@ -1473,6 +1539,7 @@ async def list_rows(
             rows.append(_row_from_entity(
                 e, offers.get(e.id), assignee_names, sourcers_by_entity,
                 mentors_by_entity, depts, placement=pl,
+                person_sandbox=sandbox_of.get(e.id),
             ))
     return rows
 

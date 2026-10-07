@@ -120,8 +120,12 @@ async def test_dates_belong_to_placement(
     rows = {x["department_name"]: x for x in await _rows(client, admin_user, e.id)}
     assert rows["SANDBOX"]["practice_start_date"] == "2026-09-01"
     assert rows["SANDBOX"]["m1_done"] is None
-    assert rows["SEO"]["practice_start_date"] is None
+    # Дата практики одна на человека и видна в обеих строках (07.10.2026), а
+    # вот выход в отдел и отметки вех — у каждого назначения свои.
+    assert rows["SEO"]["practice_start_date"] == "2026-09-01"
     assert rows["SEO"]["department_start_date"] == "2026-09-20"
+    assert rows["SANDBOX"]["department_start_date"] is None
+    assert rows["SEO"]["m1_done"] == "✓"
 
 
 @pytest.mark.asyncio
@@ -650,3 +654,77 @@ async def test_move_onto_existing_placement_just_drops_the_old_row(
     )
     assert r.status_code == 201, r.text
     assert [x["department_name"] for x in await _rows(client, admin_user, e.id)] == ["Facebook"]
+
+
+@pytest.mark.asyncio
+async def test_team_choice_moves_instead_of_piling_up(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Рабочий отдел у человека ОДИН: выбрал другой — переехал, а не добавился.
+
+    На проде у тестовой карточки накопилось четыре строки разом (SANDBOX, ASA,
+    Facebook, iOS Product) — каждый выбор отдела из строки песочницы добавлял
+    ещё одну (Мария, 07.10.2026: «он не должен быть в сэндбоксе, он должен быть
+    в отделе»). Песочница при этом остаётся: это и есть «ещё из SANDBOX».
+    """
+    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    fb = await _dept(client, admin_user, "Facebook", kind="team", parent_id=sandbox["id"])
+    seo = await _dept(client, admin_user, "SEO", kind="team", parent_id=sandbox["id"])
+    e = await _person(db_session, organization, admin_user)
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
+    )
+
+    # Первый выход в отдел — добавление: практика остаётся.
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": fb["id"]}, headers=_h(admin_user),
+    )
+    assert [r["department_name"] for r in await _rows(client, admin_user, e.id)] == ["SANDBOX", "Facebook"]
+
+    # Второй — переезд между отделами, а не третья строка.
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": seo["id"]}, headers=_h(admin_user),
+    )
+    rows = await _rows(client, admin_user, e.id)
+    assert [r["department_name"] for r in rows] == ["SANDBOX", "SEO"]
+
+
+@pytest.mark.asyncio
+async def test_practice_date_visible_in_department_row(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Жизненный цикл не обрывается: дата практики видна и в строке отдела.
+
+    Даты принадлежат назначению, практика лежит у песочницы — поэтому в строке
+    отдела колонка «Выход на практику» была пустой: «был весь жизненный цикл
+    практика, а теперь нет» (Мария, 07.10.2026).
+    """
+    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    team = await _dept(client, admin_user, "Facebook", kind="team", parent_id=sandbox["id"])
+    e = await _person(db_session, organization, admin_user)
+    in_sandbox = (await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
+    )).json()
+    await client.patch(
+        f"/api/staff-board/rows/{e.id}",
+        json={"placement_id": in_sandbox["placement_id"], "practice_start_date": "2026-09-01"},
+        headers=_h(admin_user),
+    )
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": team["id"]}, headers=_h(admin_user),
+    )
+
+    rows = {r["department_name"]: r for r in await _rows(client, admin_user, e.id)}
+    assert rows["SANDBOX"]["practice_start_date"] == "2026-09-01"
+    assert rows["Facebook"]["practice_start_date"] == "2026-09-01"   # подтянулась
+    # В строке отдела видно, из какой он песочницы; в самой песочнице подписи нет.
+    assert rows["Facebook"]["sandbox_name"] == "SANDBOX"
+    assert rows["SANDBOX"]["sandbox_name"] is None
+    # Своя дата отдела в песочницу не протекает.
+    assert rows["Facebook"]["department_start_date"] == date.today().isoformat()
+    assert rows["SANDBOX"]["department_start_date"] is None

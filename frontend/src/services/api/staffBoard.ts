@@ -28,6 +28,9 @@ export interface BoardRow {
   /** Отдел строки — песочница: выбор отдела ДОБАВЛЯЕТ назначение (человек
    *  остаётся на практике), а не переносит. */
   department_is_sandbox: boolean;
+  /** Песочница, в которой человек стоит, — подпись вторым планом в строке
+   *  отдела («Facebook · из SANDBOX»). У самой песочницы пусто. */
+  sandbox_name: string | null;
   telegram: string | null;
   practice_start_date: string | null;
   department_start_date: string | null;
