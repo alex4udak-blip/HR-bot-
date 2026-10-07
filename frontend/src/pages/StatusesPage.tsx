@@ -152,9 +152,40 @@ interface BoardFilters {
   values: Partial<Record<FilterKey, string[]>>;
   /** колонка-дата → границы «с» и «по» */
   dates: Partial<Record<FilterKey, { from: string; to: string }>>;
+  /** Как складывать условия РАЗНЫХ колонок (владелец, 07.10.2026: «фильтры
+   *  работают через && , а надо ||, чтобы массово выгружать кандидатов под
+   *  определённые условия»):
+   *  - `any` — достаточно одного совпадения: «из SEO ИЛИ уволенные»;
+   *  - `all` — должны совпасть все условия сразу (прежнее поведение).
+   *  Внутри одной колонки значения всегда складываются по «или». */
+  mode?: "any" | "all";
 }
 
-const EMPTY_FILTERS: BoardFilters = { values: {}, dates: {} };
+const EMPTY_FILTERS: BoardFilters = { values: {}, dates: {}, mode: "any" };
+
+/** Проходит ли строка под фильтры панели. Условий нет — проходит всё. */
+export function rowMatchesFilters(row: BoardRow, filters: BoardFilters): boolean {
+  const checks: boolean[] = [];
+
+  for (const [key, chosen] of Object.entries(filters.values) as [FilterKey, string[]][]) {
+    if (!chosen?.length) continue;
+    const cell = cellText(row, key).trim();
+    checks.push(chosen.includes(isBlank(cell) ? BLANK : cell));
+  }
+
+  for (const [key, range] of Object.entries(filters.dates) as
+      [FilterKey, { from: string; to: string }][]) {
+    if (!range || (!range.from && !range.to)) continue;
+    // Сравниваем «сырую» дату (ГГГГ-ММ-ДД), а не видимую «дд.мм.гггг».
+    const iso = ((row[key as keyof BoardRow] as string | null) || "").slice(0, 10);
+    checks.push(
+      !!iso && (!range.from || iso >= range.from) && (!range.to || iso <= range.to)
+    );
+  }
+
+  if (!checks.length) return true;
+  return filters.mode === "all" ? checks.every(Boolean) : checks.some(Boolean);
+}
 
 /** Границы месяца в формате ГГГГ-ММ-ДД. */
 function monthRange(year: number, month: number): { from: string; to: string } {
@@ -541,27 +572,9 @@ export default function StatusesPage() {
       out = out.filter((r) => (r.sourcers ?? []).some((t) => String(t.id) === sourcerFilter));
     }
 
-    // Колонки фильтруются вместе (И), значения внутри колонки — «или»:
-    // отметили SEO и Push — видно и тех, и других.
-    for (const [key, chosen] of Object.entries(filters.values) as [FilterKey, string[]][]) {
-      if (!chosen?.length) continue;
-      out = out.filter((r) => {
-        const cell = cellText(r, key).trim();
-        return chosen.includes(isBlank(cell) ? BLANK : cell);
-      });
-    }
-
-    for (const [key, range] of Object.entries(filters.dates) as [FilterKey, { from: string; to: string }][]) {
-      if (!range || (!range.from && !range.to)) continue;
-      out = out.filter((r) => {
-        // Сравниваем «сырую» дату (ГГГГ-ММ-ДД), а не видимую «дд.мм.гггг».
-        const iso = ((r[key as keyof BoardRow] as string | null) || "").slice(0, 10);
-        if (!iso) return false;
-        if (range.from && iso < range.from) return false;
-        if (range.to && iso > range.to) return false;
-        return true;
-      });
-    }
+    // Условия панели складываются по правилу filters.mode: «любое» (по
+    // умолчанию) или «все сразу». Значения внутри одной колонки — всегда «или».
+    out = out.filter((r) => rowMatchesFilters(r, filters));
     return out;
   }, [rows, q, filters, hrFilter, sourcerFilter]);
 
@@ -855,6 +868,28 @@ export default function StatusesPage() {
 
                   <div className="hf-statuses-filter-hint">
                     Отметьте, что показывать. Ничего не отмечено — показаны все.
+                  </div>
+
+                  {/* Как складывать условия разных колонок. «Любое» — чтобы
+                      массово отобрать под выгрузку: «из SEO ИЛИ уволенные»
+                      (владелец, 07.10.2026). «Все сразу» — прежнее сужение. */}
+                  <div className="hf-statuses-filter-mode">
+                    {([
+                      { key: "any", label: "Любое из условий" },
+                      { key: "all", label: "Все условия сразу" },
+                    ] as const).map((m) => (
+                      <button
+                        key={m.key}
+                        type="button"
+                        className={clsx(
+                          "hf-statuses-preset",
+                          (filters.mode ?? "any") === m.key && "is-on"
+                        )}
+                        onClick={() => setFilters((f) => ({ ...f, mode: m.key }))}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
                   </div>
 
                   {FILTERABLE.map((c) => (

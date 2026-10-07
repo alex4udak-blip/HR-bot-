@@ -10068,6 +10068,12 @@ body.performance-mode .glass-card:hover {
 /* Месяц одной кнопкой. Классы были, а стилей — нет: три кнопки слипались в
    строку текста «Этот месяцПрошлый месяцМесяц…» и вылезали за край панели.
    Делаем чипами с переносом — ряд видно, и он всегда внутри панели. */
+/* Как складывать условия фильтров: «любое» / «все сразу». */
+.hf-statuses-filter-mode {
+  display: flex;
+  gap: var(--hf-space-xs);
+  padding: 0 var(--hf-space-s) var(--hf-space-s);
+}
 .hf-statuses-filter-presets {
   display: flex;
   flex-wrap: wrap;
