@@ -238,6 +238,9 @@ async def init_database():
             )""", "Create staff_board_status_views table"),
         ("CREATE INDEX IF NOT EXISTS ix_staff_board_status_views_org_id ON staff_board_status_views (org_id)",
          "индекс staff_board_status_views.org_id"),
+        # Личный набор КОЛОНОК (08.10.2026) — рядом с набором секций.
+        ("ALTER TABLE staff_board_status_views ADD COLUMN IF NOT EXISTS column_keys JSON DEFAULT '[]'",
+         "staff_board_status_views.column_keys"),
     ):
         await run_migration(engine, sql, description)
 

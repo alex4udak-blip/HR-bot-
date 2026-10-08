@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Search, Loader2, Plus, Pencil, Eye, EyeOff, Check, Copy, Download, X,
   ChevronRight, ChevronDown, Paperclip, Upload, SlidersHorizontal, ListChecks,
@@ -99,6 +100,18 @@ const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narro
   { key: "y1_done",               label: "✓",                 filter: true, narrow: true, width: 124 },
   { key: "dismissal_date",        label: "Дата увольнения",   filter: true, width: 124 },
 ];
+
+/** Колонки, которые можно спрятать: все, кроме «Сотрудника» — без имени
+ *  строка бессмысленна (просьба Марии 08.10.2026 про лист-вью по столбцам). */
+const HIDEABLE_COLUMNS = COLUMNS.filter((c) => c.key !== "name");
+
+/** Колонки вкладки: пусто — показываем все, иначе только отмеченные, и
+ *  «Сотрудник» всегда первым (его прятать нельзя). Порядок всегда из COLUMNS,
+ *  чтобы таблица не переставлялась от порядка галочек. */
+export function pickColumns(chosen?: string[] | null): typeof COLUMNS {
+  if (!chosen?.length) return COLUMNS;
+  return COLUMNS.filter((c) => c.key === "name" || chosen.includes(c.key));
+}
 
 /** Подписи для списка «Фильтры»: там «✓» ничего не сказало бы. */
 const FILTER_LABELS: Partial<Record<FilterKey, string>> = {
@@ -399,7 +412,13 @@ export default function StatusesPage() {
   // только „Уволился“»). Ключ — та же строка, что у вкладки: «all», «__none__»
   // или id отдела. Нет записи — показываем все секции.
   const [statusViews, setStatusViews] = useState<Record<string, string[]>>({});
+  const [columnViews, setColumnViews] = useState<Record<string, string[]>>({});
   const [showSections, setShowSections] = useState(false);
+  /** Ответ сервера → два словаря: наборы секций и наборы колонок по вкладкам. */
+  const applyViews = useCallback((list: { scope_key: string; statuses: string[]; columns: string[] }[]) => {
+    setStatusViews(Object.fromEntries(list.map((v) => [v.scope_key, v.statuses])));
+    setColumnViews(Object.fromEntries(list.map((v) => [v.scope_key, v.columns || []])));
+  }, []);
   const [savingSections, setSavingSections] = useState(false);
   // Окно выгрузки: месяцы и вехи стажа выбирают галочками, книга собирается
   // листами (Мария, 07.10.2026 — «выгрузка за сентябрь, октябрь и декабрь»).
@@ -440,10 +459,8 @@ export default function StatusesPage() {
     getBoardDepartments().then(setDepartments).catch(() => setDepartments([]));
     getBoardPositions().then(setPositions).catch(() => setPositions([]));
     getBoardStatusViews()
-      .then((list) => setStatusViews(
-        Object.fromEntries(list.map((v) => [v.scope_key, v.statuses]))
-      ))
-      .catch(() => setStatusViews({}));
+      .then(applyViews)
+      .catch(() => { setStatusViews({}); setColumnViews({}); });
     getBoardManagers().then(setManagers).catch(() => setManagers([]));
     // Вести сотрудника может только HR. В организации числятся все
     // работники, и без фильтра в список попадали бы полсотни человек,
@@ -627,6 +644,11 @@ export default function StatusesPage() {
     [sectionsOf],
   );
   const mySections = statusViews[dept];
+  // Колонки тоже настраиваются лично и по вкладкам («лист-вью не только по
+  // статусам, но и по столбцам» — Мария, 08.10.2026). Имя не прячем: без него
+  // строка бессмысленна, поэтому в наборе его нет и он всегда первый.
+  const myColumns = columnViews[dept];
+  const visibleColumns = useMemo(() => pickColumns(myColumns), [myColumns]);
 
   const counts = useMemo(() => {
     // У отдела — сколько в нём строк, у «Все» — сколько ЛЮДЕЙ: человек в
@@ -818,14 +840,19 @@ export default function StatusesPage() {
           </select>
 
           <button
-            className={clsx("hf-statuses-export-btn", mySections?.length && "hf-statuses-filters-btn-on")}
+            className={clsx(
+              "hf-statuses-export-btn",
+              (mySections?.length || myColumns?.length) && "hf-statuses-filters-btn-on",
+            )}
             onClick={() => setShowSections(true)}
-            title="Какие секции показывать на этой вкладке — только у вас"
+            title="Какие секции и колонки показывать на этой вкладке — только у вас"
           >
             <ListChecks size={15} />
-            Секции
-            {!!mySections?.length && (
-              <span className="hf-statuses-filters-badge">{mySections.length}</span>
+            Вид
+            {!!(mySections?.length || myColumns?.length) && (
+              <span className="hf-statuses-filters-badge">
+                {(mySections?.length ? 1 : 0) + (myColumns?.length ? 1 : 0)}
+              </span>
             )}
           </button>
 
@@ -939,23 +966,23 @@ export default function StatusesPage() {
       ) : (
         <div className="hf-statuses-body">
           {showSections && (
-            <SectionsModal
+            <ViewModal
               scopeLabel={
                 dept === "all" ? "Все"
                   : dept === UNASSIGNED ? "Без отдела"
                     : (departments.find((d) => String(d.id) === dept)?.name || "вкладке")
               }
-              picked={mySections ?? STATUSES.map((s) => s.key)}
+              sections={mySections?.length ? mySections : STATUSES.map((s) => s.key)}
+              columns={myColumns?.length ? myColumns : HIDEABLE_COLUMNS.map((c) => c.key)}
               busy={savingSections}
               onClose={() => setShowSections(false)}
-              onSave={async (keys) => {
+              onSave={async (view) => {
                 setSavingSections(true);
                 try {
-                  const list = await saveBoardStatusView(dept, keys);
-                  setStatusViews(Object.fromEntries(list.map((v) => [v.scope_key, v.statuses])));
+                  applyViews(await saveBoardStatusView(dept, view));
                   setShowSections(false);
                 } catch (e: any) {
-                  toast.error(e?.response?.data?.detail || "Не удалось сохранить набор секций");
+                  toast.error(e?.response?.data?.detail || "Не удалось сохранить вид");
                 } finally {
                   setSavingSections(false);
                 }
@@ -988,11 +1015,11 @@ export default function StatusesPage() {
           <div className="hf-statuses-table-wrap">
             <table className="hf-statuses-table">
               <colgroup>
-                {COLUMNS.map((c) => <col key={c.key} style={{ width: c.width }} />)}
+                {visibleColumns.map((c) => <col key={c.key} style={{ width: c.width }} />)}
               </colgroup>
               <thead>
                 <tr>
-                  {COLUMNS.map((c) => {
+                  {visibleColumns.map((c) => {
                     const sortable = SORTABLE.includes(c.key as SortKey);
                     const on = sort?.key === c.key;
                     return (
@@ -1032,7 +1059,7 @@ export default function StatusesPage() {
                         className="hf-statuses-group"
                         onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
                       >
-                        <td className="hf-statuses-group-cell" colSpan={COLUMNS.length}>
+                        <td className="hf-statuses-group-cell" colSpan={visibleColumns.length}>
                           <div className="hf-statuses-group-inner">
                             {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                             <span className={clsx("hf-statuses-chip", `hf-statuses-chip-${g.key}`)}>
@@ -1047,6 +1074,7 @@ export default function StatusesPage() {
                         <Row
                           key={rowKey(r)}
                           row={r}
+                          columns={visibleColumns}
                           departments={departments}
                           positions={positions}
                           managers={managers}
@@ -1062,7 +1090,7 @@ export default function StatusesPage() {
 
                       {!isCollapsed && g.items.length === 0 && (
                         <tr>
-                          <td className="hf-statuses-empty" colSpan={COLUMNS.length}>Пусто</td>
+                          <td className="hf-statuses-empty" colSpan={visibleColumns.length}>Пусто</td>
                         </tr>
                       )}
                     </Fragment>
@@ -1381,37 +1409,41 @@ function DepartmentSidebar({
   );
 }
 
-/** Окно «Секции»: какие статусы показывать на этой вкладке — лично у себя.
+/** Окно «Вид»: какие секции И какие колонки показывать на этой вкладке.
  *
  *  Мит 07.10.2026: «разные лист-вью под каждого пользователя и под каждый
  *  отдел — у Маши в SANDBOX видны „Перевёлся“ и „Практика“, а у Насти только
- *  „Уволился“». Набор привязан к паре «человек + вкладка»: у соседа и на
- *  другой вкладке он свой. Снял все галочки — показываются все секции. */
-function SectionsModal({
-  scopeLabel, picked, busy, onClose, onSave,
+ *  „Уволился“»; 08.10.2026 Мария попросила то же и по столбцам. Набор привязан
+ *  к паре «человек + вкладка»: у соседа и на другой вкладке он свой. Снял все
+ *  галочки — показывается всё. Колонку «Сотрудник» не прячем: без имени строка
+ *  бессмысленна. */
+function ViewModal({
+  scopeLabel, sections, columns, busy, onClose, onSave,
 }: {
   scopeLabel: string;
-  picked: string[];
+  sections: string[];
+  columns: string[];
   busy: boolean;
   onClose: () => void;
-  onSave: (keys: string[]) => void;
+  onSave: (view: { statuses: string[]; columns: string[] }) => void;
 }) {
-  const [keys, setKeys] = useState<string[]>(picked);
-  const toggle = (k: string) =>
-    setKeys((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
+  const [keys, setKeys] = useState<string[]>(sections);
+  const [cols, setCols] = useState<string[]>(columns);
+  const flip = (list: string[], k: string) =>
+    list.includes(k) ? list.filter((x) => x !== k) : [...list, k];
 
   return (
     <div className="hf-statuses-modal-back" onClick={onClose}>
       <div className="hf-statuses-modal" onClick={(e) => e.stopPropagation()}>
         <div className="hf-statuses-modal-head">
-          <h3>Секции на вкладке «{scopeLabel}»</h3>
+          <h3>Вид вкладки «{scopeLabel}»</h3>
           <button className="hf-statuses-folder-action" onClick={onClose} title="Закрыть">
             <X size={16} />
           </button>
         </div>
 
         <div className="hf-statuses-modal-label">
-          Что показывать
+          Секции
           <span className="hf-statuses-modal-note">
             Набор только ваш и только для этой вкладки: у коллег и в других отделах — свой.
           </span>
@@ -1421,23 +1453,47 @@ function SectionsModal({
                 type="checkbox"
                 checked={keys.includes(st.key)}
                 disabled={busy}
-                onChange={() => toggle(st.key)}
+                onChange={() => setKeys((cur) => flip(cur, st.key))}
               />
               {st.label}
             </label>
           ))}
         </div>
 
+        <div className="hf-statuses-modal-label">
+          Колонки
+          <span className="hf-statuses-modal-note">
+            «Сотрудник» остаётся всегда — по нему и читается строка.
+          </span>
+          <div className="hf-statuses-view-cols">
+            {HIDEABLE_COLUMNS.map((c) => (
+              <label key={c.key} className="hf-statuses-modal-check">
+                <input
+                  type="checkbox"
+                  checked={cols.includes(c.key)}
+                  disabled={busy}
+                  onChange={() => setCols((cur) => flip(cur, c.key))}
+                />
+                {FILTER_LABELS[c.key as FilterKey] || c.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
         <div className="hf-statuses-modal-foot">
           <button
             className="hf-statuses-modal-cancel"
-            onClick={() => onSave([])}
+            onClick={() => onSave({ statuses: [], columns: [] })}
             disabled={busy}
-            title="Показывать все секции"
+            title="Показывать все секции и все колонки"
           >
-            Показать все
+            Показать всё
           </button>
-          <button className="hf-statuses-modal-save" onClick={() => onSave(keys)} disabled={busy}>
+          <button
+            className="hf-statuses-modal-save"
+            onClick={() => onSave({ statuses: keys, columns: cols })}
+            disabled={busy}
+          >
             {busy ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />}
             Сохранить
           </button>
@@ -1750,10 +1806,12 @@ function DepartmentModal({
 // ============================================================
 
 function Row({
-  row, departments, positions, managers, people, saving,
+  row, columns, departments, positions, managers, people, saving,
   onPatch, onStatus, onPlace, onUnplace, onReload,
 }: {
   row: BoardRow;
+  /** Колонки, которые показывает ЭТОТ пользователь на этой вкладке. */
+  columns: typeof COLUMNS;
   departments: BoardDepartment[];
   positions: string[];
   managers: string[];
@@ -1765,135 +1823,118 @@ function Row({
   onUnplace: (row: BoardRow) => Promise<void>;
   onReload: () => void;
 }) {
+  const date = (key: "practice_start_date" | "department_start_date" | "w2" | "m1" | "m3" | "y1" | "dismissal_date",
+                auto?: boolean) => (
+    <DateCell value={row[key]} auto={auto} onSave={(v) => onPatch(row, { [key]: v } as BoardRowUpdate)} />
+  );
+  const mark = (key: "dept_done" | "w2_done" | "m1_done" | "m3_done" | "y1_done") => (
+    <MarkCell value={row[key]} onSave={(v) => onPatch(row, { [key]: v } as BoardRowUpdate)} />
+  );
+
+  // Ячейки заведены по ключу колонки, а рисуются по списку видимых: колонки
+  // прячутся лично и по вкладкам (просьба Марии 08.10.2026 — «лист-вью не
+  // только по статусам, но и по столбцам»), и порядок задаёт один COLUMNS.
+  const cells: Partial<Record<(typeof COLUMNS)[number]["key"], ReactNode>> = {
+    name: (
+      // Всё в одну строку: раньше имя, статус и направление шли друг под
+      // другом, строка вырастала втрое и таблицу «трясло» при листании.
+      <div className="hf-statuses-name-controls">
+        {/* Имя — ссылка на карточку в «Все кандидаты»: кандидат и сотрудник —
+            одна запись, вся история (резюме, воронки, комментарии) там. */}
+        <Link
+          to={`/all-candidates?entity=${row.entity_id}`}
+          className="hf-statuses-name hf-statuses-name-link"
+          title="Открыть карточку в «Все кандидаты»"
+        >
+          {row.name}
+        </Link>
+        {/* Смена статуса прямо в строке: раньше перевести человека из
+            «Практики» в «Уволен» через интерфейс было нельзя вообще. */}
+        <select
+          className={clsx("hf-statuses-status", `hf-statuses-status-${groupOf(row.status)}`)}
+          value={groupOf(row.status)}
+          // Группа «Уволен / Уволился» объединяет увольнение, уход, отказ и
+          // «отозван» — точный статус показываем подсказкой.
+          title={(STATUS_LABELS as Record<string, string>)[row.status] || ""}
+          onChange={(e) => {
+            // Уже в объединённой группе — повторный выбор ничего не меняет,
+            // иначе «уволился» молча переписался бы в «уволен».
+            if (e.target.value !== groupOf(row.status)) onStatus(row, e.target.value);
+          }}
+        >
+          {STATUSES.map((st) => (
+            <option key={st.key} value={st.key}>{st.label}</option>
+          ))}
+        </select>
+      </div>
+    ),
+    assignee: (
+      <AssigneeCell
+        row={row}
+        people={people}
+        onSave={(ids) => onPatch(row, { assignee_user_ids: ids })}
+      />
+    ),
+    sourcer: <SourcerCell row={row} onReload={onReload} />,
+    // Должность вписывает HR — и на практике тоже: раньше здесь стояла
+    // несъёмная подпись «Сандбокс», а песочница теперь настоящий отдел.
+    position: (
+      <PillCell
+        value={row.position}
+        options={positions}
+        onSave={(v) => onPatch(row, { position: v })}
+      />
+    ),
+    department: (
+      <DepartmentCell
+        row={row}
+        departments={departments}
+        onPlace={(id) => onPlace(row, id)}
+        onUnplace={() => onUnplace(row)}
+      />
+    ),
+    telegram: <TelegramCell value={row.telegram} onSave={(v) => onPatch(row, { telegram: v })} />,
+    practice_start_date: date("practice_start_date"),
+    manager: (
+      <PillCell
+        value={row.manager}
+        options={managers}
+        onSave={(v) => onPatch(row, { manager: v })}
+      />
+    ),
+    offer: <OfferCell row={row} onReload={onReload} />,
+    department_start_date: date("department_start_date"),
+    dept_done: mark("dept_done"),
+    w2: date("w2", row.w2_auto),
+    w2_done: mark("w2_done"),
+    m1: date("m1", row.m1_auto),
+    m1_done: mark("m1_done"),
+    m3: date("m3", row.m3_auto),
+    m3_done: mark("m3_done"),
+    y1: date("y1", row.y1_auto),
+    y1_done: mark("y1_done"),
+    dismissal_date: date("dismissal_date"),
+  };
 
   return (
     <tr className={clsx("hf-statuses-row", saving && "hf-statuses-row-saving")}>
-      <td className="hf-statuses-td hf-statuses-sticky">
-        {/* Всё в одну строку: раньше имя, статус и направление шли друг под
-            другом, строка вырастала втрое и таблицу «трясло» при листании. */}
-        <div className="hf-statuses-name-controls">
-          {/* Имя — ссылка на карточку в «Все кандидаты»: кандидат и сотрудник —
-              одна запись, вся история (резюме, воронки, комментарии) там. */}
-          <Link
-            to={`/all-candidates?entity=${row.entity_id}`}
-            className="hf-statuses-name hf-statuses-name-link"
-            title="Открыть карточку в «Все кандидаты»"
-          >
-            {row.name}
-          </Link>
-          {/* Смена статуса прямо в строке: раньше перевести человека из
-              «Практики» в «Уволен» через интерфейс было нельзя вообще. */}
-          <select
-            className={clsx("hf-statuses-status", `hf-statuses-status-${groupOf(row.status)}`)}
-            value={groupOf(row.status)}
-            // Группа «Уволен / Уволился» объединяет увольнение, уход, отказ и
-            // «отозван» — точный статус показываем подсказкой.
-            title={(STATUS_LABELS as Record<string, string>)[row.status] || ""}
-            onChange={(e) => {
-              // Уже в объединённой группе — повторный выбор ничего не меняет,
-              // иначе «уволился» молча переписался бы в «уволен».
-              if (e.target.value !== groupOf(row.status)) onStatus(row, e.target.value);
-            }}
-          >
-            {STATUSES.map((st) => (
-              <option key={st.key} value={st.key}>{st.label}</option>
-            ))}
-          </select>
-        </div>
-      </td>
-
-      <td className="hf-statuses-td hf-statuses-td-assignee">
-        <AssigneeCell
-          row={row}
-          people={people}
-          onSave={(ids) => onPatch(row, { assignee_user_ids: ids })}
-        />
-      </td>
-
-      <td className="hf-statuses-td">
-        <SourcerCell row={row} onReload={onReload} />
-      </td>
-
-      <td className="hf-statuses-td">
-        {/* Должность вписывает HR — и на практике тоже: раньше здесь стояла
-            несъёмная подпись «Сандбокс», а песочница теперь настоящий отдел. */}
-        <PillCell
-          value={row.position}
-          options={positions}
-          onSave={(v) => onPatch(row, { position: v })}
-        />
-      </td>
-
-      <td className="hf-statuses-td">
-        <DepartmentCell
-          row={row}
-          departments={departments}
-          onPlace={(id) => onPlace(row, id)}
-          onUnplace={() => onUnplace(row)}
-        />
-      </td>
-
-      <td className="hf-statuses-td">
-        <TelegramCell value={row.telegram} onSave={(v) => onPatch(row, { telegram: v })} />
-      </td>
-
-      <td className="hf-statuses-td">
-        <DateCell value={row.practice_start_date} onSave={(v) => onPatch(row, { practice_start_date: v })} />
-      </td>
-
-      <td className="hf-statuses-td">
-        <PillCell
-          value={row.manager}
-          options={managers}
-          onSave={(v) => onPatch(row, { manager: v })}
-        />
-      </td>
-
-      <td className="hf-statuses-td hf-statuses-td-narrow">
-        <OfferCell row={row} onReload={onReload} />
-      </td>
-
-      <td className="hf-statuses-td">
-        <DateCell value={row.department_start_date} onSave={(v) => onPatch(row, { department_start_date: v })} />
-      </td>
-      <td className="hf-statuses-td hf-statuses-td-narrow">
-        <MarkCell value={row.dept_done} onSave={(v) => onPatch(row, { dept_done: v })} />
-      </td>
-
-      <td className="hf-statuses-td">
-        <DateCell value={row.w2} auto={row.w2_auto} onSave={(v) => onPatch(row, { w2: v })} />
-      </td>
-      <td className="hf-statuses-td hf-statuses-td-narrow">
-        <MarkCell value={row.w2_done} onSave={(v) => onPatch(row, { w2_done: v })} />
-      </td>
-
-      <td className="hf-statuses-td">
-        <DateCell value={row.m1} auto={row.m1_auto} onSave={(v) => onPatch(row, { m1: v })} />
-      </td>
-      <td className="hf-statuses-td hf-statuses-td-narrow">
-        <MarkCell value={row.m1_done} onSave={(v) => onPatch(row, { m1_done: v })} />
-      </td>
-
-      <td className="hf-statuses-td">
-        <DateCell value={row.m3} auto={row.m3_auto} onSave={(v) => onPatch(row, { m3: v })} />
-      </td>
-      <td className="hf-statuses-td hf-statuses-td-narrow">
-        <MarkCell value={row.m3_done} onSave={(v) => onPatch(row, { m3_done: v })} />
-      </td>
-
-      <td className="hf-statuses-td">
-        <DateCell value={row.y1} auto={row.y1_auto} onSave={(v) => onPatch(row, { y1: v })} />
-      </td>
-      <td className="hf-statuses-td hf-statuses-td-narrow">
-        <MarkCell value={row.y1_done} onSave={(v) => onPatch(row, { y1_done: v })} />
-      </td>
-
-      <td className="hf-statuses-td">
-        <DateCell value={row.dismissal_date} onSave={(v) => onPatch(row, { dismissal_date: v })} />
-      </td>
+      {columns.map((c) => (
+        <td
+          key={c.key}
+          className={clsx(
+            "hf-statuses-td",
+            c.key === "name" && "hf-statuses-sticky",
+            c.key === "assignee" && "hf-statuses-td-assignee",
+            c.narrow && "hf-statuses-td-narrow",
+          )}
+        >
+          {cells[c.key]}
+        </td>
+      ))}
     </tr>
   );
 }
+
 
 // ============================================================
 // CELLS

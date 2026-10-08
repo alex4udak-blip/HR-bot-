@@ -9512,6 +9512,14 @@ body.performance-mode .glass-card:hover {
   gap: var(--hf-space-xs);
   font-weight: 400;
 }
+/* Колонки в окне «Вид» — в две колонки, чтобы список не уезжал за экран. */
+.hf-statuses-view-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--hf-space-xxs) var(--hf-space-s);
+  max-height: 220px;
+  overflow: auto;
+}
 .hf-statuses-modal-people {
   display: flex;
   flex-direction: column;

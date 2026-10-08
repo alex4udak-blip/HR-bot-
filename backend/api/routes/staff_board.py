@@ -1393,19 +1393,31 @@ async def delete_placement(
 # ============================================================
 
 class BoardStatusViewOut(BaseModel):
-    """Какие секции доски показывать на одной вкладке. Пусто — все."""
+    """Что показывать на одной вкладке: секции и колонки. Пусто — всё."""
     scope_key: str
     statuses: List[str]
+    columns: List[str] = []
 
 
 class BoardStatusViewUpdate(BaseModel):
     scope_key: str
-    # Пустой список = сбросить настройку: вкладка снова показывает все секции.
-    statuses: List[str]
+    # Пустой список = сбросить: вкладка снова показывает все секции/колонки.
+    # Не передали поле вовсе — оставляем как было (меняем только второе).
+    statuses: Optional[List[str]] = None
+    columns: Optional[List[str]] = None
 
 
 # Ключи секций доски — те же, что у фронта (STATUSES в StatusesPage).
 BOARD_SECTIONS = ("transferred", "dismissed", "probation", "hired")
+
+# Ключи КОЛОНОК таблицы — те же, что в COLUMNS на фронте. Колонку «Сотрудник»
+# скрыть нельзя (без имени строка бессмысленна), поэтому её здесь нет.
+BOARD_COLUMNS = (
+    "assignee", "sourcer", "position", "department", "telegram",
+    "practice_start_date", "manager", "offer", "department_start_date",
+    "dept_done", "w2", "w2_done", "m1", "m1_done", "m3", "m3_done",
+    "y1", "y1_done", "dismissal_date",
+)
 
 
 def _clean_scope(raw: str) -> str:
@@ -1439,6 +1451,7 @@ async def list_status_views(
         BoardStatusViewOut(
             scope_key=r.scope_key,
             statuses=[s for s in (r.statuses or []) if s in BOARD_SECTIONS],
+            columns=[c for c in (r.column_keys or []) if c in BOARD_COLUMNS],
         )
         for r in rows
     ]
@@ -1461,7 +1474,6 @@ async def save_status_view(
         raise HTTPException(403, "No organization access")
 
     scope = _clean_scope(data.scope_key)
-    wanted = [s for s in data.statuses if s in BOARD_SECTIONS]
     row = (await db.execute(
         select(BoardStatusView).where(
             BoardStatusView.user_id == current_user.id,
@@ -1469,25 +1481,40 @@ async def save_status_view(
         )
     )).scalar_one_or_none()
 
-    if not wanted or len(set(wanted)) == len(BOARD_SECTIONS):
+    def narrowed(values: Optional[List[str]], allowed, current) -> List[str]:
+        """Что сохранить: не передали — оставляем как было; пусто или «всё
+        отмечено» — сброс (иначе новая секция/колонка оказалась бы молча
+        скрытой у всех, кто когда-то настраивал вид)."""
+        if values is None:
+            return [v for v in (current or []) if v in allowed]
+        picked = [v for v in values if v in allowed]
+        return [] if len(set(picked)) == len(allowed) else picked
+
+    sections = narrowed(data.statuses, BOARD_SECTIONS, row.statuses if row else [])
+    columns = narrowed(data.columns, BOARD_COLUMNS, row.column_keys if row else [])
+
+    if not sections and not columns:
         if row is not None:
             await db.delete(row)
-            logger.info(
-                f"BOARD_SECTIONS reset: вкладка {scope} by user {current_user.id}"
-            )
+            logger.info(f"BOARD_SECTIONS reset: вкладка {scope} by user {current_user.id}")
     elif row is None:
         db.add(BoardStatusView(
-            user_id=current_user.id, scope_key=scope, org_id=org.id, statuses=wanted,
+            user_id=current_user.id, scope_key=scope, org_id=org.id,
+            statuses=sections, column_keys=columns,
         ))
         logger.info(
-            f"BOARD_SECTIONS set: вкладка {scope} → {wanted} by user {current_user.id}"
+            f"BOARD_SECTIONS set: вкладка {scope} → секции {sections}, "
+            f"колонки {len(columns) or 'все'} by user {current_user.id}"
         )
     else:
-        row.statuses = wanted
+        row.statuses = sections
+        row.column_keys = columns
         row.org_id = org.id
         flag_modified(row, "statuses")
+        flag_modified(row, "column_keys")
         logger.info(
-            f"BOARD_SECTIONS set: вкладка {scope} → {wanted} by user {current_user.id}"
+            f"BOARD_SECTIONS set: вкладка {scope} → секции {sections}, "
+            f"колонки {len(columns) or 'все'} by user {current_user.id}"
         )
 
     await db.commit()

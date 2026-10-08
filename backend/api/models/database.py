@@ -2108,6 +2108,9 @@ class BoardStatusView(Base):
     scope_key = Column(String(32), primary_key=True)
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     statuses = Column(JSON, default=list)   # ключи секций: transferred, probation…
+    # Ключи КОЛОНОК таблицы — «лист-вью не только по статусам, но и по
+    # столбцам» (Мария, 08.10.2026). Пусто — показываем все колонки.
+    column_keys = Column(JSON, default=list)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
 

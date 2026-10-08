@@ -258,6 +258,8 @@ export interface BoardStatusView {
   /** 'all' | 'none' (без отдела) | id отдела строкой */
   scope_key: string;
   statuses: string[];
+  /** Ключи видимых колонок таблицы; пусто — показываем все. */
+  columns: string[];
 }
 
 export async function getBoardStatusViews(): Promise<BoardStatusView[]> {
@@ -269,11 +271,13 @@ export async function getBoardStatusViews(): Promise<BoardStatusView[]> {
  *  сбросить: вкладка снова показывает все секции. */
 export async function saveBoardStatusView(
   scopeKey: string,
-  statuses: string[]
+  view: { statuses?: string[]; columns?: string[] }
 ): Promise<BoardStatusView[]> {
+  // Не переданное поле сервер оставляет как было: можно менять только секции
+  // или только колонки, не сбивая второе.
   const { data } = await api.put('/staff-board/status-views', {
     scope_key: scopeKey,
-    statuses,
+    ...view,
   });
   return data || [];
 }
