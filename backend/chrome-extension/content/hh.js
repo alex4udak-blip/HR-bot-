@@ -179,86 +179,37 @@
     // Final placeholder will be rebuilt after fields are parsed (see end of function)
 
     // --- Photo ---
-    // hh.ru photo URLs are hosted on *.hhcdn.ru; a real photo URL contains
-    // "/photo/" or a numeric filename (e.g. /12345.jpeg). We reject generic
-    // placeholders (silhouettes, icons, logos).
-    const isRealPhotoUrl = (src) => {
-      if (!src || typeof src !== 'string') return false;
-      if (!src.startsWith('http') && !src.startsWith('//')) return false;
-      const lower = src.toLowerCase();
-      // Reject obvious placeholders / icons / ui chrome / company logos.
-      // hh.ru employer logos live under .../employer-logo/... and would
-      // otherwise be picked up as the candidate's photo when the resume has
-      // no personal photo (e.g. FONBET logo from the work-experience block).
-      if (lower.includes('placeholder') || lower.includes('empty-avatar') ||
-          lower.includes('default-avatar') || lower.includes('silhouette') ||
-          lower.includes('no-photo') || lower.includes('noavatar') ||
-          lower.endsWith('.svg') ||
-          lower.includes('/icons/') || lower.includes('logo') ||
-          lower.includes('employer') ||
-          lower.includes('sprite')) return false;
-      // Must look like a real image file (jpg/jpeg/png/webp anywhere in the URL,
-      // including before a query string)
-      return /\.(?:jpe?g|png|webp)(?:[?#]|$)/i.test(lower);
-    };
-
-    const photoSelectors = [
-      '[data-qa="resume-photo"] img',
-      '[data-qa="resume-photo-image"]',
-      '[data-qa="resume-personal-photo"] img',
-      '.resume-photo img',
-      '.resume-header-photo img',
-      '[data-qa="resume-avatar"] img',
-      '.resume-avatar img',
-      // Magritte-based layout (current hh.ru 2025+)
-      '[class*="resume-photo"] img',
-      '[class*="resume-header"] img',
-      '[class*="avatar"] img',
-      'img[data-qa="bloko-image"]',
-      // Fallback: any <img> whose src looks like an hh photo CDN path
-      'img[src*="hhcdn"]',
-    ];
-    for (const sel of photoSelectors) {
-      const els = document.querySelectorAll(sel);
-      for (const el of els) {
-        const src = el.src || el.getAttribute('src') || '';
-        const normalized = src.startsWith('//') ? 'https:' + src : src;
-        if (isRealPhotoUrl(normalized)) {
-          data.photo_url = normalized;
-          break;
-        }
-      }
-      if (data.photo_url) break;
-    }
-    // Last-resort: scan every img on the page
-    if (!data.photo_url) {
-      const allImgs = document.querySelectorAll('img');
-      for (const img of allImgs) {
-        const src = (img.src || '').trim();
-        const normalized = src.startsWith('//') ? 'https:' + src : src;
-        if (isRealPhotoUrl(normalized)) {
-          data.photo_url = normalized;
-          break;
-        }
-      }
-    }
-    // Also check background-image on div containers (hh sometimes uses CSS backgrounds)
-    if (!data.photo_url) {
-      const candidates = document.querySelectorAll(
-        '[class*="photo"], [class*="avatar"], [data-qa*="photo"], [data-qa*="avatar"]'
-      );
-      for (const el of candidates) {
-        const bg = getComputedStyle(el).backgroundImage || '';
-        const match = bg.match(/url\(["']?([^"')]+)["']?\)/);
-        if (match) {
-          const normalized = match[1].startsWith('//') ? 'https:' + match[1] : match[1];
-          if (isRealPhotoUrl(normalized)) {
-            data.photo_url = normalized;
-            break;
-          }
-        }
-      }
-    }
+    // Выбор фото общий для всех парсеров (content/common.js): только хосты hh,
+    // только блок резюме, рекламные блоки и логотипы компаний пропускаются.
+    // Раньше искали по ВСЕЙ странице, и у кандидата без фото в карточку
+    // попадал рекламный креатив AdFox (жалоба Марии 08.10.2026).
+    data.photo_url = (window.__ENC__ && window.__ENC__.pickResumePhoto)
+      ? window.__ENC__.pickResumePhoto(
+          [
+            '[data-qa="resume-photo"] img',
+            '[data-qa="resume-photo-image"]',
+            '[data-qa="resume-personal-photo"] img',
+            '.resume-photo img',
+            '.resume-header-photo img',
+            '[data-qa="resume-avatar"] img',
+            '.resume-avatar img',
+            // Вёрстка Magritte (hh.ru 2025+): фото лежит в аватаре шапки резюме
+            '[data-qa="resume-main-info__content-wrapper"] img',
+            '[class*="magritte-avatar"] img',
+            '[class*="resume-photo"] img',
+            '[class*="resume-header"] img',
+            'img[data-qa="bloko-image"]',
+            'img[src*="hhcdn"]',
+          ],
+          [
+            '[data-qa="resume"]',
+            '[data-qa="resume-block"]',
+            '[class*="resume-applicant"]',
+            '[data-qa="resume-main-info__content-wrapper"]',
+            'main',
+          ],
+        )
+      : '';
     console.log('[HR-Bot Magic Button] photo_url:', data.photo_url || '(not found)');
 
     // --- Position/title ---

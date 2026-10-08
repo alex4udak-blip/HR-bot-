@@ -164,8 +164,103 @@
     return null;
   }
 
+  // ─────────── Фото кандидата ───────────
+  // Баннеры на странице — тоже <img>, и у рекламного креатива бывает обычный
+  // .webp/.jpg. Пока фото искали «по всей странице», у кандидата БЕЗ фото в
+  // карточку уезжал кусок рекламы AdFox (жалоба Марии 08.10.2026: вместо людей
+  // вебинар DreamJob). Поэтому два правила: берём картинку только с хостов hh
+  // и только из блока резюме, рекламные контейнеры пропускаем.
+
+  const PHOTO_HOSTS = ['hhcdn.ru', 'hh.ru', 'rabota.by', 'hhstatic.ru'];
+  // Контейнеры, внутри которых картинка — ЗАВЕДОМО не кандидат.
+  const PHOTO_SKIP_CONTAINERS = [
+    'aside', 'header', 'footer', 'nav',
+    '[class*="banner"]', '[class*="Banner"]', '[id*="AdFox"]', '[id*="adfox"]',
+    '[class*="advert"]', '[class*="promo"]', '[data-qa*="banner"]',
+    '[class*="company-logo"]', '[data-qa*="company-logo"]',
+    '[data-qa="resume-experience-company-logo"]',
+  ].join(',');
+
+  function hostOf(url) {
+    try {
+      return new URL(url, location.href).hostname.toLowerCase();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // Ссылка похожа на НАСТОЯЩЕЕ фото человека с hh, а не на заглушку/логотип/баннер.
+  function isRealPhotoUrl(src) {
+    if (!src || typeof src !== 'string') return false;
+    if (!src.startsWith('http') && !src.startsWith('//')) return false;
+    const url = src.startsWith('//') ? 'https:' + src : src;
+    const host = hostOf(url);
+    // Хост-аллоулист: реклама приезжает с adfox/yandex/mail.ru/avatars.mds и
+    // раньше проходила все проверки, потому что кончалась на .webp.
+    if (!PHOTO_HOSTS.some((h) => host === h || host.endsWith('.' + h))) return false;
+    const lower = url.toLowerCase();
+    if (lower.includes('placeholder') || lower.includes('empty-avatar') ||
+        lower.includes('default-avatar') || lower.includes('silhouette') ||
+        lower.includes('no-photo') || lower.includes('noavatar') ||
+        lower.endsWith('.svg') ||
+        lower.includes('/icons/') || lower.includes('logo') ||
+        lower.includes('employer') ||
+        lower.includes('sprite')) return false;
+    return /\.(?:jpe?g|png|webp)(?:[?#]|$)/i.test(lower);
+  }
+
+  function insideSkipped(el) {
+    return !!(el.closest && el.closest(PHOTO_SKIP_CONTAINERS));
+  }
+
+  /**
+   * Фото кандидата со страницы резюме.
+   * selectors — по порядку, от самого точного к общему; ищем внутри блока
+   * резюме (root), рекламу и логотипы компаний пропускаем.
+   */
+  function pickResumePhoto(selectors, rootSelectors) {
+    const roots = [];
+    for (const sel of (rootSelectors || [])) {
+      const el = document.querySelector(sel);
+      if (el) roots.push(el);
+    }
+    if (!roots.length) roots.push(document.body || document);
+
+    const fromImg = (el) => {
+      if (!el || insideSkipped(el)) return '';
+      const src = (el.currentSrc || el.src || el.getAttribute('src') || '').trim();
+      const normalized = src.startsWith('//') ? 'https:' + src : src;
+      return isRealPhotoUrl(normalized) ? normalized : '';
+    };
+
+    for (const sel of selectors) {
+      for (const root of roots) {
+        for (const el of root.querySelectorAll(sel)) {
+          const found = fromImg(el);
+          if (found) return found;
+        }
+      }
+    }
+    // Фон вместо <img> (встречалось в старой вёрстке) — тоже только внутри резюме.
+    for (const root of roots) {
+      const boxes = root.querySelectorAll(
+        '[class*="photo"], [class*="avatar"], [data-qa*="photo"], [data-qa*="avatar"]'
+      );
+      for (const el of boxes) {
+        if (insideSkipped(el)) continue;
+        const bg = (getComputedStyle(el).backgroundImage || '');
+        const m = bg.match(/url\(["']?([^"')]+)["']?\)/);
+        if (!m) continue;
+        const normalized = m[1].startsWith('//') ? 'https:' + m[1] : m[1];
+        if (isRealPhotoUrl(normalized)) return normalized;
+      }
+    }
+    return '';
+  }
+
   window.__ENC__ = {
     sanitizeRecord, sanitizeStr, cleanText, isGarbage,
     isEmail, isServiceEmail, isPhone, normalizeTelegram, extractProfileJson, deepHasKeys,
+    isRealPhotoUrl, pickResumePhoto,
   };
 })();
