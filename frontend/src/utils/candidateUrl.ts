@@ -59,3 +59,28 @@ export function shouldAdoptUrlEntity(
   if (selectedId === urlEntityId) return false; // already in sync
   return !selectionChangedThisRender;
 }
+
+/**
+ * Кого показать справа, когда человек СМЕНИЛ поиск.
+ *
+ * Мария, 09.10.2026: искали «елизавета муравьева», слева «Нет кандидатов», а
+ * справа висела чужая карточка — первая находка промежуточного запроса, пока
+ * печатали. Открытый кандидат, которого нет в выдаче нового запроса, справа
+ * оставаться не должен: пусто — закрываем, есть находки — открываем первую.
+ *
+ * Возвращает:
+ * - `undefined` — ничего не менять (поиск не менялся или открытый кандидат в
+ *   выдаче). Так диплинк из расширения на кандидата, которого нет на доске, и
+ *   фоновое обновление во время правки имени карточку не трогают;
+ * - `null` — закрыть профиль;
+ * - элемент списка — открыть его.
+ */
+export function cardAfterSearchChange<T extends { card: { id: number } }>(
+  visible: T[],
+  openId: number | null,
+  searchChanged: boolean,
+): T | null | undefined {
+  if (!searchChanged || openId == null) return undefined;
+  if (visible.some((v) => v.card.id === openId)) return undefined;
+  return visible[0] ?? null;
+}

@@ -25,7 +25,11 @@ import {
 import clsx from "clsx";
 import toast from "react-hot-toast";
 import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
-import { computeEntityParamUpdate, shouldAdoptUrlEntity } from "@/utils/candidateUrl";
+import {
+  cardAfterSearchChange,
+  computeEntityParamUpdate,
+  shouldAdoptUrlEntity,
+} from "@/utils/candidateUrl";
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import {
   buildListRowStages,
@@ -804,8 +808,18 @@ export default function AllCandidatesPage() {
   // при активном поиске, кандидат перестаёт совпадать с запросом, список пустеет,
   // и следующий тик поллинга закрывал карточку «сам по себе».
   const prevSelectionCtxRef = useRef<string | null>(null);
+  // Запрос поиска, под который в последний раз выбиралась карточка. Отдельно от
+  // контекста выше: смена ПОИСКА — единственная смена фильтра, которая сама
+  // карточку не сбрасывает (клик по вкладке делает setSelectedCard(null) явно).
+  const prevSearchForSelectionRef = useRef<string | null>(null);
   useEffect(() => {
     if (!board || boardStale) return;
+    // Человек поменял запрос (не первый проход и не фоновое обновление: пока
+    // доска не догнала запрос, сюда не доходим — boardStale выше).
+    const searchChanged =
+      prevSearchForSelectionRef.current !== null &&
+      prevSearchForSelectionRef.current !== debouncedSearch;
+    prevSearchForSelectionRef.current = debouncedSearch;
     // Гонка «клик vs URL»: клик ставит selectedCard напрямую (мгновенный UI), зеркало
     // дописывает ?entity= на тик позже. selChanged=true → менялся ВЫБОР (клик), а URL ещё
     // старый → НЕ возвращаем фокус на прошлую карточку; адоптим entity из URL только при
@@ -817,6 +831,24 @@ export default function AllCandidatesPage() {
       if (archivedParam === "1") return;  // архивного открывает отдельный эффект ниже
       const entityId = parseInt(entityParam);
       if (Number.isNaN(entityId)) return;
+      // Открытый кандидат не попал в выдачу НОВОГО запроса — справа ему не место
+      // (Мария, 09.10.2026: искали «елизавета муравьева», слева «Нет кандидатов»,
+      // а справа висела Правдецкая — первая находка промежуточного запроса, пока
+      // печатали). Раньше ранний выход ниже («URL синхронен») срабатывал раньше,
+      // чем проверка пустой выдачи, и карточка из ?entity= оставалась навсегда.
+      // Пусто — закрываем профиль, есть находки — открываем первую.
+      // Только на смене запроса: диплинк из расширения (кандидат не на доске) и
+      // фоновое обновление во время правки имени карточку по-прежнему не трогают.
+      const afterSearch =
+        selectedCard?.id === entityId
+          ? cardAfterSearchChange(filteredCards, entityId, searchChanged)
+          : undefined;
+      if (afterSearch !== undefined) {
+        prevSelectionCtxRef.current = `${activeTab}|${listSettings.scope}|${debouncedSearch}`;
+        setSelectedCard(afterSearch ? afterSearch.card : null);
+        setSelectedStatus(afterSearch ? afterSearch.status : "");
+        return;
+      }
       // Уже показываем этого кандидата — URL синхронен: доводим разовые edit/tab и выходим.
       if (selectedCard?.id === entityId) {
         if (editParam === "1") setShowEditModal(true);

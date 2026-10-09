@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeEntityParamUpdate, shouldAdoptUrlEntity } from '../candidateUrl';
+import { cardAfterSearchChange, computeEntityParamUpdate, shouldAdoptUrlEntity } from '../candidateUrl';
 
 describe('computeEntityParamUpdate', () => {
   it('sets entity when a profile opens', () => {
@@ -66,5 +66,34 @@ describe('shouldAdoptUrlEntity', () => {
 
   it('trusts the click when selection changed to a third value', () => {
     expect(shouldAdoptUrlEntity(3, 5, true)).toBe(false);
+  });
+});
+
+// Мария, 09.10.2026: «когда ищешь кандидата, если такого нет, лишних cv не
+// должно показывать» — слева «Нет кандидатов», справа висела чужая карточка.
+describe('cardAfterSearchChange', () => {
+  const row = (id: number) => ({ card: { id }, status: 'new' });
+
+  it('поиск ничего не нашёл — профиль закрывается', () => {
+    expect(cardAfterSearchChange([], 8, true)).toBeNull();
+  });
+
+  it('открытого нет в выдаче — открывается первый найденный', () => {
+    expect(cardAfterSearchChange([row(5), row(6)], 8, true)).toEqual(row(5));
+  });
+
+  it('открытый в выдаче есть — его не трогаем', () => {
+    expect(cardAfterSearchChange([row(5), row(8)], 8, true)).toBeUndefined();
+  });
+
+  it('поиск не менялся — не трогаем, даже если списка нет', () => {
+    // Диплинк из расширения на кандидата не с доски и фоновое обновление во
+    // время правки имени (кандидат перестал совпадать с запросом).
+    expect(cardAfterSearchChange([], 8, false)).toBeUndefined();
+    expect(cardAfterSearchChange([row(5)], 8, false)).toBeUndefined();
+  });
+
+  it('ничего не открыто — решает обычная логика выбора', () => {
+    expect(cardAfterSearchChange([row(5)], null, true)).toBeUndefined();
   });
 });
