@@ -78,7 +78,7 @@ type FilterKey =
 /** Ширина в px задана у каждой колонки: без неё 19 колонок растягивались как
  *  попало, длинная должность раздувала свою, а даты сжимались до переноса.
  *  Суммарно таблица шире экрана — прокрутка есть, но имя закреплено слева. */
-const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narrow?: boolean; width: number }[] = [
+const COLUMNS: { key: FilterKey | "offer" | "salary"; label: string; filter: boolean; narrow?: boolean; width: number }[] = [
   { key: "name",                  label: "Сотрудник",         filter: true, width: 250 },
   { key: "assignee",              label: "HR",                filter: true, width: 130 },
   { key: "sourcer",               label: "Сорсер",            filter: true, width: 150 },
@@ -99,6 +99,9 @@ const COLUMNS: { key: FilterKey | "offer"; label: string; filter: boolean; narro
   { key: "y1",                    label: "1 год",             filter: true, width: 116 },
   { key: "y1_done",               label: "✓",                 filter: true, narrow: true, width: 124 },
   { key: "dismissal_date",        label: "Дата увольнения",   filter: true, width: 124 },
+  // «Сумма» видна только владельцам организации (Настя). У остальных сервер
+  // не присылает значение, и колонка в таблицу не попадает.
+  { key: "salary",                label: "Сумма",             filter: false, width: 120 },
 ];
 
 /** Колонки, которые можно спрятать: все, кроме «Сотрудника» — без имени
@@ -108,9 +111,15 @@ const HIDEABLE_COLUMNS = COLUMNS.filter((c) => c.key !== "name");
 /** Колонки вкладки: пусто — показываем все, иначе только отмеченные, и
  *  «Сотрудник» всегда первым (его прятать нельзя). Порядок всегда из COLUMNS,
  *  чтобы таблица не переставлялась от порядка галочек. */
-export function pickColumns(chosen?: string[] | null): typeof COLUMNS {
-  if (!chosen?.length) return COLUMNS;
-  return COLUMNS.filter((c) => c.key === "name" || chosen.includes(c.key));
+export function pickColumns(
+  chosen?: string[] | null,
+  withSalary = false,
+): typeof COLUMNS {
+  // «Сумма» — только владельцам организации: сервер не присылает значение,
+  // и колонку мы даже не рисуем (владелец, 09.10.2026).
+  const base = withSalary ? COLUMNS : COLUMNS.filter((c) => c.key !== "salary");
+  if (!chosen?.length) return base;
+  return base.filter((c) => c.key === "name" || chosen.includes(c.key));
 }
 
 /** Подписи для списка «Фильтры»: там «✓» ничего не сказало бы. */
@@ -648,7 +657,13 @@ export default function StatusesPage() {
   // статусам, но и по столбцам» — Мария, 08.10.2026). Имя не прячем: без него
   // строка бессмысленна, поэтому в наборе его нет и он всегда первый.
   const myColumns = columnViews[dept];
-  const visibleColumns = useMemo(() => pickColumns(myColumns), [myColumns]);
+  // Право на «Сумму» приходит со строками: сервер ставит его всем строкам
+  // одинаково, поэтому достаточно посмотреть первую.
+  const canSeeSalary = rows.some((r) => r.salary_visible);
+  const visibleColumns = useMemo(
+    () => pickColumns(myColumns, canSeeSalary),
+    [myColumns, canSeeSalary],
+  );
 
   const counts = useMemo(() => {
     // У отдела — сколько в нём строк, у «Все» — сколько ЛЮДЕЙ: человек в
@@ -765,6 +780,21 @@ export default function StatusesPage() {
     toast.success(`Выгружено строк: ${total}`);
   };
 
+  /** Итог по колонке «Сумма»: считаем по ЛЮДЯМ, а не по строкам — человек в
+   *  песочнице и в отделе занимает две строки, но деньги у него одни. Берём
+   *  ровно то, что сейчас на экране после фильтров (владелец, 09.10.2026:
+   *  «когда фильтры применялись, этот столбец в конце писал сумму всех»). */
+  const salaryTotal = useMemo(() => {
+    if (!canSeeSalary) return null;
+    const seen = new Map<number, number>();
+    for (const r of visible) {
+      if (r.salary != null) seen.set(r.entity_id, r.salary);
+    }
+    let sum = 0;
+    seen.forEach((v) => { sum += v; });
+    return { sum, people: seen.size };
+  }, [visible, canSeeSalary]);
+
   const grouped = useMemo(
     () => STATUSES.filter((s) => !mySections || !mySections.length || mySections.includes(s.key)).map((s) => {
       const items = visible.filter((r) => (s.members as readonly string[]).includes(r.status));
@@ -788,7 +818,9 @@ export default function StatusesPage() {
     <div className="hf-statuses-page">
       <div className="hf-statuses-header">
         <div>
-          <h1 className="hf-statuses-title">Статусы</h1>
+          {/* Раздел называется «Штат» (владелец, 09.10.2026). Адрес остался
+              /statuses: по нему уже ходят закладки и ссылки. */}
+          <h1 className="hf-statuses-title">Штат</h1>
           <p className="hf-statuses-subtitle">Жизненный цикл сотрудника по отделам</p>
         </div>
         <div className="hf-statuses-tools">
@@ -967,6 +999,7 @@ export default function StatusesPage() {
         <div className="hf-statuses-body">
           {showSections && (
             <ViewModal
+              hideable={HIDEABLE_COLUMNS.filter((c) => c.key !== "salary" || canSeeSalary)}
               scopeLabel={
                 dept === "all" ? "Все"
                   : dept === UNASSIGNED ? "Без отдела"
@@ -974,6 +1007,7 @@ export default function StatusesPage() {
               }
               sections={mySections?.length ? mySections : STATUSES.map((s) => s.key)}
               columns={myColumns?.length ? myColumns : HIDEABLE_COLUMNS.map((c) => c.key)}
+              
               busy={savingSections}
               onClose={() => setShowSections(false)}
               onSave={async (view) => {
@@ -1097,6 +1131,28 @@ export default function StatusesPage() {
                   );
                 })}
               </tbody>
+
+              {salaryTotal && (
+                <tfoot className="hf-statuses-foot">
+                  <tr>
+                    {visibleColumns.map((c, i) => (
+                      <td
+                        key={c.key}
+                        className={clsx(
+                          "hf-statuses-td",
+                          c.key === "name" && "hf-statuses-sticky",
+                        )}
+                      >
+                        {c.key === "salary"
+                          ? <strong>{formatMoney(salaryTotal.sum)}</strong>
+                          : i === 0
+                            ? `Итого по отбору · ${salaryTotal.people} чел.`
+                            : null}
+                      </td>
+                    ))}
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
@@ -1265,21 +1321,10 @@ function DepartmentSidebar({
     .slice()
     .sort((a, b) => (a.hidden === b.hidden ? 0 : a.hidden ? 1 : -1));
 
-  // Команды показываем под их песочницей: иерархия должна быть видна глазами,
-  // а не угадываться по названиям. Личный порядок перетаскиванием сохраняется —
-  // внутри песочницы команды идут в том же порядке, что в общем списке.
-  const tree: { d: BoardDepartment; child: boolean }[] = [];
-  const sandboxIds = new Set(sorted.filter((d) => d.kind === "sandbox").map((d) => d.id));
-  for (const d of sorted) {
-    // Команду, у которой песочница есть в списке, нарисуем под ней.
-    if (d.kind === "team" && d.parent_id && sandboxIds.has(d.parent_id)) continue;
-    tree.push({ d, child: false });
-    if (d.kind === "sandbox") {
-      for (const t of sorted) {
-        if (t.parent_id === d.id) tree.push({ d: t, child: true });
-      }
-    }
-  }
+  // Список отделов плоский: вложенность под песочницу убрана (владелец,
+  // 09.10.2026 — «убрать визуальную привязку к родительскому отделу»). Связь
+  // parent_id осталась в данных и в окне отдела, просто её больше не рисуем.
+  const tree = sorted.map((d) => ({ d, child: false }));
 
   const drop = async (target: BoardDepartment) => {
     setOverId(null);
@@ -1418,9 +1463,10 @@ function DepartmentSidebar({
  *  галочки — показывается всё. Колонку «Сотрудник» не прячем: без имени строка
  *  бессмысленна. */
 function ViewModal({
-  scopeLabel, sections, columns, busy, onClose, onSave,
+  scopeLabel, sections, columns, hideable, busy, onClose, onSave,
 }: {
   scopeLabel: string;
+  hideable: typeof COLUMNS;
   sections: string[];
   columns: string[];
   busy: boolean;
@@ -1466,7 +1512,7 @@ function ViewModal({
             «Сотрудник» остаётся всегда — по нему и читается строка.
           </span>
           <div className="hf-statuses-view-cols">
-            {HIDEABLE_COLUMNS.map((c) => (
+            {hideable.map((c) => (
               <label key={c.key} className="hf-statuses-modal-check">
                 <input
                   type="checkbox"
@@ -1914,6 +1960,9 @@ function Row({
     y1: date("y1", row.y1_auto),
     y1_done: mark("y1_done"),
     dismissal_date: date("dismissal_date"),
+    salary: (
+      <MoneyCell value={row.salary} onSave={(v) => onPatch(row, { salary: v })} />
+    ),
   };
 
   return (
@@ -1975,6 +2024,41 @@ function TextCell({
       {value
         ? `${prefix || ""}${value}`
         : <span className="hf-statuses-cell-placeholder">—</span>}
+    </button>
+  );
+}
+
+/** «Сумма» — число, которое вписывает владелец. Показываем с разделителями
+ *  тысяч, правим как обычную ячейку. */
+function MoneyCell({
+  value, onSave,
+}: { value: number | null; onSave: (v: number | null) => void }) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        inputMode="decimal"
+        className="hf-statuses-cell-input"
+        defaultValue={value ?? ""}
+        onBlur={(e) => {
+          setEditing(false);
+          const raw = e.target.value.trim();
+          const next = raw === "" ? null : Number(raw);
+          if (next !== value && (next === null || Number.isFinite(next))) onSave(next);
+        }}
+        onKeyDown={(e) => { if (e.key === "Escape") setEditing(false); }}
+      />
+    );
+  }
+
+  return (
+    <button className="hf-statuses-cell-btn" onClick={() => setEditing(true)}>
+      {value == null
+        ? <span className="hf-statuses-cell-placeholder">—</span>
+        : formatMoney(value)}
     </button>
   );
 }
@@ -2119,6 +2203,10 @@ const isBoardHr = (name: string | null | undefined) =>
 /** Сколько HR можно закрепить за человеком — как на бэке (MAX_ASSIGNEES). */
 const MAX_HR = 5;
 
+/** 2500.5 → «2 500,5»: длинные суммы без разделителей не читаются. */
+const formatMoney = (v: number) =>
+  v.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+
 const initialsOf = (name: string | null | undefined) =>
   (name || "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
 
@@ -2140,13 +2228,11 @@ function DepartmentCell({
   onUnplace: () => void;
 }) {
   // Главным в ячейке всегда рабочий отдел — даже в строке песочницы: «нужно
-  // видеть отделы везде, даже на сендбоксе» (Мария, 07.10.2026). Песочница
-  // уходит подписью под ним; если отдела ещё нет, показываем саму песочницу.
+  // видеть отделы везде, даже на сендбоксе» (Мария, 07.10.2026). Подпись «из
+  // песочницы» под ним убрана (владелец, 09.10.2026: «убрать визуальную
+  // привязку к родительскому отделу») — сама связь осталась в данных.
   const own = row.department_name || "";
   const name = (row.department_is_sandbox ? row.team_name : null) || own;
-  const from = row.department_is_sandbox
-    ? (row.team_name ? own : null)
-    : row.sandbox_name;
   const hue = pillHue(name);
   const options = departments.filter(
     (d) => (!d.hidden || d.id === row.department_id) && d.id !== row.department_id
@@ -2166,7 +2252,7 @@ function DepartmentCell({
         <span className="hf-statuses-dept-stack">
           <span
             className="hf-statuses-pill"
-            title={from ? `${name} · пришёл из ${from}` : name}
+            title={name}
             style={{
               background: `hsl(${hue} 70% 94%)`,
               color: `hsl(${hue} 55% 32%)`,
@@ -2175,11 +2261,6 @@ function DepartmentCell({
           >
             {name}
           </span>
-          {from && (
-            <span className="hf-statuses-dept-from" title={`Остаётся в песочнице ${from}`}>
-              из {from}
-            </span>
-          )}
         </span>
       ) : (
         <span className="hf-statuses-empty-cell">—</span>

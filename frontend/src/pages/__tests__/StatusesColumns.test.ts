@@ -15,6 +15,16 @@ describe("pickColumns", () => {
     expect(pickColumns(null)).toEqual(all);
   });
 
+  it("«Сумма» появляется только у тех, кому её отдаёт сервер", () => {
+    // Владелец 09.10.2026: столбец видит только Настя (owner организации).
+    expect(pickColumns().map((c) => c.key)).not.toContain("salary");
+    expect(pickColumns(null, true).map((c) => c.key)).toContain("salary");
+    // Отмечена в наборе, но права нет — всё равно не показываем.
+    expect(pickColumns(["salary", "position"]).map((c) => c.key)).toEqual(["name", "position"]);
+    expect(pickColumns(["salary", "position"], true).map((c) => c.key))
+      .toEqual(["name", "position", "salary"]);
+  });
+
   it("оставляем отмеченные и всегда «Сотрудника»", () => {
     const keys = pickColumns(["position", "department"]).map((c) => c.key);
     expect(keys).toEqual(["name", "position", "department"]);

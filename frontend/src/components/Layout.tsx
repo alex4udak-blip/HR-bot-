@@ -1282,7 +1282,7 @@ export default function Layout() {
         icon: Users,
         label: "Все кандидаты",
       });
-      hrItems.push({ path: "/statuses", icon: UserCheck, label: "Статусы" });
+      hrItems.push({ path: "/statuses", icon: UserCheck, label: "Штат" });
       hrItems.push({ path: "/analytics", icon: BarChart3, label: "Аналитика" });
       hrItems.push({
         path: "/my-funnels",
@@ -1340,7 +1340,7 @@ export default function Layout() {
   const hrMobileNavItems = useMemo(
     () => [
       { path: "/all-candidates", icon: Users, label: "Все кандидаты" },
-      { path: "/statuses", icon: UserCheck, label: "Статусы" },
+      { path: "/statuses", icon: UserCheck, label: "Штат" },
       { path: "/analytics", icon: BarChart3, label: "Аналитика" },
       { path: "/vacancies", icon: GitBranch, label: "Заявки" },
       { path: "/my-funnels", icon: Briefcase, label: "Мои вакансии" },
@@ -1667,7 +1667,7 @@ export default function Layout() {
                     }
                   >
                     <HfSpriteIcon id="calendar-20" className="hf-hr-nav-icon" />
-                    Статусы
+                    Штат
                   </NavLink>
                   <NavLink
                     to="/analytics"

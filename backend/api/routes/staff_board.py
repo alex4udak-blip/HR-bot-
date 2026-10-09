@@ -115,6 +115,10 @@ _K_DEPT_START = "department_transfer_date"
 # Enceladus: там у отдела участники, руководители и права, а здесь просто
 # полка, куда HR раскладывает людей (решение владельца 23.09.2026).
 _K_BOARD_DEPT = "board_department_id"
+# Деньги по человеку («Сумма»). Лежит в карточке, а не в назначении: человек
+# один, и в итог он должен попадать один раз, даже если стоит и в песочнице,
+# и в отделе.
+_K_SALARY = "board_salary"
 
 # Поля, которые принадлежат НАЗНАЧЕНИЮ (человек в конкретном отделе), а не
 # самому человеку: в песочнице живут даты практики, в отделе — выход в отдел и
@@ -267,6 +271,10 @@ class BoardRow(BaseModel):
     # решению юзера в ОДНОЙ колонке, а не отдельной.
     sourcers: List["BoardSourcer"] = []
     dismissal_date: Optional[str] = None
+    # «Сумма» по человеку — только для владельцев организации. Остальным
+    # приходит null, а сама колонка на доске не показывается.
+    salary: Optional[float] = None
+    salary_visible: bool = False
     # Отметки «пройдено» рядом с каждой вехой
     dept_done: Optional[str] = None
     w2_done: Optional[str] = None
@@ -400,6 +408,8 @@ class BoardRowUpdate(BaseModel):
     # как было до назначений.
     placement_id: Optional[int] = None
     status: Optional[str] = None
+    # «Сумма» — только владельцам организации; остальным 403.
+    salary: Optional[float] = None
     direction: Optional[str] = None
     position: Optional[str] = None
     department_id: Optional[int] = None
@@ -495,6 +505,16 @@ def _save_folders(org: Organization, folders: List[Dict[str, str]]) -> None:
     settings[_SETTINGS_KEY] = folders
     org.settings = settings
     flag_modified(org, "settings")
+
+
+def _as_money(v) -> Optional[float]:
+    """Сумма из карточки: принимаем число или строку, мусор — пусто."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        return round(float(str(v).replace(",", ".").replace(" ", "")), 2)
+    except (TypeError, ValueError):
+        return None
 
 
 def _as_int(v) -> Optional[int]:
@@ -620,6 +640,24 @@ async def _board_depts(db: AsyncSession, org_id: int) -> Dict[int, BoardDepartme
     return {d.id: d for d in rows}
 
 
+async def _can_see_salary(db: AsyncSession, user: User, org_id: int) -> bool:
+    """Колонку «Сумма» видят ВЛАДЕЛЬЦЫ организации и суперадмин.
+
+    Владелец 09.10.2026: «столбец Сумма, который будет видеть только Настя».
+    Настя заведена owner'ом, Мария — admin, поэтому право привязано к роли, а
+    не к имени: имена меняются, а право остаётся у того, кто за деньги отвечает.
+    """
+    if user.role == UserRole.superadmin:
+        return True
+    return bool((await db.execute(
+        select(OrgMember.id).where(
+            OrgMember.user_id == user.id,
+            OrgMember.org_id == org_id,
+            OrgMember.role == OrgRole.owner,
+        ).limit(1)
+    )).scalar_one_or_none())
+
+
 async def _is_board_admin(db: AsyncSession, user: User, org_id: int) -> bool:
     """Админ HR-сегмента: superadmin, owner или admin организации.
 
@@ -707,6 +745,7 @@ def _row_from_entity(
     sourcers_by_entity: Optional[Dict[int, List["BoardSourcer"]]] = None,
     mentors_by_entity: Optional[Dict[int, List[str]]] = None,
     depts: Optional[Dict[int, BoardDepartment]] = None,
+    with_salary: bool = False,
     placement: Optional["BoardPlacement"] = None,
     person_sandbox: Optional[Dict[str, Any]] = None,
 ) -> BoardRow:
@@ -833,6 +872,8 @@ def _row_from_entity(
         assignees=assignees,
         sourcers=(sourcers_by_entity or {}).get(entity.id, []),
         dismissal_date=_iso(_parse_date(_pick(ex, _K_DISMISSAL, _CF_DISMISSAL))),
+        salary=(_as_money(ex.get(_K_SALARY)) if with_salary else None),
+        salary_visible=with_salary,
         dept_done=_as_done(pex, "dept_done"),
         w2_done=_as_done(pex, "w2_done"),
         m1_done=_as_done(pex, "m1_done"),
@@ -1217,6 +1258,7 @@ async def _single_row(
     org_id: int,
     entity: Entity,
     placement: Optional[BoardPlacement],
+    with_salary: bool = False,
 ) -> BoardRow:
     """Одна строка доски в ответе на правку — со всем, что в ней показано."""
     offer = (await db.execute(
@@ -1247,6 +1289,7 @@ async def _single_row(
         depts,
         placement=placement,
         person_sandbox=_person_sandboxes(mine, depts).get(entity.id),
+        with_salary=with_salary,
     )
 
 
@@ -1326,7 +1369,10 @@ async def create_placement(
                 f"BOARD_PLACEMENT move: entity {entity.id} → «{dept.name}» "
                 f"(строка уже была, убрали назначение {old.id}) by user {current_user.id}"
             )
-        return await _single_row(db, org.id, entity, exists)
+        return await _single_row(
+            db, org.id, entity, exists,
+            with_salary=await _can_see_salary(db, current_user, org.id),
+        )
 
     placement = BoardPlacement(
         org_id=org.id, entity_id=entity.id, department_id=dept.id,
@@ -1347,7 +1393,10 @@ async def create_placement(
         + (f", вместо назначения {data.replace_placement_id}" if old is not None else "")
         + f" by user {current_user.id}"
     )
-    return await _single_row(db, org.id, entity, placement)
+    return await _single_row(
+        db, org.id, entity, placement,
+        with_salary=await _can_see_salary(db, current_user, org.id),
+    )
 
 
 @router.delete("/placements/{placement_id}")
@@ -1666,6 +1715,7 @@ async def list_rows(
     # поэтому у того, кто с практики вышел в команду, строк две — в песочнице и
     # в команде, — но карточка кандидата одна (entity_id совпадает).
     is_admin = await _is_board_admin(db, current_user, org.id)
+    with_salary = await _can_see_salary(db, current_user, org.id)
     placements = (await db.execute(
         select(BoardPlacement)
         .where(BoardPlacement.org_id == org.id, BoardPlacement.entity_id.in_(ids))
@@ -1697,6 +1747,7 @@ async def list_rows(
                 e, offers.get(e.id), assignee_names, sourcers_by_entity,
                 mentors_by_entity, depts, placement=pl,
                 person_sandbox=sandbox_of.get(e.id),
+                with_salary=with_salary,
             ))
     return rows
 
@@ -1810,6 +1861,14 @@ async def update_row(
     if "telegram" in payload:
         handle = (payload["telegram"] or "").strip().lstrip("@")
         entity.telegram_usernames = [handle] if handle else []
+
+    # «Сумма» — деньги, их правит только владелец организации.
+    salary_changed = False
+    if "salary" in payload:
+        if not await _can_see_salary(db, current_user, org.id):
+            raise HTTPException(403, "Сумму меняет только владелец")
+        salary_changed = True
+        salary_value = _as_money(payload.pop("salary"))
 
     # --- Поля доски в extra_data ---
     extra_map = {
@@ -1926,6 +1985,16 @@ async def update_row(
             entity.id, status_note["from_status"], status_note["stage"], current_user.id,
         )
 
+    if salary_changed:
+        if salary_value is None:
+            ex.pop(_K_SALARY, None)
+        else:
+            ex[_K_SALARY] = salary_value
+        touched_extra = True
+        logger.info(
+            f"BOARD_SALARY: entity {entity.id} → {salary_value} by user {current_user.id}"
+        )
+
     if touched_extra:
         entity.extra_data = ex
         flag_modified(entity, "extra_data")
@@ -1974,4 +2043,7 @@ async def update_row(
         f"Board row updated: entity {entity_id}, placement "
         f"{fresh.id if fresh else '—'} by user {current_user.id}"
     )
-    return await _single_row(db, org.id, entity, fresh)
+    return await _single_row(
+        db, org.id, entity, fresh,
+        with_salary=await _can_see_salary(db, current_user, org.id),
+    )
