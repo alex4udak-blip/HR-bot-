@@ -16,6 +16,7 @@ import logging
 from typing import Any, Dict, List
 
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
 from ..models.database import (
     BoardDepartment, BoardPlacement, DataMigrationMark, Entity,
@@ -222,3 +223,72 @@ async def place_current_practice(db, org_id: int, dept_id: int) -> int:
     if added:
         logger.info(f"BOARD_PLACEMENT backfill: {added} практикантов → отдел {dept_id}")
     return added
+
+
+# --- Разовое слияние дат отдела (13.10.2026) ----------------------------------
+
+TEAM_MERGE_MARK = "board_team_dates_merge_2026_10_13"
+
+# Поля РАБОЧЕГО отдела: выход в отдел, вехи и отметки. Практика сюда не входит —
+# она живёт у песочницы.
+TEAM_DATE_KEYS = (
+    "department_transfer_date", "w2_date", "m1_date", "m3_date", "y1_date",
+    "department_start_done", "w2_done", "m1_done", "m3_done", "y1_done",
+)
+
+
+async def merge_team_dates_once(db) -> int:
+    """Собрать даты отдела в одном месте — у рабочего назначения.
+
+    До 13.10.2026 «выход в отдел» и вехи лежали у КАЖДОГО назначения своими,
+    поэтому HR вписывал их то в строке песочницы, то в строке отдела, и на
+    разных вкладках у человека выходили разные даты («инфа не синхронизируется»,
+    Мария). Теперь значение одно и живёт у рабочего отдела — а то, что успели
+    вписать в песочнице, переносим сюда, если в отделе пусто.
+
+    Из песочницы ничего не удаляем: данные целы, просто больше не показываются.
+    Один раз (отметка в data_migration_marks). Коммитит. Возвращает число
+    перенесённых полей.
+    """
+    from ..models.database import BoardDepartment, DataMigrationMark
+
+    if await db.get(DataMigrationMark, TEAM_MERGE_MARK) is not None:
+        return 0
+
+    kinds = {
+        d_id: (kind or "team")
+        for d_id, kind in (await db.execute(
+            select(BoardDepartment.id, BoardDepartment.kind)
+        )).all()
+    }
+    placements = (await db.execute(select(BoardPlacement))).scalars().all()
+
+    by_entity: Dict[int, Dict[str, list]] = {}
+    for pl in placements:
+        side = "sandbox" if kinds.get(pl.department_id) == "sandbox" else "team"
+        by_entity.setdefault(pl.entity_id, {"sandbox": [], "team": []})[side].append(pl)
+
+    moved = 0
+    for ent_id, sides in by_entity.items():
+        # Переносим, только когда всё однозначно: одна песочница и один отдел.
+        if len(sides["team"]) != 1 or not sides["sandbox"]:
+            continue
+        team = sides["team"][0]
+        team_extra = dict(team.extra or {})
+        changed = False
+        for sand in sides["sandbox"]:
+            sand_extra = sand.extra if isinstance(sand.extra, dict) else {}
+            for key in TEAM_DATE_KEYS:
+                if team_extra.get(key) in (None, "") and sand_extra.get(key) not in (None, ""):
+                    team_extra[key] = sand_extra[key]
+                    changed = True
+                    moved += 1
+        if changed:
+            team.extra = team_extra
+            flag_modified(team, "extra")
+            logger.info(f"BOARD_TEAM_MERGE: entity {ent_id} → назначение {team.id}")
+
+    db.add(DataMigrationMark(key=TEAM_MERGE_MARK))
+    await db.commit()
+    logger.info(f"BOARD_TEAM_MERGE: перенесено полей: {moved}")
+    return moved

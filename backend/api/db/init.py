@@ -542,6 +542,17 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Board placements migration failed (non-critical): {e}")
 
+    # Даты отдела собрать в одном месте — у рабочего назначения (13.10.2026,
+    # services/board_placements.py). Одноразово: до этого они лежали у каждого
+    # назначения своими, и на вкладках у человека выходили разные даты.
+    try:
+        from ..services.board_placements import merge_team_dates_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await merge_team_dates_once(session)
+    except Exception as e:
+        logger.warning(f"Board team dates merge failed (non-critical): {e}")
+
     # Контакты из шапки уже сохранённых резюме (22.09.2026) — одноразово.
     try:
         from ..services.resume_contacts import backfill_resume_contacts_once

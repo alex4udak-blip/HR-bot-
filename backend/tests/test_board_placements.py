@@ -118,14 +118,15 @@ async def test_dates_belong_to_placement(
     assert r.json()["m1_done"] == "✓"
 
     rows = {x["department_name"]: x for x in await _rows(client, admin_user, e.id)}
+    # Практика живёт у песочницы, выход в отдел и вехи — у рабочего отдела, но
+    # ПОКАЗЫВАЮТСЯ обе стороны в обеих строках: одно и то же значение на всех
+    # вкладках («инфа не синхронизируется», Мария 13.10.2026).
     assert rows["SANDBOX"]["practice_start_date"] == "2026-09-01"
-    assert rows["SANDBOX"]["m1_done"] is None
-    # Дата практики одна на человека и видна в обеих строках (07.10.2026), а
-    # вот выход в отдел и отметки вех — у каждого назначения свои.
     assert rows["SEO"]["practice_start_date"] == "2026-09-01"
     assert rows["SEO"]["department_start_date"] == "2026-09-20"
-    assert rows["SANDBOX"]["department_start_date"] is None
+    assert rows["SANDBOX"]["department_start_date"] == "2026-09-20"
     assert rows["SEO"]["m1_done"] == "✓"
+    assert rows["SANDBOX"]["m1_done"] == "✓"
 
 
 @pytest.mark.asyncio
@@ -729,9 +730,9 @@ async def test_practice_date_visible_in_department_row(
     # отделы везде, даже на сендбоксе» (Мария, 07.10.2026).
     assert rows["SANDBOX"]["team_name"] == "Facebook"
     assert rows["SANDBOX"]["sandbox_name"] is None
-    # Своя дата отдела в песочницу не протекает.
+    # Дата выхода в отдел одна на человека и видна в обеих строках.
     assert rows["Facebook"]["department_start_date"] == date.today().isoformat()
-    assert rows["SANDBOX"]["department_start_date"] is None
+    assert rows["SANDBOX"]["department_start_date"] == date.today().isoformat()
 
 
 @pytest.mark.asyncio
@@ -783,3 +784,104 @@ async def test_sandbox_row_without_department_keeps_itself(
     row = (await _rows(client, admin_user, e.id))[0]
     assert row["department_name"] == "SANDBOX"
     assert row["team_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_team_dates_edited_from_sandbox_row_go_to_the_team(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Правка «выхода в отдел» из строки песочницы пишет в РАБОЧИЙ отдел.
+
+    Мария 13.10.2026: «инфа не синхронизируется» — на вкладке «Все» у человека
+    была одна дата выхода в отдел, а на вкладке песочницы другая, потому что
+    поле лежало у каждого назначения своё. Теперь это одно значение на
+    человека: где ни правь, видно везде.
+    """
+    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    team = await _dept(client, admin_user, "R&D", kind="team", parent_id=sandbox["id"])
+    e = await _person(db_session, organization, admin_user)
+    in_sandbox = (await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": sandbox["id"]}, headers=_h(admin_user),
+    )).json()
+    await client.post(
+        "/api/staff-board/placements",
+        json={"entity_id": e.id, "department_id": team["id"]}, headers=_h(admin_user),
+    )
+
+    # Правим, стоя в строке ПЕСОЧНИЦЫ.
+    r = await client.patch(
+        f"/api/staff-board/rows/{e.id}",
+        json={"placement_id": in_sandbox["placement_id"],
+              "department_start_date": "2026-01-09", "m1_done": "✓"},
+        headers=_h(admin_user),
+    )
+    assert r.status_code == 200, r.text
+
+    rows = {x["department_name"]: x for x in await _rows(client, admin_user, e.id)}
+    assert rows["R&D"]["department_start_date"] == "2026-01-09"
+    assert rows["SANDBOX"]["department_start_date"] == "2026-01-09"
+    assert rows["R&D"]["m1_done"] == "✓" and rows["SANDBOX"]["m1_done"] == "✓"
+    # Вехи пересчитались от новой даты — и тоже одинаковые в обеих строках.
+    assert rows["R&D"]["w2"] == rows["SANDBOX"]["w2"] == "2026-01-23"
+
+    # А практика по-прежнему своя у песочницы и подтягивается в отдел.
+    await client.patch(
+        f"/api/staff-board/rows/{e.id}",
+        json={"placement_id": in_sandbox["placement_id"], "practice_start_date": "2025-12-01"},
+        headers=_h(admin_user),
+    )
+    rows = {x["department_name"]: x for x in await _rows(client, admin_user, e.id)}
+    assert rows["SANDBOX"]["practice_start_date"] == "2025-12-01"
+    assert rows["R&D"]["practice_start_date"] == "2025-12-01"
+
+
+@pytest.mark.asyncio
+async def test_one_off_merge_moves_team_dates_from_sandbox(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Разовое слияние: то, что вписали в песочнице, переезжает в отдел.
+
+    До 13.10.2026 даты отдела лежали у каждого назначения своими, и на проде
+    у шести человек значения разъехались. Миграция переносит непустое из
+    песочницы в отдел, если там пусто, и ничего не затирает.
+    """
+    from api.services.board_placements import merge_team_dates_once
+
+    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    team = await _dept(client, admin_user, "R&D", kind="team", parent_id=sandbox["id"])
+    e = await _person(db_session, organization, admin_user)
+    rows = []
+    for d in (sandbox, team):
+        rows.append((await client.post(
+            "/api/staff-board/placements",
+            json={"entity_id": e.id, "department_id": d["id"]}, headers=_h(admin_user),
+        )).json())
+
+    # Руками разводим данные так, как они разъехались на проде.
+    sand_pl = (await db_session.execute(
+        BoardPlacement.__table__.select().where(
+            BoardPlacement.id == rows[0]["placement_id"]
+        )
+    )).first()
+    await db_session.execute(
+        BoardPlacement.__table__.update()
+        .where(BoardPlacement.id == rows[0]["placement_id"])
+        .values(extra={"department_transfer_date": "2026-01-09", "m1_done": "✓"})
+    )
+    await db_session.execute(
+        BoardPlacement.__table__.update()
+        .where(BoardPlacement.id == rows[1]["placement_id"])
+        .values(extra={})
+    )
+    await db_session.commit()
+    assert sand_pl is not None
+
+    assert await merge_team_dates_once(db_session) == 2
+    # Второй запуск уже ничего не делает.
+    assert await merge_team_dates_once(db_session) == 0
+
+    rows2 = {x["department_name"]: x for x in await _rows(client, admin_user, e.id)}
+    assert rows2["R&D"]["department_start_date"] == "2026-01-09"
+    assert rows2["SANDBOX"]["department_start_date"] == "2026-01-09"
+    assert rows2["R&D"]["m1_done"] == "✓"

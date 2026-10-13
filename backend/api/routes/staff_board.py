@@ -129,6 +129,11 @@ PLACEMENT_KEYS = (
     "w2_date", "m1_date", "m3_date", "y1_date",
     "department_start_done", "w2_done", "m1_done", "m3_done", "y1_done",
 )
+
+# Из них «выход в отдел» и вехи принадлежат РАБОЧЕМУ отделу: они одни на
+# человека, и строка песочницы показывает и правит их же (Мария, 13.10.2026 —
+# «инфа не синхронизируется»). В песочнице своё только «Выход на практику».
+TEAM_KEYS = tuple(k for k in PLACEMENT_KEYS if k != "practice_start_date")
 _K_MANAGER = "manager_name"
 # «Рук-ль» подставлен из руководителей отдела, а не вписан руками. Такой при
 # смене отдела заменяется руководителями нового; вписанный руками — никогда.
@@ -753,6 +758,17 @@ def _row_from_entity(
     # Даты отдела берём у назначения; у карточек, которые ещё не перевели на
     # назначения, — из самой карточки, как раньше.
     pex = dict(placement.extra or {}) if placement is not None else ex
+    # «Выход в отдел» и вехи — ОДНО на человека и живут у его РАБОЧЕГО отдела.
+    # В строке песочницы показываем их же: иначе одна и та же веха на вкладке
+    # «Все» и на вкладке песочницы показывала разные даты (Мария, 13.10.2026).
+    in_sandbox_row = (
+        placement is not None
+        and (depts or {}).get(placement.department_id) is not None
+        and ((depts or {})[placement.department_id].kind or "team") == "sandbox"
+    )
+    if in_sandbox_row and person_sandbox and person_sandbox.get("team_extra") is not None:
+        team_extra = person_sandbox["team_extra"]
+        pex = {**pex, **{k: v for k, v in team_extra.items() if k in TEAM_KEYS}}
     dept_start = _parse_date(_pick(pex, _K_DEPT_START, _CF_DEPT_START))
 
     def milestone(key: str, cf_key: Optional[str], days: int = 0, months: int = 0):
@@ -1239,7 +1255,10 @@ def _person_sandboxes(
         dept = depts.get(pl.department_id)
         if dept is None:
             continue
-        row = out.setdefault(pl.entity_id, {"name": None, "practice": None, "team": None})
+        row = out.setdefault(
+            pl.entity_id,
+            {"name": None, "practice": None, "team": None, "team_extra": None},
+        )
         if (dept.kind or "team") == "sandbox":
             extra = pl.extra if isinstance(pl.extra, dict) else {}
             practice = _iso(_parse_date(_pick(extra, _K_PRACTICE, _CF_PRACTICE)))
@@ -1249,7 +1268,11 @@ def _person_sandboxes(
                 row["practice"] = practice
         elif row["team"] is None:
             # Рабочий отдел тоже один (см. create_placement); первый и берём.
+            # Его даты — «выход в отдел» и вехи — ОДНИ на человека: их же
+            # показывает строка песочницы, иначе на разных вкладках у человека
+            # были разные даты («инфа не синхронизируется», Мария 13.10.2026).
             row["team"] = dept.name
+            row["team_extra"] = pl.extra if isinstance(pl.extra, dict) else {}
     return out
 
 
@@ -1791,6 +1814,23 @@ async def update_row(
     elif len(placements) == 1:
         target = placements[0]
 
+    # «Выход в отдел» и вехи правятся в РАБОЧЕМ отделе, даже когда жмут из
+    # строки песочницы: значение одно на человека, иначе на разных вкладках
+    # выходили разные даты («инфа не синхронизируется», Мария 13.10.2026).
+    # Практика остаётся у песочницы — её пишем туда, где нажали.
+    team_target: Optional[BoardPlacement] = None
+    if placements:
+        all_depts = await _board_depts(db, org.id)
+
+        def _is_sandbox_pl(pl: BoardPlacement) -> bool:
+            dept = all_depts.get(pl.department_id)
+            return dept is not None and (dept.kind or "team") == "sandbox"
+
+        teams = [pl for pl in placements if not _is_sandbox_pl(pl)]
+        team_target = teams[0] if len(teams) == 1 else None
+        if target is not None and not _is_sandbox_pl(target):
+            team_target = target
+
     # --- Поля самой карточки ---
     dismissal_triggered = False
     status_note: Optional[Dict[str, Any]] = None
@@ -1891,9 +1931,14 @@ async def update_row(
     # None — назначения нет, всё пишем в карточку (и тогда bucket() всегда
     # отдаёт ex, а проверка «store is pex» ничего не ловит).
     pex = dict(target.extra or {}) if target is not None else None
+    # Поля рабочего отдела пишем в него, даже если правят из строки песочницы.
+    tex = dict(team_target.extra or {}) if team_target is not None else None
     touched_placement = False
+    touched_team = False
 
     def bucket(key: str) -> Dict[str, Any]:
+        if tex is not None and key in TEAM_KEYS:
+            return tex
         return pex if (pex is not None and key in PLACEMENT_KEYS) else ex
     # HR: список главнее одиночного поля. Одиночное (старые клиенты) заменяет
     # весь список, иначе второй HR «воскресал» бы после смены первого.
@@ -1931,7 +1976,9 @@ async def update_row(
                 store[key] = parsed.isoformat()
             else:
                 store[key] = str(value).strip()
-        if store is pex:
+        if store is tex:
+            touched_team = True
+        elif store is pex:
             touched_placement = True
         else:
             touched_extra = True
@@ -1946,7 +1993,9 @@ async def update_row(
         store = bucket(_K_DEPT_START)
         if not store.get(_K_DEPT_START) and not store.get(_CF_DEPT_START):
             store[_K_DEPT_START] = date.today().isoformat()
-            if store is pex:
+            if store is tex:
+                touched_team = True
+            elif store is pex:
                 touched_placement = True
             else:
                 touched_extra = True
@@ -1970,7 +2019,9 @@ async def update_row(
             cf = _CF_DONE.get(field)
             if cf and cf in store:
                 store[cf] = ""
-        if store is pex:
+        if store is tex:
+            touched_team = True
+        elif store is pex:
             touched_placement = True
         else:
             touched_extra = True
@@ -2001,6 +2052,9 @@ async def update_row(
     if touched_placement and target is not None:
         target.extra = pex
         flag_modified(target, "extra")
+    if touched_team and team_target is not None:
+        team_target.extra = tex
+        flag_modified(team_target, "extra")
 
     if dismissal_triggered:
         # Закрываем запись сотрудника и запускаем тот же оркестратор, что и
