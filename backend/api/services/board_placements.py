@@ -237,6 +237,18 @@ TEAM_DATE_KEYS = (
 )
 
 
+def _is_auto_dept_date(key: str, value, placement) -> bool:
+    """Похоже ли, что «выход в отдел» проставился сам при заведении назначения.
+
+    Дату выхода мы ставим днём добавления в отдел; вписанная руками обычно
+    другая. Для прочих полей автодаты нет.
+    """
+    if key != "department_transfer_date" or placement is None:
+        return False
+    created = getattr(placement, "created_at", None)
+    return bool(created) and str(value)[:10] == created.date().isoformat()
+
+
 async def merge_team_dates_once(db) -> int:
     """Собрать все даты доски в КАРТОЧКЕ человека.
 
@@ -280,23 +292,40 @@ async def merge_team_dates_once(db) -> int:
             continue
         extra = dict(entity.extra_data or {})
         changed = False
+        # Откуда взяли значение — нужно, чтобы отличить автодату от вписанной.
+        chosen_from: Dict[str, Any] = {}
+        # Отдел главнее песочницы, но ВПИСАННОЕ РУКАМИ главнее автодаты:
+        # «выход в отдел» проставляется сам днём добавления в отдел, и если
+        # где-то лежит другая дата — верна она (владелец, 13.10.2026: «09.01
+        # правильное», хотя автодатой стояло 13.10).
         for pl in sides["team"] + sides["sandbox"]:
             pl_extra = pl.extra if isinstance(pl.extra, dict) else {}
             for key, value in pl_extra.items():
                 if key not in PLACEMENT_KEYS or value in (None, ""):
                     continue
-                if extra.get(key) in (None, ""):
+                current = extra.get(key)
+                if current in (None, ""):
                     extra[key] = value
                     changed = True
                     moved += 1
-                elif extra[key] != value:
-                    # Два разных значения одного поля — это и был разъезд между
-                    # вкладками. Берём то, что уже победило (отдел главнее), но
-                    # пишем оба в лог: вдруг верным окажется второе.
-                    logger.info(
-                        f"BOARD_TEAM_MERGE conflict: entity {ent_id} {key}: "
-                        f"оставили {extra[key]}, в назначении {pl.id} было {value}"
-                    )
+                elif current != value:
+                    # Что из двух — автодата: совпадает с днём, когда назначение
+                    # завели.
+                    auto_now = _is_auto_dept_date(key, value, pl)
+                    auto_prev = _is_auto_dept_date(key, current, chosen_from.get(key))
+                    if auto_prev and not auto_now:
+                        extra[key] = value
+                        changed = True
+                        logger.info(
+                            f"BOARD_TEAM_MERGE: entity {ent_id} {key}: автодату "
+                            f"{current} заменили вписанной {value}"
+                        )
+                    else:
+                        logger.info(
+                            f"BOARD_TEAM_MERGE conflict: entity {ent_id} {key}: "
+                            f"оставили {extra[key]}, в назначении {pl.id} было {value}"
+                        )
+                chosen_from.setdefault(key, pl)
         if changed:
             await db.execute(
                 sa_update(Entity).where(Entity.id == ent_id).values(extra_data=extra)

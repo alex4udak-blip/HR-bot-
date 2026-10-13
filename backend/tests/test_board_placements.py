@@ -884,3 +884,50 @@ async def test_one_off_merge_collects_dates_into_the_card(
         assert rows[name]["practice_start_date"] == "2025-12-01"
         assert rows[name]["department_start_date"] == "2026-01-09"
         assert rows[name]["m1_done"] == "✓"
+
+
+@pytest.mark.asyncio
+async def test_merge_prefers_hand_typed_date_over_auto(
+    client, db_session, organization, admin_user, org_owner
+):
+    """При сборе в карточку вписанная руками дата бьёт автодату.
+
+    «Выход в отдел» проставляется сам днём добавления в отдел. У Баринова в
+    одной строке стояло 13.10 (автодата), в другой 09.01 — владелец 13.10.2026:
+    «09.01 правильное». Значит при разъезде верна та, что не совпадает с днём
+    заведения назначения.
+    """
+    from datetime import date as _date
+
+    from api.services.board_placements import merge_team_dates_once
+
+    sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
+    team = await _dept(client, admin_user, "R&D", kind="team", parent_id=sandbox["id"])
+    e = await _person(db_session, organization, admin_user)
+    made = []
+    for d in (sandbox, team):
+        made.append((await client.post(
+            "/api/staff-board/placements",
+            json={"entity_id": e.id, "department_id": d["id"]}, headers=_h(admin_user),
+        )).json())
+
+    today = _date.today().isoformat()
+    # В отделе — автодата (день заведения), в песочнице — вписанная руками.
+    await db_session.execute(
+        BoardPlacement.__table__.update()
+        .where(BoardPlacement.id == made[1]["placement_id"])
+        .values(extra={"department_transfer_date": today})
+    )
+    await db_session.execute(
+        BoardPlacement.__table__.update()
+        .where(BoardPlacement.id == made[0]["placement_id"])
+        .values(extra={"department_transfer_date": "2026-01-09"})
+    )
+    e.extra_data = {}
+    await db_session.commit()
+
+    await merge_team_dates_once(db_session)
+
+    rows = {x["department_name"]: x for x in await _rows(client, admin_user, e.id)}
+    assert rows["R&D"]["department_start_date"] == "2026-01-09"
+    assert rows["SANDBOX"]["department_start_date"] == "2026-01-09"
