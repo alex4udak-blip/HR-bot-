@@ -2228,11 +2228,16 @@ function DepartmentCell({
   onUnplace: () => void;
 }) {
   // Главным в ячейке всегда рабочий отдел — даже в строке песочницы: «нужно
-  // видеть отделы везде, даже на сендбоксе» (Мария, 07.10.2026). Подпись «из
-  // песочницы» под ним убрана (владелец, 09.10.2026: «убрать визуальную
-  // привязку к родительскому отделу») — сама связь осталась в данных.
+  // видеть отделы везде, даже на сендбоксе» (Мария, 07.10.2026). Под ним —
+  // подпись «из <песочницы>»: её убирали 09.10.2026 вместе с вложенностью
+  // отделов, но она нужна — «разве мы не должны видеть, из какого санбокса
+  // кандидат пришёл?» (Мария, 13.10.2026). Вложенность в сайдбаре при этом
+  // осталась убранной: просили вернуть пометку именно в столбце «Отдел».
   const own = row.department_name || "";
   const name = (row.department_is_sandbox ? row.team_name : null) || own;
+  const from = row.department_is_sandbox
+    ? (row.team_name ? own : null)   // в строке песочницы подпись — она сама
+    : row.sandbox_name;
   const hue = pillHue(name);
   const options = departments.filter(
     (d) => (!d.hidden || d.id === row.department_id) && d.id !== row.department_id
@@ -2252,7 +2257,7 @@ function DepartmentCell({
         <span className="hf-statuses-dept-stack">
           <span
             className="hf-statuses-pill"
-            title={name}
+            title={from ? `${name} · пришёл из ${from}` : name}
             style={{
               background: `hsl(${hue} 70% 94%)`,
               color: `hsl(${hue} 55% 32%)`,
@@ -2261,6 +2266,11 @@ function DepartmentCell({
           >
             {name}
           </span>
+          {from && (
+            <span className="hf-statuses-dept-from" title={`Остаётся в песочнице ${from}`}>
+              из {from}
+            </span>
+          )}
         </span>
       ) : (
         <span className="hf-statuses-empty-cell">—</span>
