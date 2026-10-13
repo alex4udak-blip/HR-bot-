@@ -837,51 +837,50 @@ async def test_team_dates_edited_from_sandbox_row_go_to_the_team(
 
 
 @pytest.mark.asyncio
-async def test_one_off_merge_moves_team_dates_from_sandbox(
+async def test_one_off_merge_collects_dates_into_the_card(
     client, db_session, organization, admin_user, org_owner
 ):
-    """Разовое слияние: то, что вписали в песочнице, переезжает в отдел.
+    """Разовый сбор: даты из назначений переезжают в карточку человека.
 
-    До 13.10.2026 даты отдела лежали у каждого назначения своими, и на проде
-    у шести человек значения разъехались. Миграция переносит непустое из
-    песочницы в отдел, если там пусто, и ничего не затирает.
+    С 30.09 по 13.10.2026 они лежали у назначений — своя копия в песочнице и
+    своя в отделе, и значения расходились между вкладками. Миграция складывает
+    непустое в карточку (отдел главнее песочницы) и ничего не удаляет.
     """
     from api.services.board_placements import merge_team_dates_once
 
     sandbox = await _dept(client, admin_user, "SANDBOX", kind="sandbox")
     team = await _dept(client, admin_user, "R&D", kind="team", parent_id=sandbox["id"])
     e = await _person(db_session, organization, admin_user)
-    rows = []
+    made = []
     for d in (sandbox, team):
-        rows.append((await client.post(
+        made.append((await client.post(
             "/api/staff-board/placements",
             json={"entity_id": e.id, "department_id": d["id"]}, headers=_h(admin_user),
         )).json())
 
-    # Руками разводим данные так, как они разъехались на проде.
-    sand_pl = (await db_session.execute(
-        BoardPlacement.__table__.select().where(
-            BoardPlacement.id == rows[0]["placement_id"]
-        )
-    )).first()
+    # Разводим данные так, как они разъехались на проде: карточка пустая,
+    # в песочнице практика, в отделе — свой выход и отметка.
     await db_session.execute(
         BoardPlacement.__table__.update()
-        .where(BoardPlacement.id == rows[0]["placement_id"])
+        .where(BoardPlacement.id == made[0]["placement_id"])
+        .values(extra={"practice_start_date": "2025-12-01"})
+    )
+    await db_session.execute(
+        BoardPlacement.__table__.update()
+        .where(BoardPlacement.id == made[1]["placement_id"])
         .values(extra={"department_transfer_date": "2026-01-09", "m1_done": "✓"})
     )
-    await db_session.execute(
-        BoardPlacement.__table__.update()
-        .where(BoardPlacement.id == rows[1]["placement_id"])
-        .values(extra={})
-    )
+    # Карточку чистим через объект сессии: миграция читает ту же сессию.
+    e.extra_data = {}
     await db_session.commit()
-    assert sand_pl is not None
 
-    assert await merge_team_dates_once(db_session) == 2
+    assert await merge_team_dates_once(db_session) == 3
     # Второй запуск уже ничего не делает.
     assert await merge_team_dates_once(db_session) == 0
 
-    rows2 = {x["department_name"]: x for x in await _rows(client, admin_user, e.id)}
-    assert rows2["R&D"]["department_start_date"] == "2026-01-09"
-    assert rows2["SANDBOX"]["department_start_date"] == "2026-01-09"
-    assert rows2["R&D"]["m1_done"] == "✓"
+    rows = {x["department_name"]: x for x in await _rows(client, admin_user, e.id)}
+    # Одни и те же значения в обеих строках — это один и тот же человек.
+    for name in ("SANDBOX", "R&D"):
+        assert rows[name]["practice_start_date"] == "2025-12-01"
+        assert rows[name]["department_start_date"] == "2026-01-09"
+        assert rows[name]["m1_done"] == "✓"

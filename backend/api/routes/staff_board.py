@@ -120,19 +120,20 @@ _K_BOARD_DEPT = "board_department_id"
 # и в отделе.
 _K_SALARY = "board_salary"
 
-# Поля, которые принадлежат НАЗНАЧЕНИЮ (человек в конкретном отделе), а не
-# самому человеку: в песочнице живут даты практики, в отделе — выход в отдел и
-# вехи от него (решение владельца 30.09.2026). Остальное — должность, HR,
-# сорсер, Telegram, статус — одно на человека и одинаково во всех отделах.
+# Все поля доски живут в КАРТОЧКЕ человека (`entities.extra_data`) — и даты
+# практики, и выход в отдел, и вехи. Владелец 13.10.2026: «надо, чтобы данные
+# всегда были одинаковые, это же один и тот же кандидат». С 30.09 по 13.10 они
+# лежали у назначений (своя копия в песочнице и в отделе), и значения
+# расходились между вкладками. Назначение теперь — только связь «человек ↔
+# отдел», ничего своего не хранит.
+#
+# Список оставлен для разового переноса старых значений из назначений.
 PLACEMENT_KEYS = (
     "practice_start_date", "department_transfer_date",
     "w2_date", "m1_date", "m3_date", "y1_date",
     "department_start_done", "w2_done", "m1_done", "m3_done", "y1_done",
 )
 
-# Из них «выход в отдел» и вехи принадлежат РАБОЧЕМУ отделу: они одни на
-# человека, и строка песочницы показывает и правит их же (Мария, 13.10.2026 —
-# «инфа не синхронизируется»). В песочнице своё только «Выход на практику».
 TEAM_KEYS = tuple(k for k in PLACEMENT_KEYS if k != "practice_start_date")
 _K_MANAGER = "manager_name"
 # «Рук-ль» подставлен из руководителей отдела, а не вписан руками. Такой при
@@ -755,20 +756,9 @@ def _row_from_entity(
     person_sandbox: Optional[Dict[str, Any]] = None,
 ) -> BoardRow:
     ex = _extra(entity)
-    # Даты отдела берём у назначения; у карточек, которые ещё не перевели на
-    # назначения, — из самой карточки, как раньше.
-    pex = dict(placement.extra or {}) if placement is not None else ex
-    # «Выход в отдел» и вехи — ОДНО на человека и живут у его РАБОЧЕГО отдела.
-    # В строке песочницы показываем их же: иначе одна и та же веха на вкладке
-    # «Все» и на вкладке песочницы показывала разные даты (Мария, 13.10.2026).
-    in_sandbox_row = (
-        placement is not None
-        and (depts or {}).get(placement.department_id) is not None
-        and ((depts or {})[placement.department_id].kind or "team") == "sandbox"
-    )
-    if in_sandbox_row and person_sandbox and person_sandbox.get("team_extra") is not None:
-        team_extra = person_sandbox["team_extra"]
-        pex = {**pex, **{k: v for k, v in team_extra.items() if k in TEAM_KEYS}}
+    # Даты и отметки — из КАРТОЧКИ: одна правда на человека, поэтому во всех его
+    # строках они одинаковые, в какой бы вкладке ни смотрели.
+    pex = ex
     dept_start = _parse_date(_pick(pex, _K_DEPT_START, _CF_DEPT_START))
 
     def milestone(key: str, cf_key: Optional[str], days: int = 0, months: int = 0):
@@ -824,8 +814,6 @@ def _row_from_entity(
     sandbox_name = None
     team_name = None
     if person_sandbox:
-        if not practice:
-            practice = person_sandbox.get("practice")
         if is_sandbox:
             # В строке песочницы главным будет рабочий отдел, а подписью — она
             # сама (её имя фронт берёт из department_name).
@@ -1242,37 +1230,25 @@ def _person_sandboxes(
     placements: List[BoardPlacement],
     depts: Dict[int, BoardDepartment],
 ) -> Dict[int, Dict[str, Any]]:
-    """По каждому человеку — его песочница, дата практики и рабочий отдел.
+    """По каждому человеку — имя его песочницы и имя рабочего отдела.
 
-    Нужно ОБЕИМ сторонам. Строке отдела — дата практики (она лежит у назначения
-    в песочнице, без неё жизненный цикл обрывался) и имя песочницы для подписи.
-    Строке ПЕСОЧНИЦЫ — имя рабочего отдела: «нужно видеть отделы везде, даже на
-    сендбоксе» (Мария, 07.10.2026), то есть и там главным показывается отдел, а
-    песочница уходит подписью.
+    Строке отдела нужна песочница для подписи «из SANDBOX», строке песочницы —
+    имя отдела: «нужно видеть отделы везде, даже на сендбоксе» (Мария,
+    07.10.2026). Дат здесь нет: они лежат в карточке человека и одинаковы во
+    всех его строках.
     """
     out: Dict[int, Dict[str, Any]] = {}
     for pl in placements:
         dept = depts.get(pl.department_id)
         if dept is None:
             continue
-        row = out.setdefault(
-            pl.entity_id,
-            {"name": None, "practice": None, "team": None, "team_extra": None},
-        )
+        row = out.setdefault(pl.entity_id, {"name": None, "team": None})
         if (dept.kind or "team") == "sandbox":
-            extra = pl.extra if isinstance(pl.extra, dict) else {}
-            practice = _iso(_parse_date(_pick(extra, _K_PRACTICE, _CF_PRACTICE)))
-            # Песочница у человека одна; если их всё же две, берём ту, где есть дата.
-            if row["name"] is None or (practice and not row["practice"]):
+            if row["name"] is None:
                 row["name"] = dept.name
-                row["practice"] = practice
         elif row["team"] is None:
             # Рабочий отдел тоже один (см. create_placement); первый и берём.
-            # Его даты — «выход в отдел» и вехи — ОДНИ на человека: их же
-            # показывает строка песочницы, иначе на разных вкладках у человека
-            # были разные даты («инфа не синхронизируется», Мария 13.10.2026).
             row["team"] = dept.name
-            row["team_extra"] = pl.extra if isinstance(pl.extra, dict) else {}
     return out
 
 
@@ -1402,8 +1378,14 @@ async def create_placement(
         extra={}, created_by=current_user.id,
     )
     # Переезд в отдел — это выход в отдел: ставим дату, от неё считаются вехи.
+    # Пишем её в КАРТОЧКУ (одна правда на человека) и только если там пусто:
+    # вернувшегося в прежний отдел не переставляем на сегодня.
     if (dept.kind or "team") != "sandbox":
-        placement.extra = {_K_DEPT_START: date.today().isoformat()}
+        ex = dict(_extra(entity))
+        if not _pick(ex, _K_DEPT_START, _CF_DEPT_START):
+            ex[_K_DEPT_START] = date.today().isoformat()
+            entity.extra_data = ex
+            flag_modified(entity, "extra_data")
     db.add(placement)
 
     if old is not None:
@@ -1814,22 +1796,6 @@ async def update_row(
     elif len(placements) == 1:
         target = placements[0]
 
-    # «Выход в отдел» и вехи правятся в РАБОЧЕМ отделе, даже когда жмут из
-    # строки песочницы: значение одно на человека, иначе на разных вкладках
-    # выходили разные даты («инфа не синхронизируется», Мария 13.10.2026).
-    # Практика остаётся у песочницы — её пишем туда, где нажали.
-    team_target: Optional[BoardPlacement] = None
-    if placements:
-        all_depts = await _board_depts(db, org.id)
-
-        def _is_sandbox_pl(pl: BoardPlacement) -> bool:
-            dept = all_depts.get(pl.department_id)
-            return dept is not None and (dept.kind or "team") == "sandbox"
-
-        teams = [pl for pl in placements if not _is_sandbox_pl(pl)]
-        team_target = teams[0] if len(teams) == 1 else None
-        if target is not None and not _is_sandbox_pl(target):
-            team_target = target
 
     # --- Поля самой карточки ---
     dismissal_triggered = False
@@ -1930,16 +1896,9 @@ async def update_row(
     # «без отдела») — пишем в карточку, как было до 30.09.2026.
     # None — назначения нет, всё пишем в карточку (и тогда bucket() всегда
     # отдаёт ex, а проверка «store is pex» ничего не ловит).
-    pex = dict(target.extra or {}) if target is not None else None
-    # Поля рабочего отдела пишем в него, даже если правят из строки песочницы.
-    tex = dict(team_target.extra or {}) if team_target is not None else None
-    touched_placement = False
-    touched_team = False
-
+    # Всё пишем в карточку: у человека одни даты, где бы их ни правили.
     def bucket(key: str) -> Dict[str, Any]:
-        if tex is not None and key in TEAM_KEYS:
-            return tex
-        return pex if (pex is not None and key in PLACEMENT_KEYS) else ex
+        return ex
     # HR: список главнее одиночного поля. Одиночное (старые клиенты) заменяет
     # весь список, иначе второй HR «воскресал» бы после смены первого.
     if "assignee_user_ids" in payload:
@@ -1976,12 +1935,7 @@ async def update_row(
                 store[key] = parsed.isoformat()
             else:
                 store[key] = str(value).strip()
-        if store is tex:
-            touched_team = True
-        elif store is pex:
-            touched_placement = True
-        else:
-            touched_extra = True
+        touched_extra = True
 
     if "manager" in payload:
         ex.pop(_K_MANAGER_AUTO, None)
@@ -1993,12 +1947,7 @@ async def update_row(
         store = bucket(_K_DEPT_START)
         if not store.get(_K_DEPT_START) and not store.get(_CF_DEPT_START):
             store[_K_DEPT_START] = date.today().isoformat()
-            if store is tex:
-                touched_team = True
-            elif store is pex:
-                touched_placement = True
-            else:
-                touched_extra = True
+            touched_extra = True
 
     # Отметки у вех — текст (галочка, крестик, месяц, бонус). Пустое значение
     # здесь означает «снять отметку», а не «не трогать».
@@ -2019,12 +1968,7 @@ async def update_row(
             cf = _CF_DONE.get(field)
             if cf and cf in store:
                 store[cf] = ""
-        if store is tex:
-            touched_team = True
-        elif store is pex:
-            touched_placement = True
-        else:
-            touched_extra = True
+        touched_extra = True
 
     if status_note is not None:
         notes = list(ex.get("notes") or [])
@@ -2049,12 +1993,6 @@ async def update_row(
     if touched_extra:
         entity.extra_data = ex
         flag_modified(entity, "extra_data")
-    if touched_placement and target is not None:
-        target.extra = pex
-        flag_modified(target, "extra")
-    if touched_team and team_target is not None:
-        team_target.extra = tex
-        flag_modified(team_target, "extra")
 
     if dismissal_triggered:
         # Закрываем запись сотрудника и запускаем тот же оркестратор, что и

@@ -225,7 +225,7 @@ async def place_current_practice(db, org_id: int, dept_id: int) -> int:
     return added
 
 
-# --- Разовое слияние дат отдела (13.10.2026) ----------------------------------
+# --- Разовый сбор дат в карточку (13.10.2026) ---------------------------------
 
 TEAM_MERGE_MARK = "board_team_dates_merge_2026_10_13"
 
@@ -238,19 +238,23 @@ TEAM_DATE_KEYS = (
 
 
 async def merge_team_dates_once(db) -> int:
-    """Собрать даты отдела в одном месте — у рабочего назначения.
+    """Собрать все даты доски в КАРТОЧКЕ человека.
 
-    До 13.10.2026 «выход в отдел» и вехи лежали у КАЖДОГО назначения своими,
-    поэтому HR вписывал их то в строке песочницы, то в строке отдела, и на
-    разных вкладках у человека выходили разные даты («инфа не синхронизируется»,
-    Мария). Теперь значение одно и живёт у рабочего отдела — а то, что успели
-    вписать в песочнице, переносим сюда, если в отделе пусто.
+    С 30.09 по 13.10.2026 даты лежали у назначений: своя копия в песочнице и
+    своя в отделе. HR вписывал их то там, то там, и на разных вкладках у одного
+    человека выходили разные значения — «надо, чтобы данные всегда были
+    одинаковые, это же один и тот же кандидат» (владелец, 13.10.2026). Теперь
+    правда одна и живёт в карточке, а назначение — только связь с отделом.
 
-    Из песочницы ничего не удаляем: данные целы, просто больше не показываются.
-    Один раз (отметка в data_migration_marks). Коммитит. Возвращает число
-    перенесённых полей.
+    Что переносим: непустые поля из назначений в `entities.extra_data`, если
+    там пусто. Приоритет — РАБОЧИЙ отдел (в нём обычно свежие даты выхода и
+    вехи), затем песочница. Из назначений ничего не удаляем: данные целы, и
+    откатиться можно. Один раз (отметка в data_migration_marks). Коммитит.
+    Возвращает число перенесённых полей.
     """
-    from ..models.database import BoardDepartment, DataMigrationMark
+    from sqlalchemy import update as sa_update
+
+    from ..models.database import BoardDepartment, DataMigrationMark, Entity
 
     if await db.get(DataMigrationMark, TEAM_MERGE_MARK) is not None:
         return 0
@@ -263,30 +267,41 @@ async def merge_team_dates_once(db) -> int:
     }
     placements = (await db.execute(select(BoardPlacement))).scalars().all()
 
+    # Сначала отдел, потом песочница: отдел главнее при совпадении ключа.
     by_entity: Dict[int, Dict[str, list]] = {}
     for pl in placements:
         side = "sandbox" if kinds.get(pl.department_id) == "sandbox" else "team"
-        by_entity.setdefault(pl.entity_id, {"sandbox": [], "team": []})[side].append(pl)
+        by_entity.setdefault(pl.entity_id, {"team": [], "sandbox": []})[side].append(pl)
 
     moved = 0
     for ent_id, sides in by_entity.items():
-        # Переносим, только когда всё однозначно: одна песочница и один отдел.
-        if len(sides["team"]) != 1 or not sides["sandbox"]:
+        entity = await db.get(Entity, ent_id)
+        if entity is None:
             continue
-        team = sides["team"][0]
-        team_extra = dict(team.extra or {})
+        extra = dict(entity.extra_data or {})
         changed = False
-        for sand in sides["sandbox"]:
-            sand_extra = sand.extra if isinstance(sand.extra, dict) else {}
-            for key in TEAM_DATE_KEYS:
-                if team_extra.get(key) in (None, "") and sand_extra.get(key) not in (None, ""):
-                    team_extra[key] = sand_extra[key]
+        for pl in sides["team"] + sides["sandbox"]:
+            pl_extra = pl.extra if isinstance(pl.extra, dict) else {}
+            for key, value in pl_extra.items():
+                if key not in PLACEMENT_KEYS or value in (None, ""):
+                    continue
+                if extra.get(key) in (None, ""):
+                    extra[key] = value
                     changed = True
                     moved += 1
+                elif extra[key] != value:
+                    # Два разных значения одного поля — это и был разъезд между
+                    # вкладками. Берём то, что уже победило (отдел главнее), но
+                    # пишем оба в лог: вдруг верным окажется второе.
+                    logger.info(
+                        f"BOARD_TEAM_MERGE conflict: entity {ent_id} {key}: "
+                        f"оставили {extra[key]}, в назначении {pl.id} было {value}"
+                    )
         if changed:
-            team.extra = team_extra
-            flag_modified(team, "extra")
-            logger.info(f"BOARD_TEAM_MERGE: entity {ent_id} → назначение {team.id}")
+            await db.execute(
+                sa_update(Entity).where(Entity.id == ent_id).values(extra_data=extra)
+            )
+            logger.info(f"BOARD_TEAM_MERGE: entity {ent_id} — даты собраны в карточке")
 
     db.add(DataMigrationMark(key=TEAM_MERGE_MARK))
     await db.commit()
