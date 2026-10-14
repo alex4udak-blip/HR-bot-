@@ -3024,8 +3024,24 @@ export default function Layout() {
               setShowFabParserModal(false);
               toast.success("Кандидат добавлен");
             }}
-            onAttachedToEntity={() => {
+            // Добавили — открываем ЕГО карточку (Эльвира, 13.10.2026: «после
+            // добавления опять на чужие карточки кидает»). Этот «+» виден, когда
+            // окно уже 1024 px (ноутбук с масштабом, полэкрана), и его окно
+            // разбора живёт здесь, а не на странице: правка 02.10 подключила
+            // открытие только к окну внутри «Все кандидаты», а отсюда справа
+            // оставался тот, кто был открыт до добавления. Страница ловит метку
+            // openCreatedEntity так же, как resetSearch у пункта меню.
+            onCreated={(entityId) => {
               setShowFabParserModal(false);
+              navigate(`/all-candidates?entity=${entityId}`, {
+                state: { openCreatedEntity: entityId },
+              });
+            }}
+            onAttachedToEntity={(entityId) => {
+              setShowFabParserModal(false);
+              navigate(`/all-candidates?entity=${entityId}`, {
+                state: { openCreatedEntity: entityId },
+              });
             }}
           />
         )}

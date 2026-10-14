@@ -586,7 +586,12 @@ export default function AllCandidatesPage() {
   // был открыт ДО добавления, и статусы на бегу меняли не тому человеку.
   // Поиск и вкладку этапа сбрасываем: новый кандидат — «Новый», и при активном
   // фильтре его бы просто не было видно в списке.
+  // id только что добавленного. Его ещё нет на доске (список догружается), и
+  // открытие «по id» сопровождалось тостом «Карточка открыта отдельно: его статус
+  // «Новый» не показывается на доске» — неправда, он просто не успел подгрузиться.
+  const justCreatedRef = useRef<number | null>(null);
   const openCandidateCard = useCallback((entityId: number) => {
+    justCreatedRef.current = entityId;
     closeSearch();
     setActiveTabState("all");
     setSearchParams((prev) => {
@@ -604,8 +609,20 @@ export default function AllCandidatesPage() {
   // уже здесь) — начинаем с чистого листа: пустой поиск и вкладка «Все».
   // location.key меняется на каждый переход, даже на тот же адрес, а метка в
   // state отличает клик по меню от наших же правок адреса (?entity=…).
-  const navState = location.state as { resetSearch?: boolean } | null;
+  const navState = location.state as
+    | { resetSearch?: boolean; openCreatedEntity?: number }
+    | null;
   useEffect(() => {
+    // Добавили кандидата через плавающий «+» (окно разбора в Layout): адрес уже
+    // ведёт на него (?entity=), остаётся то же, что делает openCandidateCard, —
+    // сбросить поиск и вкладку и подтянуть свежий список.
+    if (navState?.openCreatedEntity) {
+      justCreatedRef.current = navState.openCreatedEntity;
+      closeSearch();
+      setActiveTabState("all");
+      fetchBoard();
+      return;
+    }
     if (!navState?.resetSearch) return;
     closeSearch();
     setActiveTabState("all");
@@ -898,6 +915,12 @@ export default function AllCandidatesPage() {
             if (tabParam === "anketa") setDetailTab("anketa");
             consumeOneShotParams();
             deepLinkPendingRef.current = null;
+            // Только что добавленный — не «открыт отдельно», его просто ещё нет в
+            // загруженном списке. Объяснение тут было бы неправдой.
+            if (justCreatedRef.current === entity.id) {
+              justCreatedRef.current = null;
+              return;
+            }
             // Говорим прямо, почему его нет в списке слева — иначе выглядит как
             // «база открыла не того».
             const why = (entity as unknown as { is_archived?: boolean }).is_archived
