@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Clock, Users, UserPlus, Filter, ChevronDown, FileSpreadsheet,
   FileDown, XCircle, ArrowRight, UserCheck,
@@ -9,6 +10,7 @@ import clsx from 'clsx';
 import * as XLSX from 'xlsx';
 import api from '@/services/api/client';
 import { useAuthStore } from '@/stores/authStore';
+import { ANALYTICS_PARAM, readAnalyticsState, writeAnalyticsParams } from '@/utils/analyticsUrl';
 
 // ===== TYPES =====
 
@@ -213,13 +215,58 @@ export default function DashboardPage() {
     ? REPORT_CATEGORIES
     : REPORT_CATEGORIES.filter(c => c.id !== 'recruiter');
 
-  const [activeCategory, setActiveCategory] = useState('vacancy');
-  const [activeReport, setActiveReport] = useState('ttf');
-  const [period, setPeriod] = useState('current');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
-  const [vacancyStatus, setVacancyStatus] = useState('open');
-  const [selectedDepartment, setSelectedDepartment] = useState<number | null>(null);
+  // Выбранный отчёт и фильтры живут в АДРЕСЕ (?cat=&report=&period=&from=&to=
+  // &status=&dept=), а не в памяти страницы: F5 возвращает туда же (Мария,
+  // 14.10.2026: «при обновлении страницы остаёмся на той же странице»). Разбор
+  // с проверкой — utils/analyticsUrl.ts.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlState = useMemo(
+    () =>
+      readAnalyticsState(
+        searchParams,
+        visibleCategories,
+        PERIOD_TABS.map((p) => p.id),
+        VACANCY_STATUS_OPTIONS.map((o) => o.id),
+      ),
+    [searchParams, visibleCategories],
+  );
+  const activeCategory = urlState.category;
+  const activeReport = urlState.report;
+  const period = urlState.period;
+  const customFrom = urlState.from;
+  const customTo = urlState.to;
+  const vacancyStatus = urlState.status;
+  const selectedDepartment = urlState.department;
+  // Правки из одного обработчика (категория + её первый отчёт) копим и пишем
+  // ОДНОЙ навигацией: два setSearchParams подряд затирали бы друг друга —
+  // функциональная форма отдаёт адрес с прошлой отрисовки.
+  const pendingParamsRef = useRef<Parameters<typeof writeAnalyticsParams>[1]>({});
+  const writeParam = useCallback(
+    (field: keyof typeof ANALYTICS_PARAM, value: string | number | null) => {
+      const flushNeeded = Object.keys(pendingParamsRef.current).length === 0;
+      pendingParamsRef.current = { ...pendingParamsRef.current, [field]: value };
+      if (!flushNeeded) return;
+      queueMicrotask(() => {
+        const patch = pendingParamsRef.current;
+        pendingParamsRef.current = {};
+        setSearchParams(
+          () => writeAnalyticsParams(new URLSearchParams(window.location.search), patch),
+          { replace: true },
+        );
+      });
+    },
+    [setSearchParams],
+  );
+  const setActiveCategory = useCallback((v: string) => writeParam('category', v), [writeParam]);
+  const setActiveReport = useCallback((v: string) => writeParam('report', v), [writeParam]);
+  const setPeriod = useCallback((v: string) => writeParam('period', v), [writeParam]);
+  const setCustomFrom = useCallback((v: string) => writeParam('from', v), [writeParam]);
+  const setCustomTo = useCallback((v: string) => writeParam('to', v), [writeParam]);
+  const setVacancyStatus = useCallback((v: string) => writeParam('status', v), [writeParam]);
+  const setSelectedDepartment = useCallback(
+    (v: number | null) => writeParam('department', v),
+    [writeParam],
+  );
   const [showCategoryDD, setShowCategoryDD] = useState(false);
   const [showReportDD, setShowReportDD] = useState(false);
   const [showPeriodDD, setShowPeriodDD] = useState(false);

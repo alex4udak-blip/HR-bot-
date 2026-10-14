@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Fragment, lazy, Suspense, startTransition } from "react";
 import type { ReactNode } from "react";
-import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useLiveSearchParams } from "@/hooks/useLiveSearchParams";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -448,7 +449,10 @@ function HfCandidatesLoadingLayout() {
 // ================================================================
 
 export default function AllCandidatesPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  // Функциональные правки адреса — от ЖИВОГО адреса, а не от снимка прошлой
+  // отрисовки: иначе клик по вкладке (?stage=) и зеркало карточки (?entity=)
+  // затирали друг друга, и этап терялся при F5 (см. useLiveSearchParams).
+  const [searchParams, setSearchParams] = useLiveSearchParams();
   const [showNewCandidateModal, setShowNewCandidateModal] = useState(false);
   const [showParserModal, setShowParserModal] = useState(false);
   const { user } = useAuthStore();
