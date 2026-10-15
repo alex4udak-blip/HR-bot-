@@ -338,6 +338,24 @@ export function useResumeSources(
   return { files, sources, loading, previewUrls };
 }
 
+// ---------- Текст резюме из формы ----------
+
+/** Резюме, вписанное текстом в форму «Новый кандидат» / «Редактировать». */
+function TextResume({ text }: { text: string }) {
+  return (
+    <div className="pt-[var(--hf-space-xxl)] max-w-[1180px]">
+      <div className="rounded-[16px] border border-[color:var(--hf-black-alpha-10)] bg-[var(--hf-white)] px-[var(--hf-space-xxl)] py-[var(--hf-space-xl)] hf-dark-disabled:bg-[var(--hf-white-alpha-04)] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
+        <p className="mb-[var(--hf-space-m)] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-secondary)] text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
+          Текст резюме · правится в «Редактировать»
+        </p>
+        <div className="whitespace-pre-wrap break-words text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
+          {text}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- ResumeTab ----------
 
 const ResumeTab = memo(function ResumeTab({
@@ -462,8 +480,16 @@ const ResumeTab = memo(function ResumeTab({
   if (resumeFiles.length === 0 && !resumeDemo) {
     const importedQuestionnaire = getImportedQuestionnaire(card);
     const externalResume = findExternalResume(card);
+    // Текст резюме из формы. Без этой ветки кандидат, созданный вручную с
+    // «Текстом резюме», показывал заглушку «Резюме ещё не сгенерировано… через
+    // Волшебную кнопку», хотя текст лежал в карточке (Мария, 15.10.2026).
+    const textSource = sources.find(
+      (src): src is Extract<ResumeSource, { kind: "text" }> => src.kind === "text",
+    );
     const qMainContent = importedQuestionnaire.rows.length > 0 ? (
       <ImportedQuestionnaire card={card} />
+    ) : textSource ? (
+      <TextResume text={textSource.text} />
     ) : externalResume ? (
       <div className="p-5 max-w-3xl">
         <div className="bg-[var(--hf-white-alpha-02)] border border-[color:var(--hf-white-alpha-06)] rounded-lg p-8 text-center text-sm min-h-[200px] flex flex-col items-center justify-center gap-3">
@@ -901,6 +927,8 @@ const ResumeTab = memo(function ResumeTab({
     selectedContent = buildFileContent(selectedSource.file);
   } else if (selectedSource?.kind === "images") {
     selectedContent = buildFileContent(undefined);
+  } else if (selectedSource?.kind === "text") {
+    selectedContent = <TextResume text={selectedSource.text} />;
   } else {
     selectedContent = buildFileContent(currentPdf);
   }

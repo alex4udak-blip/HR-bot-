@@ -76,7 +76,9 @@ export type StageContainer = {
 export type ResumeSource =
   | { kind: "parsed" }
   | { kind: "pdf"; file: EntityFile }
-  | { kind: "images" };
+  | { kind: "images" }
+  // Текст резюме, вписанный руками в форму «Новый кандидат» / «Редактировать».
+  | { kind: "text"; text: string };
 
 export type ResumeDemoData = {
   title?: string;
@@ -281,6 +283,20 @@ export function buildResumeSources(
         : []
   ).filter(Boolean);
 
+  // Текст резюме из формы (`resume_text`). Раньше карточка его не показывала
+  // вовсе: Мария вставила резюме текстом при создании, оно сохранилось, а во
+  // вкладке «Резюме» было пусто — «добавляю текст резюме, он не добавляется к
+  // карточке» (15.10.2026). Окно разбора файла кладёт сюда же краткое `summary`
+  // (resume_text === summary) — это пересказ уже показанного PDF, его не дублируем.
+  const resumeText =
+    typeof extraData?.resume_text === "string" ? extraData.resume_text.trim() : "";
+  const summary =
+    typeof extraData?.summary === "string" ? extraData.summary.trim() : "";
+  const textSource =
+    resumeText && resumeText !== summary
+      ? [{ kind: "text" as const, text: resumeText }]
+      : [];
+
   return [
     ...(resumeDemos.length > 0 ? [{ kind: "parsed" as const }] : []),
     ...pdfFiles.map((file) => ({ kind: "pdf" as const, file })),
@@ -289,6 +305,7 @@ export function buildResumeSources(
     pdfFiles.length === 0
       ? [{ kind: "images" as const }]
       : []),
+    ...textSource,
   ];
 }
 
