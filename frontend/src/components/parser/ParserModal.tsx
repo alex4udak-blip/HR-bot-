@@ -294,7 +294,18 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
         try {
           await uploadEntityFile(created.id, uploadedFile, 'resume');
         } catch (e) {
+          // Раньше сбой здесь глотался молча: кандидат создан, тост «Кандидат
+          // добавлен», а резюме в карточке нет — «создаю кандидата, добавляю
+          // резюме, он не добавляется к карточке» (Мария, 15.10.2026). Теперь
+          // говорим прямо и с причиной от сервера — по ней и разбираемся.
           console.error('attach resume file failed', e);
+          const detail = (e as { response?: { data?: { detail?: string } } })
+            ?.response?.data?.detail;
+          toast.error(
+            `Кандидат создан, но резюме не прикрепилось${detail ? `: ${detail}` : ''}. ` +
+              'Добавьте файл кнопкой «Файл» в карточке.',
+            { duration: 10000 },
+          );
         }
       } else {
         // URL-парсинг — оставляем парент-flow (CandidatesDatabase открывает

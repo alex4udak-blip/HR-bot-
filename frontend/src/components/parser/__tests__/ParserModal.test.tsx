@@ -234,6 +234,27 @@ describe('ParserModal — загрузка резюме файлом', () => {
       await waitFor(() => expect(onCreated).toHaveBeenCalledWith(501));
     });
 
+    it('файл не прицепился — говорим прямо, с причиной от сервера', async () => {
+      // Мария, 15.10.2026: «создаю кандидата, добавляю резюме, он не добавляется
+      // к карточке». Сбой загрузки файла раньше глотался молча: кандидат создан,
+      // тост «Кандидат добавлен», а резюме в карточке нет.
+      mockFn(uploadEntityFile).mockRejectedValue({
+        response: { data: { detail: 'Не удалось сохранить файл' } },
+      });
+      const { onCreated } = renderModal();
+      await uploadAndParse();
+      fireEvent.click(screen.getByText('Создать нового кандидата'));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          expect.stringContaining('резюме не прикрепилось: Не удалось сохранить файл'),
+          expect.anything(),
+        ),
+      );
+      // Сам кандидат создан — карточка всё равно открывается, файл можно добавить из неё.
+      await waitFor(() => expect(onCreated).toHaveBeenCalledWith(501));
+    });
+
     it('без имени кандидата не создаёт', async () => {
       mockFn(parseResumeFromFile).mockResolvedValue({ ...parsed, name: '' });
       renderModal();
