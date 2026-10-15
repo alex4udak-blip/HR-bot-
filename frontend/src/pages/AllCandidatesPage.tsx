@@ -1997,9 +1997,15 @@ export default function AllCandidatesPage() {
         {showNewCandidateModal && (
           <NewCandidateModal
             onClose={() => setShowNewCandidateModal(false)}
-            onSaved={() => {
+            // Ручное создание (форма «Новый кандидат») тоже открывает карточку
+            // СОЗДАННОГО (Мария, 15.10.2026: «при создании хотелось бы оставаться
+            // на карточке кандидата, а не предыдущего»). Правки 02.10 и 14.10
+            // закрыли только окна разбора резюме; здесь справа оставался
+            // прежний кандидат, и «Файл» с резюме нового уходил ЕМУ.
+            onSaved={(createdId) => {
               setShowNewCandidateModal(false);
               fetchBoard();
+              if (createdId) openCandidateCard(createdId);
             }}
             onOpenParser={() => {
               setShowNewCandidateModal(false);
@@ -4069,7 +4075,8 @@ export function NewCandidateModal({
   onOpenParser,
 }: {
   onClose: () => void;
-  onSaved: () => void;
+  // id созданного — страница открывает ЕГО карточку (см. ниже, onSaved).
+  onSaved: (createdId?: number) => void;
   onOpenParser: () => void;
 }) {
   const [lastName, setLastName] = useState("");
@@ -4204,7 +4211,7 @@ export function NewCandidateModal({
       } else {
         toast.success("Кандидат добавлен");
       }
-      onSaved();
+      onSaved(created.id);
     } catch {
       toast.error("Ошибка создания кандидата");
     } finally {
