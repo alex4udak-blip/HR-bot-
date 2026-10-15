@@ -10193,6 +10193,18 @@ body.performance-mode .glass-card:hover {
   cursor: pointer;
 }
 .hf-statuses-sourcer-pill:hover { filter: brightness(0.92); }
+/* «+» в колонке сорсеров — такой же, как у HR, но под размер пилюль */
+.hf-statuses-avatar-add-sm {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.hf-statuses-sourcer-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
 
 /* Отдел: цветная пилюля, поверх — прозрачный select для правки */
 .hf-statuses-dept { position: relative; display: flex; align-items: center; min-width: 0; }

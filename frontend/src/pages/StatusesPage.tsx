@@ -20,7 +20,7 @@ import {
   getBoardStatusViews, saveBoardStatusView,
 } from "@/services/api/staffBoard";
 import { getOrgMembers } from "@/services/api/accessHub";
-import { removeTagFromEntity } from "@/services/api/tags";
+import { addTagToEntity, getTags, removeTagFromEntity, type Tag } from "@/services/api/tags";
 import { useUrlTab } from "@/hooks/useUrlTab";
 import { STATUS_LABELS } from "@/types";
 
@@ -320,6 +320,8 @@ export default function StatusesPage() {
   const [positions, setPositions] = useState<string[]>([]);
   const [managers, setManagers] = useState<string[]>([]);
   const [people, setPeople] = useState<{ user_id: number; user_name: string | null }[]>([]);
+  // Справочник сорсеров (те же метки кандидата) — для «+» в колонке «Сорсер».
+  const [sourcerTags, setSourcerTags] = useState<Tag[]>([]);
   const [orgHr, setOrgHr] = useState<{ user_id: number; user_name: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   // Отдел слева живёт в URL (?dept=) — работают браузерные «Назад/Вперёд».
@@ -471,6 +473,7 @@ export default function StatusesPage() {
       .then(applyViews)
       .catch(() => { setStatusViews({}); setColumnViews({}); });
     getBoardManagers().then(setManagers).catch(() => setManagers([]));
+    getTags().then(setSourcerTags).catch(() => setSourcerTags([]));
     // Вести сотрудника может только HR. В организации числятся все
     // работники, и без фильтра в список попадали бы полсотни человек,
     // среди которых нужного не найти.
@@ -1113,6 +1116,7 @@ export default function StatusesPage() {
                           positions={positions}
                           managers={managers}
                           people={people}
+                          sourcerTags={sourcerTags}
                           saving={savingId === rowKey(r)}
                           onPatch={patch}
                           onStatus={changeStatus}
@@ -1852,7 +1856,7 @@ function DepartmentModal({
 // ============================================================
 
 function Row({
-  row, columns, departments, positions, managers, people, saving,
+  row, columns, departments, positions, managers, people, sourcerTags, saving,
   onPatch, onStatus, onPlace, onUnplace, onReload,
 }: {
   row: BoardRow;
@@ -1862,6 +1866,7 @@ function Row({
   positions: string[];
   managers: string[];
   people: { user_id: number; user_name: string | null }[];
+  sourcerTags: Tag[];
   saving: boolean;
   onPatch: (row: BoardRow, body: BoardRowUpdate) => Promise<void>;
   onStatus: (row: BoardRow, status: string) => Promise<void>;
@@ -1921,7 +1926,7 @@ function Row({
         onSave={(ids) => onPatch(row, { assignee_user_ids: ids })}
       />
     ),
-    sourcer: <SourcerCell row={row} onReload={onReload} />,
+    sourcer: <SourcerCell row={row} catalog={sourcerTags} onReload={onReload} />,
     // Должность вписывает HR — и на практике тоже: раньше здесь стояла
     // несъёмная подпись «Сандбокс», а песочница теперь настоящий отдел.
     position: (
@@ -2436,56 +2441,13 @@ function PillCell({
  *  нажать на имя и увидеть всех, кого он вывел (встреча 29.09.2026). Сорсер —
  *  это метка на кандидате, поэтому крестик снимает её с карточки.
  */
-function SourcerCell({ row, onReload }: { row: BoardRow; onReload: () => void }) {
-  const sourcers = row.sourcers ?? [];
-
-  const remove = async (tagId: number, name: string) => {
-    try {
-      await removeTagFromEntity(row.entity_id, tagId);
-      onReload();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || `Не удалось снять «${name}»`);
-    }
-  };
-
-  if (!sourcers.length) return <span className="hf-statuses-empty-cell">—</span>;
-
-  return (
-    <div className="hf-statuses-sourcers">
-      {sourcers.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          className="hf-statuses-pill hf-statuses-sourcer-pill"
-          style={{
-            backgroundColor: `color-mix(in srgb, ${t.color} 14%, transparent)`,
-            color: t.color,
-            borderColor: `color-mix(in srgb, ${t.color} 30%, transparent)`,
-          }}
-          title={`Сорсер: ${t.name} — нажмите, чтобы снять`}
-          onClick={() => remove(t.id, t.name)}
-        >
-          {t.name}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function AssigneeCell({
-  row, people, onSave,
-}: {
-  row: BoardRow;
-  people: { user_id: number; user_name: string | null }[];
-  onSave: (ids: number[]) => void;
-}) {
+/** Выпадашка у «+» в ячейке: меню fixed, закрытие по клику мимо, Escape и
+ *  прокрутке. Одна на HR и сорсеров — колонки разные, повадки кнопки одни. */
+function useCellMenu() {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  const assignees = rowAssignees(row);
-  const ids = assignees.map((a) => a.user_id);
 
   useEffect(() => {
     if (!open) return;
@@ -2506,16 +2468,132 @@ function AssigneeCell({
     };
   }, [open]);
 
-  const openMenu = () => {
+  /** Открыть/закрыть, посчитав место под кнопкой. */
+  const toggle = () => {
     if (open) { setOpen(false); return; }
-    if (ids.length >= MAX_HR) { toast.error(`Не больше ${MAX_HR} HR на человека`); return; }
     const r = plusRef.current?.getBoundingClientRect();
     if (r) setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 232)) });
     setOpen(true);
   };
 
+  return { open, pos, plusRef, menuRef, toggle, close: () => setOpen(false) };
+}
+
+/**
+ *  Сорсера можно не только снять, но и ПОСТАВИТЬ прямо из доски — «пусть будет
+ *  аналогичная кнопка, что и для HR» (владелец, 15.10.2026). Раньше в пустой
+ *  ячейке стоял прочерк, и чтобы вписать сорсера, приходилось открывать
+ *  карточку кандидата. Список в «+» — тот же справочник меток, что и на
+ *  карточке (`getTags`), поэтому новых сущностей не заводим: сорсер — это
+ *  метка, крестик на чипе снимает её с кандидата.
+ */
+function SourcerCell({ row, catalog, onReload }: { row: BoardRow; catalog: Tag[]; onReload: () => void }) {
+  const sourcers = row.sourcers ?? [];
+  const menu = useCellMenu();
+  const [busy, setBusy] = useState(false);
+
+  const remove = async (tagId: number, name: string) => {
+    try {
+      await removeTagFromEntity(row.entity_id, tagId);
+      onReload();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || `Не удалось снять «${name}»`);
+    }
+  };
+
+  const add = async (tag: Tag) => {
+    menu.close();
+    setBusy(true);
+    try {
+      await addTagToEntity(row.entity_id, tag.id);
+      onReload();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || `Не удалось поставить «${tag.name}»`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // В меню — всё из справочника, чего на человеке ещё нет.
+  const options = catalog.filter((t) => !sourcers.some((s) => s.id === t.id));
+
+  return (
+    <div className="hf-statuses-sourcers">
+      {sourcers.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          className="hf-statuses-pill hf-statuses-sourcer-pill"
+          style={{
+            backgroundColor: `color-mix(in srgb, ${t.color} 14%, transparent)`,
+            color: t.color,
+            borderColor: `color-mix(in srgb, ${t.color} 30%, transparent)`,
+          }}
+          title={`Сорсер: ${t.name} — нажмите, чтобы снять`}
+          onClick={() => remove(t.id, t.name)}
+        >
+          {t.name}
+        </button>
+      ))}
+      <button
+        ref={menu.plusRef}
+        type="button"
+        className="hf-statuses-avatar-add hf-statuses-avatar-add-sm"
+        title="Добавить сорсера"
+        aria-label="Добавить сорсера"
+        onClick={menu.toggle}
+        disabled={busy}
+      >
+        <Plus size={12} />
+      </button>
+      {menu.open && menu.pos && (
+        <div ref={menu.menuRef} className="hf-statuses-hr-menu" style={{ top: menu.pos.top, left: menu.pos.left }}>
+          <div className="hf-statuses-hr-menu-hint">Добавить сорсера</div>
+          {options.length === 0 && (
+            <div className="hf-statuses-hr-menu-hint">
+              {catalog.length
+                ? "Все сорсеры уже стоят"
+                : "Список пуст — заведите метку в карточке кандидата"}
+            </div>
+          )}
+          {options.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className="hf-statuses-hr-option"
+              onClick={() => add(t)}
+            >
+              <span className="hf-statuses-sourcer-dot" style={{ background: t.color }} />
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssigneeCell({
+  row, people, onSave,
+}: {
+  row: BoardRow;
+  people: { user_id: number; user_name: string | null }[];
+  onSave: (ids: number[]) => void;
+}) {
+  const { open, pos, plusRef, menuRef, toggle, close } = useCellMenu();
+
+  const assignees = rowAssignees(row);
+  const ids = assignees.map((a) => a.user_id);
+
+  const openMenu = () => {
+    // Предел — как на бэке; говорим о нём ДО открытия, иначе человек выбрал бы
+    // имя из списка и получил ошибку уже на сохранении.
+    if (!open && ids.length >= MAX_HR) { toast.error(`Не больше ${MAX_HR} HR на человека`); return; }
+    toggle();
+  };
+
   const add = (uid: number) => {
-    setOpen(false);
+    close();
     onSave([...ids, uid]);
   };
 
