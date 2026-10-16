@@ -1681,6 +1681,8 @@ export default function AllCandidatesPage() {
                                   <img
                                     src={card.photo_url}
                                     alt={card.name}
+                                    loading="lazy"
+                                    decoding="async"
                                     referrerPolicy="no-referrer"
                                     className="hf-candidate-avatar"
                                     onError={(e) => {
