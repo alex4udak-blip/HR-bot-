@@ -60,6 +60,7 @@ import ThemeToggle from "./ThemeToggle";
 import { VacancyForm } from "@/components/vacancies";
 import ParserModal from "@/components/parser/ParserModal";
 import TelegramConnectBanner from "@/components/TelegramConnectBanner";
+import UpdateBanner from "@/components/app/UpdateBanner";
 import { NotifPeek } from "@/components/NotifPeek";
 import { NotifSettings } from "@/components/NotifSettings";
 import { getVacancy, takeVacancy, declineVacancy, getAssignableUsers } from "@/services/api/vacancies";
@@ -2879,6 +2880,8 @@ export default function Layout() {
             </span>
           </div>
         )}
+        {/* Вышла новая сборка, а вкладка открыта на старой — предложить обновить. */}
+        <UpdateBanner />
         {/* Telegram bot connect banner — показываем если у юзера не привязан tg */}
         <TelegramConnectBanner />
         {/* Impersonation Banner */}
