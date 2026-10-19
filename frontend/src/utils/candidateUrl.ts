@@ -38,6 +38,29 @@ export function computeEntityParamUpdate(
 }
 
 /**
+ * Адрес сменился САМ (выбор при этом не менялся) — зеркалу «выбор → адрес»
+ * молчать: адрес тут новее, его подхватит эффект «адрес → выбор».
+ *
+ * Эльвира, 19.10.2026: добавила кандидата из файла — экран секунд пятнадцать
+ * прыгал между ним и тем, кто был открыт до добавления, и мог остановиться на
+ * прежнем. Окно добавления ставит ?entity=<новый>, пока справа ещё прежний.
+ * Эффект выбора открывал нового, а зеркало в том же проходе видело «открыт
+ * прежний, в адресе другой» и писало прежнего обратно — с опозданием
+ * (startTransition). Запоздалая запись выглядела как переход по ссылке, её
+ * снова подхватывали, и так по кругу. Ловилось, только когда новый уже успел
+ * попасть в список (загрузка файла на проде — 12 с, список обновляется раз в
+ * 15 с): иначе карточка грузилась по id, и зеркало стояло на паузе.
+ */
+export function urlLeadsSelection(
+  current: URLSearchParams,
+  curId: number | null,
+  prevId: number | null,
+): boolean {
+  const have = current.get('entity');
+  return curId != null && curId === prevId && have != null && have !== String(curId);
+}
+
+/**
  * Should the URL->selection effect adopt the URL's ?entity= as the selected card?
  *
  * The click handler sets selectedCard directly (instant UI); the URL mirror writes

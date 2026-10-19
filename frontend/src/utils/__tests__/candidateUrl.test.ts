@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cardAfterSearchChange, computeEntityParamUpdate, shouldAdoptUrlEntity } from '../candidateUrl';
+import { cardAfterSearchChange, computeEntityParamUpdate, shouldAdoptUrlEntity, urlLeadsSelection } from '../candidateUrl';
 
 describe('computeEntityParamUpdate', () => {
   it('sets entity when a profile opens', () => {
@@ -95,5 +95,54 @@ describe('cardAfterSearchChange', () => {
 
   it('ничего не открыто — решает обычная логика выбора', () => {
     expect(cardAfterSearchChange([row(5)], null, true)).toBeUndefined();
+  });
+});
+
+describe('urlLeadsSelection', () => {
+  // Эльвира, 19.10.2026: после добавления из файла экран прыгал между новым
+  // кандидатом и прежним. Окно добавления поставило ?entity=<новый>, а зеркало
+  // «выбор → адрес» писало прежнего обратно — и так по кругу.
+  it('адрес сменился сам при прежнем выборе — зеркалу молчать', () => {
+    expect(urlLeadsSelection(new URLSearchParams('entity=17268'), 16673, 16673)).toBe(true);
+  });
+
+  it('клик по другой карточке — адрес догоняет выбор, как раньше', () => {
+    expect(urlLeadsSelection(new URLSearchParams('entity=1'), 2, 1)).toBe(false);
+  });
+
+  it('адрес и выбор совпадают — спорить не о чем', () => {
+    expect(urlLeadsSelection(new URLSearchParams('entity=5'), 5, 5)).toBe(false);
+  });
+
+  it('в адресе кандидата нет — зеркало вправе его вписать', () => {
+    expect(urlLeadsSelection(new URLSearchParams('stage=new'), 5, 5)).toBe(false);
+  });
+
+  it('ничего не открыто — решает старая логика закрытия/диплинка', () => {
+    expect(urlLeadsSelection(new URLSearchParams('entity=5'), null, null)).toBe(false);
+  });
+
+  it('прогон по кругу: с новым правилом цикл обрывается на первом шаге', () => {
+    // Модель двух эффектов: «адрес → выбор» подхватывает адрес, если выбор не
+    // менялся; зеркало пишет выбор в адрес, если его не остановили.
+    let selected = 16673;
+    let prevSelected = 16673;
+    let url = new URLSearchParams('entity=17268'); // окно добавления открыло нового
+    const writes: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const selChanged = selected !== prevSelected;
+      const urlId = Number(url.get('entity'));
+      const adopt = shouldAdoptUrlEntity(selected, urlId, selChanged);
+      // зеркало в том же проходе видит СТАРЫЙ выбор
+      if (!urlLeadsSelection(url, selected, prevSelected)) {
+        const next = computeEntityParamUpdate(url, selected, prevSelected);
+        if (next) { url = next; writes.push(next.get('entity')!); }
+      }
+      prevSelected = selected;
+      if (adopt) selected = urlId;
+    }
+    expect(selected).toBe(17268);
+    expect(url.get('entity')).toBe('17268');
+    expect(writes).toEqual([]);
   });
 });

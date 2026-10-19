@@ -28,6 +28,7 @@ import toast from "react-hot-toast";
 import { useHorizontalScroll } from "../hooks/useHorizontalScroll";
 import {
   cardAfterSearchChange,
+  urlLeadsSelection,
   computeEntityParamUpdate,
   shouldAdoptUrlEntity,
 } from "@/utils/candidateUrl";
@@ -978,6 +979,9 @@ export default function AllCandidatesPage() {
     if (deepLinkPendingRef.current != null) return;
     const curId = selectedCard?.id ?? null;
     const prevId = prevSelectedIdRef.current;
+    // Адрес сменили без нас (окно добавления открыло нового, «назад», переход из
+    // тоста) — не перебиваем его прежним выбором, см. urlLeadsSelection.
+    if (urlLeadsSelection(searchParams, curId, prevId)) return;
     const next = computeEntityParamUpdate(searchParams, curId, prevId);
     prevSelectedIdRef.current = curId;
     // URL-запись — НЕ срочная: startTransition, чтобы ререндер от смены searchParams не
@@ -989,7 +993,11 @@ export default function AllCandidatesPage() {
     if (next) {
       startTransition(() =>
         setSearchParams(
-          (prev) => computeEntityParamUpdate(prev, curId, prevId) ?? prev,
+          // Запись отложенная: к её исполнению адрес мог уйти вперёд сам.
+          (prev) =>
+            urlLeadsSelection(prev, curId, prevId)
+              ? prev
+              : computeEntityParamUpdate(prev, curId, prevId) ?? prev,
           { replace: true },
         ),
       );
