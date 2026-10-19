@@ -5,6 +5,16 @@ import type { PublicFormData } from '@/services/api/forms';
 import { FieldRenderer } from '@/features/forms/FieldRenderer';
 import { sanitizeHtml } from '@/utils/sanitizeHtml';
 import { autoLinkify } from '@/utils/linkify';
+import {
+  clearDraft,
+  describeSubmitError,
+  draftKey,
+  hasAnswers,
+  loadDraft,
+  mergeDraft,
+  reportSubmitError,
+  saveDraft,
+} from '@/utils/publicFormSubmit';
 
 // Должны совпадать с бэкендом (_save_public_form_files): иначе файл «принимается»
 // на фронте, но тихо отбрасывается на сервере. Стоп даём СРАЗУ при выборе.
@@ -53,6 +63,11 @@ export default function PublicFormPage() {
   const [fileUploads, setFileUploads] = useState<Record<string, File>>({});
   // Разрешённый идентификатор ссылки: либо {token} (персональная), либо {slug} (общая).
   const [resolved, setResolved] = useState<{ token?: string; slug?: string } | null>(null);
+  // Ответы восстановлены из черновика (перезагрузили страницу посреди анкеты).
+  const [draftRestored, setDraftRestored] = useState(false);
+  // Черновик пишем только после того, как анкета загружена и в неё влит прежний
+  // черновик, — иначе пустые значения по умолчанию затёрли бы его.
+  const [draftReady, setDraftReady] = useState(false);
 
   useEffect(() => {
     if (!dispatchToken && !key) return;
@@ -87,7 +102,14 @@ export default function PublicFormPage() {
             defaults[field.id] = '';
           }
         }
-        setValues(defaults);
+        // Черновик: кандидат мог перезагрузить страницу посреди анкеты (17.10.2026
+        // так стёрлись 23 ответа — пять раз подряд). Предпросмотр и уже
+        // заполненную анкету не трогаем.
+        const draftStorageKey = draftKey(res);
+        const draft = !isPreview && !data.already_submitted ? loadDraft(draftStorageKey) : null;
+        setValues(mergeDraft(defaults, draft));
+        if (hasAnswers(draft)) setDraftRestored(true);
+        setDraftReady(!isPreview && !data.already_submitted);
       } catch {
         setError('Форма не найдена или больше не активна');
       } finally {
@@ -95,6 +117,12 @@ export default function PublicFormPage() {
       }
     })();
   }, [dispatchToken, key]);
+
+  // Каждый ответ сразу сохраняется на устройстве кандидата.
+  useEffect(() => {
+    if (!draftReady || submitted || !resolved) return;
+    saveDraft(draftKey(resolved), values);
+  }, [values, draftReady, submitted, resolved]);
 
   const validate = (): boolean => {
     if (!form) return false;
@@ -144,10 +172,15 @@ export default function PublicFormPage() {
       // Пропущенные файлы (формат/размер/лимит) — показываем кандидату, чтобы он
       // знал, что часть вложений не доставлена, а не считал анкету полной.
       if (result?.skipped_files?.length) setSkippedFiles(result.skipped_files);
+      clearDraft(draftKey({ token: rToken, slug: rSlug }));
       setSubmitted(true);
     } catch (err: unknown) {
-      const message = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(message || 'Произошла ошибка при отправке');
+      // Раньше любой сбой без текста от сервера превращался в «Произошла ошибка
+      // при отправке», а сам сбой не оставлял следов: 17.10.2026 запрос кандидата
+      // до нас не дошёл ни разу. Теперь объясняем, что делать, и сообщаем нам.
+      const info = describeSubmitError(err);
+      setError(info.message);
+      if (info.kind !== 'server_detail') reportSubmitError({ token: rToken, slug: rSlug }, info);
     } finally {
       setSubmitting(false);
     }
@@ -279,9 +312,10 @@ export default function PublicFormPage() {
           </div>
         )}
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-            {error}
+        {draftRestored && !error && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-sm">
+            Мы восстановили ваши ответы — можно продолжить с того же места.
+            {form.fields.some((f) => f.type === 'file') && ' Файлы, если они были, прикрепите заново.'}
           </div>
         )}
 
@@ -338,6 +372,14 @@ export default function PublicFormPage() {
             />
           ))}
 
+          {/* Ошибка — у кнопки, а не в шапке: анкета длинная, человек жмёт
+              «Отправить» внизу и сообщения наверху просто не видит. */}
+          {error && (
+            <div role="alert" className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+              {error}
+            </div>
+          )}
+
           <button
             type="button"
             onClick={handleSubmit}
@@ -346,6 +388,11 @@ export default function PublicFormPage() {
           >
             {isPreview ? 'Предпросмотр — отправка отключена' : submitting ? 'Отправка...' : 'Отправить'}
           </button>
+          {draftReady && (
+            <p className="text-center text-xs text-gray-400 -mt-3">
+              Ответы сохраняются автоматически — если обновить страницу, они не пропадут.
+            </p>
+          )}
         </form>
 
         <p className="text-center text-xs text-gray-400 mt-6">

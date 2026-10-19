@@ -14,7 +14,7 @@ from pathlib import Path
 
 from anthropic import AsyncAnthropic
 import asyncio
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, File, Form, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, File, Form, Request, Response, UploadFile
 from sqlalchemy import select, func, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -1510,6 +1510,36 @@ async def submit_public_form_with_files(
         # чтобы кандидат не думал, что резюме доставлено, когда оно потерялось.
         "skipped_files": skipped_files,
     }
+
+
+class PublicClientErrorSchema(BaseModel):
+    link: str = ""
+    kind: str = ""
+    status: Optional[int] = None
+    message: str = ""
+    online: Optional[bool] = None
+
+
+@router.post("/public/client-error", status_code=204)
+async def report_public_form_client_error(body: PublicClientErrorSchema, request: Request):
+    """Браузер кандидата сообщает, что отправка анкеты не удалась.
+
+    17.10.2026 кандидат пять раз жал «Отправить» и видел ошибку, а у нас не
+    осталось ни следа: запрос до сервера не дошёл. Этот отчёт страница анкеты
+    шлёт в обход axios (sendBeacon), поэтому он доходит и тогда, когда сломался
+    сам путь отправки. Ищется в логах по маркеру PUBLIC_FORM_CLIENT_ERROR.
+    Без авторизации и без записи в базу — только строка в лог, всё обрезано.
+    """
+    logger.warning(
+        "PUBLIC_FORM_CLIENT_ERROR link=%s… kind=%s status=%s online=%s msg=%r ua=%r",
+        (body.link or "")[:6],
+        (body.kind or "")[:32],
+        body.status,
+        body.online,
+        (body.message or "")[:500],
+        (request.headers.get("user-agent") or "")[:200],
+    )
+    return Response(status_code=204)
 
 
 @router.get("/public/d/{token}")
