@@ -807,6 +807,16 @@ KANBAN_STATUSES = ["new", "screening", "practice", "tech_practice", "is_intervie
 OTHER_STATUS = "other"
 BOARD_COLUMNS = KANBAN_STATUSES + [OTHER_STATUS]
 
+# Уволенные со «Штата» — в базе это «Отказ». Своей колонки у увольнения здесь
+# нет и не нужно: «уволен/уволился» — язык доски, а в базе кандидатов человек
+# просто больше не в работе (владелец, 20.10.2026: «меняю статус с практики на
+# уволен — в ATS он тоже перемещается в отказ»). Без этого они падали в «Вне
+# воронки»: на проде 20.10.2026 там лежали ровно трое уволенных.
+COLUMN_OF_STATUS = {
+    EntityStatus.dismissed.value: "rejected",
+    EntityStatus.quit.value: "rejected",
+}
+
 KANBAN_STATUS_LABELS = {
     "new": "Новый",
     "screening": "Выполняет ТЗ",
@@ -971,6 +981,7 @@ async def get_candidates_kanban(
     counts: dict[str, int] = {s: 0 for s in BOARD_COLUMNS}
     for e in entities:
         status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
+        status_val = COLUMN_OF_STATUS.get(status_val, status_val)
         if status_val not in by_status:
             status_val = OTHER_STATUS   # «Вне воронки», но кандидат ВИДЕН
         counts[status_val] += 1
@@ -1126,6 +1137,7 @@ async def get_candidates_kanban(
     for e in display_entities:
         try:
             status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
+            status_val = COLUMN_OF_STATUS.get(status_val, status_val)
             if status_val not in grouped:
                 status_val = OTHER_STATUS
             tg = first_real_telegram(e.telegram_usernames)
@@ -1253,6 +1265,14 @@ async def get_candidate_ids(
                 status_enums.append(EntityStatus(s))
             except ValueError:
                 pass
+    # Колонка «Отказ» показывает и уволенных со «Штата» (COLUMN_OF_STATUS) —
+    # «Выбрать всех» обязано отбирать ровно тех, кого показал список.
+    for raw, column in COLUMN_OF_STATUS.items():
+        extra = EntityStatus(raw)
+        if extra in status_enums:
+            continue
+        if not status or status in ("all", "") or status == column:
+            status_enums.append(extra)
     base_q = base_q.where(Entity.status.in_(status_enums))
 
     id_q = base_q.with_only_columns(Entity.id).order_by(Entity.created_at.desc()).limit(5000)

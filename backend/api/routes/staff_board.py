@@ -1849,6 +1849,11 @@ async def update_row(
         # кроме переводов, сделанных здесь.
         status_note = _stage_note(entity, entity.status, new_status, current_user)
         entity.status = new_status
+        # Доска и база «Все кандидаты» — одна система (владелец, 20.10.2026):
+        # уволили на доске — в воронке «Отказ». Правила и причины —
+        # services/board_status_sync.py.
+        from ..services.board_status_sync import sync_applications_to_status
+        await sync_applications_to_status(db, entity, new_status, current_user)
 
     if "position" in payload:
         entity.position = (payload["position"] or None)

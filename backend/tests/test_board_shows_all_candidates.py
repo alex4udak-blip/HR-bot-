@@ -46,14 +46,19 @@ async def test_withdrawn_candidate_is_on_the_board(client, db_session, organizat
 
 @pytest.mark.asyncio
 async def test_status_outside_funnel_lands_in_other_column(client, db_session, organization, admin_user, org_owner):
-    """Статусы вне воронки (уволен / легаси) собираются в «Вне воронки» —
-    кандидат остаётся видимым, а не исчезает с доски."""
+    """Статусы вне воронки (легаси) собираются в «Вне воронки» — кандидат
+    остаётся видимым, а не исчезает с доски.
+
+    Уволенные со «Штата» с 20.10.2026 сюда больше не попадают: для базы
+    кандидатов это «Отказ» (владелец: «меняю статус с практики на уволен — в
+    ATS он тоже перемещается в отказ»), см. test_board_ats_sync.py.
+    """
     await _mk(db_session, organization, "Уволенов Урал", EntityStatus.dismissed, admin_user)
     await _mk(db_session, organization, "Легасин Лев", EntityStatus.active, admin_user)
 
     r = await client.get("/api/candidates/kanban?per_column=500", headers=_h(admin_user))
     cards = _cards(r.json())
-    assert cards.get("Уволенов Урал") == "other"
+    assert cards.get("Уволенов Урал") == "rejected"
     assert cards.get("Легасин Лев") == "other"
 
     labels = {c["status"]: c["label"] for c in r.json()["columns"]}
