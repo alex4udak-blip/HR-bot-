@@ -1640,7 +1640,19 @@ export default function AllCandidatesPage() {
                       const listMetaPrimary =
                         (listSettings.fields.lastCompany ? card.company : undefined) ||
                         (listFunnels.length ? undefined : listFunnelName);
-                      const showListDate = !card.company;
+                      // Дата в строке — это дата ПЕРЕВОДА на текущий статус
+                      // (Мария, 20.10.2026: «видим статус „оффер принят“ и
+                      // дату его перевода на этот статус»). Раньше здесь
+                      // стояла дата ДОБАВЛЕНИЯ карточки, и рядом со статусом
+                      // она выглядела случайной. Перевода в истории может не
+                      // быть (статус выставили правкой карточки) — тогда
+                      // остаётся прежнее поведение: дата добавления, и только
+                      // если место не занято последней компанией.
+                      const listDate =
+                        card.status_changed_at || (card.company ? null : card.created_at);
+                      const listDateTitle = listDate
+                        ? `${card.status_changed_at ? "Переведён на текущий этап" : "Добавлен"}: ${formatDateFull(listDate)}`
+                        : undefined;
                       return (
                         <div
                           key={card.id}
@@ -1794,16 +1806,17 @@ export default function AllCandidatesPage() {
                                   +{listExtraFunnels}
                                 </span>
                               )}
-                              {listMetaPrimary &&
-                                showListDate &&
-                                card.created_at && (
-                                  <span className="hf-candidate-row-meta-dot">
-                                    ·
-                                  </span>
-                                )}
-                              {showListDate && card.created_at && (
-                                <span className="hf-candidate-row-date">
-                                  {formatDateShort(card.created_at)}
+                              {listMetaPrimary && listDate && (
+                                <span className="hf-candidate-row-meta-dot">
+                                  ·
+                                </span>
+                              )}
+                              {listDate && (
+                                <span
+                                  className="hf-candidate-row-date"
+                                  title={listDateTitle}
+                                >
+                                  {formatDateShort(listDate)}
                                 </span>
                               )}
                             </div>

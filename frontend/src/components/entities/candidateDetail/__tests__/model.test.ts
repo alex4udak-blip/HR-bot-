@@ -595,6 +595,40 @@ describe('selectVisibleCards (список «Все кандидаты»)', () =
     });
     expect(visible.map((v) => v.card.name)).toEqual(['Чужой Отказник']);
   });
+
+  // Порядок на вкладке «Все» и в поиске — по дате ПЕРЕВОДА на текущий статус,
+  // свежие сверху (Мария, 20.10.2026: «отказали 09.10 — стоит перед 08.10»).
+  it('на вкладке «Все» сортирует по дате перевода, а не добавления', () => {
+    const byStage = [
+      {
+        status: 'rejected', label: 'Отказ', count: 3,
+        cards: [
+          { id: 1, name: 'Отказ 08.10', created_at: '2026-10-01T10:00:00', status_changed_at: '2026-10-08T10:00:00' },
+          { id: 2, name: 'Отказ 09.10', created_at: '2026-09-01T10:00:00', status_changed_at: '2026-10-09T10:00:00' },
+        ],
+      },
+    ] as unknown as KanbanColumn[];
+    const visible = selectVisibleCards(byStage, {
+      activeTab: 'all', scope: 'all', myId: 7, search: '',
+    });
+    expect(visible.map((v) => v.card.name)).toEqual(['Отказ 09.10', 'Отказ 08.10']);
+  });
+
+  it('без даты перевода человек встаёт по дате добавления', () => {
+    const mixed = [
+      {
+        status: 'new', label: 'Новый', count: 2,
+        cards: [
+          { id: 1, name: 'Без перевода', created_at: '2026-10-10T10:00:00' },
+          { id: 2, name: 'Переведён 05.10', created_at: '2026-10-01T10:00:00', status_changed_at: '2026-10-05T10:00:00' },
+        ],
+      },
+    ] as unknown as KanbanColumn[];
+    const visible = selectVisibleCards(mixed, {
+      activeTab: 'all', scope: 'all', myId: 7, search: '',
+    });
+    expect(visible.map((v) => v.card.name)).toEqual(['Без перевода', 'Переведён 05.10']);
+  });
 });
 
 describe('countHiddenByScope', () => {

@@ -732,11 +732,21 @@ export function selectVisibleCards(
     }
   }
   if (searching || opts.activeTab === "all") {
-    return items.sort(
-      (a, b) => new Date(b.card.created_at).getTime() - new Date(a.card.created_at).getTime(),
-    );
+    // Свежие сверху по дате ПЕРЕВОДА на текущий статус: «если человеку
+    // отказали 08.10, перед ним должен стоять тот, кому отказали 09.10»
+    // (Мария, 20.10.2026). У кого перевода в истории нет — по дате добавления,
+    // её строка и показывает.
+    return items.sort((a, b) => cardOrderTime(b.card) - cardOrderTime(a.card));
   }
   return items;
+}
+
+/** Время, по которому список выстраивается и которое он показывает: перевод
+ *  на текущий статус, а если его нет — добавление карточки. */
+export function cardOrderTime(card: Pick<KanbanCard, "created_at"> & { status_changed_at?: string | null }): number {
+  const raw = card.status_changed_at || card.created_at;
+  const t = raw ? new Date(raw).getTime() : NaN;
+  return Number.isNaN(t) ? 0 : t;
 }
 
 /** Сколько карточек доски прячет скоуп «Только мои» — для объяснения пустого списка. */

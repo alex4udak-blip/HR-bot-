@@ -151,6 +151,10 @@ export interface KanbanCard {
   recruiter_id?: number | null;
   recruiter_name?: string;
   created_at: string;
+  /** Когда кандидата перевели на ТЕКУЩИЙ статус: строка списка показывает эту
+   *  дату рядом с этапом, по ней же сервер сортирует список. null — перевода в
+   *  истории нет, тогда показываем дату добавления. */
+  status_changed_at?: string | null;
   tags: string[];
   photo_url?: string;
   company?: string;

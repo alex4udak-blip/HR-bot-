@@ -844,6 +844,11 @@ class KanbanCard(BaseModel):
     recruiter_id: Optional[int] = None
     recruiter_name: Optional[str] = None
     created_at: datetime
+    # Когда кандидата перевели на ТЕКУЩИЙ статус. Строка списка показывает
+    # именно её рядом с этапом, и по ней же список отсортирован (просьба Марии
+    # 20.10.2026). None — перевода в истории нет (статус выставлен правкой
+    # карточки), тогда строка показывает дату добавления, как раньше.
+    status_changed_at: Optional[datetime] = None
     tags: list = []
     photo_url: Optional[str] = None
     company: Optional[str] = None
@@ -944,7 +949,19 @@ async def get_candidates_kanban(
         base_q = base_q.order_by(Entity.created_at.desc())
 
     result = await db.execute(base_q)
-    entities = result.scalars().all()
+    entities = list(result.scalars().all())
+
+    # Дата перевода на текущий статус — и подпись в строке, и порядок списка:
+    # «кандидаты должны располагаться по актуальности даты перехода под статус»
+    # (Мария, 20.10.2026). При ПОИСКЕ порядок остаётся по релевантности, иначе
+    # лучшее совпадение уехало бы вниз.
+    from ..services.status_dates import status_changed_at_map
+    status_at = await status_changed_at_map(db, entities)
+    if _score is None:
+        # sorted стабильна: у кого даты перевода нет, тот остаётся на своём
+        # месте по дате добавления — её строка и показывает.
+        oldest = datetime.min
+        entities.sort(key=lambda e: status_at.get(e.id) or e.created_at or oldest, reverse=True)
 
     # Группируем по статусу и берём только per_column на колонку ДО дорогой работы
     # (построение карточек + два IN-подзапроса фото/вакансий). Раньше всё это
@@ -1131,6 +1148,7 @@ async def get_candidates_kanban(
                 recruiter_id=e.created_by,
                 recruiter_name=recruiter_map.get(e.created_by),
                 created_at=e.created_at,
+                status_changed_at=status_at.get(e.id),
                 tags=e.tags or [],
                 # Локальный URL предпочтительнее внешнего: hh.ru CDN может
                 # отдавать 403 на чужой Referer / истечь срок ссылки. Локальный
