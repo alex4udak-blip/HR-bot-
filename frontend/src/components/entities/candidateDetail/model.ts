@@ -576,6 +576,8 @@ export type SystemHrTag = {
   /** Воронка (вакансия), в которую этот HR забрал кандидата. */
   vacancy_id?: number;
   vacancy_title?: string;
+  /** 'board' — HR не из воронки, а назначенный руками на доске «Штат». */
+  source?: "board";
 };
 
 /**
@@ -587,7 +589,21 @@ export type SystemHrTag = {
 export function readSystemHrTags(
   extraData: Record<string, unknown> | undefined | null,
 ): SystemHrTag[] {
-  const raw = extraData?.system_hr_tags;
+  const fromFunnels = readHrTagList(extraData?.system_hr_tags);
+  // HR, назначенный на доске «Штат» (extra_data.board_hr_tags): воронки у него
+  // нет, поэтому метка показывается без названия — «HR: Имя». Если этот же
+  // человек уже значится по воронке, второй раз не повторяем: в карточке
+  // хватает одной строки на человека (просьба владельца 20.10.2026 — «добавляю
+  // HR в штате, в метках он тоже должен появиться»).
+  const seen = new Set(fromFunnels.map((t) => t.hr_id));
+  const fromBoard = readHrTagList(extraData?.board_hr_tags)
+    .filter((t) => !seen.has(t.hr_id))
+    .map((t) => ({ hr_id: t.hr_id, name: t.name, source: "board" as const }));
+  return [...fromFunnels, ...fromBoard];
+}
+
+/** Разбор одного массива меток HR: мусор и записи без имени отбрасываем. */
+function readHrTagList(raw: unknown): SystemHrTag[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter(

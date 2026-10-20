@@ -336,3 +336,78 @@ async def merge_team_dates_once(db) -> int:
     await db.commit()
     logger.info(f"BOARD_TEAM_MERGE: перенесено полей: {moved}")
     return moved
+
+
+BOARD_HR_MARK = "board_hr_tags_from_assignees_2026_10_20"
+
+
+async def backfill_board_hr_tags_once(db) -> int:
+    """Метка «HR: Имя» в карточке для тех, кого уже назначили на доске.
+
+    Назначенный на доске HR с 20.10.2026 виден и в карточке кандидата
+    (`extra_data.board_hr_tags`, пишет PATCH доски). У людей, которым HR
+    поставили РАНЬШЕ, в карточке пусто: их список лежит только в
+    `assignee_user_ids`. Собираем метку один раз (отметка в
+    `data_migration_marks`), ничего не удаляя. Коммитит, возвращает число
+    карточек.
+    """
+    from ..models.database import User
+
+    if await db.get(DataMigrationMark, BOARD_HR_MARK) is not None:
+        return 0
+
+    rows = (await db.execute(select(Entity.id, Entity.extra_data))).all()
+    wanted: Dict[int, List[int]] = {}
+    for ent_id, extra in rows:
+        if not isinstance(extra, dict):
+            continue
+        raw = extra.get("assignee_user_ids")
+        ids: List[int] = []
+        if isinstance(raw, list):
+            for v in raw:
+                try:
+                    i = int(v)
+                except (TypeError, ValueError):
+                    continue
+                if i not in ids:
+                    ids.append(i)
+        else:
+            single = extra.get("assignee_user_id")
+            try:
+                ids = [int(single)] if single not in (None, "") else []
+            except (TypeError, ValueError):
+                ids = []
+        if ids and not extra.get("board_hr_tags"):
+            wanted[ent_id] = ids
+
+    if not wanted:
+        db.add(DataMigrationMark(key=BOARD_HR_MARK))
+        await db.commit()
+        return 0
+
+    all_ids = {i for ids in wanted.values() for i in ids}
+    names = {
+        uid: nm
+        for uid, nm in (await db.execute(
+            select(User.id, User.name).where(User.id.in_(all_ids))
+        )).all()
+    }
+
+    done = 0
+    for ent_id, ids in wanted.items():
+        tags = [{"hr_id": i, "name": names[i]} for i in ids if names.get(i)]
+        if not tags:
+            continue
+        entity = await db.get(Entity, ent_id)
+        if entity is None:
+            continue
+        extra = dict(entity.extra_data or {})
+        extra["board_hr_tags"] = tags
+        entity.extra_data = extra
+        flag_modified(entity, "extra_data")
+        done += 1
+
+    db.add(DataMigrationMark(key=BOARD_HR_MARK))
+    await db.commit()
+    logger.info(f"BOARD_HR_TAGS: метка HR собрана у {done} карточек")
+    return done

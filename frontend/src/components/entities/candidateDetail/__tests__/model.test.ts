@@ -466,6 +466,33 @@ describe("readSystemHrTags", () => {
       { hr_id: 2, name: "Настя" },
     ]);
   });
+
+  // HR, назначенный руками на доске «Штат», тоже метка карточки — просьба
+  // владельца 20.10.2026. Воронки у него нет, поэтому показывается «HR: Имя».
+  it("добавляет HR с доски «Штат» — без воронки и с пометкой source", () => {
+    expect(
+      readSystemHrTags({
+        system_hr_tags: [{ hr_id: 7, name: "Мария", vacancy_id: 3, vacancy_title: "Трафик" }],
+        board_hr_tags: [{ hr_id: 9, name: "Влада" }],
+      }),
+    ).toEqual([
+      { hr_id: 7, name: "Мария", vacancy_id: 3, vacancy_title: "Трафик" },
+      { hr_id: 9, name: "Влада", source: "board" },
+    ]);
+  });
+  it("не дублирует человека, который уже значится по воронке", () => {
+    expect(
+      readSystemHrTags({
+        system_hr_tags: [{ hr_id: 7, name: "Мария", vacancy_id: 3, vacancy_title: "Трафик" }],
+        board_hr_tags: [{ hr_id: 7, name: "Мария" }],
+      }),
+    ).toEqual([{ hr_id: 7, name: "Мария", vacancy_id: 3, vacancy_title: "Трафик" }]);
+  });
+  it("мусор в board_hr_tags отбрасывается так же, как в системных", () => {
+    expect(
+      readSystemHrTags({ board_hr_tags: [{ hr_id: "9", name: "Нет" }, { hr_id: 4, name: " " }, null] }),
+    ).toEqual([]);
+  });
 });
 
 describe('entityToKanbanCard (диплинк на кандидата вне доски)', () => {

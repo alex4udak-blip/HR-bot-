@@ -121,3 +121,47 @@ async def test_patch_keeps_sourcers_in_response(client, db_session, organization
     r = await client.patch(f"/api/staff-board/rows/{e.id}", json={"assignee_user_ids": []}, headers=_h(admin_user))
     assert r.status_code == 200, r.text
     assert [s["name"] for s in r.json()["sourcers"]] == ["Олег"]
+
+
+@pytest.mark.asyncio
+async def test_board_hr_becomes_card_label(client, db_session, organization, admin_user, second_user, org_owner):
+    """Назначили HR на доске — он виден и в метках карточки (20.10.2026).
+
+    Метка лежит СВОИМ ключом `board_hr_tags`: `system_hr_tags` считаются по
+    воронкам и переписываются бэкафиллом при каждом старте, так что запись туда
+    не пережила бы деплой.
+    """
+    e = await _mk(db_session, organization, admin_user)
+    await client.patch(
+        f"/api/staff-board/rows/{e.id}",
+        json={"assignee_user_ids": [admin_user.id, second_user.id]},
+        headers=_h(admin_user),
+    )
+    await db_session.refresh(e)
+    assert e.extra_data["board_hr_tags"] == [
+        {"hr_id": admin_user.id, "name": admin_user.name},
+        {"hr_id": second_user.id, "name": second_user.name},
+    ]
+
+    # Сняли всех — метка уходит с карточки, а не остаётся висеть.
+    await client.patch(f"/api/staff-board/rows/{e.id}",
+                       json={"assignee_user_ids": []}, headers=_h(admin_user))
+    await db_session.refresh(e)
+    assert "board_hr_tags" not in e.extra_data
+
+    # Старый одиночный ключ пишет метку так же.
+    await client.patch(f"/api/staff-board/rows/{e.id}",
+                       json={"assignee_user_id": second_user.id}, headers=_h(admin_user))
+    await db_session.refresh(e)
+    assert e.extra_data["board_hr_tags"] == [{"hr_id": second_user.id, "name": second_user.name}]
+
+
+@pytest.mark.asyncio
+async def test_board_hr_label_keeps_funnel_tags(client, db_session, organization, admin_user, org_owner):
+    """Метки по воронкам доска не трогает: у них свой ключ и свой пересчёт."""
+    e = await _mk(db_session, organization, admin_user, {"system_hr_tags": [{"hr_id": 101, "name": "Лиза"}]})
+    await client.patch(f"/api/staff-board/rows/{e.id}",
+                       json={"assignee_user_ids": [admin_user.id]}, headers=_h(admin_user))
+    await db_session.refresh(e)
+    assert e.extra_data["system_hr_tags"] == [{"hr_id": 101, "name": "Лиза"}]
+    assert e.extra_data["board_hr_tags"] == [{"hr_id": admin_user.id, "name": admin_user.name}]

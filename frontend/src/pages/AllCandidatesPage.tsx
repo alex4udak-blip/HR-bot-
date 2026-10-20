@@ -3537,7 +3537,11 @@ const InfoTab = memo(function InfoTab({
                   return (
                     <span
                       key={`hr-${hr.hr_id}`}
-                      title="Закреплённый HR — проставляется автоматически по воронке"
+                      title={
+                        hr.source === "board"
+                          ? "Ведущий HR — назначен на доске «Штат»"
+                          : "Закреплённый HR — проставляется автоматически по воронке"
+                      }
                       className={chipBase}
                     >
                       <Lock className="w-3 h-3 opacity-50" />

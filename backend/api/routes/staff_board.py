@@ -157,6 +157,14 @@ _K_ASSIGNEE = "assignee_user_id"
 # дублируется в _K_ASSIGNEE — его читают старые клиенты и фильтры. Ключ есть,
 # но список пуст — HR сняли всех, и воронка их больше не подставляет.
 _K_ASSIGNEES = "assignee_user_ids"
+# Те же HR, но с именами — чтобы метка «HR: Имя» была видна в карточке
+# кандидата, а не только на доске (просьба владельца 20.10.2026: «добавляю HR в
+# штате — в базе в метках HR тоже должен добавиться»). Своим ключом, а НЕ в
+# system_hr_tags: те считаются по воронкам и переписываются бэкафиллом при
+# каждом старте (start.sh), так что дописанное туда пропало бы на первом же
+# деплое. Имена храним рядом с id: карточку читают из разных мест, лишний
+# запрос в users там делать негде.
+_K_BOARD_HR = "board_hr_tags"
 MAX_ASSIGNEES = 5
 _K_DISMISSAL = "dismissal_date"
 _K_DONE = {
@@ -395,6 +403,23 @@ def _manual_assignee_ids(ex: Dict[str, Any]) -> Optional[List[int]]:
         return ids[:MAX_ASSIGNEES]
     single = _as_int(ex.get(_K_ASSIGNEE))
     return [single] if single is not None else None
+
+
+async def _board_hr_tags(db: AsyncSession, ids: List[int]) -> List[Dict[str, Any]]:
+    """[{hr_id, name}] для метки «HR: Имя» в карточке кандидата.
+
+    Порядок — как выбрали на доске. Удалённый пользователь просто выпадает:
+    метка без имени ничего не говорит.
+    """
+    if not ids:
+        return []
+    names = {
+        uid: nm
+        for uid, nm in (await db.execute(
+            select(User.id, User.name).where(User.id.in_(ids))
+        )).all()
+    }
+    return [{"hr_id": uid, "name": names[uid]} for uid in ids if names.get(uid)]
 
 
 class BoardSourcer(BaseModel):
@@ -1901,6 +1926,7 @@ async def update_row(
         return ex
     # HR: список главнее одиночного поля. Одиночное (старые клиенты) заменяет
     # весь список, иначе второй HR «воскресал» бы после смены первого.
+    assignees_touched = "assignee_user_ids" in payload or "assignee_user_id" in payload
     if "assignee_user_ids" in payload:
         ids: List[int] = []
         for v in payload.pop("assignee_user_ids") or []:
@@ -1935,6 +1961,16 @@ async def update_row(
                 store[key] = parsed.isoformat()
             else:
                 store[key] = str(value).strip()
+        touched_extra = True
+
+    # Метка «HR: Имя» в карточке — пересобираем по итоговому списку (он мог
+    # приехать и списком, и старым одиночным полем через extra_map выше).
+    if assignees_touched:
+        ex_tags = await _board_hr_tags(db, _manual_assignee_ids(ex) or [])
+        if ex_tags:
+            ex[_K_BOARD_HR] = ex_tags
+        else:
+            ex.pop(_K_BOARD_HR, None)
         touched_extra = True
 
     if "manager" in payload:

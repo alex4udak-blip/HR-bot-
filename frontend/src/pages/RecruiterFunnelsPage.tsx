@@ -3511,7 +3511,9 @@ export default function RecruiterFunnelsPage() {
                                   {readSystemHrTags(entityExtraData).map((hr) => (
                                     <span
                                       key={`hr-${hr.hr_id}`}
-                                      title="Закреплённый HR — проставляется автоматически по воронке"
+                                      title={hr.source === "board"
+                                        ? "Ведущий HR — назначен на доске «Штат»"
+                                        : "Закреплённый HR — проставляется автоматически по воронке"}
                                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--hf-ui-hover)] text-[var(--hf-main-800)] border border-[color:var(--hf-ui-border)]"
                                     >
                                       <Lock className="w-3 h-3 opacity-50" />

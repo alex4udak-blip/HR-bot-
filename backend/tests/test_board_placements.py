@@ -931,3 +931,30 @@ async def test_merge_prefers_hand_typed_date_over_auto(
     rows = {x["department_name"]: x for x in await _rows(client, admin_user, e.id)}
     assert rows["R&D"]["department_start_date"] == "2026-01-09"
     assert rows["SANDBOX"]["department_start_date"] == "2026-01-09"
+
+
+@pytest.mark.asyncio
+async def test_one_off_backfill_board_hr_tags(
+    client, db_session, organization, admin_user, org_owner
+):
+    """Разовый сбор метки «HR: Имя» у тех, кого назначили до 20.10.2026.
+
+    PATCH доски пишет метку сам, но у старых назначений в карточке только
+    `assignee_user_ids` — без имён метку не показать.
+    """
+    from api.services.board_placements import backfill_board_hr_tags_once
+
+    e = await _person(db_session, organization, admin_user)
+    e.extra_data = {"assignee_user_ids": [admin_user.id]}
+    other = await _person(db_session, organization, admin_user)
+    other.extra_data = {"assignee_user_id": str(admin_user.id)}
+    await db_session.commit()
+
+    assert await backfill_board_hr_tags_once(db_session) == 2
+    # Второй запуск уже ничего не делает (отметка в data_migration_marks).
+    assert await backfill_board_hr_tags_once(db_session) == 0
+
+    await db_session.refresh(e)
+    await db_session.refresh(other)
+    assert e.extra_data["board_hr_tags"] == [{"hr_id": admin_user.id, "name": admin_user.name}]
+    assert other.extra_data["board_hr_tags"] == [{"hr_id": admin_user.id, "name": admin_user.name}]

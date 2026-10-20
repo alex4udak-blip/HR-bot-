@@ -553,6 +553,17 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Board team dates merge failed (non-critical): {e}")
 
+    # Метка «HR: Имя» в карточке для уже назначенных на доске (20.10.2026,
+    # services/board_placements.py). Одноразово: PATCH доски пишет её сам, но у
+    # тех, кому HR поставили раньше, в карточке её нет.
+    try:
+        from ..services.board_placements import backfill_board_hr_tags_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await backfill_board_hr_tags_once(session)
+    except Exception as e:
+        logger.warning(f"Board HR tags backfill failed (non-critical): {e}")
+
     # Контакты из шапки уже сохранённых резюме (22.09.2026) — одноразово.
     try:
         from ..services.resume_contacts import backfill_resume_contacts_once
