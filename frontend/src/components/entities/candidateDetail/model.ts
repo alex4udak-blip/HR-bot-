@@ -720,11 +720,10 @@ export function selectVisibleCards(
     }
   }
   if (searching || opts.activeTab === "all") {
-    // Порядок задаёт сервер (rank): во «Все» — по дате ПЕРЕВОДА на текущий
-    // статус («если человеку отказали 08.10, перед ним должен стоять тот, кому
-    // отказали 09.10», Мария, 20.10.2026), в поиске — по совпадению (раньше тут
+    // Порядок задаёт сервер (rank): во «Все» — по дате ДОБАВЛЕНИЯ, свежие
+    // сверху (владелец, 21.10.2026), в поиске — по совпадению (раньше тут
     // пересортировывали по дате, и лучшее совпадение уезжало вниз). Без rank —
-    // по дате перевода, у кого её нет — по дате добавления.
+    // по дате добавления.
     return items.sort((a, b) => {
       const ra = a.card.rank;
       const rb = b.card.rank;
@@ -735,12 +734,22 @@ export function selectVisibleCards(
   return items;
 }
 
-/** Время, по которому список выстраивается и которое он показывает: перевод
- *  на текущий статус, а если его нет — добавление карточки. */
-export function cardOrderTime(card: Pick<KanbanCard, "created_at"> & { status_changed_at?: string | null }): number {
-  const raw = card.status_changed_at || card.created_at;
+/** Время, по которому выстраивается список: добавление карточки (владелец,
+ *  21.10.2026: «не по дате изменения, а по дате добавления»). Подпись в строке
+ *  при этом — дата перевода на текущий статус (CandidateListRow). */
+export function cardOrderTime(card: Pick<KanbanCard, "created_at">): number {
+  const raw = card.created_at;
   const t = raw ? new Date(raw).getTime() : NaN;
   return Number.isNaN(t) ? 0 : t;
+}
+
+/** Вставить карточку в колонку на её место по дате добавления (колонки с
+ *  сервера идут свежими сверху). Нужно после смены этапа на месте: раньше
+ *  переведённый вставал первым, а после обновления доски уезжал на своё место. */
+export function insertByCreatedAt<T extends Pick<KanbanCard, "created_at">>(cards: T[], card: T): T[] {
+  const t = cardOrderTime(card);
+  const at = cards.findIndex((c) => cardOrderTime(c) < t);
+  return at < 0 ? [...cards, card] : [...cards.slice(0, at), card, ...cards.slice(at)];
 }
 
 /** Сколько карточек доски прячет скоуп «Только мои» — для объяснения пустого списка. */

@@ -23,6 +23,7 @@ import {
   readSystemHrTags,
   entityToKanbanCard,
   selectVisibleCards,
+  insertByCreatedAt,
   countHiddenByScope,
 } from "../model";
 
@@ -596,38 +597,27 @@ describe('selectVisibleCards (список «Все кандидаты»)', () =
     expect(visible.map((v) => v.card.name)).toEqual(['Чужой Отказник']);
   });
 
-  // Порядок на вкладке «Все» и в поиске — по дате ПЕРЕВОДА на текущий статус,
-  // свежие сверху (Мария, 20.10.2026: «отказали 09.10 — стоит перед 08.10»).
-  it('на вкладке «Все» сортирует по дате перевода, а не добавления', () => {
+  // Порядок на вкладке «Все» — по дате ДОБАВЛЕНИЯ, свежие сверху (владелец,
+  // 21.10.2026: «не по дате изменения, а по дате добавления»). Дата перевода
+  // остаётся только подписью в строке.
+  it('на вкладке «Все» сортирует по дате добавления, а не перевода', () => {
     const byStage = [
       {
-        status: 'rejected', label: 'Отказ', count: 3,
+        status: 'rejected', label: 'Отказ', count: 2,
         cards: [
-          { id: 1, name: 'Отказ 08.10', created_at: '2026-10-01T10:00:00', status_changed_at: '2026-10-08T10:00:00' },
-          { id: 2, name: 'Отказ 09.10', created_at: '2026-09-01T10:00:00', status_changed_at: '2026-10-09T10:00:00' },
+          { id: 1, name: 'Добавлен 01.10', created_at: '2026-10-01T10:00:00', status_changed_at: '2026-10-08T10:00:00' },
+          { id: 2, name: 'Добавлен 01.09', created_at: '2026-09-01T10:00:00', status_changed_at: '2026-10-09T10:00:00' },
         ],
+      },
+      {
+        status: 'new', label: 'Новый', count: 1,
+        cards: [{ id: 3, name: 'Добавлен 10.10', created_at: '2026-10-10T10:00:00' }],
       },
     ] as unknown as KanbanColumn[];
     const visible = selectVisibleCards(byStage, {
       activeTab: 'all', scope: 'all', myId: 7, search: '',
     });
-    expect(visible.map((v) => v.card.name)).toEqual(['Отказ 09.10', 'Отказ 08.10']);
-  });
-
-  it('без даты перевода человек встаёт по дате добавления', () => {
-    const mixed = [
-      {
-        status: 'new', label: 'Новый', count: 2,
-        cards: [
-          { id: 1, name: 'Без перевода', created_at: '2026-10-10T10:00:00' },
-          { id: 2, name: 'Переведён 05.10', created_at: '2026-10-01T10:00:00', status_changed_at: '2026-10-05T10:00:00' },
-        ],
-      },
-    ] as unknown as KanbanColumn[];
-    const visible = selectVisibleCards(mixed, {
-      activeTab: 'all', scope: 'all', myId: 7, search: '',
-    });
-    expect(visible.map((v) => v.card.name)).toEqual(['Без перевода', 'Переведён 05.10']);
+    expect(visible.map((v) => v.card.name)).toEqual(['Добавлен 10.10', 'Добавлен 01.10', 'Добавлен 01.09']);
   });
 });
 
@@ -647,16 +637,7 @@ describe('selectVisibleCards — порядок (Мария, 20.10.2026)', () =>
     }
   });
 
-  it('только что переведённый (rank -1) — сверху «Все»', () => {
-    const columns = [
-      { status: 'new', label: 'Новый', count: 1, cards: [card(1, '2026-10-19T10:00:00', { rank: 0 })] },
-      { status: 'offer', label: 'Оффер', count: 1, cards: [card(2, '2026-01-01T10:00:00', { rank: -1 })] },
-    ] as unknown as KanbanColumn[];
-    const v = selectVisibleCards(columns, { activeTab: 'all', scope: 'all', myId: 7, search: '' });
-    expect(v[0].card.id).toBe(2);
-  });
-
-  it('без rank — по дате перевода на этап, а не добавления', () => {
+  it('без rank — по дате добавления, а не перевода на этап', () => {
     const columns = [
       { status: 'rejected', label: 'Отказ', count: 2, cards: [
         card(1, '2026-10-01T10:00:00', { status_changed_at: '2026-10-08T10:00:00' }),
@@ -664,7 +645,14 @@ describe('selectVisibleCards — порядок (Мария, 20.10.2026)', () =>
       ] },
     ] as unknown as KanbanColumn[];
     const v = selectVisibleCards(columns, { activeTab: 'all', scope: 'all', myId: 7, search: '' });
-    expect(v.map((x) => x.card.id)).toEqual([2, 1]);
+    expect(v.map((x) => x.card.id)).toEqual([1, 2]);
+  });
+
+  it('переведённый на этап встаёт в колонку на место по дате добавления', () => {
+    const col = [card(1, '2026-10-19T10:00:00'), card(2, '2026-10-01T10:00:00')];
+    expect(insertByCreatedAt(col, card(3, '2026-10-10T10:00:00')).map((c) => c.id)).toEqual([1, 3, 2]);
+    expect(insertByCreatedAt(col, card(4, '2026-01-01T10:00:00')).map((c) => c.id)).toEqual([1, 2, 4]);
+    expect(insertByCreatedAt([], card(5, '2026-01-01T10:00:00')).map((c) => c.id)).toEqual([5]);
   });
 });
 

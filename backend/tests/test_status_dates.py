@@ -105,26 +105,29 @@ async def test_no_transition_no_date(db_session, organization, admin_user, org_o
 
 
 @pytest.mark.asyncio
-async def test_kanban_orders_by_status_date(
+async def test_kanban_orders_by_created_at_shows_status_date(
     client, db_session, organization, admin_user, org_owner
 ):
-    """В колонке свежий перевод стоит выше, даже если карточка старше."""
-    late = await _candidate(db_session, organization, admin_user, EntityStatus.rejected, "Отказ 09.10")
-    early = await _candidate(db_session, organization, admin_user, EntityStatus.rejected, "Отказ 08.10")
-    await _moved(db_session, organization, admin_user, late,
+    """Порядок — по дате ДОБАВЛЕНИЯ, свежие сверху (владелец, 21.10.2026), даже
+    если другого перевели на этап позже; дата перевода — только подпись."""
+    old = await _candidate(db_session, organization, admin_user, EntityStatus.rejected, "Добавлен давно")
+    fresh = await _candidate(db_session, organization, admin_user, EntityStatus.rejected, "Добавлен недавно")
+    await _moved(db_session, organization, admin_user, old,
                  STATUS_SYNC_MAP[EntityStatus.rejected], datetime(2026, 10, 9, 10, 0))
-    await _moved(db_session, organization, admin_user, early,
+    await _moved(db_session, organization, admin_user, fresh,
                  STATUS_SYNC_MAP[EntityStatus.rejected], datetime(2026, 10, 8, 10, 0))
-    # Карточку «отказ 08.10» создаём позже — по старому порядку она была бы первой.
-    early.created_at = datetime(2026, 10, 15)
+    old.created_at = datetime(2026, 9, 1)
+    fresh.created_at = datetime(2026, 10, 15)
     await db_session.commit()
 
     r = await client.get("/api/candidates/kanban", headers=_h(admin_user))
     assert r.status_code == 200, r.text
     column = next(c for c in r.json()["columns"] if c["status"] == "rejected")
     names = [c["name"] for c in column["cards"]]
-    assert names.index("Отказ 09.10") < names.index("Отказ 08.10")
-    card = next(c for c in column["cards"] if c["name"] == "Отказ 09.10")
+    assert names.index("Добавлен недавно") < names.index("Добавлен давно")
+    ranks = {c["name"]: c["rank"] for c in column["cards"]}
+    assert ranks["Добавлен недавно"] < ranks["Добавлен давно"]
+    card = next(c for c in column["cards"] if c["name"] == "Добавлен давно")
     assert card["status_changed_at"].startswith("2026-10-09")
 
 

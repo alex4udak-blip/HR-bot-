@@ -15,6 +15,7 @@ import {
   loadCandidateListSettings,
   selectVisibleCards,
   entityToKanbanCard,
+  insertByCreatedAt,
   type CandidateListSettings,
 } from "@/components/entities/candidateDetail/model";
 import { calculateAge } from "@/utils/date";
@@ -417,8 +418,9 @@ export default function AllCandidatesPage() {
           if (col.status === newStatus)
             return {
               ...col,
-              // Только что переведён — свежая дата этапа и место сверху вкладки.
-              cards: [{ ...selectedCard, status_changed_at: new Date().toISOString(), rank: -1 }, ...col.cards],
+              // Свежая дата этапа в подписи; место — по дате добавления, как
+              // у всех (rank от сервера прежний: дата добавления не менялась).
+              cards: insertByCreatedAt(col.cards, { ...selectedCard, status_changed_at: new Date().toISOString() }),
               count: col.count + 1,
             };
           return col;
