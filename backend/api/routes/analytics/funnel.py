@@ -21,27 +21,13 @@ from ...models.database import (
 )
 from ...services.auth import get_current_user, get_user_org
 from ...utils.logging import get_logger
+from ...services.hr_stages import STAGE_LABELS  # общий справочник этапов
 
 logger = get_logger("analytics-funnel")
 
 router = APIRouter()
 
 
-# HR Pipeline stage labels (Russian) — единый источник, согласован с
-# KANBAN_STATUS_LABELS в candidate_search.py и фронтом.
-STAGE_LABELS = {
-    "applied": "Новый",
-    "screening": "Выполняет ТЗ",
-    "phone_screen": "Интервью с HR",
-    "interview": "Интервью с заказчиком",
-    "assessment": "Принятие решения",
-    "offer": "Выставлен оффер",
-    "hired": "Оффер принят",
-    "probation": "Практика",
-    "transferred": "Перешёл в отдел",
-    "rejected": "Отказ",
-    "withdrawn": "Отозван",
-}
 
 # Ordered stages for funnel
 FUNNEL_STAGES = ["applied", "screening", "phone_screen", "interview", "assessment", "offer", "hired"]

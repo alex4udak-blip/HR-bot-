@@ -383,24 +383,6 @@ class TestCrossOrgApplications:
 
         assert entity.org_id == vacancy.org_id
 
-    async def test_entity_apply_to_vacancy_checks_org(
-        self,
-        client: AsyncClient,
-        user_org_a: User,
-        entity_org_a: Entity,
-        vacancy_org_b: Vacancy  # Vacancy from different org
-    ):
-        """Test that entity apply-to-vacancy endpoint checks org match."""
-        token = create_access_token(data={"sub": str(user_org_a.id)})
-
-        response = await client.post(
-            f"/api/entities/{entity_org_a.id}/apply-to-vacancy",
-            json={"vacancy_id": vacancy_org_b.id},  # Vacancy from different org
-            headers=auth_headers(token)
-        )
-
-        # Should fail - vacancy from different org
-        assert response.status_code == 404
 
     async def test_cannot_view_applications_from_other_org(
         self,

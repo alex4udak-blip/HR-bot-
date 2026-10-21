@@ -1,11 +1,4 @@
-import {
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-  useRef,
-  memo,
-} from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -19,10 +12,6 @@ import {
   Trash2,
   ChevronDown,
   ClipboardList,
-  PenLine,
-  Pin,
-  Briefcase,
-  Copy,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -30,9 +19,7 @@ import toast from "react-hot-toast";
 import { HuntflowComposer } from "@/components/hr/HuntflowComposer";
 import { HuntflowRichInput } from "@/components/hr/HuntflowRichInput";
 import { HuntflowActionChip as ActionChip } from "@/components/hr/HuntflowControls";
-import { sanitizeHtml } from "@/utils/sanitizeHtml";
-import { parseServerDate } from "@/utils/date";
-import { useAuthStore } from "@/stores/authStore";
+
 import { downloadEntityFile } from "@/services/api/entities";
 import type { ActivityEvent, EntityFile } from "@/services/api/entities";
 import type { KanbanCard } from "@/services/api/candidates";
@@ -41,123 +28,22 @@ import {
   TIMELINE_ACTION_FILTERS,
   isRejectedStage,
   nextStageStatus,
-  trimTrailingEmptyHtml,
   type ContainerNote,
   type EntryReaction,
 } from "@/components/entities/candidateDetail/model";
 import { HfLoadingSpinner } from "@/components/ui/HfLoadingSpinner";
 import { backdropClose } from '@/utils/backdropClose';
+import { buildTimelineRows, pinTimelineRow } from "@/components/entities/candidateDetail/timeline";
+import { useCommentDraft } from "@/components/entities/candidateDetail/useCommentDraft";
+import { TimelineDot } from "@/components/entities/candidateDetail/timelineParts";
+import { useTimelineRowActions } from "@/components/entities/candidateDetail/useTimelineRowActions";
+import { TimelineEntry } from "@/components/entities/candidateDetail/TimelineEntry";
 
 // ── Module-scope helpers/constants moved verbatim from AllCandidatesPage
 //    (used only by CandidateVacancyCard). ──
 
 const normalizeStageLabel = (value: string) =>
   value.toLowerCase().replace(/\s+/g, " ").trim();
-
-function TimelineUserGlyph({
-  surface = "stage",
-  align = "stage",
-}: {
-  surface?: "stage" | "white";
-  align?: "stage" | "notes";
-}) {
-  return (
-    <span
-      aria-hidden="true"
-      className={clsx(
-        "hf-timeline-user-glyph",
-        align === "stage"
-          ? "hf-timeline-user-glyph-stage"
-          : "hf-timeline-user-glyph-notes",
-        surface === "white"
-          ? "hf-timeline-user-glyph-white-surface"
-          : "hf-timeline-user-glyph-stage-surface",
-      )}
-    >
-      <span className="hf-timeline-user-head" />
-      <span className="hf-timeline-user-body" />
-    </span>
-  );
-}
-
-function TimelineDot({ align = "stage" }: { align?: "stage" | "notes" }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={clsx(
-        "hf-timeline-dot",
-        align === "stage" ? "hf-timeline-dot-stage" : "hf-timeline-dot-notes",
-      )}
-    />
-  );
-}
-
-function TimelineMetaIcon() {
-  return (
-    <span
-      aria-hidden="true"
-      className="hf-timeline-meta-icon"
-    >
-      <span className="hf-timeline-meta-eye-left" />
-      <span className="hf-timeline-meta-eye-right" />
-      <span className="hf-timeline-meta-mouth" />
-    </span>
-  );
-}
-
-// Пояс ТОГО, КТО СМОТРИТ: время в ленте и так местное (Date.getHours), а в
-// подсказке к правке подписываем, в каком оно поясе — у рекрутёров разные
-// (24.09.2026). Считается один раз на модуль: в рамках сессии не меняется.
-const localZoneLabel = (() => {
-  const offsetMin = -new Date().getTimezoneOffset();
-  const sign = offsetMin >= 0 ? "+" : "-";
-  const abs = Math.abs(offsetMin);
-  const hours = Math.floor(abs / 60);
-  const minutes = abs % 60;
-  return `GMT${sign}${hours}${minutes ? `:${String(minutes).padStart(2, "0")}` : ""}`;
-})();
-
-function formatTimelineDate(dateStr: string): string {
-  const date = parseServerDate(dateStr);
-  const months = [
-    "января",
-    "февраля",
-    "марта",
-    "апреля",
-    "мая",
-    "июня",
-    "июля",
-    "августа",
-    "сентября",
-    "октября",
-    "ноября",
-    "декабря",
-  ];
-  const day = date.getDate();
-  const month = months[date.getMonth()];
-  const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${day} ${month} ${year}, ${hours}:${minutes}`;
-}
-
-// Текст записи таймлайна для копирования в буфер: тот же sanitizeHtml, что и
-// рендер (event.title/body). НЕ innerText — на элементе, не прикреплённом к
-// документу (нет layout), innerText игнорирует <br>/блочные теги и склеивает
-// текст в одну строку. Поэтому переносы строк проставляем вручную ДО парсинга.
-function htmlToPlainText(html: string): string {
-  const withBreaks = html
-    .replace(/<br\s*\/?>/gi, "\n")
-    // Перенос ПЕРЕД началом блока (список/абзац сразу после инлайн-текста без
-    // <br> между ними иначе слипается с предыдущей строкой, напр. «Контакт:
-    // t.me/ivan_petrov• Пункт А»). <li> не сюда — у него свой маркер ниже.
-    .replace(/<(p|div|ul|ol|h[1-6])[^>]*>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<\/(p|div|ul|ol|li|h[1-6])>/gi, "\n");
-  const div = document.createElement("div");
-  div.innerHTML = withBreaks;
-  return (div.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
-}
 
 const TIMELINE_EXPAND_DELAY_MS = 420;
 
@@ -174,9 +60,6 @@ const GRAY_STAGE_CARD_STYLE: CSSProperties = {
   "--hf-stage-card-bg": "var(--hf-bg-panel)",
 } as CSSProperties;
 
-// Набор эмодзи для пикера реакций.
-const REACTION_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👀", "✅", "😂", "🙏"];
-
 // ================================================================
 // CANDIDATE VACANCY CARD — одна интерактивная карточка этапа на ОДНУ вакансию.
 // Извлечена из singleton-карточки InfoTab; вся state — ПЕР-ИНСТАНС, поэтому
@@ -184,39 +67,6 @@ const REACTION_EMOJIS = ["👍", "❤️", "🔥", "🎉", "👀", "✅", "😂"
 // (история переходов именно этой заявки) в той же avatar/«Действия»-таймлайн-
 // разметке, что и исходная карточка.
 // ================================================================
-/**
- * Черновики комментариев: ключ — «кандидат:заявка».
- *
- * Держим и в памяти, и в localStorage: память переживает переключение карточек
- * внутри вкладки, localStorage — случайную перезагрузку. Любая осечка хранилища
- * (приватное окно, запрет на данные сайта) не должна ронять редактор, поэтому
- * обе операции в try/catch, а память — источник правды.
- */
-const COMMENT_DRAFT_PREFIX = "hf-comment-draft:";
-const commentDrafts = new Map<string, string>();
-
-function readCommentDraft(key: string): string {
-  const inMemory = commentDrafts.get(key);
-  if (inMemory !== undefined) return inMemory;
-  try {
-    return localStorage.getItem(COMMENT_DRAFT_PREFIX + key) || "";
-  } catch {
-    return "";
-  }
-}
-
-function writeCommentDraft(key: string, value: string): void {
-  if (value) commentDrafts.set(key, value);
-  else commentDrafts.delete(key);
-  try {
-    if (value) localStorage.setItem(COMMENT_DRAFT_PREFIX + key, value);
-    else localStorage.removeItem(COMMENT_DRAFT_PREFIX + key);
-  } catch {
-    /* приватное окно — хватит памяти */
-  }
-}
-
-
 const CandidateVacancyCard = memo(
 function CandidateVacancyCard({
   card,
@@ -369,27 +219,6 @@ function CandidateVacancyCard({
   const [timelineActionFilter, setTimelineActionFilter] = useState<
     string | null
   >(null);
-  // «Все кандидаты»: длинные комменты с бейджем воронки свёрнуты (виден только
-  // бейдж); клик по бейджу раскрывает текст. Множество раскрытых — по reactionKey.
-  const [expandedFunnelNotes, setExpandedFunnelNotes] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const toggleFunnelNote = (key: string) =>
-    setExpandedFunnelNotes((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  // Инлайн-редактирование комментария: id заметки, которая сейчас редактируется.
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-  // Правка комментария у записи о ПЕРЕВОДЕ — та же форма, что у комментария,
-  // поэтому текст и флаг сохранения общие (24.09.2026).
-  const [editingHistoryId, setEditingHistoryId] = useState<number | null>(null);
-  const [editingNoteText, setEditingNoteText] = useState("");
-  const [savingNoteEdit, setSavingNoteEdit] = useState(false);
-  // Меню строки ленты (шеврон): Редактировать / Закрепить / Удалить.
-  const [rowMenuKey, setRowMenuKey] = useState<string | null>(null);
   // Черновик комментария живёт ДОЛЬШЕ открытой карточки.
   //
   // Разбор случая Влады (07.10.2026): по логам прода её комментарий на сервер
@@ -398,20 +227,7 @@ function CandidateVacancyCard({
   // набранное исчезло молча, без предупреждения и без следа. Теперь черновик
   // привязан к паре «кандидат + воронка», переживает переключение карточек,
   // перезагрузку вкладки и стирается только после успешного сохранения.
-  const draftKey = `${card.id}:${applicationId}`;
-  const [comment, setCommentState] = useState(() => readCommentDraft(draftKey));
-  const setComment = useCallback(
-    (next: string) => {
-      setCommentState(next);
-      writeCommentDraft(draftKey, next);
-    },
-    [draftKey],
-  );
-  // Открытая карточка сменилась (тот же компонент, другой кандидат) — показываем
-  // черновик нового, а не текст предыдущего.
-  useEffect(() => {
-    setCommentState(readCommentDraft(draftKey));
-  }, [draftKey]);
+  const [comment, setComment] = useCommentDraft(`${card.id}:${applicationId}`);
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   // Гейт от даблклика/медленной сети: без него «Сохранить» в дропдауне смены
@@ -446,141 +262,15 @@ function CandidateVacancyCard({
   // Таймлайн контейнера = его СОБСТВЕННЫЕ notes (комментарии) как строки лога,
   // плюс — только для живого контейнера — реальная история переходов (events).
   // Merged-контейнеры показывают строго свои notes (read-only).
-  type TimelineRow = {
-    date?: string;
-    title?: string;
-    body?: string;
-    author?: string;
-    historyId?: number;
-    // Заметки (extra_data.notes) удаляются НЕ через историю переходов
-    // (StageTransition), а отдельным DELETE /entities/{id}/notes/{note_id}.
-    noteId?: string;
-    // Исходный текст заметки (без "Этап: X" префикса) — нужен только для
-    // предзаполнения инлайн-редактора, не для отображения.
-    rawText?: string;
-    // Автор заметки — для проверки прав редактирования/удаления на фронте
-    // (бэк и так это проверяет, но кнопки не должны показываться тем, кому
-    // всё равно откажут: правит/удаляет только автор либо admin/owner/superadmin).
-    authorId?: number;
-    // Когда заметка последний раз отредактирована (бэк проставляет сам).
-    editedAt?: string;
-    reactionKey: string;
-    // Тип записи для фильтра «Действия»: смена этапа vs свободный комментарий.
-    kind: "stage" | "comment";
-    // Статусная запись (переход или заметка-этап) — к ней можно дописывать
-    // комментарии (кнопка «+коммент»).
-    isStage?: boolean;
-    // Дописанный коммент, привязанный к родительской статусной записи:
-    // parentKey — reactionKey родителя, stageAtWrite — метка этапа на момент
-    // написания (жёлтая плашка), indented — рисуем с отступом под родителем.
-    parentKey?: string;
-    stageAtWrite?: string;
-    indented?: boolean;
-    // Этап, ИЗ которого перевели (подсказка при наведении на статус).
-    fromLabel?: string;
-    // Кто правил комментарий (для подсказки у пометки «Изменено»).
-    editedByName?: string;
-    // Строка закреплена: показывается первой, со своего места по дате уходит.
-    pinned?: boolean;
-    // «Все кандидаты»: воронка, в которой оставлен коммент (бейдж + сворачивание
-    // длинного текста). null = нет привязки/не тот контекст → без бейджа.
-    vacancyLabel?: string | null;
-  };
-  const timelineItems = useMemo<TimelineRow[]>(() => {
-    const noteRows = (Array.isArray(notes) ? notes : [])
-      .filter((note) => note && (note.text || note.stage_label))
-      .map((note) => ({
-        date: note.date || undefined,
-        // Строка ленты = СТАТУС, а под ним/через тире — комментарий (запрос
-        // Марии 24.09.2026: «мне нужен статус и под ним коммент»). Приставки
-        // «Этап:» больше нет. У дописки статус свой — тот, на котором её
-        // написали (stage_at_write_label), поэтому она встаёт в общий поток
-        // наравне с остальными, без отступа и жёлтой плашки.
-        title:
-          note.stage_at_write_label ||
-          note.stage_label ||
-          note.text ||
-          "Комментарий",
-        body:
-          note.stage_at_write_label || note.stage_label
-            ? note.text || undefined
-            : undefined,
-        author: note.author_name || undefined,
-        noteId: note.id ? String(note.id) : undefined,
-        rawText: note.text || "",
-        authorId: typeof note.author_id === "number" ? note.author_id : undefined,
-        editedAt: note.edited_at || undefined,
-        editedByName: note.edited_by_name || undefined,
-        reactionKey: note.id ? `n:${note.id}` : `nd:${note.date || ""}`,
-        // Заметки (extra_data.notes) — это КОММЕНТАРИИ (даже если несут stage_label
-        // текущего этапа). Смена этапа — отдельные события (eventRows, kind=stage).
-        kind: "comment" as const,
-        // Заметка-этап (несёт stage_label) — тоже статусная запись, к ней можно
-        // дописывать комменты (напр. стартовое «Этап: Новый»).
-        isStage: !!note.stage_label,
-        parentKey: note.parent_key || undefined,
-        stageAtWrite: note.stage_at_write_label || undefined,
-        vacancyLabel: resolveNoteVacancyLabel
-          ? resolveNoteVacancyLabel(note.vacancy_id)
-          : null,
-      }));
-
-    const eventRows = (!snapshot && Array.isArray(events) ? events : []).map(
-      (ev) => {
-        const to = getStageLabel(ev.to_stage);
-        const from = ev.from_stage ? getStageLabel(ev.from_stage) : null;
-        return {
-          date: ev.created_at || undefined,
-          // Только новый этап: стрелки «Новый → Интервью с HR» убрали — смена
-          // этапа теперь просто новая строка (решение владельца 24.09.2026).
-          // Прежний этап не теряем: показываем подсказкой при наведении, это
-          // спасает, когда соседнюю запись удалили и не понять, откуда пришёл.
-          title: to,
-          fromLabel: from || undefined,
-          body: ev.comment || undefined,
-          author: ev.changed_by_name || undefined,
-          historyId: ev.id as number | undefined,
-          reactionKey: `e:${ev.id}`,
-          kind: "stage" as const,
-          isStage: true,
-          editedAt: ev.edited_at || undefined,
-          editedByName: ev.edited_by_name || undefined,
-        };
-      },
-    );
-
-    // Дописки (parentKey) раньше вкладывались под родительскую запись с
-    // отступом — рекрутёры путались, к какому статусу относится текст. Теперь
-    // они идут общим потоком по дате, а их собственный этап уже стоит в
-    // заголовке строки (24.09.2026).
-    const topLevelNotes = noteRows;
-
-    const tsOf = (d?: string) => (d ? parseServerDate(d).getTime() : 0);
-    // parseServerDate, а НЕ new Date: у заметок время aware-UTC («…+00:00»), а у
-    // событий этапа — naive из БД («…T14:34:00»). Сырой new Date() читает naive как
-    // ЛОКАЛЬНОЕ, а aware как UTC — записи из двух источников сравнивались в разных
-    // системах отсчёта, и лента шла вразброс.
-    const base: TimelineRow[] = [...eventRows, ...topLevelNotes].sort(
-      (a, b) => tsOf(b.date) - tsOf(a.date),
-    );
-    if (base.length === 0) {
-      // Влитые (read-only) контейнеры без заметок/событий НЕ показывают
-      // синтетическое «Кандидат добавлен»: иначе каждый объединённый дубль
-      // плодит свой зелёный «new», и лента засоряется N одинаковыми записями.
-      if (snapshot) return [];
-      return [
-        {
-          date: addedAt || card.created_at,
-          title: "Кандидат добавлен",
-          author: card.recruiter_name || undefined,
-          reactionKey: "created",
-          kind: "stage" as const,
-          isStage: true,
-        },
-      ];
-    }
-    return base;
-  }, [notes, events, snapshot, getStageLabel, addedAt, card.created_at, card.recruiter_name, resolveNoteVacancyLabel]);
+  const timelineItems = useMemo(
+    () =>
+      buildTimelineRows({
+        notes, events, snapshot, getStageLabel, addedAt,
+        createdAt: card.created_at, recruiterName: card.recruiter_name,
+        resolveNoteVacancyLabel,
+      }),
+    [notes, events, snapshot, getStageLabel, addedAt, card.created_at, card.recruiter_name, resolveNoteVacancyLabel],
+  );
 
   const filteredTimelineItems = useMemo(() => {
     if (!timelineActionFilter) return timelineItems;
@@ -588,19 +278,11 @@ function CandidateVacancyCard({
       matchesTimelineFilter(event, timelineActionFilter),
     );
   }, [timelineItems, timelineActionFilter]);
-  // Закреплённая запись уезжает в самый верх ленты и со своего места по дате
-  // пропадает — дублировать её не стали (решение владельца 24.09.2026).
-  const orderedTimelineItems = useMemo(() => {
-    if (!pinnedEntryKey) return filteredTimelineItems;
-    const idx = filteredTimelineItems.findIndex(
-      (row) => row.reactionKey === pinnedEntryKey,
-    );
-    if (idx < 0) return filteredTimelineItems;
-    return [
-      { ...filteredTimelineItems[idx], pinned: true },
-      ...filteredTimelineItems.filter((_, i) => i !== idx),
-    ];
-  }, [filteredTimelineItems, pinnedEntryKey]);
+  // Закреплённая запись — первой (pinTimelineRow).
+  const orderedTimelineItems = useMemo(
+    () => pinTimelineRow(filteredTimelineItems, pinnedEntryKey),
+    [filteredTimelineItems, pinnedEntryKey],
+  );
   const visibleTimelineItems = showAllTimeline
     ? orderedTimelineItems
     : orderedTimelineItems.slice(0, 5);
@@ -615,111 +297,10 @@ function CandidateVacancyCard({
   const isCommentComposerOpen =
     commentComposerOpen || comment.trim().length > 0;
 
-  // --- Эмодзи-реакции на записи таймлайна ---
-  const { user: reactionUser } = useAuthStore();
-  // Правка/удаление комментария — только автор либо admin/owner/superadmin
-  // (зеркалит бэковую _note_can_modify): показывать кнопки остальным бессмысленно,
-  // сервер всё равно ответит 403.
-  const canModifyNote = (authorId?: number) => {
-    if (!reactionUser) return false;
-    if (reactionUser.role === "superadmin") return true;
-    if (reactionUser.org_role === "owner" || reactionUser.org_role === "admin")
-      return true;
-    return authorId !== undefined && authorId === reactionUser.id;
-  };
-  const [reactionPickerKey, setReactionPickerKey] = useState<string | null>(null);
-  const [localReactions, setLocalReactions] = useState<
-    Record<string, EntryReaction[]>
-  >(
-    () =>
-      (card.extra_data?.timeline_reactions as
-        | Record<string, EntryReaction[]>
-        | undefined) || {},
-  );
-  const handleReact = useCallback(
-    async (entryKey: string, emoji: string) => {
-      setReactionPickerKey(null);
-      if (!onReact) return;
-      const updated = await onReact(entryKey, emoji);
-      if (updated === null) return;
-      setLocalReactions((prev) => {
-        const next = { ...prev };
-        if (updated.length) next[entryKey] = updated;
-        else delete next[entryKey];
-        return next;
-      });
-    },
-    [onReact],
-  );
-
-  const startEditNote = (noteId: string, rawText: string) => {
-    setEditingHistoryId(null);
-    setEditingNoteId(noteId);
-    setEditingNoteText(rawText);
-  };
-
-  const startEditHistory = (historyId: number, rawText: string) => {
-    setEditingNoteId(null);
-    setEditingHistoryId(historyId);
-    setEditingNoteText(rawText);
-  };
-
-  const cancelEditNote = () => {
-    setEditingNoteId(null);
-    setEditingHistoryId(null);
-    setEditingNoteText("");
-  };
-
-  const saveEditNote = async () => {
-    const text = editingNoteText.trim();
-    setSavingNoteEdit(true);
-    try {
-      if (editingHistoryId != null) {
-        // У перевода комментарий можно и стереть целиком — останется чистая
-        // строка со статусом, поэтому пустой текст здесь допустим.
-        if (!onEditHistory) return;
-        await onEditHistory(applicationId, editingHistoryId, text);
-      } else {
-        if (!editingNoteId || !text || !onEditNote) return;
-        await onEditNote(card.id, editingNoteId, text);
-      }
-      cancelEditNote();
-    } finally {
-      setSavingNoteEdit(false);
-    }
-  };
-
-  // Закрепить/открепить строку: закреп один на воронку, поэтому повторный
-  // клик по уже закреплённой снимает его.
-  const togglePinned = async (entryKey: string) => {
-    if (!onPin) return;
-    setRowMenuKey(null);
-    // applicationId = 0 — кандидат вне воронок: страница сама положит закреп на
-    // карточку, а не на заявку (закреплять всё равно нужно, 24.09.2026).
-    await onPin(applicationId, pinnedEntryKey === entryKey ? null : entryKey);
-  };
-
-  // --- Дописка комментария к прошлой статусной записи (запрос Марии) ---
-  // Копировать текст записи таймлайна (статус/комментарий/отчёт после звонка)
-  // в буфер обмена — доступно ВСЕМ, включая наблюдателя (просмотр без права
-  // редактировать всё равно должен уметь забрать текст себе).
-  const copyTimelineEntry = async (row: {
-    title?: string;
-    body?: string;
-  }) => {
-    const parts = [
-      htmlToPlainText(sanitizeHtml(row.title || "")),
-      row.body ? htmlToPlainText(sanitizeHtml(row.body)) : "",
-    ].filter(Boolean);
-    const text = parts.join("\n\n");
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success("Скопировано");
-    } catch {
-      toast.error("Не удалось скопировать");
-    }
-  };
+  // Строки ленты: правка, меню, реакции, закреп, копирование (useTimelineRowActions).
+  const rowActions = useTimelineRowActions({
+    card, applicationId, pinnedEntryKey, onReact, onEditHistory, onEditNote, onPin,
+  });
 
   const stagePickerOptions = useMemo(
     () =>
@@ -1263,359 +844,21 @@ function CandidateVacancyCard({
         <div className="relative ml-[17px] w-[calc(100%-11px)] border-l border-[var(--hf-main-300)] pl-[38.667px] hf-dark-disabled:border-[color:var(--hf-white-alpha-08)]">
           {visibleTimelineItems.length > 0 ? (
             visibleTimelineItems.map((event, i) => (
-              <div
+              <TimelineEntry
                 key={`${event.historyId ?? event.noteId ?? event.date ?? card.created_at}-${i}`}
-                className="relative group/timeline first:mt-0 mt-[20px]"
-              >
-                {/* Лента: сплошная линия слева, кружок у каждой записи и
-                    аватар у самой верхней (как в Huntflow, 24.09.2026).
-                    Отступов у дописок больше нет — все строки в один ряд. */}
-                {i === 0 ? <TimelineUserGlyph /> : <TimelineDot />}
-                <div className="flex flex-wrap items-center gap-x-0 gap-y-[2px] text-[length:var(--hf-fs-xxs)] leading-[var(--hf-lh-field)] font-normal text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-                  {event.author && (
-                    <span className="mr-[8px] min-w-[10px] whitespace-nowrap font-medium text-[color:var(--hf-alpha-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">
-                      {event.author}
-                    </span>
-                  )}
-                  <span className="whitespace-nowrap">
-                    {formatTimelineDate(event.date || card.created_at)}
-                  </span>
-                  {/* «Изменено» — только пометка: автор и время в строке
-                      остаются от НАПИСАНИЯ, а кто и когда правил показывается
-                      подсказкой при наведении (требование 24.09.2026). */}
-                  {event.editedAt && (
-                    <span className="ml-[6px] whitespace-nowrap cursor-default">
-                      · Изменено
-                    </span>
-                  )}
-                  {event.pinned && (
-                    <span className="ml-[6px] inline-flex items-center gap-[3px] whitespace-nowrap font-medium text-[var(--hf-accent)]">
-                      <Pin className="h-[11px] w-[11px]" />
-                      Закреплено
-                    </span>
-                  )}
-                  {/* Смайлик-реакция у наблюдателя не рендерим вовсе: раньше
-                      кнопка оставалась, но без обработчика — «нажимаю, ничего не
-                      происходит». Уже поставленные реакции он видит ниже. */}
-                  {!readonly && onReact && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setReactionPickerKey((k) =>
-                        k === event.reactionKey ? null : event.reactionKey,
-                      )
-                    }
-                    title="Поставить реакцию"
-                    className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full transition-colors hover:bg-[var(--hf-black-alpha-04)] focus:outline-none focus-visible:outline-none hf-dark-disabled:hover:bg-[var(--hf-white-alpha-06)]"
-                  >
-                    <TimelineMetaIcon />
-                  </button>
-                  )}
-                  {reactionPickerKey === event.reactionKey && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-10"
-                        onClick={() => setReactionPickerKey(null)}
-                      />
-                      <div className="absolute left-[38px] top-[16px] z-20 flex items-center gap-[2px] rounded-[var(--hf-radius-s)] border border-[var(--hf-main-200)] bg-[var(--hf-white)] px-[6px] py-[3px] shadow-md hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
-                        {REACTION_EMOJIS.map((em) => (
-                          <button
-                            key={em}
-                            type="button"
-                            onClick={() => handleReact(event.reactionKey, em)}
-                            className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-full text-[16px] leading-none transition-transform hover:scale-125"
-                          >
-                            {em}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {/* Копирование и меню стоят ВПЛОТНУЮ к смайлику, а не
-                      улетают к правому краю: рекрутёру не нужно вести мышь
-                      через всю карточку (замечание владельца 24.09.2026). */}
-                  <div className="ml-[2px] flex items-center gap-[2px] opacity-0 transition-opacity group-hover/timeline:opacity-100">
-                      <button
-                        type="button"
-                        onClick={() => copyTimelineEntry(event)}
-                        title="Скопировать текст"
-                        className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:text-[var(--hf-main-900)] focus:outline-none focus-visible:outline-none"
-                      >
-                        <Copy className="h-[13px] w-[13px]" />
-                      </button>
-                      {(() => {
-                        // Одно меню на строку вместо россыпи иконок: рекрутёры
-                        // путались, какая из них что делает (Мария, 24.09.2026).
-                        const isNote = !!event.noteId;
-                        const mayTouchNote = isNote && canModifyNote(event.authorId);
-                        const canEditRow = !readonly && (
-                          (event.historyId != null && !!onEditHistory) ||
-                          (mayTouchNote && !!onEditNote)
-                        );
-                        const canPinRow =
-                          !readonly && !!onPin && (event.historyId != null || isNote);
-                        const canDeleteRow = !readonly && (
-                          event.historyId != null || (mayTouchNote && !!onDeleteNote)
-                        );
-                        if (!canEditRow && !canPinRow && !canDeleteRow) return null;
-                        const open = rowMenuKey === event.reactionKey;
-                        return (
-                          <div className="relative">
-                            <button
-                              type="button"
-                              title="Действия с записью"
-                              onClick={() =>
-                                setRowMenuKey(open ? null : event.reactionKey)
-                              }
-                              className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[var(--hf-main-500)] transition-colors hover:text-[var(--hf-main-900)] focus:outline-none focus-visible:outline-none"
-                            >
-                              <ChevronDown className="h-[13px] w-[13px]" />
-                            </button>
-                            {open && (
-                              <>
-                                <div
-                                  className="fixed inset-0 z-10"
-                                  onClick={() => setRowMenuKey(null)}
-                                />
-                                <div className="absolute right-0 top-[20px] z-20 w-[196px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-main-200)] bg-[var(--hf-white)] py-[4px] shadow-md hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
-                                  {canEditRow && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setRowMenuKey(null);
-                                        if (event.historyId != null) {
-                                          startEditHistory(
-                                            event.historyId,
-                                            event.body || "",
-                                          );
-                                        } else {
-                                          startEditNote(
-                                            event.noteId as string,
-                                            event.rawText || "",
-                                          );
-                                        }
-                                      }}
-                                      className="flex w-full items-center gap-[8px] px-[12px] py-[7px] text-left text-[length:var(--hf-fs-xs)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)] hf-dark-disabled:text-[var(--hf-white)]"
-                                    >
-                                      <PenLine className="h-[13px] w-[13px]" />
-                                      Редактировать
-                                    </button>
-                                  )}
-                                  {canPinRow && (
-                                    <button
-                                      type="button"
-                                      onClick={() => togglePinned(event.reactionKey)}
-                                      className="flex w-full items-center gap-[8px] px-[12px] py-[7px] text-left text-[length:var(--hf-fs-xs)] text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)] hf-dark-disabled:text-[var(--hf-white)]"
-                                    >
-                                      <Pin className="h-[13px] w-[13px]" />
-                                      {event.pinned ? "Открепить" : "Закрепить"}
-                                    </button>
-                                  )}
-                                  {canDeleteRow && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setRowMenuKey(null);
-                                        if (event.historyId != null) {
-                                          onDeleteHistory(
-                                            applicationId,
-                                            event.historyId as number,
-                                          );
-                                        } else {
-                                          onDeleteNote?.(
-                                            card.id,
-                                            event.noteId as string,
-                                          );
-                                        }
-                                      }}
-                                      className="flex w-full items-center gap-[8px] px-[12px] py-[7px] text-left text-[length:var(--hf-fs-xs)] text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-ui-hover)]"
-                                    >
-                                      <Trash2 className="h-[13px] w-[13px]" />
-                                      Удалить
-                                    </button>
-                                  )}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })()}
-                  </div>
-                </div>
-                {(editingNoteId && editingNoteId === event.noteId) ||
-                (editingHistoryId != null &&
-                  editingHistoryId === event.historyId) ? (
-                  <div className="mt-[4px] overflow-hidden rounded-[var(--hf-radius-s)] border border-[var(--hf-cyan-500)] bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)]">
-                    {/* Панель форматирования ЗАКРЕПЛЕНА сверху, текст скроллится
-                        ВНУТРИ (до 240px) — иначе у длинного коммента (напр. отчёт
-                        после звонка) панель и «Сохранить» разъезжались в разные
-                        концы страницы и приходилось листать, чтобы дотянуться. */}
-                    <HuntflowRichInput
-                      value={editingNoteText}
-                      onChange={setEditingNoteText}
-                      placeholder="Текст комментария"
-                      toolbarClassName="flex h-[36px] items-center gap-[2px] border-b border-[var(--hf-ui-border)] px-[8px]"
-                      editableClassName="hf-stage-picker-textarea block max-h-[240px] w-full overflow-y-auto"
-                    />
-                    <div className="flex items-center gap-[8px] border-t border-[var(--hf-main-200)] hf-dark-disabled:border-[color:var(--hf-white-alpha-10)] px-[10px] py-[8px]">
-                      <button
-                        type="button"
-                        onClick={saveEditNote}
-                        disabled={
-                          savingNoteEdit ||
-                          (editingHistoryId == null && !editingNoteText.trim())
-                        }
-                        className="inline-flex h-[28px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-main-900)] bg-[var(--hf-main-900)] px-[10px] text-[length:var(--hf-fs-xxs)] font-medium !text-[var(--hf-white)] transition-colors hover:bg-[var(--hf-main-800)] disabled:opacity-60"
-                      >
-                        Сохранить
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelEditNote}
-                        disabled={savingNoteEdit}
-                        className="inline-flex h-[28px] items-center justify-center rounded-[var(--hf-radius-s)] border border-[var(--hf-alpha-200)] bg-[var(--hf-white)] px-[10px] text-[length:var(--hf-fs-xxs)] font-medium text-[var(--hf-main-900)] transition-colors hover:bg-[var(--hf-ui-hover)]"
-                      >
-                        Отмена
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                <div className="relative text-[length:var(--hf-fs-s)] leading-[var(--hf-lh-primary)] text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)] whitespace-pre-wrap hf-rich-content">
-                  {/* Своя подсказка о правке, а не нативный title: браузерный
-                      всплывает через ~секунду, а рекрутёру нужно сразу. Висит
-                      вплотную под текстом комментария, к которому относится
-                      (замечания владельца 24.09.2026). */}
-                  {event.editedAt && (
-                    <span className="pointer-events-none absolute left-[0px] top-full z-30 hidden whitespace-nowrap rounded-[6px] bg-[var(--hf-main-900)] px-[8px] py-[4px] text-[length:var(--hf-fs-2xs)] leading-none text-[var(--hf-white)] shadow-md group-hover/timeline:block">
-                      Изменено: {event.editedByName || "неизвестно"},{" "}
-                      {formatTimelineDate(event.editedAt)} ({localZoneLabel})
-                    </span>
-                  )}
-                  {(() => {
-                    // Одна строка: СТАТУС — комментарий. Ни стрелок «из → в»,
-                    // ни приставки «Этап:» (решение владельца 24.09.2026).
-                    // Прежний этап не пропадает совсем — он в подсказке.
-                    const funnelLabel = event.vacancyLabel;
-                    const titleText = htmlToPlainText(
-                      sanitizeHtml(event.title || "Событие"),
-                    );
-                    // Пустой хвост редактора («<div><br></div>») режем: иначе
-                    // строка занимает лишнюю высоту, а подсказка о правке
-                    // уезжает вниз.
-                    const bodyHtml = event.body
-                      ? trimTrailingEmptyHtml(event.body)
-                      : "";
-                    const plainBody = bodyHtml
-                      ? htmlToPlainText(sanitizeHtml(bodyHtml))
-                      : "";
-                    const collapsible = plainBody.length > 220;
-                    const collapsed =
-                      collapsible && !expandedFunnelNotes.has(event.reactionKey);
-                    const stageNode = (
-                      <span
-                        className={event.fromLabel ? "cursor-default" : undefined}
-                        title={
-                          event.fromLabel
-                            ? `Перевели из этапа «${event.fromLabel}»`
-                            : undefined
-                        }
-                      >
-                        {titleText}
-                      </span>
-                    );
-                    return (
-                      <>
-                        {funnelLabel && (
-                          <div
-                            className="mb-[4px] inline-flex w-fit items-center gap-[4px] rounded-[6px] px-[7px] py-[1px] text-[length:var(--hf-fs-2xs)] font-medium"
-                            style={{ background: "#e8effb", color: "#28518f" }}
-                          >
-                            <Briefcase className="h-[11px] w-[11px]" />
-                            воронка «{funnelLabel}»
-                          </div>
-                        )}
-                        <div>
-                          {bodyHtml ? (
-                            <>
-                              {stageNode}
-                              <span className="mx-[6px] text-[var(--hf-main-500)]">
-                                —
-                              </span>
-                              {collapsed ? (
-                                <span>{plainBody.slice(0, 220).trimEnd()}…</span>
-                              ) : (
-                                <span
-                                  dangerouslySetInnerHTML={{
-                                    __html: sanitizeHtml(bodyHtml),
-                                  }}
-                                />
-                              )}
-                              {collapsible && (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleFunnelNote(event.reactionKey)}
-                                  className="ml-[6px] align-baseline text-[length:var(--hf-fs-xs)] font-medium text-[var(--hf-accent)] underline underline-offset-2 hover:no-underline"
-                                >
-                                  {collapsed ? "Показать ещё" : "Свернуть"}
-                                </button>
-                              )}
-                            </>
-                          ) : event.isStage ? (
-                            // Запись о переводе без комментария — только статус,
-                            // прежний этап так же доступен подсказкой.
-                            stageNode
-                          ) : (
-                            <span
-                              dangerouslySetInnerHTML={{
-                                __html: sanitizeHtml(event.title || "Событие"),
-                              }}
-                            />
-                          )}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-                )}
-                {(() => {
-                  const rs = localReactions[event.reactionKey] || [];
-                  if (rs.length === 0) return null;
-                  const byEmoji: Record<string, string[]> = {};
-                  for (const r of rs)
-                    (byEmoji[r.emoji] ||= []).push(r.user_name || "—");
-                  return (
-                    <div className="mt-[5px] flex flex-wrap gap-[4px]">
-                      {Object.entries(byEmoji).map(([em, names]) => {
-                        const mine = rs.some(
-                          (r) =>
-                            r.emoji === em && r.user_id === reactionUser?.id,
-                        );
-                        return (
-                          <button
-                            key={em}
-                            type="button"
-                            onClick={
-                              !readonly && onReact
-                                ? () => handleReact(event.reactionKey, em)
-                                : undefined
-                            }
-                            title={names.join(", ")}
-                            className={clsx(
-                              "inline-flex items-center gap-[3px] rounded-full border px-[7px] py-[1px] text-[12px] leading-[18px] transition-colors",
-                              mine
-                                ? "border-[var(--hf-cyan-500)] bg-[var(--hf-black-alpha-04)] text-[var(--hf-main-900)]"
-                                : "border-[var(--hf-main-200)] text-[var(--hf-main-700)] hover:bg-[var(--hf-black-alpha-04)]",
-                            )}
-                          >
-                            <span>{em}</span>
-                            <span>{names.length}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
+                event={event}
+                i={i}
+                actions={rowActions}
+                card={card}
+                applicationId={applicationId}
+                readonly={readonly}
+                onDeleteHistory={onDeleteHistory}
+                onDeleteNote={onDeleteNote}
+                onEditHistory={onEditHistory}
+                onEditNote={onEditNote}
+                onPin={onPin}
+                onReact={onReact}
+              />
             ))
           ) : (
             <div className="relative text-[length:var(--hf-fs-xs)] leading-[var(--hf-lh-field)] text-[var(--hf-main-600)] hf-dark-disabled:text-[color:var(--hf-white-alpha-45)]">

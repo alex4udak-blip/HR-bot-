@@ -23,6 +23,7 @@ from api.models.database import (
     Entity,
 )
 from api.services.auth import get_current_user, get_user_org
+from ..services.hr_stages import STAGE_LABELS
 
 logger = logging.getLogger("hr-analyzer.workspaces")
 
@@ -85,19 +86,8 @@ class WorkspaceCandidate(BaseModel):
         from_attributes = True
 
 
-APPLICATION_STAGE_LABELS = {
-    # Единые лейблы стадий — синхронизированы с KANBAN_STATUS_LABELS
-    # (отображаются на /all-candidates). Не разводить разные наборы.
-    "applied": "Новый",
-    "screening": "Скрининг",
-    "phone_screen": "Практика",
-    "interview": "Тех-практика",
-    "assessment": "ИС",
-    "offer": "Оффер",
-    "hired": "Принят",
-    "rejected": "Отклонён",
-    "withdrawn": "Отозван",
-}
+# Подписи этапов — общий справочник (services/hr_stages.py).
+APPLICATION_STAGE_LABELS = STAGE_LABELS
 
 ACTIVE_STAGES = [
     ApplicationStage.applied, ApplicationStage.screening,

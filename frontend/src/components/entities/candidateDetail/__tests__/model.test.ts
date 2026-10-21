@@ -631,6 +631,43 @@ describe('selectVisibleCards (список «Все кандидаты»)', () =
   });
 });
 
+describe('selectVisibleCards — порядок (Мария, 20.10.2026)', () => {
+  const card = (id: number, created: string, extra: Partial<KanbanCard> = {}) =>
+    ({ id, name: `К${id}`, created_at: created, ...extra }) as unknown as KanbanCard;
+
+  it('«Все» и поиск — в порядке сервера (rank), а не по дате добавления', () => {
+    // Сервер поставил лучшее совпадение (добавлено давно) первым.
+    const columns = [
+      { status: 'new', label: 'Новый', count: 1, cards: [card(1, '2026-10-19T10:00:00', { rank: 1 })] },
+      { status: 'rejected', label: 'Отказ', count: 1, cards: [card(2, '2026-01-01T10:00:00', { rank: 0 })] },
+    ] as unknown as KanbanColumn[];
+    for (const search of ['', 'иванов']) {
+      const v = selectVisibleCards(columns, { activeTab: 'all', scope: 'all', myId: 7, search });
+      expect(v.map((x) => x.card.id)).toEqual([2, 1]);
+    }
+  });
+
+  it('только что переведённый (rank -1) — сверху «Все»', () => {
+    const columns = [
+      { status: 'new', label: 'Новый', count: 1, cards: [card(1, '2026-10-19T10:00:00', { rank: 0 })] },
+      { status: 'offer', label: 'Оффер', count: 1, cards: [card(2, '2026-01-01T10:00:00', { rank: -1 })] },
+    ] as unknown as KanbanColumn[];
+    const v = selectVisibleCards(columns, { activeTab: 'all', scope: 'all', myId: 7, search: '' });
+    expect(v[0].card.id).toBe(2);
+  });
+
+  it('без rank — по дате перевода на этап, а не добавления', () => {
+    const columns = [
+      { status: 'rejected', label: 'Отказ', count: 2, cards: [
+        card(1, '2026-10-01T10:00:00', { status_changed_at: '2026-10-08T10:00:00' }),
+        card(2, '2026-09-01T10:00:00', { status_changed_at: '2026-10-09T10:00:00' }),
+      ] },
+    ] as unknown as KanbanColumn[];
+    const v = selectVisibleCards(columns, { activeTab: 'all', scope: 'all', myId: 7, search: '' });
+    expect(v.map((x) => x.card.id)).toEqual([2, 1]);
+  });
+});
+
 describe('countHiddenByScope', () => {
   const columns = [
     {

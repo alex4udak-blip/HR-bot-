@@ -16,6 +16,7 @@ import {
 import type { FormTemplate } from '@/services/api/forms';
 import { FormBuilder, nextFieldId, fieldWord, submissionWord } from '@/features/forms/FormBuilder';
 import { useAuthStore } from '@/stores/authStore';
+import HrConfirm from '@/components/hr/HrConfirm';
 
 // ============================================================
 // List mode component
@@ -61,15 +62,36 @@ function FormListView() {
     }
   };
 
-  const handleDelete = async (id: number, e: React.MouseEvent) => {
+  // Удаление спрашиваем окном сайта, а анкету с ответами не удаляем вовсе:
+  // удаление стирает ответы всех кандидатов (сервер тоже не даст, 409).
+  const [pendingDelete, setPendingDelete] = useState<FormTemplate | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const handleDelete = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Удалить форму? Все ответы будут потеряны.')) return;
+    const form = forms.find(f => f.id === id);
+    if (!form) return;
+    if (form.submissions_count > 0) {
+      toast.error(
+        `У анкеты уже есть ${form.submissions_count} ${submissionWord(form.submissions_count)} — удаление сотрёт их. Сделайте её неактивной вместо удаления.`,
+        { duration: 6000 },
+      );
+      return;
+    }
+    setPendingDelete(form);
+  };
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteForm(id);
-      setForms(prev => prev.filter(f => f.id !== id));
-      toast.success('Форма удалена');
-    } catch {
-      toast.error('Не удалось удалить');
+      await deleteForm(pendingDelete.id);
+      setForms(prev => prev.filter(f => f.id !== pendingDelete.id));
+      toast.success('Анкета удалена');
+      setPendingDelete(null);
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Не удалось удалить');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -107,6 +129,17 @@ function FormListView() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
+      {pendingDelete && (
+        <HrConfirm
+          title="Удалить анкету?"
+          subtitle={`«${pendingDelete.title}»`}
+          danger="Действие нельзя отменить."
+          confirmLabel="Удалить"
+          busy={deleting}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Анкеты</h1>

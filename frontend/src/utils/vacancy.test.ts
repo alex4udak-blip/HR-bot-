@@ -64,6 +64,9 @@ describe('getVacancyExitOptions', () => {
     expect(getVacancyExitOptions(alone, ME, false)).toMatchObject({ canLeave: false, canClose: true });
     expect(getVacancyExitOptions(alone, ME, true)).toMatchObject({ canLeave: false, canClose: true });
   });
+  it('a non-participant recruiter can neither leave nor close a vacancy others work in', () => {
+    expect(getVacancyExitOptions(shared, 77, false)).toMatchObject({ canLeave: false, canClose: false });
+  });
   it('a non-participant admin can only close', () => {
     expect(getVacancyExitOptions(shared, 77, true)).toMatchObject({ canLeave: false, canClose: true });
   });

@@ -20,7 +20,51 @@ from typing import Dict, List, Optional, Set
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.database import Entity, EntityType, Vacancy, VacancyApplication
+from ..models.database import ApplicationCoRecruiter, Entity, EntityType, Vacancy, VacancyApplication
+
+
+async def _move_side_links(
+    db: AsyncSession, from_user_id: int, to_user_id: int, vacancy_ids,
+) -> Set[int]:
+    """То, что тоже даёт метку «HR: X», но не лежит в created_by заявки
+    (до 20.10.2026 после передачи такие метки так и оставались на уходящем):
+
+    • заявки БЕЗ автора (NULL) в вакансиях X — их HR = владелец вакансии;
+    • строки со-рекрутёра X — переходят на Y (если Y там уже есть — снимаются).
+
+    Возвращает карточки, которым пересчитать метки. Вызывать ДО смены
+    владельца вакансии.
+    """
+    affected = set((await db.execute(
+        select(VacancyApplication.entity_id)
+        .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
+        .where(
+            VacancyApplication.vacancy_id.in_(vacancy_ids),
+            VacancyApplication.created_by.is_(None),
+            Vacancy.created_by == from_user_id,
+        )
+    )).scalars().all())
+    rows = (await db.execute(
+        select(ApplicationCoRecruiter, VacancyApplication)
+        .join(VacancyApplication, VacancyApplication.id == ApplicationCoRecruiter.application_id)
+        .where(
+            ApplicationCoRecruiter.user_id == from_user_id,
+            VacancyApplication.vacancy_id.in_(vacancy_ids),
+        )
+    )).all()
+    for co, app in rows:
+        affected.add(app.entity_id)
+        has_to = (await db.execute(
+            select(ApplicationCoRecruiter.id).where(
+                ApplicationCoRecruiter.application_id == app.id,
+                ApplicationCoRecruiter.user_id == to_user_id,
+            )
+        )).scalar() is not None
+        if has_to or app.created_by == to_user_id:
+            await db.delete(co)
+        else:
+            co.user_id = to_user_id
+    return affected
 
 
 async def reassign_recruiter_ownership(
@@ -54,6 +98,7 @@ async def reassign_recruiter_ownership(
             )
         ).scalars().all()
     )
+    affected_entities |= await _move_side_links(db, from_user_id, to_user_id, org_vacancy_ids)
     res = await db.execute(
         update(VacancyApplication)
         .where(
@@ -212,6 +257,7 @@ async def _reassign_one_vacancy(
         )
     ).scalars().all()
     affected.update(eids)
+    affected.update(await _move_side_links(db, from_user_id, to_user_id, [vacancy.id]))
 
     res = await db.execute(
         update(VacancyApplication)

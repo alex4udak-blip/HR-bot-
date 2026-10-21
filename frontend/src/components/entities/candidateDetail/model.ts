@@ -8,6 +8,7 @@
 // no I/O) and unit-tested in ./__tests__/model.test.ts — the safety net that
 // guards the upcoming component extraction (zero-regression requirement).
 // ================================================================
+import { BOARD_OTHER_LABEL, STAGE_LABEL_BY_STAGE } from "@/constants/hrStages";
 import type { KanbanCard, KanbanColumn } from "@/services/api/candidates";
 import type { ActivityEvent, EntityFile } from "@/services/api/entities";
 import {
@@ -146,21 +147,8 @@ export function nextStageStatus(
   return next ? next.status : current;
 }
 
-/** Единые лейблы стадий карточки вакансии (совпадают с воронкой/бэкендом). */
-export const CANDIDATE_VACANCY_STAGE_LABELS: Record<string, string> = {
-  applied: "Новый",
-  screening: "Выполняет ТЗ",
-  phone_screen: "Интервью с HR",
-  interview: "Интервью с заказчиком",
-  assessment: "Принятие решения",
-  offer: "Выставлен оффер",
-  hired: "Оффер принят",
-  probation: "Практика",
-  transferred: "Перешёл в отдел",
-  rejected: "Отказ",
-  withdrawn: "Отозван",
-  reserve: "Резерв",
-};
+/** Подписи этапов карточки вакансии — общий справочник (constants/hrStages.ts). */
+export const CANDIDATE_VACANCY_STAGE_LABELS: Record<string, string> = STAGE_LABEL_BY_STAGE;
 
 /**
  * Лейбл статуса контейнера (EntityStatus → русский). Приоритет: org-override из
@@ -176,7 +164,7 @@ export function resolveContainerStatusLabel(
     col?.label ||
     (STATUS_LABELS as Record<string, string>)[status] ||
     CANDIDATE_VACANCY_STAGE_LABELS[status] ||
-    status
+    (status === BOARD_OTHER_STATUS ? BOARD_OTHER_LABEL : status)
   );
 }
 
@@ -732,11 +720,17 @@ export function selectVisibleCards(
     }
   }
   if (searching || opts.activeTab === "all") {
-    // Свежие сверху по дате ПЕРЕВОДА на текущий статус: «если человеку
-    // отказали 08.10, перед ним должен стоять тот, кому отказали 09.10»
-    // (Мария, 20.10.2026). У кого перевода в истории нет — по дате добавления,
-    // её строка и показывает.
-    return items.sort((a, b) => cardOrderTime(b.card) - cardOrderTime(a.card));
+    // Порядок задаёт сервер (rank): во «Все» — по дате ПЕРЕВОДА на текущий
+    // статус («если человеку отказали 08.10, перед ним должен стоять тот, кому
+    // отказали 09.10», Мария, 20.10.2026), в поиске — по совпадению (раньше тут
+    // пересортировывали по дате, и лучшее совпадение уезжало вниз). Без rank —
+    // по дате перевода, у кого её нет — по дате добавления.
+    return items.sort((a, b) => {
+      const ra = a.card.rank;
+      const rb = b.card.rank;
+      if (ra != null && rb != null && ra !== rb) return ra - rb;
+      return cardOrderTime(b.card) - cardOrderTime(a.card);
+    });
   }
   return items;
 }

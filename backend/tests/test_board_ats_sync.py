@@ -83,7 +83,8 @@ async def test_dismissal_closes_all_live_applications(
     )).scalars().all()
     assert {m.application_id for m in moves} == {live.id, other.id}
     assert all(m.to_stage == ApplicationStage.rejected.value for m in moves)
-    assert all(m.comment == "Перевод с доски «Штат»" for m in moves)
+    # В ленте видно, почему «Отказ»: уволен на доске.
+    assert all(m.comment == "Уволен — доска «Штат»" for m in moves)
 
 
 @pytest.mark.asyncio
@@ -101,20 +102,27 @@ async def test_single_funnel_follows_board_status(
 
 
 @pytest.mark.asyncio
-async def test_two_funnels_are_not_touched_outside_dismissal(
+async def test_two_funnels_move_only_the_actual_application(
     client, db_session, organization, admin_user, org_owner
 ):
-    """Воронок несколько — непонятно, какую двигать: чужую не трогаем."""
+    """Воронок несколько — двигается «актуальная» (по ней сервер считает
+    общий статус), вторая не трогается. Если не двигать ничего, на доске
+    человек «Практика», а заявка висит на прежнем этапе, и первое же действие
+    в воронке вернёт статус назад (жалоба Марии 20.10.2026)."""
+    from datetime import timedelta
+
     e = await _candidate(db_session, organization, admin_user, EntityStatus.hired)
     a1 = await _application(db_session, organization, admin_user, e, "Growth", ApplicationStage.offer)
-    a2 = await _application(db_session, organization, admin_user, e, "Трафик", ApplicationStage.phone_screen)
+    a2 = await _application(db_session, organization, admin_user, e, "Трафик", ApplicationStage.hired)
+    a1.last_stage_change_at = datetime.utcnow() - timedelta(days=3)  # a2 — актуальная
+    await db_session.commit()
 
     r = await client.patch(f"/api/staff-board/rows/{e.id}",
                            json={"status": "probation"}, headers=_h(admin_user))
     assert r.status_code == 200, r.text
     stages = await _stages(db_session, [a1.id, a2.id])
     assert stages[a1.id] == ApplicationStage.offer
-    assert stages[a2.id] == ApplicationStage.phone_screen
+    assert stages[a2.id] == ApplicationStage.probation
 
 
 @pytest.mark.asyncio

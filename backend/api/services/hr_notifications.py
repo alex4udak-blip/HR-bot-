@@ -25,23 +25,12 @@ from ..models.database import (
     OrgMember,
     OrgRole,
 )
+from .hr_stages import STAGE_LABELS_BY_ENUM
 
 logger = logging.getLogger("hr-analyzer.notifications")
 
-# Human-readable stage names (Russian)
-STAGE_LABELS = {
-    ApplicationStage.applied: "Новый",
-    ApplicationStage.screening: "Выполняет ТЗ",
-    ApplicationStage.phone_screen: "Интервью с HR",
-    ApplicationStage.interview: "Интервью с заказчиком",
-    ApplicationStage.assessment: "Принятие решения",
-    ApplicationStage.offer: "Выставлен оффер",
-    ApplicationStage.hired: "Оффер принят",
-    ApplicationStage.probation: "Практика",
-    ApplicationStage.transferred: "Перешёл в отдел",
-    ApplicationStage.rejected: "Отказ",
-    ApplicationStage.withdrawn: "Отозван",
-}
+# Подписи этапов — общий справочник (services/hr_stages.py).
+STAGE_LABELS = STAGE_LABELS_BY_ENUM
 
 
 def _stage_label(stage: ApplicationStage) -> str:

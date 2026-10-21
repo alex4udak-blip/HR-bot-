@@ -619,32 +619,7 @@ class TestKanbanBoard:
         assert all(app["stage"] == "screening" for app in data)
 
 
-# ============================================================================
-# STATS TESTS
-# ============================================================================
-
-class TestVacancyStats:
-    """Tests for vacancy statistics."""
-
-    async def test_get_vacancies_stats(
-        self,
-        client: AsyncClient,
-        admin_user: User,
-        vacancy: Vacancy,
-        application: VacancyApplication,
-        org_owner
-    ):
-        """Test getting vacancy overview statistics."""
-        token = create_access_token(data={"sub": str(admin_user.id)})
-        response = await client.get(
-            "/api/vacancies/stats/overview",
-            headers=auth_headers(token)
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "vacancies_by_status" in data
-        assert "applications_by_stage" in data
-        assert "applications_this_week" in data
+# Тест /stats/overview удалён вместе с ручкой (20.10.2026, интерфейс её не звал).
 
 
 # ============================================================================

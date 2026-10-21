@@ -144,11 +144,23 @@ async def merge_vacancies(
         tgt_app = tgt_by_entity[o["entity_id"]]
         src_app = next(a for a in src_apps if a.id == src_app_id)
 
-        await db.execute(
+        reattached = (await db.execute(
             update(StageTransition)
             .where(StageTransition.application_id == src_app_id)
             .values(application_id=tgt_app.id)
-        )
+        )).rowcount or 0
+        if reattached:
+            # Последней записью ленты могла стать запись дубля: корзина у неё
+            # («отмена перевода») вернула бы заявку на этап, где она в главной
+            # воронке никогда не была (ревью 20.10.2026). Отметка слияния —
+            # последняя и описывает текущий этап главной: её отмена ничего не
+            # двигает.
+            db.add(StageTransition(
+                application_id=tgt_app.id, entity_id=tgt_app.entity_id,
+                from_stage=tgt_app.stage.value, to_stage=tgt_app.stage.value,
+                changed_by=merged_by,
+                comment=f"Слияние вакансий: добавлена история «{source.title}»",
+            ))
 
         tgt_co = set((await db.execute(
             select(ApplicationCoRecruiter.user_id).where(

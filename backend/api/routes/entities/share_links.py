@@ -20,6 +20,7 @@ from api.models.database import (
 )
 from api.services.auth import get_current_user, get_user_org
 from .common import check_entity_access
+from ...services.hr_stages import STAGE_LABELS  # общий справочник этапов
 
 router = APIRouter()
 
@@ -46,20 +47,6 @@ def _serve_mime(f: EntityFile) -> str:
         mime = _EXT_MIME.get(ext, "application/octet-stream")
     return mime
 
-# Единый RU-словарь этапов (согласован с analytics/funnel.py и фронтом).
-STAGE_LABELS = {
-    "applied": "Новый",
-    "screening": "Выполняет ТЗ",
-    "phone_screen": "Интервью с HR",
-    "interview": "Интервью с заказчиком",
-    "assessment": "Принятие решения",
-    "offer": "Выставлен оффер",
-    "hired": "Оффер принят",
-    "probation": "Практика",
-    "transferred": "Перешёл в отдел",
-    "rejected": "Отказ",
-    "withdrawn": "Отозван",
-}
 
 
 def _stage_label(stage_value: str, vacancy: Vacancy | None) -> str:

@@ -34,19 +34,6 @@ export interface FormTemplate {
   created_by: number | null;
 }
 
-export interface FormSubmission {
-  id: number;
-  form_id: number;
-  entity_id: number | null;
-  entity: {
-    id: number;
-    name: string;
-    email: string | null;
-    status: string | null;
-  } | null;
-  data: Record<string, unknown>;
-  submitted_at: string | null;
-}
 
 export interface PublicFormData {
   id: number;
@@ -112,10 +99,6 @@ export const deleteForm = async (id: number): Promise<void> => {
   await api.delete(`/forms/${id}`);
 };
 
-export const getFormSubmissions = async (id: number): Promise<FormSubmission[]> => {
-  const { data } = await api.get(`/forms/${id}/submissions`);
-  return data;
-};
 
 // ============================================================
 // Public API (no auth — candidate fills form)
@@ -173,10 +156,6 @@ export const createDispatch = async (formId: number, entityId: number): Promise<
   return data;
 };
 
-export const getEntityDispatches = async (entityId: number): Promise<FormDispatchInfo[]> => {
-  const { data } = await api.get(`/forms/entity/${entityId}/dispatches`);
-  return data;
-};
 
 export const getEntityAllDispatches = async (entityId: number): Promise<(FormDispatchInfo & { source_entity_id: number; source_name: string | null })[]> => {
   const { data } = await api.get(`/forms/entity/${entityId}/all-dispatches`);
@@ -241,10 +220,3 @@ export const aiFormChat = async (
   return data;
 };
 
-export const generateFormFieldsAI = async (
-  prompt: string,
-  vacancyTitle?: string,
-): Promise<Omit<FormField, 'id'>[]> => {
-  const { data } = await api.post('/forms/ai-generate', { prompt, vacancy_title: vacancyTitle });
-  return data.fields;
-};

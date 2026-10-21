@@ -42,7 +42,7 @@ async def test_full_dispatch_flow_e2e(client, db_session, organization: Organiza
     r = await client.post(f"/api/forms/{form_id}/dispatch", json={"entity_id": cand_id}, headers=H)
     assert r.status_code == 200, r.text
     token = r.json()["token"]
-    assert r.json()["url"] == f"/form/d/{token}"
+    assert r.json()["url"] == f"/form/{token}"  # короткая ссылка (c782bb7e)
 
     # 3. Candidate opens the personal link (NO auth) -> sees their name, status -> opened
     r = await client.get(f"/api/forms/public/d/{token}")
@@ -62,7 +62,7 @@ async def test_full_dispatch_flow_e2e(client, db_session, organization: Organiza
     assert r.status_code == 200 and r.json()["count"] == 1
 
     # 6. Answers are attached to the SAME candidate and readable in the card
-    r = await client.get(f"/api/forms/entity/{cand_id}/dispatches", headers=H)
+    r = await client.get(f"/api/forms/entity/{cand_id}/all-dispatches", headers=H)
     body = r.json()
     assert len(body) == 1
     assert body[0]["status"] == "submitted"

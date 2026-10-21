@@ -2,12 +2,12 @@
 Shared schemas, imports, and helper functions for vacancy management.
 """
 import re
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func, or_, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from typing import Optional, List, Literal
-from datetime import datetime, timezone
+from typing import Optional, List, Literal, Iterable
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, field_validator, model_validator
 import logging
 
@@ -144,6 +144,55 @@ def recruiter_owns_application(vacancy: Vacancy, recruiter_id: int):
     return cond
 
 
+def co_recruiter_of(user_id: int):
+    """Условие «R — со-рекрутёр заявки» (общая воронка, старые пары до 21.09)."""
+    from ...models.database import ApplicationCoRecruiter
+    return VacancyApplication.id.in_(
+        select(ApplicationCoRecruiter.application_id).where(ApplicationCoRecruiter.user_id == user_id)
+    )
+
+
+def applications_of_recruiter(vacancy: Vacancy, recruiter_id: int):
+    """Скоуп воронки «кандидаты рекрутёра R»: его заявки (см.
+    recruiter_owns_application) ИЛИ где он со-рекрутёр. Одно условие на список
+    заявок и канбан — до 20.10.2026 канбан со-рекрутёров не учитывал."""
+    return or_(recruiter_owns_application(vacancy, recruiter_id), co_recruiter_of(recruiter_id))
+
+
+def private_funnel_view(user_id: int):
+    """Что видит рекрутёр в СКРЫТОЙ воронке без явного скоупа: свои, старые без
+    автора (NULL) и те, где он со-рекрутёр."""
+    return or_(
+        VacancyApplication.created_by == user_id,
+        VacancyApplication.created_by.is_(None),
+        co_recruiter_of(user_id),
+    )
+
+
+async def ensure_may_touch_applications(
+    applications, vacancy: Vacancy, user: User, org: Organization, db: AsyncSession,
+    detail: str = "Можно изменять только своих кандидатов",
+) -> None:
+    """Приватность воронки при ЗАПИСИ: в скрытой воронке не-админ трогает только
+    тех, кого видит (private_funnel_view). Одна проверка на перевод, массовый
+    перевод и откат этапа — раньше со-рекрутёр видел кандидата, но двигать его
+    не мог (403)."""
+    if await sees_all_candidates(user, org, db) or bool(getattr(vacancy, "visible_to_all", False)):
+        return
+    foreign = [a.id for a in applications if a.created_by is not None and a.created_by != user.id]
+    if not foreign:
+        return
+    from ...models.database import ApplicationCoRecruiter
+    co = set((await db.execute(
+        select(ApplicationCoRecruiter.application_id).where(
+            ApplicationCoRecruiter.application_id.in_(foreign),
+            ApplicationCoRecruiter.user_id == user.id,
+        )
+    )).scalars().all())
+    if any(a not in co for a in foreign):
+        raise HTTPException(status_code=403, detail=detail)
+
+
 async def get_user_department_ids(user_id: int, org_id: int, db: AsyncSession) -> List[int]:
     """Get all department IDs user belongs to in the organization."""
     result = await db.execute(
@@ -226,6 +275,26 @@ async def can_access_vacancy(vacancy: Vacancy, user: User, org: Organization, db
     return False
 
 
+# Ключи extra_data вакансии, которые ведёт сервер, а не форма. Форма шлёт
+# extra_data целиком из снимка на момент открытия, и сохранение стирало то, что
+# случилось за это время: «Взять в работу» коллеги (accepted_by), «Выйти»
+# (dismissed_by). А через ту же форму можно было вписать чат бота или id
+# «исходной заявки», которую потом правил сервер (20.10.2026).
+SERVER_MANAGED_EXTRA = ("accepted_by", "dismissed_by", "source_chat_id", "cloned_from_request_id")
+
+
+def keep_server_extra(current: Optional[dict], incoming: Optional[dict]) -> dict:
+    """extra_data из формы, но серверные ключи — как в базе."""
+    out = dict(incoming or {})
+    cur = current or {}
+    for key in SERVER_MANAGED_EXTRA:
+        if key in cur:
+            out[key] = cur[key]
+        else:
+            out.pop(key, None)
+    return out
+
+
 async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: AsyncSession) -> bool:
     """
     Check if user can edit a specific vacancy.
@@ -244,8 +313,10 @@ async def can_edit_vacancy(vacancy: Vacancy, user: User, org: Organization, db: 
     if org is None or getattr(vacancy, 'org_id', None) != org.id:
         return False
 
-    # Org owner can edit all (в СВОЕЙ орг).
-    if await is_org_owner(user, org, db):
+    # Владелец и админ орга правят любую вакансию (в СВОЕЙ орг). До 20.10.2026
+    # здесь был только owner: Мария (admin) получала 403 на скрытой вакансии
+    # рекрутёра, хотя двигать в ней кандидатов и удалять её могла.
+    if await is_org_admin_or_owner(user, org, db):
         return True
 
     # Vacancy marked as visible to all org members
@@ -336,6 +407,7 @@ async def can_delete_vacancy(vacancy: Vacancy, user: User, org: Organization, db
 # === Feature Access Control ===
 
 async def check_vacancy_access(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> User:
@@ -366,7 +438,36 @@ async def check_vacancy_access(
             detail="Candidate Database feature is not enabled for your department"
         )
 
+    # Скоуп по воронкам — здесь, одним горлышком на все ручки вакансий: раньше
+    # он стоял только на чтении, и человек со скоупом (например, наблюдатель,
+    # которого потом сделали рекрутёром — скоуп при этом остаётся) мог по id
+    # двигать, править и удалять заявки чужих воронок (20.10.2026).
+    await _ensure_path_in_scope(request, current_user, db)
     return current_user
+
+
+async def _ensure_path_in_scope(request: Request, user: User, db: AsyncSession) -> None:
+    from ...services.vacancy_scope import ensure_vacancy_visible, get_scope_vacancy_ids
+    params = request.path_params or {}
+    if "vacancy_id" not in params and "application_id" not in params:
+        return
+    if await get_scope_vacancy_ids(user, db) is None:
+        return
+    vacancy_id = params.get("vacancy_id")
+    if vacancy_id is None:
+        try:
+            app_id = int(params["application_id"])
+        except (TypeError, ValueError):
+            return
+        vacancy_id = (await db.execute(
+            select(VacancyApplication.vacancy_id).where(VacancyApplication.id == app_id)
+        )).scalar()
+        if vacancy_id is None:
+            return  # заявки нет — ответит сама ручка (404)
+    try:
+        await ensure_vacancy_visible(int(vacancy_id), user, db)
+    except (TypeError, ValueError):
+        return
 
 
 # === Pydantic Schemas ===
@@ -771,13 +872,21 @@ STAYS_EMPLOYED_AFTER_TRANSFER = {
 }
 
 
-async def recompute_entity_status(db: AsyncSession, entity_id: int) -> None:
+# Ушёл из штата — финальный статус доски «Штат».
+DEPARTED_FROM_STAFF = {EntityStatus.dismissed, EntityStatus.quit}
+
+async def recompute_entity_status(
+    db: AsyncSession, entity_id: int, moved_app_ids: Iterable[int] = (),
+) -> None:
     """Пересчитать Entity.status по «актуальной» заявке кандидата (см.
     pick_primary_application). Раньше общий статус просто НЕ обновлялся, если
     воронок больше одной, и на «Все кандидаты» кандидат подвисал в старой
     колонке — было не видно, где он сейчас.
 
     Не коммитит. Закрытые вакансии не учитываем: работа идёт в открытых.
+
+    moved_app_ids — заявки, которые сдвинулись В ЭТОМ действии. Только такое
+    движение меняет «Уволен»/«Уволился» (см. ниже).
     """
     apps = (await db.execute(
         select(VacancyApplication)
@@ -785,6 +894,10 @@ async def recompute_entity_status(db: AsyncSession, entity_id: int) -> None:
         .where(
             VacancyApplication.entity_id == entity_id,
             Vacancy.status != VacancyStatus.closed,
+            # Удалённая воронка (мягкое удаление) — не работа: до 20.10.2026
+            # её заявка считалась открытой, и смена статуса на карточке не
+            # доходила до живой воронки («две открытые — не трогаем»).
+            Vacancy.deleted_at.is_(None),
         )
     )).scalars().all()
     primary = pick_primary_application(apps)
@@ -794,6 +907,23 @@ async def recompute_entity_status(db: AsyncSession, entity_id: int) -> None:
     entity = (await db.execute(
         select(Entity).where(Entity.id == entity_id)
     )).scalar()
+    # Уволен / уволился — итог, который HR поставил сам (доска «Штат» или
+    # «Отказ» после выхода в отдел). Пересчёт по СТАРОЙ заявке его не отменяет:
+    # раньше любое действие рядом (удаление соседней заявки, сохранение заявки
+    # без смены этапа) превращало уволенного обратно в «Перешёл в отдел»,
+    # «Отказ» или даже «Практику», если заявка там застряла (20.10.2026).
+    # Меняет его только реальное движение по воронке — повторный найм:
+    # актуальная заявка сдвинулась в этом же действии.
+    if (
+        entity is not None
+        and entity.status in DEPARTED_FROM_STAFF
+        and primary.id not in set(moved_app_ids)
+    ):
+        logger.info(
+            "KEEP_DEPARTED: entity=%s остаётся %s (заявка %s на этапе %s не двигалась)",
+            entity_id, entity.status.value, primary.id, primary.stage.value,
+        )
+        return
     # Уже оформленного в отдел «Отказ» в воронке не возвращает в кандидаты —
     # он увольняется (см. STAYS_EMPLOYED_AFTER_TRANSFER).
     if (
@@ -850,6 +980,7 @@ async def has_single_active_application(db: AsyncSession, entity_id: int) -> boo
         .where(
             VacancyApplication.entity_id == entity_id,
             Vacancy.status != VacancyStatus.closed,
+            Vacancy.deleted_at.is_(None),
         )
     )).scalar() or 0
     return count <= 1
@@ -867,6 +998,7 @@ async def entities_with_single_active_application(
         .where(
             VacancyApplication.entity_id.in_(entity_ids),
             Vacancy.status != VacancyStatus.closed,
+            Vacancy.deleted_at.is_(None),
         )
         .group_by(VacancyApplication.entity_id)
     )).all()

@@ -144,7 +144,6 @@ export {
   getEntityStatsByType,
   getEntityStatsByStatus,
   // Smart search
-  smartSearch,
   // Criteria
   getEntityCriteria,
   updateEntityCriteria,
@@ -192,9 +191,6 @@ export type {
   RedFlag,
   RedFlagsAnalysis,
   RiskScoreResponse,
-  SmartSearchResult,
-  SmartSearchResponse,
-  SmartSearchParams,
   EntityDefaultCriteriaResponse,
   SimilarCandidateResult,
   DuplicateCandidateResult,
@@ -325,7 +321,6 @@ export {
   updateApplication,
   deleteApplication,
   // Kanban
-  getKanbanBoard,
   bulkMoveApplications,
   // History
   getApplicationHistory,
@@ -333,16 +328,11 @@ export {
   updateApplicationHistory,
   setPinnedEntry,
   // Stats
-  getVacancyStats,
   // Entity-Vacancy
   getEntityVacancies,
-  applyEntityToVacancy,
   // Recommendations
   getRecommendedVacancies,
   autoApplyToVacancy,
-  getMatchingCandidates,
-  notifyMatchingCandidates,
-  inviteCandidateToVacancy,
   // Assignable users
   getAssignableUsers,
   // Vacancy assignment
@@ -369,7 +359,6 @@ export type {
   ApplicationUpdate,
   AssignableUser,
   RecruiterStat,
-  KanbanFilters
 } from './vacancies';
 
 // Projects
@@ -613,7 +602,6 @@ export {
   getForm,
   updateForm,
   deleteForm,
-  getFormSubmissions,
   getPublicForm,
   submitPublicForm,
 } from './forms';
@@ -621,7 +609,6 @@ export {
 export type {
   FormField,
   FormTemplate,
-  FormSubmission,
   PublicFormData,
   FormCreateData,
   FormUpdateData,

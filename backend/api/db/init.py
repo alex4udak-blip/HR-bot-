@@ -241,6 +241,11 @@ async def init_database():
         # Личный набор КОЛОНОК (08.10.2026) — рядом с набором секций.
         ("ALTER TABLE staff_board_status_views ADD COLUMN IF NOT EXISTS column_keys JSON DEFAULT '[]'",
          "staff_board_status_views.column_keys"),
+        # Вопросы анкеты на момент ответа (20.10.2026): правка шаблона больше не
+        # переписывает подписи в старых ответах и не прячет ответы на удалённые
+        # вопросы. Пусто у старых ответов — для них берутся поля шаблона.
+        ("ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS fields_snapshot JSON",
+         "form_submissions.fields_snapshot"),
     ):
         await run_migration(engine, sql, description)
 
@@ -541,6 +546,16 @@ async def init_database():
             await migrate_board_departments_once(session)
     except Exception as e:
         logger.warning(f"Board placements migration failed (non-critical): {e}")
+
+    # Заявки людей, которых доска «Штат» перевела в отдел, не сдвинув заявку
+    # с «Практики» (20.10.2026, services/board_stage_sync.py). Одноразово.
+    try:
+        from ..services.board_stage_sync import sync_transferred_applications_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await sync_transferred_applications_once(session)
+    except Exception as e:
+        logger.warning(f"Board stage sync failed (non-critical): {e}")
 
     # Даты отдела собрать в одном месте — у рабочего назначения (13.10.2026,
     # services/board_placements.py). Одноразово: до этого они лежали у каждого

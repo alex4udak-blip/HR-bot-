@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import type { ApplicationStage } from '@/types';
 import { APPLICATION_STAGE_LABELS } from '@/types';
+import { FUNNEL_STAGE_ORDER, HR_STAGES } from '@/constants/hrStages';
 
 export interface StageColumn {
   key: string;
@@ -13,26 +14,17 @@ export interface StageColumn {
   color?: string;   // color key from STAGE_COLORS palette
 }
 
-// Default stages — единый набор согласован с KANBAN_STATUS_LABELS
-// (отображается на /all-candidates) и фронтовым STAGE_LABELS.
-const DEFAULT_STAGES: StageColumn[] = [
-  { key: 'applied', label: 'Новый', visible: true },
-  { key: 'screening', label: 'Выполняет ТЗ', visible: true },
-  { key: 'phone_screen', label: 'Интервью с HR', visible: true },
-  { key: 'interview', label: 'Интервью с заказчиком', visible: true },
-  { key: 'assessment', label: 'Принятие решения', visible: true },
-  { key: 'offer', label: 'Выставлен оффер', visible: true },
-  { key: 'hired', label: 'Оффер принят', visible: true },
-  { key: 'probation', label: 'Практика', visible: true },
-  { key: 'transferred', label: 'Перешёл в отдел', visible: true },
-  { key: 'rejected', label: 'Отказ', visible: true },
-];
+// Этапы по умолчанию — колонки воронки из общего справочника
+// (constants/hrStages.ts). Раньше здесь была своя копия без «Резерва»:
+// сохранив настройку, вакансия теряла колонку «Резерв».
+const DEFAULT_STAGES: StageColumn[] = HR_STAGES.filter((st) => st.inFunnel).map((st) => ({
+  key: st.stage,
+  label: st.label,
+  visible: true,
+}));
 
 // Real DB enum values that virtual stages can map to
-const ENUM_VALUES: ApplicationStage[] = [
-  'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'probation', 'transferred', 'rejected'
-];
+const ENUM_VALUES: ApplicationStage[] = FUNNEL_STAGE_ORDER;
 
 interface StagesConfigModalProps {
   columns: StageColumn[] | null;

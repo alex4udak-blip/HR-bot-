@@ -68,10 +68,6 @@ class TestAuthorizationChecks:
         response = await client.post("/api/entities/from-resume", files=files)
         assert response.status_code == 401
 
-    async def test_smart_search_unauthorized(self, client: AsyncClient):
-        """Test /api/entities/search requires auth."""
-        response = await client.get("/api/entities/search", params={"query": "test"})
-        assert response.status_code == 401
 
     async def test_similar_candidates_unauthorized(self, client: AsyncClient):
         """Test /api/entities/{id}/similar requires auth."""
@@ -255,28 +251,7 @@ class TestValidationErrors:
         """Create auth token for admin user with org membership."""
         return create_access_token({"sub": str(admin_user.id)})
 
-    async def test_smart_search_empty_query(
-        self, client: AsyncClient, auth_token
-    ):
-        """Test /api/entities/search with empty query."""
-        response = await client.get(
-            "/api/entities/search",
-            params={"query": ""},
-            headers=auth_headers(auth_token)
-        )
-        assert response.status_code == 422
 
-    async def test_smart_search_query_too_long(
-        self, client: AsyncClient, auth_token
-    ):
-        """Test /api/entities/search with query exceeding max length."""
-        long_query = "x" * 501  # Max is 500
-        response = await client.get(
-            "/api/entities/search",
-            params={"query": long_query},
-            headers=auth_headers(auth_token)
-        )
-        assert response.status_code == 422
 
     async def test_global_search_empty_query(
         self, client: AsyncClient, auth_token
@@ -454,19 +429,6 @@ class TestEdgeCases:
         assert response.status_code == 400
         assert "саму с собой" in response.json()["detail"].lower()
 
-    async def test_smart_search_no_results(
-        self, client: AsyncClient, auth_token
-    ):
-        """Test /api/entities/search with query that has no matches."""
-        response = await client.get(
-            "/api/entities/search",
-            params={"query": "xyznonexistent12345"},
-            headers=auth_headers(auth_token)
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["results"] == []
-        assert data["total"] == 0
 
     async def test_global_search_no_results(
         self, client: AsyncClient, auth_token
@@ -554,32 +516,6 @@ class TestResponseFormats:
         await db_session.refresh(vacancy)
         return vacancy
 
-    async def test_smart_search_response_format(
-        self, client: AsyncClient, auth_token, candidate_with_data
-    ):
-        """Test /api/entities/search returns correct response format."""
-        response = await client.get(
-            "/api/entities/search",
-            params={"query": "Python"},
-            headers=auth_headers(auth_token)
-        )
-        assert response.status_code == 200
-        data = response.json()
-
-        # Check required fields
-        assert "results" in data
-        assert "total" in data
-        assert "parsed_query" in data
-        assert "limit" in data
-        assert "offset" in data
-
-        # Check result item format if results exist
-        if data["results"]:
-            result = data["results"][0]
-            assert "id" in result
-            assert "name" in result
-            assert "type" in result
-            assert "relevance_score" in result
 
     async def test_red_flags_response_format(
         self, client: AsyncClient, auth_token, candidate_with_data
@@ -721,63 +657,3 @@ class TestIntegrationScenarios:
                 deleted_entity = result.scalar_one_or_none()
                 assert deleted_entity is None
 
-    async def test_search_to_scoring_workflow(
-        self, client: AsyncClient, auth_token, similar_candidates,
-        db_session, organization, mock_anthropic_client
-    ):
-        """Test workflow: search candidates and score against vacancy."""
-        candidate1, _ = similar_candidates
-
-        # Create a vacancy
-        vacancy = Vacancy(
-            org_id=organization.id,
-            title="Python Developer",
-            requirements="Python, Django, PostgreSQL",
-            status=VacancyStatus.open,
-            salary_min=140000,
-            salary_max=200000,
-            salary_currency="RUB"
-        )
-        db_session.add(vacancy)
-        await db_session.commit()
-        await db_session.refresh(vacancy)
-
-        # Step 1: Search for Python candidates
-        search_response = await client.get(
-            "/api/entities/search",
-            params={"query": "Python"},
-            headers=auth_headers(auth_token)
-        )
-        assert search_response.status_code == 200
-        search_data = search_response.json()
-
-        # Step 2: Score first candidate against vacancy
-        if search_data["results"]:
-            # Mock AI response for scoring
-            mock_response = MagicMock()
-            mock_response.content = [MagicMock(text=json.dumps({
-                "overall_score": 85,
-                "skills_match": 90,
-                "experience_match": 80,
-                "salary_match": 95,
-                "culture_fit": 75,
-                "strengths": ["Python skills", "Experience"],
-                "weaknesses": [],
-                "recommendation": "hire",
-                "summary": "Good match",
-                "key_factors": ["Technical match"]
-            }))]
-            mock_anthropic_client.messages.create = AsyncMock(return_value=mock_response)
-
-            score_response = await client.post(
-                "/api/scoring/calculate",
-                headers=auth_headers(auth_token),
-                json={
-                    "entity_id": search_data["results"][0]["id"],
-                    "vacancy_id": vacancy.id
-                }
-            )
-            assert score_response.status_code == 200
-            score_data = score_response.json()
-            assert "score" in score_data
-            assert score_data["score"]["overall_score"] >= 0

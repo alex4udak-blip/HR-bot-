@@ -1,3 +1,13 @@
+import {
+  HR_STAGES,
+  STAGE_BADGE_CLASS,
+  STAGE_BY_STATUS,
+  STAGE_LABEL_BY_STAGE,
+  STAGE_LABEL_BY_STATUS,
+  STATUS_BY_STAGE,
+  DEPARTED_LABELS,
+} from '@/constants/hrStages';
+
 export type UserRole = 'superadmin' | 'admin';
 export type OrgRole = 'owner' | 'admin' | 'hr' | 'member';
 export type DeptRole = 'lead' | 'sub_admin' | 'member';
@@ -229,6 +239,8 @@ export type EntityStatus =
   | 'transferred'     // Перешёл в отдел
   | 'rejected'        // Отклонён
   | 'reserve'         // Резерв
+  | 'dismissed'       // Уволен (доска «Штат»)
+  | 'quit'            // Уволился (доска «Штат»)
   // General statuses
   | 'active'
   | 'paused'
@@ -477,21 +489,10 @@ export const ENTITY_TYPES: Record<EntityType, EntityTypeInfo> = {
  *  уволился, легаси). Не статус сущности — поэтому вне EntityStatus. */
 export const BOARD_OTHER_STATUS = 'other';
 
-export const STATUS_LABELS: Record<EntityStatus, string> = {
-  // Единые HR-лейблы: держим в синхронизации с KANBAN_STATUS_LABELS
-  // и APPLICATION_STAGE_LABELS.
-  new: 'Новый',
-  screening: 'Выполняет ТЗ',
-  practice: 'Интервью с HR',
-  tech_practice: 'Интервью с заказчиком',
-  is_interview: 'Принятие решения',
-  offer: 'Выставлен оффер',
-  hired: 'Оффер принят',
-  probation: 'Практика',
-  transferred: 'Перешёл в отдел',
-  rejected: 'Отказ',
-  withdrawn: 'Отозван',
-  reserve: 'Резерв',
+export const STATUS_LABELS = {
+  // Этапы HR — из общего справочника (constants/hrStages.ts).
+  ...STAGE_LABEL_BY_STATUS,
+  ...DEPARTED_LABELS,
   // General/Legacy statuses
   active: 'Активный',
   paused: 'На паузе',
@@ -499,11 +500,12 @@ export const STATUS_LABELS: Record<EntityStatus, string> = {
   converted: 'Сконвертирован',
   ended: 'Завершён',
   negotiation: 'Переговоры',
-  interview: 'Интервью с заказчиком',
-  applied: 'Новый',
-  phone_screen: 'Интервью с HR',
-  assessment: 'Принятие решения'
-};
+  // Легаси: статусы, записанные значением этапа заявки.
+  interview: STAGE_LABEL_BY_STAGE.interview,
+  applied: STAGE_LABEL_BY_STAGE.applied,
+  phone_screen: STAGE_LABEL_BY_STAGE.phone_screen,
+  assessment: STAGE_LABEL_BY_STAGE.assessment,
+} as Record<EntityStatus, string>;
 
 export const STATUS_COLORS: Record<EntityStatus, string> = {
   // HR Pipeline
@@ -519,6 +521,8 @@ export const STATUS_COLORS: Record<EntityStatus, string> = {
   rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
   withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
   reserve: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
+  dismissed: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
+  quit: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
   // General/Legacy
   active: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]',
   paused: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]',
@@ -744,11 +748,6 @@ export interface KanbanBoard {
   total_count: number;
 }
 
-export interface VacancyStats {
-  vacancies_by_status: Record<string, number>;
-  applications_by_stage: Record<string, number>;
-  applications_this_week: number;
-}
 
 export const VACANCY_STATUS_LABELS: Record<VacancyStatus, string> = {
   draft: 'Черновик',
@@ -768,55 +767,16 @@ export const VACANCY_STATUS_COLORS: Record<VacancyStatus, string> = {
   cancelled: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]'
 };
 
-export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = {
-  // Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
-  // и теми, что отображаются на /all-candidates. Не разводить разные наборы.
-  applied: 'Новый',
-  screening: 'Выполняет ТЗ',
-  phone_screen: 'Интервью с HR',
-  interview: 'Интервью с заказчиком',
-  assessment: 'Принятие решения',
-  offer: 'Выставлен оффер',
-  hired: 'Оффер принят',
-  probation: 'Практика',
-  transferred: 'Перешёл в отдел',
-  rejected: 'Отказ',
-  withdrawn: 'Отозван',
-  reserve: 'Резерв'
-};
+// Подписи и цвета этапов заявки — из общего справочника (constants/hrStages.ts).
+export const APPLICATION_STAGE_LABELS: Record<ApplicationStage, string> = STAGE_LABEL_BY_STAGE;
 
-export const APPLICATION_STAGE_COLORS: Record<ApplicationStage, string> = {
-  // HR Pipeline stages (using existing PostgreSQL enum values)
-  applied: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)] border-[color:var(--hf-accent-border-30)]',      // "Новый"
-  screening: 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-status-cyan)] border-[color:var(--hf-status-cyan-badge)]',
-  phone_screen: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)] border-[color:var(--hf-status-purple-badge)]', // "Практика"
-  interview: 'bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)] border-[color:var(--hf-status-indigo-badge)]',    // "Тех-практика"
-  assessment: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)] border-[color:var(--hf-status-orange-badge)]',   // "ИС"
-  offer: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)] border-[color:var(--hf-status-yellow-badge)]',
-  hired: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
-  probation: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)] border-[color:var(--hf-status-teal-badge)]',
-  transferred: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)] border-[color:var(--hf-status-green-badge)]',
-  rejected: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)] border-[color:var(--hf-status-red-badge)]',
-  withdrawn: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]',
-  reserve: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)] border-[color:var(--hf-status-gray-badge)]'
-};
+export const APPLICATION_STAGE_COLORS = Object.fromEntries(
+  HR_STAGES.map((st) => [st.stage, STAGE_BADGE_CLASS[st.color]]),
+) as Record<ApplicationStage, string>;
 
 // Map EntityStatus to ApplicationStage for synchronization logic
 export const STATUS_TO_STAGE_MAP: Partial<Record<EntityStatus, ApplicationStage>> = {
-  new: 'applied',
-  screening: 'screening',
-  practice: 'phone_screen',
-  tech_practice: 'interview',
-  is_interview: 'assessment',
-  offer: 'offer',
-  hired: 'hired',
-  probation: 'probation',
-  transferred: 'transferred',
-  rejected: 'rejected',
-  // withdrawn был пропущен: значение есть и в EntityStatus, и в ApplicationStage,
-  // а без строки в карте «Отозван» не доезжал до заявки.
-  withdrawn: 'withdrawn',
-  reserve: 'reserve',
+  ...STAGE_BY_STATUS,
   // Legacy aliases
   applied: 'applied',
   phone_screen: 'phone_screen',
@@ -824,20 +784,7 @@ export const STATUS_TO_STAGE_MAP: Partial<Record<EntityStatus, ApplicationStage>
   assessment: 'assessment'
 };
 
-export const STAGE_TO_STATUS_MAP: Record<ApplicationStage, EntityStatus> = {
-  applied: 'new',
-  screening: 'screening',
-  phone_screen: 'practice',
-  interview: 'tech_practice',
-  assessment: 'is_interview',
-  offer: 'offer',
-  hired: 'hired',
-  probation: 'probation',
-  transferred: 'transferred',
-  rejected: 'rejected',
-  withdrawn: 'withdrawn',
-  reserve: 'reserve'
-};
+export const STAGE_TO_STATUS_MAP: Record<ApplicationStage, EntityStatus> = STATUS_BY_STAGE;
 
 export const EMPLOYMENT_TYPES = [
   { value: 'full-time', label: 'Полная занятость' },
@@ -893,26 +840,4 @@ export interface VacancyRecommendation {
   applications_count: number;
 }
 
-export interface CandidateMatch {
-  entity_id: number;
-  entity_name: string;
-  match_score: number;
-  match_reasons: string[];
-  missing_skills: string[];
-  salary_compatible: boolean;
-  email?: string;
-  phone?: string;
-  position?: string;
-  status?: string;
-  expected_salary_min?: number;
-  expected_salary_max?: number;
-  expected_salary_currency: string;
-}
 
-export interface NotifyCandidatesResponse {
-  vacancy_id: number;
-  vacancy_title: string;
-  candidates_found: number;
-  candidates_notified: CandidateMatch[];
-  message: string;
-}

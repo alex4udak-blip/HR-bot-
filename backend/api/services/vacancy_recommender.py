@@ -1071,6 +1071,12 @@ class VacancyRecommenderService:
         )
         max_order = max_order_result.scalar() or 0
 
+        # Есть ли у кандидата другие воронки — до добавления этой (иначе
+        # autoflush посчитает и её).
+        has_other = (await db.execute(
+            select(func.count(VacancyApplication.id)).where(VacancyApplication.entity_id == entity.id)
+        )).scalar() or 0
+
         # Create application
         application = VacancyApplication(
             vacancy_id=vacancy.id,
@@ -1084,8 +1090,13 @@ class VacancyRecommenderService:
 
         db.add(application)
 
-        # Synchronize Entity.status to match VacancyApplication.stage
+        # Общий статус — только по ПЕРВОЙ воронке и не у сотрудников (то же
+        # правило, что у «Добавить в воронку»): раньше рекомендация сбрасывала
+        # в «Новый» и человека на оффере, и уволенного (20.10.2026).
         expected_entity_status = STAGE_SYNC_MAP.get(ApplicationStage.applied)
+        keep = {EntityStatus.transferred, EntityStatus.dismissed, EntityStatus.quit}
+        if has_other or entity.status in keep:
+            expected_entity_status = None
         if expected_entity_status and entity.status != expected_entity_status:
             entity.status = expected_entity_status
             entity.updated_at = datetime.utcnow()

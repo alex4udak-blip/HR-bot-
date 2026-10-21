@@ -41,6 +41,7 @@ from ..models.database import (
     NameTag, entity_name_tag_association,
 )
 from ..services.auth import get_current_user, get_user_org
+from ..services.stage_change import log_moves
 from ..services.board_placements import DEFAULT_SANDBOX_KEY, place_current_practice
 
 logger = logging.getLogger("hr-analyzer.staff-board")
@@ -354,6 +355,68 @@ class BoardAssignee(BaseModel):
     user_id: int
     name: Optional[str] = None
     auto: bool = False
+
+
+async def _move_board_application(
+    db: AsyncSession, entity: Entity, new_status: EntityStatus, user: User,
+) -> list:
+    """Довести заявки человека до статуса доски. Возвращает переводы (StageMove).
+
+    «Борд и АТС — единая система» (Мария, 20.10.2026). Одно место на это
+    правило (раньше было две копии — здесь и в services/board_status_sync.py):
+      • УВОЛЕН / УВОЛИЛСЯ — человек ушёл целиком: «Отказом» закрываются ВСЕ его
+        живые заявки. Статус кандидата остаётся точным (уволен/уволился), на
+        «Все кандидаты» он во вкладке «Отказ»; пересчёт по этим заявкам статус
+        не отменит (KEEP_DEPARTED).
+      • Остальные статусы доски — двигается «актуальная» открытая заявка, та
+        же, по которой сервер считает общий статус (pick_primary_application):
+        тогда статус и этап совпадут, и следующее действие в воронке не вернёт
+        человека назад (утренняя жалоба 20.10.2026: «на этапе „Перешёл в отдел“
+        висят кандидаты со статусом практика»).
+    Переводы идут через move_application: история, порядок в колонке, отмена
+    корзиной в ленте. Статус мог и не меняться — повторный выбор доводит заявку.
+    """
+    from ..models.database import (
+        STATUS_SYNC_MAP, ApplicationStage, Vacancy, VacancyApplication, VacancyStatus,
+    )
+    from ..services.stage_change import move_application
+    from .vacancies.common import pick_primary_application
+
+    fired = new_status in (EntityStatus.dismissed, EntityStatus.quit)
+    target_stage = ApplicationStage.rejected if fired else STATUS_SYNC_MAP.get(new_status)
+    if target_stage is None:
+        return []
+    open_apps = (await db.execute(
+        select(VacancyApplication)
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            VacancyApplication.entity_id == entity.id,
+            Vacancy.status != VacancyStatus.closed,
+            Vacancy.deleted_at.is_(None),
+        )
+        # Единый порядок row-locks со всеми FOR UPDATE по заявкам (deadlock 27.08).
+        .order_by(VacancyApplication.id)
+        .with_for_update(of=VacancyApplication)
+    )).scalars().all()
+
+    if fired:
+        closed = (ApplicationStage.rejected, ApplicationStage.withdrawn)
+        targets = [a for a in open_apps if a.stage not in closed]
+        comment = (
+            "Уволен — доска «Штат»" if new_status == EntityStatus.dismissed
+            else "Уволился — доска «Штат»"
+        )
+    else:
+        primary = pick_primary_application(list(open_apps))
+        targets = [primary] if primary is not None else []
+        comment = "Перевод с доски «Штат»"
+
+    moves = []
+    for app in targets:
+        move = await move_application(db, app, target_stage, changed_by=user, comment=comment)
+        if move is not None:
+            moves.append(move)
+    return moves
 
 
 def _stage_note(
@@ -1825,6 +1888,7 @@ async def update_row(
     # --- Поля самой карточки ---
     dismissal_triggered = False
     status_note: Optional[Dict[str, Any]] = None
+    board_moves: list = []
     if "status" in payload:
         raw = payload["status"]
         try:
@@ -1847,13 +1911,17 @@ async def update_row(
         # из «Все кандидаты» (владелец, 06.10.2026: «нету логов, что он перешёл
         # в отдел»). Раньше доска меняла статус молча: в ленте было видно всё,
         # кроме переводов, сделанных здесь.
-        status_note = _stage_note(entity, entity.status, new_status, current_user)
+        # Человек в воронке — переводим и его заявку: раньше доска меняла только
+        # общий статус, заявка оставалась на прежнем этапе, и на «Все
+        # кандидаты» он стоял в «Перешёл в отдел» с чипом «Практика · воронка»
+        # (Мария, 20.10.2026), а первое же действие в воронке пересчитывало
+        # статус обратно. Перевод заявки пишет историю — это и есть строка в
+        # ленте (её корзина отменяет перевод), поэтому отдельную запись-
+        # комментарий пишем только человеку без открытых воронок.
+        board_moves = await _move_board_application(db, entity, new_status, current_user)
+        if not board_moves:
+            status_note = _stage_note(entity, entity.status, new_status, current_user)
         entity.status = new_status
-        # Доска и база «Все кандидаты» — одна система (владелец, 20.10.2026):
-        # уволили на доске — в воронке «Отказ». Правила и причины —
-        # services/board_status_sync.py.
-        from ..services.board_status_sync import sync_applications_to_status
-        await sync_applications_to_status(db, entity, new_status, current_user)
 
     if "position" in payload:
         entity.position = (payload["position"] or None)
@@ -2057,6 +2125,7 @@ async def update_row(
             logger.exception("Не удалось выполнить оффбординг с доски для entity=%s", entity.id)
 
     await db.commit()
+    log_moves(board_moves, current_user, via="staff_board")
 
     # НЕ db.refresh(): он сбрасывает уже загруженную связь department, и
     # следующее обращение к entity.department.name ушло бы в ленивую подгрузку —

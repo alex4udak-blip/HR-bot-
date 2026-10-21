@@ -16,23 +16,6 @@ def _h(user):
     return {"Authorization": f"Bearer {create_access_token(data={'sub': str(user.id)})}"}
 
 
-@pytest.mark.asyncio
-async def test_apply_to_vacancy_unarchives_entity(client, db_session, organization, admin_user, org_owner):
-    """apply-to-vacancy (Взять на вакансию) выводит архивного кандидата из архива."""
-    ent = Entity(
-        org_id=organization.id, type=EntityType.candidate, name="Архив Тест",
-        status=EntityStatus.new, is_archived=True,
-    )
-    vac = Vacancy(org_id=organization.id, title="Воронка Архив", status=VacancyStatus.open, created_by=admin_user.id)
-    db_session.add_all([ent, vac])
-    await db_session.commit()
-    H = _h(admin_user)
-
-    r = await client.post(f"/api/entities/{ent.id}/apply-to-vacancy", json={"vacancy_id": vac.id}, headers=H)
-    assert r.status_code == 200, r.text
-
-    await db_session.refresh(ent)
-    assert ent.is_archived is False
 
 
 @pytest.mark.asyncio
@@ -68,22 +51,3 @@ async def test_update_application_stage_change_unarchives_entity(client, db_sess
     assert ent.is_archived is False
 
 
-@pytest.mark.asyncio
-async def test_non_archived_entity_stays_non_archived(client, db_session, organization, admin_user, org_owner):
-    """Кандидат, который и так не в архиве, не ломается и не трогается лишний раз —
-    прочие поля (например name) остаются нетронутыми."""
-    ent = Entity(
-        org_id=organization.id, type=EntityType.candidate, name="Не Архив",
-        status=EntityStatus.new, is_archived=False,
-    )
-    vac = Vacancy(org_id=organization.id, title="Воронка НеАрхив", status=VacancyStatus.open, created_by=admin_user.id)
-    db_session.add_all([ent, vac])
-    await db_session.commit()
-    H = _h(admin_user)
-
-    r = await client.post(f"/api/entities/{ent.id}/apply-to-vacancy", json={"vacancy_id": vac.id}, headers=H)
-    assert r.status_code == 200, r.text
-
-    await db_session.refresh(ent)
-    assert ent.is_archived is False
-    assert ent.name == "Не Архив"

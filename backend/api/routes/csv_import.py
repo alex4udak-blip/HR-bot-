@@ -801,6 +801,15 @@ async def import_execute(
     # Add vacancy applications
     if vacancy_apps:
         db.add_all(vacancy_apps)
+        # Первая запись истории у каждой заявки, как у «Добавить в воронку».
+        await db.flush()
+        from ..services.stage_transitions import record_transition
+        for app in vacancy_apps:
+            await record_transition(
+                db, application_id=app.id, entity_id=app.entity_id, from_stage=None,
+                to_stage=ApplicationStage.applied.value, changed_by_id=current_user.id,
+                comment="Импорт из CSV",
+            )
 
     await db.commit()
 

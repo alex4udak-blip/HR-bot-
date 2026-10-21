@@ -3,6 +3,7 @@ Application management endpoints for vacancies.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_, text, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from datetime import datetime
@@ -13,11 +14,11 @@ from .common import (
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
     check_vacancy_access, can_access_vacancy, can_manage_applications,
     is_org_admin_or_owner, sees_all_candidates, recompute_entity_status,
-    recruiter_owns_application,
+    applications_of_recruiter, private_funnel_view, ensure_may_touch_applications,
     BaseModel, OrgMember, OrgRole, UserRole,
 )
 from ...services.auth import get_user_org
-from ...models.database import ApplicationCoRecruiter
+from ...models.database import ApplicationCoRecruiter, EntityStatus
 
 router = APIRouter()
 
@@ -203,30 +204,16 @@ async def list_applications(
     # «Скрыта от коллег» → прежняя приватность: каждый видит только своих.
     # Скоуп «кандидаты рекрутёра R» = заявки, где R владелец (created_by) ИЛИ
     # со-рекрутёр (общая воронка: один кандидат у нескольких HR сразу).
-    def _co_recruiter_of(uid: int):
-        return VacancyApplication.id.in_(
-            select(ApplicationCoRecruiter.application_id).where(
-                ApplicationCoRecruiter.user_id == uid
-            )
-        )
-
     is_admin_viewer = await sees_all_candidates(current_user, org, db)
     if created_by is not None and (is_admin_viewer or created_by == current_user.id):
         # Явный скоуп по рекрутёру: админ — на ЛЮБОГО (сайдбар /my-funnels), а
         # ЛЮБОЙ рекрутёр — на СЕБЯ (чекбокс «Только мои»). Себя можно фильтровать
         # даже на «Видна коллегам», иначе рекрутёр не мог оставить только своих.
-        query = query.where(or_(
-            recruiter_owns_application(vacancy, created_by),
-            _co_recruiter_of(created_by),
-        ))
+        query = query.where(applications_of_recruiter(vacancy, created_by))
     elif not is_admin_viewer and not vacancy.visible_to_all:
         # Обычный рекрутёр на «скрытой» вакансии без явного скоупа: только свои +
         # legacy без автора. На «Видна коллегам» без скоупа — видит всех (выше).
-        query = query.where(or_(
-            VacancyApplication.created_by == current_user.id,
-            VacancyApplication.created_by.is_(None),
-            _co_recruiter_of(current_user.id),
-        ))
+        query = query.where(private_funnel_view(current_user.id))
 
     if stage:
         query = query.where(VacancyApplication.stage == stage)
@@ -321,7 +308,10 @@ async def create_application(
 
     # Verify vacancy exists and belongs to user's organization
     vacancy_result = await db.execute(
-        select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
+        select(Vacancy).where(
+            Vacancy.id == vacancy_id, Vacancy.org_id == org.id,
+            Vacancy.deleted_at.is_(None),  # в удалённую воронку не добавляем
+        )
     )
     vacancy = vacancy_result.scalar()
     if not vacancy:
@@ -371,15 +361,7 @@ async def create_application(
     # отклонили) — наследовать его в НОВУЮ воронку неверно: кандидат должен
     # начинать с «Новый», как и любой другой. Инцидент: добавленный в свежую
     # воронку кандидат, отклонённый ранее в другой, стартовал сразу «Отказ».
-    initial_stage = data.stage
-    has_other_applications = (await db.execute(
-        select(func.count(VacancyApplication.id)).where(
-            VacancyApplication.entity_id == data.entity_id
-        )
-    )).scalar() or 0
-    if not has_other_applications and entity.status in STATUS_SYNC_MAP:
-        initial_stage = STATUS_SYNC_MAP[entity.status]
-        logger.info(f"Using entity status {entity.status} -> stage {initial_stage} for new application")
+    initial_stage, has_other_applications = await initial_application_stage(db, entity, data.stage)
 
     # New candidates appear at TOP of the column (Maria's request).
     # Sort is ORDER BY stage_order ASC, applied_at DESC, so we need the
@@ -416,14 +398,15 @@ async def create_application(
     # новой заявки этап applied, и человек, стоящий на оффере в первой воронке,
     # визуально откатывался на старт на «Статусах» и «Всех кандидатах» — просто
     # потому, что его позвали ещё в одну вакансию.
-    if initial_stage in STAGE_SYNC_MAP and not has_other_applications:
-        expected_entity_status = STAGE_SYNC_MAP[initial_stage]
-        if entity.status != expected_entity_status:
-            entity.status = expected_entity_status
-            entity.updated_at = datetime.utcnow()
-            logger.info(f"POST /applications: Synchronized entity {entity.id} status to {expected_entity_status} (from stage {initial_stage})")
+    sync_status_for_first_application(entity, initial_stage, has_other_applications)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Двойной клик «Добавить»: второй запрос прошёл проверку выше раньше,
+        # чем первый записал заявку, и упирался в уникальность (500).
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Кандидат уже добавлен в эту вакансию")
     await db.refresh(application)
 
     # Record initial stage transition
@@ -511,7 +494,9 @@ async def take_application(
         raise HTTPException(status_code=403, detail="No organization access")
 
     vacancy = (await db.execute(
-        select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.org_id == org.id)
+        select(Vacancy).where(
+            Vacancy.id == vacancy_id, Vacancy.org_id == org.id, Vacancy.deleted_at.is_(None),
+        )
     )).scalar()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
@@ -575,7 +560,13 @@ async def take_application(
         application.updated_at = datetime.utcnow()
     else:
         created = True
-        initial_stage = STATUS_SYNC_MAP.get(entity.status, ApplicationStage.applied)
+        # В воронку, куда кандидата забрали, он всегда приходит на «Новый»: это
+        # новый подбор (решение владельца 20.10.2026). До этого этап копировался
+        # из общего статуса — из «Отказа» в другой воронке кандидат приходил
+        # сюда сразу в «Отказ». В прежней воронке он остаётся у прежнего
+        # рекрутёра как был.
+        initial_stage = ApplicationStage.applied
+        _, has_other_applications = await initial_application_stage(db, entity, initial_stage)
         min_order = (await db.execute(
             select(func.min(VacancyApplication.stage_order)).where(
                 VacancyApplication.vacancy_id == vacancy_id,
@@ -592,10 +583,7 @@ async def take_application(
             created_by=data.recruiter_id,
         )
         db.add(application)
-        expected = STAGE_SYNC_MAP.get(initial_stage)
-        if expected and entity.status != expected:
-            entity.status = expected
-            entity.updated_at = datetime.utcnow()
+        sync_status_for_first_application(entity, initial_stage, has_other_applications)
 
     await db.commit()
     await db.refresh(application)
@@ -646,7 +634,7 @@ async def update_application(
 ):
     """Update an application (move stage, add notes, etc.) - with access control."""
     from .kanban import rebalance_stage_orders
-    from ...services.stage_transitions import record_transition
+    from ...services.stage_change import log_moves, move_application, settle_entities
 
     org = await get_user_org(current_user, db)
 
@@ -697,14 +685,8 @@ async def update_application(
     # Исключение — «Видна коллегам» (visible_to_all): там он видит всех, значит и
     # менять этап может у всех (иначе виден, но не двигается). По запросу юзера
     # 2026-08-04.
-    vac_visible_to_all = bool(getattr(vacancy, "visible_to_all", False))
-    if not (await sees_all_candidates(current_user, org, db) or vac_visible_to_all):
-        # Свои + legacy без автора (created_by=NULL) менять можно, чужие — нет.
-        if application.created_by is not None and application.created_by != current_user.id:
-            raise HTTPException(
-                status_code=403,
-                detail="Можно изменять только своих кандидатов",
-            )
+    if vacancy:
+        await ensure_may_touch_applications([application], vacancy, current_user, org, db)
 
     # Страховка от промаха по заявке: фронт присылает, КОМУ он собирался менять
     # этап. Не совпало — значит, карточка держала чужую заявку (баг 2026-09-15,
@@ -727,32 +709,6 @@ async def update_application(
     old_stage = application.stage
     old_interview_at = application.next_interview_at
 
-    # Track stage change
-    if data.stage and data.stage != application.stage:
-        application.last_stage_change_at = datetime.utcnow()
-
-        # Update stage_order for the new stage
-        # Note: FOR UPDATE cannot be used with aggregate functions in PostgreSQL
-        # Race condition is acceptable here as stage_order is just for display ordering
-        max_order_result = await db.execute(
-            select(func.max(VacancyApplication.stage_order))
-            .where(
-                VacancyApplication.vacancy_id == application.vacancy_id,
-                VacancyApplication.stage == data.stage
-            )
-        )
-        max_order = max_order_result.scalar() or 0
-        application.stage_order = max_order + 1
-
-        # Активно работаемый кандидат не должен оставаться в теневом архиве
-        # дедупа — реальная смена этапа выводит его из архива (is_archived).
-        archived_entity_result = await db.execute(
-            select(Entity).where(Entity.id == application.entity_id)
-        )
-        archived_entity = archived_entity_result.scalar()
-        if archived_entity and archived_entity.is_archived:
-            archived_entity.is_archived = False
-
     # Update fields
     update_data = data.model_dump(exclude_unset=True)
     # comment — не поле VacancyApplication, а коммент к переходу (пишется в историю).
@@ -762,50 +718,36 @@ async def update_application(
     # мимо маппинга, но стоит появиться колонке с таким именем — служебное поле
     # начнёт молча писаться в строку.
     update_data.pop("expected_entity_id", None)
+    # Этап меняет ТОЛЬКО move_application — общий для всех путей смены этапа.
+    new_stage = update_data.pop("stage", None)
+    update_data.pop("stage_order", None)
     for field, value in update_data.items():
-        if field != 'stage_order' or data.stage_order is not None:  # Don't override auto-calculated order
-            setattr(application, field, value)
+        setattr(application, field, value)
+
+    move = None
+    if new_stage is not None:
+        move = await move_application(
+            db, application, new_stage,
+            changed_by=current_user,
+            comment=transition_comment,
+            order=data.stage_order,
+        )
+        # Общий статус кандидата (колонка на «Все кандидаты»/«Статусы») — по
+        # АКТУАЛЬНОЙ заявке: самой свежей среди живых воронок; отказ/резерв
+        # берутся в расчёт, только если живых не осталось (решение 2026-09-17).
+        await settle_entities(db, [application.entity_id], [move])
+    if move is None and data.stage_order is not None:
+        # Перестановка внутри колонки без смены этапа (drag-n-drop).
+        application.stage_order = data.stage_order
 
     # Check if stage_order went negative and rebalance if needed
     if application.stage_order is not None and application.stage_order < 0:
         await rebalance_stage_orders(db, application.vacancy_id, application.stage)
 
-    # Общий статус кандидата (колонка на «Все кандидаты»/«Статусы») пересчитываем
-    # по АКТУАЛЬНОЙ заявке: самой свежей среди живых воронок; отказ/резерв берутся
-    # в расчёт, только если живых воронок не осталось (решение юзера 2026-09-17).
-    # Раньше при двух воронках общий статус не обновлялся вовсе и подвисал на
-    # старом значении — «не видно, где он сейчас».
-    if data.stage:
-        await db.flush()  # чтобы пересчёт увидел новый этап этой заявки
-        await recompute_entity_status(db, application.entity_id)
-
-    # Record stage transition in audit log
-    if data.stage and data.stage != old_stage:
-        await record_transition(
-            db=db,
-            application_id=application.id,
-            entity_id=application.entity_id,
-            from_stage=old_stage.value if old_stage else None,
-            to_stage=data.stage.value,
-            changed_by_id=current_user.id,
-            comment=transition_comment,
-        )
-
     await db.commit()
     await db.refresh(application)
 
-    # Лог ПОСЛЕ коммита: до него запись врала бы про переход, который откатился
-    # (падение record_transition или самого commit). Смысл STAGE_CHANGE — по
-    # логам подтвердить, что этап реально сменился, поэтому ложное срабатывание
-    # тут хуже отсутствия записи. expire_on_commit=False, атрибуты живы.
-    if data.stage and data.stage != old_stage:
-        logger.info(
-            "STAGE_CHANGE: user=%s (%s) app=%s entity=%s vacancy=%s %s -> %s expected_entity=%s",
-            current_user.id, current_user.name, application.id, application.entity_id,
-            application.vacancy_id,
-            old_stage.value if old_stage else None, data.stage.value,
-            data.expected_entity_id,
-        )
+    log_moves([move], current_user, via="application", expected_entity=data.expected_entity_id)
 
     # Get entity info
     entity_result = await db.execute(
@@ -830,8 +772,10 @@ async def update_application(
             await notify_stage_change(
                 db, application, entity, old_stage, data.stage, current_user
             )
-            # Practice started
-            if data.stage == ApplicationStage.phone_screen:
+            # Практика началась. phone_screen — это «Интервью с HR» (hr_stages):
+            # до 20.10.2026 уведомление «переведён на этап «Практика»» приходило
+            # на интервью, а на настоящей практике — нет.
+            if data.stage == ApplicationStage.probation:
                 await notify_practice_started(db, application, entity, current_user)
 
         # Interview scheduled notification
@@ -877,6 +821,53 @@ async def update_application(
         # «Все кандидаты» БЕЗ перезагрузки и ровно туда, где её увидит сервер.
         entity_status=entity.status.value if entity and entity.status else None,
     )
+
+
+# Статусы, которые не сбрасываются при снятии с последней воронки.
+# Статусы человека, а не этап воронки: новая воронка их не перезаписывает
+# («Новый» в ней — начало подбора, а не увольнение из отдела).
+STATUSES_KEPT_ON_NEW_APPLICATION = {
+    EntityStatus.transferred, EntityStatus.dismissed, EntityStatus.quit,
+}
+
+
+async def initial_application_stage(db, entity, requested: ApplicationStage):
+    """С какого этапа кандидат входит в воронку → (этап, есть ли другие заявки).
+
+    Общий статус кандидата наследуется ТОЛЬКО в первую воронку: если заявки уже
+    есть, статус может описывать совсем другую воронку (инцидент: отклонённый в
+    одной воронке стартовал в новой сразу с «Отказа»). Одно правило для
+    «Добавить в воронку» и «Забрать».
+    """
+    has_other = (await db.execute(
+        select(func.count(VacancyApplication.id)).where(VacancyApplication.entity_id == entity.id)
+    )).scalar() or 0
+    stage = requested
+    if not has_other and entity.status in STATUS_SYNC_MAP:
+        stage = STATUS_SYNC_MAP[entity.status]
+        logger.info(f"Using entity status {entity.status} -> stage {stage} for new application")
+    return stage, bool(has_other)
+
+
+def sync_status_for_first_application(entity, stage: ApplicationStage, has_other: bool) -> None:
+    """Первая воронка задаёт общий статус кандидата; вторая и дальше — нет.
+
+    Иначе добавление во вторую воронку сбрасывало человека с оффера в «Новый».
+    Уволенного / перешедшего в отдел не трогаем вовсе: без этого он пропадал с
+    доски «Штат», как только его звали в новую вакансию.
+    """
+    if has_other or entity.status in STATUSES_KEPT_ON_NEW_APPLICATION:
+        return
+    expected = STAGE_SYNC_MAP.get(stage)
+    if expected and entity.status != expected:
+        entity.status = expected
+        entity.updated_at = datetime.utcnow()
+        logger.info(f"New application: synchronized entity {entity.id} status to {expected} (from stage {stage})")
+
+
+STAFF_STATUSES_KEPT_ON_REMOVE = {
+    EntityStatus.transferred, EntityStatus.dismissed, EntityStatus.quit,
+}
 
 
 @router.delete("/applications/{application_id}", status_code=204)
@@ -925,10 +916,19 @@ async def delete_application(
 
     await db.delete(application)
 
-    if entity and not has_other_apps:
+    # В отделе / уволен / уволился — статус человека, а не этап воронки:
+    # снятие с последней воронки не превращает сотрудника в «Новый» (раньше
+    # он так молча пропадал с доски «Штат», 20.10.2026).
+    if entity and not has_other_apps and entity.status not in STAFF_STATUSES_KEPT_ON_REMOVE:
         entity.status = EntityStatus.new
         entity.updated_at = datetime.utcnow()
         logger.info(f"DELETE /applications/{application_id}: Reset entity {entity_id} status to 'new'")
+    elif entity and has_other_apps:
+        # Остались другие воронки — общий статус по «актуальной» из них. Раньше
+        # он оставался от удалённой заявки: убрали из воронки, где был «Оффер»,
+        # а в «Все кандидаты» он так и висел «Оффером» (20.10.2026).
+        from ...services.stage_change import settle_entities
+        await settle_entities(db, [entity_id])
 
     await db.commit()
 

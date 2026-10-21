@@ -1,6 +1,6 @@
 import type {
   Vacancy, VacancyStatus, VacancyApplication, ApplicationStage,
-  KanbanBoard, VacancyStats, VacancyRecommendation, CandidateMatch, NotifyCandidatesResponse,
+  VacancyRecommendation,
   CalculateScoreRequest, CalculateScoreResponse, EntityScoreResult,
   BestMatchesRequest, BestMatchesResponse, MatchingVacanciesRequest, MatchingVacanciesResponse
 } from '@/types';
@@ -226,37 +226,13 @@ export const getVacancyRecruiterStats = async (vacancyId: number): Promise<Recru
 // KANBAN BOARD API
 // ============================================================
 
-export interface KanbanFilters {
-  created_by?: number;
-  applied_after?: string; // YYYY-MM-DD
-  applied_before?: string; // YYYY-MM-DD
-}
 
-export const getKanbanBoard = async (vacancyId: number, filters?: KanbanFilters): Promise<KanbanBoard> => {
-  const params: Record<string, string> = {};
-  if (filters) {
-    if (filters.created_by) params.created_by = String(filters.created_by);
-    if (filters.applied_after) params.applied_after = filters.applied_after;
-    if (filters.applied_before) params.applied_before = filters.applied_before;
-  }
-  const { data } = await deduplicatedGet<KanbanBoard>(`/vacancies/${vacancyId}/kanban`, { params });
-  return data;
-};
 
 export const bulkMoveApplications = async (applicationIds: number[], stage: ApplicationStage): Promise<VacancyApplication[]> => {
   const { data } = await debouncedMutation<VacancyApplication[]>('post', '/vacancies/applications/bulk-move', {
     application_ids: applicationIds,
     stage
   });
-  return data;
-};
-
-// ============================================================
-// VACANCY STATS API
-// ============================================================
-
-export const getVacancyStats = async (): Promise<VacancyStats> => {
-  const { data } = await deduplicatedGet<VacancyStats>('/vacancies/stats/overview');
   return data;
 };
 
@@ -269,17 +245,6 @@ export const getEntityVacancies = async (entityId: number): Promise<VacancyAppli
   return data;
 };
 
-export const applyEntityToVacancy = async (
-  entityId: number,
-  vacancyId: number,
-  source?: string
-): Promise<VacancyApplication> => {
-  const { data } = await debouncedMutation<VacancyApplication>('post', `/entities/${Number(entityId)}/apply-to-vacancy`, {
-    vacancy_id: Number(vacancyId),
-    source
-  });
-  return data;
-};
 
 // ============================================================
 // VACANCY RECOMMENDATIONS API
@@ -301,68 +266,6 @@ export const autoApplyToVacancy = async (
   vacancyId: number
 ): Promise<{ id: number; vacancy_id: number; entity_id: number; stage: string; message: string }> => {
   const { data } = await debouncedMutation<{ id: number; vacancy_id: number; entity_id: number; stage: string; message: string }>('post', `/entities/${entityId}/auto-apply/${vacancyId}`);
-  return data;
-};
-
-export const getMatchingCandidates = async (
-  vacancyId: number,
-  options?: { limit?: number; minScore?: number; excludeApplied?: boolean }
-): Promise<CandidateMatch[]> => {
-  const params: Record<string, string | number | boolean> = {};
-  if (options?.limit) params.limit = options.limit;
-  if (options?.minScore !== undefined) params.min_score = options.minScore;
-  if (options?.excludeApplied !== undefined) params.exclude_applied = options.excludeApplied;
-
-  const { data } = await deduplicatedGet<CandidateMatch[]>(
-    `/vacancies/${vacancyId}/matching-candidates`,
-    { params }
-  );
-  return data;
-};
-
-export const notifyMatchingCandidates = async (
-  vacancyId: number,
-  options?: { minScore?: number; limit?: number }
-): Promise<NotifyCandidatesResponse> => {
-  const params: Record<string, string | number> = {};
-  if (options?.minScore !== undefined) params.min_score = options.minScore;
-  if (options?.limit) params.limit = options.limit;
-
-  const { data } = await debouncedMutation<NotifyCandidatesResponse>(
-    'post',
-    `/vacancies/${vacancyId}/notify-candidates`,
-    undefined,
-    { params }
-  );
-  return data;
-};
-
-interface InviteCandidateResponse {
-  id: number;
-  vacancy_id: number;
-  vacancy_title: string;
-  entity_id: number;
-  entity_name: string;
-  stage: string;
-  message: string;
-}
-
-export const inviteCandidateToVacancy = async (
-  vacancyId: number,
-  entityId: number,
-  stage?: string,
-  notes?: string
-): Promise<InviteCandidateResponse> => {
-  const params: Record<string, string> = {};
-  if (stage) params.stage = stage;
-  if (notes) params.notes = notes;
-
-  const { data } = await debouncedMutation<InviteCandidateResponse>(
-    'post',
-    `/vacancies/${vacancyId}/invite-candidate/${entityId}`,
-    undefined,
-    { params }
-  );
   return data;
 };
 

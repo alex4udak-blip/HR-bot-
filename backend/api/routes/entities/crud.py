@@ -4,7 +4,6 @@ CRUD operations for entities (create, read, update, delete).
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 import asyncio
@@ -14,7 +13,7 @@ from .common import (
     logger, get_db, Entity, EntityType, EntityStatus, EntityTransfer,
     Chat, CallRecording, AnalysisHistory, User, SharedAccess, ResourceType,
     UserRole, AccessLevel, Department, DepartmentMember, DeptRole,
-    Vacancy, VacancyApplication, VacancyStatus, STATUS_SYNC_MAP,
+    Vacancy, VacancyApplication,
     get_current_user, get_user_org, has_full_database_access,
     broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted,
     scoring_cache, OwnershipFilter,
@@ -23,14 +22,11 @@ from .common import (
     regenerate_entity_profile_background
 )
 from ...services.shadow_filter import get_isolated_creator_ids
+from ...services.entity_card import (
+    accessible_chat_call_conditions, entity_base_dict, entity_broadcast_payload,
+)
 
 router = APIRouter()
-
-# Комментарии-заметки (add/update_entity_note) хранят СЫРОЙ HTML из rich-text
-# редактора (теги форматирования + @-упоминания <span data-uid=...>) — реальный
-# видимый текст заметно короче этого числа. Было 5000 — рекрутёры жаловались,
-# что не могут дописать длинный комментарий при смене этапа; подняли с запасом.
-NOTE_TEXT_MAX_LENGTH = 20000
 
 # Ключи extra_data, которыми владеет ТОЛЬКО сервер (свои эндпоинты/сервисы). Клиент
 # их через PUT /entities слать не должен: формы и модалки нередко спредят весь
@@ -250,90 +246,21 @@ async def list_entities(
     # Batch query: Get chat/call counts WITH ACCESS CONTROL
     # Full access users (superadmin, owner, or member with has_full_access) see all counts
     user_has_full_access = await has_full_database_access(current_user, org.id, db) if org else False
-
-    if user_has_full_access:
-        # Full access - count all chats/calls
-        chats_counts_result = await db.execute(
-            select(Chat.entity_id, func.count(Chat.id))
-            .where(Chat.entity_id.in_(entity_ids))
-            .group_by(Chat.entity_id)
-        )
-        chats_counts = {row[0]: row[1] for row in chats_counts_result.fetchall()}
-
-        calls_counts_result = await db.execute(
-            select(CallRecording.entity_id, func.count(CallRecording.id))
-            .where(CallRecording.entity_id.in_(entity_ids))
-            .group_by(CallRecording.entity_id)
-        )
-        calls_counts = {row[0]: row[1] for row in calls_counts_result.fetchall()}
-    else:
-        # Limited access - count only accessible chats/calls
-        # Get IDs of chats shared with current user
-        shared_chats_result = await db.execute(
-            select(SharedAccess.resource_id).where(
-                SharedAccess.resource_type == ResourceType.chat,
-                SharedAccess.shared_with_id == current_user.id,
-                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-            )
-        )
-        shared_chat_ids = set(shared_chats_result.scalars().all())
-
-        # Get IDs of calls shared with current user
-        shared_calls_result = await db.execute(
-            select(SharedAccess.resource_id).where(
-                SharedAccess.resource_type == ResourceType.call,
-                SharedAccess.shared_with_id == current_user.id,
-                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-            )
-        )
-        shared_call_ids = set(shared_calls_result.scalars().all())
-
-        # Get departments where user is lead or sub_admin
-        admin_dept_result = await db.execute(
-            select(DepartmentMember.department_id).where(
-                DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
-            )
-        )
-        admin_dept_ids = [r for r in admin_dept_result.scalars().all()]
-
-        # Get user IDs in departments where current user is lead/sub_admin
-        dept_member_ids = set()
-        if admin_dept_ids:
-            dept_members_result = await db.execute(
-                select(DepartmentMember.user_id).where(
-                    DepartmentMember.department_id.in_(admin_dept_ids)
-                )
-            )
-            dept_member_ids = set(dept_members_result.scalars().all())
-
-        # Build chat access conditions
-        chat_conditions = [Chat.owner_id == current_user.id]  # Own chats
-        if shared_chat_ids:
-            chat_conditions.append(Chat.id.in_(shared_chat_ids))  # Shared with me
-        if dept_member_ids:
-            chat_conditions.append(Chat.owner_id.in_(dept_member_ids))  # Dept members' chats
-
-        chats_counts_result = await db.execute(
-            select(Chat.entity_id, func.count(Chat.id))
-            .where(Chat.entity_id.in_(entity_ids), or_(*chat_conditions))
-            .group_by(Chat.entity_id)
-        )
-        chats_counts = {row[0]: row[1] for row in chats_counts_result.fetchall()}
-
-        # Build call access conditions
-        call_conditions = [CallRecording.owner_id == current_user.id]  # Own calls
-        if shared_call_ids:
-            call_conditions.append(CallRecording.id.in_(shared_call_ids))  # Shared with me
-        if dept_member_ids:
-            call_conditions.append(CallRecording.owner_id.in_(dept_member_ids))  # Dept members' calls
-
-        calls_counts_result = await db.execute(
-            select(CallRecording.entity_id, func.count(CallRecording.id))
-            .where(CallRecording.entity_id.in_(entity_ids), or_(*call_conditions))
-            .group_by(CallRecording.entity_id)
-        )
-        calls_counts = {row[0]: row[1] for row in calls_counts_result.fetchall()}
+    chat_conditions, call_conditions = await accessible_chat_call_conditions(
+        db, current_user, full_access=user_has_full_access,
+    )
+    chats_counts_result = await db.execute(
+        select(Chat.entity_id, func.count(Chat.id))
+        .where(Chat.entity_id.in_(entity_ids), *([or_(*chat_conditions)] if chat_conditions else []))
+        .group_by(Chat.entity_id)
+    )
+    chats_counts = {row[0]: row[1] for row in chats_counts_result.fetchall()}
+    calls_counts_result = await db.execute(
+        select(CallRecording.entity_id, func.count(CallRecording.id))
+        .where(CallRecording.entity_id.in_(entity_ids), *([or_(*call_conditions)] if call_conditions else []))
+        .group_by(CallRecording.entity_id)
+    )
+    calls_counts = {row[0]: row[1] for row in calls_counts_result.fetchall()}
 
     # Batch query: Get vacancy application counts and vacancy names
     vacancies_counts = {}
@@ -378,46 +305,27 @@ async def list_entities(
         is_mine = entity.created_by == current_user.id
         is_shared = entity.id in shared_with_me_ids and not is_mine
 
-        response.append({
-            "id": entity.id,
-            "type": entity.type,
-            "name": entity.name,
-            "status": entity.status,
-            "phone": entity.phone,
-            "email": entity.email,
-            "telegram_user_id": entity.telegram_user_id,
-            "telegram_usernames": entity.telegram_usernames or [],
-            "emails": entity.emails or [],
-            "phones": entity.phones or [],
-            "company": entity.company,
-            "position": entity.position,
-            "tags": entity.tags or [],
-            "extra_data": entity.extra_data or {},
-            "created_by": entity.created_by,
+        row = entity_base_dict(
+            entity,
+            department_name=dept_names.get(entity.department_id) if entity.department_id else None,
+            scope_ids=_scope_ids,
+        )
+        row.update({
             "owner_name": owner_names.get(entity.created_by, "Unknown"),
-            "department_id": entity.department_id,
-            "department_name": dept_names.get(entity.department_id) if entity.department_id else None,
             "is_mine": is_mine,
             "is_shared": is_shared,
-            "created_at": entity.created_at.isoformat() if entity.created_at else None,
-            "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
             "chats_count": chats_counts.get(entity.id, 0),
             "calls_count": calls_counts.get(entity.id, 0),
-            # Optimistic locking version
-            "version": entity.version or 1,
             # Transfer tracking
             "is_transferred": entity.is_transferred or False,
             "transferred_to_id": entity.transferred_to_id,
             "transferred_to_name": transferred_to_names.get(entity.transferred_to_id) if entity.transferred_to_id else None,
             "transferred_at": entity.transferred_at.isoformat() if entity.transferred_at else None,
-            # Expected salary for candidates
-            "expected_salary_min": entity.expected_salary_min,
-            "expected_salary_max": entity.expected_salary_max,
-            "expected_salary_currency": entity.expected_salary_currency or 'RUB',
             # Vacancy tracking
             "vacancies_count": vacancies_counts.get(entity.id, 0),
-            "vacancy_names": vacancy_names_map.get(entity.id, [])
+            "vacancy_names": vacancy_names_map.get(entity.id, []),
         })
+        response.append(row)
 
     return response
 
@@ -504,37 +412,21 @@ async def create_entity(
         except Exception as e:
             logger.warning(f"resume-text-twin detect failed for new entity {entity.id}: {e}")
 
-    response_data = {
-        "id": entity.id,
-        "type": entity.type,
-        "name": entity.name,
-        "status": entity.status,
-        "phone": entity.phone,
-        "email": entity.email,
-        "telegram_user_id": entity.telegram_user_id,
-        "telegram_usernames": entity.telegram_usernames or [],
-        "emails": entity.emails or [],
-        "phones": entity.phones or [],
-        "company": entity.company,
-        "position": entity.position,
-        "tags": entity.tags or [],
-        "extra_data": entity.extra_data or {},
-        "created_by": entity.created_by,
-        "department_id": entity.department_id,
-        "department_name": department_name,
-        "created_at": entity.created_at.isoformat() if entity.created_at else None,
-        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
+    from ...services.vacancy_scope import get_scope_vacancy_ids
+    response_data = entity_base_dict(
+        entity,
+        department_name=department_name,
+        scope_ids=await get_scope_vacancy_ids(current_user, db),
+    )
+    response_data.update({
         "chats_count": 0,
         "calls_count": 0,
-        "expected_salary_min": entity.expected_salary_min,
-        "expected_salary_max": entity.expected_salary_max,
-        "expected_salary_currency": entity.expected_salary_currency or 'RUB',
         "has_hidden_duplicate": bool(hidden_duplicate_id),
         "hidden_duplicate_id": hidden_duplicate_id,
-    }
+    })
 
-    # Broadcast entity.created event
-    await broadcast_entity_created(org.id, response_data)
+    # Broadcast entity.created event (без контактов и заметок — см. entity_card)
+    await broadcast_entity_created(org.id, entity_broadcast_payload(entity))
 
     return response_data
 
@@ -580,80 +472,21 @@ async def get_entity(
     # Load related data WITH ACCESS CONTROL
     # Full access users (superadmin, owner, or member with has_full_access) see all
     user_has_full_access = await has_full_database_access(current_user, org.id, db)
-
-    if user_has_full_access:
-        chats_result = await db.execute(
-            select(Chat).where(Chat.entity_id == entity_id)
+    chat_conditions, call_conditions = await accessible_chat_call_conditions(
+        db, current_user, full_access=user_has_full_access,
+    )
+    chats = (await db.execute(
+        select(Chat).where(
+            Chat.entity_id == entity_id,
+            *([or_(*chat_conditions)] if chat_conditions else []),
         )
-        calls_result = await db.execute(
-            select(CallRecording).where(CallRecording.entity_id == entity_id).order_by(CallRecording.created_at.desc())
-        )
-        chats = chats_result.scalars().all()
-        calls = calls_result.scalars().all()
-    else:
-        # Limited access - only show accessible chats/calls
-        # Get IDs of chats shared with current user
-        shared_chats_result = await db.execute(
-            select(SharedAccess.resource_id).where(
-                SharedAccess.resource_type == ResourceType.chat,
-                SharedAccess.shared_with_id == current_user.id,
-                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-            )
-        )
-        shared_chat_ids = set(shared_chats_result.scalars().all())
-
-        # Get IDs of calls shared with current user
-        shared_calls_result = await db.execute(
-            select(SharedAccess.resource_id).where(
-                SharedAccess.resource_type == ResourceType.call,
-                SharedAccess.shared_with_id == current_user.id,
-                or_(SharedAccess.expires_at.is_(None), SharedAccess.expires_at > datetime.utcnow())
-            )
-        )
-        shared_call_ids = set(shared_calls_result.scalars().all())
-
-        # Get departments where user is lead or sub_admin
-        admin_dept_result = await db.execute(
-            select(DepartmentMember.department_id).where(
-                DepartmentMember.user_id == current_user.id,
-                DepartmentMember.role.in_([DeptRole.lead, DeptRole.sub_admin])
-            )
-        )
-        admin_dept_ids = [r for r in admin_dept_result.scalars().all()]
-
-        # Get user IDs in departments where current user is lead/sub_admin
-        dept_member_ids = set()
-        if admin_dept_ids:
-            dept_members_result = await db.execute(
-                select(DepartmentMember.user_id).where(
-                    DepartmentMember.department_id.in_(admin_dept_ids)
-                )
-            )
-            dept_member_ids = set(dept_members_result.scalars().all())
-
-        # Build chat access conditions
-        chat_conditions = [Chat.owner_id == current_user.id]  # Own chats
-        if shared_chat_ids:
-            chat_conditions.append(Chat.id.in_(shared_chat_ids))  # Shared with me
-        if dept_member_ids:
-            chat_conditions.append(Chat.owner_id.in_(dept_member_ids))  # Dept members' chats
-
-        chats_result = await db.execute(
-            select(Chat).where(Chat.entity_id == entity_id, or_(*chat_conditions))
-        )
-        chats = chats_result.scalars().all()
-
-        # Build call access conditions
-        call_conditions = [CallRecording.owner_id == current_user.id]  # Own calls
-        if shared_call_ids:
-            call_conditions.append(CallRecording.id.in_(shared_call_ids))  # Shared with me
-        if dept_member_ids:
-            call_conditions.append(CallRecording.owner_id.in_(dept_member_ids))  # Dept members' calls
-
-        calls_result = await db.execute(
-            select(CallRecording).where(CallRecording.entity_id == entity_id, or_(*call_conditions)).order_by(CallRecording.created_at.desc())
-        )
-        calls = calls_result.scalars().all()
+    )).scalars().all()
+    calls = (await db.execute(
+        select(CallRecording).where(
+            CallRecording.entity_id == entity_id,
+            *([or_(*call_conditions)] if call_conditions else []),
+        ).order_by(CallRecording.created_at.desc())
+    )).scalars().all()
 
     # Get transfers - wrap in try/except in case new columns don't exist yet
     try:
@@ -749,40 +582,17 @@ async def get_entity(
 
     # Скоуп по воронкам: из карточки убираем следы чужих воронок (метки
     # «HR: Имя · Воронка» и заметки, привязанные к ним).
-    from ...services.vacancy_scope import filter_extra_for_scope, get_scope_vacancy_ids
+    from ...services.vacancy_scope import get_scope_vacancy_ids
     _scope_ids = await get_scope_vacancy_ids(current_user, db)
 
+    card = entity_base_dict(entity, department_name=department_name, scope_ids=_scope_ids)
     return {
-        "id": entity.id,
-        "type": entity.type,
-        "name": entity.name,
-        "status": entity.status,
-        "phone": entity.phone,
-        "email": entity.email,
-        "telegram_user_id": entity.telegram_user_id,
-        "telegram_usernames": entity.telegram_usernames or [],
-        "emails": entity.emails or [],
-        "phones": entity.phones or [],
-        "company": entity.company,
-        "position": entity.position,
-        "tags": entity.tags or [],
-        "extra_data": filter_extra_for_scope(entity.extra_data or {}, _scope_ids),
-        "created_by": entity.created_by,
-        "department_id": entity.department_id,
-        "department_name": department_name,
-        "created_at": entity.created_at.isoformat() if entity.created_at else None,
-        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
-        # Optimistic locking version
-        "version": entity.version or 1,
+        **card,
         # Transfer tracking
         "is_transferred": entity.is_transferred or False,
         "transferred_to_id": entity.transferred_to_id,
         "transferred_to_name": transferred_to_name,
         "transferred_at": entity.transferred_at.isoformat() if entity.transferred_at else None,
-        # Expected salary for candidates
-        "expected_salary_min": entity.expected_salary_min,
-        "expected_salary_max": entity.expected_salary_max,
-        "expected_salary_currency": entity.expected_salary_currency or 'RUB',
         # Ownership info for frontend permissions
         "owner_id": entity.created_by,
         "is_mine": entity.created_by == current_user.id,
@@ -929,6 +739,7 @@ async def update_entity(
     from ...services.similarity import identity_fingerprint, recheck_duplicates_after_edit
     _is_candidate = entity.type == EntityType.candidate
     _identity_before = identity_fingerprint(entity) if _is_candidate else None
+    _status_before = entity.status
 
     # extra_data: MERGE, не заменять — иначе частичный апдейт (напр. форма правки
     # шлёт только salary/city/...) затрёт notes, merged_from, timeline_reactions,
@@ -951,24 +762,17 @@ async def update_entity(
     # Increment version for optimistic locking
     entity.version = (entity.version or 1) + 1
 
-    # Synchronize Entity.status -> VacancyApplication.stage if status changed
-    if 'status' in update_data and data.status in STATUS_SYNC_MAP:
-        new_stage = STATUS_SYNC_MAP[data.status]
-        # Find active application for this entity
-        apps = (await db.execute(
-            select(VacancyApplication)
-            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-            .where(
-                VacancyApplication.entity_id == entity_id,
-                Vacancy.status != VacancyStatus.closed
-            )
-        )).scalars().all()
-        # Синхронизируем этап ТОЛЬКО когда отклик ровно один — иначе непонятно,
-        # в какой вакансии менять этап, и можно затереть чужую воронку.
-        if len(apps) == 1 and apps[0].stage != new_stage:
-            apps[0].stage = new_stage
-            apps[0].last_stage_change_at = datetime.utcnow()
-            logger.info(f"PUT /entities/{entity_id}: Synchronized status {data.status} -> application {apps[0].id} stage {new_stage}")
+    from ...services.stage_change import apply_entity_status, log_moves
+
+    status_move = None
+    if 'status' in update_data and data.status is not None:
+        # Те же правила, что у PATCH /status (apply_entity_status). Из архива
+        # выводит только НАСТОЯЩАЯ смена статуса: форма правки шлёт статус при
+        # каждом сохранении, и сохранить карточку архивного не значит вернуть его.
+        status_move = await apply_entity_status(
+            db, entity, data.status, changed_by=current_user,
+            unarchive=data.status != _status_before,
+        )
 
     if _is_candidate and identity_fingerprint(entity) != _identity_before:
         # Сбой пересчёта не должен ронять сохранение карточки: откатываем только
@@ -980,6 +784,7 @@ async def update_entity(
             logger.warning(f"DUP_RECHECK failed for entity {entity_id}: {e}")
 
     await db.commit()
+    log_moves([status_move], current_user, via="entity_edit")
     await db.refresh(entity)
 
     # Get department name
@@ -988,31 +793,12 @@ async def update_entity(
         dept_result = await db.execute(select(Department.name).where(Department.id == entity.department_id))
         department_name = dept_result.scalar()
 
-    response_data = {
-        "id": entity.id,
-        "type": entity.type,
-        "name": entity.name,
-        "status": entity.status,
-        "phone": entity.phone,
-        "email": entity.email,
-        "telegram_user_id": entity.telegram_user_id,
-        "telegram_usernames": entity.telegram_usernames or [],
-        "emails": entity.emails or [],
-        "phones": entity.phones or [],
-        "company": entity.company,
-        "position": entity.position,
-        "tags": entity.tags or [],
-        "extra_data": entity.extra_data or {},
-        "created_by": entity.created_by,
-        "department_id": entity.department_id,
-        "department_name": department_name,
-        "created_at": entity.created_at.isoformat() if entity.created_at else None,
-        "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
-        "expected_salary_min": entity.expected_salary_min,
-        "expected_salary_max": entity.expected_salary_max,
-        "expected_salary_currency": entity.expected_salary_currency or 'RUB',
-        "version": entity.version
-    }
+    from ...services.vacancy_scope import get_scope_vacancy_ids
+    response_data = entity_base_dict(
+        entity,
+        department_name=department_name,
+        scope_ids=await get_scope_vacancy_ids(current_user, db),
+    )
 
     # Invalidate scoring cache if relevant fields changed
     scoring_relevant_fields = {
@@ -1037,430 +823,10 @@ async def update_entity(
             )
             logger.info(f"Scheduled AI profile regeneration for entity {entity.id}")
 
-    # Broadcast entity.updated event
-    await broadcast_entity_updated(org.id, response_data)
+    # Broadcast entity.updated event (без контактов и заметок — см. entity_card)
+    await broadcast_entity_updated(org.id, entity_broadcast_payload(entity))
 
     return response_data
-
-
-class NoteCreate(BaseModel):
-    text: str
-    stage: Optional[str] = None
-    stage_label: Optional[str] = None
-    # Дописка комментария к ПРОШЛОЙ статусной записи таймлайна (запрос Марии):
-    # parent_key = reactionKey статусной записи, под которую цепляем коммент
-    # (напр. "e:123" для перехода, "n:<uuid>" для стартовой заметки-этапа,
-    # "created" для синтетического «Кандидат добавлен»). stage_at_write_label —
-    # метка этапа, на котором кандидат был В МОМЕНТ написания коммента (для
-    # жёлтой плашки «оставлен на этапе X»). Дату НЕ принимаем — сервер ставит
-    # datetime.now(), чтобы дата всегда = момент написания.
-    parent_key: Optional[str] = None
-    stage_at_write_label: Optional[str] = None
-    # Прежний статус кандидата — только для записей о смене этапа У КАНДИДАТА
-    # ВНЕ ВОРОНОК. Заявки у него нет, историю (StageTransition) писать некуда,
-    # и такая запись живёт комментарием. Чтобы её удаление возвращало кандидата
-    # назад — как корзина у записи истории в воронке (28.09.2026) — запоминаем,
-    # откуда перевели.
-    from_status: Optional[str] = None
-    # Воронка (вакансия), в которой написан коммент. Один кандидат может быть в
-    # НЕСКОЛЬКИХ воронках — каждая показывает только свои комменты (по vacancy_id).
-    # None = «Общий» коммент (написан вне контекста конкретной воронки / легаси).
-    vacancy_id: Optional[int] = None
-
-
-class NoteUpdate(BaseModel):
-    text: str
-
-
-class PinnedEntryUpdate(BaseModel):
-    """Закреп записи ленты у кандидата БЕЗ заявок. У кандидата в воронке закреп
-    живёт на заявке (одна воронка — один закреп); вне воронок хранить негде,
-    поэтому кладём на саму карточку (24.09.2026)."""
-    entry_key: Optional[str] = None
-
-
-def _note_org_check(entity, current_user, org):
-    """Общая проверка: org-scope доступа к entity для notes-эндпоинтов."""
-    if current_user.role != UserRole.superadmin:
-        if not org or entity.org_id != org.id:
-            raise HTTPException(404, "Entity not found")
-
-
-async def _note_can_modify(note: dict, current_user, org, db) -> bool:
-    """Edit/delete: только автор коммента или админ/owner/superadmin.
-
-    F-fix: докстринг всегда обещал «или админ/owner», но код проверял ТОЛЬКО
-    superadmin + автора — обычный org-admin/owner получал 403 при попытке
-    удалить чужой (например, с @-упоминанием) комментарий.
-    """
-    if current_user.role == UserRole.superadmin:
-        return True
-    author_id = note.get("author_id")
-    if author_id is not None and int(author_id) == int(current_user.id):
-        return True
-    if org and await has_full_database_access(current_user, org.id, db):
-        return True
-    return False
-
-
-@router.post("/{entity_id}/notes")
-async def add_entity_note(
-    entity_id: int,
-    data: NoteCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Добавить комментарий-заметку кандидату.
-
-    Доступно любому пользователю в той же организации, что и entity —
-    зеркалит видимость в общем kanban'e /all-candidates (где рекрутёр
-    видит всех кандидатов оргa). Комментарий не модифицирует данные
-    кандидата, а только дополняет workflow.
-    """
-    import uuid
-    from datetime import timezone as _tz
-    current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-    if not org and current_user.role != UserRole.superadmin:
-        raise HTTPException(403, "No organization access")
-
-    # FOR UPDATE: заметки живут в общем блобе extra_data, который перезаписывается
-    # ЦЕЛИКОМ и здесь, и в hr_tags.sync_for_entity (self-heal при открытии карточки).
-    # Без блокировки строки два таких писателя, прочитавших один снимок, при коммите
-    # затирают заметки друг друга (lost update) — ровно «пропали НЕКОТОРЫЕ
-    # комментарии» у Марии при переводе кандидата в отдел, когда self-heal HR-тегов
-    # реально пишет устаревший snapshot. Лок сериализует писателей.
-    result = await db.execute(
-        select(Entity).where(Entity.id == entity_id).with_for_update()
-    )
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(404, "Entity not found")
-    _note_org_check(entity, current_user, org)
-
-    text_clean = (data.text or "").strip()
-    # Запись о СМЕНЕ ЭТАПА у кандидата вне воронок может быть без текста: в
-    # воронке такой перевод всегда оставляет строку в истории, и здесь лента
-    # должна вести себя так же (28.09.2026). Обычный комментарий без текста
-    # по-прежнему не принимаем.
-    if not text_clean and not data.stage:
-        raise HTTPException(400, "Comment text cannot be empty")
-    if len(text_clean) > NOTE_TEXT_MAX_LENGTH:
-        raise HTTPException(400, f"Comment too long (max {NOTE_TEXT_MAX_LENGTH})")
-
-    extra = dict(entity.extra_data or {})
-    notes = list(extra.get("notes") or [])
-    note = {
-        "id": str(uuid.uuid4()),
-        "text": text_clean,
-        "date": datetime.now(_tz.utc).isoformat(),
-        "stage": data.stage,
-        "stage_label": data.stage_label,
-        "author_id": current_user.id,
-        "author_name": current_user.name,
-    }
-    # Привязка к статусной записи + этап-на-момент-написания — только если переданы,
-    # чтобы не засорять обычные комментарии пустыми ключами.
-    if data.parent_key:
-        note["parent_key"] = data.parent_key
-    if data.stage_at_write_label:
-        note["stage_at_write_label"] = data.stage_at_write_label
-    if data.from_status:
-        note["from_status"] = data.from_status
-    # Метка воронки — чтобы в каждой вакансии показывать только её комменты.
-    if data.vacancy_id is not None:
-        note["vacancy_id"] = data.vacancy_id
-    notes.append(note)
-    extra["notes"] = notes
-    entity.extra_data = extra
-    # Сначала ГАРАНТИРОВАННО коммитим сам комментарий — его сохранность не должна
-    # зависеть от уведомлений об @-упоминаниях (иначе при сбое/медленном notify
-    # коммент «появлялся только после F5»).
-    await db.commit()
-    await db.refresh(entity)
-
-    # @-упоминания — ОТДЕЛЬНОЙ транзакцией: достаём data-uid из HTML и шлём
-    # упомянутым уведомление «как у анкет». Падение здесь уже не трогает коммент.
-    try:
-        from ...services.hr_notifications import notify_comment_mentions
-        await notify_comment_mentions(
-            db, text=text_clean, author=current_user, entity=entity
-        )
-        await db.commit()
-    except Exception:
-        await db.rollback()
-
-    return {"success": True, "note": note, "total_notes": len(notes)}
-
-
-class TimelineReactionRequest(BaseModel):
-    entry_key: str
-    emoji: str
-
-
-@router.post("/{entity_id}/timeline-reaction")
-async def toggle_timeline_reaction(
-    entity_id: int,
-    data: TimelineReactionRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Тоггл эмодзи-реакции на запись таймлайна (лог карточки).
-
-    entry_key — стабильный ключ записи (id заметки / history-id события / 'created').
-    Реакции хранятся в extra_data.timeline_reactions[entry_key] = [{emoji, user_id,
-    user_name, date}]. Повторный клик тем же эмодзи снимает реакцию (toggle).
-    Доступно любому в той же организации (как и заметки).
-    """
-    from datetime import timezone as _tz
-    current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-    if not org and current_user.role != UserRole.superadmin:
-        raise HTTPException(403, "No organization access")
-
-    # FOR UPDATE — см. add_entity_note. Реакции живут в том же блобе extra_data,
-    # а кликают их часто и быстро: без блокировки тоггл реакции спокойно затирает
-    # только что добавленный комментарий.
-    result = await db.execute(
-        select(Entity).where(Entity.id == entity_id).with_for_update()
-    )
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(404, "Entity not found")
-    _note_org_check(entity, current_user, org)
-
-    key = (data.entry_key or "").strip()
-    emoji = (data.emoji or "").strip()
-    if not key or not emoji:
-        raise HTTPException(400, "entry_key and emoji are required")
-    if len(emoji) > 16:
-        raise HTTPException(400, "emoji too long")
-
-    extra = dict(entity.extra_data or {})
-    reactions = dict(extra.get("timeline_reactions") or {})
-    entry = list(reactions.get(key) or [])
-    # toggle: снять, если я уже ставил ЭТОТ эмодзи; иначе добавить
-    idx = next(
-        (
-            i for i, r in enumerate(entry)
-            if isinstance(r, dict)
-            and r.get("user_id") == current_user.id
-            and r.get("emoji") == emoji
-        ),
-        -1,
-    )
-    if idx >= 0:
-        entry.pop(idx)
-    else:
-        entry.append({
-            "emoji": emoji,
-            "user_id": current_user.id,
-            "user_name": current_user.name,
-            "date": datetime.now(_tz.utc).isoformat(),
-        })
-    if entry:
-        reactions[key] = entry
-    else:
-        reactions.pop(key, None)
-    extra["timeline_reactions"] = reactions
-    entity.extra_data = extra
-    await db.commit()
-    return {"success": True, "entry_key": key, "reactions": entry}
-
-
-def _find_note_index(notes: list, note_id: str) -> int:
-    """Ищем по id; для legacy-комментов без id допускаем поиск по date."""
-    for i, n in enumerate(notes):
-        if isinstance(n, dict):
-            if n.get("id") == note_id:
-                return i
-            # legacy fallback: id-формат "date:<iso>" (фронт может прислать)
-            if note_id.startswith("date:") and n.get("date") == note_id[5:]:
-                return i
-    return -1
-
-
-@router.put("/{entity_id}/pin")
-async def set_entity_pinned_entry(
-    entity_id: int,
-    data: PinnedEntryUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Закрепить запись ленты кандидата вне воронок (entry_key = null — снять).
-
-    Закреп общий для всех, кто видит карточку, как и у воронок.
-    """
-    current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-
-    # FOR UPDATE — extra_data перезаписывается целиком: без блокировки
-    # параллельная заметка затёрла бы закреп (та же причина, что в notes).
-    result = await db.execute(
-        select(Entity).where(Entity.id == entity_id).with_for_update()
-    )
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(404, "Entity not found")
-    _note_org_check(entity, current_user, org)
-
-    key = (data.entry_key or "").strip() or None
-    if key and len(key) > 64:
-        raise HTTPException(400, "Слишком длинный ключ записи")
-
-    extra = dict(entity.extra_data or {})
-    if key:
-        extra["pinned_entry_key"] = key
-    else:
-        extra.pop("pinned_entry_key", None)
-    entity.extra_data = extra
-    await db.commit()
-    logger.info(
-        "ENTRY_PIN entity=%s user=%s -> %s", entity_id, current_user.id, key or "снят",
-    )
-    return {"success": True, "pinned_entry_key": key}
-
-
-@router.patch("/{entity_id}/notes/{note_id}")
-async def update_entity_note(
-    entity_id: int,
-    note_id: str,
-    data: NoteUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Редактировать комментарий — автор, org-admin/owner или superadmin."""
-    from datetime import timezone as _tz
-    current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-
-    # FOR UPDATE — по той же причине, что в add_entity_note: extra_data
-    # перезаписывается ЦЕЛИКОМ, и без блокировки правка коммента затирает
-    # заметки/реакции, добавленные параллельным писателем (lost update).
-    result = await db.execute(
-        select(Entity).where(Entity.id == entity_id).with_for_update()
-    )
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(404, "Entity not found")
-    _note_org_check(entity, current_user, org)
-
-    text_clean = (data.text or "").strip()
-    if not text_clean:
-        raise HTTPException(400, "Comment text cannot be empty")
-    if len(text_clean) > NOTE_TEXT_MAX_LENGTH:
-        raise HTTPException(400, f"Comment too long (max {NOTE_TEXT_MAX_LENGTH})")
-
-    extra = dict(entity.extra_data or {})
-    notes = list(extra.get("notes") or [])
-    idx = _find_note_index(notes, note_id)
-    if idx < 0:
-        raise HTTPException(404, "Comment not found")
-
-    note = dict(notes[idx])
-    if not await _note_can_modify(note, current_user, org, db):
-        raise HTTPException(403, "You can only edit your own comments")
-
-    note["text"] = text_clean
-    note["edited_at"] = datetime.now(_tz.utc).isoformat()
-    # Кто правил — для подсказки «Изменено: Настя, сегодня 09:36»: в строке
-    # ленты остаётся автор комментария, а правившего видно при наведении
-    # (24.09.2026). Раньше писали только время, и автор правки терялся.
-    note["edited_by"] = current_user.id
-    note["edited_by_name"] = current_user.name
-    notes[idx] = note
-    extra["notes"] = notes
-    entity.extra_data = extra
-    await db.commit()
-    await db.refresh(entity)
-    return {"success": True, "note": note}
-
-
-@router.delete("/{entity_id}/notes/{note_id}")
-async def delete_entity_note(
-    entity_id: int,
-    note_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Удалить комментарий — автор, org-admin/owner или superadmin."""
-    current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-
-    # FOR UPDATE — см. add_entity_note: удаление одного коммента переписывает
-    # весь extra_data, поэтому без блокировки оно затрёт заметку, которую в этот
-    # момент добавляет коллега (или self-heal HR-тегов). Это ровно тот «пропали
-    # НЕКОТОРЫЕ комментарии», который чинили в POST, но не тут.
-    result = await db.execute(
-        select(Entity).where(Entity.id == entity_id).with_for_update()
-    )
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(404, "Entity not found")
-    _note_org_check(entity, current_user, org)
-
-    extra = dict(entity.extra_data or {})
-    notes = list(extra.get("notes") or [])
-    idx = _find_note_index(notes, note_id)
-    if idx < 0:
-        raise HTTPException(404, "Comment not found")
-
-    if not await _note_can_modify(notes[idx], current_user, org, db):
-        raise HTTPException(403, "You can only delete your own comments")
-
-    removed = notes.pop(idx)
-    extra["notes"] = notes
-
-    # Удалили запись о переводе у кандидата ВНЕ воронок — возвращаем его на
-    # прежний статус, как это делает корзина у записи истории в воронке. Без
-    # этого поведение разъезжалось: в воронке кандидат откатывался, а вне её
-    # запись просто пропадала, и он оставался на новом этапе (владелец,
-    # 28.09.2026). Откатываем ТОЛЬКО если запись описывает текущий статус —
-    # этап уже подвинули руками, значит, она его больше не описывает.
-    from_status = removed.get("from_status")
-    current_status = entity.status.value if entity.status else None
-    if from_status and removed.get("stage") and removed.get("stage") == current_status:
-        try:
-            entity.status = EntityStatus(from_status)
-            entity.updated_at = datetime.utcnow()
-            logger.info(
-                "NOTE_STAGE_UNDO: entity=%s %s -> %s (удалена запись о переводе)",
-                entity_id, current_status, from_status,
-            )
-        except ValueError:
-            logger.warning("NOTE_STAGE_UNDO: неизвестный статус %s", from_status)
-    # Закреп должен уйти вместе с комментарием. Иначе ключ указывает в пустоту
-    # (прод 28.09.2026: «закрепил, удалил не открепив») — закреп висит на
-    # несуществующей записи и мешает понять, что вообще закреплено.
-    pin_key = f"n:{removed.get('id') or note_id}"
-    if extra.get("pinned_entry_key") == pin_key:
-        extra.pop("pinned_entry_key", None)
-        logger.info("ENTRY_PIN снят вместе с комментарием: entity=%s %s", entity_id, pin_key)
-    entity.extra_data = extra
-
-    # Тот же комментарий мог быть закреплён в воронке — там закреп живёт на
-    # заявке, и его надо снять отдельно.
-    from ...models.database import VacancyApplication
-    apps = (await db.execute(
-        select(VacancyApplication).where(
-            VacancyApplication.entity_id == entity_id,
-            VacancyApplication.pinned_entry_key == pin_key,
-        )
-    )).scalars().all()
-    for app in apps:
-        app.pinned_entry_key = None
-        logger.info("ENTRY_PIN снят вместе с комментарием: app=%s %s", app.id, pin_key)
-
-    await db.commit()
-    await db.refresh(entity)
-    return {
-        "success": True,
-        "total_notes": len(notes),
-        # Фронт по этим полям переставляет карточку на месте, без перезагрузки.
-        "rolled_back": bool(from_status) and entity.status is not None
-        and entity.status.value == from_status,
-        "entity_status": entity.status.value if entity.status else None,
-    }
 
 
 @router.patch("/{entity_id}/status")
@@ -1492,6 +858,10 @@ async def update_entity_status(
 
     if entity.is_transferred:
         raise HTTPException(400, "Cannot edit a transferred entity")
+    # Скоуп по воронкам: чужой кандидат — 404, как у карточки (раньше статус
+    # можно было сменить по номеру мимо скоупа).
+    from ...services.vacancy_scope import ensure_entity_visible
+    await ensure_entity_visible(entity_id, current_user, db)
 
     # Смена этапа/статуса — additive workflow-действие в общем kanban, как
     # комментарий и загрузка файла (см. add_entity_note и upload_entity_file в
@@ -1505,65 +875,21 @@ async def update_entity_status(
         f"Status change allowed (org-scope): user {current_user.id} → entity {entity_id}"
     )
 
-    # Update status
     old_status = entity.status
-    entity.status = data.status
+    from ...services.stage_change import apply_entity_status, log_moves
 
-    # Активно работаемый кандидат не должен оставаться в теневом архиве
-    # дедупа — смена статуса (напр. drag&drop на канбане) выводит его из архива.
-    if entity.is_archived:
-        entity.is_archived = False
-
-    # Synchronize Entity.status -> VacancyApplication.stage
-    if data.status in STATUS_SYNC_MAP:
-        new_stage = STATUS_SYNC_MAP[data.status]
-        # Find active application for this entity
-        apps = (await db.execute(
-            select(VacancyApplication)
-            .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
-            .where(
-                VacancyApplication.entity_id == entity_id,
-                Vacancy.status != VacancyStatus.closed
-            )
-        )).scalars().all()
-        # Только при единственном отклике (см. PUT /entities) — иначе не трогаем.
-        if len(apps) == 1 and apps[0].stage != new_stage:
-            apps[0].stage = new_stage
-            apps[0].last_stage_change_at = datetime.utcnow()
-            logger.info(f"Synchronized entity {entity_id} status {data.status} to application {apps[0].id} stage {new_stage}")
-
-    # Практика ведёт в песочницу: статус меняют и отсюда (drag&drop на «Все
-    # кандидаты»), а не только переводом по воронке.
-    if data.status == EntityStatus.probation:
-        try:
-            from ...services.board_placements import ensure_sandbox_placement
-            single = (await db.execute(
-                select(Vacancy)
-                .join(VacancyApplication, VacancyApplication.vacancy_id == Vacancy.id)
-                .where(
-                    VacancyApplication.entity_id == entity_id,
-                    Vacancy.status != VacancyStatus.closed,
-                )
-                .limit(2)
-            )).scalars().all()
-            await ensure_sandbox_placement(
-                db, entity_id, single[0] if len(single) == 1 else None, org_id=org.id
-            )
-        except Exception:
-            logger.exception("Не удалось поставить entity=%s в песочницу", entity_id)
+    # Статус, единственная открытая заявка, выход из архива, песочница на
+    # практике — одним правилом с правкой карточки (apply_entity_status).
+    status_move = await apply_entity_status(db, entity, data.status, changed_by=current_user)
 
     await db.commit()
+    log_moves([status_move], current_user, via="entity_status")
     await db.refresh(entity)
 
     logger.info(f"Entity {entity_id} status changed: {old_status} -> {data.status}")
 
     # Broadcast update
-    await broadcast_entity_updated(org.id, {
-        "id": entity.id,
-        "type": entity.type,
-        "name": entity.name,
-        "status": entity.status
-    })
+    await broadcast_entity_updated(org.id, entity_broadcast_payload(entity))
 
     return {
         "id": entity.id,
@@ -1644,13 +970,26 @@ async def delete_entity(
     deleted_entity_id = entity.id
     deleted_org_id = entity.org_id
 
+    # Корзина (20.10.2026): полный слепок перед удалением — 7 дней его можно
+    # вернуть, а «кто, кого, когда» остаётся в журнале навсегда. Раньше
+    # кандидат стирался бесследно (случай 19.10.2026).
+    from ...services.entity_trash import move_to_trash, purge_expired
+    trash = await move_to_trash(db, entity, current_user)
+    await purge_expired(db)
+    deleted_name = entity.name
+
     await db.delete(entity)
     await db.commit()
+    logger.info(
+        "ENTITY_DELETE: entity=%s «%s» by user=%s (%s) -> корзина #%s до %s",
+        deleted_entity_id, deleted_name, current_user.id, current_user.name,
+        trash.id, trash.purge_after.isoformat(timespec="minutes"),
+    )
 
     # Broadcast entity.deleted event
     await broadcast_entity_deleted(deleted_org_id, deleted_entity_id)
 
-    return {"success": True}
+    return {"success": True, "trash_id": trash.id, "restorable_until": trash.purge_after.isoformat()}
 
 
 # Stats endpoints
@@ -1697,390 +1036,3 @@ async def get_entities_stats_by_status(
     result = await db.execute(query)
     stats = {row[0].value: row[1] for row in result.all()}
     return stats
-
-
-# ============================================================
-# Теневая база (архив): список для суперадмина + действия архивации
-# ============================================================
-
-@router.get("/archive/list")
-async def list_archived_candidates(
-    q: Optional[str] = None,
-    page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Теневая база: список архивных кандидатов. Только суперадмин."""
-    current_user = await db.merge(current_user)
-    if current_user.role != UserRole.superadmin:
-        raise HTTPException(403, "Архив доступен только суперадмину")
-
-    base = select(Entity).where(
-        Entity.is_archived.is_(True),
-        Entity.type == EntityType.candidate,
-    )
-    if q and q.strip():
-        like = f"%{q.strip()}%"
-        from ...services.search_index import name_search_conditions, ensure_pg_trgm_checked, contact_search_conditions
-        await ensure_pg_trgm_checked(db)
-        base = base.where(or_(
-            *name_search_conditions(q),  # умный поиск по имени (транслит+порядок+опечатки)
-            *contact_search_conditions(q),  # почта/телефон(норм.)/telegram + доп-списки
-            Entity.position.ilike(like),
-        ))
-
-    count_result = await db.execute(select(func.count()).select_from(base.subquery()))
-    total = count_result.scalar() or 0
-
-    rows = await db.execute(
-        base.order_by(Entity.created_at.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-    )
-    items = []
-    for e in rows.scalars().all():
-        extra = e.extra_data or {}
-        items.append({
-            "id": e.id,
-            "name": e.name,
-            "email": e.email,
-            "phone": e.phone,
-            "position": e.position,
-            "company": e.company,
-            "status": e.status.value if e.status else None,
-            "tags": e.tags or [],
-            "photo_url": extra.get("photo_url"),
-            "source": extra.get("source"),
-            "created_at": e.created_at.isoformat() if e.created_at else None,
-        })
-    return {"items": items, "total": total, "page": page, "per_page": per_page}
-
-
-@router.post("/{entity_id}/archive")
-async def archive_entity(
-    entity_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """«В архив»: убрать кандидата в теневую базу (скрыть из активных списков).
-    Доступно тому, кто имеет доступ к карточке."""
-    current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-    if not org and current_user.role != UserRole.superadmin:
-        raise HTTPException(403, "No organization access")
-
-    result = await db.execute(select(Entity).where(Entity.id == entity_id))
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(404, "Entity not found")
-
-    # Org-граница: кандидат должен быть в орг вызывающего (или вызывающий —
-    # суперадмин). Раньше check_entity_access получал entity.org_id (org ЦЕЛИ),
-    # а не вызывающего → confused deputy: любой HR мог архивировать чужого.
-    if current_user.role != UserRole.superadmin and (not org or entity.org_id != org.id):
-        raise HTTPException(404, "Entity not found")
-    has_access = await check_entity_access(entity, current_user, entity.org_id, db, required_level=None)
-    if not has_access:
-        raise HTTPException(403, "No access to this candidate")
-
-    entity.is_archived = True
-    await db.commit()
-    # Кандидат исчезает из активных списков — уведомляем клиентов
-    await broadcast_entity_deleted(entity.org_id, entity.id)
-    return {"success": True, "is_archived": True}
-
-
-@router.post("/{entity_id}/unarchive")
-async def unarchive_entity(
-    entity_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Вернуть кандидата из архива в активную базу. Только суперадмин."""
-    current_user = await db.merge(current_user)
-    if current_user.role != UserRole.superadmin:
-        raise HTTPException(403, "Только суперадмин может возвращать из архива")
-
-    result = await db.execute(select(Entity).where(Entity.id == entity_id))
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(404, "Entity not found")
-
-    entity.is_archived = False
-    await db.commit()
-    await broadcast_entity_updated(entity.org_id, entity.id)
-    return {"success": True, "is_archived": False}
-
-
-@router.post("/archive/rescan")
-async def rescan_active_duplicates(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Разовый прогон детекта по ВСЕМ активным кандидатам против всех остальных
-    (активные + архив). Детект-на-создании покрывает только новых; этот прогон
-    помечает уже существующих. Проставляет extra_data.hidden_duplicate_id — на
-    карточках появится баннер «Проверить». Только суперадмин.
-
-    Считает ЕДИНЫМ ядром (services/duplicate_matcher), тем же, что баннер и окно
-    сравнения. Раньше здесь был свой индекс ключей, где ФИО сверялось точной
-    строкой: «Векленко Кирилл» и «Векленко Кирилл Дмитриевич» пере-скан считал
-    разными людьми, хотя детект-на-создании — одним.
-    """
-    current_user = await db.merge(current_user)
-    if current_user.role != UserRole.superadmin:
-        raise HTTPException(403, "Только для суперадмина")
-    org = await get_user_org(current_user, db)
-
-    from ...services.duplicate_matcher import scan_org_pairs, best_match
-    from ...services.duplicate_decisions import different_map, legacy_dismissed
-
-    items, pair_matches = await scan_org_pairs(db, org.id if org is not None else None)
-    names = {it.entity_id: it.name for it in items}
-
-    act_q = select(Entity).where(
-        Entity.is_archived.is_not(True), Entity.type == EntityType.candidate
-    )
-    if org is not None:
-        act_q = act_q.where(Entity.org_id == org.id)
-    actives = (await db.execute(act_q)).scalars().all()
-    decided = await different_map(db, [e.id for e in actives])
-
-    matches = []
-    scanned = 0
-    changed = 0
-    cleared = 0
-    for e in actives:
-        scanned += 1
-        extra = e.extra_data if isinstance(e.extra_data, dict) else {}
-        dismissed = decided.get(e.id, set()) | legacy_dismissed(extra)
-
-        found = [m for m in pair_matches.get(e.id, []) if m.entity_id not in dismissed]
-        chosen = best_match(found)
-        dup_id = chosen.entity_id if chosen is not None else None
-
-        cur = extra.get("hidden_duplicate_id")
-        if chosen is not None:
-            matches.append({
-                "id": e.id,
-                "name": e.name,
-                "duplicate_id": dup_id,
-                "duplicate_name": names.get(dup_id),
-                "strength": chosen.strength,
-                "confidence": chosen.confidence,
-            })
-            new_extra = dict(extra)
-            meta = {
-                "strength": chosen.strength,
-                "confidence": chosen.confidence,
-                "reasons": chosen.reasons,
-                "matched_id": chosen.entity_id,
-                "level": chosen.level,
-            }
-            if cur != dup_id or new_extra.get("hidden_duplicate_meta") != meta:
-                new_extra["hidden_duplicate_id"] = dup_id
-                new_extra["hidden_duplicate_meta"] = meta
-                e.extra_data = new_extra
-                if cur != dup_id:
-                    changed += 1
-        elif cur is not None:
-            # Реального дубля больше нет (напр. ушло ложное совпадение по мусорному
-            # telegram) — снимаем устаревший авто-флаг, чтобы баннер исчез.
-            new_extra = dict(extra)
-            new_extra.pop("hidden_duplicate_id", None)
-            new_extra.pop("hidden_duplicate_meta", None)
-            e.extra_data = new_extra
-            cleared += 1
-
-    if changed or cleared or matches:
-        await db.commit()
-    return {
-        "scanned": scanned,
-        "flagged": len(matches),
-        "newly_flagged": changed,
-        "cleared": cleared,
-        "matches": matches,
-    }
-
-
-@router.post("/archive/find-duplicates")
-async def find_archive_duplicates(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Найти дубликаты ВНУТРИ архива: группы архивных кандидатов, которых единое
-    ядро (services/duplicate_matcher) считает одним человеком. Возвращает группы
-    из ≥2 профилей. Только суперадмин.
-
-    Раньше группы строились собственным union-find по email/телефону/telegram/URL
-    и ФИО не учитывали вовсе — архивные карточки одного человека, добавленные без
-    контактов, в группу не попадали.
-    """
-    current_user = await db.merge(current_user)
-    if current_user.role != UserRole.superadmin:
-        raise HTTPException(403, "Только для суперадмина")
-    org = await get_user_org(current_user, db)
-
-    from ...services.duplicate_matcher import scan_org_pairs
-    from ...services.duplicate_decisions import different_map, legacy_dismissed
-
-    items, pair_matches = await scan_org_pairs(
-        db, org.id if org is not None else None, archived_only=True,
-    )
-
-    # Union-find поверх пар, которые ядро признало дублями.
-    parent: dict = {}
-
-    def find(x):
-        root = x
-        while parent[root] != root:
-            root = parent[root]
-        while parent[x] != root:
-            parent[x], x = root, parent[x]
-        return root
-
-    def union(a, b):
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[rb] = ra
-
-    info: dict = {}
-    for it in items:
-        parent.setdefault(it.entity_id, it.entity_id)
-        ph = sorted(it.keys.get("phone_keys") or set())
-        em = sorted(it.keys.get("emails") or set())
-        tg = sorted(it.keys.get("tg_names") or set())
-        info[it.entity_id] = {
-            "id": it.entity_id,
-            "name": it.name,
-            "email": em[0] if em else None,
-            "phone": ph[0] if ph else None,
-            "telegram": tg[0] if tg else None,
-            "position": (it.extra_data or {}).get("position"),
-        }
-    for eid, ms in pair_matches.items():
-        for m in ms:
-            if eid in parent and m.entity_id in parent:
-                union(eid, m.entity_id)
-
-    groups_map: dict = {}
-    for rid in info:
-        groups_map.setdefault(find(rid), []).append(info[rid])
-    groups = [m for m in groups_map.values() if len(m) >= 2]
-    groups.sort(key=lambda m: -len(m))
-
-    # Помечаем участников групп флагом hidden_duplicate_id → при открытии карточки
-    # архивного появится баннер сравнения (как у активных). Каждый указывает на
-    # «соседа» по группе (первый — на второго, остальные — на первого).
-    member_ids = [m["id"] for g in groups for m in g]
-    if member_ids:
-        ents = (await db.execute(
-            select(Entity).where(Entity.id.in_(member_ids))
-        )).scalars().all()
-        by_id = {e.id: e for e in ents}
-        decided = await different_map(db, by_id.keys())
-        changed = False
-        for g in groups:
-            ids = [m["id"] for m in g]
-            for idx, mid in enumerate(ids):
-                sibling = ids[1] if idx == 0 else ids[0]
-                ent = by_id.get(mid)
-                if ent is None:
-                    continue
-                extra = ent.extra_data if isinstance(ent.extra_data, dict) else {}
-                if (
-                    sibling in decided.get(mid, set()) | legacy_dismissed(extra)
-                    or extra.get("hidden_duplicate_id") == sibling
-                ):
-                    continue
-                ne = dict(extra)
-                ne["hidden_duplicate_id"] = sibling
-                hit = next((m for m in pair_matches.get(mid, []) if m.entity_id == sibling), None)
-                if hit is not None:
-                    ne["hidden_duplicate_meta"] = {
-                        "strength": hit.strength,
-                        "confidence": hit.confidence,
-                        "reasons": hit.reasons,
-                        "matched_id": sibling,
-                        "level": hit.level,
-                    }
-                ent.extra_data = ne
-                changed = True
-        if changed:
-            await db.commit()
-
-    return {
-        "groups": groups,
-        "total_groups": len(groups),
-        "total_dupes": sum(len(g) for g in groups),
-    }
-
-
-
-class _MergeArchivedRequest(BaseModel):
-    source_id: int
-
-
-@router.post("/{entity_id}/merge-archived")
-async def merge_archived_duplicate(
-    entity_id: int,
-    body: _MergeArchivedRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Объединить два АРХИВНЫХ профиля: source_id вливается в survivor (entity_id),
-    survivor остаётся в архиве. Только суперадмин."""
-    current_user = await db.merge(current_user)
-    if current_user.role != UserRole.superadmin:
-        raise HTTPException(403, "Только для суперадмина")
-
-    survivor = (await db.execute(select(Entity).where(Entity.id == entity_id))).scalar_one_or_none()
-    source = (await db.execute(select(Entity).where(Entity.id == body.source_id))).scalar_one_or_none()
-    if not survivor or not survivor.is_archived:
-        raise HTTPException(404, "Кандидат-приёмник не в архиве")
-    if not source or not source.is_archived:
-        raise HTTPException(404, "Кандидат-источник не в архиве")
-    if survivor.id == source.id:
-        raise HTTPException(400, "Нельзя объединить профиль сам с собой")
-
-    from ...services.similarity import similarity_service
-    await similarity_service.merge_entities(db=db, source_entity=source, target_entity=survivor)
-    return {"success": True, "survivor_id": survivor.id}
-
-
-@router.post("/{entity_id}/detect-duplicate")
-async def detect_duplicate_now(
-    entity_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Живой поиск дубля для кандидата (вызывается при ОТКРЫТИИ карточки) —
-    ловит уже существующих дублей без ручного прогона. Помечает обе стороны
-    (detect ставит обратную ссылку), возвращает id найденного дубля или null."""
-    current_user = await db.merge(current_user)
-    org = await get_user_org(current_user, db)
-    result = await db.execute(select(Entity).where(Entity.id == entity_id))
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(404, "Entity not found")
-    # Org-граница (раньше отсутствовала вовсе — любой HR мог запускать дедуп на
-    # чужом кандидате и ставить hidden_duplicate_id).
-    if current_user.role != UserRole.superadmin and (not org or entity.org_id != org.id):
-        raise HTTPException(404, "Entity not found")
-    has_access = await check_entity_access(entity, current_user, entity.org_id, db, required_level=None)
-    if not has_access:
-        raise HTTPException(403, "No access to this candidate")
-
-    from ...services.similarity import detect_archived_duplicate
-    dup_id = await detect_archived_duplicate(db, entity)
-    if dup_id:
-        extra = dict(entity.extra_data) if isinstance(entity.extra_data, dict) else {}
-        if extra.get("hidden_duplicate_id") != dup_id:
-            extra["hidden_duplicate_id"] = dup_id
-            entity.extra_data = extra
-        await db.commit()
-    return {
-        "duplicate_id": dup_id,
-        "hidden_duplicate_meta": (entity.extra_data or {}).get("hidden_duplicate_meta"),
-    }

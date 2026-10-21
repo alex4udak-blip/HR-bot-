@@ -8,39 +8,18 @@ import {
 import clsx from 'clsx';
 import * as workspacesApi from '@/services/api/workspaces';
 import { smartNameMatch, contactMatch } from '@/utils/translit';
+import { FUNNEL_STAGE_ORDER, HR_STAGES, STAGE_LABEL_BY_STAGE, STAGE_TAB_COLORS, type StageTabColors } from '@/constants/hrStages';
 
 // --------------- constants ---------------
 
-const STAGE_ORDER = [
-  'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'probation', 'transferred', 'rejected',
-] as const;
-
-const STAGE_LABELS: Record<string, string> = {
-  applied: 'Новый',
-  screening: 'Выполняет ТЗ',
-  phone_screen: 'Интервью с HR',
-  interview: 'Интервью с заказчиком',
-  assessment: 'Принятие решения',
-  offer: 'Выставлен оффер',
-  hired: 'Оффер принят',
-  probation: 'Практика',
-  transferred: 'Перешёл в отдел',
-  rejected: 'Отказ',
-  withdrawn: 'Отозван',
-};
-
-const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badge: string }> = {
-  applied:      { bg: 'bg-[var(--hf-status-blue-bg)]',   text: 'text-[var(--hf-status-blue)]',    dot: 'bg-[var(--hf-status-blue)]',    badge: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]' },
-  screening:    { bg: 'bg-[var(--hf-status-cyan-bg)]',    text: 'text-[var(--hf-cyan-400)]',    dot: 'bg-[var(--hf-status-cyan)]',    badge: 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-cyan-400)]' },
-  phone_screen: { bg: 'bg-[var(--hf-status-purple-bg)]',  text: 'text-[var(--hf-status-purple)]',  dot: 'bg-[var(--hf-status-purple)]',  badge: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]' },
-  interview:    { bg: 'bg-[var(--hf-status-indigo-bg)]',  text: 'text-[var(--hf-status-indigo)]',  dot: 'bg-[var(--hf-status-indigo)]',  badge: 'bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)]' },
-  assessment:   { bg: 'bg-[var(--hf-status-orange-bg)]',  text: 'text-[var(--hf-status-orange)]',  dot: 'bg-[var(--hf-status-orange)]',  badge: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]' },
-  offer:        { bg: 'bg-[var(--hf-status-yellow-bg)]',  text: 'text-[var(--hf-status-yellow)]',  dot: 'bg-[var(--hf-status-yellow)]',  badge: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
-  hired:        { bg: 'bg-[var(--hf-status-green-bg)]',   text: 'text-[var(--hf-status-green)]',   dot: 'bg-[var(--hf-status-green)]',   badge: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' },
-  rejected:     { bg: 'bg-[var(--hf-status-red-bg)]',     text: 'text-[var(--hf-status-red)]',     dot: 'bg-[var(--hf-status-red)]',     badge: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]' },
-  withdrawn:    { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
-};
+// Порядок, подписи и цвета этапов — общий справочник (constants/hrStages.ts).
+// Раньше тут была своя копия без «Практики», «Перешёл в отдел» и «Резерва»:
+// такие кандидаты уезжали в конец списка серыми.
+const STAGE_ORDER = FUNNEL_STAGE_ORDER;
+const STAGE_LABELS: Record<string, string> = STAGE_LABEL_BY_STAGE;
+const STAGE_COLORS = Object.fromEntries(
+  HR_STAGES.map((st) => [st.stage, STAGE_TAB_COLORS[st.color]]),
+) as Record<string, StageTabColors>;
 
 const fallbackColor = { bg: 'bg-[var(--hf-white-alpha-10)]', text: 'text-[var(--hf-dark-300)]', dot: 'bg-[var(--hf-dark-400)]', badge: 'bg-[var(--hf-white-alpha-15)] text-[var(--hf-dark-300)]' };
 

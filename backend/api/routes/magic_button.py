@@ -507,6 +507,15 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             created_by=current_user.id,  # кто добавил → авто-метка HR
         )
         db.add(app)
+        # Первая запись истории — как у «Добавить в воронку»: без неё у
+        # кандидата из расширения лента воронки начиналась ни с чего (20.10.2026).
+        await db.flush()
+        from ..services.stage_transitions import record_transition
+        await record_transition(
+            db, application_id=app.id, entity_id=entity.id, from_stage=None,
+            to_stage=ApplicationStage.applied.value, changed_by_id=current_user.id,
+            comment="Первичная заявка",
+        )
 
     # Теневая дедупликация: сверяем нового кандидата с архивом до коммита.
     # При совпадении помечаем профиль флагом — веб-карточка покажет баннер «Проверить»,

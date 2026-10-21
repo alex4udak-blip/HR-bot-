@@ -278,36 +278,6 @@ class TestCreateApplicationSync:
         assert data["stage"] == expected_stage.value, \
             f"Expected stage {expected_stage.value}, got {data['stage']}"
 
-    async def test_apply_to_vacancy_syncs_entity_status(
-        self,
-        client: AsyncClient,
-        db_session: AsyncSession,
-        admin_user: User,
-        test_candidate: Entity,
-        test_vacancy: Vacancy,
-        organization: Organization,
-        org_owner
-    ):
-        """POST /entities/{id}/apply-to-vacancy should sync Entity.status to 'new'."""
-        token = create_access_token(data={"sub": str(admin_user.id)})
-
-        # Set candidate to different status first
-        test_candidate.status = EntityStatus.practice
-        await db_session.commit()
-
-        # Apply to vacancy (starts at 'applied' stage)
-        response = await client.post(
-            f"/api/entities/{test_candidate.id}/apply-to-vacancy",
-            json={"vacancy_id": test_vacancy.id},
-            headers=auth_headers(token)
-        )
-        assert response.status_code == 200
-
-        # Verify entity status was synced to match 'applied' stage
-        await db_session.refresh(test_candidate)
-        expected_status = STAGE_SYNC_MAP[ApplicationStage.applied]
-        assert test_candidate.status == expected_status, \
-            f"Expected status {expected_status}, got {test_candidate.status}"
 
 
 # ============================================================================
@@ -376,27 +346,6 @@ class TestOneCandidateOneVacancy:
         assert response.status_code == 400
         assert "уже добавлен" in response.json()["detail"].lower()
 
-    async def test_apply_to_vacancy_rejects_when_in_another_vacancy(
-        self,
-        client: AsyncClient,
-        admin_user: User,
-        test_candidate: Entity,
-        test_vacancy: Vacancy,
-        second_vacancy: Vacancy,
-        test_application: VacancyApplication,
-        org_owner
-    ):
-        """apply-to-vacancy should reject when candidate is in another vacancy."""
-        token = create_access_token(data={"sub": str(admin_user.id)})
-
-        # Try to apply same candidate to second vacancy
-        response = await client.post(
-            f"/api/entities/{test_candidate.id}/apply-to-vacancy",
-            json={"vacancy_id": second_vacancy.id},
-            headers=auth_headers(token)
-        )
-        assert response.status_code == 400
-        assert "уже добавлен" in response.json()["detail"].lower()
 
 
 # ============================================================================

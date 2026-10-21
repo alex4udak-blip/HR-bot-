@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Calendar as CalendarIcon, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import type { FormField } from '@/services/api/forms';
+// Старые анкеты могли сохраниться с пустыми и повторяющимися вариантами —
+// кандидату их не показываем (20.10.2026).
+import { cleanOptions } from './formValidation';
 
 const WEEKDAYS_MON_FIRST = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MONTH_NAMES = [
@@ -236,16 +239,16 @@ export function FieldRenderer({
           className={inputClasses}
         >
           <option value="">-- Выберите --</option>
-          {(field.options || []).map(opt => (
-            <option key={opt} value={opt}>{opt}</option>
+          {cleanOptions(field.options).map((opt, i) => (
+            <option key={`${i}:${opt}`} value={opt}>{opt}</option>
           ))}
         </select>
       )}
 
       {field.type === 'radio' && (
         <div className="space-y-2 mt-1">
-          {(field.options || []).map(opt => (
-            <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+          {cleanOptions(field.options).map((opt, i) => (
+            <label key={`${i}:${opt}`} className="flex items-center gap-3 cursor-pointer group">
               <input
                 type="radio"
                 name={field.id}
@@ -262,11 +265,11 @@ export function FieldRenderer({
 
       {field.type === 'multiselect' && (
         <div className="space-y-2 mt-1">
-          {(field.options || []).map(opt => {
+          {cleanOptions(field.options).map((opt, i) => {
             const selected = Array.isArray(value) ? value as string[] : [];
             const isChecked = selected.includes(opt);
             return (
-              <label key={opt} className="flex items-center gap-3 cursor-pointer group">
+              <label key={`${i}:${opt}`} className="flex items-center gap-3 cursor-pointer group">
                 <input
                   type="checkbox"
                   checked={isChecked}

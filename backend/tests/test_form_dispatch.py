@@ -35,7 +35,9 @@ def _headers(user):
 
 @pytest.mark.asyncio
 async def test_create_dispatch_returns_token(client, db_session, organization, admin_user, org_owner):
-    form = FormTemplate(org_id=organization.id, created_by=admin_user.id, title="Скрининг", slug="scr-1", fields=[])
+    # Анкету без вопросов сервер не отправляет (form_answers.form_problem).
+    form = FormTemplate(org_id=organization.id, created_by=admin_user.id, title="Скрининг", slug="scr-1",
+                        fields=[{"id": "f1", "type": "text", "label": "ФИО", "required": True}])
     entity = Entity(org_id=organization.id, type=EntityType.candidate, name="Анна", status=EntityStatus.new)
     db_session.add_all([form, entity])
     await db_session.commit()
@@ -134,7 +136,7 @@ async def test_submit_creates_notification(client, db_session, organization, adm
 
 @pytest.mark.asyncio
 async def test_submitted_answer_visible_in_entity_dispatches(client, db_session, organization, admin_user, org_owner):
-    # «Анкета дошла»: после сабмита ответ виден в /entity/{id}/dispatches со статусом и answers.
+    # «Анкета дошла»: после сабмита ответ виден в /entity/{id}/all-dispatches со статусом и answers.
     form = FormTemplate(org_id=organization.id, created_by=admin_user.id, title="Скрининг", slug="scr-vis",
                         fields=[{"id": "f1", "type": "text", "label": "ФИО", "required": True}])
     entity = Entity(org_id=organization.id, type=EntityType.candidate, name="Анна", status=EntityStatus.new)
@@ -146,7 +148,7 @@ async def test_submitted_answer_visible_in_entity_dispatches(client, db_session,
     sub = await client.post("/api/forms/public/d/t-vis/submit", json={"data": {"f1": "Иван Петров"}})
     assert sub.status_code == 200, sub.text
 
-    r = await client.get(f"/api/forms/entity/{entity.id}/dispatches", headers=_headers(admin_user))
+    r = await client.get(f"/api/forms/entity/{entity.id}/all-dispatches", headers=_headers(admin_user))
     assert r.status_code == 200, r.text
     rows = r.json()
     assert len(rows) == 1

@@ -1,8 +1,12 @@
+import { pluralRu } from '@/utils/plural';
+import { copyOrShowLink } from '@/utils/copyOrShowLink';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import HrConfirm from '@/components/hr/HrConfirm';
 import * as Dialog from '@radix-ui/react-dialog';
 import toast from 'react-hot-toast';
 import { Plus, LayoutGrid, Sparkles, X, Send, Loader2, ChevronLeft, FileText, PenLine, Trash2 } from 'lucide-react';
-import { FormBuilder, submissionWord } from './FormBuilder';
+import { FormBuilder, submissionWord, type FormBuilderHandle } from './FormBuilder';
+import { formProblem } from './formValidation';
 import {
   createForm, createDispatch, getFormTemplates, deleteForm,
   aiFormChat,
@@ -11,6 +15,11 @@ import {
 
 type Step = 'entry' | 'template-select' | 'builder' | 'ai-chat';
 type ChatMsg = { role: 'user' | 'assistant'; content: string };
+
+function apiDetail(error: unknown): string | null {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  return typeof detail === 'string' ? detail : null;
+}
 
 export function AnketaDrawer({
   open, onOpenChange, entityId, entityName, vacancyId, vacancyTitle,
@@ -43,15 +52,20 @@ export function AnketaDrawer({
   // использование шаблона создавало ещё одну сохранённую анкету; новая строка
   // должна появляться только когда её явно создают («Создать шаблон» / «С нуля»).
   const useTemplateDirectly = async (tpl: FormTemplate) => {
+    // Шаблон, на котором кандидат застрял бы (нет вариантов у выбора, кривая
+    // шкала), не отправляем — сначала исправить (formValidation.ts).
+    const problem = formProblem(tpl.title, tpl.fields || []);
+    if (problem) {
+      toast.error(`Шаблон «${tpl.title}» пока нельзя отправить. ${problem} — откройте его на карандаше и исправьте.`, { duration: 7000 });
+      return;
+    }
     setDispatchingTemplateId(tpl.id);
     try {
       const { url } = await createDispatch(tpl.id, entityId);
-      const full = `${window.location.origin}${url}`;
-      await navigator.clipboard.writeText(full);
-      toast.success('Персональная ссылка скопирована');
+      await copyOrShowLink(`${window.location.origin}${url}`, 'Персональная ссылка скопирована');
       onOpenChange(false);
-    } catch {
-      toast.error('Не удалось создать ссылку');
+    } catch (error) {
+      toast.error(apiDetail(error) || 'Не удалось создать ссылку');
     } finally {
       setDispatchingTemplateId(null);
     }
@@ -80,14 +94,26 @@ export function AnketaDrawer({
     setFormId(form.id); setIsTemplate(false); setStep('builder');
   };
 
+  const builderRef = useRef<FormBuilderHandle | null>(null);
+  const [sending, setSending] = useState(false);
   const sendToCandidate = async () => {
-    if (!formId) return;
+    if (!formId || sending) return;
+    setSending(true);
     try {
+      // Проверяем то, что на экране, и досохраняем последнюю правку: раньше
+      // ссылка уходила, пока автосейв ещё ждал свои 0,7 с.
+      const problem = await builderRef.current?.flush();
+      if (problem) {
+        toast.error(problem, { duration: 6000 });
+        return;
+      }
       const { url } = await createDispatch(formId, entityId);
-      const full = `${window.location.origin}${url}`;
-      await navigator.clipboard.writeText(full);
-      toast.success('Персональная ссылка скопирована');
-    } catch { toast.error('Не удалось создать ссылку'); }
+      await copyOrShowLink(`${window.location.origin}${url}`, 'Персональная ссылка скопирована');
+    } catch (error) {
+      toast.error(apiDetail(error) || 'Не удалось создать ссылку');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -147,6 +173,8 @@ export function AnketaDrawer({
                     кнопки «Сохранить», НЕ попадает в шаблоны. Шаблон: как раньше —
                     ручное «Сохранить» в библиотеку. */}
                 <FormBuilder
+                  handleRef={builderRef}
+                  inDialog
                   formId={formId}
                   saveAsTemplate={isTemplate}
                   autosave={!isTemplate}
@@ -156,7 +184,8 @@ export function AnketaDrawer({
                   <div className="sticky bottom-0 bg-white border-t px-5 py-3 flex justify-end gap-2">
                     <button
                       onClick={sendToCandidate}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
+                      disabled={sending}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-sm font-medium"
                     >
                       <Send className="w-4 h-4" /> Отправить кандидату
                     </button>
@@ -223,6 +252,7 @@ function TemplateSelectStep({ onBack, onUse, usingTemplateId, onEdit, onNew, vac
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   useEffect(() => {
     getFormTemplates()
@@ -242,21 +272,40 @@ function TemplateSelectStep({ onBack, onUse, usingTemplateId, onEdit, onNew, vac
       );
       return;
     }
-    if (!confirm('Удалить шаблон? Это действие необратимо.')) return;
+    setPendingDeleteId(id);
+  };
+  const confirmDelete = async () => {
+    const id = pendingDeleteId;
+    if (id == null) return;
     setDeletingId(id);
     try {
       await deleteForm(id);
       setTemplates(prev => prev.filter(t => t.id !== id));
       toast.success('Шаблон удалён');
-    } catch {
-      toast.error('Не удалось удалить шаблон');
+      setPendingDeleteId(null);
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Не удалось удалить шаблон');
     } finally {
       setDeletingId(null);
     }
   };
 
+  const pendingDelete = templates.find(t => t.id === pendingDeleteId);
   return (
     <div className="flex flex-col h-full min-h-0">
+      {pendingDelete && (
+        <HrConfirm
+          title="Удалить шаблон?"
+          subtitle={`«${pendingDelete.title}»`}
+          danger="Действие нельзя отменить."
+          confirmLabel="Удалить"
+          busy={deletingId === pendingDelete.id}
+          inDialog
+          onCancel={() => setPendingDeleteId(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
       <div className="flex items-center gap-2 px-5 py-2.5 border-b bg-gray-50/60 shrink-0">
         <button onClick={onBack} className="text-gray-400 hover:text-gray-700 p-0.5 -ml-1">
           <ChevronLeft className="w-4 h-4" />
@@ -295,7 +344,12 @@ function TemplateSelectStep({ onBack, onUse, usingTemplateId, onEdit, onNew, vac
           const card = (tpl: FormTemplate) => (
             <div key={tpl.id} className="border border-gray-200 rounded-xl p-4 flex items-start gap-3 hover:border-gray-300 transition-colors">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{tpl.title}</p>
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {tpl.title}
+                  {tpl.is_active === false && (
+                    <span className="ml-2 align-middle px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-[11px] font-normal">Выключен</span>
+                  )}
+                </p>
                 {tpl.description && (
                   <p className="text-xs text-gray-500 mt-0.5 truncate">{tpl.description}</p>
                 )}
@@ -304,7 +358,7 @@ function TemplateSelectStep({ onBack, onUse, usingTemplateId, onEdit, onNew, vac
                       кому его отправляли) тут не показываем — не читается как
                       метрика самого шаблона. tpl.submissions_count не убираем
                       из данных: им же защищено удаление ниже (handleDelete). */}
-                  {tpl.fields.length} вопросов
+                  {tpl.fields.length} {pluralRu(tpl.fields.length, 'вопрос', 'вопроса', 'вопросов')}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -325,7 +379,8 @@ function TemplateSelectStep({ onBack, onUse, usingTemplateId, onEdit, onNew, vac
                 </button>
                 <button
                   onClick={() => onUse(tpl)}
-                  disabled={usingTemplateId === tpl.id}
+                  disabled={usingTemplateId === tpl.id || tpl.is_active === false}
+                  title={tpl.is_active === false ? 'Шаблон выключен — включите его на карандаше, чтобы отправлять' : undefined}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors disabled:opacity-60"
                 >
                   {usingTemplateId === tpl.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -468,7 +523,7 @@ function AIStep({ entityId, entityName, onBack, onCreateForm }: {
           <div className="border border-purple-200 rounded-xl bg-purple-50/40 p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide">Предложенная анкета</span>
-              <span className="text-xs text-gray-500">{fields.length} вопросов</span>
+              <span className="text-xs text-gray-500">{fields.length} {pluralRu(fields.length, 'вопрос', 'вопроса', 'вопросов')}</span>
             </div>
             <div className="space-y-0.5 max-h-28 overflow-y-auto">
               {fields.map((f, i) => (

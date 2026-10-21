@@ -1,4 +1,4 @@
-import { backdropClose } from '@/utils/backdropClose';
+import { pluralRu } from '@/utils/plural';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCurrencyRates } from '@/hooks';
@@ -26,172 +26,25 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
+import { vacancyExitCopy } from '@/utils/vacancyExitCopy';
+import { DATE_RANGES, SALARY_RANGES, filterVacancyRequests, type QuickFilters } from '@/utils/vacancyRequests';
 import type { Vacancy, VacancyStatus } from '@/types';
 import { EMPLOYMENT_TYPES } from '@/types';
 import { formatSalary } from '@/utils';
-import { getDepartments, assignVacancy, takeVacancy, declineVacancy, getAssignableUsers } from '@/services/api';
-import type { Department, AssignableUser } from '@/services/api';
-import {
-  VacancyForm,
-  VacancyStatusBadge,
-} from '@/components/vacancies';
-import { SidebarRequestPreviewModal } from '@/components/Layout';
-import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds, isExplicitlyAssigned, getVacancyExitOptions } from '@/utils/vacancy';
+import { getDepartments, takeVacancy, declineVacancy, getAssignableUsers } from '@/services/api';
+import type { Department } from '@/services/api';
+import { VacancyForm, VacancyStatusBadge } from '@/components/vacancies';
+import AssignVacancyModal from '@/components/vacancies/AssignVacancyModal';
+import { SidebarRequestPreviewModal } from '@/components/hr/SidebarRequestPreviewModal';
+import { isPersonallyActive, getAcceptorIds, isExplicitlyAssigned, getVacancyExitOptions } from '@/utils/vacancy';
 import {
   ContextMenu,
   createVacancyContextMenu,
   EmptyVacancies,
   ConfirmDialog,
-  ErrorMessage
+  ErrorMessage,
 } from '@/components/ui';
-import {
-  HUNTFLOW_VACANCY_STATUS_FILTERS,
-  getHuntflowVacancyStatusFilterLabel,
-} from '@/components/hr/huntflowVacancyStatus';
-
-// Quick filter options
-const SALARY_RANGES = [
-  { id: 'any', label: 'Любая зарплата', min: undefined, max: undefined },
-  { id: 'under100k', label: 'До 100k', min: undefined, max: 100000 },
-  { id: '100k-200k', label: '100k - 200k', min: 100000, max: 200000 },
-  { id: '200k-300k', label: '200k - 300k', min: 200000, max: 300000 },
-  { id: '300k+', label: '300k+', min: 300000, max: undefined },
-];
-
-const DATE_RANGES = [
-  { id: 'any', label: 'За всё время', days: undefined },
-  { id: '7days', label: 'За 7 дней', days: 7 },
-  { id: '30days', label: 'За 30 дней', days: 30 },
-  { id: '90days', label: 'За 90 дней', days: 90 },
-];
-
-interface QuickFilters {
-  statuses: VacancyStatus[];
-  salaryRange: string;
-  dateRange: string;
-}
-
-// Assign vacancy modal
-function AssignModal({
-  vacancy,
-  onClose,
-  onAssigned,
-}: {
-  vacancy: Vacancy;
-  onClose: () => void;
-  onAssigned: () => void;
-}) {
-  const [users, setUsers] = useState<AssignableUser[]>([]);
-  const [selectedIds, setSelectedIds] = useState<number[]>(vacancy.assigned_to || []);
-  const [assignAll, setAssignAll] = useState(vacancy.assigned_to_all || false);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    getAssignableUsers().then(setUsers).catch(() => toast.error('Не удалось загрузить пользователей'));
-  }, []);
-
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      await assignVacancy(vacancy.id, selectedIds, assignAll);
-      toast.success('Заявка назначена');
-      onAssigned();
-    } catch {
-      toast.error('Не удалось назначить заявку');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleUser = (id: number) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--hf-black-alpha-60)]" {...backdropClose(onClose)}>
-      <div
-        className="w-full max-w-md mx-4 bg-[var(--hf-white)] border border-[var(--hf-ui-border)] text-[var(--hf-main-900)] rounded-2xl shadow-[var(--hf-shadow-2xl)] overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--hf-ui-divider)]">
-          <h3 className="text-lg font-semibold">Назначить рекрутеров</h3>
-          <button onClick={onClose} className="p-1 rounded-lg text-[var(--hf-main-500)] hover:bg-[var(--hf-ui-hover)] hover:text-[var(--hf-main-900)] transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4 max-h-96 overflow-y-auto">
-          {/* Assign to all toggle */}
-          <label className="flex items-center gap-3 p-3 rounded-xl bg-[var(--hf-bg-muted)] border border-[var(--hf-ui-divider)] cursor-pointer hover:bg-[var(--hf-ui-hover)] transition-colors">
-            <input
-              type="checkbox"
-              checked={assignAll}
-              onChange={() => setAssignAll(!assignAll)}
-              className="w-4 h-4 rounded border-[var(--hf-ui-border)] text-[var(--hf-cyan-700)] focus:ring-[var(--hf-cyan-500)]"
-            />
-            <div>
-              <span className="text-sm font-medium">Назначить всем</span>
-              <p className="text-xs text-[var(--hf-main-500)]">Все рекрутеры увидят эту заявку</p>
-            </div>
-          </label>
-
-          {/* User list */}
-          {!assignAll && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-[var(--hf-main-500)] mb-2">Выберите рекрутеров:</p>
-              {users.length === 0 ? (
-                <div className="flex items-center justify-center py-6">
-                  <div className="animate-spin w-5 h-5 border-2 border-[color:var(--hf-status-blue)] border-t-transparent rounded-full" />
-                </div>
-              ) : (
-                users.map(u => (
-                  <label
-                    key={u.id}
-                    className={clsx(
-                      'flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors',
-                      selectedIds.includes(u.id)
-                        ? 'bg-[var(--hf-status-blue-badge)] border border-[color:var(--hf-status-blue-badge)]'
-                        : 'hover:bg-[var(--hf-ui-hover)] border border-transparent'
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(u.id)}
-                      onChange={() => toggleUser(u.id)}
-                      className="w-4 h-4 rounded border-[var(--hf-ui-border)] text-[var(--hf-cyan-700)] focus:ring-[var(--hf-cyan-500)]"
-                    />
-                    <span className="text-sm">{u.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[var(--hf-ui-divider)]">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg text-[var(--hf-main-700)] hover:text-[var(--hf-main-900)] hover:bg-[var(--hf-ui-hover)] transition-colors"
-          >
-            Отмена
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={loading || (!assignAll && selectedIds.length === 0)}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-[var(--hf-cyan-700)] text-[var(--hf-white)] hover:bg-[var(--hf-cyan-600)] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
-          >
-            {loading ? (
-              <div className="animate-spin w-4 h-4 border-2 border-[color:var(--hf-white)] border-t-transparent rounded-full" />
-            ) : (
-              <UserPlus className="w-4 h-4" />
-            )}
-            Назначить
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { HUNTFLOW_VACANCY_STATUS_FILTERS, getHuntflowVacancyStatusFilterLabel } from '@/components/hr/huntflowVacancyStatus';
 
 export default function VacanciesPage() {
   const { vacancyId } = useParams();
@@ -308,110 +161,14 @@ export default function VacanciesPage() {
 
   // Filter vacancies based on quick filters
   // Note: Salary ranges are in RUB, so we convert vacancy salaries to RUB for comparison
-  const filteredVacancies = useMemo(() => {
-    const normalizedSearch = searchQuery.trim().toLowerCase();
-
-    return vacancies.filter((vacancy) => {
-      // Заявки page = только заявки, не персональные клоны рекрутёров.
-      // Личные вакансии (включая клоны) живут в "Мои вакансии".
-      const extra = vacancy.extra_data as Record<string, unknown> | undefined;
-      const cloneSrc = extra?.cloned_from_request_id;
-      if (typeof cloneSrc === 'number') return false;
-
-      // Рекрутёр, который «отказался»/закрыл свой клон, больше не видит заявку
-      // (бэкенд кладёт его id в dismissed_by). НО админ/hr/owner видят ВСЕ
-      // заявки (оверсайт) — на них dismissed_by не распространяем, иначе после
-      // назначения заявка могла «пропасть» и у админа.
-      if (user && !isAdmin) {
-        const dismissedBy = extra?.dismissed_by;
-        if (Array.isArray(dismissedBy) && dismissedBy.includes(user.id)) return false;
-      }
-
-      // Task 9: "My vacancies" filter
-      if (effectiveShowOnlyMine && user) {
-        const isMine = vacancy.created_by === user.id
-          || (vacancy.assigned_to && vacancy.assigned_to.includes(user.id))
-          || vacancy.assigned_to_all === true;
-        if (!isMine) return false;
-      }
-
-      // Task 12: Unassigned requests filter
-      if (assignmentFilter === 'unassigned') {
-        const hasAssignment = (vacancy.assigned_to && vacancy.assigned_to.length > 0) || vacancy.assigned_to_all;
-        if (hasAssignment) return false;
-      }
-
-      if (departmentFilter !== 'all' && vacancy.department_id !== departmentFilter) {
-        return false;
-      }
-
-      if (normalizedSearch) {
-        const searchableText = [
-          vacancy.title,
-          vacancy.description,
-          vacancy.requirements,
-          vacancy.responsibilities,
-          vacancy.location,
-          vacancy.department_name,
-          vacancy.created_by_name,
-          vacancy.hiring_manager_name,
-          ...(vacancy.tags || []),
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-
-        if (!searchableText.includes(normalizedSearch)) {
-          return false;
-        }
-      }
-
-      // Main status tab filter (top tabs)
-      if (statusFilter !== 'all' && vacancy.status !== statusFilter) {
-        return false;
-      }
-
-      // Quick filter statuses (multi-select inside dropdown)
-      if (quickFilters.statuses.length > 0 && !quickFilters.statuses.includes(vacancy.status)) {
-        return false;
-      }
-
-      // Salary range filter (with currency conversion)
-      if (quickFilters.salaryRange !== 'any') {
-        const salaryConfig = SALARY_RANGES.find(s => s.id === quickFilters.salaryRange);
-        if (salaryConfig) {
-          // Convert vacancy salary to RUB for comparison
-          // This allows comparing salaries across different currencies
-          const vacancySalaryInRUB = getComparableSalary(
-            vacancy.salary_min,
-            vacancy.salary_max,
-            vacancy.salary_currency || 'RUB'
-          );
-
-          if (vacancySalaryInRUB === 0) {
-            // No salary specified - exclude from salary filter
-            return false;
-          }
-
-          if (salaryConfig.min !== undefined && vacancySalaryInRUB < salaryConfig.min) return false;
-          if (salaryConfig.max !== undefined && vacancySalaryInRUB > salaryConfig.max) return false;
-        }
-      }
-
-      // Date range filter
-      if (quickFilters.dateRange !== 'any') {
-        const dateConfig = DATE_RANGES.find(d => d.id === quickFilters.dateRange);
-        if (dateConfig?.days) {
-          const vacancyDate = new Date(vacancy.created_at);
-          const cutoffDate = new Date();
-          cutoffDate.setDate(cutoffDate.getDate() - dateConfig.days);
-          if (vacancyDate < cutoffDate) return false;
-        }
-      }
-
-      return true;
-    });
-  }, [vacancies, searchQuery, departmentFilter, quickFilters, getComparableSalary, effectiveShowOnlyMine, assignmentFilter, statusFilter, user, isAdmin]);
+  const filteredVacancies = useMemo(
+    () =>
+      filterVacancyRequests(vacancies, {
+        search: searchQuery, user, isAdmin, onlyMine: effectiveShowOnlyMine,
+        assignmentFilter, departmentFilter, statusFilter, quickFilters, getComparableSalary,
+      }),
+    [vacancies, searchQuery, departmentFilter, quickFilters, getComparableSalary, effectiveShowOnlyMine, assignmentFilter, statusFilter, user, isAdmin],
+  );
 
   // Sync quick filters to URL
   useEffect(() => {
@@ -612,7 +369,7 @@ export default function VacanciesPage() {
     }
   };
 
-  // Тексты подтверждения — прямо говорим, у кого что останется/закроется.
+  // Тексты подтверждения — общие с «Мои вакансии» (vacancyExitCopy).
   const confirmCopy = (() => {
     const v = confirmDialog.vacancy;
     if (confirmDialog.type === 'delete' || !v) {
@@ -623,30 +380,9 @@ export default function VacanciesPage() {
         variant: 'danger' as const,
       };
     }
-    const others = otherActiveParticipants(v, user?.id);
-    const exit = getVacancyExitOptions(v, user?.id, isAdmin);
-    if (confirmDialog.type === 'leave') {
-      return {
-        title: 'Выйти из заявки',
-        message: `Вы перестанете над ней работать — она пропадёт из ваших «Мои вакансии». У остальных участников (${others.length}) она останется в работе.${exit.canClose ? ' Закрыть её для всех — «Закрыть заявку».' : ''}`,
-        confirmLabel: 'Выйти',
-        variant: 'warning' as const,
-      };
-    }
-    const total = others.length + (isVacancyParticipant(v, user?.id) ? 1 : 0);
-    return total > 1
-      ? {
-          title: 'Закрыть заявку для всех',
-          message: `Заявка закроется у всех участников (${total}) и переместится в «Закрытые». Кандидаты и история сохранятся.${exit.canLeave ? ' Если хотите только перестать работать над ней сами — «Выйти из заявки».' : ''}`,
-          confirmLabel: 'Закрыть для всех',
-          variant: 'warning' as const,
-        }
-      : {
-          title: 'Закрыть заявку',
-          message: 'Заявка переместится в «Закрытые». Кандидаты и история сохранятся.',
-          confirmLabel: 'Закрыть',
-          variant: 'warning' as const,
-        };
+    const copy = vacancyExitCopy(confirmDialog.type, v, user?.id, 'request');
+    // У «Выйти» текста нет — только вопрос; в окне показываем, из какой заявки.
+    return { title: copy.title, message: copy.text || `«${v.title?.trim() || 'Без названия'}»`, confirmLabel: copy.confirmLabel, variant: 'warning' as const };
   })();
 
   const handleCancelConfirm = () => {
@@ -937,7 +673,7 @@ export default function VacanciesPage() {
                   {/* Results count */}
                   <div className="p-3 border-t border-[color:var(--hf-vacancies-page-border)] bg-[var(--hf-vacancies-page-surface-soft)]">
                     <span className="text-xs text-[color:var(--hf-vacancies-page-soft)]">
-                      Показано {filteredVacancies.length} из {vacancies.length} заявок
+                      Показано {filteredVacancies.length} из {vacancies.length} {pluralRu(vacancies.length, 'заявки', 'заявок', 'заявок')}
                     </span>
                   </div>
                 </div>
@@ -1288,7 +1024,7 @@ export default function VacanciesPage() {
 
       {/* Assign Modal */}
       {assigningVacancy && (
-        <AssignModal
+        <AssignVacancyModal
           vacancy={assigningVacancy}
           onClose={() => setAssigningVacancy(null)}
           onAssigned={() => {

@@ -1,8 +1,6 @@
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { sanitizeHtml } from "../utils/sanitizeHtml";
-import { formatSalary } from "@/utils/currency";
-import { parseServerDate } from "@/utils/date";
-import { isRequestVisibleTo, isPersonallyActive, hasPersonallyAccepted, isExplicitlyAssigned } from "@/utils/vacancy";
+import { isRequestVisibleTo, isPersonallyActive } from "@/utils/vacancy";
+import { pluralRu } from "@/utils/plural";
 import {
   LayoutDashboard,
   Users,
@@ -26,29 +24,18 @@ import {
   Plus,
   User,
   UserPlus,
-  Puzzle,
   ChevronDown,
   Calendar,
   AlertTriangle,
   ClipboardList,
   UserCheck,
   MessageSquare,
-  Mail,
-  Wand2,
-  Code2,
-  Palette,
-  Filter,
-  Archive,
-  Layers,
-  FileText,
-  Link2,
   Volume2,
   VolumeX,
   Building2,
   type LucideIcon,
 } from "lucide-react";
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
-import type { ReactNode } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useVacancyStore } from "@/stores/vacancyStore";
 import { useNotificationStore } from "@/stores/notificationStore";
@@ -58,12 +45,14 @@ import { isAnketaSoundMuted, setAnketaSoundMuted } from "@/utils/notificationSou
 import BackgroundEffects from "./BackgroundEffects";
 import ThemeToggle from "./ThemeToggle";
 import { VacancyForm } from "@/components/vacancies";
+import { SidebarRequestPreviewModal } from "@/components/hr/SidebarRequestPreviewModal";
+import HrSettingsModal from "@/components/hr/HrSettingsModal";
 import ParserModal from "@/components/parser/ParserModal";
 import TelegramConnectBanner from "@/components/TelegramConnectBanner";
 import UpdateBanner from "@/components/app/UpdateBanner";
 import { NotifPeek } from "@/components/NotifPeek";
 import { NotifSettings } from "@/components/NotifSettings";
-import { getVacancy, takeVacancy, declineVacancy, getAssignableUsers } from "@/services/api/vacancies";
+import { getVacancy, getAssignableUsers } from "@/services/api/vacancies";
 import type { Vacancy } from "@/types";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
@@ -158,551 +147,8 @@ function HfSpriteIcon({
   );
 }
 
-type HrSettingsItem = {
-  title: string;
-  description: string;
-  icon: LucideIcon;
-  color: string;
-  path?: string;
-  adminOnly?: boolean;
-  superadminOnly?: boolean;
-  missing?: boolean;
-};
-
 type SidebarVacancyMode = "view" | "edit";
 
-function formatSidebarVacancyDate(date?: string | null) {
-  if (!date) return "";
-  return new Intl.DateTimeFormat("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(parseServerDate(date));
-}
-
-function RequestPreviewBlock({
-  title,
-  children,
-  html,
-}: {
-  title: string;
-  children?: ReactNode;
-  html?: string | null;
-}) {
-  // html — rich-text поле (обязанности/требования/условия) хранится как HTML.
-  // Рендерим через санитайзер, иначе теги <ul>/<li>/<b> видны как текст.
-  const hasHtml = typeof html === "string" && html.trim().length > 0;
-  if (!children && !hasHtml) return null;
-  return (
-    <div className="hf-request-preview-block">
-      <div className="hf-request-preview-label">{title}</div>
-      {hasHtml ? (
-        <div
-          className="hf-request-preview-value prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
-        />
-      ) : (
-        <div className="hf-request-preview-value">{children}</div>
-      )}
-    </div>
-  );
-}
-
-export function SidebarRequestPreviewModal({
-  vacancy,
-  onClose,
-  onEdit,
-  onTaken,
-}: {
-  vacancy: Vacancy;
-  onClose: () => void;
-  onEdit: () => void;
-  onTaken: () => void;
-}) {
-  const { user } = useAuthStore();
-  const { fetchVacancies } = useVacancyStore();
-  const [taking, setTaking] = useState(false);
-  const [declining, setDeclining] = useState(false);
-  const isModalAdmin =
-    user?.role === "superadmin" ||
-    user?.org_role === "owner" ||
-    user?.org_role === "admin";
-  // «Отказаться» — рекрутёр снимает себя с заявки (backend /decline).
-  const handleDecline = async () => {
-    if (declining) return;
-    setDeclining(true);
-    try {
-      await declineVacancy(vacancy.id);
-      await fetchVacancies();
-      toast.success("Вы отказались от заявки");
-      onTaken();
-    } catch {
-      toast.error("Не удалось отказаться от заявки");
-    } finally {
-      setDeclining(false);
-    }
-  };
-  // 2026-07-08: личное принятие (extra_data.accepted_by) — воронка общая, но
-  // «Взять в работу» личное для каждого. Легаси-клоны (cloned_from_request_id)
-  // больше не создаются, старая проверка всегда была бы false.
-  const isTakenByMe = useMemo(() => {
-    if (!user) return false;
-    return hasPersonallyAccepted(vacancy, user.id);
-  }, [user, vacancy]);
-  const acceptedCount = useMemo(() => {
-    const acceptedBy = (vacancy.extra_data as Record<string, unknown> | undefined)
-      ?.accepted_by as number[] | undefined;
-    return acceptedBy?.length || 0;
-  }, [vacancy]);
-  const requestDate = formatSidebarVacancyDate(
-    vacancy.published_at || vacancy.created_at,
-  );
-  const customerName =
-    vacancy.hiring_manager_name ||
-    String((vacancy.extra_data as Record<string, unknown> | undefined)?.customer_name || "") ||
-    "Не указан";
-  const salaryText =
-    vacancy.salary_min || vacancy.salary_max
-      ? formatSalary(vacancy.salary_min, vacancy.salary_max, vacancy.salary_currency || "RUB")
-      : null;
-  const deadlineText = vacancy.closes_at
-    ? formatSidebarVacancyDate(vacancy.closes_at)
-    : null;
-  const priorityLabel =
-    vacancy.priority === 2 ? "Срочно" : vacancy.priority === 1 ? "Высокий" : "Обычный";
-  const positionsCount =
-    typeof vacancy.extra_data?.positions_count === "number"
-      ? vacancy.extra_data.positions_count
-      : 1;
-
-  const handleTake = async () => {
-    // Guard: повторный клик пока запрос ещё в полёте не должен
-    // отправлять второй POST — иначе создавались дубли-клоны.
-    if (taking) return;
-    setTaking(true);
-
-    const doTake = async (force: boolean) => {
-      await takeVacancy(vacancy.id, force);
-      await fetchVacancies();
-      toast.success('Заявка взята в работу — открыта в "Мои вакансии"');
-      onTaken();
-    };
-
-    try {
-      await doTake(false);
-    } catch (err) {
-      // Backend вернул 409 duplicate_clone — у юзера уже есть вакансия по
-      // этой заявке. Не блокируем жёстко, а спрашиваем — вдруг дубль нужен.
-      const detail = (err as { response?: { data?: { detail?: unknown } } })
-        ?.response?.data?.detail;
-      const isDuplicate =
-        detail !== null &&
-        typeof detail === "object" &&
-        (detail as { code?: string }).code === "duplicate_clone";
-      if (isDuplicate) {
-        const msg =
-          (detail as { message?: string }).message ||
-          "У вас уже есть такая вакансия. Создать дубликат?";
-        if (window.confirm(msg)) {
-          try {
-            await doTake(true);
-          } catch {
-            toast.error("Не удалось взять заявку");
-          }
-        }
-      } else {
-        toast.error("Не удалось взять заявку");
-      }
-    } finally {
-      setTaking(false);
-    }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="hf-vacancy-modal-overlay hf-request-preview-overlay"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        onClick={(event) => event.stopPropagation()}
-        className="hf-vacancy-modal hf-request-preview-modal"
-      >
-        <div className="hf-vacancy-modal-header">
-          <h2 className="hf-vacancy-modal-title">
-            {vacancy.title?.trim() || "Заявка"}
-          </h2>
-          <div className="hf-vacancy-header-actions">
-            <button
-              type="button"
-              onClick={onClose}
-              className="hf-vacancy-close-btn"
-              aria-label="Закрыть"
-            >
-              <X className="hf-request-preview-close-icon" />
-            </button>
-          </div>
-        </div>
-
-        <div className="hf-vacancy-form-scroll">
-          <div className="hf-vacancy-modal-grid hf-request-preview-grid grid min-h-full">
-            <div className="hf-vacancy-modal-main hf-request-preview-main">
-              <RequestPreviewBlock
-                title="Описание вакансии"
-                html={vacancy.description}
-              />
-              <RequestPreviewBlock
-                title="Обязанности кандидата"
-                html={vacancy.responsibilities}
-              />
-              <RequestPreviewBlock
-                title="Требования к кандидату"
-                html={vacancy.requirements}
-              />
-            </div>
-
-            <aside className="hf-vacancy-modal-aside hf-request-preview-aside">
-              {salaryText && (
-                <RequestPreviewBlock title="Зарплата">
-                  {salaryText}
-                </RequestPreviewBlock>
-              )}
-              <RequestPreviewBlock title="Приоритет">
-                {priorityLabel}
-              </RequestPreviewBlock>
-              {deadlineText && (
-                <RequestPreviewBlock title="Дедлайн">
-                  {deadlineText}
-                </RequestPreviewBlock>
-              )}
-              <RequestPreviewBlock title="Сколько человек нужно нанять">
-                {positionsCount}
-              </RequestPreviewBlock>
-              <RequestPreviewBlock
-                title={requestDate ? `Заказчик, ${requestDate}` : "Заказчик"}
-              >
-                {customerName}
-              </RequestPreviewBlock>
-              {requestDate && (
-                <RequestPreviewBlock title="Заявка получена">
-                  {requestDate}
-                </RequestPreviewBlock>
-              )}
-              {acceptedCount > 0 && (
-                <RequestPreviewBlock title="Заявка в работе">
-                  {acceptedCount === 1
-                    ? "Уже взята в работу 1 рекрутёром"
-                    : `Уже взята в работу (${acceptedCount})`}
-                </RequestPreviewBlock>
-              )}
-            </aside>
-          </div>
-        </div>
-
-        <div className="hf-vacancy-footer hf-request-preview-footer">
-          <button
-            type="button"
-            onClick={handleTake}
-            disabled={taking || isTakenByMe}
-            className="hf-vacancy-primary-btn"
-          >
-            {taking ? "Беру..." : isTakenByMe ? "Уже в работе" : "Взять в работу"}
-          </button>
-          <button type="button" onClick={onClose} className="hf-vacancy-secondary-btn">
-            Закрыть
-          </button>
-          {/* Редактирование доступно и рекрутёрам (гейт снят 2026-07-02). */}
-          <button type="button" onClick={onEdit} className="hf-vacancy-secondary-btn">
-            Редактировать
-          </button>
-          {/* «Отказаться» — снимает себя с заявки: рекрутёр всегда, админ — если его
-              ЯВНО назначили (раньше админ не мог отказаться вовсе, 2026-09-10). */}
-          {(!isModalAdmin || isExplicitlyAssigned(vacancy, user?.id)) && (
-            <button
-              type="button"
-              onClick={handleDecline}
-              disabled={declining}
-              className="hf-vacancy-secondary-btn"
-              style={{ color: "var(--hf-status-red)", borderColor: "var(--hf-status-red)" }}
-            >
-              {declining ? "Отказ..." : "Отказаться"}
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
-  {
-    title: "Факториал",
-    description: "Сотрудники, документы и личный кабинет",
-    icon: Users,
-    color: "text-[var(--hf-status-indigo)]",
-    path: "/factorial",
-  },
-  {
-    title: "Импорт CSV",
-    description: "Загрузка кандидатов из CSV-файла (ClickUp и др.)",
-    icon: FileText,
-    color: "text-[var(--hf-status-cyan)]",
-    path: "/import",
-  },
-  {
-    title: "Рекрутеры и заказчики",
-    description: "Добавление пользователей и настройка прав",
-    icon: Users,
-    color: "text-[var(--hf-red-500)]",
-    path: "/users",
-    adminOnly: true,
-  },
-  {
-    title: "Воронка",
-    description: "Этапы подбора, воронки, отказы и контроль сроков",
-    icon: Filter,
-    color: "text-[var(--hf-status-pink)]",
-    path: "/all-candidates",
-  },
-  {
-    title: "Бизнес-процесс",
-    description: "Заявки, вакансии, справочники, метки и источники резюме",
-    icon: GitBranch,
-    color: "text-[var(--hf-status-green)]",
-    path: "/vacancies",
-  },
-  {
-    title: "Шаблоны, оценка и анкеты",
-    description: "Письма, анкеты, обратная связь и оценка рекрутмента",
-    icon: Layers,
-    color: "text-[var(--hf-status-cyan)]",
-    path: "/email-templates",
-  },
-  {
-    title: "Темы оформления",
-    description: "Цвета, темы и персонализация интерфейса",
-    icon: Palette,
-    color: "text-[var(--hf-status-lime)]",
-    missing: true,
-  },
-  {
-    title: "Сбор откликов",
-    description: "Карьерный сайт и публикация вакансий",
-    icon: Link2,
-    color: "text-[var(--hf-status-orange)]",
-    path: "/form-builder",
-  },
-  {
-    title: "API и вебхуки",
-    description: "Интеграция с вашими внутренними ресурсами",
-    icon: Code2,
-    color: "text-[var(--hf-status-blue)]",
-    missing: true,
-  },
-  {
-    title: "Архив кандидатов",
-    description: "Теневая база: скрытые дубликаты и архив (только суперадмин)",
-    icon: Archive,
-    color: "text-[var(--hf-status-orange)]",
-    path: "/candidate-archive",
-    superadminOnly: true,
-  },
-];
-
-const HR_SETTINGS_MY_ITEMS: HrSettingsItem[] = [
-  {
-    title: "Профиль",
-    description: "Обо мне, часовой пояс, аккаунт, язык интерфейса",
-    icon: User,
-    color: "text-[var(--hf-status-yellow)]",
-    path: "/my-profile",
-  },
-  {
-    title: "Почта и календарь",
-    description: "Google, Exchange, Outlook365 и другие",
-    icon: Mail,
-    color: "text-[var(--hf-status-cyan)]",
-    missing: true,
-  },
-  {
-    title: "Волшебная кнопка",
-    description: "Сохранение резюме с 20+ сайтов одним кликом",
-    icon: Wand2,
-    color: "text-[var(--hf-red-400)]",
-    path: "/extension",
-  },
-  {
-    title: "Джоб-сайты",
-    description: "HH, Avito, Хабр Карьера, AmazingHiring и другие",
-    icon: FileText,
-    color: "text-[var(--hf-status-pink)]",
-    missing: true,
-  },
-  {
-    title: "Интеграции",
-    description: "Zoom, MS Teams, Google Meet и другие",
-    icon: Puzzle,
-    color: "text-[var(--hf-status-indigo)]",
-    missing: true,
-  },
-];
-
-function HrSettingsCard({
-  item,
-  onSelect,
-}: {
-  item: HrSettingsItem;
-  onSelect: (item: HrSettingsItem) => void;
-}) {
-  const Icon = item.icon;
-
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(item)}
-      className="hf-hr-settings-card"
-    >
-      <Icon
-        className={clsx(
-          "hf-hr-settings-card-icon",
-          item.color,
-        )}
-      />
-      <span className="hf-hr-settings-card-content">
-        <span className="hf-hr-settings-card-title">
-          {item.title}
-        </span>
-        <span className="hf-hr-settings-card-desc">
-          {item.description}
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function HrSettingsModal({
-  canUseAdmin,
-  isSuperadmin,
-  onClose,
-  onNavigate,
-}: {
-  canUseAdmin: boolean;
-  isSuperadmin: boolean;
-  onClose: () => void;
-  onNavigate: (path: string) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const normalizedQuery = query.trim().toLowerCase();
-  const filterItems = (items: HrSettingsItem[]) => {
-    // Суперадм-только пункты (напр. «Архив кандидатов») скрываем от остальных
-    const visible = items.filter((item) => !item.superadminOnly || isSuperadmin);
-    return normalizedQuery
-      ? visible.filter((item) =>
-          `${item.title} ${item.description}`
-            .toLowerCase()
-            .includes(normalizedQuery),
-        )
-      : visible;
-  };
-  const orgItems = filterItems(HR_SETTINGS_ORG_ITEMS);
-  const myItems = filterItems(HR_SETTINGS_MY_ITEMS);
-
-  const handleSelect = (item: HrSettingsItem) => {
-    if (item.missing) {
-      toast("Этого раздела пока нет в HR-bot, оставляем как отсутствующую фичу Huntflow");
-      return;
-    }
-    if (item.adminOnly && !canUseAdmin) {
-      toast("Раздел доступен только администратору");
-      return;
-    }
-    if (item.superadminOnly && !isSuperadmin) {
-      toast("Раздел доступен только суперадмину");
-      return;
-    }
-    if (item.path) {
-      onNavigate(item.path);
-    }
-  };
-
-  return (
-    <div
-      className="hf-hr-settings-overlay"
-      onMouseDown={onClose}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: -10, scale: 0.985 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -8, scale: 0.985 }}
-        transition={{ duration: 0.14, ease: "easeOut" }}
-        onMouseDown={(event) => event.stopPropagation()}
-        className="hf-hr-settings-modal"
-      >
-        <div className="hf-hr-settings-header">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть настройки"
-            className="hf-hr-settings-close"
-          >
-            <X className="hf-hr-settings-close-icon" />
-          </button>
-          <h2 className="hf-hr-settings-title">
-            HR-bot
-          </h2>
-          <p className="hf-hr-settings-subtitle">
-            Настройки рабочего пространства и рекрутингового контура
-          </p>
-        </div>
-
-        <div className="hf-hr-settings-body">
-          <label className="hf-hr-settings-search">
-            <Search
-              className="hf-hr-settings-search-icon"
-            />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              autoFocus
-              placeholder="Поиск"
-              className="hf-hr-settings-search-input"
-            />
-          </label>
-
-          <div className="hf-hr-settings-grid hf-hr-settings-grid-first">
-            {orgItems.map((item) => (
-              <HrSettingsCard
-                key={item.title}
-                item={item}
-                onSelect={handleSelect}
-              />
-            ))}
-          </div>
-
-          <div className="hf-hr-settings-section">
-            <h3 className="hf-hr-settings-section-title">
-              Мой профиль
-            </h3>
-            <div className="hf-hr-settings-grid hf-hr-settings-grid-first">
-              {myItems.map((item) => (
-                <HrSettingsCard
-                  key={item.title}
-                  item={item}
-                  onSelect={handleSelect}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
 
 // FAB — floating action button for HR block
 function FABButton({
@@ -790,6 +236,7 @@ function getBlockForPath(path: string): string | null {
       "/all-candidates",
       "/statuses",
       "/candidate-archive",
+      "/deleted-candidates",
       "/workspaces",
       "/my-funnels",
       "/form-builder",
@@ -1456,7 +903,13 @@ export default function Layout() {
       .map(([id, count]) => ({
         id,
         count,
-        name: pickerUsersById[id] || `#${id}`,
+        // Имени нет в списке назначаемых (например, у суперадмина) — берём его
+        // из вакансии, которую он создал, как делают воронки
+        // (resolveGroupUserName). Раньше в меню стояло «#1 · 4 вакансий».
+        name:
+          pickerUsersById[id] ||
+          vacancies.find((v) => v.created_by === id && v.created_by_name)?.created_by_name ||
+          `#${id}`,
         onlyVacancyId: count === 1 ? lastVacancyId.get(id) ?? null : null,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -1790,7 +1243,7 @@ export default function Layout() {
                         <span className="truncate">
                           {pickerOwnerId === null
                             ? "Мои вакансии"
-                            : `Вакансии: ${pickerUsersById[pickerOwnerId] || "..."}`}
+                            : `Вакансии: ${funnelsPickerRecruiters.find((r) => r.id === pickerOwnerId)?.name || pickerUsersById[pickerOwnerId] || "..."}`}
                         </span>
                         <span className="hf-hr-funnels-trigger-caret">
                           <ChevronDown
@@ -1906,7 +1359,7 @@ export default function Layout() {
                                     {r.name}
                                   </span>
                                   <span className="hf-hr-funnels-option-subtitle">
-                                    {r.count} {r.count === 1 ? "вакансия" : "вакансий"}
+                                    {r.count} {pluralRu(r.count, "вакансия", "вакансии", "вакансий")}
                                   </span>
                                 </span>
                               </button>

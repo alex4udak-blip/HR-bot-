@@ -27,6 +27,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.database import STAGE_SYNC_MAP, StageTransition
+from .hr_stages import board_column
 
 logger = logging.getLogger("hr-analyzer.status-dates")
 
@@ -94,7 +95,11 @@ async def status_changed_at_map(db: AsyncSession, entities: Iterable[Any]) -> Di
             .group_by(StageTransition.entity_id, StageTransition.to_stage)
         )
         for ent_id, to_stage, at in rows.all():
-            if _STAGE_TO_STATUS.get(to_stage) != status_of.get(ent_id):
+            # Сравниваем по вкладке, а не по статусу дословно: уволенного доска
+            # переводит в воронке в «Отказ» (запись истории — на rejected), а
+            # статус у него «уволен» — это та же вкладка «Отказ» (hr_stages).
+            stage_status = _STAGE_TO_STATUS.get(to_stage)
+            if stage_status is None or board_column(stage_status) != board_column(status_of.get(ent_id, "")):
                 continue
             when = _naive_utc(at)
             if when is not None and (ent_id not in out or when > out[ent_id]):

@@ -1,244 +1,92 @@
-import { useState, useEffect, useMemo, useCallback, useRef, Fragment, Suspense, lazy, startTransition } from 'react';
-import { useHorizontalScroll } from '../hooks/useHorizontalScroll';
+import { copyOrShowLink } from '@/utils/copyOrShowLink';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
+
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Briefcase,
   Users,
-  ArrowRightLeft,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  Search,
   X,
   Loader2,
-  FolderOpen,
   Menu,
-  PanelLeftClose,
   PanelLeftOpen,
   FileText,
   Copy,
   Check,
   Tag,
   Pencil,
-  Archive,
-  Trash2,
   Lock,
   MapPin,
   ExternalLink,
   Phone,
   Send,
-  LogOut,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useVacancyStore } from '@/stores/vacancyStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getAssignableUsers, getApplications, updateApplication, deleteApplication, deleteApplicationHistory, updateApplicationHistory, setPinnedEntry, getEntityFiles, getEntity, uploadEntityFile, declineVacancy } from '@/services/api';
-import { getOrgStages } from '@/services/api/auth';
-import { addEntityNote, deleteEntityNote, updateEntityNote, createCandidateShareLink } from '@/services/api/entities';
+import { deleteApplication, getEntityFiles, declineVacancy } from '@/services/api';
+
+import { createCandidateShareLink } from '@/services/api/entities';
+import { useCardActions } from '@/components/entities/candidateDetail/useCardActions';
+import { useFunnelStages } from '@/components/funnels/useFunnelStages';
+import { useFunnelVacancyList } from '@/components/funnels/useFunnelVacancyList';
+import { FunnelsRecruiterSidebar } from '@/components/funnels/FunnelsRecruiterSidebar';
+import { FunnelsVacancyOverview } from '@/components/funnels/FunnelsVacancyOverview';
+import { FunnelStageTabs } from '@/components/funnels/FunnelStageTabs';
+import VacancyConfirmModal from '@/components/vacancies/VacancyConfirmModal';
+import { FunnelCandidateList } from '@/components/funnels/FunnelCandidateList';
+import type { Tag as TagType } from '@/services/api/tags';
+import { useFunnelVacancyAccess } from '@/components/funnels/useFunnelVacancyAccess';
+import { useFunnelEntityData } from '@/components/funnels/useFunnelEntityData';
+import { useFunnelCandidates } from '@/components/funnels/useFunnelCandidates';
+import { useFunnelSelection } from '@/components/funnels/useFunnelSelection';
+import { FUNNEL_STAGE_ORDER, STAGE_LABEL_BY_STAGE } from '@/constants/hrStages';
 import TakeCandidateButton from '@/components/entities/TakeCandidateButton';
 import TagPicker from '@/components/entities/TagPicker';
-import { isVacancyParticipant, otherActiveParticipants, isPersonallyActive, getAcceptorIds, getVacancyExitOptions, pinMovedCandidate } from '@/utils/vacancy';
-import type { Tag as TagType } from '@/services/api/tags';
-import type { EntityFile } from '@/services/api/entities';
-import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage } from '@/types';
-import { readHeadlineTags, HeadlineTagChip } from '@/components/entities/headlineTags';
-import { STATUS_LABELS } from '@/types';
-import { VacancyStatusBadge, VacancyForm } from '@/components/vacancies';
+import { isPersonallyActive } from '@/utils/vacancy';
+
+import type { Vacancy, VacancyApplication, ApplicationStage } from '@/types';
+
+import { VacancyForm } from '@/components/vacancies';
 import CandidateHandoverModal from '@/components/vacancies/CandidateHandoverModal';
-import { getAllVacancies, createApplication, getVacancy } from '@/services/api/vacancies';
-import { funnelSearchMatch } from '@/utils/translit';
-import type { StageColumn } from '@/components/vacancies/StagesConfigModal';
+import { createApplication } from '@/services/api/vacancies';
+
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
 import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
-import { BulkSelectionBar } from '@/components/entities/BulkSelectionBar';
-import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
+
 import ResumeTab from '@/components/entities/candidateDetail/ResumeTab';
-import { buildStageContainers, buildResumeSources, readSystemHrTags, type StageContainer, type EntryReaction } from '@/components/entities/candidateDetail/model';
-import { getEntityActivity, toggleTimelineReaction, deleteEntityFile, type VacancyActivityBlock as ActivityBlockData } from '@/services/api/entities';
-import { EditCandidateModal } from './AllCandidatesPage';
-import {
-  HuntflowInfoRow,
-  HuntflowOptionsIcon,
-} from '@/components/hr/HuntflowControls';
-import {
-  HUNTFLOW_VACANCY_STATUS_FILTERS,
-  getHuntflowVacancyStatusFilterLabel,
-} from '@/components/hr/huntflowVacancyStatus';
-import { computeEntityParamUpdate, shouldAdoptUrlEntity } from '@/utils/candidateUrl';
+import { buildStageContainers, readSystemHrTags, type StageContainer } from '@/components/entities/candidateDetail/model';
+import { EditCandidateModal } from '@/components/candidates/EditCandidateModal';
+import { HuntflowInfoRow } from '@/components/hr/HuntflowControls';
+
 import { useFormBadgeStore } from '@/stores/formBadgeStore';
-import { getEntityFormsUnreadCount, getEntityDispatches, markEntityDispatchesSeen, type FormDispatchInfo } from '@/services/api/forms';
+import {
+  getEntityFormsUnreadCount,
+  getEntityAllDispatches,
+  markEntityDispatchesSeen,
+  type FormDispatchInfo,
+} from '@/services/api/forms';
 import { AnketaResponses } from '@/features/forms/AnketaResponses';
-import { backdropClose } from '@/utils/backdropClose';
+import { FunnelScopeToggle, funnelScopeMode } from '@/components/funnels/FunnelScopeToggle';
+
 const AnketaDrawer = lazy(() =>
   import('@/features/forms/AnketaDrawer').then((m) => ({ default: m.AnketaDrawer })),
 );
 
 // ==================== Constants ====================
 
+// Вкладки, подписи и цвета этапов — общий справочник (constants/hrStages.ts).
+const STAGE_ORDER = FUNNEL_STAGE_ORDER;
 
-const STATUS_FILTER_IDS = new Set<string>(HUNTFLOW_VACANCY_STATUS_FILTERS.map((f) => f.id));
-
-const getRecruiterStatusDotClass = (status: VacancyStatus) => {
-  if (status === 'open') return 'hf-recruiter-status-dot-open';
-  if (status === 'paused') return 'hf-recruiter-status-dot-paused';
-  if (status === 'closed') return 'hf-recruiter-status-dot-closed';
-  if (status === 'pending_review') return 'hf-recruiter-status-dot-pending';
-  if (status === 'cancelled') return 'hf-recruiter-status-dot-cancelled';
-  return 'hf-recruiter-status-dot-default';
-};
-
-const STAGE_ORDER = [
-  'applied', 'screening', 'phone_screen', 'interview',
-  'assessment', 'offer', 'hired', 'probation', 'transferred', 'rejected', 'reserve',
-] as const;
-
-// Единые лейблы стадий — синхронизированы с backend KANBAN_STATUS_LABELS
-// (отображаются на /all-candidates). Не разводить разные наборы по страницам.
 const STAGE_LABELS: Record<string, string> = {
-  new: 'Новый',
-  applied: 'Новый',
-  screening: 'Выполняет ТЗ',
-  phone_screen: 'Интервью с HR',
-  interview: 'Интервью с заказчиком',
-  assessment: 'Принятие решения',
-  offer: 'Выставлен оффер',
-  hired: 'Оффер принят',
-  probation: 'Практика',
-  transferred: 'Перешёл в отдел',
-  rejected: 'Отказ',
-  withdrawn: 'Отозван',
-  reserve: 'Резерв',
-};
-
-const formatVacancyListDate = (date?: string | null) => {
-  if (!date) return 'не указана';
-  const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return 'не указана';
-  return parsed.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).replace(/\sг\.$/, '');
+  ...STAGE_LABEL_BY_STAGE,
+  new: STAGE_LABEL_BY_STAGE.applied,
 };
 
 const getCandidateFallbackInitial = (name?: string | null) =>
   name?.match(/[0-9A-Za-zА-Яа-яЁё]/)?.[0]?.toUpperCase() || '?';
-
-const STAGE_COLORS: Record<string, { bg: string; text: string; dot: string; badge: string }> = {
-  applied:      { bg: 'bg-[var(--hf-status-blue-bg)]',   text: 'text-[var(--hf-status-blue)]',    dot: 'bg-[var(--hf-status-blue)]',    badge: 'bg-[var(--hf-status-blue-badge)] text-[var(--hf-status-blue)]' },
-  screening:    { bg: 'bg-[var(--hf-status-cyan-bg)]',    text: 'text-[var(--hf-cyan-400)]',    dot: 'bg-[var(--hf-status-cyan)]',    badge: 'bg-[var(--hf-status-cyan-badge)] text-[var(--hf-cyan-400)]' },
-  phone_screen: { bg: 'bg-[var(--hf-status-purple-bg)]',  text: 'text-[var(--hf-status-purple)]',  dot: 'bg-[var(--hf-status-purple)]',  badge: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]' },
-  interview:    { bg: 'bg-[var(--hf-status-indigo-bg)]',  text: 'text-[var(--hf-status-indigo)]',  dot: 'bg-[var(--hf-status-indigo)]',  badge: 'bg-[var(--hf-status-indigo-badge)] text-[var(--hf-status-indigo)]' },
-  assessment:   { bg: 'bg-[var(--hf-status-orange-bg)]',  text: 'text-[var(--hf-status-orange)]',  dot: 'bg-[var(--hf-status-orange)]',  badge: 'bg-[var(--hf-status-orange-badge)] text-[var(--hf-status-orange)]' },
-  offer:        { bg: 'bg-[var(--hf-status-yellow-bg)]',  text: 'text-[var(--hf-status-yellow)]',  dot: 'bg-[var(--hf-status-yellow)]',  badge: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
-  hired:        { bg: 'bg-[var(--hf-status-green-bg)]',   text: 'text-[var(--hf-status-green)]',   dot: 'bg-[var(--hf-status-green)]',   badge: 'bg-[var(--hf-status-green-badge)] text-[var(--hf-status-green)]' },
-  probation:    { bg: 'bg-[var(--hf-status-teal-bg)]',    text: 'text-[var(--hf-status-teal)]',    dot: 'bg-[var(--hf-status-teal)]',    badge: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)]' },
-  transferred:  { bg: 'bg-[var(--hf-status-lime-bg)]',    text: 'text-[var(--hf-status-lime)]',    dot: 'bg-[var(--hf-status-lime)]',    badge: 'bg-[var(--hf-status-lime-badge)] text-[var(--hf-status-lime)]' },
-  rejected:     { bg: 'bg-[var(--hf-status-red-bg)]',     text: 'text-[var(--hf-status-red)]',     dot: 'bg-[var(--hf-status-red)]',     badge: 'bg-[var(--hf-status-red-badge)] text-[var(--hf-status-red)]' },
-  withdrawn:    { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
-  reserve:      { bg: 'bg-[var(--hf-status-gray-bg)]',    text: 'text-[var(--hf-status-gray)]',    dot: 'bg-[var(--hf-status-gray)]',    badge: 'bg-[var(--hf-status-gray-badge)] text-[var(--hf-status-gray)]' },
-  // Extra colors for custom stages
-  pink:         { bg: 'bg-[var(--hf-status-pink-bg)]',    text: 'text-[var(--hf-status-pink)]',    dot: 'bg-[var(--hf-status-pink)]',    badge: 'bg-[var(--hf-status-pink-badge)] text-[var(--hf-status-pink)]' },
-  teal:         { bg: 'bg-[var(--hf-status-teal-bg)]',    text: 'text-[var(--hf-status-teal)]',    dot: 'bg-[var(--hf-status-teal)]',    badge: 'bg-[var(--hf-status-teal-badge)] text-[var(--hf-status-teal)]' },
-  amber:        { bg: 'bg-[var(--hf-status-yellow-bg)]',   text: 'text-[var(--hf-status-yellow)]',   dot: 'bg-[var(--hf-status-yellow)]',   badge: 'bg-[var(--hf-status-yellow-badge)] text-[var(--hf-status-yellow)]' },
-  lime:         { bg: 'bg-[var(--hf-status-lime-bg)]',    text: 'text-[var(--hf-status-lime)]',    dot: 'bg-[var(--hf-status-lime)]',    badge: 'bg-[var(--hf-status-lime-badge)] text-[var(--hf-status-lime)]' },
-  rose:         { bg: 'bg-[var(--hf-status-rose-bg)]',    text: 'text-[var(--hf-status-rose)]',    dot: 'bg-[var(--hf-status-rose)]',    badge: 'bg-[var(--hf-status-rose-badge)] text-[var(--hf-status-rose)]' },
-  violet:       { bg: 'bg-[var(--hf-status-purple-bg)]',  text: 'text-[var(--hf-status-purple)]',  dot: 'bg-[var(--hf-status-purple)]',  badge: 'bg-[var(--hf-status-purple-badge)] text-[var(--hf-status-purple)]' },
-  sky:          { bg: 'bg-[var(--hf-status-sky-bg)]',     text: 'text-[var(--hf-status-sky)]',     dot: 'bg-[var(--hf-status-sky)]',     badge: 'bg-[var(--hf-status-sky-badge)] text-[var(--hf-status-sky)]' },
-};
-
-// Map color key to STAGE_COLORS key (some overlap with enum names)
-const colorToStageColor = (colorKey?: string, enumVal?: string): string => {
-  if (colorKey && STAGE_COLORS[colorKey]) return colorKey;
-  if (enumVal && STAGE_COLORS[enumVal]) return enumVal;
-  return 'screening'; // fallback cyan
-};
-
-// Группировка админ-вида (2026-07-09): раньше группировали по created_by (кто
-// СОЗДАЛ заявку) — но создатель часто просто раздаёт заявки, не работая над
-// ними лично. Реальный «владелец» воронки — тот, кто лично нажал «Взять в
-// работу» (extra_data.accepted_by). Заявку могут принять НЕСКОЛЬКО
-// рекрутёров (общая воронка) — тогда она показывается у КАЖДОГО из них.
-// СТРОГО accepted_by, БЕЗ фолбэка на created_by (в отличие от getAcceptorIds,
-// utils/vacancy.ts) — иначе старые вакансии без личного принятия
-// приписывались создателю, и счётчик «N вакансий» у него расходился с тем,
-// что реально показывает сайдбар «Мои вакансии» (тот же баг, что чинили в
-// Layout.tsx funnelsPickerRecruiters). Пустой accepted_by → uid=0
-// «Без исполнителя», чтобы заявка не выпала из группировки совсем.
-// F5 открытой воронки: документ перезагружен ровно на текущем URL. Проверка
-// идемпотентна: StrictMode в dev дважды зовёт инициализатор useState, а страница
-// после загрузки может смонтироваться повторно (гарды ролей/авторизации) — всё
-// это та же перезагрузка. Отметка гаснет, как только адрес стал другим: значит,
-// юзер уже ходил по приложению, и следующий заход с ?entity= — снова ссылка.
-let documentReloadHref: string | null | undefined;
-function isDocumentReloadOfCurrentUrl(): boolean {
-  if (documentReloadHref === undefined) {
-    try {
-      const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
-      documentReloadHref = nav?.type === 'reload' ? nav.name : null;
-    } catch {
-      documentReloadHref = null;
-    }
-  }
-  if (documentReloadHref !== window.location.href) documentReloadHref = null;
-  return documentReloadHref != null;
-}
-
-// Состояние воронки, которое должно пережить F5 в этой вкладке, но не новую
-// вкладку и не новую ссылку, — sessionStorage.
-const SHARED_ENTRY_KEY = 'funnel_shared_entry';
-const FOREIGN_ONLY_MINE_KEY = 'funnel_foreign_only_mine';
-function readFunnelSession<T>(key: string): T | null {
-  try {
-    const raw = sessionStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : null;
-  } catch {
-    return null;
-  }
-}
-function writeFunnelSession(key: string, value: unknown) {
-  try {
-    sessionStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* приватный режим — просто не запомним */
-  }
-}
-function removeFunnelSession(key: string) {
-  try {
-    sessionStorage.removeItem(key);
-  } catch {
-    /* noop */
-  }
-}
-
-function groupAcceptorIds(v: Vacancy): number[] {
-  const acceptedBy = ((v.extra_data as Record<string, unknown> | undefined)?.accepted_by as number[] | undefined) || [];
-  return acceptedBy.length > 0 ? acceptedBy : [0];
-}
-
-function resolveGroupUserName(
-  uid: number,
-  v: Vacancy,
-  usersMap: Record<number, string>,
-  currentUser: { id?: number; name?: string } | null | undefined,
-): string {
-  if (uid === v.created_by && v.created_by_name) return v.created_by_name;
-  if (usersMap[uid]) return usersMap[uid];
-  if (currentUser && uid === currentUser.id) return currentUser.name || 'Мои';
-  return 'Без исполнителя';
-}
-
-// ==================== Types ====================
-
-interface RecruiterGroup {
-  userId: number;
-  userName: string;
-  vacancies: Vacancy[];
-  expanded: boolean;
-}
 
 // ==================== Copy Button Helper ====================
 
@@ -274,97 +122,33 @@ export default function RecruiterFunnelsPage() {
   const isSuperadmin = user?.role === 'superadmin';
 
   // UI state
-  const [search, setSearch] = useState('');
-  const [recruiterSearch, setRecruiterSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<VacancyStatus | 'all' | 'deleted'>('all');
-  const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState<number | null>(null);
-  // Выключенная рекрутёром «Только мои» в СВОЕЙ воронке — временно, до ухода
-  // из воронки / F5 / новой вкладки (null = умолчание, кнопка включена).
-  const [ownOnlyMineOverride, setOwnOnlyMineOverride] = useState<boolean | null>(null);
-  // «Удалённые»: мягко-удалённые вакансии тянем отдельным запросом (deleted=true).
-  const [deletedVacancies, setDeletedVacancies] = useState<Vacancy[]>([]);
-  useEffect(() => {
-    if (statusFilter === 'deleted') {
-      getAllVacancies({ deleted: true }).then(setDeletedVacancies).catch(() => setDeletedVacancies([]));
-    }
-  }, [statusFilter]);
-  const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [showRecruiterMenu, setShowRecruiterMenu] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showHandover, setShowHandover] = useState(false);
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [usersMap, setUsersMap] = useState<Record<number, string>>({});
-  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
-  const recruiterAutoExpandedRef = useRef(false);
-  const statusMenuRef = useRef<HTMLDivElement>(null);
-  const recruiterMenuRef = useRef<HTMLDivElement>(null);
+
+  // Список вакансий: фильтры, группы рекрутёров, меню (useFunnelVacancyList).
+  const vacancyList = useFunnelVacancyList({
+    vacancies, fetchVacancies, user, isHrAdmin, searchParams, setSearchParams,
+    selectedVacancyId: searchParams.get('v') ? Number(searchParams.get('v')) : null,
+  });
+  const {
+    statusFilter,
+    selectedRecruiterFilter, setSelectedRecruiterFilter, 
+  } = vacancyList;
 
   // ClickUp view: selected vacancy + candidates
   const selectedVacancyId = searchParams.get('v') ? Number(searchParams.get('v')) : null;
-  // Открыли по ШАРИНГ-ССЫЛКЕ на кандидата (в URL сразу есть и ?v=, и ?entity=).
-  // В этом режиме грузим кандидатов БЕЗ скоупа по рекрутёру — иначе чужой кандидат
-  // (added другим рекрутёром) не попадает в список и окно пустое (баг Марии по
-  // ссылке) — а сам кандидат из ссылки остаётся в списке при любом фильтре.
-  // Хранится id кандидата из URL на момент открытия: живой ?entity= не годится,
-  // страница переписывает его при каждом выборе кандидата.
-  //  • F5 — НЕ новая ссылка: ?entity= туда записала сама страница. F5 обязан
-  //    вернуть ровно то, что было на экране (решение юзера 2026-09-10), поэтому
-  //    кандидат из ссылки запоминается в sessionStorage вкладки и после F5
-  //    восстанавливается оттуда, а не из ?entity=. Иначе после перезагрузки в
-  //    «воронке Марии» застревал последний открытый чужой кандидат (прод,
-  //    2026-09-10: Шатилов с меткой Влады в «Вакансии: Мария»).
-  //  • Режим живёт до первого своего действия — смена воронки, рекрутёра или
-  //    «Только мои» (см. эффект у onlyMine ниже).
-  const [sharedEntryEntityId, setSharedEntryEntityId] = useState<number | null>(() => {
-    const vacancyId = Number(searchParams.get('v')) || null;
-    if (vacancyId == null) return null;
-    if (isDocumentReloadOfCurrentUrl()) {
-      const saved = readFunnelSession<{ v: number; entityId: number }>(SHARED_ENTRY_KEY);
-      return saved?.v === vacancyId ? saved.entityId : null;
-    }
-    return Number(searchParams.get('entity')) || null;
-  });
-  useEffect(() => {
-    if (sharedEntryEntityId == null || selectedVacancyId == null) removeFunnelSession(SHARED_ENTRY_KEY);
-    else writeFunnelSession(SHARED_ENTRY_KEY, { v: selectedVacancyId, entityId: sharedEntryEntityId });
-  }, [sharedEntryEntityId, selectedVacancyId]);
-  const arrivedViaSharedCandidate = sharedEntryEntityId != null;
-  const [candidates, setCandidates] = useState<VacancyApplication[]>([]);
-  const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateSearch, setCandidateSearch] = useState('');
-  // Горизонтальный скролл табов этапов (инлайн detail-view) — единый хук.
-  const {
-    ref: vacancyStageScrollRef,
-    canScrollLeft: vacancyStageCanScrollLeft,
-    canScrollRight: vacancyStageCanScrollRight,
-    scrollLeft: scrollVacancyStagesLeft,
-    scrollRight: scrollVacancyStagesRight,
-  } = useHorizontalScroll<HTMLDivElement>({ step: 520 });
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkMoving, setBulkMoving] = useState(false);
-  // Модалка массового перемещения в другую воронку.
-  const [showBulkMove, setShowBulkMove] = useState(false);
-
 
   // Master-detail state
-  const [selectedTab, setSelectedTab] = useState<string>('all');
-  const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
-  // Заявка, которую только что двигали (или чей перевод отменили): остаётся в
-  // списке текущей вкладки, пока рекрутёр сам не уйдёт с неё.
-  const [stickyCandidateId, setStickyCandidateId] = useState<number | null>(null);
-  // Лента активности ПРИВЯЗАНА к кандидату, для которого загружена. Раньше это был
-  // голый массив: при переключении кандидата в нём до ответа сервера (или навсегда,
-  // если опоздавший ответ прошлого кандидата прилетал позже) лежала лента ДРУГОГО
-  // человека, и карточка брала оттуда application_id — «Отказ» уходил чужой заявке
-  // в той же воронке, а комментарий «Этап: Отказ» — выбранному (2026-09-15, Мария:
-  // «поставила отказ, а висит в Выполняет ТЗ»).
-  const [activityState, setActivityState] = useState<{ entityId: number | null; blocks: ActivityBlockData[] }>({ entityId: null, blocks: [] });
-  const activityEntityRef = useRef<number | null>(null);
-  const [dupCard, setDupCard] = useState<KanbanCard | null>(null);
+  // Метки кандидата (TagPicker пишет сюда) — уходят в карточку окна «Редактировать».
+  const [entityTags, setEntityTags] = useState<TagType[]>([]);
   // По умолчанию 'resume' — как в «Все кандидаты» (detailTab там тоже стартует
   // с "resume"): резюме видно сразу прокруткой, без клика по вкладке. 'info'
   // здесь ничего не рендерит (тут нет отдельной вкладки «Личные заметки»,
@@ -382,225 +166,13 @@ export default function RecruiterFunnelsPage() {
   // кандидату, хотя дровер не закрывался. Причина жалобы «анкета прилетает не
   // в ту карточку».
   const [anketaTarget, setAnketaTarget] = useState<{ id: number; name: string } | null>(null);
-  const [entityFiles, setEntityFiles] = useState<EntityFile[]>([]);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [entityExtraData, setEntityExtraData] = useState<Record<string, unknown> | null>(null);
 
-  // Tags state
-  const [entityTags, setEntityTags] = useState<TagType[]>([]);
   // Яркие теги-ярлыки у имени (редактор в воронке).
 
   // "Add to vacancy" dropdown state
   const [showAddToVacancy, setShowAddToVacancy] = useState(false);
   const [addingToVacancy, setAddingToVacancy] = useState(false);
   const addToVacancyRef = useRef<HTMLDivElement>(null);
-  const [showVacancyTopSearch, setShowVacancyTopSearch] = useState(false);
-  const vacancyTopSearchRef = useRef<HTMLInputElement>(null);
-
-  // Org-level лейблы этапов с /all-candidates → ⚙️.
-  // Маппинг: ApplicationStage (applied/screening/phone_screen/...) ↔
-  //          EntityStatus       (new/screening/practice/...)
-  const APP_TO_ENTITY_STAGE: Record<string, string> = {
-    applied: 'new',
-    screening: 'screening',
-    phone_screen: 'practice',
-    interview: 'tech_practice',
-    assessment: 'is_interview',
-    offer: 'offer',
-    hired: 'hired',
-    probation: 'probation',
-    transferred: 'transferred',
-    rejected: 'rejected',
-  };
-  const [orgStageOverrides, setOrgStageOverrides] = useState<Record<string, string>>({});
-  useEffect(() => {
-    getOrgStages()
-      .then((r) => {
-        const map: Record<string, string> = {};
-        r.stages.forEach((s) => { map[s.key] = s.label; });
-        setOrgStageOverrides(map);
-      })
-      .catch(() => { /* не критично — будут дефолты */ });
-  }, []);
-
-  // Load data
-  useEffect(() => {
-    fetchVacancies();
-  }, [fetchVacancies]);
-
-  useEffect(() => {
-    const urlStatus = searchParams.get('status');
-    const nextStatus =
-      urlStatus && STATUS_FILTER_IDS.has(urlStatus)
-        ? (urlStatus as VacancyStatus | 'all' | 'deleted')
-        : 'all';
-    if (nextStatus !== statusFilter) {
-      setStatusFilter(nextStatus);
-    }
-  }, [searchParams, statusFilter]);
-
-  // Выбор рекрутёра в попапе «Мои вакансии» сайдбара (Layout.tsx) шлёт сюда
-  // ?recruiter=<id> — раньше он просто делал navigate("/my-funnels") без
-  // параметра, поэтому клик по ЛЮБОМУ рекрутёру в попапе визуально ничего не
-  // менял на этой странице (уже открытый общий вид «Все вакансии» оставался
-  // как есть). Теперь синхронизируем с тем же selectedRecruiterFilter, что и
-  // родное меню «Рекрутеры» этой страницы.
-  useEffect(() => {
-    const urlRecruiter = searchParams.get('recruiter');
-    const parsed = urlRecruiter ? Number(urlRecruiter) : NaN;
-    const nextFilter = Number.isFinite(parsed) ? parsed : null;
-    if (nextFilter !== selectedRecruiterFilter) {
-      setSelectedRecruiterFilter(nextFilter);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    // Резолвер id → имя нужен ВСЕМ, не только admin-виду: обычный рекрутёр
-    // тоже видит «Рекрутер: ...» с именами других принявших (общая воронка,
-    // 2026-07-09). getUsers() отдаёт список по ОТДЕЛУ (для member — пусто,
-    // если отдел не назначен), поэтому берём assignable-users — тот же
-    // org-wide HR-пул, что и в дропдауне «Назначить рекрутёрам», без гейта.
-    getAssignableUsers().then((users) => {
-      const map: Record<number, string> = {};
-      users.forEach((u) => { map[u.id] = u.name; });
-      setUsersMap(map);
-    }).catch(() => {});
-  }, []);
-
-  const scopedVacancies = useMemo(() => {
-    if (statusFilter === 'deleted') {
-      return (!isHrAdmin && user)
-        ? deletedVacancies.filter((v) => isVacancyParticipant(v, user.id))
-        : deletedVacancies;
-    }
-    let result = vacancies;
-    // Исходные заявки, у которых уже есть клон («взяли в работу»), —
-    // это НЕ рабочие вакансии, а заявки. После «Взять в работу» оригинал
-    // переходит в status=open и без этого фильтра дублировал клон в списке
-    // вакансий рекрутёра (видно как два одинаковых «Тест»).
-    const clonedSourceIds = new Set<number>();
-    vacancies.forEach((v) => {
-      const src = (v.extra_data as Record<string, unknown> | undefined)
-        ?.cloned_from_request_id;
-      if (typeof src === 'number') clonedSourceIds.add(src);
-    });
-    result = result.filter((v) => !clonedSourceIds.has(v.id));
-    // Общая модель (2026-07-02): рекрутёр видит воронки, где он УЧАСТНИК —
-    // создатель ИЛИ назначенный (assigned_to/assigned_to_all), минус те, из
-    // которых он «закрыл у себя» (dismissed_by). Клонов больше нет — все
-    // участники работают в одной воронке и видят всех её кандидатов.
-    // 2026-07-08: но «Мои вакансии» показывает только ЛИЧНО принятые
-    // (isPersonallyActive) — назначенный, ещё не нажавший «Взять в работу»,
-    // видит её в «Заявки», а не здесь, даже если статус уже open (её взял
-    // кто-то другой из назначенных).
-    // Наблюдатель (is_readonly) — ментор: видит ВСЕ воронки, а не только личные,
-    // поэтому его этот фильтр не касается (бэк уже отдаёт ему все вакансии).
-    if (!isHrAdmin && !user?.is_readonly && user) {
-      result = result.filter((v) => isPersonallyActive(v, user.id));
-    }
-    if (statusFilter !== 'all') {
-      result = result.filter((v) => v.status === statusFilter);
-    } else {
-      // Заявки (pending_review/draft) живут в разделе «Заявки», а НЕ в активных
-      // воронках «Мои вакансии». Иначе только что созданная заявка сразу висела
-      // как «в работе» под создателем, будто он её уже взял. Принятой (взятой в
-      // работу) она становится через «Взять в работу» → клон со статусом open.
-      result = result.filter(
-        (v) => v.status !== 'pending_review' && v.status !== 'draft',
-      );
-    }
-    return result;
-  }, [vacancies, deletedVacancies, user, isHrAdmin, statusFilter]);
-
-  // Filter vacancies
-  const filteredVacancies = useMemo(() => {
-    let result = scopedVacancies;
-    if (isHrAdmin && selectedRecruiterFilter !== null) {
-      result = result.filter((v) => groupAcceptorIds(v).includes(selectedRecruiterFilter));
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter((v) => {
-        return v.title.toLowerCase().includes(q) || Boolean(v.department_name?.toLowerCase().includes(q));
-      });
-    }
-    return result;
-  }, [scopedVacancies, isHrAdmin, selectedRecruiterFilter, search]);
-
-  useEffect(() => {
-    if (!isHrAdmin || recruiterAutoExpandedRef.current || scopedVacancies.length === 0) return;
-
-    const groups = new Map<number, string>();
-    scopedVacancies.forEach((v) => {
-      groupAcceptorIds(v).forEach((uid) => {
-        if (!groups.has(uid)) {
-          groups.set(uid, resolveGroupUserName(uid, v, usersMap, user));
-        }
-      });
-    });
-
-    const firstGroup = Array.from(groups.entries()).sort((a, b) => a[1].localeCompare(b[1]))[0];
-    if (!firstGroup) return;
-
-    recruiterAutoExpandedRef.current = true;
-    setExpandedGroups(new Set([firstGroup[0]]));
-  }, [isHrAdmin, scopedVacancies, user, usersMap]);
-
-  // Группировка по тому, кто ЛИЧНО принял заявку в работу (accepted_by), а не
-  // по создателю — см. getAcceptorIds выше. Заявка с несколькими принявшими
-  // показывается у КАЖДОГО (сумма счётчиков по группам может быть больше
-  // общего числа заявок — это ожидаемо; «Найдено вакансий: N» ниже считает
-  // по scopedVacancies/filteredVacancies напрямую, без дублей).
-  const recruiterGroups = useMemo((): RecruiterGroup[] => {
-    const groups: Record<number, RecruiterGroup> = {};
-    const vacs = scopedVacancies;
-    vacs.forEach((v) => {
-      groupAcceptorIds(v).forEach((uid) => {
-        if (!groups[uid]) {
-          groups[uid] = {
-            userId: uid,
-            userName: resolveGroupUserName(uid, v, usersMap, user),
-            vacancies: [],
-            expanded: !isHrAdmin || expandedGroups.has(uid),
-          };
-        }
-        groups[uid].vacancies.push(v);
-      });
-    });
-    return Object.values(groups).sort((a, b) => a.userName.localeCompare(b.userName));
-  }, [scopedVacancies, isHrAdmin, usersMap, expandedGroups, user]);
-
-  const filteredRecruiterCount = useMemo(() => {
-    const ids = new Set<number>();
-    filteredVacancies.forEach((vacancy) => {
-      getAcceptorIds(vacancy).forEach((uid) => ids.add(uid));
-    });
-    return ids.size;
-  }, [filteredVacancies]);
-
-  const recruiterFilterOptions = useMemo(() => (
-    recruiterGroups.map((group) => ({
-      id: group.userId,
-      name: group.userName,
-      count: group.vacancies.length,
-    }))
-  ), [recruiterGroups]);
-
-  const statusFilterLabel = useMemo(() => {
-    if (statusFilter === 'all') return 'Все вакансии';
-    return getHuntflowVacancyStatusFilterLabel(statusFilter) || 'Все вакансии';
-  }, [statusFilter]);
-
-  const recruiterFilterLabel = useMemo(() => {
-    if (selectedRecruiterFilter === null) return 'Все';
-    return recruiterFilterOptions.find((item) => item.id === selectedRecruiterFilter)?.name || 'Все';
-  }, [recruiterFilterOptions, selectedRecruiterFilter]);
-
-  const visibleRecruiterGroups = useMemo(() => {
-    if (!recruiterSearch.trim()) return recruiterGroups;
-    const q = recruiterSearch.trim().toLowerCase();
-    return recruiterGroups.filter((group) => group.userName.toLowerCase().includes(q));
-  }, [recruiterGroups, recruiterSearch]);
 
   // Selected vacancy — сначала ищем в загруженном списке пользователя.
   const listedVacancy = useMemo(
@@ -608,80 +180,10 @@ export default function RecruiterFunnelsPage() {
     [vacancies, selectedVacancyId],
   );
 
-  // ДИПЛИНК НА ВОРОНКУ, КОТОРОЙ НЕТ В СПИСКЕ (?v=<чужая/закрытая/удалённая>).
-  // Раньше selectedVacancy молча оставался undefined → страница рисовала обзор
-  // СВОИХ воронок с прежним URL, и это читалось как «меня перекинуло на мои же
-  // вакансии» (обратная связь Эльвиры, 2026-09-07): отличить «нет прав» от
-  // «сломалось» было невозможно, 403 глотался пустым catch в loadCandidates.
-  // Теперь спрашиваем воронку точечно (GET /vacancies/{id}):
-  //   200 → берём её как fallback (в списке её могло не быть из-за фильтров
-  //         стора/пагинации — воронка доступна, просто не попала в выборку);
-  //   403 → явный экран «Нет доступа к этой воронке»;
-  //   404 → «Воронка не найдена» (удалена или чужая орг).
-  // Пока запрос летит, показываем лоадер, а НЕ обзор своих воронок — иначе
-  // прежний «отскок на свои ваки» просто мигал бы перед экраном ошибки.
-  const [probedVacancy, setProbedVacancy] = useState<Vacancy | null>(null);
-  const [vacancyAccessError, setVacancyAccessError] = useState<'forbidden' | 'missing' | null>(null);
-  const [vacancyProbing, setVacancyProbing] = useState(false);
-
-  useEffect(() => {
-    if (!selectedVacancyId || listedVacancy) {
-      setProbedVacancy(null);
-      setVacancyAccessError(null);
-      setVacancyProbing(false);
-      return;
-    }
-    // Уже разрешили этот id — не долбим бэк на каждый ре-рендер.
-    if (probedVacancy?.id === selectedVacancyId) return;
-    let cancelled = false;
-    setVacancyProbing(true);
-    setVacancyAccessError(null);
-    getVacancy(selectedVacancyId)
-      .then((v) => {
-        if (cancelled) return;
-        setProbedVacancy(v);
-        setVacancyAccessError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        const status = (err as { response?: { status?: number } })?.response?.status;
-        setProbedVacancy(null);
-        // Сетевую ошибку не выдаём за отказ в доступе — для неё остаётся
-        // прежнее поведение (обзор воронок), иначе оффлайн выглядел бы как
-        // отобранные права.
-        setVacancyAccessError(status === 403 ? 'forbidden' : status === 404 ? 'missing' : null);
-      })
-      .finally(() => {
-        if (!cancelled) setVacancyProbing(false);
-      });
-    return () => { cancelled = true; };
-  }, [selectedVacancyId, listedVacancy, probedVacancy?.id]);
-
-  const selectedVacancy = listedVacancy ?? (probedVacancy?.id === selectedVacancyId ? probedVacancy : undefined);
-  // Воронка запрошена в URL, но недоступна — рисуем экран отказа вместо обзора.
-  const funnelBlocked = !!selectedVacancyId && !selectedVacancy && vacancyAccessError !== null;
-
-  // ШАРИНГ-ССЫЛКА без ?recruiter=: восстанавливаем «путь» воронки. Ссылка-дип-линк
-  // рекрутёра обычно вида ?v=176&entity=8913&stage=applied (БЕЗ recruiter) → сайдбар
-  // не знал владельца и показывал голое «Мои вакансии» вместо «Вакансии: Мария».
-  // Выводим владельца из самой вакансии (accepted_by/created_by) и подставляем в URL —
-  // дальше существующий механизм (?recruiter= → pickerOwnerId в Layout) поднимает
-  // контекст сайдбара. Только для шаринг-сессии, только когда вакансия уже загружена.
-  useEffect(() => {
-    if (!arrivedViaSharedCandidate) return;
-    if (searchParams.get('recruiter')) return;
-    if (!selectedVacancy) return;
-    const ownerId = getAcceptorIds(selectedVacancy)[0];
-    if (!ownerId) return;
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set('recruiter', String(ownerId));
-        return next;
-      },
-      { replace: true },
-    );
-  }, [arrivedViaSharedCandidate, selectedVacancy, searchParams, setSearchParams]);
+  // Воронка из адреса: из загруженного списка или точечным запросом — с явным
+  // экраном «нет доступа / не найдена» (useFunnelVacancyAccess).
+  const { selectedVacancy, funnelBlocked, vacancyAccessError, vacancyProbing } =
+    useFunnelVacancyAccess(selectedVacancyId, listedVacancy);
 
   // Закрытая (архивная) вакансия открывается тем же полноценным окном, что и
   // активная (просмотр, резюме, история) — но любая попытка её изменить
@@ -695,492 +197,38 @@ export default function RecruiterFunnelsPage() {
     return false;
   }, [vacancyArchived]);
 
-
-  // Load candidates when vacancy selected
-  useEffect(() => {
-    if (!selectedVacancyId || funnelBlocked) {
-      setCandidates([]);
-      return;
-    }
-    loadCandidates(selectedVacancyId);
-    setSelectedCandidateId(null);
-    // Дефолтную вкладку выставляет эффект авто-выбора (гейт по id воронки) —
-    // здесь не трогаем, иначе он повторно дёргается на каждый ре-рендер.
-    setDetailTab('resume');
-    setSelectedIds(new Set());
-  }, [selectedVacancyId]);
-
-  // Счётчик-версия загрузок. Тихий focus-refresh (alt-tab) или гонка запросов
-  // могли прилететь со СТАРЫМ списком и перезаписать свежее состояние — напр.
-  // вернуть только что снятого кандидата («удаляй дважды»). Применяем результат
-  // загрузки ТОЛЬКО если это последний запрос; любая мутация бампает счётчик.
-  const loadSeqRef = useRef(0);
-  // «Только мои» живёт в двух режимах (решение юзера 2026-09-10):
-  //  • СВОЯ воронка (в сайдбаре рекрутёр не выбран или выбран я) — кнопка
-  //    ВКЛЮЧЕНА всегда при входе. Выключил — видны все кандидаты, но только пока
-  //    он в этой воронке: другая воронка, уход со страницы, F5, новая вкладка —
-  //    снова включена. Раньше выключение навсегда писалось в localStorage, и
-  //    рекрутёр, однажды щёлкнувший кнопку, дальше везде видел всех (2026-09-21).
-  //  • ЧУЖАЯ воронка (в сайдбаре выбран другой рекрутёр) — кнопка ВЫКЛЮЧЕНА,
-  //    видны кандидаты этого рекрутёра. Включил — видишь в его воронке своих.
-  //    Это временно: ушёл из воронки — кнопка отжимается и не запоминается.
-  //    F5 уходом не считается — состояние кнопки держится в sessionStorage вкладки.
-  // Наблюдателю и суперадмину по умолчанию «выключено»: сами они кандидатов не
-  // добавляют, и с включённой кнопкой видели бы пустые воронки (такой баг у
-  // наблюдателя уже чинили).
-  const isForeignContext =
-    selectedRecruiterFilter != null && selectedRecruiterFilter !== user?.id;
-  // Своя воронка из сайдбара («Я» → вакансия, ?recruiter=<я>) — только свои
-  // кандидаты, кнопке тут переключать нечего.
-  const isSelfContext = selectedRecruiterFilter != null && selectedRecruiterFilter === user?.id;
-  // «Только мои» имеет смысл только в воронке, которая у человека В РАБОТЕ (лично
-  // взял — как в сайдбаре «Мои вакансии»). В воронке не в работе своих кандидатов
-  // нет — кнопка выключена и неактивна. Пока вакансия не загрузилась — считаем
-  // «в работе», чтобы список не перегружался дважды.
-  const worksOnFunnel = !selectedVacancy || (!!user && isPersonallyActive(selectedVacancy, user.id));
-  const onlyMineAvailable = worksOnFunnel && !isSelfContext;
-  const ownOnlyMine = ownOnlyMineOverride ?? !(isSuperadmin || user?.is_readonly);
-  const [foreignOnlyMine, setForeignOnlyMine] = useState(() => {
-    if (!isDocumentReloadOfCurrentUrl()) return false;
-    const saved = readFunnelSession<{ v: number; r: number }>(FOREIGN_ONLY_MINE_KEY);
-    return (
-      saved != null &&
-      saved.v === (Number(searchParams.get('v')) || null) &&
-      saved.r === (Number(searchParams.get('recruiter')) || null)
-    );
-  });
-  useEffect(() => {
-    if (!foreignOnlyMine) removeFunnelSession(FOREIGN_ONLY_MINE_KEY);
-    else if (selectedVacancyId != null && selectedRecruiterFilter != null) {
-      writeFunnelSession(FOREIGN_ONLY_MINE_KEY, { v: selectedVacancyId, r: selectedRecruiterFilter });
-    }
-  }, [foreignOnlyMine, selectedVacancyId, selectedRecruiterFilter]);
-  const onlyMine = !onlyMineAvailable ? false : isForeignContext ? foreignOnlyMine : ownOnlyMine;
-  const setOnlyMine = (value: boolean) => {
-    if (!onlyMineAvailable) return;
-    setSharedEntryEntityId(null);
-    if (isForeignContext) setForeignOnlyMine(value);
-    else setOwnOnlyMineOverride(value);
-  };
-  // Уход в другую воронку или к другому рекрутёру заканчивает режим шаринг-ссылки
-  // и отжимает временную «Только мои» чужой воронки. null → X по рекрутёру — не
-  // уход: это URL-синк на маунте и восстановление владельца для ссылки без
-  // ?recruiter= (эффект выше).
-  const sharedEntryContextRef = useRef({ v: selectedVacancyId, r: selectedRecruiterFilter });
-  useEffect(() => {
-    const prev = sharedEntryContextRef.current;
-    sharedEntryContextRef.current = { v: selectedVacancyId, r: selectedRecruiterFilter };
-    const vacancyChanged = prev.v !== selectedVacancyId;
-    const recruiterChanged = prev.r != null && prev.r !== selectedRecruiterFilter;
-    if (vacancyChanged || recruiterChanged) {
-      setSharedEntryEntityId(null);
-      setForeignOnlyMine(false);
-      setOwnOnlyMineOverride(null);
-    }
-  }, [selectedVacancyId, selectedRecruiterFilter]);
-
-  // Скоуп кандидатов на СЕРВЕРЕ:
-  //  • ШАРИНГ-ССЫЛКА (arrivedViaSharedCandidate): без скоупа — грузим всю воронку,
-  //    чтобы кандидат из ссылки гарантированно был в списке; сужаем уже на фронте
-  //    (recruiterScopedCandidates), оставляя кандидата из ссылки.
-  //  • «Только мои» — на себя. Сервер разрешает это любой роли и учитывает
-  //    со-рекрутёров.
-  //  • Обычный рекрутёр — без скоупа: фильтр на КОЛЛЕГУ сервер ему не применяет
-  //    (бэкенд по решению юзера не трогаем), сужаем на фронте.
-  //  • Админ, суперадмин, наблюдатель — на выбранного в сайдбаре рекрутёра, а без
-  //    выбора — ВСЕ. Раньше админ/овнер по умолчанию видел только своих; теперь
-  //    «только своих» даёт кнопка, и /my-funnels для всех ролей значит «все».
-  const candidateScopeRecruiterId = arrivedViaSharedCandidate
-    ? undefined
-    : onlyMine || isSelfContext
-    ? (user?.id ?? undefined)
-    : !isHrAdmin
-      ? undefined
-      : (selectedRecruiterFilter ?? undefined);
-  const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
-    const seq = ++loadSeqRef.current;
-    if (!silent) setCandidatesLoading(true);
-    try {
-      const apps = await getApplications(vacancyId, undefined, candidateScopeRecruiterId);
-      if (seq === loadSeqRef.current) setCandidates(apps);
-    } catch {
-      if (!silent && seq === loadSeqRef.current) setCandidates([]);
-    } finally {
-      if (!silent) setCandidatesLoading(false);
-    }
-  }, [candidateScopeRecruiterId]);
-
-  // Админ сменил рекрутёра в сайдбаре при открытой воронке — перезагружаем
-  // кандидатов под новый скоуп (тихо, без скелетона).
-  useEffect(() => {
-    if (selectedVacancyId && !funnelBlocked) loadCandidates(selectedVacancyId, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidateScopeRecruiterId]);
-
-  // Авто-refresh когда юзер возвращается на вкладку браузера —
-  // например, после добавления кандидата через волшебную кнопку из
-  // другой вкладки. Иначе нужен F5 чтобы увидеть новых.
-  // ВАЖНО: рефреш ТИХИЙ (silent) — без скелетонов-лоадеров. Раньше обычный
-  // alt-tab перерисовывал список со скелетоном и выглядел как перезагрузка
-  // страницы. Плюс троттл: не чаще раза в 3с.
-  useEffect(() => {
-    let lastRun = 0;
-    const onFocus = () => {
-      const now = Date.now();
-      if (now - lastRun < 3000) return;
-      lastRun = now;
-      if (selectedVacancyId && !funnelBlocked) loadCandidates(selectedVacancyId, true);
-      fetchVacancies(true);
-    };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [selectedVacancyId, loadCandidates, fetchVacancies, funnelBlocked]);
-
-  // Поллинг воронки каждые 15с (только когда вкладка видима): на проде WS
-  // ненадёжен, поэтому тихо подтягиваем кандидатов и вакансии — иначе рекрутёр,
-  // сидя на странице воронки, не видел изменений без F5 (доска «Все кандидаты»
-  // уже так поллится). Тихий refresh, без скелетонов.
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
-      if (selectedVacancyId && !funnelBlocked) loadCandidates(selectedVacancyId, true);
-      fetchVacancies(true);
-    }, 15000);
-    return () => clearInterval(id);
-  }, [selectedVacancyId, loadCandidates, fetchVacancies, funnelBlocked]);
-
-  // Filter candidates by search — умный матч по ИМЕНИ (транслит RU↔EN + любой
-  // порядок слов + опечатки, как серверный pg_trgm в «Все кандидаты»); по
-  // email/телефону — обычная подстрока; по telegram — ВСЕ ники кандидата +
-  // текст комментариев карточки; запрос с «@» — строгий режим (только тг/комменты).
-  // Фронтовое сужение списка — там, где сервер не отфильтровал сам.
-  // Кого показываем: при «Только мои» — себя, иначе рекрутёра из сайдбара
-  // («Вакансии: Мария» → кандидаты Марии), а без выбора — всех.
-  //  • Если сервер уже отфильтровал на того же человека — верим ему: он учитывает
-  //    со-рекрутёров, а в ответе нет поля, по которому их узнал бы фронт (только
-  //    created_by), и фронтовый фильтр их бы срезал.
-  //  • Кандидат из ССЫЛКИ (sharedEntryEntityId) остаётся в списке, пока юзер не
-  //    сменил контекст — иначе ссылка на со-рекрутёрского кандидата открывала бы
-  //    пустое окно.
-  const recruiterScopedCandidates = useMemo(() => {
-    const wantedOwner = onlyMine ? (user?.id ?? null) : selectedRecruiterFilter;
-    if (wantedOwner == null) return candidates;
-    if (candidateScopeRecruiterId === wantedOwner) return candidates;
-    // Заявка без автора (created_by = null) — кандидат владельца вакансии, как
-    // у метки «HR: …» и серверного скоупа (recruiter_owns_application).
-    const ownsVacancy = selectedVacancy?.created_by === wantedOwner;
-    return candidates.filter(
-      (c) =>
-        c.created_by === wantedOwner ||
-        (c.created_by == null && ownsVacancy) ||
-        c.entity_id === sharedEntryEntityId,
-    );
-  }, [candidates, onlyMine, user?.id, selectedRecruiterFilter, candidateScopeRecruiterId, sharedEntryEntityId, selectedVacancy?.created_by]);
-
-  const filteredCandidates = useMemo(() => {
-    if (!candidateSearch.trim()) return recruiterScopedCandidates;
-    return recruiterScopedCandidates.filter((c) => funnelSearchMatch(candidateSearch, c));
-  }, [recruiterScopedCandidates, candidateSearch]);
-
-  // Derive stages config from custom_stages or fallback to defaults
-  // Each column has a unique `key` and optional `maps_to` (the real DB enum value)
-  const stagesConfig = useMemo((): {
-    keys: string[];
-    labels: Record<string, string>;
-    keyToEnum: Record<string, string>;   // column key → real enum value
-    enumToKeys: Record<string, string[]>; // real enum → column keys that accept it
-    colorKeys: Record<string, string>;   // column key → color key for STAGE_COLORS
-    isVirtual: Record<string, boolean>;  // column key → has maps_to (can be deleted)
-  } => {
-    // Утилита: для App-стадии находим org-override через mapping → EntityStatus.
-    const labelFor = (appStage: string, fallback: string): string => {
-      const entityKey = APP_TO_ENTITY_STAGE[appStage];
-      if (entityKey && orgStageOverrides[entityKey]) return orgStageOverrides[entityKey];
-      return fallback;
-    };
-
-    const cols = selectedVacancy?.custom_stages?.columns as StageColumn[] | undefined;
-    if (cols && cols.length > 0) {
-      const visible = cols.filter(c => c.visible);
-      const enumToKeys: Record<string, string[]> = {};
-      for (const c of visible) {
-        const enumVal = c.maps_to || c.key;
-        if (!enumToKeys[enumVal]) enumToKeys[enumVal] = [];
-        enumToKeys[enumVal].push(c.key);
-      }
-      return {
-        keys: visible.map(c => c.key),
-        // Per-vacancy custom_stages всё ещё имеют приоритет, но если
-        // лейбл там пустой/совпадает с дефолтом — берём org-override.
-        labels: Object.fromEntries(visible.map(c => {
-          const appKey = c.maps_to || c.key;
-          return [c.key, labelFor(appKey, c.label)];
-        })),
-        keyToEnum: Object.fromEntries(visible.map(c => [c.key, c.maps_to || c.key])),
-        enumToKeys,
-        colorKeys: Object.fromEntries(visible.map(c => [c.key, colorToStageColor(c.color, c.maps_to || c.key)])),
-        isVirtual: Object.fromEntries(visible.map(c => [c.key, !!c.maps_to])),
-      };
-    }
-    const enumToKeys: Record<string, string[]> = {};
-    for (const s of STAGE_ORDER) enumToKeys[s] = [s];
-    return {
-      keys: [...STAGE_ORDER],
-      // Для дефолтной воронки лейбл = org-override либо STAGE_LABELS.
-      labels: Object.fromEntries(STAGE_ORDER.map(s => [s, labelFor(s, STAGE_LABELS[s] || s)])),
-      keyToEnum: Object.fromEntries(STAGE_ORDER.map(s => [s, s])),
-      enumToKeys,
-      colorKeys: Object.fromEntries(STAGE_ORDER.map(s => [s, s])),
-      isVirtual: Object.fromEntries(STAGE_ORDER.map(s => [s, false])),
-    };
-  }, [selectedVacancy, orgStageOverrides]);
-
-  const getVacancyStageLabel = useCallback((stageOrKey: string) => {
-    // Контейнеры смёрдженных (исторических) кандидатов хранят статус как
-    // EntityStatus (practice/tech_practice/is_interview/...), а не как
-    // ApplicationStage — их нет в STAGE_LABELS/stagesConfig.labels (те только
-    // про этапы заявки), из-за чего плашка показывала сырой английский ключ
-    // («practice» вместо «Интервью с HR»). STATUS_LABELS (canon, @/types)
-    // покрывает оба набора ключей — как в AllCandidatesPage.
-    return (
-      stagesConfig.labels[stageOrKey] ||
-      STAGE_LABELS[stageOrKey] ||
-      (STATUS_LABELS as Record<string, string>)[stageOrKey] ||
-      stageOrKey
-    );
-  }, [stagesConfig]);
-
-  const vacancyStageDropdownLabels = useMemo(() => {
-    const labels: Record<string, string> = {};
-    for (const key of stagesConfig.keys) {
-      labels[key] = getVacancyStageLabel(key);
-    }
-    for (const stage of STAGE_ORDER) {
-      labels[stage] = getVacancyStageLabel(stage);
-    }
-    return labels;
-  }, [getVacancyStageLabel, stagesConfig.keys]);
-
-  // Group candidates by stage columns (handles virtual stages via maps_to)
-  const groupedByStage = useMemo(() => {
-    const map = new Map<string, VacancyApplication[]>();
-    for (const key of stagesConfig.keys) map.set(key, []);
-    for (const c of filteredCandidates) {
-      // Find which column(s) this candidate's stage maps to
-      const targetKeys = stagesConfig.enumToKeys[c.stage];
-      if (targetKeys && targetKeys.length > 0) {
-        // Put in first matching column
-        map.get(targetKeys[0])!.push(c);
-      } else {
-        // Этап аппликации не маппится ни в одну ВИДИМУЮ колонку (например,
-        // кандидата добавили со stage=applied, а в кастомной воронке нет
-        // колонки «Новый»). Раньше он уезжал в отдельную группу, которой нет в
-        // vacancyVisibleStageKeys → колонка не рендерилась и кандидат ИСЧЕЗАЛ.
-        // Теперь кладём его в первую видимую колонку, чтобы он не пропадал.
-        const fallbackKey = stagesConfig.keys[0];
-        if (fallbackKey) {
-          map.get(fallbackKey)!.push(c);
-        } else {
-          if (!map.has(c.stage)) map.set(c.stage, []);
-          map.get(c.stage)!.push(c);
-        }
-      }
-    }
-    const result: [string, VacancyApplication[]][] = [];
-    for (const [key, items] of map) {
-      result.push([key, items]);
-    }
-    return result;
-  }, [filteredCandidates, stagesConfig]);
-
-  // Derive grouped as a Record for quick count lookup by key
-  const groupedByStageMap = useMemo(() => {
-    const map: Record<string, VacancyApplication[]> = {};
-    for (const [key, items] of groupedByStage) {
-      map[key] = items;
-    }
-    return map;
-  }, [groupedByStage]);
-
-  const vacancyWorkflowKeys = stagesConfig.keys;
-
-  const vacancyVisibleStageKeys = useMemo(() => {
-    return vacancyWorkflowKeys;
-  }, [vacancyWorkflowKeys]);
-
-  // Master-detail derived data
-  const selectedCandidate = useMemo(
-    () => candidates.find(c => c.id === selectedCandidateId) || null,
-    [candidates, selectedCandidateId],
-  );
-
-  // Durable per-candidate deep-link (?entity=ID), как в «Все кандидаты».
-  // ВАЖНО: в воронке state хранит id ЗАЯВКИ (selectedCandidateId === VacancyApplication.id),
-  // а в URL пишем entity_id (id человека) — для кросс-страничной совместимости. Поэтому
-  // через помощники candidateUrl мы прогоняем именно entity_id выбранного кандидата.
-  const urlEntity = searchParams.get('entity');
-  // Предыдущий entity_id для ЗЕРКАЛА (selection -> URL): отличает настоящее закрытие
-  // (entity был -> стал null) от ещё не доехавшего диплинка (null -> null) → не стираем ?entity=.
-  const prevMirrorEntityIdRef = useRef<number | null>(null);
-  // Предыдущий entity_id для АДОПТА (URL -> selection): отличает смену выбора (клик) от
-  // смены URL, чтобы не «бодаться» за фокус на свежем клике (см. shouldAdoptUrlEntity).
-  const prevAdoptEntityIdRef = useRef<number | null>(null);
-  // Чтобы не дёргать адопт повторно, когда entity из URL не найден в текущем списке
-  // (кандидат ещё не загружен / другая вакансия) — пробуем один раз на каждый id.
-  const adoptTriedEntityRef = useRef<number | null>(null);
-
-  // Диплинк из URL «в процессе»: ?entity= указывает на загруженного кандидата, который
-  // ещё НЕ выбран. Пока это так — эффекты авто-первого должны уступить, чтобы диплинк
-  // победил на загрузке. Если entity из URL не найден (устаревшая ссылка) — null, и
-  // авто-первый работает как обычно (фолбэк).
-  const pendingDeepLinkEntity = useMemo(() => {
-    if (!urlEntity) return null;
-    const entityId = Number(urlEntity);
-    if (Number.isNaN(entityId)) return null;
-    if (selectedCandidate?.entity_id === entityId) return null; // уже выбран — не ждём
-    return candidates.some((c) => c.entity_id === entityId) ? entityId : null;
-  }, [urlEntity, candidates, selectedCandidate?.entity_id]);
-
-  // Адопт из URL: на маунте и при РЕАЛЬНОЙ смене ?entity= (не при смене выбора) находим
-  // заявку по entity_id и выбираем её. Диплинк ПОБЕЖДАЕТ авто-селект первого (см. ниже —
-  // эффекты авто-первого ждут, пока есть подходящий незанятый entity из URL).
-  useEffect(() => {
-    if (!urlEntity) { adoptTriedEntityRef.current = null; return; }
-    const entityId = Number(urlEntity);
-    if (Number.isNaN(entityId)) return;
-
-    // Гонка «клик vs URL»: клик ставит selectedCandidateId мгновенно, зеркало пишет
-    // ?entity= на тик позже. selChanged=true → менялся ВЫБОР (клик), а URL отстал → НЕ
-    // адоптим (иначе вернём фокус назад). Сравниваем по entity_id выбранного кандидата.
-    const curEntityId = selectedCandidate?.entity_id ?? null;
-    const selChanged = curEntityId !== prevAdoptEntityIdRef.current;
-    prevAdoptEntityIdRef.current = curEntityId;
-
-    if (curEntityId === entityId) { adoptTriedEntityRef.current = null; return; } // уже синхронно
-    if (!shouldAdoptUrlEntity(curEntityId, entityId, selChanged)) return;
-
-    const match = candidates.find((c) => c.entity_id === entityId);
-    if (match) {
-      adoptTriedEntityRef.current = null;
-      // Делаем кандидата гарантированно видимым: вкладка «Все» показывает всех, поэтому
-      // эффект авто-первого (фильтрует по вкладке) не перебьёт наш выбор. Исключение —
-      // валидный ?stage= из URL (F5 на конкретной вкладке): его не затираем, кандидат
-      // всё равно должен быть в этой вкладке, раз ссылка на него пришла с тем же ?stage=.
-      const urlStage = searchParams.get('stage');
-      const hasValidUrlStage =
-        !!urlStage && (urlStage === 'all' || stagesConfig.keys.includes(urlStage));
-      // УСТАРЕВШИЙ дип-линк: ?stage= указывает на КОНКРЕТНУЮ вкладку, а кандидат из
-      // ?entity= в ДРУГОМ этапе (юзер переключил вкладку, entity остался в URL). Тогда
-      // НЕ адоптим — чистим stale ?entity=; авто-первый откроет первого текущей вкладки.
-      // Иначе была пустая правая панель («перехожу на статус — пустое окно», баг Марии).
-      if (hasValidUrlStage && urlStage !== 'all') {
-        const matchKeys = stagesConfig.enumToKeys[match.stage] || [];
-        if (!matchKeys.includes(urlStage as string)) {
-          setSearchParams(
-            (prev) => {
-              const next = new URLSearchParams(prev);
-              next.delete('entity');
-              return next;
-            },
-            { replace: true },
-          );
-          return;
-        }
-      }
-      if (!hasValidUrlStage) {
-        setSelectedTab('all');
-      }
-      setSelectedCandidateId(match.id);
+  // Кандидаты открытой воронки: «Только мои», режим шаринг-ссылки, загрузка и
+  // тихий опрос (useFunnelCandidates).
+  const {
+    candidates, setCandidates, candidatesLoading, loadCandidates, loadSeqRef,
+    recruiterScopedCandidates, filteredCandidates,
+    onlyMine, setOnlyMine, isSelfContext, isForeignContext, worksOnFunnel,
+  } = useFunnelCandidates({
+    selectedVacancyId, selectedVacancy, funnelBlocked, user, isHrAdmin, isSuperadmin,
+    selectedRecruiterFilter, candidateSearch, searchParams, setSearchParams, fetchVacancies,
+    onVacancyOpened: () => {
+      setSelectedCandidateId(null);
+      // Дефолтную вкладку выставляет эффект авто-выбора (гейт по id воронки).
       setDetailTab('resume');
-      return;
-    }
-    // entity из URL ещё не загружен в этом списке (другая вакансия / не подгрузился) —
-    // отмечаем попытку, чтобы не крутиться; адоптим, когда candidates приедут (deps).
-    adoptTriedEntityRef.current = entityId;
-  }, [urlEntity, candidates, selectedCandidate?.entity_id]);
+      setSelectedIds(new Set());
+    },
+  });
 
-  // Зеркалим выбранного кандидата в URL (?entity=<entity_id>) — ссылка шарящаяся.
-  // Функциональная форма setSearchParams(prev => …) ПРЕСЕРВИТ v/status; чистая функция
-  // вернёт null, когда менять нечего — это защита от бесконечного цикла. startTransition,
-  // чтобы ререндер от смены URL не блокировал мгновенный отклик на клик.
-  useEffect(() => {
-    const curEntityId = selectedCandidate?.entity_id ?? null;
-    // Пока есть неразрешённый диплинк из URL — НЕ стираем entity (адопт ещё не доехал).
-    if (curEntityId == null && urlEntity && adoptTriedEntityRef.current != null) {
-      prevMirrorEntityIdRef.current = curEntityId;
-      return;
-    }
-    const prevId = prevMirrorEntityIdRef.current;
-    prevMirrorEntityIdRef.current = curEntityId;
-    // Считаем по СВЕЖИМ searchParams в функциональной форме (колбэк стабилен → эффект
-    // авто-селекта не пересоздаётся на каждой смене URL); null от помощника = менять
-    // нечего → возвращаем prev БЕЗ изменений, чтобы не плодить лишнюю запись в историю.
-    startTransition(() => {
-      setSearchParams((prev) => computeEntityParamUpdate(prev, curEntityId, prevId) ?? prev, { replace: true });
-    });
-  }, [selectedCandidate?.entity_id, urlEntity, setSearchParams]);
+  // Этапы воронки: свои колонки вакансии или общий порядок, подписи организации.
+  const { stagesConfig, getVacancyStageLabel, vacancyStageDropdownLabels } =
+    useFunnelStages(selectedVacancy);
 
-  // Зеркалим выбранную вкладку статуса воронки в URL (?stage=<key>) — чтобы F5
-  // оставлял рекрутёра на той же колонке (кандидат уже переживает F5 через ?entity=
-  // выше). «Все» пишем тоже (stage=all): без этого F5 на «Все» открывал первую
-  // рабочую вкладку, а открытый кандидат терялся. Пока эффект авто-вкладки ниже не
-  // выставил вкладку для ЭТОЙ воронки — URL не трогаем: стартовое 'all' иначе
-  // перетёрло бы ?stage= из ссылки/F5. Функциональная форма setSearchParams(prev => …)
-  // сохраняет v/entity/status/recruiter; no-op guard возвращает prev без изменений,
-  // если значение не поменялось — защита от лишней записи в историю и от цикла с
-  // эффектом восстановления вкладки.
-  useEffect(() => {
-    if (selectedVacancyId == null || autoTabVacancyRef.current !== selectedVacancyId) return;
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set('stage', selectedTab || 'all');
-      if ((prev.get('stage') || '') === (next.get('stage') || '')) return prev;
-      return next;
-    }, { replace: true });
-  }, [selectedTab, selectedVacancyId, setSearchParams]);
-
-  // Клик по вкладке-этапу: помимо смены стейта ПУШИМ ?stage= в историю, чтобы
-  // браузерный «Назад» вернул на предыдущую вкладку вместе с открытым кандидатом
-  // (?entity=). Эффект-зеркало выше — replace + no-op guard, так что второй записи
-  // не будет. Обратная связь 2026-08-05: из карточки кандидата переключил вкладку —
-  // Back стал серым, к кандидату не вернуться.
-  const selectStageTab = useCallback((key: string) => {
-    setSelectedTab(key);
-    setSelectedCandidateId(null);
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set('stage', key || 'all');
-      // Снимаем открытого кандидата из URL в том же push (он и так деселектится):
-      // иначе ?entity= off-tab кандидата может отскочить/переспорить адопт при
-      // смене вкладки. Предыдущая запись истории сохраняет entity — Back вернёт.
-      next.delete('entity');
-      next.delete('edit');
-      next.delete('tab');
-      return next;
-    }, { replace: false });
-  }, [setSearchParams]);
-
-  // Браузерный Назад/Вперёд меняет ЗНАЧЕНИЕ ?stage= — подхватываем его в
-  // selectedTab (иначе URL менялся, а видимая вкладка оставалась прежней).
-  // Зависимость — извлечённая строка stage, а НЕ весь searchParams: правки
-  // ?status=/?recruiter=/?entity= этот эффект не дёргают. Guard на равенство +
-  // валидация по этапам текущей вакансии — без циклов с зеркалом.
-  // ВАЖНО: raw (может быть null) — ОТСУТСТВИЕ ?stage= это НЕ то же, что ?stage=all.
-  // Клик по ссылке вакансии в сайдбаре ведёт на ?v=&recruiter= БЕЗ stage; если бы
-  // мы трактовали «нет параметра» как 'all', воронка молча переключалась бы на
-  // вкладку «Все» (все этапы разом, активной вкладки нет, кандидаты из отказа и пр.).
-  // Поэтому синхроним вкладку из URL ТОЛЬКО при ЯВНОМ значении stage (Back/Forward
-  // между колонками); отсутствие параметра оставляет текущую вкладку — её тут же
-  // дописывает обратно эффект-зеркало ?stage=.
-  const urlStageParam = searchParams.get('stage');
-  useEffect(() => {
-    if (urlStageParam == null) return;
-    if (urlStageParam === selectedTab) return;
-    if (urlStageParam === 'all' || stagesConfig.keys.includes(urlStageParam)) {
-      setSelectedTab(urlStageParam);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlStageParam]);
+  // Вкладка, выбранный кандидат и связь с адресом (?stage=, ?entity=) —
+  // правила «пустой панели» и «открылся не тот» под тестами (useFunnelSelection).
+  const {
+    selectedTab, selectedCandidateId, setSelectedCandidateId, setStickyCandidateId,
+    selectedCandidate, selectStageTab,
+    groupedByStageMap, vacancyVisibleStageKeys, tabFilteredCandidates, orderedCandidates,
+  } = useFunnelSelection({
+    candidates, filteredCandidates, candidateSearch, stagesConfig, selectedVacancyId,
+    searchParams, setSearchParams,
+    onCandidateFocused: () => setDetailTab('resume'),
+  });
 
   // Бейдж непрочитанных анкет (entity-уровень) — как в «Все кандидаты».
   const anketaCount = useFormBadgeStore((s) => s.counts[selectedCandidate?.entity_id ?? 0] ?? 0);
@@ -1193,345 +241,16 @@ export default function RecruiterFunnelsPage() {
       .catch(() => {});
   }, [selectedCandidate?.entity_id, setAnketaCount]);
 
-  const tabFilteredCandidates = useMemo(() => {
-    // При активном поиске игнорируем выбранную вкладку — ищем по ВСЕМ статусам
-    // воронки (рекрутёр не должен помнить, в какой колонке лежит кандидат).
-    if (candidateSearch.trim()) return filteredCandidates;
-    if (selectedTab === 'all') return filteredCandidates;
-    const inTab = filteredCandidates.filter(c => {
-      const mapped = stagesConfig.enumToKeys[c.stage];
-      // Тот же фолбэк, что в groupedByStage: кандидат без маппинга этапа
-      // относится к первой видимой колонке, иначе он невидим в любой вкладке.
-      const candidateStageKeys =
-        mapped && mapped.length > 0
-          ? mapped
-          : stagesConfig.keys[0]
-            ? [stagesConfig.keys[0]]
-            : [];
-      return candidateStageKeys.includes(selectedTab);
-    });
-    // Только что перемещённый кандидат уехал на другой этап, но остаётся
-    // видимым здесь, чтобы его карточка справа не подменилась чужой.
-    return pinMovedCandidate(inTab, filteredCandidates, stickyCandidateId);
-  }, [filteredCandidates, selectedTab, stagesConfig, candidateSearch, stickyCandidateId]);
-
-  // Пин живёт до первого «ухода»: другая вкладка, другая воронка или клик по
-  // другому кандидату.
-  useEffect(() => {
-    setStickyCandidateId(null);
-  }, [selectedTab, selectedVacancyId]);
-  useEffect(() => {
-    if (stickyCandidateId != null && selectedCandidateId !== stickyCandidateId) {
-      setStickyCandidateId(null);
-    }
-  }, [selectedCandidateId, stickyCandidateId]);
-
-  // «В предыдущих сериях»: отклики старше последнего переоткрытия вакансии
-  // (is_previous_series с бэка) уходят ВНИЗ списка под разделитель. Активные
-  // сверху, порядок внутри групп сохраняется. У обычных (не переоткрытых)
-  // вакансий previous всегда пуст → поведение не меняется.
-  const orderedCandidates = useMemo(() => {
-    // Сортируем ВИДИМЫЙ список ЯВНО по дате последнего переноса (недавние вверху) —
-    // не полагаемся на порядок бэкенда, где первичный ключ stage_order (группировка
-    // по этапу), из-за чего в списке из разных этапов даты выглядели вразброс.
-    // Фолбэк на applied_at для тех, кого ещё не двигали.
-    const byRecency = (a: typeof tabFilteredCandidates[number], b: typeof tabFilteredCandidates[number]) => {
-      const ta = new Date(a.last_stage_change_at || a.applied_at || 0).getTime();
-      const tb = new Date(b.last_stage_change_at || b.applied_at || 0).getTime();
-      return tb - ta;
-    };
-    const active = tabFilteredCandidates.filter(c => !c.is_previous_series).slice().sort(byRecency);
-    const previous = tabFilteredCandidates.filter(c => c.is_previous_series).slice().sort(byRecency);
-    return { list: [...active, ...previous], firstPreviousId: previous[0]?.id };
-  }, [tabFilteredCandidates]);
-
-  // Дефолтная вкладка ставится ОДИН раз при открытии воронки (первая рабочая).
-  // Гейт по id воронки: последующие ре-рендеры (фильтр «Только мои», перезагрузка
-  // кандидатов) больше НЕ сбрасывают выбранную пользователем вкладку на «Новый».
-  // Если этап-конфиг сменился и текущая вкладка стала невалидной — мягко чиним.
-  const autoTabVacancyRef = useRef<number | null>(null);
-  // Кастомные этапы вакансии (custom_stages) могут подгрузиться ПОСЛЕ открытия
-  // воронки — на первом проходе stagesConfig.keys ещё дефолтный STAGE_ORDER, и
-  // ?stage= с кастомным ключом не проходит валидацию. stageRestoredRef помнит,
-  // удалось ли уже восстановить вкладку из URL для ТЕКУЩЕЙ вакансии, и разрешает
-  // один повторный ретрай, когда stagesConfig.keys обновится (уже есть в deps).
-  const stageRestoredRef = useRef(false);
-  useEffect(() => {
-    const vid = selectedVacancyId ?? null;
-    // Читаем ?stage= свежим значением при каждом проходе эффекта — НЕ через deps
-    // (см. комментарий у deps ниже), чтобы правки URL от ?status=/?recruiter=
-    // не перезапускали восстановление вкладки.
-    const urlStage = searchParams.get('stage');
-    const restored =
-      urlStage && (urlStage === 'all' || stagesConfig.keys.includes(urlStage)) ? urlStage : null;
-
-    if (autoTabVacancyRef.current !== vid) {
-      autoTabVacancyRef.current = vid;
-      // При (пере)открытии воронки — в т.ч. при перезагрузке страницы — пробуем
-      // восстановить вкладку из ?stage=, если она валидна для ТЕКУЩЕЙ вакансии.
-      // Иначе — прежнее поведение: первая рабочая вкладка.
-      stageRestoredRef.current = restored != null;
-      setSelectedTab(restored ?? (vacancyWorkflowKeys[0] || 'all'));
-      return;
-    }
-    // Та же вакансия, но кастомные этапы могли подгрузиться ПОСЛЕ открытия —
-    // даём один ретрай восстановления из URL, если он ещё не сработал.
-    if (!stageRestoredRef.current && restored) {
-      stageRestoredRef.current = true;
-      setSelectedTab(restored);
-      return;
-    }
-    if (selectedTab !== 'all' && !stagesConfig.keys.includes(selectedTab)) {
-      setSelectedTab(vacancyWorkflowKeys[0] || 'all');
-    }
-    // searchParams намеренно НЕ в deps: читаем только для восстановления/ретрая
-    // (гейт по autoTabVacancyRef/stageRestoredRef), чтобы правки URL от других
-    // частей этой же страницы (?status=, ?recruiter=) не перезапускали логику.
-    // Ретрай триггерится изменением stagesConfig.keys (уже в deps) при подгрузке
-    // кастомных этапов вакансии.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVacancyId, selectedTab, stagesConfig.keys, vacancyWorkflowKeys]);
-
-  useEffect(() => {
-    if (tabFilteredCandidates.length === 0) {
-      if (selectedCandidateId !== null) setSelectedCandidateId(null);
-      return;
-    }
-    // Диплинк из URL побеждает авто-первого — НО только если дип-линк-кандидат есть в
-    // ТЕКУЩЕЙ вкладке (его и покажет адопт-эффект). Если ?entity= указывает на кандидата
-    // из ДРУГОЙ вкладки (юзер переключил этап, а stale ?entity= остался в URL) — НЕ
-    // блокируем: иначе правая панель пустая навсегда (адопт off-tab не показывает, а
-    // авто-первый заблокирован). Это и был баг Марии «перехожу на статус — пустое окно».
-    if (
-      pendingDeepLinkEntity != null &&
-      tabFilteredCandidates.some((c) => c.entity_id === pendingDeepLinkEntity)
-    )
-      return;
-    // Мария (2026-08-25, уточнение): при открытии воронки/переключении этапа справа
-    // ДОЛЖЕН сам открываться первый кандидат вкладки (его CV) — единая логика во всех
-    // воронках. Если выбранного нет в текущей вкладке (переключили этап) — открываем
-    // первого. Явный клик по кандидату и ?entity= работают как раньше.
-    if (!selectedCandidateId || !tabFilteredCandidates.some((candidate) => candidate.id === selectedCandidateId)) {
-      // Берём ПЕРВОГО из ОТОБРАЖАЕМОГО (отсортированного по свежести) списка, а не из
-      // сырого tabFilteredCandidates — иначе выбирался не тот, кто визуально сверху
-      // (Мария: «открывает последнюю, а не первую»).
-      const first = orderedCandidates.list[0] || tabFilteredCandidates[0];
-      setSelectedCandidateId(first.id);
-      setDetailTab('resume');
-    }
-  }, [selectedCandidateId, tabFilteredCandidates, orderedCandidates, pendingDeepLinkEntity]);
-
-
-  // Load cross-vacancy activity feed when entity changes
-  useEffect(() => {
-    const eid = selectedCandidate?.entity_id ?? null;
-    activityEntityRef.current = eid;
-    setActivityState({ entityId: eid, blocks: [] });
-    if (!eid) return;
-    getEntityActivity(eid)
-      .then((blocks) => {
-        if (activityEntityRef.current !== eid) return; // опоздавший ответ прошлого кандидата
-        setActivityState({ entityId: eid, blocks: Array.isArray(blocks) ? blocks : [] });
-      })
-      .catch(() => {});
-  }, [selectedCandidate?.entity_id]);
-
-  // Перезагрузка ленты активности после мутации в карточке вакансии +
-  // обновление счётчиков досок.
-  const refreshActivity = useCallback(async () => {
-    const eid = selectedCandidate?.entity_id;
-    if (eid) {
-      try {
-        const blocks = await getEntityActivity(eid);
-        if (activityEntityRef.current === eid) {
-          setActivityState({ entityId: eid, blocks: Array.isArray(blocks) ? blocks : [] });
-        }
-      } catch {
-        /* ignore — оставляем прежнюю ленту */
-      }
-    }
-    fetchVacancies();
-  }, [selectedCandidate?.entity_id, fetchVacancies]);
-
-  // Открытая карточка в воронке тоже должна оживать сама: комменты и этап,
-  // изменённые на «Все кандидаты» или коллегой, раньше появлялись только после
-  // F5 (2026-09-17). Тикаем раз в 15с и сразу при возврате на вкладку.
-  useEffect(() => {
-    const eid = selectedCandidate?.entity_id;
-    if (!eid) return;
-    const poll = () => {
-      if (document.visibilityState !== 'visible') return;
-      void refreshActivity();
-      getEntity(eid)
-        .then((fresh) => {
-          if (activityEntityRef.current === eid && fresh?.extra_data) {
-            setEntityExtraData(fresh.extra_data as Record<string, unknown>);
-          }
-        })
-        .catch(() => {});
-    };
-    const id = window.setInterval(poll, 15000);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') poll();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', onVisible);
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', onVisible);
-    };
-  }, [selectedCandidate?.entity_id, refreshActivity]);
-
-  // Load entity files (resumes) when candidate selected
-  useEffect(() => {
-    if (!selectedCandidate?.entity_id) {
-      setEntityFiles([]);
-      return;
-    }
-    setFilesLoading(true);
-    getEntityFiles(selectedCandidate.entity_id)
-      .then(files => setEntityFiles(files))
-      .catch(() => setEntityFiles([]))
-      .finally(() => setFilesLoading(false));
-  }, [selectedCandidate?.entity_id]);
-
-  // Load entity extra_data for resume text view + дедуп-баннер в воронке.
-  // silent=true (поллинг) не сбрасывает в null перед запросом — иначе фон
-  // мигал бы пустотой каждые 15с.
-  const loadEntityExtra = useCallback((entityId: number, silent = false) => {
-    if (!silent) { setEntityExtraData(null); setDupCard(null); }
-    return getEntity(entityId)
-      .then(entity => {
-        setEntityExtraData(entity.extra_data || null);
-        // Карточка для ShadowDuplicateBanner — чтобы баннер «Похожий кандидат»
-        // работал и в воронке, а не только в «Все кандидаты».
-        const ed = (entity.extra_data || {}) as Record<string, any>;
-        setDupCard({
-          id: entity.id,
-          name: entity.name || '',
-          email: entity.email || undefined,
-          phone: entity.phone || undefined,
-          telegram_username: entity.telegram_usernames?.[0],
-          position: entity.position || undefined,
-          company: entity.company || undefined,
-          created_at: entity.created_at || '',
-          tags: (entity.tags as string[]) || [],
-          city: ed.city,
-          age: ed.age != null ? String(ed.age) : undefined,
-          salary: ed.salary != null ? String(ed.salary) : undefined,
-          total_experience: ed.total_experience != null ? String(ed.total_experience) : undefined,
-          source: ed.source,
-          source_url: ed.source_url,
-          extra_data: entity.extra_data || undefined,
-        });
-      })
-      .catch(() => { if (!silent) { setEntityExtraData(null); setDupCard(null); } });
-  }, []);
-
-  useEffect(() => {
-    if (!selectedCandidate?.entity_id) {
-      setEntityExtraData(null);
-      setDupCard(null);
-      return;
-    }
-    loadEntityExtra(selectedCandidate.entity_id, false);
-  }, [selectedCandidate?.entity_id, loadEntityExtra]);
-
-  // Молчаливый поллинг entity_id — та же причина, что и у доски/анкет: WS на
-  // проде ненадёжен. Без этого коммент, оставленный на ЭТОМ ЖЕ кандидате в
-  // «Все кандидаты», не появлялся в воронке без переоткрытия карточки (Мария).
-  useEffect(() => {
-    const entityId = selectedCandidate?.entity_id;
-    if (!entityId) return;
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible') loadEntityExtra(entityId, true);
-    }, 15000);
-    return () => clearInterval(id);
-  }, [selectedCandidate?.entity_id, loadEntityExtra]);
-
-  // Resume: original document (PDF or DOC/DOCX) + page images (JPEG renders from backend)
-  const resumeOriginal = useMemo(
-    () => entityFiles.find(f => f.file_type === 'resume' && f.mime_type !== 'image/jpeg') || null,
-    [entityFiles],
-  );
-  const resumePages = useMemo(
-    () => entityFiles
-      .filter(f => f.file_type === 'resume' && f.mime_type === 'image/jpeg')
-      .sort((a, b) => {
-        // Sort by page number extracted from file_name "Резюме стр. N.jpg"
-        const numA = parseInt(a.file_name.match(/(\d+)/)?.[1] || '0');
-        const numB = parseInt(b.file_name.match(/(\d+)/)?.[1] || '0');
-        return numA - numB;
-      }),
-    [entityFiles],
-  );
-  const hasResume = resumeOriginal !== null || resumePages.length > 0;
-
-  // Источники резюме (по одному на влитый профиль/PDF) — та же чистая модель,
-  // что и «Все кандидаты». Вкладки «Резюме» рисуем на верхнем уровне (паритет),
-  // а ResumeViewer переключаем по resumeIndex в управляемом режиме.
-  const resumeSources = useMemo(
-    () => buildResumeSources(entityFiles, entityExtraData ?? undefined),
-    [entityFiles, entityExtraData],
-  );
-  const [resumeIndex, setResumeIndex] = useState(0);
-  // Сброс активной вкладки резюме при переключении кандидата.
-  useEffect(() => { setResumeIndex(0); }, [selectedCandidate?.entity_id]);
-
-  // Tag handlers
-  // Авто-выбор первого кандидата при смене вкладки (страховка к эффекту выше):
-  // справа всегда открыт первый кандидат вкладки, если ничего не выбрано.
-  // Блокируем только на дип-линк ТЕКУЩЕЙ вкладки (см. подробный комментарий выше).
-  useEffect(() => {
-    if (
-      pendingDeepLinkEntity != null &&
-      tabFilteredCandidates.some((c) => c.entity_id === pendingDeepLinkEntity)
-    )
-      return;
-    if (tabFilteredCandidates.length > 0 && !selectedCandidateId) {
-      // Первый из ОТОБРАЖАЕМОГО списка (по свежести), а не из сырого массива.
-      const first = orderedCandidates.list[0] || tabFilteredCandidates[0];
-      setSelectedCandidateId(first.id);
-    }
-  }, [tabFilteredCandidates, orderedCandidates, pendingDeepLinkEntity]);
+  // Данные открытого кандидата: лента по воронкам, файлы, extra_data, карточка
+  // для баннера дублей и тихий опрос (useFunnelEntityData).
+  const {
+    activityState, refreshActivity,
+    entityFiles, setEntityFiles, filesLoading,
+    entityExtraData, setEntityExtraData, dupCard, setDupCard,
+    hasResume, resumeSources, resumeIndex, setResumeIndex,
+  } = useFunnelEntityData(selectedCandidate?.entity_id ?? null, fetchVacancies);
 
   // Handlers
-  const toggleGroup = (userId: number) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return next;
-    });
-  };
-
-  const handleStatusFilterChange = (nextStatus: VacancyStatus | 'all' | 'deleted') => {
-    setStatusFilter(nextStatus);
-    setShowStatusMenu(false);
-    if (!selectedVacancyId) {
-      setSearchParams(nextStatus === 'all' ? {} : { status: nextStatus });
-    }
-  };
-
-  const handleRecruiterFilterChange = (userId: number | null) => {
-    setShowRecruiterMenu(false);
-    if (!isHrAdmin) {
-      setSelectedRecruiterFilter(null);
-      return;
-    }
-    setSelectedRecruiterFilter(userId);
-    if (userId !== null) {
-      setExpandedGroups((prev) => new Set(prev).add(userId));
-    }
-    // ?recruiter — единый источник истины для скоупа кандидатов по рекрутёру.
-    // Пишем его в URL и закрываем вакансию (смена рекрутёра = новый контекст).
-    const params: Record<string, string> = {};
-    if (statusFilter !== 'all') params.status = statusFilter;
-    if (userId !== null) params.recruiter = String(userId);
-    setSearchParams(params);
-  };
-
   const selectVacancy = (vacancyId: number) => {
     const params: Record<string, string> = { v: String(vacancyId) };
     if (statusFilter !== 'all') params.status = statusFilter;
@@ -1606,146 +325,11 @@ export default function RecruiterFunnelsPage() {
     }
   };
 
-  // Тексты подтверждения выхода/закрытия — прямо говорим, у кого что останется.
-  const confirmCopy = (() => {
-    if (!confirmDialog || confirmDialog.type === 'delete') return null;
-    const v = confirmDialog.vacancy;
-    const others = otherActiveParticipants(v, user?.id);
-    const exit = getVacancyExitOptions(v, user?.id, isHrAdmin);
-    if (confirmDialog.type === 'leave') {
-      return {
-        title: 'Выйти из вакансии?',
-        text: `Вы перестанете над ней работать — она пропадёт из ваших «Мои вакансии». У остальных участников (${others.length}) она останется в работе.${exit.canClose ? ' Закрыть её для всех — кнопка «Закрыть вакансию».' : ''}`,
-        confirmLabel: 'Выйти',
-      };
-    }
-    const total = others.length + (isVacancyParticipant(v, user?.id) ? 1 : 0);
-    return total > 1
-      ? {
-          title: 'Закрыть вакансию для всех?',
-          text: `Она закроется у всех участников (${total}) и уйдёт в «Закрытые вакансии». Кандидаты и история сохранятся.${exit.canLeave ? ' Если хотите только перестать работать над ней сами — «Выйти из вакансии».' : ''}`,
-          confirmLabel: 'Закрыть для всех',
-        }
-      : {
-          title: 'Закрыть вакансию?',
-          text: 'Она уйдёт в «Закрытые вакансии». Кандидаты и история сохранятся.',
-          confirmLabel: 'Закрыть',
-        };
-  })();
-
-  // Change candidate stage
-  //
-  // expectedEntityId — ОБЯЗАТЕЛЕН и приходит СНАРУЖИ: это кандидат, которого
-  // пользователь видит открытым. Брать его здесь по applicationId нельзя —
-  // получится сверка числа с самим собой (entity_id заявки == entity_id заявки),
-  // и страховка 2026-09-16 не поймала бы ровно тот случай, ради которого
-  // сделана: applicationId из устаревшей ленты принадлежит ДРУГОМУ кандидату
-  // той же воронки, его entity_id совпал бы с серверным, и «Отказ» снова ушёл
-  // бы не тому (баг Марии 2026-09-15).
-  const handleStageChange = useCallback(async (
-    applicationId: number,
-    newStage: ApplicationStage,
-    comment: string | undefined,
-    expectedEntityId: number,
-  ) => {
-    if (blockIfArchived()) return false;
-    try {
-      await updateApplication(applicationId, {
-        stage: newStage,
-        ...(comment ? { comment } : {}),
-        expected_entity_id: expectedEntityId,
-      });
-      // Локально двигаем кандидата на новый этап + СРАЗУ снимаем «предыдущую
-      // серию» (оптимистично): смена этапа обновляет last_stage_change_at на
-      // бэке → отклик уходит из серой зоны. Не ждём рефетча, иначе серость
-      // спадала бы с задержкой. Бэк подтвердит is_previous_series=false.
-      setCandidates((prev) =>
-        prev.map((c) => c.id === applicationId ? { ...c, stage: newStage, is_previous_series: false } : c)
-      );
-      // Инвалидируем in-flight поллинг (15с/focus-refresh): иначе его ответ со
-      // СТАРЫМ этапом пройдёт guard `seq === loadSeqRef` и откатит карточку назад
-      // на ~15с. Та же защита, что в handleRemoveFromVacancy (аудит 2026-08-07).
-      loadSeqRef.current++;
-      // НЕ переключаем вкладку и НЕ «следуем» за кандидатом (требование Маши):
-      // остаёмся на текущем этапе. Но и не выбрасываем перемещённого из списка
-      // сразу: раньше он пропадал из вкладки, справа открывался СЛЕДУЮЩИЙ
-      // кандидат, и рекрутёр терял из виду того, кого только что двигал
-      // (2026-09-23, разбор видео Huntflow: «мы всё ещё на его карточке, но
-      // этап у него уже другой»). Пин снимается при смене вкладки/воронки или
-      // при выборе другого кандидата.
-      setStickyCandidateId(applicationId);
-      // Тоста о переводе нет намеренно: этап виден прямо в карточке, а
-      // всплывашка на каждый шаг воронки только мешала.
-      // Refresh vacancy store for updated counts
-      fetchVacancies();
-      return true;
-    } catch (err) {
-      const status = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
-      toast.error(
-        status?.status === 409 && status.data?.detail
-          ? status.data.detail
-          : 'Ошибка смены статуса',
-      );
-      return false;
-    }
-  }, [fetchVacancies, getVacancyStageLabel, blockIfArchived]);
-
-  // ─── Interview scheduling modal ───
-  const [interviewForCandidate, setInterviewForCandidate] = useState<typeof selectedCandidate | null>(null);
-  const [interviewDateTime, setInterviewDateTime] = useState('');
-  const [interviewSaving, setInterviewSaving] = useState(false);
-
-  const handleSaveInterview = useCallback(async () => {
-    if (!interviewForCandidate) return;
-    if (!interviewDateTime) {
-      toast.error('Выберите дату и время');
-      return;
-    }
-    setInterviewSaving(true);
-    try {
-      // datetime-local даёт 'YYYY-MM-DDTHH:mm' без таймзоны — backend ожидает ISO
-      const iso = new Date(interviewDateTime).toISOString();
-      await updateApplication(interviewForCandidate.id, { next_interview_at: iso });
-      toast.success('Интервью назначено');
-      setInterviewForCandidate(null);
-      setInterviewDateTime('');
-    } catch {
-      toast.error('Не удалось назначить интервью');
-    } finally {
-      setInterviewSaving(false);
-    }
-  }, [interviewForCandidate, interviewDateTime]);
-
-  // ─── Comment textarea state ───
-  const commentRef = useRef<HTMLTextAreaElement | null>(null);
-  // Значение больше не читается (личных-заметок панели нет — карточка ведёт
-  // своё состояние сохранения сама), но сеттер всё ещё гейтит saveEntityNote.
-  const [, setCommentSaving] = useState(false);
-
-  // ─── Меню действий со статусом («⋯»): убрать из вакансии / откатить этап ───
-  const [candidateMenuOpen, setCandidateMenuOpen] = useState(false);
-  const candidateMenuRef = useRef<HTMLDivElement>(null);
-  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
-  // Какую заявку убираем (для карточек разных вакансий — не всегда selectedCandidate).
-  const [removeTargetAppId, setRemoveTargetAppId] = useState<number | null>(null);
-  const [removeBusy, setRemoveBusy] = useState(false);
-
-  useEffect(() => {
-    if (!candidateMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (candidateMenuRef.current && !candidateMenuRef.current.contains(e.target as Node)) {
-        setCandidateMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [candidateMenuOpen]);
-
   // Прошлый этап для отката — from_stage самой свежей записи истории
   // (to_stage у неё = текущий этап).
   const handleRemoveFromVacancy = useCallback(async () => {
     if (blockIfArchived()) return;
-    const targetAppId = removeTargetAppId ?? selectedCandidate?.id;
+    const targetAppId = selectedCandidate?.id;
     if (!targetAppId) return;
     // entity_id целевого кандидата (по отклику в списке или по выбранному).
     const targetEntityId =
@@ -1759,7 +343,6 @@ export default function RecruiterFunnelsPage() {
       .filter((c) => c.entity_id === targetEntityId)
       .map((c) => c.id);
     if (appIds.length === 0) return;
-    setRemoveBusy(true);
     try {
       for (const id of appIds) {
         await deleteApplication(id);
@@ -1768,81 +351,11 @@ export default function RecruiterFunnelsPage() {
       setCandidates((prev) => prev.filter((c) => !idsSet.has(c.id)));
       loadSeqRef.current++; // инвалидируем in-flight загрузки — иначе focus-refresh вернёт снятого
       toast.success('Кандидат убран из вакансии');
-      setRemoveConfirmOpen(false);
-      setRemoveTargetAppId(null);
-      setCandidateMenuOpen(false);
       await refreshActivity();
     } catch {
       toast.error('Не удалось убрать из вакансии');
-    } finally {
-      setRemoveBusy(false);
     }
-  }, [removeTargetAppId, selectedCandidate, candidates, refreshActivity, blockIfArchived]);
-
-  const saveEntityNote = useCallback(async (
-    text: string,
-    stage?: string | null,
-    stageLabel?: string | null,
-  ): Promise<boolean> => {
-    if (blockIfArchived()) return false;
-    if (!text.trim()) return false;
-    if (!selectedCandidate?.entity_id) {
-      // Раньше тут был молчаливый выход: карточка всё равно чистила поле, и
-      // набранный комментарий пропадал без единого сообщения (07.10.2026).
-      toast.error('Кандидат не выбран — обновите страницу и повторите');
-      return false;
-    }
-    setCommentSaving(true);
-    let saved = true;
-    try {
-      // Через POST /entities/{id}/notes — рекрутёру достаточно view-доступа.
-      // vacancy_id — привязка коммента к ЭТОЙ воронке: один кандидат в нескольких
-      // воронках, каждая показывает только свои комменты.
-      const resp = await addEntityNote(selectedCandidate.entity_id, {
-        text: text.trim(),
-        stage,
-        stage_label: stageLabel,
-        vacancy_id: selectedVacancyId ?? undefined,
-      });
-      // Локально мерджим только что добавленный коммент в entity_data
-      // — иначе пришлось бы ждать reload entity, и юзер думал бы что
-      // 'не сохранилось'.
-      setEntityExtraData((prev) => {
-        const existing = Array.isArray(prev?.notes) ? (prev!.notes as unknown[]) : [];
-        return { ...(prev || {}), notes: [...existing, resp.note] };
-      });
-      toast.success('Комментарий сохранён');
-      if (commentRef.current) commentRef.current.value = '';
-    } catch (err) {
-      saved = false;
-      console.error('Failed to save comment:', err);
-      // Бэкенд (add_entity_note) отдаёт 400 «Comment too long» при превышении
-      // NOTE_TEXT_MAX_LENGTH — без этой проверки юзер видел generic «Не удалось
-      // сохранить» и не понимал, что дело именно в длине комментария.
-      const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
-      toast.error(
-        detail?.status === 400 && detail.data?.detail?.includes('too long')
-          ? 'Комментарий слишком длинный — сократите текст'
-          : 'Не удалось сохранить комментарий'
-      );
-    } finally {
-      // ВСЕГДА синхронизируем авторитетное состояние с сервера — даже если
-      // запрос отвалился (таймаут/сеть), но бэкенд успел закоммитить коммент
-      // (с @-тэгом бэкенд делает доп. работу — уведомления — и ответ мог не
-      // дойти), он появится СРАЗУ, а не после F5. getEntity не кэшируется.
-      const eid = selectedCandidate?.entity_id;
-      if (eid) {
-        try {
-          const fresh = await getEntity(eid);
-          setEntityExtraData(fresh.extra_data || null);
-        } catch {
-          /* ignore — оптимистичного мерджа достаточно */
-        }
-      }
-      setCommentSaving(false);
-    }
-    return saved;
-  }, [selectedCandidate?.entity_id, blockIfArchived]);
+  }, [selectedCandidate, candidates, refreshActivity, blockIfArchived]);
 
   // Этапы для пикера — тот же список и лейблы, что были в StageDropdown.
   const stagePickerOptions = useMemo(
@@ -1854,174 +367,56 @@ export default function RecruiterFunnelsPage() {
     [vacancyStageDropdownLabels],
   );
 
-  // ─── Тонкие обёртки для CandidateVacancyCard: переиспользуем существующие
-  // обработчики (по applicationId) и докидываем refreshActivity после мутации,
-  // чтобы лента карточек и счётчики досок обновились. ───
+  // Действия карточки — общие с «Все кандидаты» (useCardActions). Здесь только
+  // то, чем воронка отличается: extra_data кандидата — своё состояние страницы,
+  // комментарий привязан к ЭТОЙ воронке (у каждой воронки своя лента), откат
+  // перевода переставляет карточку в списке воронки.
+  const cardActions = useCardActions({
+    entityId: selectedCandidate?.entity_id,
+    isBlocked: blockIfArchived,
+    patchExtra: (update) => setEntityExtraData((prev) => update(prev || {})),
+    replaceExtra: (fresh) => setEntityExtraData(fresh),
+    refreshActivity,
+    reloadFiles: async (eid) => setEntityFiles(await getEntityFiles(eid)),
+    noteVacancyId: () => selectedVacancyId,
+    onRolledBack: ({ appId, stage }) => {
+      if (appId == null || !stage) return;
+      const back = stage as ApplicationStage;
+      setCandidates((prev) =>
+        prev.map((c) => (c.id === appId ? { ...c, stage: back } : c)),
+      );
+      loadSeqRef.current++; // in-flight поллинг не должен вернуть старый этап
+      setStickyCandidateId(appId);
+      fetchVacancies();
+      return `Перевод отменён — кандидат снова на «${getVacancyStageLabel(back)}»`;
+    },
+  });
+
+  // Смена этапа из карточки: перевод — общий (cardActions), здесь только
+  // перестановка в списке воронки.
   const cardChangeStage = useCallback(
     async (appId: number, stage: string, comment?: string) => {
-      // Кандидат, которого пользователь ВИДИТ открытым. Именно его бэк сверит с
-      // заявкой: appId приходит из ленты активности и может оказаться чужим —
-      // тогда сверка не сойдётся и этап не уедет не туда.
-      const expectedEntityId = selectedCandidate?.entity_id;
-      if (!expectedEntityId) {
-        // Без открытого кандидата сверять не с чем — лучше отказать, чем
-        // отправить запрос без страховки.
-        toast.error('Кандидат не выбран — обновите страницу и повторите');
-        return false;
+      const newStage = stage as ApplicationStage;
+      const { ok } = await cardActions.changeApplicationStage(appId, newStage, comment);
+      if (ok) {
+        // Двигаем кандидата на месте + СРАЗУ снимаем «предыдущую серию»: смена
+        // этапа обновляет last_stage_change_at, отклик уходит из серой зоны.
+        setCandidates((prev) =>
+          prev.map((c) => (c.id === appId ? { ...c, stage: newStage, is_previous_series: false } : c)),
+        );
+        // Инвалидируем in-flight поллинг: его ответ со СТАРЫМ этапом иначе
+        // откатил бы карточку назад на ~15с (аудит 2026-08-07).
+        loadSeqRef.current++;
+        // Вкладку не переключаем и перемещённого не выбрасываем из списка:
+        // рекрутёр остаётся на его карточке (2026-09-23, разбор Huntflow).
+        // Тоста нет намеренно — этап виден прямо в карточке.
+        setStickyCandidateId(appId);
+        fetchVacancies(); // счётчики вакансий
       }
-      const ok = await handleStageChange(appId, stage as ApplicationStage, comment, expectedEntityId);
       await refreshActivity();
       return ok;
     },
-    [handleStageChange, refreshActivity, selectedCandidate?.entity_id],
-  );
-
-  const cardComment = useCallback(
-    async (_appId: number, stage: string, stageLabel: string, text: string) => {
-      // saveEntityNote привязан к selectedCandidate.entity_id — это ТОТ ЖЕ
-      // кандидат во всех его заявках, поэтому подходит для любой карточки.
-      const saved = await saveEntityNote(text, stage, stageLabel);
-      await refreshActivity();
-      return saved;
-    },
-    [saveEntityNote, refreshActivity],
-  );
-
-  // F-fix: комментарии (extra_data.notes, включая с @-упоминанием) раньше
-  // вообще не имели кнопки удаления — historyId у них не бывает, это не
-  // StageTransition. DELETE /entities/{id}/notes/{note_id} уже был на бэке,
-  // просто не был подключён на фронте.
-  const cardDeleteNote = useCallback(
-    async (entityId: number, noteId: string) => {
-      if (blockIfArchived()) return;
-      try {
-        await deleteEntityNote(entityId, noteId);
-        setEntityExtraData((prev) => {
-          const existing = Array.isArray(prev?.notes)
-            ? (prev!.notes as Array<Record<string, unknown>>)
-            : [];
-          return {
-            ...(prev || {}),
-            notes: existing.filter((n) => String(n.id) !== noteId),
-          };
-        });
-        toast.success('Комментарий удалён');
-      } catch {
-        toast.error('Не удалось удалить комментарий');
-      }
-      const eid = selectedCandidate?.entity_id;
-      if (eid) {
-        try {
-          const fresh = await getEntity(eid);
-          setEntityExtraData(fresh.extra_data || null);
-        } catch {
-          /* ignore */
-        }
-      }
-    },
-    [selectedCandidate?.entity_id, blockIfArchived],
-  );
-
-  // Редактирование текста заметки — бэк (PATCH /entities/{id}/notes/{id}) уже
-  // проставлял edited_at, не хватало только кнопки на фронте.
-  const cardEditNote = useCallback(
-    async (entityId: number, noteId: string, text: string) => {
-      if (blockIfArchived()) return;
-      try {
-        const { note } = await updateEntityNote(entityId, noteId, text);
-        setEntityExtraData((prev) => {
-          const existing = Array.isArray(prev?.notes)
-            ? (prev!.notes as Array<Record<string, unknown>>)
-            : [];
-          return {
-            ...(prev || {}),
-            notes: existing.map((n) => (String(n.id) === noteId ? note : n)),
-          };
-        });
-        toast.success('Комментарий обновлён');
-      } catch (err) {
-        const detail = (err as { response?: { status?: number; data?: { detail?: string } } })?.response;
-        toast.error(
-          detail?.status === 400 && detail.data?.detail?.includes('too long')
-            ? 'Комментарий слишком длинный — сократите текст'
-            : 'Не удалось отредактировать комментарий'
-        );
-      }
-    },
-    [blockIfArchived],
-  );
-
-  const cardDeleteHistory = useCallback(
-    async (appId: number, historyId: number) => {
-      if (blockIfArchived()) return;
-      const res = await deleteApplicationHistory(appId, historyId);
-      // Удалили ПОСЛЕДНЮЮ запись = отменили сам перевод: бэк вернул заявку на
-      // прежний этап. Переставляем карточку на месте, без перезагрузки списка.
-      if (res?.rolled_back && res.stage) {
-        const back = res.stage as ApplicationStage;
-        setCandidates((prev) =>
-          prev.map((c) => (c.id === appId ? { ...c, stage: back } : c)),
-        );
-        loadSeqRef.current++; // in-flight поллинг не должен вернуть старый этап
-        setStickyCandidateId(appId);
-        fetchVacancies();
-        toast.success(`Перевод отменён — кандидат снова на «${getVacancyStageLabel(back)}»`);
-      }
-      await refreshActivity();
-    },
-    [refreshActivity, blockIfArchived, fetchVacancies, getVacancyStageLabel],
-  );
-
-  // Правка комментария у записи о переводе (текст живёт в самой истории).
-  const cardEditHistory = useCallback(
-    async (appId: number, historyId: number, text: string) => {
-      if (blockIfArchived()) return;
-      try {
-        await updateApplicationHistory(appId, historyId, text);
-        toast.success('Комментарий обновлён');
-      } catch (err) {
-        const resp = (err as { response?: { status?: number } })?.response;
-        toast.error(
-          resp?.status === 403
-            ? 'Редактировать можно только свою запись'
-            : 'Не удалось отредактировать запись',
-        );
-      }
-      await refreshActivity();
-    },
-    [refreshActivity, blockIfArchived],
-  );
-
-  // Закреп записи наверху ленты — один на воронку, общий для всех.
-  const cardPinEntry = useCallback(
-    async (appId: number, entryKey: string | null) => {
-      if (blockIfArchived()) return;
-      try {
-        await setPinnedEntry(appId, entryKey);
-        toast.success(entryKey ? 'Закреплено' : 'Откреплено');
-      } catch {
-        toast.error('Не удалось закрепить запись');
-      }
-      await refreshActivity();
-    },
-    [refreshActivity, blockIfArchived],
-  );
-
-  const cardUploadFile = useCallback(
-    async (entityId: number, file: File) => {
-      if (blockIfArchived()) return;
-      try {
-        await uploadEntityFile(entityId, file, 'other');
-        toast.success(`Файл "${file.name}" загружен`);
-        const fresh = await getEntityFiles(entityId);
-        setEntityFiles(fresh);
-      } catch (err) {
-        const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-        toast.error(detail || 'Ошибка загрузки файла');
-      }
-      await refreshActivity();
-    },
-    [refreshActivity, blockIfArchived],
+    [cardActions, refreshActivity, fetchVacancies],
   );
 
   // ─── Общая богатая карточка «Все кандидаты» (CandidateVacancyCard) в детали
@@ -2099,49 +494,6 @@ export default function RecruiterFunnelsPage() {
     });
   }, [funnelCard, selectedCandidate?.stage, selectedCandidate?.id, selectedCandidate?.vacancy_id, selectedVacancyId, primaryBlock, entityFiles]);
 
-  const cardReact = useCallback(
-    async (entryKey: string, emoji: string): Promise<EntryReaction[] | null> => {
-      const eid = selectedCandidate?.entity_id;
-      if (!eid) return null;
-      try {
-        const resp = await toggleTimelineReaction(eid, entryKey, emoji);
-        // Зеркалим реакцию в локальный extra_data, чтобы карточка обновилась
-        // мгновенно (без ожидания reload entity), как делает AllCandidatesPage.
-        setEntityExtraData((prev) => {
-          const tr = {
-            ...((prev?.timeline_reactions as Record<string, unknown> | undefined) || {}),
-          };
-          if (resp.reactions?.length) tr[entryKey] = resp.reactions;
-          else delete tr[entryKey];
-          return { ...(prev || {}), timeline_reactions: tr };
-        });
-        return (resp.reactions as EntryReaction[]) || [];
-      } catch {
-        toast.error('Не удалось поставить реакцию');
-        return null;
-      }
-    },
-    [selectedCandidate?.entity_id],
-  );
-
-  const cardDeleteFile = useCallback(
-    async (fileId: number) => {
-      if (blockIfArchived()) return;
-      const eid = selectedCandidate?.entity_id;
-      if (!eid) return;
-      if (!window.confirm('Удалить этот файл?')) return;
-      try {
-        await deleteEntityFile(eid, fileId);
-        toast.success('Файл удалён');
-        const fresh = await getEntityFiles(eid);
-        setEntityFiles(fresh);
-      } catch {
-        toast.error('Не удалось удалить файл');
-      }
-    },
-    [selectedCandidate?.entity_id, blockIfArchived],
-  );
-
   // Toggle checkbox selection for a candidate
   const toggleCandidateSelection = useCallback((candidateId: number) => {
     setSelectedIds(prev => {
@@ -2199,37 +551,6 @@ export default function RecruiterFunnelsPage() {
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showAddToVacancy]);
-
-  useEffect(() => {
-    if (showVacancyTopSearch) {
-      vacancyTopSearchRef.current?.focus();
-    }
-  }, [showVacancyTopSearch]);
-
-  // Своё меню «Рекрутеры» этой страницы — только для HR-админа. Выбор владельца
-  // из сайдбара (?recruiter=) при этом действует для ВСЕХ ролей: рекрутёр в
-  // «Вакансии: Мария» видит кандидатов Марии (решение юзера 2026-09-10; раньше
-  // здесь фильтр у не-админа сбрасывался и он видел всю воронку).
-  useEffect(() => {
-    if (isHrAdmin) return;
-    setShowRecruiterMenu(false);
-    setRecruiterSearch('');
-  }, [isHrAdmin]);
-
-  useEffect(() => {
-    if (!showStatusMenu && !showRecruiterMenu) return;
-    const handler = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (statusMenuRef.current && !statusMenuRef.current.contains(target)) {
-        setShowStatusMenu(false);
-      }
-      if (recruiterMenuRef.current && !recruiterMenuRef.current.contains(target)) {
-        setShowRecruiterMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showStatusMenu, showRecruiterMenu]);
 
   // Get vacancies available for adding a candidate (exclude current vacancy, show only open ones)
   const availableVacanciesForCandidate = useMemo(() => {
@@ -2343,134 +664,21 @@ export default function RecruiterFunnelsPage() {
       )}
 
       {/* ========== LEFT SIDEBAR: Recruiter tree (admin only) ========== */}
-      {isHrAdmin && !selectedVacancy && !funnelBlocked && <aside className={clsx(
-        'hf-recruiter-sidebar flex-shrink-0 flex flex-col overflow-hidden z-50 transition-all duration-200',
-        // Desktop: collapsible
-        sidebarCollapsed
-          ? 'lg:relative lg:translate-x-0 lg:w-0 lg:border-r-0 lg:overflow-hidden'
-          : 'lg:relative lg:translate-x-0 lg:w-[260px]',
-        // Mobile: slide-in overlay
-        'fixed inset-y-0 left-0 w-[280px]',
-        mobileSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
-      )}>
-        {/* Header */}
-        <div className="hf-recruiter-sidebar-head">
-          <span className="hf-recruiter-sidebar-title">
-            {isHrAdmin ? 'Рекрутеры' : 'Мои вакансии'}
-          </span>
-          <div className="flex items-center gap-1">
-            {/* Создание доступно всем, включая рекрутёров (гейт снят 2026-07-02),
-                кроме наблюдателя — он ничего не создаёт. */}
-            {!hlReadonly && (
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="hf-recruiter-sidebar-icon-btn"
-                title="Новая вакансия"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            )}
-            <button
-              onClick={() => setSidebarCollapsed(true)}
-              className="hf-recruiter-sidebar-icon-btn hidden lg:block"
-              title="Свернуть панель"
-            >
-              <PanelLeftClose className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setMobileSidebar(false)}
-              className="hf-recruiter-sidebar-icon-btn lg:hidden"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="hf-recruiter-search-wrap">
-          <div className="relative">
-            <Search className="hf-recruiter-search-icon" />
-            <input
-              type="text"
-              placeholder={isHrAdmin ? "Поиск по рекрутеру..." : "Поиск вакансий..."}
-              value={recruiterSearch}
-              onChange={(e) => setRecruiterSearch(e.target.value)}
-              className="hf-recruiter-search-input"
-            />
-          </div>
-        </div>
-
-        {/* Tree */}
-        <div className="flex-1 overflow-y-auto py-1">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="w-5 h-5 border-2 border-[var(--hf-accent)] border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : visibleRecruiterGroups.length === 0 ? (
-            <div className="hf-recruiter-empty">
-              {recruiterSearch ? 'Ничего не найдено' : 'Нет вакансий'}
-            </div>
-          ) : (
-            visibleRecruiterGroups.map((group) => (
-              <div key={group.userId}>
-                {/* Recruiter folder header */}
-                {isHrAdmin && (
-                  <button
-                    onClick={() => toggleGroup(group.userId)}
-                    className="hf-recruiter-group-btn group"
-                  >
-                    {group.expanded ? (
-                      <ChevronDown className="hf-recruiter-chevron" />
-                    ) : (
-                      <ChevronRight className="hf-recruiter-chevron" />
-                    )}
-                    <FolderOpen className="hf-recruiter-folder-icon" />
-                    <span className="hf-recruiter-group-name">
-                      {group.userName}
-                    </span>
-                    <span className="hf-recruiter-count">
-                      {group.vacancies.length}
-                    </span>
-                  </button>
-                )}
-
-                {/* Vacancy list */}
-                {(group.expanded || !isHrAdmin) && (
-                  <div className={isHrAdmin ? 'ml-3' : ''}>
-                    {group.vacancies.map((v) => {
-                      const isSelected = selectedVacancyId === v.id;
-                      const count = v.applications_count ?? 0;
-                      return (
-                        <button
-                          key={v.id}
-                          onClick={() => selectVacancy(v.id)}
-                          className={clsx(
-                            'hf-recruiter-vacancy-btn',
-                            isHrAdmin ? 'pl-6' : 'pl-3',
-                            isSelected && 'hf-recruiter-vacancy-btn-active',
-                          )}
-                        >
-                          <span className={clsx(
-                            'hf-recruiter-status-dot',
-                            getRecruiterStatusDotClass(v.status),
-                          )} />
-                          <span className={clsx('hf-recruiter-vacancy-title', !v.title?.trim() && 'hf-recruiter-vacancy-title-empty')}>{v.title?.trim() || 'Без названия'}</span>
-                          <span className={clsx(
-                            'hf-recruiter-count',
-                            isSelected && 'hf-recruiter-count-active',
-                          )}>
-                            {count}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </aside>}
+      {isHrAdmin && !selectedVacancy && !funnelBlocked && (
+        <FunnelsRecruiterSidebar
+          list={vacancyList}
+          isLoading={isLoading}
+          isHrAdmin={isHrAdmin}
+          selectedVacancyId={selectedVacancyId}
+          selectVacancy={selectVacancy}
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
+          mobileSidebar={mobileSidebar}
+          setMobileSidebar={setMobileSidebar}
+          hlReadonly={hlReadonly}
+          setShowCreateModal={setShowCreateModal}
+        />
+      )}
 
       {/* Expand sidebar button (visible when collapsed, admin only) */}
       {isHrAdmin && !selectedVacancy && !funnelBlocked && sidebarCollapsed && (
@@ -2518,301 +726,20 @@ export default function RecruiterFunnelsPage() {
             <Loader2 className="w-6 h-6 animate-spin text-[var(--hf-dark-500)]" />
           </div>
         ) : !selectedVacancy ? (
-          <div className="vacancies-page flex-1 w-full max-w-full flex flex-col overflow-hidden text-[var(--hf-vacancies-page-text)]">
-            <div className="hf-funnels-overview-head">
-              <div className="hf-funnels-toolbar-shell">
-                <div className="hf-funnels-toolbar">
-                  <button
-                    onClick={() => setMobileSidebar(true)}
-                    className="hf-funnels-mobile-sidebar-btn lg:hidden"
-                    aria-label="Открыть список рекрутеров"
-                  >
-                    <Menu className="hf-funnels-mobile-sidebar-icon" />
-                  </button>
-                  <label className={clsx('hf-funnels-search', search && 'hf-funnels-search-active')}>
-                    <Search className="hf-funnels-search-icon" />
-                    <input
-                      type="text"
-                      placeholder="Поиск по названию..."
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      className="hf-funnels-search-input"
-                    />
-                    {search && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSearch('');
-                        }}
-                        className="hf-funnels-search-clear"
-                        title="Очистить поиск"
-                      >
-                        <X className="hf-funnels-search-clear-icon" />
-                      </button>
-                    )}
-                  </label>
-
-                  <div className="hf-funnels-filter-wrap" ref={statusMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setShowStatusMenu((value) => !value)}
-                    className="hf-funnels-filter"
-                    aria-haspopup="menu"
-                    aria-expanded={showStatusMenu}
-                  >
-                    <span>{statusFilterLabel}</span>
-                    <ChevronDown className={clsx('hf-funnels-filter-icon', showStatusMenu && 'hf-funnels-filter-icon-open')} />
-                  </button>
-                  {showStatusMenu && (
-                    <div className="hf-funnels-menu hf-funnels-status-menu" role="menu">
-                      {HUNTFLOW_VACANCY_STATUS_FILTERS.map((status) => (
-                        <button
-                          key={status.id}
-                          type="button"
-                          role="menuitem"
-                          onClick={() => handleStatusFilterChange(status.id)}
-                          className={clsx(
-                            'hf-funnels-menu-option',
-                            statusFilter === status.id && 'hf-funnels-menu-option-active',
-                          )}
-                        >
-                          <Check className="hf-funnels-menu-check" />
-                          <span>{status.id === 'all' ? 'Все вакансии' : status.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  </div>
-
-                  {isHrAdmin && (
-                    <div className="hf-funnels-filter-wrap" ref={recruiterMenuRef}>
-                      <button
-                        type="button"
-                        onClick={() => setShowRecruiterMenu((value) => !value)}
-                        className="hf-funnels-filter"
-                        aria-haspopup="menu"
-                        aria-expanded={showRecruiterMenu}
-                      >
-                        <Users className="hf-funnels-filter-leading-icon" />
-                        <span>Рекрутеры: {recruiterFilterLabel}</span>
-                        <ChevronDown className={clsx('hf-funnels-filter-icon', showRecruiterMenu && 'hf-funnels-filter-icon-open')} />
-                      </button>
-                      {showRecruiterMenu && (
-                        <div className="hf-funnels-menu hf-funnels-recruiter-menu" role="menu">
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => handleRecruiterFilterChange(null)}
-                            className={clsx(
-                              'hf-funnels-menu-option',
-                              selectedRecruiterFilter === null && 'hf-funnels-menu-option-active',
-                            )}
-                          >
-                            <Check className="hf-funnels-menu-check" />
-                            <span className="hf-funnels-recruiter-avatar">Все</span>
-                            <span className="hf-funnels-recruiter-menu-text">
-                              <span>Все рекрутеры</span>
-                              <span>{scopedVacancies.length} вакансий</span>
-                            </span>
-                          </button>
-                          {recruiterFilterOptions.length === 0 ? (
-                            <div className="hf-funnels-menu-empty">Нет рекрутеров</div>
-                          ) : (
-                            recruiterFilterOptions.map((recruiter) => (
-                              <button
-                                key={recruiter.id}
-                                type="button"
-                                role="menuitem"
-                                onClick={() => handleRecruiterFilterChange(recruiter.id)}
-                                className={clsx(
-                                  'hf-funnels-menu-option',
-                                  selectedRecruiterFilter === recruiter.id && 'hf-funnels-menu-option-active',
-                                )}
-                              >
-                                <Check className="hf-funnels-menu-check" />
-                                <span className="hf-funnels-recruiter-avatar">
-                                  {recruiter.name[0]?.toUpperCase() || 'Р'}
-                                </span>
-                                <span className="hf-funnels-recruiter-menu-text">
-                                  <span>{recruiter.name}</span>
-                                  <span>{recruiter.count} вакансий</span>
-                                </span>
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* «Перенос кандидатов» — справа от фильтра рекрутёров. Уходит
-                      сотрудник → передать его воронки и кандидатов другому. Только
-                      админ/суперадмин (isHrAdmin). */}
-                  {isHrAdmin && !hlReadonly && (
-                    <button
-                      type="button"
-                      onClick={() => setShowHandover(true)}
-                      className="hf-funnels-filter"
-                      title="Передать все воронки и кандидатов уходящего рекрутёра другому"
-                    >
-                      <ArrowRightLeft className="hf-funnels-filter-leading-icon" />
-                      <span>Перенос кандидатов</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Создание доступно всем, включая рекрутёров (гейт снят 2026-07-02),
-                    кроме наблюдателя. */}
-                {!hlReadonly && (
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateModal(true)}
-                    data-tour="create-vacancy"
-                    aria-label="Создать вакансию"
-                    title="Создать вакансию"
-                    className="hf-funnels-icon-action-btn hf-funnels-overview-create"
-                  >
-                    <Plus className="hf-funnels-icon-action" strokeWidth={2.25} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="hf-vacancies-search-body">
-              <section className="hf-vacancies-search-results">
-                <div className="hf-vacancies-search-count">
-                  Найдено вакансий: {filteredVacancies.length}
-                  {isHrAdmin && ` у ${filteredRecruiterCount} рекрутеров`}
-                </div>
-                <div className="hf-vacancies-search-list">
-                  {filteredVacancies.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-                      <Briefcase className="w-10 h-10 text-[var(--hf-vacancies-page-faint)]" />
-                      <div>
-                        <p className="text-[var(--hf-vacancies-page-text)] font-medium">
-                          {search ? 'Ничего не найдено' : 'Пока нет вакансий'}
-                        </p>
-                        <p className="text-[var(--hf-vacancies-page-muted)] text-sm mt-1">
-                          {search ? 'Измените поиск или фильтр статуса' : 'Создайте первую вакансию для начала работы'}
-                        </p>
-                      </div>
-                      {!search && !hlReadonly && (
-                        <button
-                          onClick={() => setShowCreateModal(true)}
-                          className="flex items-center gap-2 px-4 py-2 bg-[var(--hf-cyan-600)] hover:bg-[var(--hf-cyan-400)] text-[var(--hf-white)] text-sm font-medium rounded-lg transition-colors"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Создать вакансию
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    filteredVacancies.map((v) => {
-                      const count = v.applications_count ?? 0;
-                      return (
-                        <div
-                          key={v.id}
-                          onClick={() => selectVacancy(v.id)}
-                          className="hf-vacancies-search-row"
-                        >
-                          <div className="hf-vacancies-search-main">
-                            <div className="hf-vacancies-search-title-row">
-                              <VacancyStatusBadge status={v.status} size="sm" />
-                              <span
-                                className={clsx(
-                                  'hf-vacancies-search-title',
-                                  !v.title?.trim() && 'hf-vacancies-search-title-empty',
-                                )}
-                              >
-                                {v.title?.trim() || 'Без названия'}
-                              </span>
-                              <span className="hf-vacancies-search-kind">Вакансия</span>
-                              {count > 0 && (
-                                <span className="hf-vacancies-search-candidates">
-                                  <Users className="hf-vacancies-search-candidates-icon" />
-                                  {count}
-                                </span>
-                              )}
-                            </div>
-                            <div className="hf-vacancies-search-meta">
-                              <span>Открыта: {formatVacancyListDate(v.created_at)}</span>
-                              {v.updated_at && (
-                                <span>Последнее действие: {formatVacancyListDate(v.updated_at)}</span>
-                              )}
-                              <span>Рекрутер: {getAcceptorIds(v).map((uid) => resolveGroupUserName(uid, v, usersMap, user)).join(', ')}</span>
-                            </div>
-                            <div className="hf-vacancies-search-department">
-                              {v.department_name || 'Общая'}
-                            </div>
-                          </div>
-                          <div className="hf-vacancies-search-side">
-                            <span className="hf-vacancies-search-chip">
-                              {count} кандидатов
-                            </span>
-                            <div className="flex items-center gap-2">
-                              {!hlReadonly && (
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setEditingVacancy(v);
-                                }}
-                                className="hf-vacancies-search-action"
-                                title="Редактировать"
-                              >
-                                <Pencil className="hf-vacancies-search-action-icon" />
-                              </button>
-                              )}
-                              {!hlReadonly && v.status !== 'closed' && getVacancyExitOptions(v, user?.id, isHrAdmin).canLeave && (
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleLeaveVacancy(v);
-                                  }}
-                                  className="hf-vacancies-search-action"
-                                  title="Выйти из вакансии — у остальных она останется в работе"
-                                >
-                                  <LogOut className="hf-vacancies-search-action-icon" />
-                                </button>
-                              )}
-                              {!hlReadonly && v.status !== 'closed' && getVacancyExitOptions(v, user?.id, isHrAdmin).canClose && (
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleCloseVacancy(v);
-                                  }}
-                                  className="hf-vacancies-search-action"
-                                  title={getVacancyExitOptions(v, user?.id, isHrAdmin).canLeave ? 'Закрыть вакансию для всех участников' : 'Закрыть вакансию'}
-                                >
-                                  <Archive className="hf-vacancies-search-action-icon" />
-                                </button>
-                              )}
-                              {user?.role === 'superadmin' && !hlReadonly && (
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleDeleteVacancy(v);
-                                  }}
-                                  className="hf-vacancies-search-action"
-                                  title="Удалить"
-                                  style={{ color: 'var(--hf-status-red)' }}
-                                >
-                                  <Trash2 className="hf-vacancies-search-action-icon" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </section>
-            </div>
-          </div>
+          <FunnelsVacancyOverview
+            list={vacancyList}
+            user={user}
+            isHrAdmin={isHrAdmin}
+            hlReadonly={hlReadonly}
+            selectVacancy={selectVacancy}
+            setMobileSidebar={setMobileSidebar}
+            setShowCreateModal={setShowCreateModal}
+            setShowHandover={setShowHandover}
+            setEditingVacancy={setEditingVacancy}
+            onCloseVacancy={handleCloseVacancy}
+            onLeaveVacancy={handleLeaveVacancy}
+            onDeleteVacancy={handleDeleteVacancy}
+          />
         ) : (
           /* Vacancy selected — show candidates (Huntflow-style master-detail) */
           <div className="hf-vacancy-workspace flex-1 flex flex-col overflow-hidden">
@@ -2853,162 +780,26 @@ export default function RecruiterFunnelsPage() {
             ) : (
               /* ===== DETAIL VIEW: Huntflow-style master-detail ===== */
               <>
-                {/* Stage tabs: same visual shell as /all-candidates, vacancy-specific content */}
-                <div className="hf-vacancy-stage-shell hf-top-stage-shell">
-                  <div
-                    ref={vacancyStageScrollRef}
-                    className={clsx(
-                      'hf-vacancy-stage-tabs hf-top-stage-tabs no-scrollbar',
-                      !showVacancyTopSearch && 'hf-top-stage-tabs-padded',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (showVacancyTopSearch || candidateSearch) {
-                          setCandidateSearch('');
-                          setShowVacancyTopSearch(false);
-                          return;
-                        }
-                        setShowVacancyTopSearch(true);
-                      }}
-                      className={clsx(
-                        'hf-top-stage-search-toggle hf-vacancy-stage-search-toggle',
-                        (showVacancyTopSearch || candidateSearch) && 'hf-top-stage-search-toggle-active',
-                      )}
-                      title={showVacancyTopSearch ? 'Скрыть поиск' : 'Открыть поиск'}
-                      aria-pressed={showVacancyTopSearch}
-                    >
-                      <Search className="h-[var(--hf-candidates-search-icon)] w-[var(--hf-candidates-search-icon)]" />
-                    </button>
-
-                    {showVacancyTopSearch || candidateSearch ? (
-                      <div className="hf-top-stage-search hf-vacancy-stage-search">
-                        <input
-                          ref={vacancyTopSearchRef}
-                          value={candidateSearch}
-                          onChange={(event) => setCandidateSearch(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                              if (candidateSearch) setCandidateSearch('');
-                              else setShowVacancyTopSearch(false);
-                            }
-                          }}
-                          placeholder="Поиск по имени, должности..."
-                          className="hf-top-stage-search-input"
-                        />
-                        {candidateSearch ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCandidateSearch('');
-                              vacancyTopSearchRef.current?.focus();
-                            }}
-                            className="hf-top-stage-search-action hf-top-stage-search-clear"
-                            title="Очистить поиск"
-                          >
-                            <X className="h-5 w-5" />
-                          </button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <>
-                        {vacancyVisibleStageKeys.map(key => {
-                          // Счётчик вкладки считает ТОЛЬКО активных — «предыдущие
-                          // серии» не входят в тотал, пока их не тронут (как в референсе:
-                          // бейдж «1» при нескольких серых карточках под плашкой).
-                          const count = (groupedByStageMap[key] || []).filter(c => !c.is_previous_series).length;
-                          const vacancyStageLabel = stagesConfig.labels[key];
-                          const isActive = selectedTab === key;
-                          return (
-                            <button
-                              key={key}
-                              onClick={() => selectStageTab(key)}
-                              className={clsx(
-                                'hf-top-stage-item',
-                                isActive
-                                  ? 'hf-top-stage-item-active'
-                                  : 'hf-top-stage-item-idle',
-                              )}
-                            >
-                              {vacancyStageLabel}
-                              {count > 0 && <span className="hf-top-stage-badge hf-top-stage-badge-muted">{count}</span>}
-                              {isActive && <span className="hf-top-stage-underline" />}
-                            </button>
-                          );
-                        })}
-                      </>
-                    )}
-                  </div>
-                  {/* Полная форма редактирования (в т.ч. закрыть вакансию) —
-                      доступна и рекрутёрам (гейт «только админ» снят 2026-07-02). */}
-                  <div className="hf-top-stage-action-cell">
-                    <button
-                      type="button"
-                      onClick={() => setEditingVacancy(selectedVacancy)}
-                      className="hf-top-stage-action-btn"
-                      title="Действия с вакансией"
-                      aria-label="Действия с вакансией"
-                    >
-                      <HuntflowOptionsIcon className="hf-top-stage-options-icon" />
-                    </button>
-                  </div>
-                  {vacancyStageCanScrollLeft && !showVacancyTopSearch && !candidateSearch ? (
-                    <button
-                      type="button"
-                      onClick={scrollVacancyStagesLeft}
-                      className="hf-top-stage-arrow hf-top-stage-arrow-left"
-                      title="Прокрутить этапы влево"
-                    >
-                      <ChevronLeft className="hf-top-stage-arrow-icon" />
-                    </button>
-                  ) : null}
-                  {vacancyStageCanScrollRight && !showVacancyTopSearch && !candidateSearch ? (
-                    <button
-                      type="button"
-                      onClick={scrollVacancyStagesRight}
-                      className="hf-top-stage-arrow hf-top-stage-arrow-right"
-                      title="Прокрутить этапы вправо"
-                    >
-                      <ChevronRight className="hf-top-stage-arrow-icon" />
-                    </button>
-                  ) : null}
+                <FunnelStageTabs
+                  candidateSearch={candidateSearch}
+                  setCandidateSearch={setCandidateSearch}
+                  groupedByStageMap={groupedByStageMap}
+                  selectStageTab={selectStageTab}
+                  selectedTab={selectedTab}
+                  selectedVacancy={selectedVacancy}
+                  setEditingVacancy={setEditingVacancy}
+                  stagesConfig={stagesConfig}
+                  vacancyVisibleStageKeys={vacancyVisibleStageKeys}
+                />
+                {/* Чьих кандидатов показываем — ПОСТОЯННАЯ полоса над контентом (а не
+                    в списке), чтобы переключать и когда этап пуст. */}
+                <div className="flex items-center px-3 sm:px-5 py-2 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
+                  <FunnelScopeToggle
+                    mode={funnelScopeMode({ isSelfContext, isForeignContext, worksOnFunnel })}
+                    onlyMine={onlyMine}
+                    setOnlyMine={setOnlyMine}
+                  />
                 </div>
-
-                {/* «Только мои» — ПОСТОЯННАЯ полоса над контентом (а не в списке),
-                    чтобы фильтр можно было снять и когда этап пуст (включил →
-                    опустошил вкладку → иначе не вернуть всех без F5). Доступна ВСЕМ
-                    ролям (не только суперадмину): рекрутёр на воронке «Видна
-                    коллегам» может оставить только своих кандидатов. */}
-                {(
-                  <div className="flex items-center px-3 sm:px-5 py-2 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
-                    <label
-                      className={clsx(
-                        'group inline-flex items-center select-none',
-                        onlyMineAvailable ? 'cursor-pointer' : 'cursor-default opacity-50',
-                      )}
-                      title={isSelfContext
-                        ? 'Это ваша воронка из «Мои вакансии» — здесь показаны только ваши кандидаты.'
-                        : !worksOnFunnel
-                          ? 'Эта воронка не у вас в работе — ваших кандидатов в ней нет, фильтр недоступен.'
-                          : isForeignContext
-                            ? 'Показать в этой воронке только кандидатов, которых добавил я. Выключится само, когда уйдёте из воронки.'
-                            : 'Показывать только кандидатов, которых добавил я. Снимите — будут видны все, пока вы в этой воронке.'}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelfContext || onlyMine}
-                        disabled={!onlyMineAvailable}
-                        onChange={(e) => setOnlyMine(e.target.checked)}
-                        className="peer sr-only"
-                      />
-                      <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors border-[color:var(--hf-white-alpha-12)] text-[var(--hf-main-600)] group-hover:border-[color:var(--hf-white-alpha-25)] group-hover:text-[var(--hf-main-800)] peer-checked:border-[color:var(--hf-accent)] peer-checked:text-[color:var(--hf-accent)] peer-checked:bg-[color:var(--hf-accent-soft,var(--hf-white-alpha-06))] peer-focus-visible:ring-2 peer-focus-visible:ring-[color:var(--hf-accent)]">
-                        <Users className="w-3.5 h-3.5" aria-hidden="true" />
-                        Только мои
-                      </span>
-                    </label>
-                  </div>
-                )}
 
                 {tabFilteredCandidates.length === 0 && !candidateSearch.trim() ? (
                   <div className="hf-vacancy-empty flex-1 overflow-y-auto">
@@ -3023,205 +814,25 @@ export default function RecruiterFunnelsPage() {
                 /* Master-Detail split */
                 <div className="hf-candidates-master">
                   {/* Left: candidate list */}
-                  <div className="hf-candidates-list-panel relative">
-                    <div className={clsx('hf-candidates-list-scroll', anySelected && 'pb-14')}>
-                    {tabFilteredCandidates.length === 0 ? (
-                      <div className="flex items-center justify-center h-40 text-hf-xxs text-[var(--hf-main-500)] hf-dark-disabled:text-[color:var(--hf-white-alpha-40)]">
-                        Нет кандидатов
-                      </div>
-                    ) : (
-                      orderedCandidates.list.map(candidate => {
-                        const isSelected = candidate.id === selectedCandidateId;
-                        const isChecked = selectedIds.has(candidate.id);
-                        const listMetaPrimary = candidate.entity_company || candidate.source;
-                        return (
-                          <Fragment key={candidate.id}>
-                          {candidate.id === orderedCandidates.firstPreviousId && (
-                            <div className="hf-prev-series-divider">В предыдущих сериях</div>
-                          )}
-                          <div
-                            onClick={() => {
-                              setSelectedCandidateId(candidate.id);
-                              setDetailTab('resume');
-                              // ПУШ ?entity= в историю — браузерные «Назад/Вперёд»
-                              // листают кандидатов (иначе Back выкидывал из воронки).
-                              // Зеркало ?entity= (replace + guard) второй записи не даёт.
-                              const eid = candidate.entity_id;
-                              if (eid != null) {
-                                setSearchParams((prev) => {
-                                  if (prev.get('entity') === String(eid)) return prev;
-                                  const next = new URLSearchParams(prev);
-                                  next.set('entity', String(eid));
-                                  return next;
-                                }, { replace: false });
-                              }
-                            }}
-                            className={clsx(
-                              'hf-candidate-row',
-                              candidate.is_previous_series && 'hf-candidate-row-prev-series',
-                              isChecked || isSelected
-                                ? 'hf-candidate-row-selected'
-                                : 'hf-candidate-row-idle',
-                            )}
-                          >
-                            {/* Avatar / checkmark zone — same interaction as /all-candidates */}
-                            <div
-                              onClick={(e) => { e.stopPropagation(); toggleCandidateSelection(candidate.id); }}
-                              className="hf-candidate-avatar-zone"
-                            >
-                              {isChecked ? (
-                                (candidate as { entity_photo?: string }).entity_photo ? (
-                                  <div className="hf-candidate-avatar-check">
-                                    <img
-                                      src={(candidate as { entity_photo?: string }).entity_photo}
-                                      alt={candidate.entity_name || ''}
-                                      referrerPolicy="no-referrer"
-                                      className="hf-candidate-avatar-check-img"
-                                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                                    />
-                                    <div className="hf-candidate-avatar-check-overlay">
-                                      <Check className="hf-candidate-check-icon" />
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="hf-candidate-avatar-check">
-                                    <Check className="hf-candidate-check-icon" />
-                                  </div>
-                                )
-                              ) : (
-                                <>
-                                  {(candidate as { entity_photo?: string }).entity_photo ? (
-                                    <img
-                                      src={(candidate as { entity_photo?: string }).entity_photo}
-                                      alt={candidate.entity_name || ''}
-                                      referrerPolicy="no-referrer"
-                                      className="hf-candidate-avatar"
-                                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                                    />
-                                  ) : (
-                                    <div className="hf-candidate-avatar-fallback">
-                                      <span className="hf-candidate-avatar-head" />
-                                      <span className="hf-candidate-avatar-body" />
-                                    </div>
-                                  )}
-                                  <div className="hf-candidate-avatar-hover">
-                                    <Check className="hf-candidate-check-icon" />
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                            <div className="hf-candidate-row-copy">
-                              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                                <div className="hf-candidate-row-name">
-                                  {candidate.entity_name || 'Без имени'}
-                                </div>
-                                {/* Яркие теги у имени — ВСЕ, как в «Все кандидаты»
-                                    (запрос HR 16.09). Не влезли — переносятся строкой
-                                    ниже, имя не сжимается. */}
-                                {readHeadlineTags(candidate.entity_headline_tags).map((t, i) => (
-                                  <span key={i} className="shrink-0">
-                                    <HeadlineTagChip tag={t} small />
-                                  </span>
-                                ))}
-                              </div>
-                              {candidate.entity_position && (
-                                <div className="hf-candidate-row-subtitle">
-                                  {candidate.entity_position}
-                                </div>
-                              )}
-                              <div className="hf-candidate-row-meta">
-                                {listMetaPrimary && (
-                                  <span
-                                    className="hf-candidate-row-meta-text"
-                                    title={listMetaPrimary}
-                                  >
-                                    {listMetaPrimary}
-                                  </span>
-                                )}
-                                {listMetaPrimary && (candidate.last_stage_change_at || candidate.applied_at) && (
-                                  <span className="hf-candidate-row-meta-dot">·</span>
-                                )}
-                                {(candidate.last_stage_change_at || candidate.applied_at) && (
-                                  <span className="hf-candidate-row-date" title="Дата последнего переноса статуса">
-                                    {new Date(candidate.last_stage_change_at || candidate.applied_at).toLocaleDateString('ru')}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="sr-only">
-                                {candidate.entity_name || 'Без имени'}
-                              </div>
-                            </div>
-                          </div>
-                          </Fragment>
-                        );
-                      })
-                    )}
-                    </div>
-
-                    {/* Bulk actions floating bar — единая плашка (как «Все кандидаты»).
-                        Прячем, пока открыта модалка перемещения, иначе плашка
-                        перекрывает её футер с кнопкой «Добавить». */}
-                    <BulkSelectionBar
-                      open={anySelected && !showBulkMove && !hlReadonly}
-                      count={selectedIds.size}
-                      avatars={candidates
-                        .filter((c) => selectedIds.has(c.id))
-                        .map((c) => ({
-                          id: c.id,
-                          name: c.entity_name || 'Без имени',
-                          photo_url: (c as { entity_photo?: string }).entity_photo,
-                        }))}
-                      onSelectAll={() =>
-                        setSelectedIds(
-                          new Set(tabFilteredCandidates.slice(0, 1000).map((c) => c.id)),
-                        )
-                      }
-                      onClear={() => setSelectedIds(new Set())}
-                      onClose={() => setSelectedIds(new Set())}
-                      actions={[
-                        {
-                          label: 'Добавить в воронку',
-                          icon: Plus,
-                          variant: 'neutral',
-                          onClick: () => setShowBulkMove(true),
-                          disabled: bulkMoving,
-                        },
-                        {
-                          label: 'Удалить с воронки',
-                          icon: X,
-                          variant: 'danger',
-                          onClick: handleBulkRemoveFromVacancy,
-                          disabled: bulkMoving,
-                        },
-                      ]}
-                    />
-                    {showBulkMove && (
-                      <AddToVacancyModal
-                        entityId={
-                          candidates.find((c) => selectedIds.has(c.id))?.entity_id ?? 0
-                        }
-                        entityName={`${selectedIds.size} кандидат(ов)`}
-                        bulkEntityIds={candidates
-                          .filter((c) => selectedIds.has(c.id))
-                          .map((c) => c.entity_id)}
-                        bulkEntities={candidates
-                          .filter((c) => selectedIds.has(c.id))
-                          .map((c) => ({
-                            id: c.entity_id,
-                            name: c.entity_name || 'Без имени',
-                          }))}
-                        // Прячем текущую воронку из назначений — перемещаем ИЗ неё.
-                        excludeVacancyIds={selectedVacancyId ? [selectedVacancyId] : undefined}
-                        onClose={() => setShowBulkMove(false)}
-                        onSuccess={() => {
-                          setShowBulkMove(false);
-                          setSelectedIds(new Set());
-                          if (selectedVacancyId) loadCandidates(selectedVacancyId);
-                          fetchVacancies();
-                        }}
-                      />
-                    )}
-                  </div>
+                  <FunnelCandidateList
+                    anySelected={anySelected}
+                    bulkMoving={bulkMoving}
+                    candidates={candidates}
+                    fetchVacancies={fetchVacancies}
+                    handleBulkRemoveFromVacancy={handleBulkRemoveFromVacancy}
+                    hlReadonly={hlReadonly}
+                    loadCandidates={loadCandidates}
+                    orderedCandidates={orderedCandidates}
+                    selectedCandidateId={selectedCandidateId}
+                    selectedIds={selectedIds}
+                    selectedVacancyId={selectedVacancyId}
+                    setDetailTab={setDetailTab}
+                    setSearchParams={setSearchParams}
+                    setSelectedCandidateId={setSelectedCandidateId}
+                    setSelectedIds={setSelectedIds}
+                    tabFilteredCandidates={tabFilteredCandidates}
+                    toggleCandidateSelection={toggleCandidateSelection}
+                  />
 
                   {/* Right: detail panel */}
                   <div className="hf-candidates-detail-panel hf-vacancy-detail flex-1 bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)] rounded-hf-l flex flex-col overflow-hidden">
@@ -3322,8 +933,7 @@ export default function RecruiterFunnelsPage() {
                                     onClick={async () => {
                                       try {
                                         const link = await createCandidateShareLink(selectedCandidate.entity_id!);
-                                        await navigator.clipboard.writeText(`${window.location.origin}${link.url_path}`);
-                                        toast.success('Ссылка на предпросмотр скопирована — действует 30 дней');
+                                        await copyOrShowLink(`${window.location.origin}${link.url_path}`, 'Ссылка на предпросмотр скопирована — действует 30 дней');
                                       } catch {
                                         toast.error('Не удалось создать ссылку');
                                       }
@@ -3497,7 +1107,6 @@ export default function RecruiterFunnelsPage() {
                                 })()}
                               </div>
 
-
                               {/* Tags / Metki */}
                               <div className="mb-6">
                                 <div className="flex items-center gap-2 mb-2">
@@ -3579,23 +1188,23 @@ export default function RecruiterFunnelsPage() {
                                       stageOptions={stagePickerOptions}
                                       getStageLabel={getVacancyStageLabel}
                                       onChangeStage={cardChangeStage}
-                                      onComment={cardComment}
-                                      onDeleteHistory={cardDeleteHistory}
-                                      onEditHistory={cardEditHistory}
-                                      onPin={cardPinEntry}
+                                      onComment={cardActions.comment}
+                                      onDeleteHistory={cardActions.deleteHistory}
+                                      onEditHistory={cardActions.editHistory}
+                                      onPin={cardActions.pin}
                                       pinnedEntryKey={c.pinnedEntryKey}
-                                      onDeleteNote={cardDeleteNote}
-                                      onEditNote={cardEditNote}
-                                      onUploadFile={cardUploadFile}
+                                      onDeleteNote={cardActions.deleteNote}
+                                      onEditNote={cardActions.editNote}
+                                      onUploadFile={cardActions.uploadFile}
                                       onAnketa={c.origin === 'live' && !vacancyArchived ? () => {
                                         if (!selectedCandidate.entity_id) return;
                                         setAnketaTarget({ id: selectedCandidate.entity_id, name: selectedCandidate.entity_name || '' });
                                         setAnketaOpen(true);
                                       } : undefined}
                                       anketaCount={anketaCount}
-                                      onReact={c.origin === 'live' ? cardReact : undefined}
+                                      onReact={c.origin === 'live' ? cardActions.react : undefined}
                                       files={c.files}
-                                      onDeleteFile={c.origin === 'live' && !vacancyArchived && !hlReadonly ? cardDeleteFile : undefined}
+                                      onDeleteFile={c.origin === 'live' && !vacancyArchived && !hlReadonly ? cardActions.deleteFile : undefined}
                                     />
                                   ))
                                 )}
@@ -3604,7 +1213,7 @@ export default function RecruiterFunnelsPage() {
                               {/* Ряд вкладок под карточкой — паритет с «Все
                                   кандидаты»: «Анкеты» (с бейджем непрочитанных) +
                                   «Резюме». Вкладки «Личные заметки» больше нет —
-                                  заметки пишутся в композере карточки (cardComment)
+                                  заметки пишутся в композере карточки (cardActions.comment)
                                   и показываются в её ленте. */}
                               <div className="hf-vacancy-detail-tabs">
                                 <button
@@ -3733,49 +1342,6 @@ export default function RecruiterFunnelsPage() {
         />
       )}
 
-      {/* Interview scheduling modal — простой datetime-picker */}
-      {interviewForCandidate && (
-        <div
-          className="fixed inset-0 bg-[var(--hf-black-alpha-50)] backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          {...backdropClose(() => !interviewSaving && setInterviewForCandidate(null))}
-        >
-          <div
-            className="glass rounded-xl p-5 w-full max-w-sm space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div>
-              <h3 className="text-base font-semibold text-[var(--hf-white)] mb-1">Назначить интервью</h3>
-              <p className="text-xs text-[var(--hf-dark-400)]">
-                {interviewForCandidate.entity_name}
-              </p>
-            </div>
-            <input
-              type="datetime-local"
-              value={interviewDateTime}
-              onChange={(e) => setInterviewDateTime(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--hf-white-alpha-03)] border border-[color:var(--hf-white-alpha-08)] rounded-lg text-sm text-[var(--hf-dark-100)] focus:outline-none focus:border-[var(--hf-accent)]"
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setInterviewForCandidate(null)}
-                disabled={interviewSaving}
-                className="px-3 py-1.5 text-sm text-[var(--hf-dark-300)] hover:text-[var(--hf-white)] transition-colors disabled:opacity-50"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={handleSaveInterview}
-                disabled={interviewSaving || !interviewDateTime}
-                className="px-4 py-1.5 text-sm font-medium bg-[var(--hf-accent)] hover:bg-[var(--hf-accent-hover)] text-[var(--hf-white)] rounded-lg transition-colors disabled:opacity-50"
-              >
-                {interviewSaving ? 'Сохраняем…' : 'Назначить'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {editingCandidateCard && (
         <EditCandidateModal
           card={editingCandidateCard}
@@ -3788,98 +1354,16 @@ export default function RecruiterFunnelsPage() {
         />
       )}
 
-      {/* Confirm modal — close / delete vacancy */}
+      {/* Confirm modal — close / leave / delete vacancy */}
       {confirmDialog && (
-        <div
-          className="hf-confirm-modal-backdrop"
-          onClick={() => !confirmBusy && setConfirmDialog(null)}
-        >
-          <div
-            className={clsx(
-              'hf-confirm-modal',
-              confirmDialog.type === 'delete' && 'hf-confirm-modal-delete',
-            )}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div>
-              <h3 className="hf-confirm-modal-title">
-                {confirmCopy?.title ?? 'Удалить вакансию?'}
-              </h3>
-              <p className="hf-confirm-modal-subtitle">
-                «{confirmDialog.vacancy.title?.trim() || 'Без названия'}»
-              </p>
-              {confirmCopy && (
-                <p className="hf-confirm-modal-subtitle">{confirmCopy.text}</p>
-              )}
-              {confirmDialog.type === 'delete' && (
-                <p className="hf-confirm-modal-danger-text">
-                  Действие нельзя отменить. Кандидаты в воронке потеряют связь с этой вакансией.
-                </p>
-              )}
-            </div>
-            <div className="hf-confirm-modal-actions">
-              <button
-                onClick={() => setConfirmDialog(null)}
-                disabled={confirmBusy}
-                className="hf-confirm-modal-cancel"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={runConfirmedAction}
-                disabled={confirmBusy}
-                className={clsx(
-                  'hf-confirm-modal-submit',
-                  confirmDialog.type === 'delete'
-                    ? 'hf-confirm-modal-submit-danger'
-                    : 'hf-confirm-modal-submit-warning',
-                )}
-              >
-                {confirmBusy
-                  ? 'Применяем…'
-                  : confirmCopy?.confirmLabel ?? 'Удалить'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {removeConfirmOpen && selectedCandidate && (
-        <div
-          className="hf-confirm-modal-backdrop"
-          onClick={() => !removeBusy && setRemoveConfirmOpen(false)}
-        >
-          <div
-            className="hf-confirm-modal hf-confirm-modal-delete"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div>
-              <h3 className="hf-confirm-modal-title">Убрать из вакансии?</h3>
-              <p className="hf-confirm-modal-subtitle">
-                «{selectedCandidate.entity_name?.trim() || 'Кандидат'}»
-              </p>
-              <p className="hf-confirm-modal-danger-text">
-                Кандидат пропадёт из этой воронки, но останется в общей базе («Все кандидаты»).
-              </p>
-            </div>
-            <div className="hf-confirm-modal-actions">
-              <button
-                onClick={() => setRemoveConfirmOpen(false)}
-                disabled={removeBusy}
-                className="hf-confirm-modal-cancel"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={handleRemoveFromVacancy}
-                disabled={removeBusy}
-                className="hf-confirm-modal-submit hf-confirm-modal-submit-danger"
-              >
-                {removeBusy ? 'Убираем…' : 'Убрать'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <VacancyConfirmModal
+          action={confirmDialog.type}
+          vacancy={confirmDialog.vacancy}
+          userId={user?.id}
+          busy={confirmBusy}
+          onCancel={() => setConfirmDialog(null)}
+          onConfirm={runConfirmedAction}
+        />
       )}
 
     </div>
@@ -3889,17 +1373,19 @@ export default function RecruiterFunnelsPage() {
 /* StageDropdown удалён — на воронке смена этапа теперь через богатый пикер
    (список этапов + «Записать комментарий») прямо в карточке кандидата. */
 
-// Вкладка «Анкеты» (копия AnketaTab из AllCandidatesPage, параметризованная
-// entityId): тянет диспатчи анкет по кандидату, разово помечает прочитанными +
-// гасит бейдж, поллит раз в 15с (на проде realtime по WS может не доходить).
+// Вкладка «Анкеты» в воронке: тянет диспатчи анкет по кандидату, разово
+// помечает прочитанными + гасит бейдж, поллит раз в 15с (на проде realtime по
+// WS может не доходить). Источник тот же, что у «Все кандидаты»
+// (all-dispatches): до 20.10.2026 воронка брала урезанную копию — без ссылок на
+// файлы из ответов и без анкет влитых дублей.
 function FunnelAnketaTab({ entityId }: { entityId: number }) {
-  const [dispatches, setDispatches] = useState<FormDispatchInfo[]>([]);
+  const [dispatches, setDispatches] = useState<(FormDispatchInfo & { source_entity_id?: number; source_name?: string | null })[]>([]);
   const clearBadge = useFormBadgeStore((s) => s.clear);
   useEffect(() => {
     let alive = true;
     const fetchRows = async () => {
       try {
-        const rows = await getEntityDispatches(entityId);
+        const rows = await getEntityAllDispatches(entityId);
         if (alive) setDispatches(rows);
       } catch {
         /* пустой/ошибка — покажем пустое состояние */

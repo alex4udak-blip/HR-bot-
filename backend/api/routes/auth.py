@@ -25,6 +25,7 @@ from ..services.auth import (
 from ..services.password_policy import validate_password
 from ..limiter import limiter
 from ..config import settings
+from ..services.hr_stages import DEFAULT_ORG_STAGES as _HR_DEFAULT_ORG_STAGES
 
 router = APIRouter()
 
@@ -514,21 +515,9 @@ async def get_telegram_link(user: User = Depends(get_current_user)):
 # Org-level stage configuration (kanban labels & colors)
 # ============================================================
 
-# Дефолты — повторяют KANBAN_STATUSES в candidate_search.py.
-# Если у орги ещё нет своей конфигурации, отдаём это.
-DEFAULT_ORG_STAGES = [
-    {"key": "new",           "label": "Новый",                 "color": "#3b82f6"},
-    {"key": "screening",     "label": "Выполняет ТЗ",          "color": "#06b6d4"},
-    {"key": "practice",      "label": "Интервью с HR",         "color": "#a855f7"},
-    {"key": "tech_practice", "label": "Интервью с заказчиком", "color": "#6366f1"},
-    {"key": "is_interview",  "label": "Принятие решения",      "color": "#f97316"},
-    {"key": "offer",         "label": "Выставлен оффер",       "color": "#eab308"},
-    {"key": "hired",         "label": "Оффер принят",          "color": "#22c55e"},
-    {"key": "probation",     "label": "Практика",              "color": "#14b8a6"},
-    {"key": "transferred",   "label": "Перешёл в отдел",       "color": "#16a34a"},
-    {"key": "rejected",      "label": "Отказ",                 "color": "#ef4444"},
-    {"key": "reserve",       "label": "Резерв",                "color": "#6b7280"},
-]
+# Если у орги ещё нет своей конфигурации, отдаём этапы из общего справочника
+# (services/hr_stages.py) — те же, что колонки воронки.
+DEFAULT_ORG_STAGES = _HR_DEFAULT_ORG_STAGES
 ALLOWED_STAGE_KEYS = {s["key"] for s in DEFAULT_ORG_STAGES}
 
 

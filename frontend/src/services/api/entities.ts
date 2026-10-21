@@ -91,6 +91,35 @@ export const deleteEntity = async (id: number): Promise<void> => {
   await debouncedMutation<void>('delete', `/entities/${id}`);
 };
 
+/** Корзина (20.10.2026): удалённый кандидат хранится 7 дней целиком, вернуть может админ. */
+export interface TrashItem {
+  id: number;
+  entity_id: number;
+  name: string | null;
+  deleted_by_name: string | null;
+  deleted_at: string | null;
+  restorable_until: string | null;
+  restorable: boolean;
+  restored_at: string | null;
+  restored_by_name: string | null;
+  purged_at: string | null;
+  summary: { applications?: number; history?: number; files?: number };
+}
+
+export const getEntityTrash = async (): Promise<TrashItem[]> => {
+  const { data } = await deduplicatedGet<{ items: TrashItem[] }>('/entities/trash');
+  return data.items;
+};
+
+export const restoreEntityFromTrash = async (
+  trashId: number,
+): Promise<{ success: boolean; entity_id: number; skipped: Record<string, number> }> => {
+  const { data } = await debouncedMutation<{ success: boolean; entity_id: number; skipped: Record<string, number> }>(
+    'post', `/entities/trash/${trashId}/restore`,
+  );
+  return data;
+};
+
 /**
  * Quick status update for Kanban drag & drop
  */
@@ -190,65 +219,9 @@ export const getEntityStatsByStatus = async (type?: EntityType): Promise<Record<
 // SMART SEARCH
 // ============================================================
 
-export interface SmartSearchResult {
-  id: number;
-  type: EntityType;
-  name: string;
-  status: EntityStatus;
-  phone?: string;
-  email?: string;
-  company?: string;
-  position?: string;
-  tags: string[];
-  extra_data: Record<string, unknown>;
-  department_id?: number;
-  department_name?: string;
-  created_at: string;
-  updated_at: string;
-  relevance_score: number;
-  expected_salary_min?: number;
-  expected_salary_max?: number;
-  expected_salary_currency?: string;
-  ai_summary?: string;
-}
 
-export interface SmartSearchResponse {
-  results: SmartSearchResult[];
-  total: number;
-  parsed_query: Record<string, unknown>;
-  offset: number;
-  limit: number;
-}
 
-export interface SmartSearchParams {
-  query: string;
-  type?: EntityType;
-  limit?: number;
-  offset?: number;
-}
 
-/**
- * Smart search for entities with AI-powered natural language understanding.
- *
- * Examples:
- * - "Python developers with 3+ years experience"
- * - "Frontend React salary up to 200000"
- * - "Moscow Java senior"
- *
- * @param params Search parameters including query string and optional filters
- * @returns Search results with relevance scores and parsed query info
- */
-export const smartSearch = async (params: SmartSearchParams): Promise<SmartSearchResponse> => {
-  const searchParams: Record<string, string> = {
-    query: params.query,
-  };
-  if (params.type) searchParams.type = params.type;
-  if (params.limit !== undefined) searchParams.limit = String(params.limit);
-  if (params.offset !== undefined) searchParams.offset = String(params.offset);
-
-  const { data } = await deduplicatedGet<SmartSearchResponse>('/entities/search', { params: searchParams });
-  return data;
-};
 
 // ============================================================
 // ENTITY CRITERIA

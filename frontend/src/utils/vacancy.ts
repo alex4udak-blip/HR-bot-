@@ -123,7 +123,11 @@ export function getVacancyExitOptions(
   const participant = isVacancyParticipant(v, userId);
   const others = participant ? otherActiveParticipants(v, userId) : [];
   const canLeave = participant && others.length > 0;
-  return { canLeave, canClose: isAdmin || !canLeave, others };
+  // Не участник и не админ — закрыть нельзя, пока в вакансии кто-то работает:
+  // раньше такому рекрутёру предлагалось «Закрыть», и вакансия закрывалась у
+  // всех (20.10.2026; сервер теперь отвечает 403).
+  const canClose = isAdmin || (participant ? !canLeave : otherActiveParticipants(v, userId).length === 0);
+  return { canLeave, canClose, others };
 }
 
 /** Активные участники, кроме указанного юзера (для вопроса «ты последний?»). */

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Vacancy, VacancyStatus, VacancyApplication, ApplicationStage, KanbanBoard, VacancyStats } from '@/types';
+import type { Vacancy, VacancyStatus } from '@/types';
 import * as api from '@/services/api';
 
 interface VacancyFilters {
@@ -17,15 +17,6 @@ interface VacancyState {
   error: string | null;
   filters: VacancyFilters;
 
-  // Kanban board
-  kanbanBoard: KanbanBoard | null;
-  isKanbanLoading: boolean;
-
-  // Stats
-  stats: VacancyStats | null;
-
-  // Selected applications (for bulk operations)
-  selectedApplicationIds: number[];
 
   // Actions - Vacancies
   fetchVacancies: (silent?: boolean) => Promise<void>;
@@ -38,26 +29,6 @@ interface VacancyState {
   clearFilters: () => void;
   clearCurrentVacancy: () => void;
 
-  // Actions - Kanban
-  kanbanFilters: api.KanbanFilters;
-  setKanbanFilters: (filters: api.KanbanFilters) => void;
-  fetchKanbanBoard: (vacancyId: number, filters?: api.KanbanFilters) => Promise<void>;
-  moveApplication: (applicationId: number, newStage: ApplicationStage) => Promise<void>;
-  bulkMoveApplications: (stage: ApplicationStage) => Promise<void>;
-
-  // Actions - Applications
-  addCandidateToVacancy: (vacancyId: number, entityId: number, source?: string) => Promise<VacancyApplication>;
-  addCandidateFromEntity: (entityId: number, vacancyId: number, source?: string) => Promise<VacancyApplication>;
-  updateApplication: (applicationId: number, data: api.ApplicationUpdate) => Promise<void>;
-  removeApplication: (applicationId: number) => Promise<void>;
-
-  // Actions - Selection
-  toggleApplicationSelection: (applicationId: number) => void;
-  selectAllInStage: (stage: ApplicationStage) => void;
-  clearSelection: () => void;
-
-  // Actions - Stats
-  fetchStats: () => Promise<void>;
 
   // Utility
   clearError: () => void;
@@ -70,11 +41,6 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
   isLoading: false,
   error: null,
   filters: {},
-  kanbanBoard: null,
-  isKanbanLoading: false,
-  kanbanFilters: {},
-  stats: null,
-  selectedApplicationIds: [],
 
   // === VACANCIES ===
 
@@ -184,276 +150,7 @@ export const useVacancyStore = create<VacancyState>((set, get) => ({
     set({ currentVacancy: null });
   },
 
-  // === KANBAN BOARD ===
-
-  setKanbanFilters: (filters) => {
-    set({ kanbanFilters: filters });
-  },
-
-  fetchKanbanBoard: async (vacancyId, filters) => {
-    set({ isKanbanLoading: true, error: null });
-    try {
-      const appliedFilters = filters ?? get().kanbanFilters;
-      const board = await api.getKanbanBoard(vacancyId, appliedFilters);
-      set({ kanbanBoard: board, isKanbanLoading: false });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch Kanban board';
-      set({ error: message, isKanbanLoading: false });
-    }
-  },
-
-  moveApplication: async (applicationId, newStage) => {
-    const { kanbanBoard } = get();
-    if (!kanbanBoard) return;
-
-    // Find the application and its current stage
-    let movedApp: VacancyApplication | null = null;
-    let sourceColumnIndex = -1;
-
-    for (let i = 0; i < kanbanBoard.columns.length; i++) {
-      const app = kanbanBoard.columns[i].applications.find((a) => a.id === applicationId);
-      if (app) {
-        movedApp = { ...app }; // Clone the application
-        sourceColumnIndex = i;
-        break;
-      }
-    }
-
-    if (!movedApp || sourceColumnIndex === -1) {
-      console.error(`Application ${applicationId} not found in kanban board`);
-      return;
-    }
-
-    // Skip if already in target stage
-    if (movedApp.stage === newStage) {
-      return;
-    }
-
-    // Create deep copy of board for immutable update
-    const updatedBoard = {
-      ...kanbanBoard,
-      columns: kanbanBoard.columns.map((col, idx) => {
-        if (idx === sourceColumnIndex) {
-          // Remove from source column
-          return {
-            ...col,
-            applications: col.applications.filter((a) => a.id !== applicationId),
-            count: col.count - 1
-          };
-        }
-        if (col.stage === newStage) {
-          // Add to target column
-          return {
-            ...col,
-            applications: [...col.applications, { ...movedApp!, stage: newStage }],
-            count: col.count + 1
-          };
-        }
-        return col;
-      })
-    };
-
-    // Optimistic update
-    set({ kanbanBoard: updatedBoard });
-
-    try {
-      await api.updateApplication(applicationId, { stage: newStage });
-    } catch (err) {
-      // Revert on error
-      get().fetchKanbanBoard(kanbanBoard.vacancy_id);
-      const message = err instanceof Error ? err.message : 'Failed to move application';
-      set({ error: message });
-      // ВАЖНО: пробрасываем ошибку, иначе вызывающий (например, модалка итогов
-      // интервью) показывал toast.success даже при неуспешном перемещении —
-      // HR думал, что кандидат продвинут, а он остался в старой колонке.
-      throw err;
-    }
-  },
-
-  bulkMoveApplications: async (stage) => {
-    const { selectedApplicationIds, kanbanBoard } = get();
-    if (selectedApplicationIds.length === 0 || !kanbanBoard) return;
-
-    try {
-      await api.bulkMoveApplications(selectedApplicationIds, stage);
-      set({ selectedApplicationIds: [] });
-      // Refresh board
-      get().fetchKanbanBoard(kanbanBoard.vacancy_id);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to move applications';
-      set({ error: message });
-    }
-  },
-
-  // === APPLICATIONS ===
-
-  addCandidateToVacancy: async (vacancyId, entityId, source) => {
-    try {
-      const application = await api.createApplication(vacancyId, {
-        vacancy_id: vacancyId,
-        entity_id: entityId,
-        source
-      });
-
-      // Refresh kanban if viewing this vacancy
-      const { kanbanBoard } = get();
-      if (kanbanBoard?.vacancy_id === vacancyId) {
-        get().fetchKanbanBoard(vacancyId);
-      }
-
-      // Update vacancy applications count
-      set((state) => ({
-        vacancies: state.vacancies.map((v) =>
-          v.id === vacancyId
-            ? { ...v, applications_count: v.applications_count + 1 }
-            : v
-        ),
-        currentVacancy:
-          state.currentVacancy?.id === vacancyId
-            ? { ...state.currentVacancy, applications_count: state.currentVacancy.applications_count + 1 }
-            : state.currentVacancy
-      }));
-
-      return application;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to add candidate';
-      set({ error: message });
-      throw err;
-    }
-  },
-
-  addCandidateFromEntity: async (entityId, vacancyId, source) => {
-    try {
-      const application = await api.applyEntityToVacancy(entityId, vacancyId, source);
-
-      // Refresh kanban if viewing this vacancy
-      const { kanbanBoard } = get();
-      if (kanbanBoard?.vacancy_id === vacancyId) {
-        get().fetchKanbanBoard(vacancyId);
-      }
-
-      // Update vacancy applications count
-      set((state) => ({
-        vacancies: state.vacancies.map((v) =>
-          v.id === vacancyId
-            ? { ...v, applications_count: v.applications_count + 1 }
-            : v
-        ),
-        currentVacancy:
-          state.currentVacancy?.id === vacancyId
-            ? { ...state.currentVacancy, applications_count: state.currentVacancy.applications_count + 1 }
-            : state.currentVacancy
-      }));
-
-      return application;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to add candidate from entity';
-      set({ error: message });
-      throw err;
-    }
-  },
-
-  updateApplication: async (applicationId, data) => {
-    try {
-      await api.updateApplication(applicationId, data);
-
-      // Update in kanban board if present
-      const { kanbanBoard } = get();
-      if (kanbanBoard) {
-        const updatedBoard = { ...kanbanBoard };
-        for (const column of updatedBoard.columns) {
-          const app = column.applications.find((a) => a.id === applicationId);
-          if (app) {
-            Object.assign(app, data);
-            break;
-          }
-        }
-        set({ kanbanBoard: updatedBoard });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update application';
-      set({ error: message });
-      throw err;
-    }
-  },
-
-  removeApplication: async (applicationId) => {
-    const { kanbanBoard } = get();
-
-    try {
-      await api.deleteApplication(applicationId);
-
-      // Remove from kanban board
-      if (kanbanBoard) {
-        const updatedBoard = { ...kanbanBoard };
-        for (const column of updatedBoard.columns) {
-          const appIndex = column.applications.findIndex((a) => a.id === applicationId);
-          if (appIndex !== -1) {
-            column.applications.splice(appIndex, 1);
-            column.count--;
-            updatedBoard.total_count--;
-            break;
-          }
-        }
-        set({ kanbanBoard: updatedBoard });
-      }
-
-      // Update vacancy applications count
-      if (kanbanBoard) {
-        set((state) => ({
-          vacancies: state.vacancies.map((v) =>
-            v.id === kanbanBoard.vacancy_id
-              ? { ...v, applications_count: Math.max(0, v.applications_count - 1) }
-              : v
-          )
-        }));
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to remove application';
-      set({ error: message });
-      throw err;
-    }
-  },
-
-  // === SELECTION ===
-
-  toggleApplicationSelection: (applicationId) => {
-    set((state) => {
-      const isSelected = state.selectedApplicationIds.includes(applicationId);
-      return {
-        selectedApplicationIds: isSelected
-          ? state.selectedApplicationIds.filter((id) => id !== applicationId)
-          : [...state.selectedApplicationIds, applicationId]
-      };
-    });
-  },
-
-  selectAllInStage: (stage) => {
-    const { kanbanBoard } = get();
-    if (!kanbanBoard) return;
-
-    const column = kanbanBoard.columns.find((c) => c.stage === stage);
-    if (column) {
-      set({
-        selectedApplicationIds: column.applications.map((a) => a.id)
-      });
-    }
-  },
-
-  clearSelection: () => {
-    set({ selectedApplicationIds: [] });
-  },
-
   // === STATS ===
-
-  fetchStats: async () => {
-    try {
-      const stats = await api.getVacancyStats();
-      set({ stats });
-    } catch (err) {
-      console.error('Failed to fetch vacancy stats:', err);
-    }
-  },
 
   // === UTILITY ===
 

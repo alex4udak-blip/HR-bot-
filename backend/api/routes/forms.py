@@ -14,7 +14,7 @@ from pathlib import Path
 
 from anthropic import AsyncAnthropic
 import asyncio
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, File, Form, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, File, Form, Request, Response, UploadFile
 from sqlalchemy import select, func, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -23,12 +23,13 @@ from ..config import get_settings
 from ..database import get_db
 from ..models.database import (
     FormTemplate, FormSubmission, FormVacancy, FormDispatch,
-    Entity, EntityType, EntityStatus,
-    EntityFile, EntityFileType, AccessLevel,
-    Vacancy, VacancyApplication, ApplicationStage,
-    User, UserRole, Organization, OrgMember
+    Entity, EntityFile, EntityFileType, AccessLevel,
+    Vacancy, User, UserRole, Organization, OrgMember
 )
-from ..services.auth import get_current_user, get_user_org
+from ..services.auth import get_current_user, get_current_user_optional, get_user_org
+from ..services.form_answers import (
+    AnswerError, answer_fields, clean_answers, field_labels, form_problem, required_problem,
+)
 from .entities.common import check_entity_access
 
 # File upload settings for public forms
@@ -91,11 +92,6 @@ class DispatchCreateSchema(BaseModel):
     entity_id: int
 
 
-class AIGenerateSchema(BaseModel):
-    prompt: str  # role name or job description
-    vacancy_title: Optional[str] = None  # optional extra context
-
-
 class AIChatMessage(BaseModel):
     role: str  # "user" | "assistant"
     content: str
@@ -128,7 +124,9 @@ def generate_slug(title: str) -> str:
     for char in text:
         if char in _TRANSLIT:
             result.append(_TRANSLIT[char])
-        elif char.isascii() and (char.isalnum() or char in ('-', '_', ' ')):
+        # Пробел сюда не входит — он становится дефисом ниже (до 20.10.2026 он
+        # проходил этой веткой, и адрес выходил «novaya anketa-…» с пробелом).
+        elif char.isascii() and (char.isalnum() or char in ('-', '_')):
             result.append(char)
         elif char == ' ':
             result.append('-')
@@ -145,6 +143,21 @@ def generate_slug(title: str) -> str:
 # ============================================================
 # Authenticated routes — CRUD for form templates
 # ============================================================
+
+async def _own_vacancy_ids(db: AsyncSession, org_id: int, ids: List[int]) -> List[int]:
+    """Воронки анкеты — только этого орга, без повторов, порядок как прислали.
+
+    Несуществующий id раньше давал 500 (внешний ключ), чужой — молча
+    привязывался (20.10.2026).
+    """
+    wanted = [int(v) for v in dict.fromkeys(ids or []) if v]
+    if not wanted:
+        return []
+    own = set((await db.execute(
+        select(Vacancy.id).where(Vacancy.id.in_(wanted), Vacancy.org_id == org_id)
+    )).scalars().all())
+    return [v for v in wanted if v in own]
+
 
 @router.get("")
 async def list_forms(
@@ -224,7 +237,7 @@ async def create_form(
     slug = generate_slug(body.title)
 
     # Resolve vacancy_ids from both legacy and new fields
-    vacancy_ids = body.vacancy_ids or ([body.vacancy_id] if body.vacancy_id else [])
+    vacancy_ids = await _own_vacancy_ids(db, org.id, body.vacancy_ids or ([body.vacancy_id] if body.vacancy_id else []))
 
     form = FormTemplate(
         org_id=org.id,
@@ -309,83 +322,13 @@ async def get_form_templates(
             "description": f.description,
             "fields": f.fields or [],
             "is_template": True,
+            "is_active": f.is_active is not False,
             "vacancy_ids": fv_map.get(f.id, [f.vacancy_id] if f.vacancy_id else []),
             "submissions_count": submissions_map.get(f.id, 0),
             "created_at": f.created_at.isoformat() if f.created_at else None,
         }
         for f in forms
     ]
-
-
-@router.post("/ai-generate")
-async def ai_generate_form_fields(
-    body: AIGenerateSchema,
-    current_user: User = Depends(get_current_user),
-):
-    """Generate form fields using Claude AI based on a role or job description."""
-    cfg = get_settings()
-    api_key = (
-        os.environ.get("ANTHROPIC_API_KEY_FORMS")
-        or cfg.anthropic_api_key_forms
-        or os.environ.get("ANTHROPIC_API_KEY")
-        or cfg.anthropic_api_key
-    )
-    if not api_key:
-        raise HTTPException(status_code=503, detail="AI service not configured: ANTHROPIC_API_KEY_FORMS not set")
-
-    context = body.prompt.strip()
-    if body.vacancy_title:
-        context = f"{body.vacancy_title}\n\n{context}"
-
-    system_prompt = """Ты — ассистент HR-рекрутера. Создаёшь анкеты для кандидатов.
-Отвечай ТОЛЬКО валидным JSON-массивом, без markdown-блоков, без пояснений.
-
-Схема каждого поля:
-{
-  "type": "text"|"email"|"phone"|"textarea"|"select"|"multiselect"|"radio"|"file"|"url"|"scale",
-  "label": string (на русском),
-  "required": boolean,
-  "placeholder": string (опционально, на русском),
-  "options": [string] (только для select/multiselect/radio — минимум 2 варианта),
-  "min": number (только для scale, обычно 1),
-  "max": number (только для scale, обычно 10)
-}
-
-Правила:
-- Первое поле всегда: {"type":"text","label":"ФИО","required":true}
-- Генерируй 4–8 релевантных вопросов
-- Используй разные типы: шкалы, checkbox, radio, textarea, url
-- Все тексты — на русском языке
-- Для технических ролей включай вопросы о стеке (multiselect) и опыте (scale)
-- Для sales/менеджерских ролей — мотивация (textarea), KPI (scale), каналы продаж (multiselect)"""
-
-    user_message = f"Создай анкету для кандидата на роль: {context}"
-
-    client = AsyncAnthropic(api_key=api_key)
-    response = await client.messages.create(
-        model=cfg.claude_model,
-        max_tokens=1024,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_message}],
-    )
-
-    raw = response.content[0].text.strip()
-    # Strip markdown code blocks if Claude added them despite the instruction
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-
-    try:
-        fields = json.loads(raw)
-        if not isinstance(fields, list):
-            raise ValueError("Expected JSON array")
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.error("AI form generation: failed to parse Claude response: %s | raw: %s", e, raw[:300])
-        raise HTTPException(status_code=502, detail="AI returned invalid JSON — try again")
-
-    return {"fields": fields}
 
 
 @router.post("/ai-chat")
@@ -399,6 +342,11 @@ async def ai_form_chat(
     """
     import base64 as _b64
     import io as _io
+
+    # Резюме кандидата уходит в Claude — только своего орга и в своём скоупе
+    # (до 20.10.2026 проверки не было: по чужому entity_id резюме читалось).
+    current_user = await db.merge(current_user)
+    await _assert_entity_access(body.entity_id, current_user, db)
 
     cfg = get_settings()
     api_key = (
@@ -699,12 +647,9 @@ async def update_form(
         vacancy_ids = [body.vacancy_id] if body.vacancy_id else []
 
     if vacancy_ids is not None:
+        vacancy_ids = await _own_vacancy_ids(db, form.org_id, vacancy_ids)
         form.vacancy_id = vacancy_ids[0] if vacancy_ids else None  # legacy compat
         # Replace junction table entries
-        await db.execute(
-            select(FormVacancy).where(FormVacancy.form_id == form.id)
-        )
-        from sqlalchemy import delete
         await db.execute(delete(FormVacancy).where(FormVacancy.form_id == form.id))
         for vid in vacancy_ids:
             db.add(FormVacancy(form_id=form.id, vacancy_id=vid))
@@ -757,68 +702,40 @@ async def delete_form(
     if current_user.role != UserRole.superadmin:
         if not org or form.org_id != org.id:
             raise HTTPException(status_code=403, detail="Access denied")
+        # Удаляет автор или админ — как с кандидатами. Раньше любой рекрутёр
+        # мог стереть чужой шаблон (20.10.2026).
+        if form.created_by != current_user.id and not await _is_org_admin(current_user, org, db):
+            raise HTTPException(status_code=403, detail="Удалить анкету может её автор или администратор")
+
+    # Удаление каскадом стирает ответы ВСЕХ кандидатов по этой анкете. Фронт
+    # такую кнопку прятал, сервер — нет: прямой запрос стирал ответы молча.
+    answered = (await db.execute(
+        select(func.count(FormSubmission.id)).where(FormSubmission.form_id == form.id)
+    )).scalar() or 0
+    if answered:
+        raise HTTPException(
+            status_code=409,
+            detail=f"По анкете уже есть ответы ({answered}) — удаление сотрёт их. Сделайте её неактивной вместо удаления.",
+        )
 
     await db.delete(form)
     await db.commit()
     return {"ok": True}
 
 
+async def _is_org_admin(user: User, org: Organization, db: AsyncSession) -> bool:
+    from ..models.database import OrgRole
+    if user.role == UserRole.superadmin:
+        return True
+    om = (await db.execute(
+        select(OrgMember).where(OrgMember.org_id == org.id, OrgMember.user_id == user.id)
+    )).scalar_one_or_none()
+    return om is not None and om.role in (OrgRole.owner, OrgRole.admin)
+
+
 # ============================================================
 # Submissions (authenticated)
 # ============================================================
-
-@router.get("/{form_id}/submissions")
-async def list_submissions(
-    form_id: int,
-    limit: int = Query(50, le=200),
-    offset: int = 0,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """List form submissions with linked entities."""
-    current_user = await db.merge(current_user)
-    result = await db.execute(select(FormTemplate).where(FormTemplate.id == form_id))
-    form = result.scalar_one_or_none()
-    if not form:
-        raise HTTPException(status_code=404, detail="Form not found")
-
-    org = await get_user_org(current_user, db)
-    if current_user.role != UserRole.superadmin:
-        if not org or form.org_id != org.id:
-            raise HTTPException(status_code=403, detail="Access denied")
-
-    query = (
-        select(FormSubmission)
-        .where(FormSubmission.form_id == form_id)
-        .order_by(FormSubmission.submitted_at.desc())
-        .offset(offset)
-        .limit(limit)
-    )
-    subs = await db.execute(query)
-    submissions = subs.scalars().all()
-
-    # Get linked entities
-    entity_ids = [s.entity_id for s in submissions if s.entity_id]
-    entities_map = {}
-    if entity_ids:
-        ent_result = await db.execute(
-            select(Entity).where(Entity.id.in_(entity_ids))
-        )
-        for e in ent_result.scalars().all():
-            entities_map[e.id] = {"id": e.id, "name": e.name, "email": e.email, "status": e.status.value if e.status else None}
-
-    return [
-        {
-            "id": s.id,
-            "form_id": s.form_id,
-            "entity_id": s.entity_id,
-            "entity": entities_map.get(s.entity_id) if s.entity_id else None,
-            "data": s.data,
-            "submitted_at": s.submitted_at.isoformat() if s.submitted_at else None,
-        }
-        for s in submissions
-    ]
-
 
 @router.post("/{form_id}/dispatch")
 async def create_dispatch(
@@ -834,13 +751,20 @@ async def create_dispatch(
     form = (await db.execute(select(FormTemplate).where(FormTemplate.id == form_id))).scalar_one_or_none()
     if not form:
         raise HTTPException(status_code=404, detail="Form not found")
-    entity = (await db.execute(select(Entity).where(Entity.id == body.entity_id))).scalar_one_or_none()
-    if not entity:
-        raise HTTPException(status_code=404, detail="Candidate not found")
+    # Скоуп по воронкам: чужому кандидату анкету не шлём (404, как и показ).
+    entity = await _assert_entity_access(body.entity_id, current_user, db)
 
     if current_user.role != UserRole.superadmin:
         if not org or form.org_id != org.id or entity.org_id != org.id:
             raise HTTPException(status_code=403, detail="Access denied")
+
+    # Выключенный шаблон — «больше не отправлять». И анкету, на которой
+    # кандидат застрянет (выбор без вариантов, кривая шкала), не отправляем.
+    if form.is_active is False:
+        raise HTTPException(status_code=400, detail="Анкета выключена — включите её в конструкторе, чтобы отправить")
+    problem = form_problem(form.title, form.fields or [])
+    if problem:
+        raise HTTPException(status_code=400, detail=f"Анкету пока нельзя отправить: {problem}")
 
     # Токен ссылки на анкету — единственная защита (кандидат не авторизован),
     # поэтому берём криптослучайный secrets.token_urlsafe с ПОЛНОЙ стойкостью:
@@ -873,18 +797,11 @@ async def reassign_dispatch(
 ):
     """Перепривязать анкету (dispatch + её submission) к ДРУГОМУ кандидату — починка
     ошибочно улетевших анкет. Только admin/owner/superadmin; оба кандидата в своём орге."""
-    from ..models.database import OrgRole
     current_user = await db.merge(current_user)
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(403, "No organization access")
-    om = (await db.execute(
-        select(OrgMember).where(OrgMember.org_id == org.id, OrgMember.user_id == current_user.id)
-    )).scalar_one_or_none()
-    is_admin = current_user.role == UserRole.superadmin or (
-        om is not None and om.role in (OrgRole.owner, OrgRole.admin)
-    )
-    if not is_admin:
+    if not await _is_org_admin(current_user, org, db):
         raise HTTPException(403, "Only administrators can reassign anketa")
 
     dispatch = (await db.execute(
@@ -910,10 +827,36 @@ async def reassign_dispatch(
     await db.execute(
         update(FormSubmission).where(FormSubmission.dispatch_id == dispatch_id).values(entity_id=body.entity_id)
     )
+    # Файлы из ответов — к новому кандидату тоже (до 20.10.2026 оставались у
+    # прежнего, и ссылка «файл» в анкете нового вела в никуда). Вместе с
+    # картинками страниц PDF («<имя>_page_N.jpg»).
+    moved_files = 0
+    sub = (await db.execute(
+        select(FormSubmission).where(FormSubmission.dispatch_id == dispatch_id)
+    )).scalar_one_or_none()
+    if sub and isinstance(sub.data, dict):
+        form = await db.get(FormTemplate, dispatch.form_id)
+        fields = answer_fields(form.fields if form else [], sub.fields_snapshot)
+        names = {
+            sub.data.get(f["id"]).strip() for f in fields
+            if isinstance(f, dict) and f.get("type") == "file"
+            and isinstance(sub.data.get(f.get("id")), str) and sub.data.get(f["id"]).strip()
+        }
+        if names:
+            conds = [EntityFile.file_name.in_(names)] + [
+                EntityFile.file_name.like(f"{Path(n).stem}_page_%.jpg") for n in names
+            ]
+            from sqlalchemy import or_
+            res = await db.execute(
+                update(EntityFile)
+                .where(EntityFile.entity_id == old_entity, or_(*conds))
+                .values(entity_id=body.entity_id)
+            )
+            moved_files = res.rowcount or 0
     await db.commit()
     return {
         "success": True, "dispatch_id": dispatch_id,
-        "from_entity": old_entity, "to_entity": body.entity_id,
+        "from_entity": old_entity, "to_entity": body.entity_id, "files_moved": moved_files,
     }
 
 
@@ -970,41 +913,6 @@ async def _assert_entity_access(entity_id: int, current_user: User, db: AsyncSes
     return entity
 
 
-@router.get("/entity/{entity_id}/dispatches")
-async def list_entity_dispatches(entity_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    current_user = await db.merge(current_user)
-    await _assert_entity_access(entity_id, current_user, db)
-    rows = (await db.execute(
-        select(FormDispatch).where(FormDispatch.entity_id == entity_id).order_by(FormDispatch.created_at.desc())
-    )).scalars().all()
-    form_ids = {d.form_id for d in rows}
-    titles = {}
-    labels_by_form = {}  # form_id -> {field_id: label} — чтобы показывать вопросы, а не id полей
-    if form_ids:
-        for fid, title, fields in (await db.execute(
-            select(FormTemplate.id, FormTemplate.title, FormTemplate.fields).where(FormTemplate.id.in_(form_ids))
-        )).all():
-            titles[fid] = title
-            lbl = {}
-            for f in (fields or []):
-                if isinstance(f, dict) and f.get("id"):
-                    lbl[f["id"]] = f.get("label") or f["id"]
-            labels_by_form[fid] = lbl
-    subs = {}
-    sub_ids = [d.submission_id for d in rows if d.submission_id]
-    if sub_ids:
-        for s in (await db.execute(select(FormSubmission).where(FormSubmission.id.in_(sub_ids)))).scalars().all():
-            subs[s.id] = s.data
-    return [{
-        "id": d.id, "form_id": d.form_id, "form_title": titles.get(d.form_id), "token": d.token,
-        "status": d.status, "seen_by_recruiter": d.seen_by_recruiter,
-        "submission_id": d.submission_id, "answers": subs.get(d.submission_id),
-        "field_labels": labels_by_form.get(d.form_id, {}),
-        "created_at": d.created_at.isoformat() if d.created_at else None,
-        "submitted_at": d.submitted_at.isoformat() if d.submitted_at else None,
-    } for d in rows]
-
-
 @router.get("/entity/{entity_id}/all-dispatches")
 async def list_entity_all_dispatches(entity_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get dispatches for entity + all merged_from entities (historical profiles)."""
@@ -1029,39 +937,38 @@ async def list_entity_all_dispatches(entity_id: int, db: AsyncSession = Depends(
         select(FormDispatch).where(FormDispatch.entity_id.in_(entity_ids)).order_by(FormDispatch.created_at.desc())
     )).scalars().all()
 
-    # Build form metadata (titles, field labels, file-поля)
+    # Названия и вопросы анкет. Вопросы ответа — его снимок на момент
+    # отправки (fields_snapshot), у старых ответов — текущие поля шаблона.
     form_ids = {d.form_id for d in all_rows}
     titles = {}
-    labels_by_form = {}
-    file_fields_by_form = {}  # form_id → [field_id] с type == 'file'
+    template_fields: dict = {}
     if form_ids:
         for fid, title, fields in (await db.execute(
             select(FormTemplate.id, FormTemplate.title, FormTemplate.fields).where(FormTemplate.id.in_(form_ids))
         )).all():
             titles[fid] = title
-            lbl = {}
-            file_ids = []
-            for f in (fields or []):
-                if isinstance(f, dict) and f.get("id"):
-                    lbl[f["id"]] = f.get("label") or f["id"]
-                    if f.get("type") == "file":
-                        file_ids.append(f["id"])
-            labels_by_form[fid] = lbl
-            file_fields_by_form[fid] = file_ids
+            template_fields[fid] = fields or []
 
-    # Load submissions
-    subs = {}
+    subs: dict = {}
     sub_ids = [d.submission_id for d in all_rows if d.submission_id]
     if sub_ids:
-        for s in (await db.execute(select(FormSubmission).where(FormSubmission.id.in_(sub_ids)))).scalars().all():
-            subs[s.id] = s.data
+        for sub in (await db.execute(select(FormSubmission).where(FormSubmission.id.in_(sub_ids)))).scalars().all():
+            subs[sub.id] = sub
+
+    def fields_of(d) -> list:
+        sub = subs.get(d.submission_id)
+        return answer_fields(template_fields.get(d.form_id), sub.fields_snapshot if sub else None)
+
+    def file_field_ids(d) -> list:
+        return [f["id"] for f in fields_of(d) if isinstance(f, dict) and f.get("type") == "file" and f.get("id")]
 
     # Резолв файлов анкеты: (entity_id, имя файла) → URL скачивания, чтобы поле
     # типа «файл» в ответах было кликабельным (а не просто именем).
     needed_files = []  # (entity_id, filename)
     for d in all_rows:
-        data = subs.get(d.submission_id) or {}
-        for ffid in file_fields_by_form.get(d.form_id, []):
+        sub = subs.get(d.submission_id)
+        data = (sub.data if sub else None) or {}
+        for ffid in file_field_ids(d):
             val = data.get(ffid)
             if isinstance(val, str) and val.strip():
                 needed_files.append((d.entity_id, val.strip()))
@@ -1104,9 +1011,10 @@ async def list_entity_all_dispatches(entity_id: int, db: AsyncSession = Depends(
             if source_name is None:
                 source_name = "Текущий профиль"
 
-        d_data = subs.get(d.submission_id) or {}
+        d_sub = subs.get(d.submission_id)
+        d_data = (d_sub.data if d_sub else None) or {}
         d_file_links = {}
-        for ffid in file_fields_by_form.get(d.form_id, []):
+        for ffid in file_field_ids(d):
             val = d_data.get(ffid)
             if isinstance(val, str) and val.strip():
                 url = file_url_map.get((d.entity_id, val.strip()))
@@ -1116,8 +1024,8 @@ async def list_entity_all_dispatches(entity_id: int, db: AsyncSession = Depends(
         result.append({
             "id": d.id, "form_id": d.form_id, "form_title": titles.get(d.form_id),
             "token": d.token, "status": d.status, "seen_by_recruiter": d.seen_by_recruiter,
-            "submission_id": d.submission_id, "answers": subs.get(d.submission_id),
-            "field_labels": labels_by_form.get(d.form_id, {}),
+            "submission_id": d.submission_id, "answers": d_sub.data if d_sub else None,
+            "field_labels": field_labels(fields_of(d)),
             "file_links": d_file_links,  # field_id → URL скачивания файла
             "created_at": d.created_at.isoformat() if d.created_at else None,
             "submitted_at": d.submitted_at.isoformat() if d.submitted_at else None,
@@ -1189,327 +1097,140 @@ async def get_public_form(
 
 
 @router.post("/public/{slug}/submit")
-async def submit_public_form(
-    slug: str,
-    body: PublicSubmitSchema,
-    db: AsyncSession = Depends(get_db),
-):
-    """Submit a form publicly (no auth). Creates entity + links to vacancy."""
-    result = await db.execute(
-        select(FormTemplate).where(FormTemplate.slug == slug, FormTemplate.is_active == True)
-    )
-    form = result.scalar_one_or_none()
-    if not form:
-        raise HTTPException(status_code=404, detail="Форма не найдена")
-
-    # Анкета заполняется СУЩЕСТВУЮЩИМ кандидатом по персональной ссылке (токен) и
-    # НИКОГДА не создаёт нового кандидата. Анонимное заполнение по публичному slug
-    # отключено — раньше каждый такой сабмит плодил кандидата (нежелательно).
-    raise HTTPException(
-        status_code=403,
-        detail="Эта анкета заполняется по персональной ссылке, которую отправляет рекрутёр.",
-    )
-
-    fields_by_id = {f["id"]: f for f in (form.fields or [])}
-
-    # Validate required fields
-    for field in (form.fields or []):
-        if field.get("required"):
-            val = body.data.get(field["id"])
-            if val is None or (isinstance(val, str) and not val.strip()):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Поле '{field['label']}' обязательно для заполнения"
-                )
-
-    # Extract name and email from known field types
-    candidate_name = None
-    candidate_email = None
-    candidate_phone = None
-
-    for field_id, value in body.data.items():
-        field_def = fields_by_id.get(field_id)
-        if not field_def:
-            continue
-        ftype = field_def.get("type", "")
-        if ftype == "email" and value:
-            candidate_email = str(value).strip()
-        elif ftype == "phone" and value:
-            candidate_phone = str(value).strip()
-        elif ftype == "text" and not candidate_name and value:
-            # Use first text field as name
-            candidate_name = str(value).strip()
-
-    if not candidate_name:
-        candidate_name = candidate_email or "Без имени"
-
-    # Create Entity (candidate)
-    entity = Entity(
-        org_id=form.org_id,
-        type=EntityType.candidate,
-        name=candidate_name,
-        status=EntityStatus.new,
-        email=candidate_email,
-        phone=candidate_phone,
-        created_by=form.created_by,
-        extra_data={"source": "form", "form_id": form.id, "form_title": form.title},
-    )
-    db.add(entity)
-    await db.flush()  # Get entity.id
-
-    # Теневая дедупликация: помечаем, если кандидат уже есть в архиве
-    try:
-        from ..services.similarity import detect_archived_duplicate
-        _hidden_dup = await detect_archived_duplicate(db, entity)
-        if _hidden_dup:
-            _extra = dict(entity.extra_data or {})
-            _extra["hidden_duplicate_id"] = _hidden_dup
-            entity.extra_data = _extra
-    except Exception:
-        import logging
-        logging.getLogger("hr-analyzer.forms").warning(
-            "shadow-dedup detect failed (non-critical)", exc_info=True
-        )
-
-    # Create FormSubmission
-    submission = FormSubmission(
-        form_id=form.id,
-        entity_id=entity.id,
-        data=body.data,
-    )
-    db.add(submission)
-
-    # Привязка воронок больше НЕ создаёт заявку по сабмиту (логику авто-добавления
-    # убрали): vacancy_ids теперь только скоупят показ шаблона в воронке.
-    await db.commit()
-
-    return {"message": "Спасибо! Ваша анкета успешно отправлена.", "entity_id": entity.id}
+async def submit_public_form(slug: str):
+    """Отправка по общему адресу анкеты отключена: анкету заполняет СУЩЕСТВУЮЩИЙ
+    кандидат по персональной ссылке (токен). Раньше каждый такой ответ плодил
+    нового кандидата. Ручку оставили, чтобы старые ссылки получали понятный отказ."""
+    raise HTTPException(status_code=403, detail=_SLUG_SUBMIT_OFF)
 
 
-async def _save_public_form_files(db: AsyncSession, form, entity_id: int, files) -> tuple[int, list[dict]]:
-    """Сохранить файлы публичной формы к кандидату entity_id (org_id — из формы).
-    PDF-резюме конвертирует в картинки для превью.
+@router.post("/public/{slug}/submit-with-files")
+async def submit_public_form_with_files(slug: str):
+    raise HTTPException(status_code=403, detail=_SLUG_SUBMIT_OFF)
 
-    Возвращает (число сохранённых, список пропущенных [{name, reason}]). Пропущенные
-    файлы (неподдерживаемый формат / слишком большой / сверх лимита) больше НЕ
-    теряются молча — кандидат видит предупреждение и может переотправить."""
+
+_SLUG_SUBMIT_OFF = "Эта анкета заполняется по персональной ссылке, которую отправляет рекрутёр."
+
+
+async def _read_public_uploads(files) -> tuple[list[dict], list[dict]]:
+    """Прочитать файлы анкеты с проверкой формата и размера. В базу не пишет.
+
+    Читаем не больше лимита + 1 байт: раньше файл читался целиком и только
+    потом сравнивался с лимитом — гигабайтное «видео» целиком ложилось в память.
+    Возвращает (принятые, пропущенные [{name, reason}]): пропущенные кандидат
+    видит после отправки и может переслать.
+    """
+    accepted: list[dict] = []
     skipped: list[dict] = []
-    if not files:
-        return 0, skipped
-    entity_files_dir = ENTITY_FILES_DIR / str(entity_id)
-    entity_files_dir.mkdir(parents=True, exist_ok=True)
-
-    # Файлы сверх лимита тоже отмечаем как пропущенные, а не молча роняем срезом.
-    for extra in files[PUBLIC_MAX_FILES:]:
+    for extra in (files or [])[PUBLIC_MAX_FILES:]:
         if getattr(extra, "filename", None):
             skipped.append({"name": extra.filename, "reason": f"превышен лимит файлов (макс. {PUBLIC_MAX_FILES})"})
-
-    saved_files = []
-    for upload_file in files[:PUBLIC_MAX_FILES]:
+    for upload_file in (files or [])[:PUBLIC_MAX_FILES]:
         if not upload_file.filename:
             continue
         original_name = upload_file.filename
         ext = Path(original_name.lower()).suffix
         if ext not in ALLOWED_EXTENSIONS:
-            logger.warning(f"Public form: skipped disallowed file type '{ext}' ({original_name})")
+            logger.warning("Public form: skipped disallowed file type '%s' (%s)", ext, original_name)
             skipped.append({"name": original_name, "reason": "неподдерживаемый формат"})
             continue
-        content = await upload_file.read()
-        file_size = len(content)
-        if file_size == 0:
+        max_size = PUBLIC_MAX_VIDEO_SIZE if ext in VIDEO_EXTENSIONS else PUBLIC_MAX_FILE_SIZE
+        content = await upload_file.read(max_size + 1)
+        if not content:
             skipped.append({"name": original_name, "reason": "пустой файл"})
             continue
-        max_size = PUBLIC_MAX_VIDEO_SIZE if ext in VIDEO_EXTENSIONS else PUBLIC_MAX_FILE_SIZE
-        if file_size > max_size:
+        if len(content) > max_size:
             skipped.append({"name": original_name, "reason": f"файл больше {max_size // (1024 * 1024)} МБ"})
             continue
-        content_type = upload_file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
-        unique_name = f"{uuid.uuid4().hex}{ext}"
-        file_path = entity_files_dir / unique_name
+        accepted.append({
+            "name": original_name,
+            "ext": ext,
+            "content": content,
+            "content_type": upload_file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream",
+        })
+    return accepted, skipped
+
+
+PDF_PREVIEW_MAX_PAGES = 10
+
+
+def _render_pdf_pages(pdf_path: str, out_dir: Path) -> list[tuple[int, Path, bytes]]:
+    """PDF → картинки страниц для превью (синхронно — зовётся в отдельном потоке)."""
+    import fitz
+    pages = []
+    doc = fitz.open(pdf_path)
+    try:
+        mat = fitz.Matrix(PDF_RENDER_DPI / 72, PDF_RENDER_DPI / 72)
+        for page_num in range(min(len(doc), PDF_PREVIEW_MAX_PAGES)):
+            pix = doc[page_num].get_pixmap(matrix=mat)
+            img_path = out_dir / f"{uuid.uuid4().hex}.jpg"
+            pix.save(str(img_path))
+            pages.append((page_num, img_path, pix.tobytes("jpg")))
+    finally:
+        doc.close()
+    return pages
+
+
+async def _store_public_uploads(db: AsyncSession, form, entity_id: int, accepted: list[dict]) -> int:
+    """Сохранить принятые файлы анкеты к кандидату (org_id — из формы).
+
+    PDF-резюме дополнительно раскладывается на картинки страниц для превью —
+    в отдельном потоке и не больше PDF_PREVIEW_MAX_PAGES страниц: раньше все
+    страницы рендерились по 200 DPI прямо в обработчике, и сервер на это время
+    не отвечал никому.
+    """
+    if not accepted:
+        return 0
+    entity_files_dir = ENTITY_FILES_DIR / str(entity_id)
+    entity_files_dir.mkdir(parents=True, exist_ok=True)
+
+    saved = []
+    for item in accepted:
+        original_name, content = item["name"], item["content"]
+        file_path = entity_files_dir / f"{uuid.uuid4().hex}{item['ext']}"
         with open(file_path, "wb") as f:
             f.write(content)
         is_resume = any(kw in original_name.lower() for kw in ["resume", "cv", "резюме"])
-        file_type = EntityFileType.resume if is_resume else EntityFileType.other
         entity_file = EntityFile(
             org_id=form.org_id,
             entity_id=entity_id,
-            file_type=file_type,
+            file_type=EntityFileType.resume if is_resume else EntityFileType.other,
             file_name=original_name,
             file_path=str(file_path),
             # Храним содержимое и в БД (bytea): диск на проде эфемерный, иначе при
             # редеплое файл теряется → download отдаёт file_content_lost.
             file_data=content,
-            file_size=file_size,
-            mime_type=content_type,
+            file_size=len(content),
+            mime_type=item["content_type"],
             description=f"Загружено через форму '{form.title}'",
             uploaded_by=form.created_by,
         )
         db.add(entity_file)
-        # original_name несём с собой, чтобы имя страниц PDF бралось от своего файла.
-        saved_files.append((entity_file, file_path, content_type, original_name))
-
+        saved.append((entity_file, file_path, item["content_type"], original_name))
     await db.flush()
 
-    # Convert PDF resumes to images for inline preview
-    for entity_file, fpath, ctype, orig_name in saved_files:
-        if ctype == "application/pdf" and entity_file.file_type == EntityFileType.resume:
-            try:
-                import fitz
-                doc = fitz.open(str(fpath))
-                for page_num in range(len(doc)):
-                    page = doc[page_num]
-                    mat = fitz.Matrix(PDF_RENDER_DPI / 72, PDF_RENDER_DPI / 72)
-                    pix = page.get_pixmap(matrix=mat)
-                    img_name = f"{uuid.uuid4().hex}.jpg"
-                    img_path = entity_files_dir / img_name
-                    pix.save(str(img_path))
-                    img_bytes = pix.tobytes("jpg")
-                    img_file = EntityFile(
-                        org_id=form.org_id,
-                        entity_id=entity_id,
-                        file_type=EntityFileType.resume,
-                        file_name=f"{Path(orig_name).stem}_page_{page_num + 1}.jpg",
-                        file_path=str(img_path),
-                        file_data=img_bytes,  # bytea — переживает редеплой
-                        file_size=len(img_bytes),
-                        mime_type="image/jpeg",
-                        description=f"Страница {page_num + 1} из {orig_name}",
-                        uploaded_by=form.created_by,
-                    )
-                    db.add(img_file)
-                doc.close()
-            except Exception:
-                logger.exception(f"PDF→image conversion failed for {fpath}")
-
-    return len(saved_files), skipped
-
-
-@router.post("/public/{slug}/submit-with-files")
-async def submit_public_form_with_files(
-    slug: str,
-    background_tasks: BackgroundTasks,
-    data: str = Form(..., description="JSON string with form data {field_id: value}"),
-    files: List[UploadFile] = File(default=[]),
-    db: AsyncSession = Depends(get_db),
-):
-    """Submit a form publicly with file attachments (no auth).
-
-    Accepts multipart/form-data with:
-    - data: JSON string of form field values
-    - files: uploaded files (resume, CV, etc.)
-    """
-    # Parse JSON data
-    try:
-        form_data = json.loads(data)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=422, detail="Невалидный JSON в поле data")
-
-    # Find form
-    result = await db.execute(
-        select(FormTemplate).where(FormTemplate.slug == slug, FormTemplate.is_active == True)
-    )
-    form = result.scalar_one_or_none()
-    if not form:
-        raise HTTPException(status_code=404, detail="Форма не найдена")
-
-    # Анкета заполняется СУЩЕСТВУЮЩИМ кандидатом по персональной ссылке (токен) и
-    # НИКОГДА не создаёт нового кандидата. Анонимное заполнение по публичному slug
-    # отключено — раньше каждый такой сабмит плодил кандидата (нежелательно).
-    raise HTTPException(
-        status_code=403,
-        detail="Эта анкета заполняется по персональной ссылке, которую отправляет рекрутёр.",
-    )
-
-    fields_by_id = {f["id"]: f for f in (form.fields or [])}
-
-    # Validate required fields (skip file fields — they come separately)
-    for field in (form.fields or []):
-        if field.get("required") and field.get("type") != "file":
-            val = form_data.get(field["id"])
-            if val is None or (isinstance(val, str) and not val.strip()):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Поле '{field['label']}' обязательно для заполнения"
-                )
-
-    # Extract name, email, phone
-    candidate_name = None
-    candidate_email = None
-    candidate_phone = None
-
-    for field_id, value in form_data.items():
-        field_def = fields_by_id.get(field_id)
-        if not field_def:
+    for entity_file, fpath, ctype, orig_name in saved:
+        if ctype != "application/pdf" or entity_file.file_type != EntityFileType.resume:
             continue
-        ftype = field_def.get("type", "")
-        if ftype == "email" and value:
-            candidate_email = str(value).strip()
-        elif ftype == "phone" and value:
-            candidate_phone = str(value).strip()
-        elif ftype == "text" and not candidate_name and value:
-            candidate_name = str(value).strip()
-
-    if not candidate_name:
-        candidate_name = candidate_email or "Без имени"
-
-    # Create Entity
-    entity = Entity(
-        org_id=form.org_id,
-        type=EntityType.candidate,
-        name=candidate_name,
-        status=EntityStatus.new,
-        email=candidate_email,
-        phone=candidate_phone,
-        created_by=form.created_by,
-        extra_data={"source": "form", "form_id": form.id, "form_title": form.title},
-    )
-    db.add(entity)
-    await db.flush()
-
-    # Теневая дедупликация: помечаем, если кандидат уже есть в архиве
-    try:
-        from ..services.similarity import detect_archived_duplicate
-        _hidden_dup = await detect_archived_duplicate(db, entity)
-        if _hidden_dup:
-            _extra = dict(entity.extra_data or {})
-            _extra["hidden_duplicate_id"] = _hidden_dup
-            entity.extra_data = _extra
-    except Exception:
-        import logging
-        logging.getLogger("hr-analyzer.forms").warning(
-            "shadow-dedup detect failed (non-critical)", exc_info=True
-        )
-
-    # Create FormSubmission
-    submission = FormSubmission(
-        form_id=form.id,
-        entity_id=entity.id,
-        data=form_data,
-    )
-    db.add(submission)
-
-    # Save uploaded files (общий хелпер; org_id из формы)
-    files_saved_count, skipped_files = await _save_public_form_files(db, form, entity.id, files)
-
-    # Привязка воронок больше НЕ создаёт заявку по сабмиту (логику авто-добавления
-    # убрали): vacancy_ids теперь только скоупят показ шаблона в воронке.
-    await db.commit()
-
-    # Если кандидат приложил PDF, а резюме у него нет — фоном проверим (Claude),
-    # резюме ли это, и при подтверждении поднимем во вкладку «Резюме».
-    from ..services.resume_autopromote import promote_pdf_to_resume_if_needed
-    # add_task(func, *args) — Starlette сам await'ит корутину после ответа.
-    # Раньше add_task(asyncio.create_task, coro) падал «no running event loop».
-    background_tasks.add_task(promote_pdf_to_resume_if_needed, entity.id, form.org_id)
-
-    return {
-        "message": "Спасибо! Ваша анкета успешно отправлена.",
-        "entity_id": entity.id,
-        "files_saved": files_saved_count,
-        # Пропущенные файлы (формат/размер/лимит) — фронт покажет предупреждение,
-        # чтобы кандидат не думал, что резюме доставлено, когда оно потерялось.
-        "skipped_files": skipped_files,
-    }
+        try:
+            pages = await asyncio.to_thread(_render_pdf_pages, str(fpath), entity_files_dir)
+        except Exception:
+            logger.exception("PDF→image conversion failed for %s", fpath)
+            continue
+        for page_num, img_path, img_bytes in pages:
+            db.add(EntityFile(
+                org_id=form.org_id,
+                entity_id=entity_id,
+                file_type=EntityFileType.resume,
+                file_name=f"{Path(orig_name).stem}_page_{page_num + 1}.jpg",
+                file_path=str(img_path),
+                file_data=img_bytes,  # bytea — переживает редеплой
+                file_size=len(img_bytes),
+                mime_type="image/jpeg",
+                description=f"Страница {page_num + 1} из {orig_name}",
+                uploaded_by=form.created_by,
+            ))
+    return len(saved)
 
 
 class PublicClientErrorSchema(BaseModel):
@@ -1543,89 +1264,133 @@ async def report_public_form_client_error(body: PublicClientErrorSchema, request
 
 
 @router.get("/public/d/{token}")
-async def get_public_form_by_token(token: str, db: AsyncSession = Depends(get_db)):
+async def get_public_form_by_token(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+    viewer: Optional[User] = Depends(get_current_user_optional),
+):
     """Публичный показ персональной анкеты (без авторизации)."""
     dispatch = (await db.execute(select(FormDispatch).where(FormDispatch.token == token))).scalar_one_or_none()
     if not dispatch:
         raise HTTPException(status_code=404, detail="Анкета не найдена")
-    form = (await db.execute(
-        select(FormTemplate).where(FormTemplate.id == dispatch.form_id, FormTemplate.is_active == True)
-    )).scalar_one_or_none()
-    if not form:
+    form = (await db.execute(select(FormTemplate).where(FormTemplate.id == dispatch.form_id))).scalar_one_or_none()
+    submitted = dispatch.status == "submitted"
+    # Выключенный шаблон закрывает НЕзаполненные ссылки, а заполненная анкета
+    # открывается всегда: рекрутёр смотрит по ней ответы (до 20.10.2026
+    # выключение шаблона прятало и их).
+    if not form or (form.is_active is False and not submitted):
         raise HTTPException(status_code=404, detail="Анкета недоступна")
 
     entity = (await db.execute(select(Entity).where(Entity.id == dispatch.entity_id))).scalar_one_or_none()
 
-    if dispatch.status == "sent":
+    # «Открыта» — только когда открыл кандидат. Рекрутёр, проверяя ссылку из
+    # своего браузера, раньше ставил «Открыта» сам себе.
+    opened_by_staff = viewer is not None and (
+        viewer.role == UserRole.superadmin
+        or (await db.execute(
+            select(OrgMember.id).where(OrgMember.org_id == form.org_id, OrgMember.user_id == viewer.id)
+        )).scalar_one_or_none() is not None
+    )
+    if dispatch.status == "sent" and not opened_by_staff:
         dispatch.status = "opened"
         dispatch.opened_at = datetime.utcnow()
         await db.commit()
 
     # Уже заполнено — отдаём ответы, чтобы по ссылке открывалась ЗАПОЛНЕННАЯ анкета
     # (рекрутёр может открыть/поделиться), а не пустая форма.
+    fields = form.fields or []
     answers = None
     file_links: dict = {}
-    if dispatch.status == "submitted" and dispatch.submission_id:
+    if submitted and dispatch.submission_id:
         sub = (await db.execute(
             select(FormSubmission).where(FormSubmission.id == dispatch.submission_id)
         )).scalar_one_or_none()
         answers = sub.data if sub else None
+        fields = answer_fields(fields, sub.fields_snapshot if sub else None)
         # Поля-файлы → ссылка на скачивание (резолв EntityFile по имени файла),
         # чтобы файл в заполненной анкете можно было открыть, а не только имя.
-        if answers:
-            file_field_ids = [
-                f["id"] for f in (form.fields or [])
-                if isinstance(f, dict) and f.get("type") == "file" and f.get("id")
-            ]
-            for ffid in file_field_ids:
-                val = answers.get(ffid)
-                if isinstance(val, str) and val.strip():
-                    ef = (await db.execute(
-                        select(EntityFile.id).where(
-                            EntityFile.entity_id == dispatch.entity_id,
-                            EntityFile.file_name == val.strip(),
-                        ).order_by(EntityFile.id.desc())
-                    )).scalars().first()
-                    if ef:
-                        file_links[ffid] = f"/api/entities/{dispatch.entity_id}/files/{ef}/download"
+        names = {
+            f["id"]: answers.get(f["id"]).strip()
+            for f in fields
+            if answers and isinstance(f, dict) and f.get("type") == "file" and f.get("id")
+            and isinstance(answers.get(f["id"]), str) and answers.get(f["id"]).strip()
+        }
+        if names:
+            by_name = {}
+            for fid_, fname in (await db.execute(
+                select(EntityFile.id, EntityFile.file_name).where(
+                    EntityFile.entity_id == dispatch.entity_id,
+                    EntityFile.file_name.in_(set(names.values())),
+                ).order_by(EntityFile.id.desc())
+            )).all():
+                by_name.setdefault(fname, fid_)
+            for ffid, fname in names.items():
+                if fname in by_name:
+                    file_links[ffid] = f"/api/entities/{dispatch.entity_id}/files/{by_name[fname]}/download"
 
     return {
         "id": form.id, "title": form.title, "description": form.description,
-        "fields": form.fields or [],
+        "fields": fields,
         "candidate_name": entity.name if entity else None,
-        "already_submitted": dispatch.status == "submitted",
+        "already_submitted": submitted,
         "answers": answers,
         "file_links": file_links,
     }
 
 
-@router.post("/public/d/{token}/submit")
-async def submit_public_form_by_token(
+async def _submit_by_token(
+    db: AsyncSession,
     token: str,
-    body: PublicSubmitSchema,
-    db: AsyncSession = Depends(get_db),
-):
-    """Публичная отправка персональной анкеты — привязка к существующему кандидату."""
-    dispatch = (await db.execute(select(FormDispatch).where(FormDispatch.token == token))).scalar_one_or_none()
+    raw_data,
+    files,
+    background_tasks: Optional[BackgroundTasks],
+) -> dict:
+    """Ответ кандидата по персональной ссылке — один путь для JSON и multipart.
+
+    До 20.10.2026 это были две копии с разной проверкой: с файлами `data="[]"`
+    давал 500, обязательный «Файл» не проверялся нигде, ответ принимался с
+    любыми ключами и любой длины, а два быстрых нажатия «Отправить» записывали
+    два ответа (строку ссылки никто не блокировал).
+    """
+    accepted, skipped_files = await _read_public_uploads(files)
+
+    dispatch = (await db.execute(
+        select(FormDispatch).where(FormDispatch.token == token).with_for_update()
+    )).scalar_one_or_none()
     if not dispatch:
         raise HTTPException(status_code=404, detail="Анкета не найдена")
     if dispatch.status == "submitted":
         raise HTTPException(status_code=409, detail="Анкета уже заполнена")
-    form = (await db.execute(
-        select(FormTemplate).where(FormTemplate.id == dispatch.form_id, FormTemplate.is_active == True)
-    )).scalar_one_or_none()
+    # Ссылка уже у кандидата: выключение шаблона её не закрывает, иначе
+    # заполненные ответы пропадали бы на «Отправить». Закрыть ссылку —
+    # удалить анкету в карточке кандидата.
+    form = (await db.execute(select(FormTemplate).where(FormTemplate.id == dispatch.form_id))).scalar_one_or_none()
     if not form:
         raise HTTPException(status_code=404, detail="Анкета недоступна")
 
-    for field in (form.fields or []):
-        if field.get("required") and field.get("type") != "file":
-            val = body.data.get(field["id"])
-            if val is None or (isinstance(val, str) and not val.strip()):
-                raise HTTPException(status_code=422, detail=f"Поле '{field['label']}' обязательно для заполнения")
+    fields = form.fields or []
+    try:
+        answers = clean_answers(fields, raw_data)
+    except AnswerError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    # Имя файла в ответе — только если сам файл пришёл и принят.
+    uploaded = {a["name"] for a in accepted}
+    for f in fields:
+        if isinstance(f, dict) and f.get("type") == "file" and answers.get(f.get("id")) not in uploaded:
+            answers.pop(f.get("id"), None)
+    problem = required_problem(fields, answers, uploaded)
+    if problem:
+        reason = next((s_["reason"] for s_ in skipped_files), None)
+        raise HTTPException(status_code=422, detail=f"{problem}" + (f" (файл не принят: {reason})" if reason else ""))
 
-    submission = FormSubmission(form_id=form.id, entity_id=dispatch.entity_id, data=body.data, dispatch_id=dispatch.id)
+    submission = FormSubmission(
+        form_id=form.id, entity_id=dispatch.entity_id, data=answers,
+        dispatch_id=dispatch.id, fields_snapshot=fields,
+    )
     db.add(submission)
     await db.flush()
+
+    files_saved_count = await _store_public_uploads(db, form, dispatch.entity_id, accepted)
 
     dispatch.status = "submitted"
     dispatch.submitted_at = datetime.utcnow()
@@ -1648,7 +1413,28 @@ async def submit_public_form_by_token(
     except Exception:
         logger.error("form.submission notify/broadcast FAILED for dispatch %s", dispatch.id, exc_info=True)
 
-    return {"message": "Спасибо! Ваша анкета успешно отправлена.", "entity_id": dispatch.entity_id}
+    # PDF без резюме → фоновый авто-промоут во вкладку «Резюме» (с проверкой
+    # Claude). Только если файлы правда пришли — раньше звался на каждый ответ.
+    if files_saved_count and background_tasks is not None:
+        from ..services.resume_autopromote import promote_pdf_to_resume_if_needed
+        background_tasks.add_task(promote_pdf_to_resume_if_needed, dispatch.entity_id, form.org_id)
+
+    return {
+        "message": "Спасибо! Ваша анкета успешно отправлена.",
+        "entity_id": dispatch.entity_id,
+        "files_saved": files_saved_count,
+        "skipped_files": skipped_files,
+    }
+
+
+@router.post("/public/d/{token}/submit")
+async def submit_public_form_by_token(
+    token: str,
+    body: PublicSubmitSchema,
+    db: AsyncSession = Depends(get_db),
+):
+    """Публичная отправка персональной анкеты — привязка к существующему кандидату."""
+    return await _submit_by_token(db, token, body.data, [], None)
 
 
 @router.post("/public/d/{token}/submit-with-files")
@@ -1665,56 +1451,4 @@ async def submit_public_form_by_token_with_files(
         form_data = json.loads(data)
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="Невалидный JSON в поле data")
-
-    dispatch = (await db.execute(select(FormDispatch).where(FormDispatch.token == token))).scalar_one_or_none()
-    if not dispatch:
-        raise HTTPException(status_code=404, detail="Анкета не найдена")
-    if dispatch.status == "submitted":
-        raise HTTPException(status_code=409, detail="Анкета уже заполнена")
-    form = (await db.execute(
-        select(FormTemplate).where(FormTemplate.id == dispatch.form_id, FormTemplate.is_active == True)
-    )).scalar_one_or_none()
-    if not form:
-        raise HTTPException(status_code=404, detail="Анкета недоступна")
-
-    for field in (form.fields or []):
-        if field.get("required") and field.get("type") != "file":
-            val = form_data.get(field["id"])
-            if val is None or (isinstance(val, str) and not val.strip()):
-                raise HTTPException(status_code=422, detail=f"Поле '{field['label']}' обязательно для заполнения")
-
-    submission = FormSubmission(form_id=form.id, entity_id=dispatch.entity_id, data=form_data, dispatch_id=dispatch.id)
-    db.add(submission)
-    await db.flush()
-
-    files_saved_count, skipped_files = await _save_public_form_files(db, form, dispatch.entity_id, files)
-
-    dispatch.status = "submitted"
-    dispatch.submitted_at = datetime.utcnow()
-    dispatch.submission_id = submission.id
-    dispatch.seen_by_recruiter = False
-    await db.commit()
-
-    try:
-        entity = (await db.execute(select(Entity).where(Entity.id == dispatch.entity_id))).scalar_one_or_none()
-        from ..services.hr_notifications import notify_form_submitted
-        await notify_form_submitted(db, dispatch, entity, form)
-        from .realtime import broadcast_form_submission
-        if dispatch.created_by:
-            await broadcast_form_submission(dispatch.created_by, {
-                "entity_id": dispatch.entity_id, "form_id": form.id, "dispatch_id": dispatch.id,
-                "form_title": form.title, "candidate_name": entity.name if entity else None,
-            })
-    except Exception:
-        logger.error("form.submission notify/broadcast FAILED for dispatch %s", dispatch.id, exc_info=True)
-
-    # PDF без резюме → фоновый авто-промоут во вкладку «Резюме» (с проверкой Claude).
-    from ..services.resume_autopromote import promote_pdf_to_resume_if_needed
-    background_tasks.add_task(promote_pdf_to_resume_if_needed, dispatch.entity_id, form.org_id)
-
-    return {
-        "message": "Спасибо! Ваша анкета успешно отправлена.",
-        "entity_id": dispatch.entity_id,
-        "files_saved": files_saved_count,
-        "skipped_files": skipped_files,
-    }
+    return await _submit_by_token(db, token, form_data, files, background_tasks)

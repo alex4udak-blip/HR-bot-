@@ -26,6 +26,9 @@ logger = logging.getLogger("hr-analyzer.hr_tags")
 # Заявки в этих стадиях НЕ считаются активной вовлечённостью HR: кандидат снят
 # с процесса, рекрутер за него больше не отвечает (design §4). Их created_by
 # не порождает метку. Любая другая стадия = активная воронка → метка.
+# «Резерв» здесь НАМЕРЕННО активный (в отличие от pick_primary_application, где
+# он не перебивает живую воронку): кандидат в резерве всё ещё «чей-то» — метка
+# говорит, у кого он отложен (сверено при ревью 20.10.2026).
 INACTIVE_STAGES = (ApplicationStage.rejected, ApplicationStage.withdrawn)
 
 # Ключ в extra_data, где живут авто-метки HR (read-only массив [{hr_id, name}]).
@@ -57,6 +60,7 @@ async def compute_hr_tags(db: AsyncSession, entity_id: int) -> list[dict]:
         .where(
             VacancyApplication.entity_id == entity_id,
             VacancyApplication.stage.not_in(INACTIVE_STAGES),
+            Vacancy.deleted_at.is_(None),  # удалённая воронка метку не даёт
         )
         .distinct()
     )
@@ -71,6 +75,7 @@ async def compute_hr_tags(db: AsyncSession, entity_id: int) -> list[dict]:
         .where(
             VacancyApplication.entity_id == entity_id,
             VacancyApplication.stage.not_in(INACTIVE_STAGES),
+            Vacancy.deleted_at.is_(None),  # удалённая воронка метку не даёт
         )
         .distinct()
     )

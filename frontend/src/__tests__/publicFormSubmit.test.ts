@@ -49,6 +49,11 @@ describe('черновик анкеты', () => {
     expect(merged).toEqual({ q1: 'да', q2: [] });
   });
 
+  it('файл после F5 не вернуть — имя из черновика не засчитывается', () => {
+    const merged = mergeDraft({ q1: '', cv: '' }, { q1: 'да', cv: 'резюме.pdf' }, ['cv']);
+    expect(merged).toEqual({ q1: 'да', cv: '' });
+  });
+
   it('пустой черновик — не повод показывать «восстановили»', () => {
     expect(hasAnswers({ q1: '', q2: [], q3: null })).toBe(false);
     expect(hasAnswers({ q1: '', q2: ['x'] })).toBe(true);

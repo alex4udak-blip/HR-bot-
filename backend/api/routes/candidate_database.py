@@ -24,27 +24,15 @@ from api.models.database import (
     Entity,
 )
 from api.services.auth import get_current_user, get_user_org
+from ..services.hr_stages import STAGE_LABELS
 
 logger = logging.getLogger("hr-analyzer.candidate-database")
 
 router = APIRouter()
 
 
-APPLICATION_STAGE_LABELS = {
-    # Единые лейблы стадий — синхронизированы с KANBAN_STATUS_LABELS
-    # (отображаются на /all-candidates). Не разводить разные наборы.
-    "applied": "Новый",
-    "screening": "Выполняет ТЗ",
-    "phone_screen": "Интервью с HR",
-    "interview": "Интервью с заказчиком",
-    "assessment": "Принятие решения",
-    "offer": "Выставлен оффер",
-    "hired": "Оффер принят",
-    "probation": "Практика",
-    "transferred": "Перешёл в отдел",
-    "rejected": "Отказ",
-    "withdrawn": "Отозван",
-}
+# Подписи этапов — общий справочник (services/hr_stages.py).
+APPLICATION_STAGE_LABELS = STAGE_LABELS
 
 
 @router.get("")

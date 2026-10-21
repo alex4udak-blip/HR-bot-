@@ -24,6 +24,7 @@ from ...models.database import (
 )
 from ...services.auth import get_current_user, get_user_org
 from ...utils.logging import get_logger
+from ...services.hr_stages import STAGE_LABELS  # общий справочник этапов
 
 logger = get_logger("analytics-reports")
 
@@ -35,20 +36,6 @@ FUNNEL_STAGES = [
     "assessment", "offer", "hired",
 ]
 
-STAGE_LABELS = {
-    # Единые лейблы — согласованы с KANBAN_STATUS_LABELS / фронтом.
-    "applied": "Новый",
-    "screening": "Выполняет ТЗ",
-    "phone_screen": "Интервью с HR",
-    "interview": "Интервью с заказчиком",
-    "assessment": "Принятие решения",
-    "offer": "Выставлен оффер",
-    "hired": "Оффер принят",
-    "probation": "Практика",
-    "transferred": "Перешёл в отдел",
-    "rejected": "Отказ",
-    "withdrawn": "Отозван",
-}
 
 LEGACY_STAGE_ALIASES = {
     "new": "applied",

@@ -126,3 +126,36 @@ async def test_kanban_orders_by_status_date(
     assert names.index("Отказ 09.10") < names.index("Отказ 08.10")
     card = next(c for c in column["cards"] if c["name"] == "Отказ 09.10")
     assert card["status_changed_at"].startswith("2026-10-09")
+
+
+@pytest.mark.asyncio
+async def test_dismissed_gets_date_of_board_rejection(
+    client, db_session, organization, department, admin_user, org_owner,
+):
+    """Уволенного доска переводит в воронке в «Отказ» — эта дата и стоит в
+    строке «Все кандидаты» (вкладка «Отказ»), а не дата добавления."""
+    from api.models.database import (
+        ApplicationStage, Entity, EntityStatus, EntityType, Vacancy, VacancyApplication,
+        VacancyStatus,
+    )
+    from api.services.auth import create_access_token
+
+    h = {"Authorization": f"Bearer {create_access_token(data={'sub': str(admin_user.id)})}"}
+    now = datetime.utcnow()
+    e = Entity(org_id=organization.id, name="Уволенов Урал", type=EntityType.candidate,
+               status=EntityStatus.transferred, created_by=admin_user.id,
+               created_at=now - timedelta(days=90), extra_data={})
+    v = Vacancy(org_id=organization.id, department_id=department.id, created_by=admin_user.id,
+                title="Трафик", status=VacancyStatus.open, salary_currency="RUB",
+                created_at=now, updated_at=now)
+    db_session.add_all([e, v])
+    await db_session.commit()
+    db_session.add(VacancyApplication(vacancy_id=v.id, entity_id=e.id, stage=ApplicationStage.transferred,
+                                      stage_order=1, created_by=admin_user.id, applied_at=now,
+                                      last_stage_change_at=now, updated_at=now))
+    await db_session.commit()
+    r = await client.patch(f"/api/staff-board/rows/{e.id}", json={"status": "dismissed"}, headers=h)
+    assert r.status_code == 200, r.text
+    cols = {c["status"]: c for c in (await client.get("/api/candidates/kanban", headers=h)).json()["columns"]}
+    card = next(c for c in cols["rejected"]["cards"] if c["id"] == e.id)
+    assert card["status_changed_at"] and card["status_changed_at"][:10] == now.date().isoformat()

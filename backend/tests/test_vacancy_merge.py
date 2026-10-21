@@ -165,7 +165,13 @@ async def test_overlap_keeps_target_stage_and_all_history(client, db_session, ad
     hist = (await db_session.execute(
         select(StageTransition).where(StageTransition.entity_id == I["both"])
     )).scalars().all()
-    assert [(h.application_id, h.to_stage) for h in hist] == [(app.id, "rejected")]
+    hist = sorted(hist, key=lambda h: h.id)
+    assert [(h.application_id, h.to_stage) for h in hist] == [(app.id, "rejected"), (app.id, "applied")]
+    # Последняя — отметка слияния на текущем этапе главной: её «отмена» ничего не
+    # двигает (иначе последней была бы запись дубля, и корзина у неё вернула бы
+    # заявку на этап, где в главной она не была).
+    assert hist[-1].from_stage == hist[-1].to_stage == "applied"
+    assert "Слияние вакансий" in hist[-1].comment
 
     # Со-рекрутёр исходной переехал.
     co = (await db_session.execute(

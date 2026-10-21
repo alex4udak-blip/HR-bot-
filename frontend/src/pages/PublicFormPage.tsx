@@ -107,7 +107,7 @@ export default function PublicFormPage() {
         // заполненную анкету не трогаем.
         const draftStorageKey = draftKey(res);
         const draft = !isPreview && !data.already_submitted ? loadDraft(draftStorageKey) : null;
-        setValues(mergeDraft(defaults, draft));
+        setValues(mergeDraft(defaults, draft, data.fields.filter((f) => f.type === 'file').map((f) => f.id)));
         if (hasAnswers(draft)) setDraftRestored(true);
         setDraftReady(!isPreview && !data.already_submitted);
       } catch {
@@ -130,20 +130,33 @@ export default function PublicFormPage() {
     for (const field of form.fields) {
       if (field.required) {
         const val = values[field.id];
-        if (val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0)) {
-          errs[field.id] = 'Обязательное поле';
-        }
+        // Строка из одних пробелов — тоже пусто (сервер её так и считает).
+        const empty = val === undefined || val === null
+          || (typeof val === 'string' && val.trim() === '')
+          || (Array.isArray(val) && val.length === 0)
+          || (field.type === 'file' && !fileUploads[field.id]);
+        if (empty) errs[field.id] = 'Обязательное поле';
       }
       // Basic email validation
       if (field.type === 'email' && values[field.id]) {
-        const email = String(values[field.id]);
+        const email = String(values[field.id]).trim();
         if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
           errs[field.id] = 'Некорректный email';
         }
       }
     }
     setValidationErrors(errs);
-    return Object.keys(errs).length === 0;
+    const firstBad = form.fields.find((f) => errs[f.id]);
+    if (firstBad) {
+      // Анкета длинная: без прокрутки кандидат жмёт «Отправить» внизу, и ничего
+      // не происходит — красная подпись осталась где-то наверху.
+      setError('');
+      requestAnimationFrame(() => {
+        document.getElementById(`field-${firstBad.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (e?: React.SyntheticEvent) => {
@@ -334,8 +347,8 @@ export default function PublicFormPage() {
           }}
           className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 space-y-6">
           {form.fields.map(field => (
+            <div key={field.id} id={`field-${field.id}`}>
             <FieldRenderer
-              key={field.id}
               field={field}
               value={values[field.id]}
               onChange={val => updateValue(field.id, val)}
@@ -370,6 +383,7 @@ export default function PublicFormPage() {
               selectedFile={fileUploads[field.id] || null}
               error={validationErrors[field.id]}
             />
+            </div>
           ))}
 
           {/* Ошибка — у кнопки, а не в шапке: анкета длинная, человек жмёт
@@ -377,6 +391,11 @@ export default function PublicFormPage() {
           {error && (
             <div role="alert" className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
               {error}
+            </div>
+          )}
+          {!error && Object.keys(validationErrors).length > 0 && (
+            <div role="alert" className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+              Заполните отмеченные красным поля: {Object.keys(validationErrors).length}
             </div>
           )}
 

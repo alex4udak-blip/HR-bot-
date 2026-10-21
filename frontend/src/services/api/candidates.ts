@@ -155,6 +155,8 @@ export interface KanbanCard {
    *  дату рядом с этапом, по ней же сервер сортирует список. null — перевода в
    *  истории нет, тогда показываем дату добавления. */
   status_changed_at?: string | null;
+  /** Место в общем порядке доски: дата этапа, при поиске — совпадение. */
+  rank?: number | null;
   tags: string[];
   photo_url?: string;
   company?: string;
@@ -238,17 +240,29 @@ export const getCandidateIds = async (params?: {
   return data.ids;
 };
 
+export type ChangeCandidateStatusResult = {
+  success: boolean;
+  /** Итоговый общий статус кандидата — по нему карточку ставят в колонку. */
+  entity_status: string | null;
+  /** Кандидат был в одной открытой воронке — перевели заявку. */
+  application_id: number | null;
+  /** Кандидат вне воронок — запись о переводе, добавленная в ленту. */
+  note: Record<string, unknown> | null;
+};
+
 /**
- * Quick status change for kanban drag-n-drop.
+ * Перевод кандидата из карточки «Все кандидаты». У кандидата вне воронок
+ * сервер в той же транзакции пишет запись о переводе в ленту (с комментарием).
  */
 export const changeCandidateStatus = async (
   entityId: number,
   status: string,
-): Promise<{ success: boolean }> => {
-  const { data } = await debouncedMutation<{ success: boolean }>(
+  opts?: { comment?: string; stage_label?: string },
+): Promise<ChangeCandidateStatusResult> => {
+  const { data } = await debouncedMutation<ChangeCandidateStatusResult>(
     'patch',
     `/candidates/${entityId}/status`,
-    { status },
+    { status, ...(opts?.comment ? { comment: opts.comment } : {}), stage_label: opts?.stage_label },
   );
   return data;
 };

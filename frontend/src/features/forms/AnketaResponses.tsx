@@ -1,7 +1,9 @@
+import { copyOrShowLink } from '@/utils/copyOrShowLink';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { Copy, ExternalLink, Trash2 } from 'lucide-react';
 import { deleteDispatch, type FormDispatchInfo } from '@/services/api/forms';
+import HrConfirm from '@/components/hr/HrConfirm';
 
 // Бэкенд отдаёт наивный UTC ("2026-06-24T22:18:32" без зоны) — трактуем как UTC,
 // чтобы toLocaleString показал корректное локальное время.
@@ -24,15 +26,14 @@ export function AnketaResponses({
 }) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  const [pendingDelete, setPendingDelete] = useState<FormDispatchInfo | null>(null);
   const handleDelete = async (d: FormDispatchInfo) => {
-    if (!window.confirm(`Удалить анкету «${d.form_title || 'Анкета'}»? Ответы кандидата будут стёрты без возможности восстановления.`)) {
-      return;
-    }
     setDeletingId(d.id);
     try {
       await deleteDispatch(d.id);
       toast.success('Анкета удалена');
       onDeleted?.(d.id);
+      setPendingDelete(null);
     } catch {
       toast.error('Не удалось удалить анкету');
     } finally {
@@ -45,6 +46,17 @@ export function AnketaResponses({
   }
   return (
     <div className="p-5 space-y-3">
+      {pendingDelete && (
+        <HrConfirm
+          title="Удалить анкету?"
+          subtitle={`«${pendingDelete.form_title || 'Анкета'}»`}
+          danger="Ответы кандидата будут стёрты без возможности восстановления."
+          confirmLabel="Удалить"
+          busy={deletingId === pendingDelete.id}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => handleDelete(pendingDelete)}
+        />
+      )}
       {dispatches.map(d => (
         <div key={d.id} className="border rounded-xl p-4">
           <div className="flex items-center justify-between">
@@ -73,13 +85,13 @@ export function AnketaResponses({
               <ExternalLink className="w-3 h-3" /> Открыть анкету
             </a>
             <button
-              onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/form/${d.token}`); toast.success('Ссылка скопирована'); }}
+              onClick={() => copyOrShowLink(`${window.location.origin}/form/${d.token}`, 'Ссылка скопирована')}
               className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
             >
               <Copy className="w-3 h-3" /> Скопировать ссылку
             </button>
             <button
-              onClick={() => handleDelete(d)}
+              onClick={() => setPendingDelete(d)}
               disabled={deletingId === d.id}
               className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-600 disabled:opacity-50"
             >

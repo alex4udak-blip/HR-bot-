@@ -39,9 +39,13 @@ from api.models.database import (
     ApplicationStage,
     StageTransition,
     AccessLevel,
+    STATUS_SYNC_MAP,
 )
 from api.services.auth import get_current_user, get_user_org, has_full_database_access
 from api.services.shadow_filter import get_isolated_creator_ids
+from api.services.hr_stages import (
+    BOARD_STATUSES, OTHER_STATUS, STATUS_LABELS, board_column, statuses_in_column,
+)
 from api.services.vacancy_scope import (
     entity_scope_filter, filter_extra_for_scope, get_scope_vacancy_ids,
 )
@@ -577,11 +581,16 @@ async def bulk_action(
 
 
 # ---------------------------------------------------------------------------
-# PATCH /{entity_id}/status  — quick status change (drag-n-drop kanban)
+# PATCH /{entity_id}/status  — смена этапа из карточки «Все кандидаты»
 # ---------------------------------------------------------------------------
 
 class ChangeStatusRequest(BaseModel):
     status: str
+    # Комментарий к переводу и подпись этапа (как её видит рекрутёр — колонки
+    # доски бывают переименованы): у кандидата вне воронок перевод живёт
+    # записью в ленте, и пишется она здесь же, в одной транзакции с переводом.
+    comment: Optional[str] = None
+    stage_label: Optional[str] = None
 
 
 @router.patch("/{entity_id}/status")
@@ -591,7 +600,22 @@ async def change_candidate_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Quick status change for kanban drag-n-drop."""
+    """Перевести кандидата на этап из карточки «Все кандидаты».
+
+    Кандидат в воронке переводится в ней (move_application) — и только если
+    открытая воронка ОДНА. Раньше эндпоинт выравнивал под новый этап ВСЕ заявки
+    кандидата: смена в одной воронке меняла его во всех (17.09.2026). Карточка
+    сама шлёт перевод в нужную воронку через PUT заявки, сюда приходит
+    кандидат вне воронок — для него перевод записывается в ленту.
+    """
+    from api.services.stage_change import (
+        change_status_without_application,
+        log_moves,
+        log_out_of_funnel,
+        move_application,
+        settle_entities,
+    )
+
     current_user = await db.merge(current_user)
 
     try:
@@ -599,75 +623,81 @@ async def change_candidate_status(
     except ValueError:
         raise HTTPException(400, f"Invalid status: {body.status}")
 
-    # Org-изоляция: смена статуса (+ синк этапов заявок) только для своего org —
-    # иначе любой HR мог менять этап чужого кандидата по id.
+    # Org-изоляция: смена статуса только для своего org — иначе любой HR мог
+    # менять этап чужого кандидата по id.
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(403, "No organization access")
-    # FOR UPDATE: сериализует конкурентную смену статуса ОДНОГО кандидата —
-    # та же гонка, что чинили в update_application/bulk-move (2026-07-14): без
-    # лока два почти одновременных drag-n-drop запроса оба читают старый
-    # stage/status и оба пишут дубль-переход в StageTransition.
-    result = await db.execute(
+    # FOR UPDATE: сериализует конкурентную смену одного кандидата (двойной клик
+    # писал дубль-переход, 2026-07-14) и защищает ленту в extra_data от lost
+    # update с соседним писателем заметок.
+    entity = (await db.execute(
         select(Entity).where(
             Entity.id == entity_id,
             Entity.type == EntityType.candidate,
             Entity.org_id == org.id,
         ).with_for_update()
-    )
-    entity = result.scalar_one_or_none()
+    )).scalar_one_or_none()
     if not entity:
         raise HTTPException(404, "Candidate not found")
-
     old_status = entity.status
-    entity.status = new_status
 
-    # Синхронизируем связанные VacancyApplication.stage. Без этого смена
-    # этапа в /all-candidates меняла только Entity.status, а в воронке
-    # (/my-funnels читает VacancyApplication.stage) кандидат оставался
-    # в старой колонке — выглядело как «не перемещается».
-    from api.models.database import STATUS_SYNC_MAP
-    from api.services.stage_transitions import record_transition
-    synced_apps = 0
-    if new_status in STATUS_SYNC_MAP:
-        target_stage = STATUS_SYNC_MAP[new_status]
-        apps_result = await db.execute(
-            # order_by(id): единый порядок взятия row-locks со ВСЕМИ прочими FOR UPDATE
-            # по vacancy_applications (в частности rebalance_stage_orders канбана) —
-            # иначе гонка «синк статуса» ↔ «реордер колонки» ловила deadlock (прод 2026-08-27).
-            select(VacancyApplication).where(VacancyApplication.entity_id == entity_id).order_by(VacancyApplication.id).with_for_update()
+    # order_by(id): единый порядок взятия row-locks со всеми прочими FOR UPDATE
+    # по vacancy_applications — иначе deadlock с реордером колонки (2026-08-27).
+    open_apps = (await db.execute(
+        select(VacancyApplication)
+        .join(Vacancy, VacancyApplication.vacancy_id == Vacancy.id)
+        .where(
+            VacancyApplication.entity_id == entity_id,
+            Vacancy.status != VacancyStatus.closed,
+            Vacancy.deleted_at.is_(None),
         )
-        for app in apps_result.scalars().all():
-            if app.stage != target_stage:
-                old_app_stage = app.stage
-                app.stage = target_stage
-                app.last_stage_change_at = datetime.utcnow()
-                synced_apps += 1
-                # Пишем транзишн в историю — иначе смена этапа из «Все кандидаты»
-                # меняла VacancyApplication.stage, но не попадала в ленту истории
-                # кандидата (главный баг с импортированными кандидатами).
-                await record_transition(
-                    db=db,
-                    application_id=app.id,
-                    entity_id=entity_id,
-                    from_stage=old_app_stage.value if hasattr(old_app_stage, "value") else (str(old_app_stage) if old_app_stage else None),
-                    to_stage=target_stage.value if hasattr(target_stage, "value") else str(target_stage),
-                    changed_by_id=current_user.id,
-                )
+        .order_by(VacancyApplication.id)
+        .with_for_update(of=VacancyApplication)
+    )).scalars().all()
+
+    move = None
+    note = None
+    if open_apps:
+        target_stage = STATUS_SYNC_MAP.get(new_status)
+        if target_stage is None:
+            raise HTTPException(409, "Этот этап нельзя поставить заявке — кандидат остался на прежнем")
+        if len(open_apps) > 1:
+            raise HTTPException(
+                409,
+                "Кандидат в нескольких воронках — смените этап в карточке нужной воронки",
+            )
+        move = await move_application(
+            db, open_apps[0], target_stage,
+            changed_by=current_user, comment=(body.comment or "").strip() or None,
+        )
+        await settle_entities(db, [entity_id], [move])
+    else:
+        try:
+            note = await change_status_without_application(
+                db, entity, new_status,
+                changed_by=current_user,
+                comment=body.comment,
+                stage_label=body.stage_label,
+            )
+        except ValueError:
+            raise HTTPException(400, "Comment too long")
 
     await db.commit()
-
-    if synced_apps:
-        logger.info(
-            f"change_candidate_status: entity {entity_id} → {new_status.value}, "
-            f"synced {synced_apps} VacancyApplication(s)"
-        )
+    await db.refresh(entity)
+    log_moves([move], current_user, via="candidate_status")
+    log_out_of_funnel(current_user, entity_id, note)
 
     return {
         "success": True,
         "entity_id": entity_id,
         "old_status": old_status.value if hasattr(old_status, "value") else str(old_status),
-        "new_status": new_status.value,
+        # Итоговый статус считает сервер (у кандидата в воронке — по актуальной
+        # заявке), фронт ставит карточку в колонку по нему.
+        "new_status": entity.status.value if entity.status else new_status.value,
+        "entity_status": entity.status.value if entity.status else None,
+        "application_id": move.application_id if move else None,
+        "note": note,
     }
 
 
@@ -798,40 +828,16 @@ async def list_tags(
 # GET /kanban  — candidates grouped by status for kanban board
 # ---------------------------------------------------------------------------
 
-KANBAN_STATUSES = ["new", "screening", "practice", "tech_practice", "is_interview", "offer", "hired", "probation", "transferred", "rejected", "withdrawn", "reserve"]
+# Колонки доски, их порядок и подписи — общий справочник (services/hr_stages.py).
+KANBAN_STATUSES = BOARD_STATUSES
 
 # Колонка-приёмник для статусов вне воронки (dismissed/quit/interview/active и
 # прочее легаси). Раньше такие кандидаты просто ВЫПАДАЛИ с доски: карточка в базе
 # есть, по id открывается, а в «Все кандидаты» её нет и поиск её не находит
 # (Эльвира, 18.09.2026). «Все кандидаты» обязаны показывать всех.
-OTHER_STATUS = "other"
 BOARD_COLUMNS = KANBAN_STATUSES + [OTHER_STATUS]
 
-# Уволенные со «Штата» — в базе это «Отказ». Своей колонки у увольнения здесь
-# нет и не нужно: «уволен/уволился» — язык доски, а в базе кандидатов человек
-# просто больше не в работе (владелец, 20.10.2026: «меняю статус с практики на
-# уволен — в ATS он тоже перемещается в отказ»). Без этого они падали в «Вне
-# воронки»: на проде 20.10.2026 там лежали ровно трое уволенных.
-COLUMN_OF_STATUS = {
-    EntityStatus.dismissed.value: "rejected",
-    EntityStatus.quit.value: "rejected",
-}
-
-KANBAN_STATUS_LABELS = {
-    "new": "Новый",
-    "screening": "Выполняет ТЗ",
-    "practice": "Интервью с HR",
-    "tech_practice": "Интервью с заказчиком",
-    "is_interview": "Принятие решения",
-    "offer": "Выставлен оффер",
-    "hired": "Оффер принят",
-    "probation": "Практика",
-    "transferred": "Перешёл в отдел",
-    "rejected": "Отказ",
-    "withdrawn": "Отозван",
-    "other": "Вне воронки",
-    "reserve": "Резерв",
-}
+KANBAN_STATUS_LABELS = STATUS_LABELS
 
 
 class CandidateFunnelInfo(BaseModel):
@@ -859,6 +865,8 @@ class KanbanCard(BaseModel):
     # 20.10.2026). None — перевода в истории нет (статус выставлен правкой
     # карточки), тогда строка показывает дату добавления, как раньше.
     status_changed_at: Optional[datetime] = None
+    # Место в общем порядке доски (0 — первый): дата этапа, при поиске — совпадение.
+    rank: Optional[int] = None
     tags: list = []
     photo_url: Optional[str] = None
     company: Optional[str] = None
@@ -973,6 +981,11 @@ async def get_candidates_kanban(
         oldest = datetime.min
         entities.sort(key=lambda e: status_at.get(e.id) or e.created_at or oldest, reverse=True)
 
+    # Место в общем порядке — фронт по нему собирает вкладку «Все» и выдачу
+    # поиска из разных колонок (раньше он пересортировывал их по дате
+    # добавления и терял и релевантность поиска, и порядок по дате этапа).
+    rank_of = {e.id: i for i, e in enumerate(entities)}
+
     # Группируем по статусу и берём только per_column на колонку ДО дорогой работы
     # (построение карточек + два IN-подзапроса фото/вакансий). Раньше всё это
     # гонялось по ВСЕМ кандидатам, а хвост выкидывался — не держало «тысячи».
@@ -980,10 +993,9 @@ async def get_candidates_kanban(
     by_status: dict[str, list] = {s: [] for s in BOARD_COLUMNS}
     counts: dict[str, int] = {s: 0 for s in BOARD_COLUMNS}
     for e in entities:
-        status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
-        status_val = COLUMN_OF_STATUS.get(status_val, status_val)
-        if status_val not in by_status:
-            status_val = OTHER_STATUS   # «Вне воронки», но кандидат ВИДЕН
+        # Вкладка по статусу: уволен/уволился — в «Отказе», прочее без колонки —
+        # «Вне воронки», но кандидат ВИДЕН (hr_stages.board_column).
+        status_val = board_column(e.status.value if hasattr(e.status, "value") else str(e.status))
         counts[status_val] += 1
         if len(by_status[status_val]) < per_column:
             by_status[status_val].append(e)
@@ -1136,10 +1148,7 @@ async def get_candidates_kanban(
     grouped: dict[str, list] = {s: [] for s in BOARD_COLUMNS}
     for e in display_entities:
         try:
-            status_val = e.status.value if hasattr(e.status, "value") else str(e.status)
-            status_val = COLUMN_OF_STATUS.get(status_val, status_val)
-            if status_val not in grouped:
-                status_val = OTHER_STATUS
+            status_val = board_column(e.status.value if hasattr(e.status, "value") else str(e.status))
             tg = first_real_telegram(e.telegram_usernames)
             source_val = None
             ed = e.extra_data if isinstance(e.extra_data, dict) else {}
@@ -1161,6 +1170,7 @@ async def get_candidates_kanban(
                 recruiter_name=recruiter_map.get(e.created_by),
                 created_at=e.created_at,
                 status_changed_at=status_at.get(e.id),
+                rank=rank_of.get(e.id),
                 tags=e.tags or [],
                 # Локальный URL предпочтительнее внешнего: hh.ru CDN может
                 # отдавать 403 на чужой Referer / истечь срок ссылки. Локальный
@@ -1252,28 +1262,12 @@ async def get_candidate_ids(
         from ..services.search_index import apply_text_search
         base_q, _ = await apply_text_search(db, base_q, q)
 
-    # Статус: конкретная вкладка (если валидна) либо все kanban-статусы.
-    status_enums = []
-    if status and status not in ("all", ""):
-        try:
-            status_enums = [EntityStatus(status)]
-        except ValueError:
-            status_enums = []
-    if not status_enums:
-        for s in KANBAN_STATUSES:
-            try:
-                status_enums.append(EntityStatus(s))
-            except ValueError:
-                pass
-    # Колонка «Отказ» показывает и уволенных со «Штата» (COLUMN_OF_STATUS) —
-    # «Выбрать всех» обязано отбирать ровно тех, кого показал список.
-    for raw, column in COLUMN_OF_STATUS.items():
-        extra = EntityStatus(raw)
-        if extra in status_enums:
-            continue
-        if not status or status in ("all", "") or status == column:
-            status_enums.append(extra)
-    base_q = base_q.where(Entity.status.in_(status_enums))
+    # Вкладка — те же статусы, что показывает доска (hr_stages.statuses_in_column):
+    # «Отказ» вместе с уволенными, «Все» — без фильтра, как и список. Раньше «Все»
+    # брало только статусы колонок и теряло тех, кто во «Вне воронки».
+    column_statuses = statuses_in_column(status or "all")
+    if column_statuses is not None:
+        base_q = base_q.where(Entity.status.in_([EntityStatus(s) for s in column_statuses]))
 
     id_q = base_q.with_only_columns(Entity.id).order_by(Entity.created_at.desc()).limit(5000)
     result = await db.execute(id_q)

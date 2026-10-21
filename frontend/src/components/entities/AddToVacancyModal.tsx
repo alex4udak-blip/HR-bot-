@@ -1,3 +1,4 @@
+import { pluralRu } from '@/utils/plural';
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
@@ -383,7 +384,7 @@ export default function AddToVacancyModal({
                       </p>
                     )}
                     <div className="mt-2 flex items-center gap-2 text-[13px] leading-[18px] text-[var(--hf-main-600)] dark:text-[color:var(--hf-white-alpha-40)]">
-                      <span>{vacancy.applications_count} кандидатов</span>
+                      <span>{vacancy.applications_count} {pluralRu(vacancy.applications_count, 'кандидат', 'кандидата', 'кандидатов')}</span>
                     </div>
                   </button>
                 );

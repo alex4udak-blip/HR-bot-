@@ -12,11 +12,16 @@ This module provides a combined router that aggregates all entity endpoints:
 from fastapi import APIRouter
 
 from .crud import router as crud_router
+from .trash import router as trash_router
+from .notes import router as notes_router
+from .archive import router as archive_router
 from .transfers import router as transfers_router
 from .hire import router as hire_router
 from .files import router as files_router
 from .memory import router as memory_router
 from .search import router as search_router
+from .entity_vacancies import router as entity_vacancies_router
+from .duplicates import router as duplicates_router
 from .bulk import router as bulk_router
 from .share_links import router as share_links_router
 
@@ -57,7 +62,12 @@ router = APIRouter()
 router.include_router(share_links_router, tags=["entities-share-links"])
 
 # CRUD operations (basic entity operations)
+# Корзина — раньше crud: иначе GET /{entity_id} перехватит /trash.
+router.include_router(trash_router, tags=["entities-trash"])
 router.include_router(crud_router, tags=["entities-crud"])
+# Лента карточки и архив — части прежнего crud.py (разрезан 20.10.2026).
+router.include_router(notes_router, tags=["entities-crud"])
+router.include_router(archive_router, tags=["entities-crud"])
 
 # Transfer operations
 router.include_router(transfers_router, tags=["entities-transfers"])
@@ -73,6 +83,9 @@ router.include_router(memory_router, tags=["entities-memory"])
 
 # Search operations (smart search, red flags, recommendations, similar, duplicates)
 router.include_router(search_router, tags=["entities-search"])
+# Части прежнего search.py (разрезан 20.10.2026) — в том же порядке.
+router.include_router(entity_vacancies_router, tags=["entities-search"])
+router.include_router(duplicates_router, tags=["entities-search"])
 
 # Bulk operations (resume parsing, bulk profile generation)
 router.include_router(bulk_router, tags=["entities-bulk"])

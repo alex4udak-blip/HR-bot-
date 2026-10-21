@@ -5,8 +5,7 @@ This package contains all vacancy-related endpoints split into modules:
 - common: Shared schemas, imports, and helper functions
 - crud: Basic CRUD operations for vacancies
 - applications: Application management endpoints
-- kanban: Kanban board endpoints
-- matching: Candidate matching and notification endpoints
+- kanban: канбан (ради тестов приватности), bulk-move, порядок в колонке
 - sharing: Vacancy sharing endpoints
 """
 from fastapi import APIRouter
@@ -73,16 +72,6 @@ from .kanban import (
     bulk_move_applications,
 )
 
-# Import matching handlers
-from .matching import (
-    get_vacancies_stats,
-    get_matching_candidates,
-    notify_matching_candidates,
-    invite_candidate_to_vacancy,
-    CandidateMatchResponse,
-    NotifyCandidatesResponse,
-)
-
 # Import history handlers
 from .history import (
     get_application_history,
@@ -100,9 +89,6 @@ from .merge import merge_vacancy_into
 
 # Register routes in the correct order
 # More specific routes must come before generic ones (like /{vacancy_id})
-
-# Stats: /stats/overview must be before /{vacancy_id}
-router.add_api_route("/stats/overview", get_vacancies_stats, methods=["GET"], tags=["vacancy-stats"])
 
 # Applications bulk-move: /applications/bulk-move must be before /applications/{application_id}
 router.add_api_route("/applications/bulk-move", bulk_move_applications, methods=["POST"], tags=["vacancy-kanban"])
@@ -143,14 +129,13 @@ router.add_api_route("/{vacancy_id}/applications/take", take_application, method
 router.add_api_route("/{vacancy_id}/applications", list_applications, methods=["GET"], tags=["vacancy-applications"])
 router.add_api_route("/{vacancy_id}/applications", create_application, methods=["POST"], status_code=201, tags=["vacancy-applications"])
 
-# Vacancy kanban
+# Vacancy kanban — интерфейс не зовёт, держится ради тестов приватности.
 router.add_api_route("/{vacancy_id}/kanban", get_kanban_board, methods=["GET"], tags=["vacancy-kanban"])
 router.add_api_route("/{vacancy_id}/kanban/column/{stage}", get_kanban_column, methods=["GET"], tags=["vacancy-kanban"])
 
-# Vacancy matching
-router.add_api_route("/{vacancy_id}/matching-candidates", get_matching_candidates, methods=["GET"], tags=["vacancy-matching"])
-router.add_api_route("/{vacancy_id}/notify-candidates", notify_matching_candidates, methods=["POST"], tags=["vacancy-matching"])
-router.add_api_route("/{vacancy_id}/invite-candidate/{entity_id}", invite_candidate_to_vacancy, methods=["POST"], tags=["vacancy-matching"])
+# Убраны 20.10.2026 — интерфейс их не звал: /stats/overview, «подходящие
+# кандидаты» и рассылка им (/matching-candidates, /notify-candidates —
+# отдавала контакты всего пула без скоупа, /invite-candidate).
 
 # Vacancy sharing
 
@@ -168,8 +153,6 @@ __all__ = [
     "KanbanColumn",
     "KanbanBoard",
     "BulkStageUpdate",
-    "CandidateMatchResponse",
-    "NotifyCandidatesResponse",
     "StageTransitionResponse",
     # Helper functions
     "is_org_owner",

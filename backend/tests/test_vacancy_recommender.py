@@ -507,26 +507,6 @@ class TestVacancyRecommendationEndpoints:
         assert response.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_get_matching_candidates_endpoint(
-        self,
-        client: AsyncClient,
-        admin_token: str,
-        test_vacancy: Vacancy,
-        candidate_with_skills: Entity,
-        org_owner
-    ):
-        """Test GET /api/vacancies/{id}/matching-candidates endpoint."""
-        response = await client.get(
-            f"/api/vacancies/{test_vacancy.id}/matching-candidates",
-            headers={"Authorization": f"Bearer {admin_token}"},
-            params={"limit": 10, "min_score": 0}
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-
-    @pytest.mark.asyncio
     async def test_auto_apply_endpoint(
         self,
         client: AsyncClient,
@@ -570,52 +550,6 @@ class TestVacancyRecommendationEndpoints:
             headers={"Authorization": f"Bearer {admin_token}"}
         )
         assert response2.status_code == 400
-
-    @pytest.mark.asyncio
-    async def test_notify_candidates_endpoint(
-        self,
-        client: AsyncClient,
-        admin_token: str,
-        test_vacancy: Vacancy,
-        candidate_with_skills: Entity,
-        org_owner
-    ):
-        """Test POST /api/vacancies/{id}/notify-candidates endpoint."""
-        response = await client.post(
-            f"/api/vacancies/{test_vacancy.id}/notify-candidates",
-            headers={"Authorization": f"Bearer {admin_token}"},
-            params={"min_score": 20, "limit": 10}
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "vacancy_id" in data
-        assert "candidates_found" in data
-        assert "candidates_notified" in data
-        assert "message" in data
-
-    @pytest.mark.asyncio
-    async def test_invite_candidate_endpoint(
-        self,
-        client: AsyncClient,
-        admin_token: str,
-        test_vacancy: Vacancy,
-        candidate_with_skills: Entity,
-        org_owner
-    ):
-        """Test POST /api/vacancies/{id}/invite-candidate/{entity_id} endpoint."""
-        response = await client.post(
-            f"/api/vacancies/{test_vacancy.id}/invite-candidate/{candidate_with_skills.id}",
-            headers={"Authorization": f"Bearer {admin_token}"},
-            params={"stage": "screening", "notes": "Great candidate"}
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["vacancy_id"] == test_vacancy.id
-        assert data["entity_id"] == candidate_with_skills.id
-        assert data["stage"] == "screening"
-
 
 # ============================================================================
 # EDGE CASE TESTS

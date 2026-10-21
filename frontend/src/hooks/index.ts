@@ -23,23 +23,6 @@ export type {
   UseCurrencyRatesReturn,
 } from './useCurrencyRates';
 
-export { useSmartSearch, clearSearchHistory } from './useSmartSearch';
-export type {
-  UseSmartSearchReturn,
-} from './useSmartSearch';
-
-export { useResumeUpload } from './useResumeUpload';
-export {
-  SUPPORTED_FILE_TYPES,
-  SUPPORTED_EXTENSIONS,
-  MAX_FILE_SIZE,
-} from './useResumeUpload';
-export type {
-  UploadingFile,
-  FileValidationError,
-  UseResumeUploadReturn,
-} from './useResumeUpload';
-
 export { useCommandPalette, clearCommandHistory } from './useCommandPalette';
 export type {
   UseCommandPaletteReturn,

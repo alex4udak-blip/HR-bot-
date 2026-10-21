@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from .common import (
     logger, get_db, VacancyApplication, Vacancy, User,
     check_vacancy_access, can_access_vacancy, recompute_entity_status,
-    is_org_admin_or_owner,
+    is_org_admin_or_owner, ensure_may_touch_applications,
 )
 from ...models.database import StageTransition, ApplicationStage, Entity
 from ...services.auth import get_user_org
@@ -237,8 +237,10 @@ async def delete_application_history(
     """
     org = await get_user_org(current_user, db)
 
+    # FOR UPDATE: откат этапа и одновременный перевод той же заявки иначе
+    # затирали друг друга (кто записал последним, тот и прав).
     app_result = await db.execute(
-        select(VacancyApplication).where(VacancyApplication.id == application_id)
+        select(VacancyApplication).where(VacancyApplication.id == application_id).with_for_update()
     )
     application = app_result.scalar()
     if not application:
@@ -250,6 +252,11 @@ async def delete_application_history(
     vacancy = vacancy_result.scalar()
     if vacancy and not await can_access_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
+    # Удаление последней записи — это смена этапа (откат), поэтому то же
+    # правило приватности, что у перевода: в скрытой воронке не-админ трогает
+    # только своих кандидатов (до 20.10.2026 корзина эту проверку обходила).
+    if vacancy:
+        await ensure_may_touch_applications([application], vacancy, current_user, org, db)
 
     tr_result = await db.execute(
         select(StageTransition).where(
@@ -296,7 +303,8 @@ async def delete_application_history(
         application.stage_order = max_order + 1
         application.last_stage_change_at = datetime.utcnow()
         await db.flush()
-        await recompute_entity_status(db, application.entity_id)
+        # Отмена перевода — тоже движение по воронке (см. recompute_entity_status).
+        await recompute_entity_status(db, application.entity_id, moved_app_ids=[application.id])
         logger.info(
             "HISTORY_UNDO: user=%s app=%s entity=%s запись %s (%s -> %s) удалена, "
             "заявка возвращена на %s",

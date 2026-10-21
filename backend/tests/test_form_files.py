@@ -14,6 +14,17 @@ from api.models.database import (
 from api.services.auth import create_access_token
 
 
+@pytest.fixture(autouse=True)
+def no_resume_autopromote(monkeypatch):
+    """Фоновое «PDF → вкладка Резюме» открывает своё соединение с базой и в
+    тестах его не закрывает — pytest потом не завершается."""
+    import api.services.resume_autopromote as ra
+
+    async def _noop(*a, **k):
+        return None
+    monkeypatch.setattr(ra, "promote_pdf_to_resume_if_needed", _noop)
+
+
 def _h(user):
     return {"Authorization": f"Bearer {create_access_token(data={'sub': str(user.id)})}"}
 

@@ -1639,6 +1639,8 @@ class FormSubmission(Base):
     entity_id = Column(Integer, ForeignKey("entities.id", ondelete="SET NULL"), nullable=True, index=True)
     data = Column(JSON, nullable=False)  # {field_id: value, ...}
     dispatch_id = Column(Integer, ForeignKey("form_dispatches.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Вопросы анкеты на момент ответа (поля шаблона потом могут поменяться).
+    fields_snapshot = Column(JSON, nullable=True)
     submitted_at = Column(DateTime, default=func.now())
 
     form = relationship("FormTemplate", back_populates="submissions")
@@ -2191,6 +2193,35 @@ class DuplicatePairDecision(Base):
     __table_args__ = (
         UniqueConstraint("entity_a_id", "entity_b_id", name="uq_duplicate_pair"),
     )
+
+
+class DeletedEntity(Base):
+    """Корзина и журнал удалений кандидатов (20.10.2026).
+
+    19.10.2026 кандидатку удалили, и ни кто, ни когда — не осталось нигде, а
+    вернуть было нечем: удаление стирает кандидата вместе с воронками, историей,
+    файлами и метками (каскадом). Теперь перед удалением снимается полный
+    слепок (``snapshot``, services/entity_trash.py), и 7 дней админ может вернуть
+    кандидата как был. Потом слепок стирается (``purged_at``), а строка журнала
+    «кто, кого, когда» остаётся навсегда.
+    """
+    __tablename__ = "deleted_entities"
+
+    id = Column(Integer, primary_key=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    # Номер удалённого кандидата — НЕ внешний ключ: самой строки уже нет.
+    entity_id = Column(Integer, nullable=False, index=True)
+    entity_name = Column(String(500), nullable=True)
+    entity_type = Column(String(50), nullable=True)
+    deleted_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    deleted_by_name = Column(String(255), nullable=True)
+    deleted_at = Column(DateTime, default=func.now(), nullable=False, index=True)
+    purge_after = Column(DateTime, nullable=False)
+    snapshot = Column(JSON, nullable=True)
+    restored_at = Column(DateTime, nullable=True)
+    restored_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    restored_by_name = Column(String(255), nullable=True)
+    purged_at = Column(DateTime, nullable=True)
 
 
 # ===========================================================================

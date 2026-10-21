@@ -37,6 +37,8 @@ import { escapeHtml } from '@/utils/linkify';
 import { useLinkPrompt, wrapRangeWithLink } from '@/components/hr/LinkPrompt';
 import type { FormField } from '@/services/api/forms';
 import { FieldRenderer } from './FieldRenderer';
+import { formProblem, normalizeFields } from './formValidation';
+import HrConfirm from '@/components/hr/HrConfirm';
 
 // ============================================================
 // Field type config
@@ -200,7 +202,7 @@ function DescriptionEditor({
             // как есть, без превращения каждого URL в тексте автоматически,
             // чтобы не удивлять при вставке большого абзаца.
             if (/^https?:\/\/\S+$/i.test(text.trim())) {
-              document.execCommand('insertHTML', false, `<a href="${text.trim()}">${text.trim()}</a>`);
+              document.execCommand('insertHTML', false, `<a href="${escapeHtml(text.trim())}">${escapeHtml(text.trim())}</a>`);
             } else {
               document.execCommand('insertText', false, text);
             }
@@ -211,6 +213,12 @@ function DescriptionEditor({
       </div>
     </div>
   );
+}
+
+// Сравнение «как на сервере» ↔ «как сейчас». Пробелы по краям и пустые
+// варианты не считаются правкой: при сохранении они всё равно срезаются.
+function snapshotOf(title: string, description: string, fields: FormField[], isActive: boolean, vacancyIds: number[]): string {
+  return JSON.stringify([title.trim(), description.trim(), normalizeFields(fields), isActive, [...vacancyIds].sort((a, b) => a - b)]);
 }
 
 // Non-interactive preview value for each field type
@@ -228,7 +236,19 @@ function previewValue(field: FormField): unknown {
 // или из карточки кандидата) кладёт форму в «Шаблоны» (is_template=true), чтобы
 // её можно было переиспользовать. Передай saveAsTemplate={false} для разовой
 // формы, которая НЕ должна попадать в библиотеку шаблонов.
-export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave = false }: { formId: number; onClose: () => void; saveAsTemplate?: boolean; autosave?: boolean }) {
+/** Для «Отправить кандидату» у разовой анкеты: проверить, что есть сейчас на
+ *  экране, и досохранить правку, не дожидаясь автосейва. Текст проблемы или null. */
+export type FormBuilderHandle = { flush: () => Promise<string | null> };
+
+export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave = false, handleRef, inDialog = false }: {
+  formId: number;
+  /** Конструктор внутри выдвижной панели «Анкета» (окна — внутри неё). */
+  inDialog?: boolean;
+  onClose: () => void;
+  saveAsTemplate?: boolean;
+  autosave?: boolean;
+  handleRef?: React.MutableRefObject<FormBuilderHandle | null>;
+}) {
   const [form, setForm] = useState<import('@/services/api/forms').FormTemplate | null>(null);
   const [fields, setFields] = useState<FormField[]>([]);
   const [title, setTitle] = useState('');
@@ -245,6 +265,11 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
   // WYSIWYG type-picker state
   const [showTypePicker, setShowTypePicker] = useState(false);
   const [insertIndex, setInsertIndex] = useState<number>(0);
+
+  // Что сохранено на сервере — чтобы «Назад» не терял правки молча. Раньше
+  // шаблон с несохранёнными вопросами закрывался без единого слова (20.10.2026).
+  const savedSnapshotRef = useRef<string | null>(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
 
   useEffect(() => {
     // Load vacancies for multi-select
@@ -273,7 +298,9 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
         setDescription(data.description || '');
         setIsActive(data.is_active);
         setFields(data.fields || []);
-        setSelectedVacancyIds(data.vacancy_ids || (data.vacancy_id ? [data.vacancy_id] : []));
+        const vids = data.vacancy_ids || (data.vacancy_id ? [data.vacancy_id] : []);
+        setSelectedVacancyIds(vids);
+        savedSnapshotRef.current = snapshotOf(data.title, data.description || '', data.fields || [], data.is_active, vids);
       } catch {
         toast.error('Форма не найдена');
         onClose();
@@ -284,29 +311,45 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onClose is an unstable caller closure (() => setStep/navigate); depend only on formId, else this effect loops forever and freezes the page
   }, [formId]);
 
-  const handleSave = async () => {
-    if (!title.trim()) {
-      toast.error('Введите название формы');
-      return;
+  const isDirty = () =>
+    !autosave &&
+    savedSnapshotRef.current !== null &&
+    savedSnapshotRef.current !== snapshotOf(title, description, fields, isActive, selectedVacancyIds);
+
+  const handleBack = () => {
+    if (isDirty()) setConfirmLeave(true);
+    else onClose();
+  };
+
+  const handleSave = async (): Promise<boolean> => {
+    // Проверяем то, на чём кандидат потом застрял бы (formValidation.ts).
+    const problem = formProblem(title, fields);
+    if (problem) {
+      toast.error(problem, { duration: 6000 });
+      return false;
     }
     setSaving(true);
     try {
       const updated = await updateForm(formId, {
         title: title.trim(),
         description: description.trim() || undefined,
-        fields,
+        fields: normalizeFields(fields),
         is_active: isActive,
         vacancy_ids: selectedVacancyIds,
         ...(saveAsTemplate ? { is_template: true } : {}),
       });
       setForm(updated);
+      setFields(updated.fields || normalizeFields(fields));
+      savedSnapshotRef.current = snapshotOf(title.trim(), description.trim(), updated.fields || normalizeFields(fields), isActive, selectedVacancyIds);
       toast.success(saveAsTemplate ? 'Сохранено в шаблоны' : 'Форма сохранена');
+      return true;
     } catch (error) {
       // Жёсткая защита от дублей названия шаблонов — бэкенд (update_form)
       // возвращает 409 с конкретным текстом («Шаблон с названием «X» уже
       // существует»), показываем его вместо общей ошибки.
       const detail = (error as { response?: { status?: number; data?: { detail?: string } } })?.response;
       toast.error(detail?.status === 409 && detail.data?.detail ? detail.data.detail : 'Ошибка сохранения');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -316,6 +359,16 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
   //    сохраняется в этом окне с дебаунсом, БЕЗ is_template (не попадает в
   //    библиотеку шаблонов). Кнопка «Сохранить» при autosave скрыта. ──
   const autoSaveTimer = useRef<number | null>(null);
+  // Последние несохранённые данные — их досылаем при закрытии окна. Раньше
+  // закрытие в первые 0,7 с после правки просто сбрасывало таймер, и правка
+  // терялась (20.10.2026).
+  const pendingAutoSave = useRef<Parameters<typeof updateForm>[1] | null>(null);
+  useEffect(() => () => {
+    if (pendingAutoSave.current) {
+      void updateForm(formId, pendingAutoSave.current).catch(() => {});
+      pendingAutoSave.current = null;
+    }
+  }, [formId]);
   // Пропускаем самый первый прогон эффекта (популяция стейта при загрузке формы),
   // чтобы не сохранять сразу после открытия.
   const skipFirstAutoSave = useRef(true);
@@ -327,16 +380,19 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
     }
     if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
     setAutoSaveState('saving');
+    const payload = {
+      title: title.trim() || 'Без названия',
+      description: description.trim() || undefined,
+      fields: normalizeFields(fields),
+      is_active: isActive,
+      vacancy_ids: selectedVacancyIds,
+      // is_template НЕ передаём — разовая анкета не попадает в шаблоны.
+    };
+    pendingAutoSave.current = payload;
     autoSaveTimer.current = window.setTimeout(async () => {
       try {
-        await updateForm(formId, {
-          title: title.trim() || 'Без названия',
-          description: description.trim() || undefined,
-          fields,
-          is_active: isActive,
-          vacancy_ids: selectedVacancyIds,
-          // is_template НЕ передаём — разовая анкета не попадает в шаблоны.
-        });
+        await updateForm(formId, payload);
+        if (pendingAutoSave.current === payload) pendingAutoSave.current = null;
         setAutoSaveState('saved');
       } catch {
         setAutoSaveState('error');
@@ -346,6 +402,28 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
       if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
     };
   }, [autosave, loading, formId, title, description, fields, isActive, selectedVacancyIds]);
+
+  if (handleRef) {
+    handleRef.current = {
+      flush: async () => {
+        const problem = formProblem(title, fields);
+        if (problem) return problem;
+        const payload = pendingAutoSave.current;
+        if (payload) {
+          if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+          try {
+            await updateForm(formId, payload);
+            if (pendingAutoSave.current === payload) pendingAutoSave.current = null;
+            setAutoSaveState('saved');
+          } catch {
+            setAutoSaveState('error');
+            return 'Не удалось сохранить анкету — проверьте интернет и попробуйте ещё раз';
+          }
+        }
+        return null;
+      },
+    };
+  }
 
   const openTypePicker = (index: number) => {
     setInsertIndex(index);
@@ -420,29 +498,52 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
 
   if (!form) return null;
 
-  const publicUrl = `${window.location.origin}/form/${form.slug}`;
+  // Только для предпросмотра (?preview=1): отправка по общему адресу отключена.
+  // encodeURIComponent — у старых анкет в адресе бывает пробел.
+  const publicUrl = `${window.location.origin}/form/${encodeURIComponent(form.slug)}`;
 
   return (
     <div className="min-h-full bg-gray-50 text-gray-900">
+      {confirmLeave && (
+        <HrConfirm
+          title="Сохранить изменения в анкете?"
+          subtitle={`«${title.trim() || 'Без названия'}»`}
+          confirmLabel="Сохранить и выйти"
+          secondary={{ label: 'Выйти без сохранения', onClick: () => { setConfirmLeave(false); onClose(); } }}
+          busy={saving}
+          inDialog={inDialog}
+          onCancel={() => setConfirmLeave(false)}
+          onConfirm={async () => {
+            if (await handleSave()) {
+              setConfirmLeave(false);
+              onClose();
+            } else {
+              setConfirmLeave(false);
+            }
+          }}
+        />
+      )}
       {/* Header (light bar) */}
       <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-6 py-3 flex items-center gap-3">
           <button
-            onClick={onClose}
+            onClick={handleBack}
             className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
             title="Назад"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0">
-            <button
-              onClick={() => { navigator.clipboard.writeText(publicUrl); toast.success('Ссылка скопирована'); }}
-              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 transition-colors max-w-full"
-              title="Скопировать ссылку"
-            >
-              <Link2 className="w-3 h-3 shrink-0" />
-              <span className="truncate">{publicUrl}</span>
-            </button>
+            {/* Раньше здесь была «Скопировать ссылку» на общий адрес анкеты, а
+                сервер отправку по нему всегда отклоняет (403: анкета заполняется
+                по ПЕРСОНАЛЬНОЙ ссылке). Кандидат заполнял всё и упирался в отказ
+                на «Отправить» (20.10.2026). Отправляют из карточки кандидата. */}
+            {!inDialog && (
+              // В панели «Анкета» мы уже в карточке кандидата — подсказка лишняя.
+              <span className="text-xs text-gray-500 truncate block">
+                Отправить анкету — из карточки кандидата, чип «Анкета»: у каждого своя ссылка
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
@@ -890,7 +991,7 @@ function QuestionBlock({
                       <input
                         type="number"
                         value={field.min ?? 1}
-                        onChange={e => onUpdate({ min: parseInt(e.target.value, 10) || 1 })}
+                        onChange={e => { const n = parseInt(e.target.value, 10); onUpdate({ min: Number.isNaN(n) ? 1 : n }); }}
                         className="w-20 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
                       />
                     </div>
@@ -899,7 +1000,7 @@ function QuestionBlock({
                       <input
                         type="number"
                         value={field.max ?? 10}
-                        onChange={e => onUpdate({ max: parseInt(e.target.value, 10) || 10 })}
+                        onChange={e => { const n = parseInt(e.target.value, 10); onUpdate({ max: Number.isNaN(n) ? 10 : n }); }}
                         className="w-20 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
                       />
                     </div>

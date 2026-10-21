@@ -67,11 +67,16 @@ export function hasAnswers(values: Record<string, unknown> | null): boolean {
 export function mergeDraft(
   defaults: Record<string, unknown>,
   draft: Record<string, unknown> | null,
+  fileFieldIds: Iterable<string> = [],
 ): Record<string, unknown> {
   if (!draft) return defaults;
+  // Сам файл после F5 не вернуть (браузер его не хранит), а имя в черновике
+  // осталось бы: обязательный «Файл» считался заполненным, и анкета уходила без
+  // файла (20.10.2026). Поэтому файловые поля всегда начинаются пустыми.
+  const skip = new Set(fileFieldIds);
   const out = { ...defaults };
   for (const id of Object.keys(defaults)) {
-    if (id in draft) out[id] = draft[id];
+    if (id in draft && !skip.has(id)) out[id] = draft[id];
   }
   return out;
 }

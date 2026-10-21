@@ -478,7 +478,9 @@
   --hf-candidates-all-gap:          6px;
   --hf-candidates-all-px:           9px;
   --hf-candidates-all-underline-x:  8px;
-  --hf-candidates-list-w-min:       220px;
+  /* 270, а не 220: на окне 1024 px (ноутбук с масштабом) под имя оставалось
+     85 px — «Никитин…», «Ковалёв…» (20.10.2026). */
+  --hf-candidates-list-w-min:       270px;
   --hf-candidates-list-w-fluid:     28%;
   --hf-candidates-list-w-max:       420px;
   --hf-candidates-list-w:           clamp(
@@ -1005,4 +1007,13 @@
 
   /* ===== Transitions ===== */
   --hf-transition-fast: 0.1s ease-out;
+}
+
+/* Минимум списка «Все кандидаты» 270 px — только там, где рядом помещается
+   карточка. На узком (телефон) прежние 220: иначе карточке не остаётся места.
+   Раскладка «список ИЛИ карточка» для телефона — отдельная задача. */
+@media (max-width: 899px) {
+  :root {
+    --hf-candidates-list-w-min: 220px;
+  }
 }

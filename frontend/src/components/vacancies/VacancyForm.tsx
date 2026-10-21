@@ -1,6 +1,4 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import type { ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import {
@@ -16,439 +14,20 @@ import type { AssignableUser } from '@/services/api';
 import { getBoardDepartments } from '@/services/api/staffBoard';
 import type { BoardDepartment } from '@/services/api/staffBoard';
 import { getCurrencySymbol, SALARY_INPUT_CURRENCIES } from '@/utils/currency';
-import { escapeHtml } from '@/utils/linkify';
-import { useLinkPrompt, wrapRangeWithLink } from '@/components/hr/LinkPrompt';
+import {
+  RichTextField, DeadlinePicker, HfSelect,
+  HuntflowClose28Icon, HuntflowEyeOffIcon, HuntflowFlagIcon,
+} from './vacancyFormParts';
+import { apiErrorDetail, buildVacancyPayload, validateVacancyForm } from './vacancyFormPayload';
+import VacancyConfirmModal, { type VacancyConfirmAction } from './VacancyConfirmModal';
 import { isVacancyParticipant, hasPersonallyAccepted, isExplicitlyAssigned, getVacancyExitOptions } from '@/utils/vacancy';
+import { backdropClose } from '@/utils/backdropClose';
 
 interface VacancyFormProps {
   vacancy?: Vacancy;
   prefillData?: Partial<Vacancy>;
   onClose: () => void;
   onSuccess: () => void;
-}
-
-type HfSelectOption = {
-  value: string | number;
-  label: string;
-  icon?: ReactNode;
-};
-
-type HfSelectMenuRect = {
-  id: string;
-  left: number;
-  top: number;
-};
-
-function HfSpriteIcon({ id, className }: { id: string; className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 20 20" aria-hidden="true">
-      <use href={`/huntflow-sprite.svg#${id}`} />
-    </svg>
-  );
-}
-
-// F1: WYSIWYG rich-text редактор (contentEditable). Кнопки реально форматируют
-// через execCommand, списки продолжаются по Enter (нативно в браузере), значение
-// хранится как HTML и рендерится с санитайзером в VacancyDetail/VacancyDetailModal.
-function RichTextField({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  // Активные форматы под курсором — чтобы кнопки визуально «нажимались»
-  // (иначе жирный/курсив срабатывали, но было не видно, что применено).
-  const [activeFormats, setActiveFormats] = useState<Record<string, boolean>>({});
-
-  // Инициализация / внешняя синхронизация без перезаписи при наборе (курсор не прыгает).
-  useEffect(() => {
-    const el = ref.current;
-    if (el && el.innerHTML !== (value || '')) el.innerHTML = value || '';
-  }, [value]);
-
-  const sync = () => onChange(ref.current?.innerHTML || '');
-
-  const refreshActiveFormats = () => {
-    if (document.activeElement !== ref.current) return;
-    setActiveFormats({
-      bold: document.queryCommandState('bold'),
-      italic: document.queryCommandState('italic'),
-      underline: document.queryCommandState('underline'),
-      insertUnorderedList: document.queryCommandState('insertUnorderedList'),
-      insertOrderedList: document.queryCommandState('insertOrderedList'),
-    });
-  };
-
-  // Курсор/выделение может двигаться кликом или стрелками без событий на самом
-  // contentEditable — слушаем на уровне document и фильтруем по фокусу.
-  useEffect(() => {
-    document.addEventListener('selectionchange', refreshActiveFormats);
-    return () => document.removeEventListener('selectionchange', refreshActiveFormats);
-  }, []);
-
-  const exec = (command: string, arg?: string) => {
-    if (disabled) return;
-    ref.current?.focus();
-    document.execCommand(command, false, arg);
-    sync();
-    refreshActiveFormats();
-  };
-
-  // Кнопка «Ссылка» без браузерного окна — общий порядок в LinkPrompt
-  // (выделенный адрес → адрес из буфера → наше окно), владелец 05.10.2026.
-  const savedRangeRef = useRef<Range | null>(null);
-
-  const applyLink = (href: string) => {
-    ref.current?.focus();
-    const selection = window.getSelection();
-    const range = savedRangeRef.current;
-    if (range) {
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    }
-    if (range && !range.collapsed) {
-      wrapRangeWithLink(range, href);
-    } else {
-      document.execCommand('insertHTML', false, `<a href="${escapeHtml(href)}">${escapeHtml(href)}</a>`);
-    }
-    savedRangeRef.current = null;
-    sync();
-  };
-
-  const { requestLink, linkModal } = useLinkPrompt(applyLink);
-
-  const addLink = () => {
-    if (disabled) return;
-    const selection = window.getSelection();
-    savedRangeRef.current =
-      selection && selection.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
-    void requestLink(selection?.toString() || '');
-  };
-
-  // Копирует содержимое поля целиком, сохраняя форматирование (жирный,
-  // списки и т.п.) — при вставке в Word/Google Docs/почту оно применится;
-  // в обычные текстовые поля вставится как plain text (браузер сам выбирает
-  // подходящий MIME из clipboard item). ClipboardItem поддерживается не
-  // везде (недоступен вне https/localhost) — тогда откатываемся на голый текст.
-  const copyContent = async () => {
-    const html = ref.current?.innerHTML || '';
-    const text = ref.current?.innerText || '';
-    if (!html && !text) return;
-    try {
-      if (typeof ClipboardItem !== 'undefined') {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            'text/html': new Blob([html], { type: 'text/html' }),
-            'text/plain': new Blob([text], { type: 'text/plain' }),
-          }),
-        ]);
-      } else {
-        await navigator.clipboard.writeText(text);
-      }
-      toast.success('Скопировано');
-    } catch {
-      toast.error('Не удалось скопировать');
-    }
-  };
-
-  const btnClass = 'hf-vacancy-editor-btn flex items-center justify-center';
-
-  return (
-    <div className="hf-vacancy-editor">
-      {linkModal}
-      <div className="hf-vacancy-editor-toolbar flex items-center">
-        <button type="button" aria-label="Жирный" aria-pressed={activeFormats.bold} disabled={disabled}
-          className={clsx(btnClass, activeFormats.bold && 'hf-vacancy-editor-btn-active')}
-          onMouseDown={(e) => { e.preventDefault(); exec('bold'); }}>
-          <HfSpriteIcon id="bold" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" aria-label="Курсив" aria-pressed={activeFormats.italic} disabled={disabled}
-          className={clsx(btnClass, activeFormats.italic && 'hf-vacancy-editor-btn-active')}
-          onMouseDown={(e) => { e.preventDefault(); exec('italic'); }}>
-          <HfSpriteIcon id="italic" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" aria-label="Подчёркнутый" aria-pressed={activeFormats.underline} disabled={disabled}
-          className={clsx(btnClass, activeFormats.underline && 'hf-vacancy-editor-btn-active')}
-          onMouseDown={(e) => { e.preventDefault(); exec('underline'); }}>
-          <span className="text-[13px] font-semibold leading-none underline">U</span>
-        </button>
-        <button type="button" aria-label="Маркированный список" aria-pressed={activeFormats.insertUnorderedList} disabled={disabled}
-          className={clsx(btnClass, activeFormats.insertUnorderedList && 'hf-vacancy-editor-btn-active')}
-          onMouseDown={(e) => { e.preventDefault(); exec('insertUnorderedList'); }}>
-          <HfSpriteIcon id="bullet-list" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" aria-label="Нумерованный список" aria-pressed={activeFormats.insertOrderedList} disabled={disabled}
-          className={clsx(btnClass, activeFormats.insertOrderedList && 'hf-vacancy-editor-btn-active')}
-          onMouseDown={(e) => { e.preventDefault(); exec('insertOrderedList'); }}>
-          <HfSpriteIcon id="numbered-list" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" aria-label="Ссылка" disabled={disabled} className={btnClass}
-          onMouseDown={(e) => { e.preventDefault(); addLink(); }}>
-          <HfSpriteIcon id="link" className="hf-vacancy-editor-icon" />
-        </button>
-        <button type="button" aria-label="Копировать" title="Копировать текст" className={btnClass}
-          onMouseDown={(e) => { e.preventDefault(); copyContent(); }}>
-          <HfSpriteIcon id="clipboard" className="hf-vacancy-editor-icon" />
-        </button>
-      </div>
-      <div
-        ref={ref}
-        contentEditable={!disabled}
-        suppressContentEditableWarning
-        role="textbox"
-        aria-multiline="true"
-        onInput={sync}
-        onKeyUp={refreshActiveFormats}
-        onMouseUp={refreshActiveFormats}
-        onFocus={refreshActiveFormats}
-        onBlur={() => setActiveFormats({})}
-        onPaste={(e) => {
-          e.preventDefault();
-          const text = e.clipboardData.getData('text/plain');
-          document.execCommand('insertText', false, text);
-        }}
-        className="hf-vacancy-textarea hf-vacancy-richtext"
-      />
-    </div>
-  );
-}
-
-const WEEKDAYS_MON_FIRST = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-
-function toDeadlineIso(y: number, m: number, d: number): string {
-  // Дедлайн = конец выбранного дня. ВАЖНО: если писать T00:00:00, для «сегодня»
-  // бэк (validate_closes_at, naive datetime.utcnow()) сочтёт момент уже прошедшим
-  // и отклонит 422-й — «closes_at cannot be in the past».
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${y}-${pad(m + 1)}-${pad(d)}T23:59:59`;
-}
-
-// F-fix: «Без дедлайна» была нередактируемым readOnly-инпутом — просто текст,
-// без реальной привязки к closes_at. Заменил на попап-календарь: сегодня и
-// будущее кликабельны, прошлые дни — нет.
-function DeadlinePicker({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-
-  const today = useMemo(() => {
-    const t = new Date();
-    t.setHours(0, 0, 0, 0);
-    return t;
-  }, []);
-
-  const selectedDate = useMemo(() => {
-    if (!value) return null;
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }, [value]);
-
-  const [viewMonth, setViewMonth] = useState(() => {
-    const base = selectedDate || today;
-    return new Date(base.getFullYear(), base.getMonth(), 1);
-  });
-
-  useEffect(() => {
-    if (open) {
-      const base = selectedDate || today;
-      setViewMonth(new Date(base.getFullYear(), base.getMonth(), 1));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const closeOnOutside = (event: PointerEvent) => {
-      const target = event.target as Element | null;
-      if (!target?.closest('[data-deadline-root]') && !target?.closest('[data-deadline-menu]')) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('pointerdown', closeOnOutside);
-    return () => document.removeEventListener('pointerdown', closeOnOutside);
-  }, [open]);
-
-  const openPicker = () => {
-    if (disabled) return;
-    const r = btnRef.current?.getBoundingClientRect();
-    if (r) setMenuPos({ left: r.left, top: r.bottom + 4 });
-    setOpen(true);
-  };
-
-  const monthLabel = viewMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
-  const firstWeekday = (new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
-  const cells: (number | null)[] = [
-    ...Array(firstWeekday).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-
-  const displayValue = selectedDate
-    ? selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
-    : 'Без дедлайна';
-
-  const menu = open && menuPos ? createPortal(
-    <div
-      data-deadline-menu
-      className="hf-vacancy-calendar-menu"
-      style={{ left: menuPos.left, top: menuPos.top }}
-    >
-      <div className="hf-vacancy-calendar-header">
-        <button
-          type="button"
-          className="hf-vacancy-calendar-nav"
-          onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))}
-          aria-label="Предыдущий месяц"
-        >
-          ‹
-        </button>
-        <span className="hf-vacancy-calendar-title">{monthLabel}</span>
-        <button
-          type="button"
-          className="hf-vacancy-calendar-nav"
-          onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))}
-          aria-label="Следующий месяц"
-        >
-          ›
-        </button>
-      </div>
-      <div className="hf-vacancy-calendar-weekdays">
-        {WEEKDAYS_MON_FIRST.map((w) => (
-          <span key={w}>{w}</span>
-        ))}
-      </div>
-      <div className="hf-vacancy-calendar-grid">
-        {cells.map((day, i) => {
-          if (day === null) return <span key={`blank-${i}`} />;
-          const cellDate = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day);
-          const isPast = cellDate < today;
-          const isToday = cellDate.getTime() === today.getTime();
-          const isSelected = !!selectedDate
-            && cellDate.getFullYear() === selectedDate.getFullYear()
-            && cellDate.getMonth() === selectedDate.getMonth()
-            && cellDate.getDate() === selectedDate.getDate();
-          return (
-            <button
-              key={day}
-              type="button"
-              disabled={isPast}
-              className={clsx(
-                'hf-vacancy-calendar-day',
-                isPast && 'hf-vacancy-calendar-day-disabled',
-                isToday && 'hf-vacancy-calendar-day-today',
-                isSelected && 'hf-vacancy-calendar-day-selected',
-              )}
-              onClick={() => {
-                onChange(toDeadlineIso(viewMonth.getFullYear(), viewMonth.getMonth(), day));
-                setOpen(false);
-              }}
-            >
-              {day}
-            </button>
-          );
-        })}
-      </div>
-      <button
-        type="button"
-        className="hf-vacancy-calendar-clear"
-        onClick={() => { onChange(''); setOpen(false); }}
-      >
-        Без дедлайна
-      </button>
-    </div>,
-    document.body,
-  ) : null;
-
-  return (
-    <div data-deadline-root>
-      <button
-        ref={btnRef}
-        type="button"
-        disabled={disabled}
-        className="hf-vacancy-input hf-vacancy-deadline-trigger"
-        onClick={openPicker}
-      >
-        <span className={clsx(!selectedDate && 'hf-vacancy-deadline-placeholder')}>{displayValue}</span>
-      </button>
-      {menu}
-    </div>
-  );
-}
-
-function HuntflowClose28Icon({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 28 28" className={className} fill="none">
-      <path
-        d="M19.833 8.167 8.167 19.833m0-11.666 11.666 11.666"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function HuntflowChevronDown24Icon({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className={className} fill="none">
-      <path
-        d="M7.5 10.5 12 15l4.5-4.5"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function HuntflowEyeOffIcon({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className={className} fill="none">
-      <path
-        d="m2.5 2.5 15 15M8.233 8.233A2.083 2.083 0 0 0 10 12.083c.557 0 1.063-.218 1.437-.573M6.821 6.821C4.04 8.116 2.5 10 2.5 10s2.727 5 7.5 5a8.53 8.53 0 0 0 3.179-.595M10 5c4.773 0 7.5 5 7.5 5a13.218 13.218 0 0 1-1.722 2.24"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function HuntflowCheckIcon({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className={className} fill="none">
-      <path
-        d="m5 10.25 3.125 3.125L15 6.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function HuntflowFlagIcon({ className }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className={className} fill="currentColor">
-      <path d="M5.5 3.75a.75.75 0 0 1 .75-.75h7.27a.75.75 0 0 1 .66 1.106l-1.58 2.925 1.58 2.925a.75.75 0 0 1-.66 1.106H7v5.188a.75.75 0 0 1-1.5 0V3.75Z" />
-    </svg>
-  );
 }
 
 export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }: VacancyFormProps) {
@@ -493,13 +72,10 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     : { canLeave: false, canClose: true, others: [] as number[] };
   const showDecline = !alreadyTaken && (isAdmin ? isExplicitlyAssignedToMe : isAssignedToMe);
   const showLeave = exitOptions.canLeave && !showDecline;
+  // Подтверждение «Выйти / Закрыть / Удалить» — окном сайта, не браузера.
+  const [confirmAction, setConfirmAction] = useState<VacancyConfirmAction | null>(null);
   const handleLeave = async () => {
     if (!vacancy || declining) return;
-    const closeHint = exitOptions.canClose ? '\nЧтобы закрыть её для всех — «Закрыть вакансию».' : '';
-    if (!window.confirm(
-      `Выйти из вакансии «${vacancy.title?.trim() || 'Без названия'}»?\n\n` +
-      `Вы перестанете над ней работать. У остальных участников (${exitOptions.others.length}) она останется в работе.${closeHint}`,
-    )) return;
     setDeclining(true);
     try {
       await declineVacancy(vacancy.id);
@@ -510,6 +86,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       toast.error('Не удалось выйти из вакансии');
     } finally {
       setDeclining(false);
+      setConfirmAction(null);
     }
   };
   const handleDecline = async () => {
@@ -568,8 +145,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [selectedRecruiters, setSelectedRecruiters] = useState<number[]>(vacancy?.assigned_to || []);
   const [assignAll, setAssignAll] = useState(vacancy?.assigned_to_all ?? false);
   const [showRecruiterDD, setShowRecruiterDD] = useState(false);
-  const [openSelectId, setOpenSelectId] = useState<string | null>(null);
-  const [selectMenuRect, setSelectMenuRect] = useState<HfSelectMenuRect | null>(null);
 
   // Заказчик — ТОЛЬКО свободный текст (решение 2026-07-02): пользователей
   // системы (рекрутёров и остальных) в подсказках НЕТ. Значения приходят из
@@ -587,6 +162,10 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       ? String(vacancy.extra_data.board_sandbox_id)
       : ''),
   );
+  const [positionsCount, setPositionsCount] = useState<string>(() => {
+    const n = vacancy?.extra_data?.positions_count ?? initialData?.extra_data?.positions_count;
+    return typeof n === 'number' && n >= 1 ? String(n) : '1';
+  });
   const [sandboxes, setSandboxes] = useState<BoardDepartment[]>([]);
   useEffect(() => {
     getBoardDepartments()
@@ -646,83 +225,18 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
     return () => document.removeEventListener('pointerdown', closeCustomerDD);
   }, [showCustomerDD]);
 
-  useEffect(() => {
-    const closeSelect = (event: PointerEvent) => {
-      const target = event.target as Element | null;
-      if (!target?.closest("[data-hf-select-root]") && !target?.closest("[data-hf-select-menu]")) {
-        setOpenSelectId(null);
-        setSelectMenuRect(null);
-      }
-    };
-
-    document.addEventListener("pointerdown", closeSelect);
-    return () => document.removeEventListener("pointerdown", closeSelect);
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnlyRequest) return;
-    if (!formData.title.trim()) {
-      toast.error('Введите название вакансии');
-      return;
-    }
-    if (formData.title.trim().length < 3) {
-      // На бэке validate_title требует ≥3 символов — раньше падало 422 с общим
-      // тостом «Ошибка при создании», и было непонятно, что не так.
-      toast.error('Название должно содержать минимум 3 символа');
-      return;
-    }
-
-    const minNum = formData.salary_min !== '' ? Number(formData.salary_min) : null;
-    const maxNum = formData.salary_max !== '' ? Number(formData.salary_max) : null;
-    if ((minNum !== null && minNum < 0) || (maxNum !== null && maxNum < 0)) {
-      toast.error('Зарплата не может быть отрицательной');
-      return;
-    }
-    if (minNum !== null && maxNum !== null && minNum > maxNum) {
-      toast.error('"Зарплата от" не может быть больше "Зарплата до"');
+    const invalid = validateVacancyForm({ ...formData, positionsCount });
+    if (invalid) {
+      toast.error(invalid);
       return;
     }
 
     setLoading(true);
     try {
-      const data = {
-        title: formData.title.trim(),
-        description: formData.description.trim() || undefined,
-        requirements: formData.requirements.trim() || undefined,
-        responsibilities: formData.responsibilities.trim() || undefined,
-        salary_min: formData.salary_min ? parseInt(String(formData.salary_min)) : undefined,
-        salary_max: formData.salary_max ? parseInt(String(formData.salary_max)) : undefined,
-        salary_currency: formData.salary_currency,
-        location: formData.location.trim() || undefined,
-        employment_type: formData.employment_type || undefined,
-        experience_level: formData.experience_level || undefined,
-        status: formData.status,
-        priority: formData.priority,
-        tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
-        visible_to_all: formData.visible_to_all,
-        // Заказчик — либо реальный пользователь (hiring_manager_id), либо
-        // свободный текст (extra_data.customer_name). Явный null (не undefined)
-        // на обоих полях — та же история, что и с closes_at: exclude_unset
-        // просто отбросит ключ, и старое значение при переключении между
-        // «юзер» ⇄ «свободный текст» не очистится.
-        // Заказчик — только текст: hiring_manager_id всегда null (легаси-значение
-        // при первом же сохранении конвертируется в customer_name).
-        hiring_manager_id: null,
-        // ВАЖНО: при редактировании бэк применяет model_dump(exclude_unset=True) —
-        // undefined убирает ключ из JSON и старый closes_at НЕ очистится. Нужен
-        // явный null, чтобы «Без дедлайна» реально снимал ранее сохранённый дедлайн.
-        closes_at: formData.closes_at || null,
-        // extra_data ЗАМЕНЯЕТСЯ на бэке целиком (не мержится) — обязательно
-        // спредим существующий, иначе стирается cloned_from_request_id и
-        // прочие служебные ключи при первом же редактировании заявки.
-        extra_data: {
-          ...(vacancy?.extra_data || {}),
-          customer_name: customerText.trim() || undefined,
-          // Песочница воронки: с практики человек попадёт именно в неё.
-          board_sandbox_id: sandboxId ? Number(sandboxId) : undefined,
-        },
-      };
+      const data = buildVacancyPayload(formData, { vacancy, customerText, sandboxId, positionsCount });
 
       if (vacancy) {
         await updateVacancy(vacancy.id, data);
@@ -739,18 +253,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       }
       onSuccess();
     } catch (error) {
-      // Достаём реальную причину из ответа бэка (422 валидация / 403 и т.п.),
-      // иначе показываем общий текст.
-      const err = error as { response?: { data?: { detail?: unknown } } };
-      const detail = err?.response?.data?.detail;
-      let msg = vacancy ? 'Ошибка при обновлении' : 'Ошибка при создании';
-      if (typeof detail === 'string') {
-        msg = detail;
-      } else if (Array.isArray(detail) && detail[0] && typeof detail[0] === 'object') {
-        const first = detail[0] as { msg?: string };
-        if (first.msg) msg = first.msg;
-      }
-      toast.error(msg);
+      toast.error(apiErrorDetail(error, vacancy ? 'Ошибка при обновлении' : 'Ошибка при создании'));
     } finally {
       setLoading(false);
     }
@@ -760,33 +263,23 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
   const [statusAction, setStatusAction] = useState(false);
   const runStatusAction = async (status: VacancyStatus, msg: string) => {
     if (!vacancy) return;
-    // «Закрыть вакансию» закрывает её у ВСЕХ — говорим это прямо. Кому нужно
-    // только перестать работать самому — отдельная кнопка «Выйти из вакансии».
-    const toastMsg = msg;
-    if (status === 'closed') {
-      const n = exitOptions.others.length;
-      const text = n > 0
-        ? `Закрыть вакансию для всех?\n\nОна закроется у всех участников (${n + 1}), включая вас. Кандидаты и история сохранятся.\nЕсли хотите только перестать работать над ней сами — «Выйти из вакансии».`
-        : 'Закрыть вакансию?\n\nВы последний участник — она закроется полностью. Кандидаты и история сохранятся.';
-      if (!window.confirm(text)) return;
-    }
     setStatusAction(true);
     try {
       await updateVacancy(vacancy.id, { status });
-      toast.success(toastMsg);
+      toast.success(msg);
       onSuccess();
       onClose();
     } catch (_) {
       toast.error('Не удалось изменить статус вакансии');
     } finally {
       setStatusAction(false);
+      setConfirmAction(null);
     }
   };
   // Удаление доступно ТОЛЬКО суперадмину (возврат кнопки 2026-07-02);
   // жизненный цикл у остальных ролей закрывается «Закрыть вакансию».
   const handleDeleteVacancy = async () => {
     if (!vacancy) return;
-    if (!window.confirm('Удалить вакансию навсегда? Её заявки и история тоже удалятся. Действие необратимо.')) return;
     setStatusAction(true);
     try {
       await deleteVacancy(vacancy.id);
@@ -797,95 +290,16 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       toast.error('Не удалось удалить вакансию');
     } finally {
       setStatusAction(false);
+      setConfirmAction(null);
     }
+  };
+  const runConfirmedAction = () => {
+    if (confirmAction === 'leave') handleLeave();
+    else if (confirmAction === 'close') runStatusAction('closed', 'Вакансия закрыта');
+    else if (confirmAction === 'delete') handleDeleteVacancy();
   };
   const hfLabelClass = "hf-vacancy-label";
   const hfInputClass = "hf-vacancy-input";
-
-  const HfSelect = ({
-    id,
-    value,
-    options,
-    disabled,
-    showSelectedIcon,
-    onChange,
-  }: {
-    id: string;
-    value: string | number;
-    options: HfSelectOption[];
-    disabled?: boolean;
-    showSelectedIcon?: boolean;
-    onChange?: (value: string) => void;
-  }) => {
-    const isOpen = openSelectId === id && !disabled;
-    const selectedOption = options.find((option) => String(option.value) === String(value)) || options[0];
-    const menu = isOpen && selectMenuRect?.id === id ? createPortal(
-      <div
-        className="hf-vacancy-select-menu"
-        data-hf-select-menu
-        style={{
-          left: selectMenuRect.left,
-          top: selectMenuRect.top,
-        }}
-      >
-        {options.map((option) => {
-          const isSelected = String(option.value) === String(value);
-          const icon = option.icon || (showSelectedIcon && isSelected ? <HuntflowCheckIcon className="hf-vacancy-select-icon-svg" /> : null);
-          return (
-            <button
-              key={String(option.value)}
-              type="button"
-              className={clsx("hf-vacancy-select-option", isSelected && "hf-vacancy-select-option-active")}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                onChange?.(String(option.value));
-                setOpenSelectId(null);
-                setSelectMenuRect(null);
-              }}
-            >
-              <span className="hf-vacancy-select-option-inner">
-                <span className="hf-vacancy-select-option-icon">
-                  {icon}
-                </span>
-                <span className="truncate">{option.label}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>,
-      document.body,
-    ) : null;
-
-    return (
-      <div className="hf-vacancy-select-wrap" data-hf-select-root>
-        <button
-          type="button"
-          disabled={disabled}
-          className={clsx(hfInputClass, "hf-vacancy-select-trigger", isOpen && "hf-vacancy-select-trigger-open")}
-          onClick={(event) => {
-            if (isOpen) {
-              setOpenSelectId(null);
-              setSelectMenuRect(null);
-              return;
-            }
-            const rect = event.currentTarget.getBoundingClientRect();
-            setOpenSelectId(id);
-            setSelectMenuRect({
-              id,
-              left: rect.left,
-              top: rect.bottom + Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hf-vacancy-select-menu-top")),
-            });
-          }}
-        >
-          <span className="hf-vacancy-select-label">
-            <span className="truncate">{selectedOption?.label}</span>
-          </span>
-          <HuntflowChevronDown24Icon className="hf-vacancy-select-chevron" />
-        </button>
-        {menu}
-      </div>
-    );
-  };
 
   // markdown applyEditorFormat удалён — теперь WYSIWYG (см. RichTextField выше).
 
@@ -902,7 +316,9 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="hf-vacancy-modal-overlay font-hf-body"
-      onClick={onClose}
+      // Не onClick={onClose}: выделение текста с отпусканием мыши за краем окна
+      // закрывало форму вместе с набранным (жалоба 24.09.2026, см. backdropClose).
+      {...backdropClose(onClose)}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
@@ -969,7 +385,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                   {/* Валюта — только рубль или доллар. */}
                   <div style={{ width: 150, flexShrink: 0 }}>
                     <HfSelect
-                      id="salary_currency"
                       value={formData.salary_currency}
                       options={SALARY_INPUT_CURRENCIES}
                       onChange={(value) => setFormData({ ...formData, salary_currency: String(value) })}
@@ -1103,7 +518,17 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
               <div className="hf-vacancy-side-stack">
                 <div className="hf-vacancy-side-section">
                   <label className="hf-vacancy-side-title">Сколько человек нужно нанять</label>
-                  <input className={hfInputClass} defaultValue="1" />
+                  {/* Сколько человек нужно — extra_data.positions_count (его же пишет бот
+                      «нужно 3 таргетолога» и показывает предпросмотр заявки). Раньше
+                      поле было пустышкой: всегда «1» и не сохранялось (20.10.2026). */}
+                  <input
+                    type="number"
+                    min={1}
+                    className={hfInputClass}
+                    value={positionsCount}
+                    onChange={(e) => setPositionsCount(e.target.value)}
+                    disabled={isReadOnlyRequest}
+                  />
                 </div>
                 <div>
                   <label className={hfLabelClass}>Дедлайн</label>
@@ -1163,7 +588,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <div>
                   <label className={hfLabelClass}>Видимость</label>
                   <HfSelect
-                    id="visibility"
                     value={formData.visible_to_all ? "all" : "private"}
                     options={[
                       { value: "all", label: "Видна коллегам" },
@@ -1180,7 +604,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                       «Статусы» без отдела, и песочницу укажут руками. */}
                   <label className={hfLabelClass}>Песочница на практике</label>
                   <HfSelect
-                    id="board-sandbox"
                     value={sandboxId}
                     options={[
                       {
@@ -1200,7 +623,6 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                 <div>
                   <label className={hfLabelClass}>Приоритет</label>
                   <HfSelect
-                    id="priority"
                     value={formData.priority}
                     options={[
                       { value: 0, label: "Обычный" },
@@ -1241,7 +663,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     ) : exitOptions.canClose && (
                       <button
                         type="button"
-                        onClick={() => runStatusAction('closed', 'Вакансия закрыта')}
+                        onClick={() => setConfirmAction('close')}
                         disabled={statusAction}
                         className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
                       >
@@ -1251,7 +673,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     {showLeave && vacancy.status !== 'closed' && (
                       <button
                         type="button"
-                        onClick={handleLeave}
+                        onClick={() => setConfirmAction('leave')}
                         disabled={declining}
                         className="w-full h-[36px] rounded-[8px] border border-[var(--hf-ui-border)] text-[13px] font-medium text-[var(--hf-main-800)] transition-colors hover:bg-[var(--hf-ui-hover)] disabled:opacity-50"
                       >
@@ -1282,7 +704,7 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
                     {(isAdmin || isVacancyParticipant(vacancy, user?.id)) && (
                       <button
                         type="button"
-                        onClick={handleDeleteVacancy}
+                        onClick={() => setConfirmAction('delete')}
                         disabled={statusAction}
                         className="w-full h-[36px] rounded-[8px] border border-[var(--hf-status-red-badge)] text-[13px] font-medium text-[var(--hf-status-red)] transition-colors hover:bg-[var(--hf-status-red-badge)] disabled:opacity-50"
                       >
@@ -1348,6 +770,16 @@ export default function VacancyForm({ vacancy, prefillData, onClose, onSuccess }
             </>
           )}
         </div>
+        {vacancy && confirmAction && (
+          <VacancyConfirmModal
+            action={confirmAction}
+            vacancy={vacancy}
+            userId={user?.id}
+            busy={declining || statusAction}
+            onCancel={() => setConfirmAction(null)}
+            onConfirm={runConfirmedAction}
+          />
+        )}
       </motion.div>
     </motion.div>
   );

@@ -14,7 +14,7 @@ from .common import (
     VacancyCreate, VacancyUpdate, VacancyResponse,
     check_vacancy_access, has_full_database_access, can_access_vacancy,
     can_edit_vacancy, has_hr_segment_access,
-    can_delete_vacancy
+    can_delete_vacancy, keep_server_extra,
 )
 from ...services.auth import get_current_user, get_user_org
 from ...services.cache import scoring_cache
@@ -473,6 +473,29 @@ async def update_vacancy(
         update_data["tags"] = []
     if "extra_data" in update_data and update_data["extra_data"] is None:
         update_data["extra_data"] = {}
+    if "extra_data" in update_data:
+        update_data["extra_data"] = keep_server_extra(vacancy.extra_data, update_data["extra_data"])
+
+    # Посторонний рекрутёр (вакансия видна всем, но он в ней не работает)
+    # закрывал её У ВСЕХ: ветка «выход» ниже срабатывает только для участника
+    # (20.10.2026). Закрыть вакансию, в которой кто-то работает, может участник
+    # или админ. Проверяем ДО изменения полей.
+    if (
+        data.status in (VacancyStatus.closed, VacancyStatus.cancelled)
+        and not isinstance((vacancy.extra_data or {}).get("cloned_from_request_id"), int)
+        and not await has_full_database_access(current_user, org, db)
+    ):
+        _dismissed = set((vacancy.extra_data or {}).get("dismissed_by") or [])
+        _active = set(vacancy.assigned_to or []) | ({vacancy.created_by} if vacancy.created_by else set())
+        _active -= _dismissed
+        _participant = current_user.id in _active or (
+            getattr(vacancy, "assigned_to_all", False) and current_user.id not in _dismissed
+        )
+        if _active and not _participant:
+            raise HTTPException(
+                status_code=403,
+                detail="Закрыть вакансию может её участник или администратор",
+            )
 
     # Запоминаем статус ДО применения апдейта — нужен для детекта строго
     # перехода closed→open (переоткрытие вакансии для новой «серии» подбора)
@@ -533,7 +556,10 @@ async def update_vacancy(
                 participants.add(vacancy.created_by)
             active = participants - dismissed_set
             others = active - {current_user.id}
-            if current_user.id in active and others:
+            is_participant = current_user.id in active or (
+                getattr(vacancy, "assigned_to_all", False) and current_user.id not in dismissed_set
+            )
+            if is_participant and others:
                 left_shared_funnel = True
                 vacancy.status = prev_status  # откат закрытия
                 vacancy.assigned_to = [
@@ -543,6 +569,8 @@ async def update_vacancy(
                 if current_user.id not in dismissed_list:
                     dismissed_list.append(current_user.id)
                 extra["dismissed_by"] = dismissed_list
+                # Как у «Выйти из вакансии» (decline): вышел — больше не «взял в работу».
+                extra["accepted_by"] = [u for u in (extra.get("accepted_by") or []) if u != current_user.id]
                 vacancy.extra_data = extra
                 logger.info(
                     f"Vacancy {vacancy.id}: user {current_user.id} left shared funnel "

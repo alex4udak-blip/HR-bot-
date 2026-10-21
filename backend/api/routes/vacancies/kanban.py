@@ -1,5 +1,8 @@
 """
 Kanban board endpoints for vacancy management.
+
+`/{id}/kanban` интерфейс больше не зовёт (воронка берёт /{id}/applications), но
+его оставили: на нём держатся тесты приватности воронки (test_kanban_privacy).
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_
@@ -12,7 +15,8 @@ from .common import (
     Entity, User, STAGE_SYNC_MAP,
     ApplicationResponse, KanbanColumn, KanbanBoard, BulkStageUpdate,
     check_vacancy_access, can_access_vacancy, is_org_admin_or_owner,
-    sees_all_candidates, recompute_entity_status, recruiter_owns_application,
+    sees_all_candidates, recompute_entity_status,
+    applications_of_recruiter, private_funnel_view, ensure_may_touch_applications,
 )
 from ...services.auth import get_user_org
 
@@ -130,13 +134,10 @@ async def get_kanban_board(
     if created_by is not None and (is_admin_viewer or created_by == current_user.id):
         # Явный скоуп: админ — на любого рекрутёра, ЛЮБОЙ — на СЕБЯ («Только мои»),
         # даже на «Видна коллегам».
-        base_filters.append(recruiter_owns_application(vacancy, created_by))
+        base_filters.append(applications_of_recruiter(vacancy, created_by))
     elif not is_admin_viewer and not bool(vacancy.visible_to_all):
         # Обычный рекрутёр на «скрытой» вакансии без скоупа: свои + legacy (NULL).
-        base_filters.append(or_(
-            VacancyApplication.created_by == current_user.id,
-            VacancyApplication.created_by.is_(None),
-        ))
+        base_filters.append(private_funnel_view(current_user.id))
     # else: админ без скоупа / «Видна коллегам» → видит всех
     if applied_after is not None:
         base_filters.append(VacancyApplication.applied_at >= datetime.combine(applied_after, datetime.min.time()))
@@ -298,12 +299,9 @@ async def get_kanban_column(
     ]
     if created_by is not None and (is_admin_viewer or created_by == current_user.id):
         # Явный скоуп: админ — на любого, ЛЮБОЙ — на СЕБЯ («Только мои»).
-        col_filters.append(recruiter_owns_application(vacancy, created_by))
+        col_filters.append(applications_of_recruiter(vacancy, created_by))
     elif not is_admin_viewer and not bool(vacancy.visible_to_all):
-        col_filters.append(or_(
-            VacancyApplication.created_by == current_user.id,
-            VacancyApplication.created_by.is_(None),
-        ))
+        col_filters.append(private_funnel_view(current_user.id))
 
     # Get total count for this stage
     total_count_result = await db.execute(
@@ -466,14 +464,10 @@ async def bulk_move_applications(
     # Исключение — «Видна коллегам» (visible_to_all): там он видит всех, значит и
     # двигать может всех (иначе drag чужого кандидата → 403, битый UX). По запросу
     # юзера 2026-08-04.
-    if not (await sees_all_candidates(current_user, org, db) or bool(vacancy.visible_to_all)):
-        for app in applications:
-            # Свои + legacy без автора (created_by=NULL) двигать можно, чужие — нет.
-            if app.created_by is not None and app.created_by != current_user.id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Можно перемещать только своих кандидатов",
-                )
+    await ensure_may_touch_applications(
+        applications, vacancy, current_user, org, db,
+        detail="Можно перемещать только своих кандидатов",
+    )
 
     # Verify all applications belong to the same vacancy
     for app in applications:
@@ -507,17 +501,9 @@ async def bulk_move_applications(
                 detail=f"Entity {entity.id} does not belong to your organization"
             )
 
-    # Validate: interview_summary required before moving to practice stage
-    if data.stage == ApplicationStage.phone_screen:
-        for app in applications:
-            if app.stage != ApplicationStage.phone_screen:
-                if not app.interview_summary or not app.interview_summary.strip():
-                    entity = entities_map.get(app.entity_id)
-                    name = entity.name if entity else f"ID {app.entity_id}"
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Необходимо заполнить итог собеседования перед переводом на практику (кандидат: {name})"
-                    )
+    # Требования «итог собеседования перед практикой» здесь больше нет: оно
+    # висело на phone_screen («Интервью с HR», а не практика) и расходилось с
+    # одиночным переводом, где его нет (20.10.2026).
 
     # Get max stage_order for the new stage
     #
@@ -538,63 +524,46 @@ async def bulk_move_applications(
     )
     max_order = max_order_result.scalar() or 0
 
+    from ...services.stage_change import log_moves, move_application, settle_entities
+
     now = datetime.utcnow()
-
-    # Save old stages for audit log
-    old_stages = {app.id: app.stage for app in applications}
-
-
+    moves = []
     for i, app in enumerate(applications):
-        app.stage = data.stage
-        app.stage_order = max_order + (i + 1) * 1000
-        app.last_stage_change_at = now
+        moves.append(await move_application(
+            db, app, data.stage,
+            changed_by=current_user,
+            order=max_order + (i + 1) * 1000,
+        ))
         # B2-fix: ставим updated_at явно (Python-значением), иначе после commit
         # server-side onupdate делает атрибут expired -> ленивая подгрузка в
         # ответе вне async-контекста -> MissingGreenlet (500).
         app.updated_at = now
 
-        # Активно работаемый кандидат не должен оставаться в теневом архиве
-        # дедупа — реальное перемещение по этапам выводит его из архива.
-        # entities_map уже загружена одним запросом выше — без N+1.
-        moved_entity = entities_map.get(app.entity_id)
-        if moved_entity and moved_entity.is_archived:
-            moved_entity.is_archived = False
-
     # Общий статус кандидата — по АКТУАЛЬНОЙ заявке (самой свежей среди живых
-    # воронок; отказ/резерв учитываются, только если живых нет). Раньше статус
-    # обновлялся лишь тем, у кого воронка одна, и у остальных подвисал.
-    await db.flush()
-    for _eid in {app.entity_id for app in applications}:
-        await recompute_entity_status(db, _eid)
-
-    # Record stage transitions in audit log
-    from ...services.stage_transitions import record_transition
-    for app in applications:
-        prev_stage = old_stages.get(app.id)
-        if prev_stage != data.stage:
-            await record_transition(
-                db=db,
-                application_id=app.id,
-                entity_id=app.entity_id,
-                from_stage=prev_stage.value if prev_stage else None,
-                to_stage=data.stage.value,
-                changed_by_id=current_user.id,
-            )
+    # воронок; отказ/резерв учитываются, только если живых нет).
+    await settle_entities(db, [app.entity_id for app in applications], moves)
 
     await db.commit()
+    log_moves(moves, current_user, via="bulk_move")
 
     # --- Notifications (fire-and-forget) ---
+    # Только по реальным переводам и с НАСТОЯЩИМ прежним этапом: раньше
+    # уведомление всегда говорило «из Новый», откуда бы кандидат ни шёл.
     try:
         from ...services.hr_notifications import notify_stage_change, notify_practice_started
 
-        for app in applications:
+        apps_by_id = {app.id: app for app in applications}
+        for move in moves:
+            if move is None:
+                continue
+            app = apps_by_id[move.application_id]
             entity = entities_map.get(app.entity_id)
             if not entity:
                 continue
             await notify_stage_change(
-                db, app, entity, ApplicationStage.applied, data.stage, current_user
+                db, app, entity, move.from_stage, data.stage, current_user
             )
-            if data.stage == ApplicationStage.phone_screen:
+            if data.stage == ApplicationStage.probation:
                 await notify_practice_started(db, app, entity, current_user)
     except Exception:
         logger.exception("Bulk-move notifications failed (non-critical)")

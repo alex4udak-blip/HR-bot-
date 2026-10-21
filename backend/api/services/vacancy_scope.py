@@ -48,8 +48,13 @@ async def get_scope_vacancy_ids(user: Optional[User], db: AsyncSession) -> Optio
     if cached is not False:
         return cached
     try:
+        # Та же «основная» запись, что у get_user_org: у человека в двух оргах
+        # раньше бралась произвольная — и скоуп мог прийти из чужой.
+        from .auth import org_membership_priority
         raw = (await db.execute(
-            select(OrgMember.scope_vacancy_ids).where(OrgMember.user_id == user.id)
+            select(OrgMember.scope_vacancy_ids)
+            .where(OrgMember.user_id == user.id)
+            .order_by(*org_membership_priority())
         )).scalars().first()
     except Exception:
         # Колонки ещё нет (миграция не прошла) — не ломаем доступ, см. init.py.
