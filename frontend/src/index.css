@@ -10090,12 +10090,36 @@ body.performance-mode .glass-card:hover {
 /* Месяц одной кнопкой. Классы были, а стилей — нет: три кнопки слипались в
    строку текста «Этот месяцПрошлый месяцМесяц…» и вылезали за край панели.
    Делаем чипами с переносом — ряд видно, и он всегда внутри панели. */
-/* Как складывать условия фильтров: «любое» / «все сразу». */
-.hf-statuses-filter-mode {
-  display: flex;
-  gap: var(--hf-space-xs);
-  padding: 0 var(--hf-space-s) var(--hf-space-s);
+/* Фильтр словами: панель пишет, кого покажет (21.10.2026). Вместо режима
+   «любое / все сразу», смысл которого рекрутёрам был непонятен. */
+.hf-statuses-filter-formula {
+  margin: 0 var(--hf-space-s) var(--hf-space-xs);
+  padding: var(--hf-space-xs) var(--hf-space-s);
+  border-radius: var(--hf-radius-s, 8px);
+  background: var(--hf-main-50, #f1f5f9);
+  font-size: var(--hf-fs-5xs);
+  line-height: 1.45;
+  color: var(--hf-main-800);
 }
+/* Пометка у условия: «нужно» (обязательное) ↔ «или». */
+.hf-statuses-filter-join {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: var(--hf-border-xs) solid var(--hf-main-900);
+  background: var(--hf-main-900);
+  color: var(--hf-white);
+  font-size: var(--hf-fs-6xs, 11px);
+  font-weight: 600;
+  cursor: pointer;
+}
+.hf-statuses-filter-join.is-or {
+  border-color: var(--hf-main-300);
+  background: var(--hf-white);
+  color: var(--hf-main-700);
+}
+.hf-statuses-filter-join:hover { opacity: 0.85; }
 .hf-statuses-filter-presets {
   display: flex;
   flex-wrap: wrap;
@@ -10152,6 +10176,14 @@ body.performance-mode .glass-card:hover {
   cursor: pointer;
 }
 .hf-statuses-fchip:hover { border-color: var(--hf-main-400); }
+/* Связка между чипами — читается как фраза: «Отдел: … и Выход в отдел: …» */
+.hf-statuses-fchip-join {
+  align-self: center;
+  font-size: var(--hf-fs-5xs);
+  font-weight: 600;
+  color: var(--hf-main-500);
+}
+.hf-statuses-fchip.is-or { border-style: dashed; }
 .hf-statuses-fchip b { font-weight: var(--hf-fw-semibold); }
 
 /* Отметка у вехи: цветная пилюля (✓ / ✗ / месяц / бонус) + выбор поверх */
