@@ -237,13 +237,15 @@ async def test_admin_applications_filter_by_recruiter(
 
 
 @pytest.mark.asyncio
-async def test_recruiter_cannot_move_foreign_candidate(
+async def test_recruiter_can_move_foreign_candidate(
     client, db_session, organization, admin_user, org_owner,
     second_user, org_member, shared_vacancy_with_two_apps,
 ):
+    """С 21.10.2026 (владелец): в фильтре воронки выбирают любого рекрутёра —
+    его кандидатов и смотрят, и правят. Чужой перевод в скрытой воронке — 200."""
     v, e_admin_id, e_member_id = shared_vacancy_with_two_apps
 
-    # Находим отклик чужого кандидата (админского) и пробуем подвинуть его
+    # Находим отклик чужого кандидата (админского) и двигаем его
     from sqlalchemy import select
     app_id = (await db_session.execute(
         select(VacancyApplication.id).where(
@@ -256,7 +258,7 @@ async def test_recruiter_cannot_move_foreign_candidate(
         f"/api/vacancies/applications/{app_id}",
         headers=_h(second_user), json={"stage": "screening"},
     )
-    assert r.status_code == 403, r.text
+    assert r.status_code == 200, r.text
 
 
 # ============================================================================

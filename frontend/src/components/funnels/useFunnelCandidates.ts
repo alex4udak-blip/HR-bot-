@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SetURLSearchParams } from "react-router-dom";
-import { getApplications } from "@/services/api";
+import { getApplications, getFunnelRecruiters, type FunnelRecruiters } from "@/services/api";
 import type { User, Vacancy, VacancyApplication } from "@/types";
 import { getAcceptorIds, isPersonallyActive } from "@/utils/vacancy";
 import { funnelSearchMatch } from "@/utils/translit";
 
-// Кандидаты открытой воронки: кого показываем («Только мои», рекрутёр из
-// сайдбара, режим шаринг-ссылки), загрузка с защитой от опоздавших ответов и
-// тихий опрос (вынесено из RecruiterFunnelsPage, 20.10.2026, без изменения
-// поведения).
+// Кандидаты открытой воронки: кого показываем (фильтр «Рекрутёр: …», рекрутёр
+// из сайдбара, режим шаринг-ссылки), загрузка с защитой от опоздавших ответов и
+// тихий опрос (вынесено из RecruiterFunnelsPage, 20.10.2026).
 
 // F5 открытой воронки: документ перезагружен ровно на текущем URL. Проверка
 // идемпотентна: StrictMode в dev дважды зовёт инициализатор useState, а страница
@@ -32,7 +31,7 @@ function isDocumentReloadOfCurrentUrl(): boolean {
 // Состояние воронки, которое должно пережить F5 в этой вкладке, но не новую
 // вкладку и не новую ссылку, — sessionStorage.
 const SHARED_ENTRY_KEY = 'funnel_shared_entry';
-const FOREIGN_ONLY_MINE_KEY = 'funnel_foreign_only_mine';
+const VIEW_OWNER_KEY = 'funnel_view_owner';
 function readFunnelSession<T>(key: string): T | null {
   try {
     const raw = sessionStorage.getItem(key);
@@ -56,12 +55,24 @@ function removeFunnelSession(key: string) {
   }
 }
 
+/** Чьих кандидатов показываем в воронке: отмеченные рекрутёры (один или
+ *  несколько, владелец 21.10.2026) или все. */
+export type FunnelViewOwner = number[] | 'all';
+
+/** Строка-ключ выбора: по ней сравниваем выборы и перезагружаем список —
+ *  массив каждую отрисовку новый, и эффекты на него крутились бы по кругу. */
+export function funnelViewKey(owner: FunnelViewOwner): string {
+  return owner === 'all' ? 'all' : [...new Set(owner)].sort((a, b) => a - b).join(',');
+}
+function parseFunnelViewKey(key: string): FunnelViewOwner {
+  return key === 'all' ? 'all' : key.split(',').filter(Boolean).map(Number);
+}
+
 export interface FunnelCandidatesParams {
   selectedVacancyId: number | null;
   selectedVacancy: Vacancy | undefined;
   funnelBlocked: boolean;
   user: User | null;
-  isHrAdmin: boolean;
   isSuperadmin: boolean;
   selectedRecruiterFilter: number | null;
   candidateSearch: string;
@@ -74,14 +85,11 @@ export interface FunnelCandidatesParams {
 
 export function useFunnelCandidates(p: FunnelCandidatesParams) {
   const {
-    selectedVacancyId, selectedVacancy, funnelBlocked, user, isHrAdmin, isSuperadmin,
+    selectedVacancyId, selectedVacancy, funnelBlocked, user, isSuperadmin,
     selectedRecruiterFilter, candidateSearch, searchParams, setSearchParams, fetchVacancies,
   } = p;
   const onVacancyOpenedRef = useRef(p.onVacancyOpened);
   onVacancyOpenedRef.current = p.onVacancyOpened;
-  // Выключенная рекрутёром «Только мои» в СВОЕЙ воронке — временно, до ухода
-  // из воронки / F5 / новой вкладки (null = умолчание, кнопка включена).
-  const [ownOnlyMineOverride, setOwnOnlyMineOverride] = useState<boolean | null>(null);
   // Открыли по ШАРИНГ-ССЫЛКЕ на кандидата (в URL сразу есть и ?v=, и ?entity=).
   // В этом режиме грузим кандидатов БЕЗ скоупа по рекрутёру — иначе чужой кандидат
   // (added другим рекрутёром) не попадает в список и окно пустое (баг Марии по
@@ -95,7 +103,7 @@ export function useFunnelCandidates(p: FunnelCandidatesParams) {
   //    «воронке Марии» застревал последний открытый чужой кандидат (прод,
   //    2026-09-10: Шатилов с меткой Влады в «Вакансии: Мария»).
   //  • Режим живёт до первого своего действия — смена воронки, рекрутёра или
-  //    «Только мои» (см. эффект у onlyMine ниже).
+  //    фильтр «Рекрутёр: …» (см. setViewOwner ниже).
   const [sharedEntryEntityId, setSharedEntryEntityId] = useState<number | null>(() => {
     const vacancyId = Number(searchParams.get('v')) || null;
     if (vacancyId == null) return null;
@@ -151,57 +159,50 @@ export function useFunnelCandidates(p: FunnelCandidatesParams) {
   // вернуть только что снятого кандидата («удаляй дважды»). Применяем результат
   // загрузки ТОЛЬКО если это последний запрос; любая мутация бампает счётчик.
   const loadSeqRef = useRef(0);
-  // «Только мои» живёт в двух режимах (решение юзера 2026-09-10):
-  //  • СВОЯ воронка (в сайдбаре рекрутёр не выбран или выбран я) — кнопка
-  //    ВКЛЮЧЕНА всегда при входе. Выключил — видны все кандидаты, но только пока
-  //    он в этой воронке: другая воронка, уход со страницы, F5, новая вкладка —
-  //    снова включена. Раньше выключение навсегда писалось в localStorage, и
-  //    рекрутёр, однажды щёлкнувший кнопку, дальше везде видел всех (2026-09-21).
-  //  • ЧУЖАЯ воронка (в сайдбаре выбран другой рекрутёр) — кнопка ВЫКЛЮЧЕНА,
-  //    видны кандидаты этого рекрутёра. Включил — видишь в его воронке своих.
-  //    Это временно: ушёл из воронки — кнопка отжимается и не запоминается.
-  //    F5 уходом не считается — состояние кнопки держится в sessionStorage вкладки.
-  // Наблюдателю и суперадмину по умолчанию «выключено»: сами они кандидатов не
-  // добавляют, и с включённой кнопкой видели бы пустые воронки (такой баг у
-  // наблюдателя уже чинили).
-  const isForeignContext =
-    selectedRecruiterFilter != null && selectedRecruiterFilter !== user?.id;
-  // Своя воронка из сайдбара («Я» → вакансия, ?recruiter=<я>) — только свои
-  // кандидаты, кнопке тут переключать нечего.
-  const isSelfContext = selectedRecruiterFilter != null && selectedRecruiterFilter === user?.id;
-  // «Только мои» имеет смысл только в воронке, которая у человека В РАБОТЕ (лично
-  // взял — как в сайдбаре «Мои вакансии»). В воронке не в работе своих кандидатов
-  // нет — кнопка выключена и неактивна. Пока вакансия не загрузилась — считаем
-  // «в работе», чтобы список не перегружался дважды.
+  // Чьих кандидатов показываем — фильтр «Рекрутёр: …» над воронкой (владелец,
+  // 21.10.2026; до этого — кнопка «Только мои» / «Показать всех»):
+  //  • по умолчанию — СВОИХ: тех, кого человек добавил сам. Чужие «не
+  //    прилетают» (владелец: «им не должны прилетать кандидаты от других
+  //    рекрутёров»);
+  //  • выбран рекрутёр в сайдбаре («Вакансии: Мария», ?recruiter=) — его;
+  //  • суперадмин и наблюдатель, а также воронка не в работе у человека — все:
+  //    своих кандидатов там нет, иначе воронка выглядела бы пустой;
+  //  • в фильтре можно выбрать любого рекрутёра воронки или «Все рекрутёры» —
+  //    их кандидатов и смотрят, и правят (сервер это разрешает всем).
+  // Выбор временный: ушёл из воронки или сменил рекрутёра в сайдбаре — снова
+  // по умолчанию. F5 его сохраняет (sessionStorage вкладки), как и всё, что
+  // человек выбрал на странице.
   const worksOnFunnel = !selectedVacancy || (!!user && isPersonallyActive(selectedVacancy, user.id));
-  const onlyMineAvailable = worksOnFunnel && !isSelfContext;
-  const ownOnlyMine = ownOnlyMineOverride ?? !(isSuperadmin || user?.is_readonly);
-  const [foreignOnlyMine, setForeignOnlyMine] = useState(() => {
-    if (!isDocumentReloadOfCurrentUrl()) return false;
-    const saved = readFunnelSession<{ v: number; r: number }>(FOREIGN_ONLY_MINE_KEY);
-    return (
-      saved != null &&
+  const defaultViewOwner: FunnelViewOwner =
+    selectedRecruiterFilter != null
+      ? [selectedRecruiterFilter]
+      : user && worksOnFunnel && !(isSuperadmin || user.is_readonly)
+        ? [user.id]
+        : 'all';
+  const [viewOverride, setViewOverride] = useState<FunnelViewOwner | null>(() => {
+    if (!isDocumentReloadOfCurrentUrl()) return null;
+    const saved = readFunnelSession<{ v: number | null; r: number | null; owner: FunnelViewOwner }>(VIEW_OWNER_KEY);
+    return saved != null &&
       saved.v === (Number(searchParams.get('v')) || null) &&
       saved.r === (Number(searchParams.get('recruiter')) || null)
-    );
+      && (saved.owner === 'all' || (Array.isArray(saved.owner) && saved.owner.length > 0))
+      ? saved.owner
+      : null;
   });
+  const viewKey = funnelViewKey(viewOverride ?? defaultViewOwner);
+  const viewOwner = useMemo(() => parseFunnelViewKey(viewKey), [viewKey]);
   useEffect(() => {
-    if (!foreignOnlyMine) removeFunnelSession(FOREIGN_ONLY_MINE_KEY);
-    else if (selectedVacancyId != null && selectedRecruiterFilter != null) {
-      writeFunnelSession(FOREIGN_ONLY_MINE_KEY, { v: selectedVacancyId, r: selectedRecruiterFilter });
-    }
-  }, [foreignOnlyMine, selectedVacancyId, selectedRecruiterFilter]);
-  const onlyMine = !onlyMineAvailable ? false : isForeignContext ? foreignOnlyMine : ownOnlyMine;
-  const setOnlyMine = (value: boolean) => {
-    if (!onlyMineAvailable) return;
+    if (viewOverride == null || selectedVacancyId == null) removeFunnelSession(VIEW_OWNER_KEY);
+    else writeFunnelSession(VIEW_OWNER_KEY, { v: selectedVacancyId, r: selectedRecruiterFilter, owner: viewOverride });
+  }, [viewOverride, selectedVacancyId, selectedRecruiterFilter]);
+  const setViewOwner = useCallback((owner: FunnelViewOwner) => {
+    if (owner !== 'all' && owner.length === 0) return; // пустой выбор = пустая воронка
     setSharedEntryEntityId(null);
-    if (isForeignContext) setForeignOnlyMine(value);
-    else setOwnOnlyMineOverride(value);
-  };
+    setViewOverride(owner);
+  }, []);
   // Уход в другую воронку или к другому рекрутёру заканчивает режим шаринг-ссылки
-  // и отжимает временную «Только мои» чужой воронки. null → X по рекрутёру — не
-  // уход: это URL-синк на маунте и восстановление владельца для ссылки без
-  // ?recruiter= (эффект выше).
+  // и сбрасывает фильтр. null → X по рекрутёру — не уход: это URL-синк на
+  // маунте и восстановление владельца для ссылки без ?recruiter= (эффект выше).
   const sharedEntryContextRef = useRef({ v: selectedVacancyId, r: selectedRecruiterFilter });
   useEffect(() => {
     const prev = sharedEntryContextRef.current;
@@ -210,48 +211,41 @@ export function useFunnelCandidates(p: FunnelCandidatesParams) {
     const recruiterChanged = prev.r != null && prev.r !== selectedRecruiterFilter;
     if (vacancyChanged || recruiterChanged) {
       setSharedEntryEntityId(null);
-      setForeignOnlyMine(false);
-      setOwnOnlyMineOverride(null);
+      setViewOverride(null);
     }
   }, [selectedVacancyId, selectedRecruiterFilter]);
 
-  // Скоуп кандидатов на СЕРВЕРЕ:
-  //  • ШАРИНГ-ССЫЛКА (arrivedViaSharedCandidate): без скоупа — грузим всю воронку,
-  //    чтобы кандидат из ссылки гарантированно был в списке; сужаем уже на фронте
-  //    (recruiterScopedCandidates), оставляя кандидата из ссылки.
-  //  • «Только мои» — на себя. Сервер разрешает это любой роли и учитывает
-  //    со-рекрутёров.
-  //  • Обычный рекрутёр — без скоупа: фильтр на КОЛЛЕГУ сервер ему не применяет
-  //    (бэкенд по решению юзера не трогаем), сужаем на фронте.
-  //  • Админ, суперадмин, наблюдатель — на выбранного в сайдбаре рекрутёра, а без
-  //    выбора — ВСЕ. Раньше админ/овнер по умолчанию видел только своих; теперь
-  //    «только своих» даёт кнопка, и /my-funnels для всех ролей значит «все».
-  const candidateScopeRecruiterId = arrivedViaSharedCandidate
-    ? undefined
-    : onlyMine || isSelfContext
-    ? (user?.id ?? undefined)
-    : !isHrAdmin
-      ? undefined
-      : (selectedRecruiterFilter ?? undefined);
+  // Что просим у сервера. ШАРИНГ-ССЫЛКА — всю воронку: кандидат из ссылки
+  // обязан быть в списке, кто бы его ни добавил; сужаем уже на фронте
+  // (recruiterScopedCandidates), оставляя его.
+  const candidateScopeKey = arrivedViaSharedCandidate ? 'all' : viewKey;
+  const candidateScope = useMemo(() => parseFunnelViewKey(candidateScopeKey), [candidateScopeKey]);
+  const [recruiterOptions, setRecruiterOptions] = useState<FunnelRecruiters | null>(null);
   const loadCandidates = useCallback(async (vacancyId: number, silent = false) => {
     const seq = ++loadSeqRef.current;
     if (!silent) setCandidatesLoading(true);
     try {
-      const apps = await getApplications(vacancyId, undefined, candidateScopeRecruiterId);
-      if (seq === loadSeqRef.current) setCandidates(apps);
+      const [apps, recruiters] = await Promise.all([
+        getApplications(vacancyId, undefined, candidateScope),
+        getFunnelRecruiters(vacancyId).catch(() => null),
+      ]);
+      if (seq === loadSeqRef.current) {
+        setCandidates(apps);
+        setRecruiterOptions(recruiters);
+      }
     } catch {
       if (!silent && seq === loadSeqRef.current) setCandidates([]);
     } finally {
       if (!silent) setCandidatesLoading(false);
     }
-  }, [candidateScopeRecruiterId]);
+  }, [candidateScopeKey]);
 
-  // Админ сменил рекрутёра в сайдбаре при открытой воронке — перезагружаем
-  // кандидатов под новый скоуп (тихо, без скелетона).
+  // Сменили фильтр или рекрутёра в сайдбаре при открытой воронке —
+  // перезагружаем кандидатов под новый выбор (тихо, без скелетона).
   useEffect(() => {
     if (selectedVacancyId && !funnelBlocked) loadCandidates(selectedVacancyId, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidateScopeRecruiterId]);
+  }, [candidateScopeKey]);
 
   // Авто-refresh когда юзер возвращается на вкладку браузера —
   // например, после добавления кандидата через волшебную кнопку из
@@ -289,29 +283,22 @@ export function useFunnelCandidates(p: FunnelCandidatesParams) {
   // порядок слов + опечатки, как серверный pg_trgm в «Все кандидаты»); по
   // email/телефону — обычная подстрока; по telegram — ВСЕ ники кандидата +
   // текст комментариев карточки; запрос с «@» — строгий режим (только тг/комменты).
-  // Фронтовое сужение списка — там, где сервер не отфильтровал сам.
-  // Кого показываем: при «Только мои» — себя, иначе рекрутёра из сайдбара
-  // («Вакансии: Мария» → кандидаты Марии), а без выбора — всех.
-  //  • Если сервер уже отфильтровал на того же человека — верим ему: он учитывает
-  //    со-рекрутёров, а в ответе нет поля, по которому их узнал бы фронт (только
-  //    created_by), и фронтовый фильтр их бы срезал.
-  //  • Кандидат из ССЫЛКИ (sharedEntryEntityId) остаётся в списке, пока юзер не
-  //    сменил контекст — иначе ссылка на со-рекрутёрского кандидата открывала бы
-  //    пустое окно.
+  // Сужение по рекрутёру делает сервер. Фронт сужает сам только в режиме
+  // ШАРИНГ-ССЫЛКИ (загружена вся воронка): кандидат из ссылки остаётся в
+  // списке, пока юзер не сменил контекст, — иначе ссылка на чужого кандидата
+  // открывала бы пустое окно. Заявка без автора — кандидат владельца вакансии,
+  // как у метки «HR: …» и серверного скоупа (recruiter_owns_application).
   const recruiterScopedCandidates = useMemo(() => {
-    const wantedOwner = onlyMine ? (user?.id ?? null) : selectedRecruiterFilter;
-    if (wantedOwner == null) return candidates;
-    if (candidateScopeRecruiterId === wantedOwner) return candidates;
-    // Заявка без автора (created_by = null) — кандидат владельца вакансии, как
-    // у метки «HR: …» и серверного скоупа (recruiter_owns_application).
-    const ownsVacancy = selectedVacancy?.created_by === wantedOwner;
+    if (candidateScopeKey === viewKey || viewOwner === 'all') return candidates;
+    const owners = new Set(viewOwner);
+    const vacancyOwner = selectedVacancy?.created_by;
     return candidates.filter(
       (c) =>
-        c.created_by === wantedOwner ||
-        (c.created_by == null && ownsVacancy) ||
+        (c.created_by != null && owners.has(c.created_by)) ||
+        (c.created_by == null && vacancyOwner != null && owners.has(vacancyOwner)) ||
         c.entity_id === sharedEntryEntityId,
     );
-  }, [candidates, onlyMine, user?.id, selectedRecruiterFilter, candidateScopeRecruiterId, sharedEntryEntityId, selectedVacancy?.created_by]);
+  }, [candidates, candidateScopeKey, viewKey, viewOwner, sharedEntryEntityId, selectedVacancy?.created_by]);
 
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch.trim()) return recruiterScopedCandidates;
@@ -321,6 +308,6 @@ export function useFunnelCandidates(p: FunnelCandidatesParams) {
   return {
     candidates, setCandidates, candidatesLoading, loadCandidates, loadSeqRef,
     recruiterScopedCandidates, filteredCandidates,
-    onlyMine, setOnlyMine, onlyMineAvailable, isSelfContext, isForeignContext, worksOnFunnel,
+    viewOwner, setViewOwner, recruiterOptions,
   };
 }

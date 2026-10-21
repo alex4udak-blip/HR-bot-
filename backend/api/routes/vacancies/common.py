@@ -169,28 +169,12 @@ def private_funnel_view(user_id: int):
     )
 
 
-async def ensure_may_touch_applications(
-    applications, vacancy: Vacancy, user: User, org: Organization, db: AsyncSession,
-    detail: str = "Можно изменять только своих кандидатов",
-) -> None:
-    """Приватность воронки при ЗАПИСИ: в скрытой воронке не-админ трогает только
-    тех, кого видит (private_funnel_view). Одна проверка на перевод, массовый
-    перевод и откат этапа — раньше со-рекрутёр видел кандидата, но двигать его
-    не мог (403)."""
-    if await sees_all_candidates(user, org, db) or bool(getattr(vacancy, "visible_to_all", False)):
-        return
-    foreign = [a.id for a in applications if a.created_by is not None and a.created_by != user.id]
-    if not foreign:
-        return
-    from ...models.database import ApplicationCoRecruiter
-    co = set((await db.execute(
-        select(ApplicationCoRecruiter.application_id).where(
-            ApplicationCoRecruiter.application_id.in_(foreign),
-            ApplicationCoRecruiter.user_id == user.id,
-        )
-    )).scalars().all())
-    if any(a not in co for a in foreign):
-        raise HTTPException(status_code=403, detail=detail)
+# Запрета «двигать только своих кандидатов» в воронке больше нет (владелец,
+# 21.10.2026: «если Мария поставила фильтр на Владу, она может смотреть и
+# редактировать её кандидатов, и это касается всех в любой воронке»). Кто видит
+# вакансию (check_vacancy_access / can_access_vacancy), тот и двигает. Раньше
+# здесь была ensure_may_touch_applications: в скрытой воронке не-админ получал
+# 403 на чужого кандидата.
 
 
 async def get_user_department_ids(user_id: int, org_id: int, db: AsyncSession) -> List[int]:

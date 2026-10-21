@@ -165,13 +165,36 @@ export const declineVacancy = async (id: number): Promise<void> => {
 // VACANCY APPLICATIONS API
 // ============================================================
 
-export const getApplications = async (vacancyId: number, stage?: ApplicationStage, createdBy?: number): Promise<VacancyApplication[]> => {
-  const params: Record<string, string | number> = {};
-  if (stage) params.stage = stage;
-  if (createdBy != null) params.created_by = createdBy;
-  const { data } = await deduplicatedGet<VacancyApplication[]>(`/vacancies/${vacancyId}/applications`, {
-    params: Object.keys(params).length ? params : undefined,
-  });
+/** createdBy: рекрутёр или несколько — их кандидаты, 'all' — всех рекрутёров
+ *  воронки (фильтр над воронкой, 21.10.2026), не задан — как решит сервер.
+ *  Строку запроса собираем сами: axios превратил бы массив в created_by[]=…,
+ *  а сервер ждёт created_by=1&created_by=2. */
+export const getApplications = async (
+  vacancyId: number,
+  stage?: ApplicationStage,
+  createdBy?: number | number[] | 'all',
+): Promise<VacancyApplication[]> => {
+  const query = new URLSearchParams();
+  if (stage) query.set('stage', stage);
+  if (createdBy === 'all') query.set('all_recruiters', 'true');
+  else if (createdBy != null) {
+    for (const id of Array.isArray(createdBy) ? createdBy : [createdBy]) query.append('created_by', String(id));
+  }
+  const qs = query.toString();
+  const { data } = await deduplicatedGet<VacancyApplication[]>(
+    `/vacancies/${vacancyId}/applications${qs ? `?${qs}` : ''}`,
+  );
+  return data;
+};
+
+export interface FunnelRecruiters {
+  total: number;
+  recruiters: Array<{ user_id: number; name: string; count: number }>;
+}
+
+/** Кто ведёт кандидатов в воронке и сколько у каждого — для фильтра над воронкой. */
+export const getFunnelRecruiters = async (vacancyId: number): Promise<FunnelRecruiters> => {
+  const { data } = await deduplicatedGet<FunnelRecruiters>(`/vacancies/${vacancyId}/applications/recruiters`);
   return data;
 };
 

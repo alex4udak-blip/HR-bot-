@@ -16,7 +16,7 @@ from .common import (
     ApplicationResponse, KanbanColumn, KanbanBoard, BulkStageUpdate,
     check_vacancy_access, can_access_vacancy, is_org_admin_or_owner,
     sees_all_candidates, recompute_entity_status,
-    applications_of_recruiter, private_funnel_view, ensure_may_touch_applications,
+    applications_of_recruiter, private_funnel_view,
 )
 from ...services.auth import get_user_org
 
@@ -459,15 +459,8 @@ async def bulk_move_applications(
     ):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
-    # Приватность воронки: не-админ двигает ТОЛЬКО своих кандидатов (тех, кого
-    # сам добавил). Чужих он даже не видит на доске — это защита в глубину.
-    # Исключение — «Видна коллегам» (visible_to_all): там он видит всех, значит и
-    # двигать может всех (иначе drag чужого кандидата → 403, битый UX). По запросу
-    # юзера 2026-08-04.
-    await ensure_may_touch_applications(
-        applications, vacancy, current_user, org, db,
-        detail="Можно перемещать только своих кандидатов",
-    )
+    # Чужих кандидатов двигать можно — то же правило, что у перевода одной
+    # заявки (21.10.2026).
 
     # Verify all applications belong to the same vacancy
     for app in applications:

@@ -317,6 +317,7 @@ export {
   deleteVacancy,
   // Applications
   getApplications,
+  getFunnelRecruiters,
   createApplication,
   updateApplication,
   deleteApplication,
@@ -359,6 +360,7 @@ export type {
   ApplicationUpdate,
   AssignableUser,
   RecruiterStat,
+  FunnelRecruiters,
 } from './vacancies';
 
 // Projects

@@ -14,7 +14,7 @@ from .common import (
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
     check_vacancy_access, can_access_vacancy, can_manage_applications,
     is_org_admin_or_owner, sees_all_candidates, recompute_entity_status,
-    applications_of_recruiter, private_funnel_view, ensure_may_touch_applications,
+    applications_of_recruiter, private_funnel_view,
     BaseModel, OrgMember, OrgRole, UserRole,
 )
 from ...services.auth import get_user_org
@@ -152,7 +152,8 @@ def _headline_tags(entity, headline_map: Optional[dict] = None):
 async def list_applications(
     vacancy_id: int,
     stage: Optional[ApplicationStage] = None,
-    created_by: Optional[int] = Query(None, description="Filter by recruiter (who added the candidate)"),
+    created_by: Optional[List[int]] = Query(None, description="Кандидаты этих рекрутёров (можно несколько: ?created_by=1&created_by=2)"),
+    all_recruiters: bool = Query(False, description="Кандидаты ВСЕХ рекрутёров воронки (фильтр «Все рекрутёры»)"),
     search: Optional[str] = Query(None, description="Умный поиск кандидата по имени (транслит+порядок+опечатки)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
@@ -204,12 +205,18 @@ async def list_applications(
     # «Скрыта от коллег» → прежняя приватность: каждый видит только своих.
     # Скоуп «кандидаты рекрутёра R» = заявки, где R владелец (created_by) ИЛИ
     # со-рекрутёр (общая воронка: один кандидат у нескольких HR сразу).
+    # Фильтр «Рекрутёр: …» над воронкой (владелец, 21.10.2026): любой, кто
+    # видит вакансию, отмечает ЛЮБЫХ рекрутёров (одного или нескольких) или
+    # «Все рекрутёры» — и
+    # смотрит (и правит) их кандидатов. По умолчанию фронт просит своих
+    # (created_by = себя): чужие сами «не прилетают». Раньше на коллегу мог
+    # фильтровать только админ.
     is_admin_viewer = await sees_all_candidates(current_user, org, db)
-    if created_by is not None and (is_admin_viewer or created_by == current_user.id):
-        # Явный скоуп по рекрутёру: админ — на ЛЮБОГО (сайдбар /my-funnels), а
-        # ЛЮБОЙ рекрутёр — на СЕБЯ (чекбокс «Только мои»). Себя можно фильтровать
-        # даже на «Видна коллегам», иначе рекрутёр не мог оставить только своих.
-        query = query.where(applications_of_recruiter(vacancy, created_by))
+    if all_recruiters:
+        pass
+    elif created_by:
+        # Несколько рекрутёров сразу — их кандидаты вместе (владелец, 21.10.2026).
+        query = query.where(or_(*(applications_of_recruiter(vacancy, r) for r in created_by)))
     elif not is_admin_viewer and not vacancy.visible_to_all:
         # Обычный рекрутёр на «скрытой» вакансии без явного скоупа: только свои +
         # legacy без автора. На «Видна коллегам» без скоупа — видит всех (выше).
@@ -291,6 +298,78 @@ async def list_applications(
         ))
 
     return responses
+
+
+class FunnelRecruiterOption(BaseModel):
+    user_id: int
+    name: str
+    count: int
+
+
+class FunnelRecruiters(BaseModel):
+    total: int
+    recruiters: List[FunnelRecruiterOption]
+
+
+@router.get("/{vacancy_id}/applications/recruiters", response_model=FunnelRecruiters)
+async def list_application_recruiters(
+    vacancy_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_vacancy_access),
+):
+    """Кто ведёт кандидатов в этой воронке и сколько у каждого — для фильтра
+    «Кандидаты: <рекрутёр>» над воронкой (21.10.2026). Только имена и числа:
+    самих кандидатов фронт берёт под выбранного человека.
+
+    Участник — тот, кто взял воронку в работу (accepted_by), автор заявки, а
+    у заявки без автора — владелец вакансии (то же правило, что у метки «HR: …»
+    и applications_of_recruiter), плюс со-рекрутёры старых пар."""
+    from ...services.vacancy_scope import ensure_vacancy_visible
+    await ensure_vacancy_visible(vacancy_id, current_user, db)
+    org = await get_user_org(current_user, db)
+    vacancy = await db.get(Vacancy, vacancy_id)
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(status_code=403, detail="Access denied to this vacancy")
+
+    counts: dict[int, int] = {}
+    rows = (await db.execute(
+        select(VacancyApplication.id, VacancyApplication.created_by)
+        .where(VacancyApplication.vacancy_id == vacancy_id)
+    )).all()
+    app_ids = [r.id for r in rows]
+    co_by_app: dict[int, set[int]] = {}
+    if app_ids:
+        for app_id, user_id in (await db.execute(
+            select(ApplicationCoRecruiter.application_id, ApplicationCoRecruiter.user_id)
+            .where(ApplicationCoRecruiter.application_id.in_(app_ids))
+        )).all():
+            co_by_app.setdefault(app_id, set()).add(user_id)
+    for r in rows:
+        owners = {r.created_by if r.created_by is not None else vacancy.created_by}
+        owners |= co_by_app.get(r.id, set())
+        for uid in owners:
+            if uid is not None:
+                counts[uid] = counts.get(uid, 0) + 1
+
+    accepted = (vacancy.extra_data or {}).get("accepted_by") if isinstance(vacancy.extra_data, dict) else None
+    for uid in accepted if isinstance(accepted, list) else []:
+        if isinstance(uid, int):
+            counts.setdefault(uid, 0)
+    counts.setdefault(current_user.id, counts.get(current_user.id, 0))
+
+    names = {
+        u.id: (u.name or u.email or f"#{u.id}")
+        for u in (await db.execute(select(User).where(User.id.in_(list(counts))))).scalars().all()
+    } if counts else {}
+    options = [
+        FunnelRecruiterOption(user_id=uid, name=names.get(uid, f"#{uid}"), count=n)
+        for uid, n in counts.items() if uid in names
+    ]
+    # Сначала сам смотрящий, дальше — у кого больше кандидатов.
+    options.sort(key=lambda o: (o.user_id != current_user.id, -o.count, o.name))
+    return FunnelRecruiters(total=len(rows), recruiters=options)
 
 
 @router.post("/{vacancy_id}/applications", response_model=ApplicationResponse, status_code=201)
@@ -680,13 +759,8 @@ async def update_application(
     ):
         raise HTTPException(status_code=403, detail="Недостаточно прав для изменения этой вакансии")
 
-    # Приватность воронки: не-админ меняет ТОЛЬКО своих кандидатов (кого сам
-    # добавил). Чужих он не видит на доске — защита в глубину (как в bulk-move).
-    # Исключение — «Видна коллегам» (visible_to_all): там он видит всех, значит и
-    # менять этап может у всех (иначе виден, но не двигается). По запросу юзера
-    # 2026-08-04.
-    if vacancy:
-        await ensure_may_touch_applications([application], vacancy, current_user, org, db)
+    # Чужого кандидата в воронке двигать можно (21.10.2026): в фильтре воронки
+    # выбирают любого рекрутёра — его кандидатов и смотрят, и правят.
 
     # Страховка от промаха по заявке: фронт присылает, КОМУ он собирался менять
     # этап. Не совпало — значит, карточка держала чужую заявку (баг 2026-09-15,

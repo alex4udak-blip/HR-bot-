@@ -202,7 +202,9 @@ async def test_co_recruiter_can_move_candidate_in_hidden_funnel(client, db_sessi
     assert r.status_code == 200, r.text
 
 
-async def test_history_undo_respects_hidden_funnel_privacy(client, db_session, organization, team):
+async def test_history_undo_by_colleague_in_hidden_funnel(client, db_session, organization, team):
+    """Откат этапа — та же правка, что перевод: с 21.10.2026 коллега может
+    править чужих кандидатов в любой воронке, которую видит."""
     v = await _vac(db_session, organization, team["anna"], "Скрытая", visible=False,
                    assigned=[team["anna"].id, team["petr"].id])
     e = await _cand(db_session, organization, team["anna"], "Чужой", EntityStatus.screening)
@@ -212,8 +214,8 @@ async def test_history_undo_respects_hidden_funnel_privacy(client, db_session, o
     db_session.add(tr)
     await db_session.commit()
     r = await client.delete(f"/api/vacancies/applications/{a.id}/history/{tr.id}", headers=_h(team["petr"]))
-    assert r.status_code == 403, r.text
-    assert (await db_session.get(VacancyApplication, a.id, populate_existing=True)).stage == ApplicationStage.screening
+    assert r.status_code == 200, r.text
+    assert (await db_session.get(VacancyApplication, a.id, populate_existing=True)).stage == ApplicationStage.applied
 
 
 async def test_practice_notification_fires_on_probation_not_on_hr_interview(

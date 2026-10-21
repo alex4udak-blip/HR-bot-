@@ -58,6 +58,7 @@ from .crud import (
 # Import application handlers
 from .applications import (
     list_applications,
+    list_application_recruiters,
     create_application,
     take_application,
     update_application,
@@ -126,6 +127,8 @@ router.add_api_route("/{target_id}/merge-from/{source_id}", merge_vacancy_into, 
 # Vacancy applications
 # «Забрать» — более специфичный путь, регистрируем ДО generic /{vacancy_id}/applications.
 router.add_api_route("/{vacancy_id}/applications/take", take_application, methods=["POST"], tags=["vacancy-applications"])
+# Фильтр «Кандидаты: <рекрутёр>» над воронкой — кто ведёт и сколько (21.10.2026).
+router.add_api_route("/{vacancy_id}/applications/recruiters", list_application_recruiters, methods=["GET"], tags=["vacancy-applications"])
 router.add_api_route("/{vacancy_id}/applications", list_applications, methods=["GET"], tags=["vacancy-applications"])
 router.add_api_route("/{vacancy_id}/applications", create_application, methods=["POST"], status_code=201, tags=["vacancy-applications"])
 

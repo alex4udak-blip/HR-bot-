@@ -69,7 +69,7 @@ import {
   type FormDispatchInfo,
 } from '@/services/api/forms';
 import { AnketaResponses } from '@/features/forms/AnketaResponses';
-import { FunnelScopeToggle, funnelScopeMode } from '@/components/funnels/FunnelScopeToggle';
+import { FunnelRecruiterFilter } from '@/components/funnels/FunnelRecruiterFilter';
 
 const AnketaDrawer = lazy(() =>
   import('@/features/forms/AnketaDrawer').then((m) => ({ default: m.AnketaDrawer })),
@@ -197,14 +197,14 @@ export default function RecruiterFunnelsPage() {
     return false;
   }, [vacancyArchived]);
 
-  // Кандидаты открытой воронки: «Только мои», режим шаринг-ссылки, загрузка и
-  // тихий опрос (useFunnelCandidates).
+  // Кандидаты открытой воронки: фильтр «Рекрутёр: …», режим шаринг-ссылки,
+  // загрузка и тихий опрос (useFunnelCandidates).
   const {
     candidates, setCandidates, candidatesLoading, loadCandidates, loadSeqRef,
     recruiterScopedCandidates, filteredCandidates,
-    onlyMine, setOnlyMine, isSelfContext, isForeignContext, worksOnFunnel,
+    viewOwner, setViewOwner, recruiterOptions,
   } = useFunnelCandidates({
-    selectedVacancyId, selectedVacancy, funnelBlocked, user, isHrAdmin, isSuperadmin,
+    selectedVacancyId, selectedVacancy, funnelBlocked, user, isSuperadmin,
     selectedRecruiterFilter, candidateSearch, searchParams, setSearchParams, fetchVacancies,
     onVacancyOpened: () => {
       setSelectedCandidateId(null);
@@ -792,12 +792,13 @@ export default function RecruiterFunnelsPage() {
                   vacancyVisibleStageKeys={vacancyVisibleStageKeys}
                 />
                 {/* Чьих кандидатов показываем — ПОСТОЯННАЯ полоса над контентом (а не
-                    в списке), чтобы переключать и когда этап пуст. */}
+                    в списке): фильтр виден на любом этапе, и когда этап пуст. */}
                 <div className="flex items-center px-3 sm:px-5 py-2 border-b border-[color:var(--hf-white-alpha-06)] flex-shrink-0">
-                  <FunnelScopeToggle
-                    mode={funnelScopeMode({ isSelfContext, isForeignContext, worksOnFunnel })}
-                    onlyMine={onlyMine}
-                    setOnlyMine={setOnlyMine}
+                  <FunnelRecruiterFilter
+                    viewOwner={viewOwner}
+                    setViewOwner={setViewOwner}
+                    options={recruiterOptions}
+                    myId={user?.id}
                   />
                 </div>
 

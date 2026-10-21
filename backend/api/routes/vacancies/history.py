@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from .common import (
     logger, get_db, VacancyApplication, Vacancy, User,
     check_vacancy_access, can_access_vacancy, recompute_entity_status,
-    is_org_admin_or_owner, ensure_may_touch_applications,
+    is_org_admin_or_owner,
 )
 from ...models.database import StageTransition, ApplicationStage, Entity
 from ...services.auth import get_user_org
@@ -252,11 +252,8 @@ async def delete_application_history(
     vacancy = vacancy_result.scalar()
     if vacancy and not await can_access_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
-    # Удаление последней записи — это смена этапа (откат), поэтому то же
-    # правило приватности, что у перевода: в скрытой воронке не-админ трогает
-    # только своих кандидатов (до 20.10.2026 корзина эту проверку обходила).
-    if vacancy:
-        await ensure_may_touch_applications([application], vacancy, current_user, org, db)
+    # Удаление последней записи — это смена этапа (откат): правило то же, что у
+    # перевода, — кто видит вакансию, тот и откатывает (21.10.2026).
 
     tr_result = await db.execute(
         select(StageTransition).where(
