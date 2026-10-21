@@ -49,4 +49,27 @@ describe("useCandidateBoard — запоздавший ответ", () => {
     expect(result.current.board?.columns[0].status).toBe("offer");
     expect(getCandidatesKanban).toHaveBeenCalledTimes(2);
   });
+
+  it("полный список, запрошенный до поиска, не затирает найденное", async () => {
+    getCandidatesKanban.mockResolvedValueOnce(board("new"));
+    const { result, rerender } = renderHook(({ q }) => useCandidateBoard(q), { initialProps: { q: "" } });
+    await waitFor(() => expect(result.current.board?.columns[0].status).toBe("new"));
+
+    // Фоновое обновление без поиска ушло и висит (вся база — долго).
+    const slowFull = deferred<KanbanBoardResponse>();
+    getCandidatesKanban.mockReturnValueOnce(slowFull.promise);
+    let polling!: Promise<void>;
+    act(() => { polling = result.current.fetchBoard(true); });
+
+    // Тем временем набрали почту — поиск ответил быстро.
+    getCandidatesKanban.mockResolvedValueOnce(board("found"));
+    rerender({ q: "ivan@mail.ru" });
+    await waitFor(() => expect(result.current.board?.columns[0].status).toBe("found"));
+
+    // Старый ответ пришёл последним — на экране остаётся поиск.
+    await act(async () => { slowFull.resolve(board("everyone")); await polling; });
+    expect(result.current.board?.columns[0].status).toBe("found");
+    expect(result.current.boardStale).toBe(false);
+  });
 });
+

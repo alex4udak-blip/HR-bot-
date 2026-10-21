@@ -28,6 +28,14 @@ export function useCandidateBoard(search: string) {
     setBoard(update);
   }, []);
 
+  // Запрос, который СЕЙЧАС в поле. Ответ, запрошенный под другой текст, на
+  // экран не попадает: фоновое обновление без поиска (вся база, на проде
+  // 3–5 МБ) идёт дольше, чем поиск, и, уйдя ДО набора, приходило ПОСЛЕ —
+  // список «сбрасывался» на всех кандидатов, а через 15 с поиск возвращался
+  // (владелец, 21.10.2026: искал по почте, нашёл, а слева показало всех).
+  const searchRef = useRef(search);
+  searchRef.current = search;
+
   const fetchBoard = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -42,6 +50,11 @@ export function useCandidateBoard(search: string) {
           // отсортирована по релевантности.
           per_column: search ? 500 : 2000,
         });
+        if (search !== searchRef.current) {
+          // Полную доску всё же запоминаем: при сбросе поиска она нужна сразу.
+          if (!search) fullBoardRef.current = data;
+          break;
+        }
         if (edits !== editsRef.current) continue;
         setBoard(data);
         setBoardQuery(search);

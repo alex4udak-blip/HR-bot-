@@ -1,7 +1,8 @@
 import { copyOrShowLink } from '@/utils/copyOrShowLink';
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy } from 'react';
 
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useLiveSearchParams } from '@/hooks/useLiveSearchParams';
 import {
   Plus,
   Briefcase,
@@ -114,7 +115,10 @@ function CopyButton({ value }: { value: string }) {
 
 export default function RecruiterFunnelsPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  // Правки адреса — от ЖИВОГО window.location: клик по этапу и зеркало открытого
+  // кандидата пишут в одном такте, и снимок прошлой отрисовки возвращал прежний
+  // ?stage= — вкладка «отскакивала» (см. useLiveSearchParams).
+  const [searchParams, setSearchParams] = useLiveSearchParams();
   const { vacancies, isLoading, fetchVacancies, updateVacancy, deleteVacancy } = useVacancyStore();
   const { user } = useAuthStore();
 
