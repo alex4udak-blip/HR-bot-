@@ -1,7 +1,7 @@
 """
 Application management endpoints for vacancies.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func, or_, text, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -947,6 +947,7 @@ STAFF_STATUSES_KEPT_ON_REMOVE = {
 @router.delete("/applications/{application_id}", status_code=204)
 async def delete_application(
     application_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access)
 ):
@@ -988,6 +989,24 @@ async def delete_application(
     )
     has_other_apps = (other_apps.scalar() or 0) > 0
 
+    # В корзину на 7 дней (21.10.2026): этап, чей был, история переводов с
+    # комментариями, закреп. Раньше «Удалить с воронки» стирало это навсегда —
+    # а с фильтром «Рекрутёры» коллега видит чужих кандидатов и может
+    # промахнуться кнопкой.
+    from ...services.entity_trash import move_application_to_trash
+    trash_record = await move_application_to_trash(db, application, vacancy, entity, current_user)
+    await db.flush()
+    # Журнал действий: заявки после ответа уже нет — подсказываем, чья она.
+    request.state.audit_extra = {"entity_id": entity_id, "vacancy_id": application.vacancy_id}
+    # Всё для строки лога — ДО коммита: после него поля объектов в async
+    # недоступны (MissingGreenlet).
+    log_args = (
+        application_id, entity_id, entity.name if entity else "?",
+        vacancy.id if vacancy else "?", vacancy.title if vacancy else "?",
+        application.stage.value if hasattr(application.stage, "value") else application.stage,
+        application.created_by, current_user.id, current_user.name, trash_record.id,
+    )
+
     await db.delete(application)
 
     # В отделе / уволен / уволился — статус человека, а не этап воронки:
@@ -1015,4 +1034,7 @@ async def delete_application(
     except Exception:
         logger.exception("HR-tags sync failed after delete (non-critical)")
 
-    logger.info(f"Deleted application {application_id}")
+    logger.info(
+        "APPLICATION_DELETE: app=%s entity=%s «%s» vacancy=%s «%s» stage=%s owner=%s by user=%s (%s) -> корзина #%s",
+        *log_args,
+    )

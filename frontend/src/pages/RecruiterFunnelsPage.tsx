@@ -803,6 +803,7 @@ export default function RecruiterFunnelsPage() {
                     setViewOwner={setViewOwner}
                     options={recruiterOptions}
                     myId={user?.id}
+                    allIsDefault={isSuperadmin || !!user?.is_readonly}
                   />
                 </div>
 

@@ -197,16 +197,21 @@ class LogContext:
 
 
 # Convenience functions
-def log_request(method: str, path: str, status_code: int, duration_ms: float) -> None:
-    """Log an HTTP request with standard fields."""
+def log_request(method: str, path: str, status_code: int, duration_ms: float, user=None) -> None:
+    """Log an HTTP request with standard fields.
+
+    user — (id, имя) того, кто сделал запрос (21.10.2026): раньше в строке было
+    только «POST /api/entities 201», и понять, кто это, было нельзя."""
     logger = get_logger("api.request")
+    who = f" · {user[1]} ({user[0]})" if user else ""
     logger.info(
-        f"{method} {path} {status_code}",
+        f"{method} {path} {status_code}{who}",
         extra={
             "method": method,
             "path": path,
             "status_code": status_code,
-            "duration_ms": round(duration_ms, 2)
+            "duration_ms": round(duration_ms, 2),
+            "user_id": user[0] if user else None,
         }
     )
 

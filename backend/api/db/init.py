@@ -246,6 +246,18 @@ async def init_database():
         # вопросы. Пусто у старых ответов — для них берутся поля шаблона.
         ("ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS fields_snapshot JSON",
          "form_submissions.fields_snapshot"),
+        # Корзина и для «Удалить с воронки» (21.10.2026): что удалено, из какой
+        # воронки, чей был кандидат и на каком этапе.
+        ("ALTER TABLE deleted_entities ADD COLUMN IF NOT EXISTS kind VARCHAR(20) DEFAULT 'entity'",
+         "deleted_entities.kind"),
+        ("ALTER TABLE deleted_entities ADD COLUMN IF NOT EXISTS vacancy_id INTEGER",
+         "deleted_entities.vacancy_id"),
+        ("ALTER TABLE deleted_entities ADD COLUMN IF NOT EXISTS vacancy_title VARCHAR(500)",
+         "deleted_entities.vacancy_title"),
+        ("ALTER TABLE deleted_entities ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255)",
+         "deleted_entities.owner_name"),
+        ("ALTER TABLE deleted_entities ADD COLUMN IF NOT EXISTS stage VARCHAR(50)",
+         "deleted_entities.stage"),
     ):
         await run_migration(engine, sql, description)
 
@@ -546,6 +558,18 @@ async def init_database():
             await migrate_board_departments_once(session)
     except Exception as e:
         logger.warning(f"Board placements migration failed (non-critical): {e}")
+
+    # Журнал действий: строки старше года — удалить (services/audit.py).
+    try:
+        from ..services.audit import purge_old
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            removed = await purge_old(session)
+            await session.commit()
+            if removed:
+                logger.info(f"AUDIT purge: удалено старых строк журнала: {removed}")
+    except Exception as e:
+        logger.warning(f"Audit purge failed (non-critical): {e}")
 
     # Заявки людей, которых доска «Штат» перевела в отдел, не сдвинув заявку
     # с «Практики» (20.10.2026, services/board_stage_sync.py). Одноразово.

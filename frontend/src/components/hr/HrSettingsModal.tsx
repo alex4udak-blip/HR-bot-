@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import clsx from "clsx";
 import toast from "react-hot-toast";
 import {
-  Archive, Code2, Trash2, FileText, Filter, GitBranch, Layers, Link2, Mail, Palette, Puzzle, Search, User, Users, Wand2, X,
+  Archive, Code2, Trash2, FileText, Filter, GitBranch, History, Layers, Link2, Mail, Palette, Puzzle, Search, User, Users, Wand2, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -42,6 +42,15 @@ const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
     icon: Trash2,
     color: "text-[var(--hf-red-500)]",
     path: "/deleted-candidates",
+    adminOnly: true,
+  },
+  {
+    // Журнал действий (21.10.2026): кто что делал — каждое изменение в HR.
+    title: "Журнал действий",
+    description: "Кто, когда и что менял: этапы, комментарии, карточки, воронки",
+    icon: History,
+    color: "text-[var(--hf-status-cyan)]",
+    path: "/audit-log",
     adminOnly: true,
   },
   {

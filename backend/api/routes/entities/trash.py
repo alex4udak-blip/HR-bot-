@@ -7,7 +7,7 @@ GET /entities/{entity_id} перехватил бы /entities/trash.
 """
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +46,12 @@ def _row(r: DeletedEntity, now: datetime) -> dict:
         "restored_by_name": r.restored_by_name,
         "purged_at": r.purged_at.isoformat() if r.purged_at else None,
         "summary": snapshot_summary(r.snapshot),
+        # «application» — кандидат убран из одной воронки (карточка осталась).
+        "kind": r.kind or "entity",
+        "vacancy_id": r.vacancy_id,
+        "vacancy_title": r.vacancy_title,
+        "owner_name": r.owner_name,
+        "stage": r.stage,
     }
 
 
@@ -74,6 +80,7 @@ async def list_trash(
 @router.post("/trash/{trash_id}/restore")
 async def restore_trash(
     trash_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -91,14 +98,36 @@ async def restore_trash(
         raise HTTPException(404, "Запись корзины не найдена")
     if record.purge_after <= datetime.utcnow() and not record.restored_at:
         raise HTTPException(410, "Срок хранения в корзине истёк — вернуть уже нельзя")
+    kind = record.kind or "entity"
+    entity_id, entity_name = record.entity_id, record.entity_name
+    vacancy_id, vacancy_title = record.vacancy_id, record.vacancy_title
+    # Журнал действий: кого вернули (в адресе только номер записи корзины).
+    request.state.audit_extra = {"entity_id": entity_id, "vacancy_id": vacancy_id}
+    user_id, user_name = current_user.id, current_user.name
     try:
         skipped = await restore_from_trash(db, record, current_user)
+        if kind == "application":
+            # Заявка вернулась — общий статус кандидата снова по «актуальной»
+            # заявке (снятие с последней воронки сбрасывало его в «Новый»).
+            from ...services.stage_change import settle_entities
+            await settle_entities(db, [entity_id])
     except RestoreError as e:
         await db.rollback()
         raise HTTPException(409, str(e))
     await db.commit()
-    logger.info(
-        "ENTITY_RESTORE: entity=%s «%s» by user=%s (%s), не вернулось: %s",
-        record.entity_id, record.entity_name, current_user.id, current_user.name, skipped or "—",
-    )
-    return {"success": True, "entity_id": record.entity_id, "skipped": skipped}
+    if kind == "application":
+        try:
+            from ...services.hr_tags import sync_for_entity
+            await sync_for_entity(db, entity_id)
+        except Exception:
+            logger.exception("HR-tags sync failed after application restore (non-critical)")
+        logger.info(
+            "APPLICATION_RESTORE: entity=%s «%s» vacancy=%s «%s» by user=%s (%s), не вернулось: %s",
+            entity_id, entity_name, vacancy_id, vacancy_title, user_id, user_name, skipped or "—",
+        )
+    else:
+        logger.info(
+            "ENTITY_RESTORE: entity=%s «%s» by user=%s (%s), не вернулось: %s",
+            entity_id, entity_name, user_id, user_name, skipped or "—",
+        )
+    return {"success": True, "entity_id": entity_id, "vacancy_id": vacancy_id, "kind": kind, "skipped": skipped}

@@ -2222,6 +2222,45 @@ class DeletedEntity(Base):
     restored_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     restored_by_name = Column(String(255), nullable=True)
     purged_at = Column(DateTime, nullable=True)
+    # Что удалено (21.10.2026): «entity» — кандидат целиком; «application» —
+    # кандидат убран из ОДНОЙ воронки кнопкой «Удалить с воронки» (заявка, её
+    # история и комментарии). Пусто у старых строк = кандидат.
+    kind = Column(String(20), nullable=True, default="entity")
+    vacancy_id = Column(Integer, nullable=True)
+    vacancy_title = Column(String(500), nullable=True)
+    # Чей кандидат был в воронке (автор заявки) и на каком этапе — для строки
+    # корзины: «был у Марии, Интервью с заказчиком».
+    owner_name = Column(String(255), nullable=True)
+    stage = Column(String(50), nullable=True)
+
+
+class AuditEvent(Base):
+    """Журнал действий (21.10.2026, владелец: «каждый их чих… чтобы не было
+    расхождения, в котором непонятно, кто что делал, кто редактировал»).
+
+    Одна строка = один изменяющий запрос к API (всё, кроме GET): кто, когда,
+    что вызвал, с каким результатом и с какими данными. Пишет промежуточный
+    слой (middleware/audit.py), поэтому новые ручки попадают в журнал сами.
+    Логи Saturn живут до перезапуска контейнера — журнал в базе переживает
+    деплои. Пароли и токены вырезаются, у файлов — только имя и размер.
+    """
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True)
+    at = Column(DateTime, default=func.now(), nullable=False, index=True)
+    # Не внешние ключи: строка журнала переживает удаление и человека, и кандидата.
+    user_id = Column(Integer, nullable=True, index=True)
+    user_name = Column(String(255), nullable=True)
+    method = Column(String(10), nullable=False)
+    path = Column(String(500), nullable=False)
+    status = Column(Integer, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    action = Column(String(200), nullable=True)
+    entity_id = Column(Integer, nullable=True, index=True)
+    vacancy_id = Column(Integer, nullable=True, index=True)
+    application_id = Column(Integer, nullable=True, index=True)
+    body = Column(JSON, nullable=True)
+    correlation_id = Column(String(40), nullable=True)
 
 
 # ===========================================================================

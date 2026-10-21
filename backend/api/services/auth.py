@@ -197,6 +197,15 @@ async def get_current_user(
     if db_token_version != token_version:
         raise HTTPException(status_code=401, detail="Token has been invalidated")
 
+    # Кто делает запрос — для строки лога и журнала действий (middleware/
+    # correlation.py, 21.10.2026). request.state живёт в scope, поэтому
+    # промежуточный слой видит его после ответа. Ставим ДО проверки
+    # «Наблюдателя»: запрещённая попытка тоже должна быть подписана.
+    try:
+        request.state.audit_user = (user.id, user.name)
+    except Exception:
+        pass
+
     # «Наблюдатель» (read-only набор прав, для менторов): ЛЮБОЙ изменяющий запрос
     # запрещаем — даже если кнопка где-то осталась активной, клик даст 403. Единая
     # точка = гарантия «ничего не может нажать/поменять». Проверяем только не-GET

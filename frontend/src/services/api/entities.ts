@@ -104,6 +104,21 @@ export interface TrashItem {
   restored_by_name: string | null;
   purged_at: string | null;
   summary: { applications?: number; history?: number; files?: number };
+  /** «application» — кандидат убран из одной воронки (карточка осталась). */
+  kind?: 'entity' | 'application';
+  vacancy_id?: number | null;
+  vacancy_title?: string | null;
+  /** Чей кандидат был в воронке (автор заявки). */
+  owner_name?: string | null;
+  stage?: string | null;
+}
+
+export interface RestoreResult {
+  success: boolean;
+  entity_id: number;
+  vacancy_id?: number | null;
+  kind?: 'entity' | 'application';
+  skipped: Record<string, number>;
 }
 
 export const getEntityTrash = async (): Promise<TrashItem[]> => {
@@ -113,8 +128,8 @@ export const getEntityTrash = async (): Promise<TrashItem[]> => {
 
 export const restoreEntityFromTrash = async (
   trashId: number,
-): Promise<{ success: boolean; entity_id: number; skipped: Record<string, number> }> => {
-  const { data } = await debouncedMutation<{ success: boolean; entity_id: number; skipped: Record<string, number> }>(
+): Promise<RestoreResult> => {
+  const { data } = await debouncedMutation<RestoreResult>(
     'post', `/entities/trash/${trashId}/restore`,
   );
   return data;

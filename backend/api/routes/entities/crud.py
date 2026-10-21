@@ -1,7 +1,7 @@
 """
 CRUD operations for entities (create, read, update, delete).
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -333,6 +333,7 @@ async def list_entities(
 @router.post("/", status_code=201)
 async def create_entity(
     data: EntityCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -384,6 +385,8 @@ async def create_entity(
     db.add(entity)
     await db.commit()
     await db.refresh(entity)
+    # Журнал действий: номер новой карточки (в адресе запроса его нет).
+    request.state.audit_extra = {"entity_id": entity.id}
 
     # Теневая дедупликация: сверяем нового активного кандидата с архивом.
     # При совпадении помечаем профиль флагом — фронт покажет баннер «Проверить».

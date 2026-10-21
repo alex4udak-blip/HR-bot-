@@ -4,6 +4,7 @@ import { RotateCcw, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getEntityTrash, restoreEntityFromTrash, type TrashItem } from '@/services/api/entities';
 import { parseServerDate } from '@/utils/date';
+import { STAGE_LABEL_BY_STAGE } from '@/constants/hrStages';
 import { useAuthStore } from '@/stores/authStore';
 
 // «Удалённые кандидаты» (20.10.2026). 19.10 кандидатку удалили, и ни кто, ни
@@ -11,6 +12,10 @@ import { useAuthStore } from '@/stores/authStore';
 // корзину целиком (воронки, история, комментарии, файлы) на 7 дней; здесь админ
 // видит, кто и когда удалял, и возвращает кандидата как был. Сервер —
 // services/entity_trash.py.
+//
+// С 21.10.2026 здесь же «Удалить с воронки»: кандидат убран из ОДНОЙ воронки
+// (карточка осталась), а этап, чей был, история переводов и комментарии к ним
+// лежат 7 дней и возвращаются кнопкой — прямо в ту воронку.
 
 const fmt = (iso: string | null) =>
   iso
@@ -59,14 +64,19 @@ export default function DeletedCandidatesPage() {
       const lost = Object.entries(res.skipped || {})
         .map(([t, n]) => `${TABLE_LABELS[t] || t}: ${n}`)
         .join(', ');
-      toast.success(
-        lost
-          ? `«${item.name}» возвращён. Не вернулось (связанное удалили): ${lost}`
-          : `«${item.name}» возвращён со всеми воронками и историей`,
-        { duration: lost ? 8000 : 4000 },
-      );
+      const what =
+        res.kind === 'application'
+          ? `«${item.name}» снова в воронке «${item.vacancy_title || '—'}» — с этапом и историей`
+          : `«${item.name}» возвращён со всеми воронками и историей`;
+      toast.success(lost ? `${what}. Не вернулось (связанное удалили): ${lost}` : what, {
+        duration: lost ? 8000 : 4000,
+      });
       await load();
-      navigate(`/all-candidates?entity=${res.entity_id}`, { state: { openCreatedEntity: res.entity_id } });
+      if (res.kind === 'application' && res.vacancy_id) {
+        navigate(`/my-funnels?v=${res.vacancy_id}&entity=${res.entity_id}`);
+      } else {
+        navigate(`/all-candidates?entity=${res.entity_id}`, { state: { openCreatedEntity: res.entity_id } });
+      }
     } catch (e) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(detail || 'Не удалось вернуть кандидата');
@@ -81,7 +91,9 @@ export default function DeletedCandidatesPage() {
         <h1 className="text-2xl font-bold text-white">Удалённые кандидаты</h1>
         <p className="text-dark-400 text-sm mt-1">
           Удалённый кандидат хранится 7 дней целиком — с воронками, историей, комментариями и
-          файлами. За это время его можно вернуть как был. Кто и когда удалял — видно здесь всегда.
+          файлами. Так же 7 дней хранится «Удалить с воронки»: этап, чей был кандидат и история
+          переводов в этой воронке. За это время всё можно вернуть как было. Кто и когда
+          удалял — видно здесь всегда.
         </p>
       </div>
 
@@ -92,7 +104,7 @@ export default function DeletedCandidatesPage() {
       ) : items.length === 0 ? (
         <div className="py-16 text-center text-dark-400">
           <Trash2 className="w-8 h-8 mx-auto mb-3 opacity-50" />
-          За последние 90 дней никого не удаляли.
+          За последние 90 дней никого не удаляли и не убирали из воронок.
         </div>
       ) : (
         <div className="grid gap-3">
@@ -103,12 +115,23 @@ export default function DeletedCandidatesPage() {
             >
               <div className="min-w-0">
                 <div className="font-semibold text-white truncate">{item.name || 'Без имени'}</div>
-                <div className="text-sm text-dark-400 mt-1">
-                  Удалил(а): {item.deleted_by_name || '—'} · {fmt(item.deleted_at)}
-                </div>
-                {summaryText(item.summary) && (
-                  <div className="text-xs text-dark-400 mt-1">{summaryText(item.summary)}</div>
+                {item.kind === 'application' && (
+                  <div className="text-sm text-white/80 mt-1">
+                    Убран из воронки «{item.vacancy_title || '—'}»
+                    {item.owner_name ? ` · рекрутёр: ${item.owner_name}` : ''}
+                    {item.stage ? ` · этап «${(STAGE_LABEL_BY_STAGE as Record<string, string>)[item.stage] || item.stage}»` : ''}
+                  </div>
                 )}
+                <div className="text-sm text-dark-400 mt-1">
+                  {item.kind === 'application' ? 'Убрал(а)' : 'Удалил(а)'}: {item.deleted_by_name || '—'} · {fmt(item.deleted_at)}
+                </div>
+                {item.kind === 'application'
+                  ? !!item.summary?.history && (
+                      <div className="text-xs text-dark-400 mt-1">записей истории: {item.summary.history}</div>
+                    )
+                  : summaryText(item.summary) && (
+                      <div className="text-xs text-dark-400 mt-1">{summaryText(item.summary)}</div>
+                    )}
               </div>
               <div className="shrink-0 text-right">
                 {item.restored_at ? (

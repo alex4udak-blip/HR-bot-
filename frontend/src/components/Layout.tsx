@@ -50,6 +50,7 @@ import HrSettingsModal from "@/components/hr/HrSettingsModal";
 import ParserModal from "@/components/parser/ParserModal";
 import TelegramConnectBanner from "@/components/TelegramConnectBanner";
 import UpdateBanner from "@/components/app/UpdateBanner";
+import ObserverBanner from "@/components/app/ObserverBanner";
 import { NotifPeek } from "@/components/NotifPeek";
 import { NotifSettings } from "@/components/NotifSettings";
 import { getVacancy, getAssignableUsers } from "@/services/api/vacancies";
@@ -237,6 +238,7 @@ function getBlockForPath(path: string): string | null {
       "/statuses",
       "/candidate-archive",
       "/deleted-candidates",
+      "/audit-log",
       "/workspaces",
       "/my-funnels",
       "/form-builder",
@@ -2318,20 +2320,7 @@ export default function Layout() {
             он действительно только смотрит. В своём рабочем домене (Практика/проекты)
             наблюдатель-практик-лид полноценно работает, поэтому там баннер не висит. */}
         {user?.is_readonly && (routeBlock === "hr" || routeBlock === "admin") && (
-          <div
-            className="px-4 py-2 flex items-center justify-center gap-2 text-[13px] font-semibold"
-            style={{ background: "#fde68a", color: "#92400e", borderBottom: "1px solid #f59e0b" }}
-            role="status"
-            aria-live="polite"
-          >
-            {/* Честная подпись: у наблюдателя со скоупом по воронкам «видите
-                всё» — неправда, он видит только свои воронки (01.10.2026). */}
-            <span>
-              {(user?.scope_vacancy_ids?.length ?? 0) > 0
-                ? "👁️ Режим наблюдателя — доступ только к вашим воронкам, изменения запрещены"
-                : "👁️ Режим наблюдателя — вы видите всё, но ничего не можете менять"}
-            </span>
-          </div>
+          <ObserverBanner scoped={(user?.scope_vacancy_ids?.length ?? 0) > 0} />
         )}
         {/* Вышла новая сборка, а вкладка открыта на старой — предложить обновить. */}
         <UpdateBanner />

@@ -11,6 +11,11 @@
 вставляет строки обратно с теми же номерами (родители раньше детей) и
 восстанавливает обнулённые ссылки. Всё в одной транзакции: не вышло — не
 вернули ничего, кандидат остаётся в корзине, причина — в ответе.
+
+С 21.10.2026 так же устроено «Удалить с воронки»: корень слепка — заявка
+(vacancy_applications), с ней уходят её история этапов и прочее, что каскад
+сотрёт. Карточка кандидата при этом остаётся, поэтому в корзине это отдельная
+строка «убран из воронки „…“» (kind = application).
 """
 from __future__ import annotations
 
@@ -25,12 +30,19 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.database import Base, DeletedEntity, Entity, User
+from ..models.database import Base, DeletedEntity, Entity, User, Vacancy, VacancyApplication
 
 logger = logging.getLogger("hr-analyzer.entity_trash")
 
 TRASH_DAYS = 7
 ROOT_TABLE = "entities"
+APPLICATION_TABLE = "vacancy_applications"
+KIND_ENTITY = "entity"
+KIND_APPLICATION = "application"
+
+
+def root_table_of(record: DeletedEntity) -> str:
+    return APPLICATION_TABLE if record.kind == KIND_APPLICATION else ROOT_TABLE
 
 
 # --- значения колонок ⇄ JSON ---------------------------------------------------
@@ -90,6 +102,11 @@ def _pk(table, row: dict) -> tuple:
 
 async def snapshot_entity(db: AsyncSession, entity_id: int) -> Dict[str, Any]:
     """Всё, что удаление кандидата сотрёт или отвяжет. Ничего не пишет."""
+    return await snapshot_rows(db, ROOT_TABLE, entity_id)
+
+
+async def snapshot_rows(db: AsyncSession, root_table: str, root_id: int) -> Dict[str, Any]:
+    """Всё, что удаление строки root_table/root_id сотрёт каскадом или отвяжет."""
     md = Base.metadata
     rows: Dict[str, Dict[tuple, dict]] = {}
     links: List[dict] = []
@@ -98,13 +115,13 @@ async def snapshot_entity(db: AsyncSession, entity_id: int) -> Dict[str, Any]:
         res = await db.execute(select(table).where(where))
         return [dict(r._mapping) for r in res]
 
-    root = md.tables[ROOT_TABLE]
-    found = await fetch(root, root.c.id == entity_id)
+    root = md.tables[root_table]
+    found = await fetch(root, root.c.id == root_id)
     if not found:
-        raise LookupError(f"entity {entity_id} not found")
-    rows[ROOT_TABLE] = {_pk(root, r): r for r in found}
+        raise LookupError(f"{root_table} {root_id} not found")
+    rows[root_table] = {_pk(root, r): r for r in found}
 
-    queue = [ROOT_TABLE]
+    queue = [root_table]
     while queue:
         parent_name = queue.pop(0)
         parent_rows = list(rows.get(parent_name, {}).values())
@@ -165,6 +182,42 @@ async def move_to_trash(
     return record
 
 
+async def move_application_to_trash(
+    db: AsyncSession,
+    application: VacancyApplication,
+    vacancy: Optional[Vacancy],
+    entity: Optional[Entity],
+    user: User,
+    *,
+    now: Optional[datetime] = None,
+) -> DeletedEntity:
+    """«Удалить с воронки»: слепок заявки (этап, автор, история, закреп) в
+    корзину. Само удаление делает вызывающий. Не коммитит."""
+    now = now or datetime.utcnow()
+    snap = await snapshot_rows(db, APPLICATION_TABLE, application.id)
+    owner_id = application.created_by or (vacancy.created_by if vacancy else None)
+    owner = await db.get(User, owner_id) if owner_id else None
+    stage = application.stage.value if hasattr(application.stage, "value") else application.stage
+    record = DeletedEntity(
+        org_id=(vacancy.org_id if vacancy else None) or (entity.org_id if entity else None),
+        kind=KIND_APPLICATION,
+        entity_id=application.entity_id,
+        entity_name=entity.name if entity else None,
+        entity_type=(entity.type.value if entity is not None and hasattr(entity.type, "value") else None),
+        vacancy_id=application.vacancy_id,
+        vacancy_title=vacancy.title if vacancy else None,
+        owner_name=owner.name if owner else None,
+        stage=stage,
+        deleted_by_id=user.id,
+        deleted_by_name=user.name,
+        deleted_at=now,
+        purge_after=now + timedelta(days=TRASH_DAYS),
+        snapshot=snap,
+    )
+    db.add(record)
+    return record
+
+
 class RestoreError(Exception):
     """Вернуть нельзя — текст для человека."""
 
@@ -181,28 +234,31 @@ async def restore_from_trash(db: AsyncSession, record: DeletedEntity, user: User
         raise RestoreError("Кандидат уже возвращён")
     if not record.snapshot:
         raise RestoreError("Срок хранения в корзине истёк — вернуть уже нельзя")
-    exists = (await db.execute(select(Entity.id).where(Entity.id == record.entity_id))).scalar()
-    if exists:
-        raise RestoreError("Карточка с этим номером уже есть")
-
+    root_name = root_table_of(record)
     md = Base.metadata
     tables = record.snapshot.get("tables") or {}
+    if root_name == ROOT_TABLE:
+        exists = (await db.execute(select(Entity.id).where(Entity.id == record.entity_id))).scalar()
+        if exists:
+            raise RestoreError("Карточка с этим номером уже есть")
+    else:
+        await _check_application_restorable(db, record)
 
     def _values(table, raw: dict) -> dict:
         return {k: _decode(table.c[k], v) for k, v in raw.items() if k in table.c}
 
-    root = md.tables[ROOT_TABLE]
+    root = md.tables[root_name]
     try:
         async with db.begin_nested():
-            for raw in tables.get(ROOT_TABLE) or []:
+            for raw in tables.get(root_name) or []:
                 await db.execute(root.insert().values(**_values(root, raw)))
     except Exception as e:  # noqa: BLE001
         logger.warning("ENTITY_RESTORE failed: record=%s entity=%s: %s", record.id, record.entity_id, e)
-        raise RestoreError("Не удалось вернуть карточку — подробности в логе ENTITY_RESTORE") from e
+        raise RestoreError("Не удалось вернуть — подробности в логе ENTITY_RESTORE") from e
 
     skipped: Dict[str, int] = {}
     for table in md.sorted_tables:  # родители раньше детей
-        if table.name == ROOT_TABLE:
+        if table.name == root_name:
             continue
         for raw in tables.get(table.name) or []:
             try:
@@ -229,6 +285,33 @@ async def restore_from_trash(db: AsyncSession, record: DeletedEntity, user: User
     record.restored_by_id = user.id
     record.restored_by_name = user.name
     return skipped
+
+
+async def _check_application_restorable(db: AsyncSession, record: DeletedEntity) -> None:
+    """Вернуть заявку можно, только если есть куда: кандидат и воронка живы, а
+    его не добавили в эту воронку заново (одна заявка на пару «кандидат +
+    воронка»). Иначе — понятная причина вместо ошибки базы."""
+    raw = ((record.snapshot.get("tables") or {}).get(APPLICATION_TABLE) or [{}])[0]
+    app_id = raw.get("id")
+    if not (await db.execute(select(Entity.id).where(Entity.id == record.entity_id))).scalar():
+        raise RestoreError("Кандидата удалили целиком — сначала верните его самого")
+    vacancy = await db.get(Vacancy, record.vacancy_id) if record.vacancy_id else None
+    if vacancy is None or getattr(vacancy, "deleted_at", None) is not None:
+        raise RestoreError("Воронку удалили — вернуть в неё нельзя")
+    again = (await db.execute(
+        select(VacancyApplication.id).where(
+            VacancyApplication.vacancy_id == record.vacancy_id,
+            VacancyApplication.entity_id == record.entity_id,
+        )
+    )).scalar()
+    if again:
+        raise RestoreError(
+            "Кандидата уже снова добавили в эту воронку — уберите новую заявку, если нужна прежняя"
+        )
+    if app_id is not None and (await db.execute(
+        select(VacancyApplication.id).where(VacancyApplication.id == app_id)
+    )).scalar():
+        raise RestoreError("Заявка уже на месте")
 
 
 async def purge_expired(db: AsyncSession, *, now: Optional[datetime] = None) -> int:

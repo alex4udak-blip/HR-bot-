@@ -51,11 +51,15 @@ export function FunnelRecruiterFilter({
   setViewOwner,
   options,
   myId,
+  allIsDefault = false,
 }: {
   viewOwner: FunnelViewOwner;
   setViewOwner: (owner: FunnelViewOwner) => void;
   options: FunnelRecruiters | null;
   myId: number | null | undefined;
+  /** Суперадмин и наблюдатель: своих кандидатов нет, «Все» — исходный вид, и
+   *  крестик у него увёл бы в пустой список. */
+  allIsDefault?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -118,6 +122,7 @@ export function FunnelRecruiterFilter({
   };
   const canRemove = (chipOwner: FunnelViewOwner) =>
     myId != null &&
+    !(chipOwner === 'all' && allIsDefault) &&
     !(chipOwner !== 'all' && viewOwner !== 'all' && viewOwner.length === 1 && chipOwner[0] === myId);
 
   return (
