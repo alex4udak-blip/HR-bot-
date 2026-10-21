@@ -359,3 +359,51 @@ async def test_entity_status_follows_live_funnel_not_rejection(
     assert r.status_code == 200, r.text
     await db_session.refresh(candidate_entity)
     assert candidate_entity.status == EntityStatus.rejected
+
+
+async def test_undo_of_transfer_returns_to_rejected_not_dismissed(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User,
+    organization: Organization, department: Department, org_owner: OrgMember,
+    candidate_entity: Entity,
+):
+    """Отмена перевода в отдел возвращает «Отказ», а не «Уволен».
+
+    Случай Саленик (21.10.2026): кандидата с отказом перевели с доски «Штат» в
+    отдел, затем удалили запись истории. Заявка вернулась в «Отказ», но защита
+    «отказ у оформленного в отдел = увольнение» подменяла статус на «Уволен», и
+    карточка с доской расходились. Отмена перевода — не новое решение по
+    человеку: он возвращается ровно туда, откуда его подняли.
+    """
+    now = datetime.utcnow()
+    vacancy = Vacancy(
+        org_id=organization.id, department_id=department.id, created_by=admin_user.id,
+        title="Персональный ассистент", status=VacancyStatus.open, salary_currency="RUB",
+        created_at=now, updated_at=now,
+    )
+    db_session.add(vacancy)
+    await db_session.commit()
+    app = VacancyApplication(
+        vacancy_id=vacancy.id, entity_id=candidate_entity.id,
+        stage=ApplicationStage.transferred, stage_order=1, created_by=admin_user.id,
+        applied_at=now, last_stage_change_at=now, updated_at=now,
+    )
+    db_session.add(app)
+    candidate_entity.status = EntityStatus.transferred
+    await db_session.commit()
+    moved = StageTransition(
+        application_id=app.id, entity_id=candidate_entity.id,
+        from_stage=ApplicationStage.rejected.value,
+        to_stage=ApplicationStage.transferred.value,
+        changed_by=admin_user.id, created_at=now,
+    )
+    db_session.add(moved)
+    await db_session.commit()
+
+    r = await client.delete(
+        f"/api/vacancies/applications/{app.id}/history/{moved.id}",
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["entity_status"] == EntityStatus.rejected.value
+    await db_session.refresh(candidate_entity)
+    assert candidate_entity.status == EntityStatus.rejected

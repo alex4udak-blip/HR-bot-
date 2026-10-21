@@ -387,10 +387,29 @@ async def delete_entity_note(
     # этого поведение разъезжалось: в воронке кандидат откатывался, а вне её
     # запись просто пропадала, и он оставался на новом этапе (владелец,
     # 28.09.2026). Откатываем ТОЛЬКО если запись описывает текущий статус —
-    # этап уже подвинули руками, значит, она его больше не описывает.
+    # этап уже подвинули руками, значит, она его больше не описывает, — И
+    # только если это САМАЯ СВЕЖАЯ запись о переводе, как в воронке: старые
+    # выше по ленте — чистка лога, этап они не двигают. Без этой проверки
+    # удаление ЛЮБОЙ старой записи с тем же статусом отбрасывало кандидата в
+    # прошлое: у Саленик (21.10.2026) статус так вернулся в «Перевёлся», хотя
+    # в воронке уже стоял «Отказ», — карточка и доска разъехались.
     from_status = removed.get("from_status")
     current_status = entity.status.value if entity.status else None
-    if from_status and removed.get("stage") and removed.get("stage") == current_status:
+    latest_stage_note = max(
+        (n for n in notes if isinstance(n, dict) and n.get("stage")),
+        key=lambda n: str(n.get("date") or ""),
+        default=None,
+    )
+    removed_is_latest = (
+        latest_stage_note is None
+        or str(removed.get("date") or "") >= str(latest_stage_note.get("date") or "")
+    )
+    if (
+        from_status
+        and removed.get("stage")
+        and removed.get("stage") == current_status
+        and removed_is_latest
+    ):
         try:
             entity.status = EntityStatus(from_status)
             entity.updated_at = datetime.utcnow()

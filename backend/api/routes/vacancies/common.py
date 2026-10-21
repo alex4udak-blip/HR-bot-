@@ -877,6 +877,7 @@ DEPARTED_FROM_STAFF = {EntityStatus.dismissed, EntityStatus.quit}
 
 async def recompute_entity_status(
     db: AsyncSession, entity_id: int, moved_app_ids: Iterable[int] = (),
+    *, undo: bool = False,
 ) -> None:
     """Пересчитать Entity.status по «актуальной» заявке кандидата (см.
     pick_primary_application). Раньше общий статус просто НЕ обновлялся, если
@@ -887,6 +888,13 @@ async def recompute_entity_status(
 
     moved_app_ids — заявки, которые сдвинулись В ЭТОМ действии. Только такое
     движение меняет «Уволен»/«Уволился» (см. ниже).
+
+    undo — это ОТМЕНА перевода (удалили последнюю запись истории), а не новое
+    решение по кандидату: подмену «отказ у оформленного в отдел = увольнение»
+    тогда не делаем, иначе откат уводит человека в статус, которого у него
+    никогда не было. Так разъехались карточка и доска у Саленик (21.10.2026):
+    удаление записи вернуло заявку в «Отказ», статус карточки стал «Уволен», а
+    доска осталась в «Перевёлся».
     """
     apps = (await db.execute(
         select(VacancyApplication)
@@ -930,6 +938,7 @@ async def recompute_entity_status(
         entity is not None
         and entity.status == EntityStatus.transferred
         and new_status not in STAYS_EMPLOYED_AFTER_TRANSFER
+        and not undo
     ):
         logger.info(
             "DISMISS_AFTER_TRANSFER: entity=%s этап %s -> статус dismissed (заявка %s)",

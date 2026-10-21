@@ -365,3 +365,38 @@ async def test_plain_comment_still_requires_text(
         json={"text": "   "}, headers=_headers(admin_user),
     )
     assert r.status_code == 400, r.text
+
+
+async def test_old_stage_note_does_not_drag_candidate_back(
+    client: AsyncClient, db_session: AsyncSession, admin_user: User,
+    organization: Organization, org_owner: OrgMember, candidate_entity: Entity,
+):
+    """Старая запись о переводе статус не трогает — откатывает только последняя.
+
+    Случай Саленик (21.10.2026): в ленте лежали две записи о переводах, статус
+    совпал со СТАРОЙ, и её удаление отбросило кандидата в прошлое («Перевёлся»),
+    хотя в воронке он уже был в «Отказе», — карточка и доска разъехались.
+    Правило то же, что у истории в воронке: чистка старых записей этап не двигает.
+    """
+    was = candidate_entity.status.value
+    old = await _add_stage_note(
+        client, admin_user, candidate_entity.id,
+        stage=EntityStatus.transferred.value, from_status=was, text="в отдел",
+    )
+    await _add_stage_note(
+        client, admin_user, candidate_entity.id,
+        stage=EntityStatus.rejected.value, from_status=EntityStatus.transferred.value,
+        text="отказ",
+    )
+    # Статус совпал со старой записью: так вышло после отката в воронке.
+    candidate_entity.status = EntityStatus.transferred
+    await db_session.commit()
+
+    r = await client.delete(
+        f"/api/entities/{candidate_entity.id}/notes/{old}",
+        headers=_headers(admin_user),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["rolled_back"] is False
+    await db_session.refresh(candidate_entity)
+    assert candidate_entity.status == EntityStatus.transferred

@@ -304,7 +304,12 @@ async def delete_application_history(
         application.last_stage_change_at = datetime.utcnow()
         await db.flush()
         # Отмена перевода — тоже движение по воронке (см. recompute_entity_status).
-        await recompute_entity_status(db, application.entity_id, moved_app_ids=[application.id])
+        # undo=True: человек возвращается ровно туда, откуда его подняли, —
+        # иначе откат перевода в отдел давал «Уволен» вместо «Отказа»
+        # (Саленик, 21.10.2026: карточка «Отказ», доска «Перевёлся»).
+        await recompute_entity_status(
+            db, application.entity_id, moved_app_ids=[application.id], undo=True,
+        )
         logger.info(
             "HISTORY_UNDO: user=%s app=%s entity=%s запись %s (%s -> %s) удалена, "
             "заявка возвращена на %s",
