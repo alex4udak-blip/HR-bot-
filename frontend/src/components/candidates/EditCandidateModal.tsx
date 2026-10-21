@@ -116,9 +116,15 @@ export function EditCandidateModal({
   const resumeDemo = card.extra_data?.resume_demo as
     | EditResumeDemoData
     | undefined;
-  const [resumeText, setResumeText] = useState(
-    buildEditResumeText(card, resumeDemo),
-  );
+  // Сначала — текст, вписанный в «Текст резюме» (его показывает вкладка
+  // «Резюме» с подписью «правится в „Редактировать“»). Раньше окно брало
+  // только демо-резюме, и поле открывалось пустым (проверка прода 21.10.2026).
+  const [resumeText, setResumeText] = useState(() => {
+    const saved = card.extra_data?.resume_text;
+    return typeof saved === "string" && saved.trim()
+      ? saved
+      : buildEditResumeText(card, resumeDemo);
+  });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});

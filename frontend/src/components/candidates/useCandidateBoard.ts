@@ -17,22 +17,37 @@ export function useCandidateBoard(search: string) {
   // человек сразу видит нормальные счётчики и список, пока с сервера едет
   // свежая. Без этого между сбросом и ответом мелькали нули и «кандидатов нет».
   const fullBoardRef = useRef<KanbanBoardResponse | null>(null);
+  // Счётчик правок доски на месте (перевод этапа, правка, удаление). Ответ
+  // сервера, запрошенный ДО правки, её не знает: раньше он приходил следом и
+  // возвращал строке старый этап до следующего обновления, до 15 с (проверка
+  // прода 21.10.2026 — список на проде грузится 1–3 с). Такой ответ не
+  // показываем и сразу запрашиваем свежий: сама правка на сервере уже сделана.
+  const editsRef = useRef(0);
+  const setBoardLocal = useCallback<typeof setBoard>((update) => {
+    editsRef.current += 1;
+    setBoard(update);
+  }, []);
 
   const fetchBoard = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const data = await getCandidatesKanban({
-        q: search || undefined,
-        // Без поиска — до 2000 на колонку, чтобы «Все кандидаты» показывали ВСЕХ
-        // (при 500 «Новый» с 468 вот-вот начал бы терять хвост при верном бейдже).
-        // «Показать ещё» лишь дорисовывает загруженное. При ПОИСКЕ — 500 лучших
-        // на колонку: туда подмешивается архив (тысячи совпадений), выдача
-        // отсортирована по релевантности.
-        per_column: search ? 500 : 2000,
-      });
-      setBoard(data);
-      setBoardQuery(search);
-      if (!search) fullBoardRef.current = data;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const edits = editsRef.current;
+        const data = await getCandidatesKanban({
+          q: search || undefined,
+          // Без поиска — до 2000 на колонку, чтобы «Все кандидаты» показывали ВСЕХ
+          // (при 500 «Новый» с 468 вот-вот начал бы терять хвост при верном бейдже).
+          // «Показать ещё» лишь дорисовывает загруженное. При ПОИСКЕ — 500 лучших
+          // на колонку: туда подмешивается архив (тысячи совпадений), выдача
+          // отсортирована по релевантности.
+          per_column: search ? 500 : 2000,
+        });
+        if (edits !== editsRef.current) continue;
+        setBoard(data);
+        setBoardQuery(search);
+        if (!search) fullBoardRef.current = data;
+        break;
+      }
     } catch {
       /* ignore */
     } finally {
@@ -85,5 +100,5 @@ export function useCandidateBoard(search: string) {
   // пока набирают первый запрос, доска полная — она не врёт.
   const staleFiltered = boardStale && boardQuery !== "";
 
-  return { board, setBoard, loading, fetchBoard, showFullBoard, boardStale, staleFiltered };
+  return { board, setBoard: setBoardLocal, loading, fetchBoard, showFullBoard, boardStale, staleFiltered };
 }
