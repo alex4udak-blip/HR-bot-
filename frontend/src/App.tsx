@@ -97,6 +97,7 @@ const PracticeListPage = lazyWithRetry(() => import('@/pages/PracticeListPage'))
 const FormBuilderPage = lazyWithRetry(() => import('@/pages/FormBuilderPage'));
 const DeletedCandidatesPage = lazyWithRetry(() => import('@/pages/DeletedCandidatesPage'));
 const AuditLogPage = lazyWithRetry(() => import('@/pages/AuditLogPage'));
+const AiUsagePage = lazyWithRetry(() => import('@/pages/AiUsagePage'));
 const PublicFormPage = lazyWithRetry(() => import('@/pages/PublicFormPage'));
 const CandidatePreviewPage = lazyWithRetry(() => import('@/pages/CandidatePreviewPage'));
 const DocumentTemplatesPage = lazyWithRetry(() => import('@/pages/DocumentTemplatesPage'));
@@ -233,6 +234,7 @@ export default function App() {
           <Route path="practice-list" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin', 'practice']}><PracticeListPage /></RoleRoute></Suspense>} />
           <Route path="deleted-candidates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><DeletedCandidatesPage /></RoleRoute></Suspense>} />
           <Route path="audit-log" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><AuditLogPage /></RoleRoute></Suspense>} />
+          <Route path="ai-usage" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><AiUsagePage /></RoleRoute></Suspense>} />
           <Route path="form-builder" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><FormBuilderPage /></RoleRoute></Suspense>} />
           <Route path="form-builder/:formId" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><FormBuilderPage /></RoleRoute></Suspense>} />
           <Route path="document-templates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><DocumentTemplatesPage /></RoleRoute></Suspense>} />

@@ -32,27 +32,3 @@ export function extractBuildId(html: string): string | null {
 export function isNewBuild(current: string | null, latest: string | null): boolean {
   return !!current && !!latest && current !== latest;
 }
-
-const SNOOZE_KEY = 'enceladus.update_snoozed';
-/** «Позже» — на два часа: напомнить стоит, надоедать нельзя (владелец, 19.10.2026). */
-export const UPDATE_SNOOZE_MS = 2 * 60 * 60 * 1000;
-
-/** Отложено ли напоминание об ЭТОЙ сборке. Новая сборка показывается сразу. */
-export function isSnoozed(build: string, now = Date.now()): boolean {
-  try {
-    const raw = localStorage.getItem(SNOOZE_KEY);
-    if (!raw) return false;
-    const { build: b, until } = JSON.parse(raw) as { build?: string; until?: number };
-    return b === build && typeof until === 'number' && now < until;
-  } catch {
-    return false;
-  }
-}
-
-export function snooze(build: string, now = Date.now()): void {
-  try {
-    localStorage.setItem(SNOOZE_KEY, JSON.stringify({ build, until: now + UPDATE_SNOOZE_MS }));
-  } catch {
-    /* без хранилища плашка просто вернётся при следующей проверке */
-  }
-}

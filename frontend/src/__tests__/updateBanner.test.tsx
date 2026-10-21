@@ -1,11 +1,12 @@
 /**
  * Плашка «Вышло обновление» (19.10.2026): вкладку держат открытой днями, и
  * исправления не доходят до человека, пока он сам не перезагрузит страницу.
+ * С 21.10.2026 крестика нет — висит, пока не обновят (владелец).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
+import { render, screen, act, cleanup } from '@testing-library/react';
 import UpdateBanner from '@/components/app/UpdateBanner';
-import { currentBuildId, extractBuildId, isNewBuild, isSnoozed, snooze, UPDATE_SNOOZE_MS } from '@/utils/appVersion';
+import { currentBuildId, extractBuildId, isNewBuild } from '@/utils/appVersion';
 
 const OLD = '/assets/index-OldHash1.js';
 const NEW = '/assets/index-NewHash2.js';
@@ -53,14 +54,6 @@ describe('версия сборки', () => {
     expect(currentBuildId()).toBeNull();
     expect(isNewBuild(null, NEW)).toBe(false);
   });
-
-  it('«Позже» откладывает только эту сборку и только на два часа', () => {
-    const now = 1_000_000;
-    snooze(NEW, now);
-    expect(isSnoozed(NEW, now + 1000)).toBe(true);
-    expect(isSnoozed('/assets/index-Newer3.js', now + 1000)).toBe(false);
-    expect(isSnoozed(NEW, now + UPDATE_SNOOZE_MS + 1)).toBe(false);
-  });
 });
 
 describe('плашка', () => {
@@ -75,7 +68,7 @@ describe('плашка', () => {
     setLoadedBuild(OLD);
     vi.stubGlobal('fetch', serverServes(NEW));
     await mountAndFocus();
-    expect(await screen.findByText('Вышло обновление Enceladus.')).toBeTruthy();
+    expect(await screen.findByText('Вышло обновление Enceladus')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Обновить' })).toBeTruthy();
   });
 
@@ -85,22 +78,21 @@ describe('плашка', () => {
     vi.stubGlobal('fetch', fetchMock);
     await mountAndFocus();
     expect(fetchMock).toHaveBeenCalled();
-    expect(screen.queryByText('Вышло обновление Enceladus.')).toBeNull();
+    expect(screen.queryByText('Вышло обновление Enceladus')).toBeNull();
   });
 
-  it('«Позже» прячет плашку', async () => {
+  it('закрыть нельзя — только «Обновить»', async () => {
     setLoadedBuild(OLD);
     vi.stubGlobal('fetch', serverServes(NEW));
     await mountAndFocus();
-    fireEvent.click(await screen.findByRole('button', { name: 'Напомнить позже' }));
-    expect(screen.queryByText('Вышло обновление Enceladus.')).toBeNull();
-    expect(isSnoozed(NEW)).toBe(true);
+    await screen.findByText('Вышло обновление Enceladus');
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Обновить']);
   });
 
   it('нет сети — тихо, без плашки и без ошибок', async () => {
     setLoadedBuild(OLD);
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     await mountAndFocus();
-    expect(screen.queryByText('Вышло обновление Enceladus.')).toBeNull();
+    expect(screen.queryByText('Вышло обновление Enceladus')).toBeNull();
   });
 });

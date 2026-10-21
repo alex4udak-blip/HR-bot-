@@ -1,7 +1,7 @@
 from datetime import datetime, time
 from typing import Optional
 from sqlalchemy import (
-    BigInteger, Boolean, Column, Date, DateTime, Enum as SQLEnum,
+    BigInteger, Boolean, Column, Date, DateTime, Enum as SQLEnum, Float,
     ForeignKey, Index, Integer, LargeBinary, String, Table, Text, JSON, Time, func, text, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -2261,6 +2261,28 @@ class AuditEvent(Base):
     application_id = Column(Integer, nullable=True, index=True)
     body = Column(JSON, nullable=True)
     correlation_id = Column(String(40), nullable=True)
+
+
+class AiUsageEvent(Base):
+    """Один вызов Claude: сколько стоил и откуда (21.10.2026, services/ai_usage.py).
+
+    Пишется на каждый вызов SDK (обёртка ставится при старте), ошибки тоже —
+    так видно и «кончился баланс». Цена примерная, по прайсу в ai_usage.PRICES.
+    """
+    __tablename__ = "ai_usage_events"
+
+    id = Column(Integer, primary_key=True)
+    at = Column(DateTime, default=func.now(), nullable=False, index=True)
+    model = Column(String(100), nullable=True)
+    caller = Column(String(200), nullable=True, index=True)
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    cache_read_tokens = Column(Integer, nullable=False, default=0)
+    cache_write_tokens = Column(Integer, nullable=False, default=0)
+    cost_usd = Column(Float, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    ok = Column(Boolean, nullable=False, default=True)
+    error = Column(String(400), nullable=True)
 
 
 # ===========================================================================

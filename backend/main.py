@@ -23,7 +23,7 @@ from api.routes import auth, users, chats, messages, criteria, ai, stats, entiti
 from api.routes import email_templates, analytics, exports, projects, saturn, notifications, project_statuses, forms, employees, documents, org_units, magic_button, pen
 from api.routes import candidate_search, extension_download, prometheus_invite, csv_import
 from api.routes import candidate_database, recruiter_workspaces
-from api.routes import timeoff, blockers, tags, integrations, staff_board, access_hub, audit
+from api.routes import timeoff, blockers, tags, integrations, staff_board, access_hub, audit, ai_usage
 from api.config import settings
 from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
@@ -588,6 +588,11 @@ async def lifespan(app: FastAPI):
         pass
 
 
+# Учёт расхода Claude: оборачиваем методы SDK до того, как сервисы начнут
+# звать модель (services/ai_usage.py, 21.10.2026).
+from api.services.ai_usage import install as install_ai_usage
+install_ai_usage()
+
 app = FastAPI(
     title="HR Candidate Analyzer API",
     description="API for HR candidate analysis with Telegram integration",
@@ -635,6 +640,8 @@ app.include_router(departments.router, prefix="/api/departments", tags=["departm
 app.include_router(staff_board.router, prefix="/api/staff-board", tags=["staff-board"])
 # Журнал действий (21.10.2026): кто что делал — пишет middleware, читают админы HR.
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
+# «Расход ИИ» (21.10.2026): сколько и на что уходит Claude — services/ai_usage.py.
+app.include_router(ai_usage.router, prefix="/api/ai-usage", tags=["ai-usage"])
 app.include_router(access_hub.router, prefix="/api/access-hub", tags=["access-hub"])
 app.include_router(invitations.router, prefix="/api/invitations", tags=["invitations"])
 app.include_router(realtime.router, tags=["realtime"])

@@ -437,7 +437,8 @@ async def parse_resume_file(
             f"size={len(file_content)} bytes"
         )
 
-        resume = await parse_resume_from_file(file_content, safe_filename)
+        # Окну нужны только поля карточки — короткий разбор (21.10.2026).
+        resume = await parse_resume_from_file(file_content, safe_filename, card=True)
 
         # Log successful parsing
         logger.info(

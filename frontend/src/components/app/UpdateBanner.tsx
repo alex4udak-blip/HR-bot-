@@ -1,63 +1,50 @@
-import { useEffect, useState } from 'react';
-import { RefreshCw, X } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useNewBuild } from '@/hooks/useNewBuild';
-import { isSnoozed, snooze, UPDATE_SNOOZE_MS } from '@/utils/appVersion';
 
 /**
  * Плашка «Вышло обновление» (Эльвира и владелец, 19.10.2026): исправления
  * доходят до открытой вкладки только после перезагрузки, а о деплое никто не
- * знает. Показывается один раз на сборку, «Позже» прячет на два часа.
- * Обновление безопасно: черновики комментариев и ответы анкет хранятся в
+ * знает. Обновление безопасно: черновики комментариев и ответы анкет хранятся в
  * браузере и переживают перезагрузку.
+ *
+ * 21.10.2026 (владелец): карточкой на линиях страницы, как плашка наблюдателя
+ * (полосой во всю ширину она прилипала к сайдбару и уходила за край), и БЕЗ
+ * крестика — висит, пока не обновят. Крестик откладывал на два часа, и плашку
+ * закрывали, не прочитав: после деплоя её «так и не увидели». Голубая — чтобы
+ * не путать с жёлтой плашкой наблюдателя.
+ *
+ * «Обновить» — обычная перезагрузка (как F5), кэш чистить не нужно: index.html
+ * отдаётся с no-store, а у файлов новой сборки другие имена.
  */
 export default function UpdateBanner() {
   const build = useNewBuild();
-  const [hidden, setHidden] = useState(false);
-
-  // Отложенную плашку возвращаем, когда истекут два часа (вкладка открыта днями).
-  useEffect(() => {
-    if (!build) return;
-    setHidden(isSnoozed(build));
-    const t = window.setInterval(() => setHidden(isSnoozed(build)), 60 * 1000);
-    return () => window.clearInterval(t);
-  }, [build]);
-
-  if (!build || hidden) return null;
+  if (!build) return null;
 
   return (
     <div
-      className="px-4 py-2 flex items-center gap-3 border-b text-[13px]"
-      style={{ background: '#e0edff', color: '#1e3a8a', borderColor: '#bfd4fb' }}
+      className="flex-shrink-0"
+      // Те же линии, что у полосы этапов (.hf-top-stage-shell): сверху и справа
+      // var(--hf-space-s), слева 0.
+      style={{ padding: 'var(--hf-space-s) var(--hf-space-s) 0 0' }}
       role="status"
       aria-live="polite"
     >
-      <RefreshCw className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-      <div className="flex-1 min-w-0">
-        <span className="font-semibold">Вышло обновление Enceladus.</span>
-        <span className="ml-1.5">
-          Обновите страницу, чтобы исправления заработали — набранные комментарии не пропадут.
-        </span>
+      <div
+        className="flex items-center justify-center gap-2.5 rounded-2xl px-3 py-1.5 text-[13px]"
+        style={{ background: '#e0edff', color: '#1e3a8a', border: '1px solid #bfd4fb' }}
+      >
+        <RefreshCw className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+        <span className="font-semibold">Вышло обновление Enceladus</span>
+        <span className="min-w-0 truncate">— обновите страницу, набранное не пропадёт</span>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="flex-shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-white"
+          style={{ background: '#2563eb' }}
+        >
+          Обновить
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => window.location.reload()}
-        className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold flex-shrink-0"
-        style={{ background: '#2563eb' }}
-      >
-        Обновить
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          snooze(build);
-          setHidden(true);
-        }}
-        className="p-1 flex-shrink-0 opacity-60 hover:opacity-100"
-        title={`Напомнить через ${UPDATE_SNOOZE_MS / 3600000} ч`}
-        aria-label="Напомнить позже"
-      >
-        <X className="w-4 h-4" />
-      </button>
     </div>
   );
 }

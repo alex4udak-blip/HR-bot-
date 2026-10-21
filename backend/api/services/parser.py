@@ -135,6 +135,42 @@ class ParsedVacancy(BaseModel):
 
 
 # AI prompts for parsing
+# Короткий разбор для окна «Загрузка из файла» (21.10.2026). Окно берёт из
+# ответа ТОЛЬКО эти поля (ParserModal → createEntity), а сам файл резюме
+# прикладывается к карточке, и его текст сервер достаёт без ИИ. Полный
+# RESUME_PROMPT заставлял модель переписывать всё резюме в JSON (опыт с
+# описаниями, образование, курсы…) — это и съедало деньги: ответ модели в 5 раз
+# дороже входа, а почти всё из него выбрасывалось. Описание (summary) раньше не
+# заказывалось вовсе — поле в окне всегда было пустым.
+RESUME_CARD_PROMPT = """Извлеки из резюме кандидата только эти поля.
+Верни ТОЛЬКО валидный JSON без markdown:
+
+{
+  "name": "Полное ФИО",
+  "email": "основной email",
+  "phone": "основной телефон в международном формате, если код страны указан",
+  "telegram": "@username",
+  "position": "желаемая должность",
+  "company": "текущая или последняя компания",
+  "location": "город",
+  "experience_years": 5,
+  "skills": ["до 30 ключевых навыков и технологий"],
+  "salary_min": 200000,
+  "salary_max": 300000,
+  "salary_currency": "RUB",
+  "summary": "2–3 предложения: кто кандидат, ключевой опыт и сильные стороны"
+}
+
+ПРАВИЛА:
+- Нет данных — null (не пустая строка), для skills — [].
+- Зарплата — числа без валюты; одна сумма — в salary_min.
+- experience_years — общий стаж в годах (можно дробью).
+- Только эти ключи, ничего больше.
+
+Текст резюме:
+"""
+
+
 RESUME_PROMPT = """Ты - HR-эксперт. Извлеки ВСЮ информацию из резюме кандидата.
 Верни ТОЛЬКО валидный JSON без markdown форматирования:
 
@@ -635,14 +671,19 @@ def _repair_truncated_json(json_str: str) -> str:
 
 async def parse_with_ai(
     content: str,
-    parse_type: Literal["resume", "vacancy"],
+    parse_type: Literal["resume", "resume_card", "vacancy"],
     source: str = "unknown"
 ) -> Dict[str, Any]:
-    """Use Claude AI to extract structured data from content"""
+    """Use Claude AI to extract structured data from content.
+
+    resume_card — короткий разбор только тех полей, что берёт окно добавления
+    кандидата (RESUME_CARD_PROMPT); resume — полный (массовый импорт, ссылка)."""
     client = _get_ai_client()
 
     # Select prompt based on type
-    if parse_type == "resume":
+    if parse_type == "resume_card":
+        prompt = RESUME_CARD_PROMPT + content
+    elif parse_type == "resume":
         prompt = RESUME_PROMPT + content
     else:
         prompt = VACANCY_PROMPT + content
@@ -665,8 +706,9 @@ async def parse_with_ai(
         response = await client.messages.create(
             model=settings.claude_model,
             # 8192 чтобы длинные резюме (опыт работы 15+ лет) не упирались
-            # в лимит и JSON не обрывался на середине.
-            max_tokens=8192,
+            # в лимит и JSON не обрывался на середине. Короткому разбору
+            # хватает 2048: в нём нет опыта и образования.
+            max_tokens=2048 if parse_type == "resume_card" else 8192,
             messages=[{"role": "user", "content": prompt}],
         )
 
@@ -746,8 +788,11 @@ async def split_vacancy_description(description: str) -> Dict[str, Optional[str]
         }
 
 
-async def parse_resume_from_file(file_content: bytes, filename: str) -> ParsedResume:
-    """Parse resume from file using AI"""
+async def parse_resume_from_file(file_content: bytes, filename: str, card: bool = False) -> ParsedResume:
+    """Parse resume from file using AI.
+
+    card=True — короткий разбор для окна «Загрузка из файла» (только поля
+    карточки, RESUME_CARD_PROMPT); без него — полный (массовый импорт)."""
     # Use existing DocumentParser to extract text
     parse_result = await document_parser.parse(file_content, filename)
 
@@ -764,7 +809,10 @@ async def parse_resume_from_file(file_content: bytes, filename: str) -> ParsedRe
         )
 
     # Use AI to extract structured data
-    data = await parse_with_ai(parse_result.content, "resume")
+    data = await parse_with_ai(parse_result.content, "resume_card" if card else "resume")
+    # В карточку — не больше 30 навыков (короткий разбор их так и просит).
+    if isinstance(data.get("skills"), list):
+        data["skills"] = data["skills"][:30]
 
     return ParsedResume(**data)
 

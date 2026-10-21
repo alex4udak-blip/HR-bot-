@@ -239,6 +239,7 @@ function getBlockForPath(path: string): string | null {
       "/candidate-archive",
       "/deleted-candidates",
       "/audit-log",
+      "/ai-usage",
       "/workspaces",
       "/my-funnels",
       "/form-builder",
