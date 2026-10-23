@@ -18,6 +18,22 @@ if not EXTENSION_DIR.exists():
     EXTENSION_DIR = _base.parent / "chrome-extension"  # Local dev: project_root/chrome-extension
 
 
+@router.get("/version")
+async def extension_version(
+    current_user: User = Depends(get_current_user),
+):
+    """Версия расширения на сервере — попап сверяет со своей и предлагает
+    обновиться (22.10.2026). Расширение ставят из zip, само оно не обновляется:
+    до этого рекрутёры годами сидели на той версии, что когда-то скачали."""
+    import json
+    from fastapi import HTTPException
+    try:
+        manifest = json.loads((EXTENSION_DIR / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise HTTPException(404, "Extension files not found on server")
+    return {"version": manifest.get("version"), "page": "/extension"}
+
+
 @router.get("/download")
 async def download_extension(
     current_user: User = Depends(get_current_user),

@@ -313,6 +313,36 @@ _CANDIDATE_COLUMNS = [
     Entity.telegram_usernames, Entity.is_archived, Entity.company, Entity.extra_data,
 ]
 
+# Что из extra_data нужно ПОСЛЕ разбора в ключи: сигнал «текст резюме совпадает»
+# (_text_twin_signal) и должность в отчёте сверки архива. Остальное (опыт,
+# комментарии, текст резюме) в памяти не держим.
+_EXTRA_KEEP = ("position", "text_twin", "hidden_duplicate_meta")
+
+# Разобранные ключи по id кандидата: (отпечаток, CandidateKeys). Расширение
+# проверяет дубли на КАЖДОМ открытии попапа, и каждая проверка заново тянула всех
+# кандидатов орга с полным extra_data и разбирала их телефоны/ФИО — на проде
+# 8 250 карточек (7 149 в архиве), 2–5 с на запрос (22.10.2026). Отпечаток — md5
+# полей, из которых строятся ключи, считается в базе (наружу уходит 32 символа
+# вместо всего extra_data): поменялась карточка — её ключи пересчитываются,
+# остальные берутся отсюда. updated_at для этого не годится: две правки в одной
+# транзакции получают одно now(). extra_data берётся целиком (json хранится
+# текстом, md5 по нему дешевле, чем разбирать поля), поэтому лишний пересчёт
+# бывает и после нового комментария — это одна карточка. Кэш свой у каждого
+# процесса и пуст после перезапуска; только Postgres (в SQLite-тестах md5 нет —
+# там каждый раз полный разбор, как раньше).
+_KEYS_CACHE: Dict[int, Tuple[str, CandidateKeys]] = {}
+
+
+def _fingerprint():
+    from sqlalchemy import Text, cast, func
+    parts = [
+        Entity.name, Entity.email, Entity.phone, cast(Entity.emails, Text),
+        cast(Entity.phones, Text), cast(Entity.telegram_usernames, Text),
+        cast(Entity.is_archived, Text), Entity.company, cast(Entity.extra_data, Text),
+    ]
+    # coalesce: пустое поле и NULL дают разный отпечаток.
+    return func.md5(func.concat_ws("|", *[func.coalesce(p, "\x01") for p in parts]))
+
 
 async def load_candidate_keys(
     db: AsyncSession,
@@ -324,9 +354,70 @@ async def load_candidate_keys(
 ) -> List[CandidateKeys]:
     """Выборка кандидатов организации, разобранная в ключи дедупа.
 
-    Пока это полный проход по кандидатам org (как и во всех прежних копиях);
-    индекс по нормализованным ключам — задача этапа 1.
+    Полный проход по кандидатам org, но в два шага: сначала лёгкий список
+    «id + отпечаток», затем полные строки — только у тех, кого нет в _KEYS_CACHE
+    или у кого отпечаток сменился.
     """
+    if db.get_bind().dialect.name != "postgresql":
+        return await _load_candidate_keys_full(
+            db, org_id, exclude_id=exclude_id,
+            include_archived=include_archived, archived_only=archived_only,
+        )
+    q = select(Entity.id, _fingerprint()).where(Entity.type == EntityType.candidate)
+    if org_id is not None:
+        q = q.where(Entity.org_id == org_id)
+    if exclude_id is not None:
+        q = q.where(Entity.id != exclude_id)
+    if archived_only:
+        q = q.where(Entity.is_archived.is_(True))
+    elif not include_archived:
+        q = q.where(Entity.is_archived.is_not(True))
+    stamps = (await db.execute(q.order_by(Entity.id.desc()))).all()
+
+    stale = [
+        eid for eid, fp in stamps
+        if eid not in _KEYS_CACHE or _KEYS_CACHE[eid][0] != fp
+    ]
+    for i in range(0, len(stale), 1000):
+        chunk = stale[i:i + 1000]
+        rows = (await db.execute(
+            select(_fingerprint().label("fp"), *_CANDIDATE_COLUMNS).where(Entity.id.in_(chunk))
+        )).all()
+        for r in rows:
+            m = r._mapping
+            extra = m[Entity.extra_data] if isinstance(m[Entity.extra_data], dict) else {}
+            _KEYS_CACHE[m[Entity.id]] = (m["fp"], CandidateKeys(
+                entity_id=m[Entity.id],
+                name=m[Entity.name] or "",
+                is_archived=bool(m[Entity.is_archived]),
+                keys=_keys_of_row(m),
+                extra_data={k: extra[k] for k in _EXTRA_KEEP if k in extra},
+            ))
+
+    # Новый объект на каждый вызов: _scan_pairs переприсваивает it.keys, и это не
+    # должно протекать в кэш.
+    items: List[CandidateKeys] = []
+    for eid, _ in stamps:
+        cached = _KEYS_CACHE.get(eid)
+        if cached is None:
+            continue  # удалили между двумя шагами
+        c = cached[1]
+        items.append(CandidateKeys(
+            entity_id=c.entity_id, name=c.name, is_archived=c.is_archived,
+            keys=c.keys, extra_data=c.extra_data,
+        ))
+    return items
+
+
+async def _load_candidate_keys_full(
+    db: AsyncSession,
+    org_id: Optional[int],
+    *,
+    exclude_id: Optional[int] = None,
+    include_archived: bool = True,
+    archived_only: bool = False,
+) -> List[CandidateKeys]:
+    """Прежний полный разбор без кэша (не-Postgres)."""
     q = select(*_CANDIDATE_COLUMNS).where(Entity.type == EntityType.candidate)
     if org_id is not None:
         q = q.where(Entity.org_id == org_id)

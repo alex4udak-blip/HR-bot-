@@ -421,10 +421,14 @@
     const expCompanies = document.querySelectorAll('[data-qa="resume-experience-company-title"]');
     const expPeriods = document.querySelectorAll('[data-qa="resume-experience-period"]');
 
+    // Должность бывает в несколько строк, период — «Сен 2025 -⏎сейчас»: без
+    // склейки пробелов строка «должность | компания | период» рвалась на куски
+    // (сохранённое резюме hh, 22.10.2026).
+    const oneLine = (el) => (el?.textContent || '').replace(/\s+/g, ' ').trim();
     for (let i = 0; i < expPositions.length && i < 5; i++) {
-      const pos = expPositions[i]?.textContent?.trim() || '';
-      const company = expCompanies[i]?.textContent?.trim() || '';
-      const period = expPeriods[i]?.textContent?.trim() || '';
+      const pos = oneLine(expPositions[i]);
+      const company = oneLine(expCompanies[i]);
+      const period = oneLine(expPeriods[i]).replace(/\s*-\s*/, ' — ');
       if (pos || company) {
         experiences.push([pos, company, period].filter(Boolean).join(' | '));
       }
@@ -491,6 +495,27 @@
       const org = eduOrgs[i]?.textContent?.trim() || '';
       const name = eduNames[i]?.textContent?.trim() || '';
       if (org || name) education.push([org, name].filter(Boolean).join(' — '));
+    }
+    // hh убрал data-qa у пунктов образования (новая разметка magritte): блок
+    // `resume-education-block`, внутри — карточки без меток. С прода, 22.10.2026:
+    // образование было пустым у ВСЕХ кандидатов из расширения. Берём текст каждой
+    // карточки блока строками («Высшее образование», «2015 — МГУ — Журналистика»).
+    if (!education.length) {
+      const block = document.querySelector('[data-qa="resume-education-block"]');
+      if (block) {
+        const title = (block.querySelector('[data-qa="resume-education-block-title"]')?.innerText || '').trim();
+        let cards = [...block.querySelectorAll('[class*="magritte-card"]')]
+          .filter((c) => !c.parentElement.closest('[class*="magritte-card"]'));
+        if (!cards.length) cards = [block];
+        for (const card of cards) {
+          // Строки-разделители «•» и повтор уровня («Высшее образование» стоит
+          // и сверху, и в конце пункта) — выкидываем.
+          const lines = [...new Set((card.innerText || '').split('\n').map((s) => s.trim())
+            .filter((s) => s && s !== title && s !== 'Уровень' && s !== '•' && s.length <= 200))];
+          if (lines.length) education.push(lines.join(' — '));
+          if (education.length >= 3) break;
+        }
+      }
     }
     data.education = education;
 

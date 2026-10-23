@@ -119,7 +119,31 @@
     if (!data.age) data.age = txt('.basic-section__age');
 
     // --- Секции резюме Habr Career (актуальная вёрстка .content-section) ---
-    const clean = (el) => el ? el.textContent.replace(/ /g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim() : '';
+    // innerText, а не textContent: textContent склеивает соседние блоки без
+    // пробела — «СПбГЭУСанкт-Петербург», «Telegram: @nickСсылка на резюме»
+    // (сохранённый профиль, 22.10.2026).
+    const clean = (el) => el ? (el.innerText || el.textContent || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim() : '';
+
+    // Боковая колонка профиля: строки «Возраст: 32 года», «Опыт работы: 8 лет и
+    // 6 месяцев», «Местоположение: Россия, Москва», «Зарплата: от …». Отдельных
+    // классов у них нет — берём по подписи. Раньше город, стаж и возраст были
+    // пустыми у всех кандидатов с Хабра.
+    const sideLines = clean(document.querySelector('.user-page-sidebar')).split('\n').map((l) => l.trim());
+    const sideValue = (re) => {
+      const line = sideLines.find((l) => re.test(l));
+      return line ? line.replace(re, '').replace(/^[:\s]+/, '').trim() : '';
+    };
+    if (!data.age) data.age = sideValue(/^Возраст/i);
+    if (!data.total_experience) data.total_experience = sideValue(/^Опыт работы/i);
+    if (!data.city) {
+      const loc = sideValue(/^Местоположение/i);
+      // «Россия, Москва» → «Москва» (город — последняя часть).
+      data.city = loc.split(',').map((x) => x.trim()).filter(Boolean).pop() || '';
+    }
+    if (!data.salary) data.salary = sideValue(/^(Желаемая )?зарплата/i);
+    // Специализации «Аналитик • Аналитик по данным • Старший (Senior)» —
+    // запасная должность, если мест работы нет.
+    const specLine = clean(document.querySelector('.user-page-sidebar__meta'));
     const sectionEl = (re) => {
       for (const s of document.querySelectorAll('.content-section')) {
         const t = s.querySelector('.content-section__title');
@@ -138,15 +162,20 @@
     // (.job-position__message). Старые .experience-section__item больше не работают —
     // Habr перешёл на .job-experience-item / .job-position.
     const expHeaders = [];
+    let firstTitle = '';
     document.querySelectorAll('.job-experience-item').forEach((job, i) => {
       if (i >= 8) return;
-      const company = (clean(job.querySelector('.job-experience-item__header')) || '').split('\n')[0];
+      // Только название-ссылка компании: рядом в шапке её оценка («3.9»), и
+      // раньше выходило «Яндекс Практикум3.9».
+      const companyLink = job.querySelector('.job-experience-item__header a.link-comp, .job-experience-item__header a');
+      const company = (clean(companyLink) || clean(job.querySelector('.job-experience-item__header')) || '').split('\n')[0].trim();
       if (i === 0 && company && !data.company) data.company = company;
       job.querySelectorAll('.job-position').forEach((p) => {
         const title = clean(p.querySelector('.job-position__title'));
         const dur = clean(p.querySelector('.job-position__duration'));
         const msg = clean(p.querySelector('.job-position__message'));
-        const head = [title, company, dur].filter(Boolean).join(' | ');
+        if (!firstTitle && title) firstTitle = title;
+        const head = [title, company, dur.replace(/\s+/g, ' ')].filter(Boolean).join(' | ');
         if (head) expHeaders.push(head);
         if (msg) data.experience_descriptions.push((head ? head + '\n' : '') + msg);
       });
@@ -165,18 +194,31 @@
     if (expHeaders.length && expHeaders.join('\n').length > data.experience_summary.length) {
       data.experience_summary = expHeaders.join('\n');
     }
+    // Должность — текущее место работы (как у LinkedIn), иначе специализации без
+    // грейда. До 22.10.2026 у сохранённого профиля должность была пустой.
+    if (!data.position) {
+      data.position = firstTitle || specLine.split('•').map((x) => x.trim())
+        .filter((x) => x && !/^(Младший|Средний|Старший|Ведущий|Стажёр|Junior|Middle|Senior|Lead)/i.test(x))
+        .slice(0, 2).join(' / ');
+    }
 
     // Образование (Высшее + Дополнительное).
     if (!data.education.length) {
       const edus = [];
       ['Высшее образование', 'Дополнительное образование', 'Образование'].forEach((t) => {
         const s = sectionEl(new RegExp(t, 'i'));
-        const b = s && s.querySelector('.resume-educations');
-        if (b) {
-          // Убираем служебный хвост «• 951 выпускник» из строки вуза.
-          const x = clean(b).replace(/\s*•\s*\d[\d\s]*выпускник\w*/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+        // По пункту на учебное заведение: «СПбГЭУ — Санкт-Петербург — Факультет
+        // экономики — Сентябрь 2012 — Июль 2016». Служебное «1759 выпускников» и
+        // разделители «•» выкидываем; описание курса (длинные строки) не берём.
+        (s ? s.querySelectorAll('.resume-education-item') : []).forEach((item) => {
+          // Без ссылок на сертификаты и строк-тегов «SQL • Python • …»: только
+          // заведение, программа и период.
+          const lines = clean(item).split('\n').map((l) => l.trim())
+            .filter((l) => l && l !== '•' && !/выпускник/i.test(l) && !/^https?:/i.test(l)
+              && !/\s•\s/.test(l) && l.length <= 120);
+          const x = [...new Set(lines)].slice(0, 3).join(' — ');
           if (x) edus.push(x);
-        }
+        });
       });
       if (edus.length) data.education = [...new Set(edus)];
     }
@@ -204,13 +246,25 @@
       data.skills = [...sk].slice(0, 40);
     }
 
-    // Контакты — только из ссылок mailto/tel/t.me (никаких текстовых эвристик).
+    // Контакты — из ссылок mailto/tel/t.me. Ссылки на каналы самого Хабра
+    // (t.me/habr…) — не кандидат: раньше такая ссылка занимала поле, санитайзер
+    // её выкидывал, и Telegram из «О себе» уже не подставлялся (22.10.2026).
     document.querySelectorAll('a[href]').forEach(a => {
       const href = a.href || '';
       if (!data.email && href.startsWith('mailto:')) data.email = href.slice(7).split('?')[0];
       if (!data.phone && href.startsWith('tel:')) data.phone = href.slice(4);
-      if (!data.telegram && href.includes('t.me/')) data.telegram = href;
+      if (!data.telegram && href.includes('t.me/') && !/t\.me\/(habr|share|joinchat)/i.test(href)) data.telegram = href;
     });
+
+    // Контакты, вписанные в «О себе» («Telegram: @nick», почта текстом), — у
+    // профиля без входа блок контактов размыт, а это единственное, что видно.
+    if (data.summary) {
+      const tg = data.summary.match(/(?:telegram|телеграм|tg)\s*[:\-–]?\s*@?([A-Za-z0-9_]{5,32})\b/i)
+        || data.summary.match(/t\.me\/([A-Za-z0-9_]{5,32})/i);
+      if (!data.telegram && tg) data.telegram = '@' + tg[1];
+      const em = data.summary.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/);
+      if (!data.email && em) data.email = em[0];
+    }
 
     if (!data.full_name) {
       const m = window.location.pathname.match(/career\.habr\.com\/([^/?#]+)/) || window.location.pathname.match(/\/([^/?#]+)$/);

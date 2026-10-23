@@ -3,149 +3,178 @@
 <head>
   <meta charset="UTF-8">
   <style>
+    /* «Мягкий тёмный» (владелец, 22.10.2026): тёмный, но тише и круглее
+       прежнего — без ярких рамок и градиентов, карточки на мягком фоне. */
+    :root {
+      --bg: #15151d; --card: #1f1f2a; --chip: #262636; --line: #2c2c3c;
+      --text: #ececf3; --sub: #b9b9d0; --muted: #8a8aa0; --faint: #6c6c84;
+      --accent: #8b8cf8; --accent-hover: #9d9efa; --on-accent: #15151d; --link: #a9a9ff;
+      --warn-bg: #2a2418; --warn: #f5d58a; --warn-sub: #b9a476;
+      --ok-bg: #16271f; --ok: #86d9a8;
+      --info-bg: #1d2033; --info: #a9b4f5;
+      --danger: #f28b8b;
+      --stage-bg: #33284a; --stage: #d8c4ff;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { width: 380px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #fff; }
-    .header { padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; }
-    .header img { width: 28px; height: 28px; }
-    .header h1 { font-size: 16px; font-weight: 600; }
-    .content { padding: 16px; }
+    body { width: 380px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.45; background: var(--bg); color: var(--text); }
+    button { font-family: inherit; }
+
+    .header { padding: 14px 16px 10px; display: flex; align-items: center; gap: 10px; }
+    .logo { width: 26px; height: 26px; border-radius: 9px; background: #2a2a3a; color: var(--link); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; }
+    .header h1 { font-size: 14px; font-weight: 600; }
+    .header .who { margin-left: auto; font-size: 11px; color: var(--muted); }
+    .content { padding: 0 14px 14px; }
     .login-form, .parse-form, .result { display: none; }
     .login-form.active, .parse-form.active, .result.active { display: block; }
 
-    .field { margin-bottom: 12px; }
-    .field label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,0.95); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
-    /* «не распознан» — отдельный янтарный бейдж, а не бледный хвост метки:
-       читается как статус «заполни вручную», не сливается с названием поля. */
-    .hint-badge { text-transform: none; letter-spacing: 0; font-size: 10px; font-weight: 600; line-height: 1; color: #ffe0a8; background: rgba(245,185,90,0.24); border: 1px solid rgba(245,185,90,0.55); padding: 3px 7px; border-radius: 999px; white-space: nowrap; }
-    .field input, .field select, .field textarea { width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; }
-    .field input::placeholder, .field textarea::placeholder { color: rgba(255,255,255,0.55); }
-    .field input:focus, .field select:focus, .field textarea:focus { border-color: rgba(99,102,241,0.5); }
-    .field textarea { resize: vertical; min-height: 60px; }
-    .field select option { background: #1a1a2e; }
-    /* Нераспознанные поля (заполняются вручную) — тёплая подсветка, чтобы глаз
-       сразу видел, что тут нужно ввести данные. */
-    #nameField input, #emailField input, #phoneField input, #telegramField input { background: rgba(245,185,90,0.09); border-color: rgba(245,185,90,0.42); }
-    #nameField input:focus, #emailField input:focus, #phoneField input:focus, #telegramField input:focus { border-color: rgba(245,180,80,0.6); }
+    .update-note { display: none; margin-bottom: 10px; padding: 9px 12px; border-radius: 14px; background: var(--info-bg); color: var(--info); font-size: 12px; cursor: pointer; }
+    .update-note b { font-weight: 600; }
 
-    .parsed-info { background: rgba(255,255,255,0.05); border-radius: 10px; padding: 12px; margin-bottom: 16px; }
-    .parsed-info .name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-    .parsed-info .name { font-size: 15px; font-weight: 600; }
-    .parsed-info .details { font-size: 12px; color: rgba(255,255,255,0.5); line-height: 1.5; }
-    .parsed-info .source { display: inline-block; background: rgba(99,102,241,0.2); color: #818cf8; padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-top: 6px; }
-    .candidate-link { color: #818cf8; text-decoration: none; font-size: 13px; font-weight: 500; }
-    .candidate-link:hover { color: #a5b4fc; text-decoration: underline; }
-    .contacts-note { font-size: 11px; color: rgba(245,158,11,0.8); margin-top: 4px; padding: 4px 8px; background: rgba(245,158,11,0.08); border-radius: 4px; }
+    .field { margin-bottom: 10px; }
+    .field label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--muted); margin-bottom: 5px; }
+    .hint-badge { font-size: 10px; line-height: 1; color: var(--warn); background: var(--warn-bg); padding: 3px 7px; border-radius: 999px; white-space: nowrap; }
+    .field input, .field select, .field textarea { width: 100%; background: var(--card); border: 1px solid transparent; border-radius: 12px; padding: 9px 12px; color: var(--text); font-size: 13px; font-family: inherit; outline: none; }
+    .field input::placeholder, .field textarea::placeholder { color: var(--faint); }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: #4a4a7a; }
+    .field textarea { resize: vertical; min-height: 56px; }
+    .field select option { background: var(--card); }
+    /* Не распознано — заполнить руками: тёплая обводка, чтобы глаз цеплялся. */
+    #nameField input, #emailField input, #phoneField input, #telegramField input { border-color: #4a3f22; }
+    .manual-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-    .duplicate-warning { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 12px; color: #fcd34d; line-height: 1.8; }
-    .duplicate-warning .icon { color: #f59e0b; font-size: 16px; font-weight: bold; }
-    .dup-link { color: #60a5fa; text-decoration: underline; cursor: pointer; font-weight: 600; }
-    .dup-link:hover { color: #93c5fd; }
-    .dup-details { color: rgba(255,255,255,0.45); font-size: 11px; margin-left: 4px; }
+    .card { background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 10px; }
+    .name-row { display: flex; align-items: center; gap: 10px; }
+    .avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; background: #2f2a45; color: #c4b5fd; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; overflow: hidden; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .name { font-size: 14px; font-weight: 600; }
+    .subline { color: var(--muted); font-size: 12px; }
+    .icon-btn { margin-left: auto; align-self: flex-start; background: transparent; border: none; color: var(--faint); border-radius: 8px; padding: 4px 8px; font-size: 15px; cursor: pointer; }
+    .icon-btn:hover { color: var(--sub); background: var(--chip); }
+    .chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; background: var(--chip); color: var(--sub); }
+    .chip.src { background: #23304a; color: #93c5fd; }
+    .details { margin-top: 8px; font-size: 12px; color: var(--muted); }
+    .details div + div { margin-top: 2px; }
+    .soft-note { margin-top: 8px; font-size: 11.5px; color: var(--warn-sub); }
+    .parsing { display: none; margin-top: 8px; font-size: 11.5px; color: var(--info); }
 
-    .dup-status { border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 12px; line-height: 1.7; }
-    .dup-status.checking { background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); color: #a5b4fc; }
-    .dup-status.clean { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
-    .dup-status.found { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); color: #fcd34d; }
-    .dup-status .dup-archive-note { margin: 4px 0; padding: 6px 8px; background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); border-radius: 6px; font-size: 12px; color: #fcd34d; font-weight: 500; }
-    .dup-status .dup-archive-note[data-archive-url]:hover { background: rgba(245,158,11,0.2); }
-    .dup-status .dup-archive-open { color: #fbbf24; text-decoration: underline; white-space: nowrap; }
-    .dup-status .dup-item { display: block; margin-top: 6px; padding: 6px 0; }
-    .dup-status .dup-item + .dup-item { border-top: 1px solid rgba(255,255,255,0.06); }
-    .dup-status .dup-head { display: flex; align-items: center; gap: 6px; }
-    .dup-status .dup-info { margin-top: 2px; font-size: 11px; color: rgba(255,255,255,0.45); }
-    .dup-status .dup-name { color: #60a5fa; cursor: pointer; font-weight: 600; text-decoration: underline; }
-    .dup-status .dup-name:hover { color: #93c5fd; }
-    .dup-status .dup-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
-    .dup-status .dup-history { margin-top: 6px; padding: 6px 8px; background: rgba(0,0,0,0.2); border-radius: 6px; font-size: 11px; }
-    .dup-status .dup-history-title { color: rgba(255,255,255,0.55); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-    .dup-status .dup-history-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: rgba(255,255,255,0.75); }
-    .dup-status .dup-history-vacancy { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .dup-status .dup-history-stage { color: #c084fc; font-weight: 500; padding: 0 6px; background: rgba(168,85,247,0.12); border-radius: 3px; font-size: 10px; }
-    .dup-status .dup-history-date { color: rgba(255,255,255,0.35); font-size: 10px; white-space: nowrap; }
-    .dup-status .dup-history-empty { margin-top: 6px; padding: 6px 8px; background: rgba(0,0,0,0.15); border-radius: 6px; font-size: 11px; color: rgba(255,255,255,0.45); font-style: italic; }
-    .dup-status .badge-new { background: rgba(59,130,246,0.2); color: #60a5fa; }
-    .dup-status .badge-interview { background: rgba(168,85,247,0.2); color: #c084fc; }
-    .dup-status .badge-hired { background: rgba(34,197,94,0.2); color: #86efac; }
-    .dup-status .badge-rejected { background: rgba(239,68,68,0.2); color: #fca5a5; }
-    .dup-status .badge-default { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+    .dup-status { border-radius: 16px; padding: 10px 14px; margin-bottom: 10px; font-size: 12px; }
+    .dup-status.checking { background: var(--info-bg); color: var(--info); }
+    .dup-status.clean { background: var(--ok-bg); color: var(--ok); }
+    .dup-status.found { background: var(--warn-bg); color: var(--warn); }
+    .dup-title { font-weight: 600; }
+    .dup-item { margin-top: 8px; }
+    .dup-item + .dup-item { padding-top: 8px; border-top: 1px solid rgba(245,213,138,0.12); }
+    .dup-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .dup-name { color: var(--link); cursor: pointer; font-weight: 600; text-decoration: none; }
+    .dup-name:hover { text-decoration: underline; }
+    .stage-chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: var(--stage-bg); color: var(--stage); }
+    .stage-chip.st-new { background: #1e2a44; color: #93c5fd; }
+    .stage-chip.st-done { background: #183326; color: #86d9a8; }
+    .stage-chip.st-off { background: #3a2226; color: #f4a7ad; }
+    .stage-chip.st-muted { background: var(--chip); color: var(--sub); }
+    .dup-info { margin-top: 2px; color: var(--warn-sub); font-size: 11px; }
+    .dup-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--warn-sub); }
+    .dup-row .vac { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dup-row .date { font-size: 11px; white-space: nowrap; }
+    .dup-empty { margin-top: 4px; color: var(--warn-sub); font-size: 11px; }
+    .dup-link { margin-top: 8px; padding: 7px 10px; border-radius: 12px; background: rgba(245,213,138,0.08); cursor: pointer; }
+    .dup-link:hover { background: rgba(245,213,138,0.14); }
+    .dup-link .open { text-decoration: underline; white-space: nowrap; }
+    /* «Был отказ» — главное в плашке, поэтому красным и первым (22.10.2026). */
+    .rej-block { margin-bottom: 8px; padding: 9px 12px; border-radius: 14px; background: #3a2226; color: #f4a7ad; }
+    .rej-title { font-weight: 600; }
+    .rej-sub { margin-top: 2px; color: #d99aa0; }
+    .rej-open { margin-top: 6px; color: var(--link); text-decoration: underline; cursor: pointer; }
+    .reason { display: inline-block; margin: 4px 4px 0 0; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: rgba(245,213,138,0.12); }
 
-    .btn { width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-    .btn-primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
-    .btn-primary:hover { opacity: 0.9; }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-secondary { background: rgba(255,255,255,0.1); color: #fff; margin-top: 8px; }
-    .btn.warning { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; }
+    .btn { width: 100%; padding: 11px; border: none; border-radius: 12px; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .btn-primary { background: var(--accent); color: var(--on-accent); }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.55; cursor: progress; }
+    .btn-secondary { background: var(--card); color: var(--text); margin-top: 8px; }
+    .btn-secondary:hover { background: var(--chip); }
+    .btn.warning { background: var(--warn); color: #2a2418; }
 
-    .success { text-align: center; padding: 20px; }
-    .success .icon { font-size: 48px; margin-bottom: 12px; }
-    .success h2 { font-size: 16px; margin-bottom: 8px; }
-    .success p { font-size: 13px; color: rgba(255,255,255,0.5); }
+    .error { color: var(--danger); font-size: 12px; margin-top: 8px; }
+    .footer { display: flex; justify-content: center; gap: 10px; margin-top: 12px; font-size: 11px; color: var(--faint); }
+    .footer a { color: var(--faint); text-decoration: none; }
+    .footer a:hover { color: var(--sub); }
 
-    .error { color: #ef4444; font-size: 12px; margin-top: 8px; }
-    .no-data { padding: 24px 18px; color: rgba(255,255,255,0.7); font-size: 13px; }
-    .nodata-icon { display: flex; justify-content: center; margin-bottom: 12px; font-size: 28px; }
-    .nodata-title { text-align: center; font-weight: 600; color: #fff; font-size: 15px; margin-bottom: 8px; }
-    .nodata-text { text-align: center; color: rgba(255,255,255,0.55); margin-bottom: 14px; line-height: 1.5; }
-    .nodata-text b { color: rgba(255,255,255,0.85); }
-    .nodata-sites { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
-    .nodata-site { display: inline-block; padding: 4px 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; font-size: 11px; color: rgba(255,255,255,0.7); }
-    .nodata-example { background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.18); border-radius: 8px; padding: 10px 12px; font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 12px; }
-    .nodata-example b { color: rgba(255,255,255,0.75); }
-    .nodata-current-url { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: rgba(255,255,255,0.35); word-break: break-all; padding: 8px 10px; background: rgba(0,0,0,0.2); border-radius: 6px; line-height: 1.4; }
-    .nodata-current-url-label { font-size: 10px; color: rgba(255,255,255,0.3); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .success { text-align: center; padding: 14px 4px 4px; }
+    .success .icon { width: 48px; height: 48px; margin: 0 auto 10px; border-radius: 50%; background: var(--ok-bg); color: var(--ok); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; }
+    .success .icon.warn { background: var(--warn-bg); color: var(--warn); }
+    .success h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .success p { font-size: 12.5px; color: var(--muted); }
+    .warn-box { margin-top: 10px; padding: 9px 12px; border-radius: 14px; background: var(--warn-bg); color: var(--warn); font-size: 12px; text-align: left; }
+    .candidate-link { display: inline-block; margin-top: 10px; color: var(--link); text-decoration: none; font-weight: 600; }
+    .candidate-link:hover { text-decoration: underline; }
 
-    .settings-link { text-align: center; margin-top: 12px; }
-    .settings-link a { color: rgba(255,255,255,0.3); font-size: 11px; text-decoration: none; }
-    .settings-link a:hover { color: rgba(255,255,255,0.6); }
+    .no-data { padding: 18px 6px 4px; color: var(--sub); }
+    .nodata-icon { width: 44px; height: 44px; margin: 0 auto 10px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .nodata-title { text-align: center; font-weight: 600; color: var(--text); font-size: 14px; margin-bottom: 6px; }
+    .nodata-text { text-align: center; color: var(--muted); margin-bottom: 12px; font-size: 12.5px; }
+    .nodata-text b { color: var(--sub); }
+    .nodata-sites { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .nodata-example { background: var(--card); border-radius: 12px; padding: 9px 12px; font-size: 11.5px; color: var(--muted); margin-bottom: 12px; }
+    .nodata-example b { color: var(--sub); }
+    .nodata-current-url-label { font-size: 11px; color: var(--faint); margin-bottom: 4px; }
+    .nodata-current-url { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--faint); word-break: break-all; padding: 8px 10px; background: var(--card); border-radius: 10px; }
   </style>
 </head>
 <body>
   <div class="header">
-    <div style="width:28px;height:28px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;">E</div>
+    <div class="logo">E</div>
     <h1>Enceladus</h1>
+    <span class="who" id="whoAmI"></span>
   </div>
 
   <div class="content">
-    <!-- Login Form -->
+    <!-- Новая версия расширения на сервере (popup.js → /api/extension/version) -->
+    <div class="update-note" id="updateNote"></div>
+
+    <!-- Вход -->
     <div class="login-form" id="loginForm">
       <div class="field">
         <label>Сервер</label>
-        <input type="text" id="serverUrl" placeholder="https://enceladus-7oylzk.saturn.ac" />
+        <input type="text" id="serverUrl" placeholder="https://enceladus.site" />
       </div>
       <div class="field">
         <label>Email</label>
-        <input type="email" id="loginEmail" placeholder="email@company.com" />
+        <input type="email" id="loginEmail" placeholder="name@company.com" />
       </div>
       <div class="field">
         <label>Пароль</label>
         <div style="position:relative;">
           <input type="password" id="loginPassword" style="padding-right:40px;" />
-          <button type="button" id="togglePassword" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:16px;padding:4px;">👁</button>
+          <button type="button" id="togglePassword" class="icon-btn" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);" aria-label="Показать пароль">👁</button>
         </div>
       </div>
       <button class="btn btn-primary" id="loginBtn">Войти</button>
       <div class="error" id="loginError"></div>
     </div>
 
-    <!-- Parse Form -->
+    <!-- Кандидат со страницы -->
     <div class="parse-form" id="parseForm">
-      <div class="parsed-info" id="parsedInfo">
+      <div class="card" id="parsedInfo">
         <div class="name-row">
-          <div id="parsedPhoto" style="display:none;"></div>
-          <div class="name" id="parsedName">&mdash;</div>
-          <button id="refreshBtn" type="button" title="Перечитать кандидата с текущей вкладки" style="margin-left:auto;background:transparent;border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.7);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">↻</button>
+          <div class="avatar" id="parsedPhoto"></div>
+          <div style="min-width:0;">
+            <div class="name" id="parsedName">&mdash;</div>
+            <div class="subline" id="parsedSubline"></div>
+          </div>
+          <button id="refreshBtn" type="button" class="icon-btn" title="Перечитать кандидата с текущей вкладки" aria-label="Перечитать">↻</button>
         </div>
+        <div class="chips" id="parsedChips"></div>
         <div class="details" id="parsedDetails"></div>
-        <div id="parsingIndicator" style="display:none;color:#a5b4fc;font-size:11px;margin-top:6px;">⏳ Догружаем опыт работы…</div>
-        <div id="contactsNote" class="contacts-note" style="display:none;">Контакты скрыты на hh.ru — кандидат будет добавлен без контактов</div>
-        <div class="source" id="parsedSource"></div>
+        <div class="parsing" id="parsingIndicator">Догружаем опыт работы…</div>
+        <div id="contactsNote" class="soft-note" style="display:none;">Контакты на странице скрыты — кандидат добавится без них, их можно вписать ниже.</div>
+        <span id="parsedSource" style="display:none;"></span>
       </div>
 
       <div id="dupStatus" class="dup-status" style="display:none;"></div>
 
-      <div id="duplicateWarning" class="duplicate-warning" style="display:none;">
-        <span class="icon">!</span> <span id="duplicateText"></span>
-      </div>
+      <div id="duplicateWarning" style="display:none;"><span id="duplicateText"></span></div>
 
       <div class="field">
         <label>Воронка</label>
@@ -156,12 +185,12 @@
 
       <div class="field" id="nameField" style="display:none;">
         <label>Имя кандидата <span class="hint-badge">не распознано</span></label>
-        <input type="text" id="manualName" placeholder="Введите имя вручную" />
+        <input type="text" id="manualName" placeholder="Иванов Иван" />
       </div>
 
       <div class="field" id="emailField" style="display:none;">
         <label>Email <span class="hint-badge">не распознан</span></label>
-        <input type="email" id="manualEmail" placeholder="candidate@email.com" />
+        <input type="email" id="manualEmail" placeholder="candidate@mail.com" />
       </div>
 
       <div class="field" id="phoneField" style="display:none;">
@@ -176,78 +205,70 @@
 
       <div class="field">
         <label>Комментарий</label>
-        <textarea id="commentField" placeholder="Заметки о кандидате..."></textarea>
+        <textarea id="commentField" placeholder="Заметки о кандидате"></textarea>
       </div>
 
       <button class="btn btn-primary" id="addBtn">Добавить кандидата</button>
       <div class="error" id="addError"></div>
 
-      <div class="settings-link">
+      <div class="footer">
         <a href="#" id="logoutLink">Выйти из аккаунта</a>
-        <span id="extVersion" style="margin-left:8px;opacity:0.5;font-size:11px;"></span>
+        <span id="extVersion"></span>
       </div>
     </div>
 
-    <!-- No Data — три контекстных варианта в зависимости от URL текущей вкладки -->
+    <!-- Нет данных — три варианта по адресу текущей вкладки -->
     <div class="no-data" id="noData" style="display:none;">
-      <!-- Состояние 1: юзер не на сайте резюме (любой другой URL) -->
       <div id="nodataWrongSite" style="display:none;">
         <div class="nodata-icon">🌐</div>
         <div class="nodata-title">Эта страница не поддерживается</div>
-        <div class="nodata-text">
-          Расширение читает резюме только с этих сайтов:
-        </div>
+        <div class="nodata-text">Расширение читает резюме только с этих сайтов:</div>
         <div class="nodata-sites">
-          <span class="nodata-site">hh.ru</span>
-          <span class="nodata-site">rabota.by</span>
-          <span class="nodata-site">career.habr.com</span>
-          <span class="nodata-site">linkedin.com</span>
+          <span class="chip">hh.ru</span>
+          <span class="chip">rabota.by</span>
+          <span class="chip">career.habr.com</span>
+          <span class="chip">linkedin.com</span>
         </div>
-        <div class="nodata-text">Открой страницу кандидата на одном из них.</div>
+        <div class="nodata-text">Откройте страницу кандидата на одном из них.</div>
       </div>
 
-      <!-- Состояние 2: юзер на hh.ru / habr / linkedin, но не на конкретной карточке резюме -->
       <div id="nodataWrongPage" style="display:none;">
         <div class="nodata-icon">🔍</div>
         <div class="nodata-title">Это не страница резюме</div>
         <div class="nodata-text">
-          Ты на правильном сайте, но это <b>не карточка конкретного кандидата</b>.
-          Открой страницу резюме — ту, где видно имя, опыт и контакты.
+          Сайт правильный, но это <b>не карточка конкретного кандидата</b>.
+          Откройте страницу резюме — ту, где видно имя и опыт.
         </div>
         <div class="nodata-example" id="nodataExample">
-          <b>Пример URL для hh.ru:</b><br>
+          <b>Пример адреса для hh.ru:</b><br>
           <span style="font-family:ui-monospace,monospace;">hh.ru/resume/&lt;id&gt;</span>
         </div>
       </div>
 
-      <!-- Состояние 3: юзер на /resume/, но парсер ничего не нашёл -->
       <div id="nodataNoParse" style="display:none;">
         <div class="nodata-icon">🤔</div>
-        <div class="nodata-title">Не нашёл данных кандидата</div>
+        <div class="nodata-title">Не нашли данных кандидата</div>
         <div class="nodata-text">
-          Страница похожа на резюме, но парсер не вытащил данные.<br>
-          Попробуй обновить страницу <b>(F5)</b> или нажми <b>↻</b> в попапе.<br>
-          Если контакты скрыты под подпиской hh.ru — добавь кандидата
-          без них и заполни вручную.
+          Страница похожа на резюме, но прочитать её не вышло.<br>
+          Обновите страницу <b>(F5)</b> или нажмите <b>↻</b>.
         </div>
       </div>
 
-      <!-- Текущий URL — чтобы рекрут видел "вот что я вижу сейчас" -->
       <div class="nodata-current-url-label">Текущая вкладка</div>
       <div class="nodata-current-url" id="nodataCurrentUrl">—</div>
     </div>
 
-    <!-- Success Result -->
+    <!-- Готово -->
     <div class="result" id="resultView">
       <div class="success">
-        <div class="icon" id="resultIcon">OK</div>
-        <h2 id="resultTitle">Кандидат добавлен!</h2>
+        <div class="icon" id="resultIcon">✓</div>
+        <h2 id="resultTitle">Кандидат добавлен</h2>
         <p id="resultMessage"></p>
-        <div id="hiddenDupWarning" class="duplicate-warning" style="display:none;text-align:left;">
-          <span class="icon">!</span> Похожий кандидат есть в базе — проверьте карточку.
+        <div id="hiddenDupWarning" class="warn-box" style="display:none;">
+          Похожий кандидат уже есть в базе — проверьте карточку.
         </div>
-        <div id="resultLink" style="display:none;margin-top:12px;"></div>
-        <button class="btn btn-secondary" id="addAnotherBtn" style="margin-top:16px;">Добавить ещё</button>
+        <div id="resultLink" style="display:none;"></div>
+        <button class="btn btn-secondary" id="addAnotherBtn" style="margin-top:14px;">Добавить ещё</button>
       </div>
     </div>
   </div>

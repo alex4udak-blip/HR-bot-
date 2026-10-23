@@ -32,7 +32,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (verEl && chrome.runtime?.getManifest) verEl.textContent = 'v' + chrome.runtime.getManifest().version;
   } catch (_) {}
   // Load saved settings
-  const stored = await chrome.storage.local.get(['serverUrl', 'authToken', 'refreshToken']);
+  const stored = await chrome.storage.local.get(['serverUrl', 'authToken', 'refreshToken', 'userName']);
+  showWho(stored.userName);
   // Актуальный прод-сервер один и тот же для всех. У старых пользователей в
   // chrome.storage мог остаться прежний адрес и «залипал» в поле входа —
   // поэтому всегда подставляем канонический сервер, кроме локальной разработки.
@@ -71,12 +72,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
+  checkExtensionUpdate();
+
   // Главное правило: кэш не доверяем. На каждом открытии попапа просим
   // content-скрипт перепарсить активную вкладку. Кэш используем только как
   // запасной вариант, если content-скрипт не отвечает (например, страница
   // ещё грузится или сайт не из списка).
   loadFromActiveTab();
 });
+
+function showWho(name) {
+  const el = document.getElementById('whoAmI');
+  if (el) el.textContent = name || '';
+}
+
+// Сравнение версий «1.9.2» > «1.9.1» по числам.
+function isNewerVersion(remote, local) {
+  const a = String(remote || '').split('.').map(Number);
+  const b = String(local || '').split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return false;
+}
+
+// Расширение ставят из zip, само оно не обновляется — без этой плашки
+// рекрутёры сидели на той версии, что когда-то скачали, и исправления в попапе
+// до них не доходили (22.10.2026). Сервер отдаёт версию из своего manifest.json.
+async function checkExtensionUpdate() {
+  const note = document.getElementById('updateNote');
+  if (!note || !chrome.runtime?.getManifest) return;
+  const resp = await rawApiRequest('GET', '/api/extension/version', null, 10000);
+  const remote = resp && resp.success && resp.data && resp.data.version;
+  if (!remote || !isNewerVersion(remote, chrome.runtime.getManifest().version)) return;
+  note.innerHTML = `<b>Вышла версия ${esc(remote)}</b> — скачайте и замените расширение · <u>открыть</u>`;
+  note.style.display = 'block';
+  note.onclick = () => chrome.tabs.create({ url: serverUrl + (resp.data.page || '/extension') });
+}
 
 function detectTabState(tabUrl) {
   // 'wrong-site' | 'wrong-page' | 'resume-page'
@@ -281,36 +313,38 @@ function showView(view) {
   if (view === 'result') resultView.classList.add('active');
 }
 
-const STATUS_MAP = {
-  new: { label: 'Новый', badge: 'badge-new' },
-  in_progress: { label: 'В работе', badge: 'badge-interview' },
-  interview: { label: 'Интервью', badge: 'badge-interview' },
-  practice: { label: 'Практика', badge: 'badge-interview' },
-  probation: { label: 'Испытательный', badge: 'badge-interview' },
-  hired: { label: 'Принят', badge: 'badge-hired' },
-  active: { label: 'Работает', badge: 'badge-hired' },
-  rejected: { label: 'Отклонён', badge: 'badge-rejected' },
-  fired: { label: 'Уволен', badge: 'badge-rejected' },
-  archived: { label: 'Архив', badge: 'badge-default' },
-};
-
-// Stage labels for pipeline history (VacancyApplication.stage values)
-const STAGE_LABELS = {
-  applied: 'Заявка',
-  screening: 'Скрининг',
-  phone_screen: 'Интервью назначено',
-  interview: 'Интервью пройдено',
-  assessment: 'Практика',
-  offer: 'Оффер',
-  hired: 'Принят',
-  rejected: 'Отказ',
-  withdrawn: 'Отозван',
+// Подписи этапов присылает сервер (services/hr_stages.py): `status`/`stage` —
+// уже подпись, `status_key`/`stage_key` — ключ. Свой словарь здесь только для
+// цвета чипа. Прежний словарь попапа разошёлся с сайтом — «Интервью с HR»
+// показывалось как «Практика» (22.10.2026).
+const STAGE_TONE = {
+  new: 'st-new', applied: 'st-new',
+  hired: 'st-done', transferred: 'st-done', probation: 'st-done',
+  rejected: 'st-off', withdrawn: 'st-off', dismissed: 'st-off', quit: 'st-off',
+  reserve: 'st-muted', other: 'st-muted',
 };
 
 function formatDateShort(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleDateString('ru', { day: 'numeric', month: 'short', year: '2-digit' });
+}
+
+// Всё, что пришло со страницы резюме или с сервера, вставляем через esc():
+// имя или название воронки с «<» иначе становилось разметкой попапа.
+function esc(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function initialsOf(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter((p) => /^[A-Za-zА-Яа-яЁё]/.test(p));
+  return parts.slice(0, 2).map((p) => p[0].toUpperCase()).join('') || '?';
+}
+
+function stageChip(label, key) {
+  return `<span class="stage-chip ${STAGE_TONE[key] || ''}">${esc(label || key)}</span>`;
 }
 
 function showParsedData() {
@@ -331,35 +365,40 @@ function showParsedData() {
     }
   }
 
-  // Show photo if available
+  // Аватар: фото со страницы, иначе инициалы.
   const photoContainer = document.getElementById('parsedPhoto');
-  if (photoContainer && parsedData.photo_url) {
-    photoContainer.innerHTML = `<img src="${parsedData.photo_url}" alt="Photo" style="width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,0.1);">`;
-    photoContainer.style.display = 'block';
-  } else if (photoContainer) {
-    photoContainer.style.display = 'none';
+  if (photoContainer) {
+    photoContainer.textContent = initialsOf(parsedData.full_name);
+    if (parsedData.photo_url) {
+      const img = document.createElement('img');
+      img.alt = '';
+      img.src = parsedData.photo_url;
+      img.onerror = () => { photoContainer.textContent = initialsOf(parsedData.full_name); };
+      photoContainer.textContent = '';
+      photoContainer.appendChild(img);
+    }
   }
 
+  // Под именем — должность · город · возраст; ниже чипы и детали строками.
+  const sub = [parsedData.position, parsedData.city, parsedData.age].filter(Boolean);
+  document.getElementById('parsedSubline').textContent = sub.join(' · ');
+
+  const chips = [];
+  if (parsedData.total_experience) chips.push('Опыт ' + parsedData.total_experience);
+  if (parsedData.salary) chips.push(parsedData.salary);
+  if (parsedData.skills && parsedData.skills.length) chips.push(`Навыков: ${parsedData.skills.length}`);
+  if (parsedData.languages && parsedData.languages.length) chips.push(`Языков: ${parsedData.languages.length}`);
+  document.getElementById('parsedChips').innerHTML =
+    chips.map((c) => `<span class="chip">${esc(c)}</span>`).join('') +
+    (parsedData.source ? `<span class="chip src">${esc(parsedData.source)}</span>` : '');
+
   const details = [];
-  if (parsedData.position) details.push(parsedData.position);
-  if (parsedData.email) details.push('Email: ' + parsedData.email);
-  if (parsedData.phone) details.push('Tel: ' + parsedData.phone);
-  if (parsedData.telegram) details.push('TG: ' + parsedData.telegram);
-  if (parsedData.city) details.push('Город: ' + parsedData.city);
-  if (parsedData.age) details.push('Возраст: ' + parsedData.age);
-  if (parsedData.salary) details.push('ЗП: ' + parsedData.salary);
-  if (parsedData.total_experience) details.push('Опыт: ' + parsedData.total_experience);
+  const contacts = [parsedData.email, parsedData.phone, parsedData.telegram].filter(Boolean);
+  if (contacts.length) details.push(contacts.join(' · '));
   if (parsedData.experience_summary) {
-    const lines = parsedData.experience_summary.split('\n').slice(0, 3);
-    details.push('Последние места: ' + lines.join('; '));
-  }
-  if (parsedData.company) details.push('Компания: ' + parsedData.company);
-  if (parsedData.skills && parsedData.skills.length > 0) {
-    details.push('Навыки: ' + parsedData.skills.slice(0, 5).join(', ') +
-      (parsedData.skills.length > 5 ? ` (+${parsedData.skills.length - 5})` : ''));
-  }
-  if (parsedData.languages && parsedData.languages.length > 0) {
-    details.push('Языки: ' + parsedData.languages.join(', '));
+    details.push('Опыт: ' + parsedData.experience_summary.split('\n').slice(0, 2).join('; '));
+  } else if (parsedData.company) {
+    details.push('Компания: ' + parsedData.company);
   }
   if (parsedData.education && parsedData.education.length > 0) {
     details.push('Образование: ' + parsedData.education.slice(0, 2).join('; '));
@@ -368,7 +407,7 @@ function showParsedData() {
     details.push('Лицензии: ' + parsedData.certifications.slice(0, 3).join('; ') +
       (parsedData.certifications.length > 3 ? ` (+${parsedData.certifications.length - 3})` : ''));
   }
-  document.getElementById('parsedDetails').innerHTML = details.join('<br>');
+  document.getElementById('parsedDetails').innerHTML = details.map((d) => `<div>${esc(d)}</div>`).join('');
   document.getElementById('parsedSource').textContent = parsedData.source;
 
   // Show manual fields if соответствующий контакт не распознан автоматически
@@ -392,15 +431,51 @@ function showParsedData() {
   checkDuplicatesOnLoad();
 }
 
+// «Был отказ 28 авг · «Трафик»» + кто и с каким текстом. Поля — как в
+// services/prior_rejection.py. Пусто → ''.
+function renderPriorRejection(pr, base) {
+  if (!pr) return '';
+  const d = pr.date ? new Date(/Z|[+-]\d\d:?\d\d$/.test(pr.date) ? pr.date : pr.date + 'Z') : null;
+  const when = d && !isNaN(d) ? d.toLocaleDateString('ru', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const head = (pr.kind === 'no_show' ? 'Не пришёл' : 'Был отказ') + (when ? ' ' + when : '') +
+    (pr.vacancy_title ? ` · «${pr.vacancy_title}»` : pr.source === 'card' ? ' · вне воронок' : '');
+  const who = [
+    pr.recruiter_name,
+    pr.source === 'archive' ? `ClickUp: ${pr.from_stage || 'архив'}` : (pr.from_stage ? `с этапа «${pr.from_stage}»` : ''),
+  ].filter(Boolean).join(' · ');
+  const more = (pr.count || 0) > 1 ? ` · всего ${pr.count}` : '';
+  const url = `${base}/all-candidates?entity=${Number(pr.entity_id)}${pr.archived ? '&archived=1' : ''}`;
+  return `<div class="rej-block">
+    <div class="rej-title">${esc(head)}${esc(more)}</div>
+    ${who ? `<div class="rej-sub">${esc(who)}</div>` : ''}
+    ${pr.comment ? `<div class="rej-sub">«${esc(pr.comment)}»</div>` : ''}
+    ${pr.reason ? `<div class="rej-sub">Причина: ${esc(pr.reason)}</div>` : ''}
+    <div class="rej-open" data-url="${url}">Открыть карточку</div>
+  </div>`;
+}
+
+// Карточка рисуется дважды — быстрый показ кэша и потом полный разбор вкладки,
+// — и раньше каждый раз уходила своя проверка дублей: два одинаковых запроса по
+// 2–5 с на проде (22.10.2026). Повторяем, только если поменялось то, по чему
+// ищем.
+let lastDupSignature = null;
+
 async function checkDuplicatesOnLoad() {
+  const manualEmail = document.getElementById('manualEmail')?.value;
+  const manualNameForCheck = document.getElementById('manualName')?.value?.trim();
+  const signature = JSON.stringify([
+    parsedData.full_name, manualNameForCheck, parsedData.email || manualEmail,
+    parsedData.phone, parsedData.telegram, parsedData.source_url,
+  ]);
+  if (signature === lastDupSignature) return;
+  lastDupSignature = signature;
+
   const dupStatus = document.getElementById('dupStatus');
   dupStatus.style.display = 'block';
   dupStatus.className = 'dup-status checking';
-  dupStatus.innerHTML = '🔍 Проверяем базу...';
+  dupStatus.textContent = 'Проверяем базу…';
 
   try {
-    const manualEmail = document.getElementById('manualEmail')?.value;
-    const manualNameForCheck = document.getElementById('manualName')?.value?.trim();
     // Дубль-чек — некритичная фоновая проверка при открытии попапа. НЕ гоняем её
     // через refresh-ретрай apiRequest (иначе 401 увёл бы на экран входа прямо из
     // авто-проверки) и держим короткий таймаут 12с, чтобы спиннер «Проверяем
@@ -421,110 +496,68 @@ async function checkDuplicatesOnLoad() {
     if (!checkResp.success) {
       // Проверка упала (сеть / нет refresh-токена) — НЕ выдаём ложное «дубликатов нет».
       dupStatus.className = 'dup-status checking';
-      dupStatus.innerHTML = '⚠️ Не удалось проверить дубликаты';
+      dupStatus.textContent = 'Не удалось проверить дубликаты';
+      lastDupSignature = null;  // следующий показ карточки попробует снова
       return;
     }
-    // Совпадение в архиве (теневая база) — только флаг, без деталей: архив
-    // superadmin-only. Показываем плашку и при активных дублях, и когда активных
-    // нет (иначе рекрутёр видел зелёное «дубликатов нет», хотя человек в архиве).
-    const hasArchive = !!checkResp.data.has_archive_match;
-    const archiveMatchId = checkResp.data.archive_match_id;
-    // Кликом открываем ОДНУ архивную карточку (?archived=1) — рекрутёр смотрит
-    // совпавшего, но список архива ему закрыт (superadmin-only). read-грант на
-    // одного кандидата уже есть (check_entity_access).
-    const archiveUrl = archiveMatchId
-      ? `${serverUrl || document.getElementById('serverUrl').value}/all-candidates?entity=${archiveMatchId}&archived=1`
+    const res = checkResp.data;
+    const base = serverUrl || document.getElementById('serverUrl').value;
+    // Совпадение в архиве — только флаг и id ОДНОЙ карточки: список архива
+    // закрыт (superadmin-only), но открыть совпавшего по id рекрутёр может.
+    const archiveNote = res.has_archive_match
+      ? `<div class="dup-link"${res.archive_match_id ? ` data-url="${base}/all-candidates?entity=${Number(res.archive_match_id)}&archived=1"` : ''}>Похожий кандидат есть в архиве${res.archive_match_id ? ' · <span class="open">открыть</span>' : ''}</div>`
       : '';
-    const archiveNote = hasArchive
-      ? `<div class="dup-archive-note"${archiveUrl ? ` data-archive-url="${archiveUrl}" title="Открыть карточку архивного кандидата"` : ''}>📦 Похожий кандидат есть в архиве${archiveUrl ? ' <span class="dup-archive-open">— открыть ↗</span>' : ''}</div>`
+    // «Возможно тот же человек» — нет точного совпадения контакта, но сложилась
+    // комбинация имя/ДР/частичный контакт. При точном дубле не показываем.
+    const softNote = (res.soft_match && !res.is_duplicate)
+      ? `<div class="dup-title">Возможно, тот же человек · ${Math.round(res.soft_confidence || 0)}%</div>` +
+        (Array.isArray(res.soft_reasons) ? res.soft_reasons.map((r) => `<span class="reason">${esc(r)}</span>`).join('') : '') +
+        (res.soft_match_id ? `<div class="dup-link" data-url="${base}/all-candidates?entity=${Number(res.soft_match_id)}">Открыть карточку</div>` : '')
       : '';
-    // Level-2 «мягкое» совпадение (возможно тот же человек под новой личиной):
-    // нет точного совпадения контакта, но сложилась комбинация имя/ДР/частичный
-    // контакт. Жёлтая плашка с % и причинами. Точный дубль (is_duplicate) главнее —
-    // при нём мягкую не показываем, чтобы не шуметь.
-    const softMatch = !!checkResp.data.soft_match;
-    const softId = checkResp.data.soft_match_id;
-    const softConf = Math.round(checkResp.data.soft_confidence || 0);
-    const softReasons = Array.isArray(checkResp.data.soft_reasons) ? checkResp.data.soft_reasons : [];
-    const softUrl = softId
-      ? `${serverUrl || document.getElementById('serverUrl').value}/all-candidates?entity=${softId}`
-      : '';
-    const softChips = softReasons.length
-      ? `<div style="margin-top:4px;">${softReasons.map(r => `<span style="display:inline-block;background:rgba(255,255,255,0.6);border-radius:10px;padding:1px 8px;margin:2px 4px 0 0;font-size:12px;">${r}</span>`).join('')}</div>`
-      : '';
-    const softNote = (softMatch && !checkResp.data.is_duplicate)
-      ? `<div class="dup-soft-note"${softUrl ? ` data-soft-url="${softUrl}" title="Открыть карточку возможного дубля"` : ''} style="margin-top:6px;padding:8px 10px;border-radius:8px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;${softUrl ? 'cursor:pointer;' : ''}">🤔 <b>Возможно тот же человек · ${softConf}%</b>${softChips}${softUrl ? '<div style="margin-top:4px;font-size:12px;">— открыть карточку ↗</div>' : ''}</div>`
-      : '';
-    if (checkResp.data.is_duplicate) {
-      const dups = checkResp.data.duplicates;
+
+    // «Был отказ» (22.10.2026): человек уже отклонён — в воронке, вне воронок или
+    // в архиве ClickUp. Самое важное, поэтому первым и красным.
+    const rejNote = renderPriorRejection(res.prior_rejection, base);
+
+    if (res.is_duplicate) {
+      const dups = res.duplicates || [];
       dupStatus.className = 'dup-status found';
-      dupStatus.innerHTML = `⚠️ <b>Уже в базе (${dups.length}):</b>` + archiveNote +
-        dups.map(d => {
-          const st = STATUS_MAP[d.status] || { label: d.status, badge: 'badge-default' };
-          // Correct URL: open candidate in Kanban board via entity query param
-          const url = `${serverUrl}/all-candidates?entity=${d.entity_id}`;
-          const info = [];
-          if (d.email) info.push(d.email);
-          if (d.phone) info.push(d.phone);
-          const infoStr = info.length ? ` <span class="dup-details">${info.join(' · ')}</span>` : '';
-
-          // Build pipeline history block: list of vacancies + stages
+      dupStatus.innerHTML = rejNote + `<div class="dup-title">Уже в базе${dups.length > 1 ? ` · ${dups.length}` : ''}</div>` +
+        dups.map((d) => {
+          const info = [d.email, d.phone].filter(Boolean).join(' · ');
           const apps = d.applications || [];
-          let historyHtml = '';
-          if (apps.length > 0) {
-            historyHtml = '<div class="dup-history"><div class="dup-history-title">📋 История:</div>' +
-              apps.map(a => {
-                const stageLabel = STAGE_LABELS[a.stage] || a.stage;
+          const rows = apps.length
+            ? apps.map((a) => {
                 const when = formatDateShort(a.last_stage_change_at || a.applied_at);
-                return `<div class="dup-history-row">
-                  <span class="dup-history-vacancy">${a.vacancy_title}</span>
-                  <span class="dup-history-stage">${stageLabel}</span>
-                  ${when ? `<span class="dup-history-date">${when}</span>` : ''}
-                </div>`;
-              }).join('') +
-              '</div>';
-          } else {
-            historyHtml = '<div class="dup-history dup-history-empty">Пока нет откликов на вакансии</div>';
-          }
-
+                return `<div class="dup-row"><span class="vac">${esc(a.vacancy_title)}</span>` +
+                  stageChip(a.stage, a.stage_key) +
+                  (when ? `<span class="date">${esc(when)}</span>` : '') + '</div>';
+              }).join('')
+            : '<div class="dup-empty">Ни в одной воронке</div>';
           return `<div class="dup-item">
             <div class="dup-head">
-              <a href="#" class="dup-name" data-url="${url}">👤 ${d.name}</a>
-              <span class="dup-badge ${st.badge}">${st.label}</span>
+              <a href="#" class="dup-name" data-url="${base}/all-candidates?entity=${Number(d.entity_id)}">${esc(d.name)}</a>
+              ${apps.length ? '' : stageChip(d.status, d.status_key)}
             </div>
-            ${infoStr ? `<div class="dup-info">${infoStr}</div>` : ''}
-            ${historyHtml}
+            ${info ? `<div class="dup-info">${esc(info)}</div>` : ''}
+            ${rows}
           </div>`;
-        }).join('');
-
-      // Click handlers
-      setTimeout(() => {
-        dupStatus.querySelectorAll('.dup-name').forEach(link => {
-          link.addEventListener('click', (e) => {
-            e.preventDefault();
-            chrome.tabs.create({ url: link.dataset.url });
-          });
-        });
-      }, 0);
-    } else if (softNote || hasArchive) {
+        }).join('') + archiveNote;
+    } else if (softNote || archiveNote || rejNote) {
       dupStatus.className = 'dup-status found';
-      dupStatus.innerHTML = softNote + archiveNote;
+      dupStatus.innerHTML = rejNote + softNote + archiveNote;
     } else {
       dupStatus.className = 'dup-status clean';
-      dupStatus.innerHTML = '✅ Новый кандидат — дубликатов нет';
+      dupStatus.textContent = 'Новый кандидат — в базе его нет';
     }
 
-    // Клик по плашке архива → открыть карточку совпавшего архивного (обе ветки).
-    const an = dupStatus.querySelector('.dup-archive-note[data-archive-url]');
-    if (an) {
-      an.style.cursor = 'pointer';
-      an.addEventListener('click', () => chrome.tabs.create({ url: an.dataset.archiveUrl }));
-    }
-    // Клик по жёлтой плашке «возможно тот же человек» → открыть карточку дубля.
-    const sn = dupStatus.querySelector('.dup-soft-note[data-soft-url]');
-    if (sn) {
-      sn.addEventListener('click', () => chrome.tabs.create({ url: sn.dataset.softUrl }));
-    }
+    // Любая ссылка в плашке открывает карточку новой вкладкой.
+    dupStatus.querySelectorAll('[data-url]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        chrome.tabs.create({ url: el.dataset.url });
+      });
+    });
   } catch (e) {
     console.error('Duplicate check failed:', e);
     dupStatus.style.display = 'none';
@@ -676,6 +709,8 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
       authToken = data.access_token;
       refreshToken = data.refresh_token || '';
       await chrome.storage.local.set({ serverUrl, authToken, refreshToken, userName: data.user?.name || '' });
+      showWho(data.user?.name || '');
+      checkExtensionUpdate();
 
       document.getElementById('loginError').textContent = '';
 
@@ -693,6 +728,20 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   document.getElementById('loginBtn').disabled = false;
   document.getElementById('loginBtn').textContent = 'Войти';
 });
+
+// «Добавить в «Трафик»» — видно, куда уйдёт кандидат, не глядя на список.
+function funnelSuffix() {
+  const sel = document.getElementById('funnelSelect');
+  return sel && sel.value ? ` в «${sel.options[sel.selectedIndex].textContent}»` : '';
+}
+function updateAddLabel() {
+  const btn = document.getElementById('addBtn');
+  if (!btn || btn.disabled) return;
+  btn.textContent = btn.classList.contains('confirmed')
+    ? 'Всё равно добавить' + funnelSuffix()
+    : 'Добавить' + (funnelSuffix() || ' кандидата');
+}
+document.getElementById('funnelSelect').addEventListener('change', updateAddLabel);
 
 // Add candidate
 document.getElementById('addBtn').addEventListener('click', async () => {
@@ -713,13 +762,13 @@ document.getElementById('addBtn').addEventListener('click', async () => {
 
   // If duplicates were found and user hasn't confirmed yet — ask first
   if (hasDuplicates && !btn.classList.contains('confirmed')) {
-    btn.textContent = '⚠️ Всё равно добавить?';
+    btn.textContent = 'Всё равно добавить' + funnelSuffix();
     btn.classList.add('warning', 'confirmed');
     return;
   }
 
   btn.disabled = true;
-  btn.textContent = 'Добавляем...';
+  btn.textContent = 'Добавляем…';
 
   try {
     const manualName = document.getElementById('manualName')?.value?.trim();
@@ -753,17 +802,23 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     if (resp.success) {
       try {
         const result = resp.data;
-        document.getElementById('resultIcon').textContent = result.is_duplicate ? '!' : 'OK';
+        const icon = document.getElementById('resultIcon');
+        icon.textContent = result.is_duplicate ? '!' : '✓';
+        icon.classList.toggle('warn', !!result.is_duplicate);
         document.getElementById('resultTitle').textContent = result.is_duplicate
-          ? 'Кандидат добавлен (дубликат)'
-          : 'Кандидат добавлен!';
-        document.getElementById('resultMessage').textContent = result.message;
+          ? 'Добавлен — такой уже был в базе'
+          : 'Кандидат добавлен';
+        const funnelSel = document.getElementById('funnelSelect');
+        const funnelName = funnelSel.value ? funnelSel.options[funnelSel.selectedIndex].textContent : '';
+        document.getElementById('resultMessage').textContent = funnelName
+          ? `В воронку «${funnelName}», этап «Новый»`
+          : 'Без воронки — найдёте его в «Все кандидаты»';
         const hiddenDupEl = document.getElementById('hiddenDupWarning');
         if (hiddenDupEl) hiddenDupEl.style.display = result.has_hidden_duplicate ? 'block' : 'none';
         const linkEl = document.getElementById('resultLink');
         if (linkEl && result.entity_id) {
           const candidateUrl = `${serverUrl}/all-candidates?entity=${result.entity_id}`;
-          linkEl.innerHTML = `<a href="#" class="candidate-link" data-url="${candidateUrl}">Открыть карточку кандидата</a>`;
+          linkEl.innerHTML = `<a href="#" class="candidate-link">Открыть карточку кандидата</a>`;
           linkEl.style.display = 'block';
           linkEl.querySelector('.candidate-link').addEventListener('click', (e) => {
             e.preventDefault();
@@ -788,8 +843,8 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     // Кнопка должна вернуться в исходное состояние ВСЕГДА — даже если
     // что-то упало в success-ветке или таймаут не сработал.
     btn.disabled = false;
-    btn.textContent = 'Добавить кандидата';
     btn.classList.remove('warning', 'confirmed');
+    updateAddLabel();
   }
 });
 
@@ -801,8 +856,9 @@ document.getElementById('addAnotherBtn').addEventListener('click', async () => {
   parsedData = null;
   document.getElementById('duplicateWarning').style.display = 'none';
   document.getElementById('addError').textContent = '';
-  document.getElementById('addBtn').textContent = 'Добавить кандидата';
   document.getElementById('addBtn').classList.remove('warning', 'confirmed');
+  updateAddLabel();
+  lastDupSignature = null;
   ['manualName', 'manualEmail', 'manualPhone', 'manualTelegram', 'commentField']
     .forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
   await loadFromActiveTab();
@@ -825,5 +881,6 @@ document.getElementById('logoutLink').addEventListener('click', (e) => {
   e.preventDefault();
   chrome.storage.local.clear();
   authToken = '';
+  showWho('');
   showView('login');
 });

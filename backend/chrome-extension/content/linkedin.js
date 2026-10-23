@@ -108,7 +108,15 @@
     // Локация: 1–3 части через запятую, каждая 1–3 слова с заглавной.
     const parts = s.split(',').map((p) => p.trim()).filter(Boolean);
     if (parts.length < 1 || parts.length > 3) return false;
-    return parts.every((p) => /^[A-ZА-ЯЁ][\wа-яё .'’-]{1,34}$/u.test(p));
+    // Заглавные и в середине: «Республика Беларусь», «New York» (без А-ЯЁ
+    // город «Минск, Республика Беларусь» не опознавался, 22.10.2026).
+    return parts.every((p) => /^[A-ZА-ЯЁ][\wА-ЯЁа-яё .'’-]{1,34}$/u.test(p));
+  }
+
+  // «· 1-й», «· 2-й», «1st», «· 3rd+» — степень связи рядом с именем, не хедлайн.
+  // С ней хедлайном (а значит, и должностью) становилось «· 1-й» (22.10.2026).
+  function isDegreeLine(s) {
+    return s === '·' || /^·?\s*(\d+\s*-?\s*(й|st|nd|rd|th)\+?|1st|2nd|3rd\+?)$/i.test(s);
   }
 
   // ── Интро-карточка (главная страница) ─────────────────────────────────────
@@ -120,10 +128,12 @@
     let headline = '';
     let card = null;
 
-    // Имя на LinkedIn — это <h1> в интро-секции. Берём его и поднимаемся вверх,
-    // пока контейнер не начнёт содержать полезные строки (локация/«компания·вуз»).
+    // Имя на LinkedIn — заголовок интро-секции: был <h1>, с осени 2026 — <h2>
+    // (сохранённый профиль, 22.10.2026). Без <h2> срабатывал фолбэк ниже и брал
+    // первый попавшийся лист с именем — в меню, не в профиле. Берём заголовок и
+    // поднимаемся вверх, пока контейнер не начнёт содержать полезные строки.
     if (nameTxt) {
-      for (const h of document.querySelectorAll('h1')) {
+      for (const h of document.querySelectorAll('main h1, main h2, h1, h2')) {
         if ((h.textContent || '').replace(/\s+/g, ' ').trim() !== nameTxt) continue;
         card = h.closest('section') || h.parentElement;
         for (let i = 0; i < 8 && card && card.parentElement; i++) {
@@ -149,7 +159,7 @@
     if (card) {
       const lines = leafLines(card);
       const idx = lines.indexOf(nameTxt);
-      if (idx >= 0 && lines[idx + 1]) headline = lines[idx + 1];
+      if (idx >= 0) headline = lines.slice(idx + 1).find((l) => !isDegreeLine(l)) || '';
 
       // Строки с middle-dot: либо «Город, Страна · Контактная информация»,
       // либо «Компания · Вуз». Различаем по наличию слова «контакт/contact».
@@ -164,7 +174,8 @@
           }
           continue;
         }
-        if (!data.company) {
+        if (!data.company && parts.length) {
+          if (isDegreeLine(l) || parts.every((p) => isDegreeLine(p) || isDegreeLine('· ' + p))) continue;
           if (parts[0]) data.company = parts[0];
           if (parts[1] && !data.education.length) data.education = [parts[1]];
         }
@@ -176,7 +187,7 @@
         const start = idx >= 0 ? idx + 1 : 0;
         for (let i = start; i < lines.length; i++) {
           const l = lines[i];
-          if (l === headline || l === nameTxt || l.includes('·')) continue;
+          if (l === headline || l === nameTxt || l.includes('·') || isDegreeLine(l)) continue;
           if (/контакт|connection|связ|follower|подписчик/i.test(l)) break;
           if (looksLikeLocation(l)) { data.city = l; break; }
         }
@@ -337,6 +348,63 @@
     '[data-view-name="profile-component-entity"]',
   ];
 
+  // ── Разделы на ГЛАВНОЙ странице профиля ───────────────────────────────────
+  // Опыт, образование, навыки и языки есть прямо на /in/<slug>/ (сохранённый
+  // профиль, 22.10.2026) — раньше их брали только из скрытых iframe детальных
+  // страниц, и если те не успевали прогрузиться, у кандидата не было ничего:
+  // 2 из 5 добавленных 21.10 пришли с должностью «· 1-й». Теперь главная — основа,
+  // iframe дополняет (там полный список навыков и лицензии).
+  const SECTION_TITLES = {
+    experience: /^(опыт работы|experience)$/i,
+    education: /^(образование|education)$/i,
+    skills: /^(навыки|skills)(\s*\(\d+\))?$/i,
+    languages: /^(языки|languages)(\s*\(\d+\))?$/i,
+  };
+  function profileSection(kind) {
+    const scope = document.querySelector('main') || document;
+    for (const sec of scope.querySelectorAll('section')) {
+      if (sec.closest('aside')) continue;
+      const h = sec.querySelector('h2');
+      const t = (h && h.textContent || '').replace(/\s+/g, ' ').trim();
+      if (SECTION_TITLES[kind].test(t)) return { sec, title: t };
+    }
+    return null;
+  }
+  const SECTION_JUNK = /^(показать все|show all|ещё|еще|see more|подтверждени|endorse)/i;
+  function sectionLines(kind) {
+    const found = profileSection(kind);
+    if (!found) return [];
+    return leafLines(found.sec).filter((l) => l !== found.title && !SECTION_JUNK.test(l));
+  }
+  function parseProfileSections(data) {
+    const exp = profileSection('experience');
+    if (exp) {
+      const items = [];
+      exp.sec.querySelectorAll('[componentkey^="entity-collection-item"]').forEach((n) => {
+        const ln = leafLines(n); if (ln.length) items.push(ln);
+      });
+      applyExperience(data, items);
+    }
+    // Образование: «Вуз» и под ним строка с годами — склеиваем в одну запись.
+    const edu = [];
+    for (const l of sectionLines('education')) {
+      if (/(19|20)\d{2}/.test(l) && edu.length) edu[edu.length - 1] += ' — ' + l;
+      else edu.push(l);
+    }
+    if (edu.length) data.education = edu.slice(0, 5);
+    const skills = sectionLines('skills').filter((l) => l.length >= 2 && l.length <= 60);
+    if (skills.length) data.skills = [...new Set(skills)].slice(0, 40);
+    // Язык и под ним уровень («Родной или билингва», «Professional working
+    // proficiency») — одна запись.
+    const langs = [];
+    for (const l of sectionLines('languages')) {
+      if (l.length > 60) continue;
+      if (langs.length && /уровень|владени|родной|билингв|proficiency|native|bilingual|elementary/i.test(l)) langs[langs.length - 1] += ' — ' + l;
+      else langs.push(l);
+    }
+    if (langs.length) data.languages = langs.slice(0, 15);
+  }
+
   function makeData() {
     return {
       source: 'linkedin.com', source_url: window.location.href,
@@ -351,6 +419,7 @@
   function parseBase(data) {
     data.full_name = nameFromTitle();
     const headline = parseIntroCard(data);
+    parseProfileSections(data);
     applyJsonLd(data);
     // Контакты — только из ссылок (на LinkedIn почти всегда отсутствуют).
     document.querySelectorAll('a[href]').forEach((a) => {
@@ -391,13 +460,20 @@
     return finalize(data, headline);
   }
 
-  // Опыт: запись = ["Должность", "Компания · тип", "даты", …описание].
+  // Опыт: запись = ["Должность", "Компания · тип", "даты", …описание]. Несколько
+  // ролей в одной компании LinkedIn собирает в группу ["Компания", "3 г. 3 мес.",
+  // "Роль", "даты", …] — там первая строка компания, а роль третья (было
+  // «Nexters | 3 г. 3 мес. | …»).
+  const DURATION_RE = /^(\d+\s*(г\.?|год|года|лет|мес\.?|yrs?|mos?)\b\s*)+$/i;
   function applyExperience(data, expItems) {
     const experiences = expItems
       .map((ln) => {
+        const dates = ln.find((l) => /(19|20)\d{2}/.test(l)) || '';
+        if (ln[1] && DURATION_RE.test(ln[1].trim()) && ln[2]) {
+          return { title: ln[2], company: ln[0], dates };
+        }
         const title = ln[0] || '';
         const company = (ln[1] || '').split('·')[0].trim();
-        const dates = ln.find((l) => /(19|20)\d{2}/.test(l)) || '';
         return { title, company, dates };
       })
       .filter((e) => e.title || e.company);
