@@ -10176,6 +10176,34 @@ body.performance-mode .glass-card:hover {
   cursor: pointer;
 }
 .hf-statuses-fchip:hover { border-color: var(--hf-main-400); }
+/* Чип состоит из двух кнопок: тело открывает условие, крестик снимает
+   (владелец, 23.10.2026 — «при нажатии оно не удаляется, а открывается»). */
+.hf-statuses-fchip { padding: 0; gap: 0; }
+.hf-statuses-fchip-body {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px var(--hf-space-xs) 4px var(--hf-space-s);
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.hf-statuses-fchip-x {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px var(--hf-space-s) 4px var(--hf-space-xxs);
+  border: 0;
+  background: none;
+  color: var(--hf-main-400);
+  cursor: pointer;
+}
+.hf-statuses-fchip-x:hover { color: var(--hf-status-red, #ef4444); }
 /* Связка между чипами — читается как фраза: «Отдел: … и Выход в отдел: …» */
 .hf-statuses-fchip-join {
   align-self: center;

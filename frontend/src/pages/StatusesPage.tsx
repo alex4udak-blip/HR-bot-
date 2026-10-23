@@ -484,6 +484,8 @@ export default function StatusesPage() {
     });
 
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Какое условие раскрыть в панели: ставится кликом по чипу под шапкой.
+  const [editKey, setEditKey] = useState<FilterKey | null>(null);
   // Сортировка по дате: клик по заголовку — сначала новые, второй — старые,
   // третий возвращает обычный порядок.
   // По умолчанию сортируем по выходу в отдел: сверху те, кто вышел недавно,
@@ -985,7 +987,7 @@ export default function StatusesPage() {
                 "hf-statuses-filters-btn",
                 activeCount > 0 && "hf-statuses-filters-btn-on"
               )}
-              onClick={() => setPickerOpen((v) => !v)}
+              onClick={() => { setPickerOpen((v) => !v); setEditKey(null); }}
             >
               <SlidersHorizontal size={15} />
               Фильтры
@@ -996,7 +998,10 @@ export default function StatusesPage() {
 
             {pickerOpen && (
               <>
-                <div className="hf-statuses-picker-backdrop" onClick={() => setPickerOpen(false)} />
+                <div
+                  className="hf-statuses-picker-backdrop"
+                  onClick={() => { setPickerOpen(false); setEditKey(null); }}
+                />
                 <div className="hf-statuses-picker">
                   <div className="hf-statuses-picker-head">
                     <span>Фильтры</span>
@@ -1016,7 +1021,7 @@ export default function StatusesPage() {
                     {describeFilters(filters)}
                   </div>
                   <div className="hf-statuses-filter-hint">
-                    Отметьте, что показывать. Условие с пометкой «нужно» обязательно;
+                    Отметьте, что показывать. Условие с пометкой «и» обязательно;
                     нажмите на неё — станет «или», и хватит совпадения с любым
                     из таких условий.
                   </div>
@@ -1030,6 +1035,7 @@ export default function StatusesPage() {
                       range={filters.dates[c.key]}
                       options={isDateKey(c.key) ? [] : valuesFor(c.key)}
                       isOr={(filters.orKeys || []).includes(c.key)}
+                      openNow={editKey === c.key}
                       onToggleJoin={() => toggleJoin(c.key)}
                       onToggle={(v) => toggleValue(c.key, v)}
                       onDate={(side, v) => setDateBound(c.key, side, v)}
@@ -1071,14 +1077,31 @@ export default function StatusesPage() {
                   {i > 0 && (
                     <span className="hf-statuses-fchip-join">{isOr ? "или" : "и"}</span>
                   )}
-                  <button
-                    className={clsx("hf-statuses-fchip", isOr && "is-or")}
-                    onClick={() => clearKey(key)}
-                    title="Снять фильтр"
-                  >
-                    <b>{filterLabel(key)}:</b> {text}
-                    <X size={12} />
-                  </button>
+                  {/* Клик по самому чипу ОТКРЫВАЕТ условие — поправить выбор
+                      (владелец, 23.10.2026: «при нажатии на него он не
+                      удаляется, а открывается и есть возможность изменить»).
+                      Снимает только крестик: раньше чип снимался целиком от
+                      любого промаха, и набранный фильтр приходилось собирать
+                      заново. */}
+                  <span className={clsx("hf-statuses-fchip", isOr && "is-or")}>
+                    <button
+                      type="button"
+                      className="hf-statuses-fchip-body"
+                      onClick={() => { setPickerOpen(true); setEditKey(key); }}
+                      title="Изменить условие"
+                    >
+                      <b>{filterLabel(key)}:</b> {text}
+                    </button>
+                    <button
+                      type="button"
+                      className="hf-statuses-fchip-x"
+                      onClick={() => clearKey(key)}
+                      title="Снять фильтр"
+                      aria-label={`Снять фильтр «${filterLabel(key)}»`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
                 </Fragment>
               );
             })}
@@ -1264,7 +1287,7 @@ export default function StatusesPage() {
  *  значениями и их количеством, у дат — «с» и «по». Ни операторов, ни
  *  «равно/содержит»: отмечаешь то, что хочешь видеть. */
 function FilterSection({
-  label, column, values, range, options, isOr, onToggleJoin,
+  label, column, values, range, options, isOr, openNow, onToggleJoin,
   onToggle, onDate, onRange, onClear,
 }: {
   label: string;
@@ -1274,6 +1297,8 @@ function FilterSection({
   options: { value: string; count: number }[];
   /** Условие помечено «или» — достаточно совпасть с ним ИЛИ с другим таким. */
   isOr: boolean;
+  /** Раскрыть сразу — пришли сюда кликом по чипу под шапкой. */
+  openNow?: boolean;
   onToggleJoin: () => void;
   onToggle: (v: string) => void;
   onDate: (side: "from" | "to", v: string) => void;
@@ -1283,6 +1308,14 @@ function FilterSection({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const months = useMemo(() => recentMonths(), []);
+  const headRef = useRef<HTMLButtonElement>(null);
+  // Пришли по клику на чип — раскрываем это условие и подкручиваем к нему
+  // панель: иначе нужное место приходится искать в длинном списке колонок.
+  useEffect(() => {
+    if (!openNow) return;
+    setOpen(true);
+    headRef.current?.scrollIntoView({ block: "nearest" });
+  }, [openNow]);
   const isDate = isDateKey(column);
   const active = isDate ? !!(range && (range.from || range.to)) : values.length > 0;
   const shown = q
@@ -1295,7 +1328,7 @@ function FilterSection({
 
   return (
     <div className={clsx("hf-statuses-filter-section", active && "is-active")}>
-      <button className="hf-statuses-filter-head" onClick={() => setOpen((v) => !v)}>
+      <button ref={headRef} className="hf-statuses-filter-head" onClick={() => setOpen((v) => !v)}>
         <ChevronRight
           size={13}
           className={clsx("hf-statuses-filter-caret", open && "is-open")}
@@ -1306,11 +1339,11 @@ function FilterSection({
           <span
             className={clsx("hf-statuses-filter-join", isOr && "is-or")}
             title={isOr
-              ? "Сейчас: «или» — достаточно совпасть с этим условием ИЛИ с другим таким же. Нажмите, чтобы сделать обязательным"
-              : "Сейчас: условие обязательно. Нажмите, чтобы стало «или»"}
+              ? "Сейчас «или»: достаточно совпасть с этим условием ИЛИ с другим таким же. Нажмите, чтобы стало «и» — обязательным"
+              : "Сейчас «и»: условие обязательно. Нажмите, чтобы стало «или»"}
             onClick={(e) => { e.stopPropagation(); onToggleJoin(); }}
           >
-            {isOr ? "или" : "нужно"}
+            {isOr ? "или" : "и"}
           </span>
         )}
         {active && (
