@@ -232,7 +232,7 @@ export default function App() {
 <Route path="interns" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin', 'practice']}><InternsPage /></RoleRoute></Suspense>} />
           <Route path="interns/:internId/stats" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin', 'practice']}><InternStatsPage /></RoleRoute></Suspense>} />
           <Route path="practice-list" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin', 'practice']}><PracticeListPage /></RoleRoute></Suspense>} />
-          <Route path="deleted-candidates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><DeletedCandidatesPage /></RoleRoute></Suspense>} />
+          <Route path="deleted-candidates" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><DeletedCandidatesPage /></RoleRoute></Suspense>} />
           <Route path="audit-log" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><AuditLogPage /></RoleRoute></Suspense>} />
           <Route path="ai-usage" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr_admin']}><AiUsagePage /></RoleRoute></Suspense>} />
           <Route path="form-builder" element={<Suspense fallback={<PageLoader />}><RoleRoute allow={['hr']}><FormBuilderPage /></RoleRoute></Suspense>} />

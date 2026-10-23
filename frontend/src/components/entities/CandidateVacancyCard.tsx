@@ -100,6 +100,8 @@ function CandidateVacancyCard({
   recruiter,
   resolveNoteVacancyLabel,
   funnelStages,
+  downloadFile,
+  fileUrlOf,
 }: {
   card: KanbanCard;
   applicationId: number;
@@ -181,6 +183,10 @@ function CandidateVacancyCard({
   onReact?: (entryKey: string, emoji: string) => Promise<EntryReaction[] | null>;
   // Файлы, прикреплённые к этому контейнеру (показываются под логом, скачиваемы).
   files?: EntityFile[];
+  /** Откуда качать файл, если не из живой карточки (корзина: из слепка). */
+  downloadFile?: (fileId: number) => Promise<Blob>;
+  /** Адрес файла для плеера видео — тот же случай. */
+  fileUrlOf?: (fileId: number) => string;
   // Удалить файл (с подтверждением) — обновляет список после удаления.
   onDeleteFile?: (fileId: number) => void;
   // Убрать кандидата из воронки (снять заявку). Только живой контейнер.
@@ -465,7 +471,7 @@ function CandidateVacancyCard({
   // Скачать прикреплённый к контейнеру файл (работает и на read-only merged).
   const handleDownloadFile = async (fileId: number, fileName: string) => {
     try {
-      const blob = await downloadEntityFile(card.id, fileId);
+      const blob = downloadFile ? await downloadFile(fileId) : await downloadEntityFile(card.id, fileId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -887,7 +893,7 @@ function CandidateVacancyCard({
                   type="button"
                   onClick={() =>
                     /\.(mp4|mov|avi|webm|m4v)$/i.test(f.file_name)
-                      ? setVideoModal({ url: `/api/entities/${card.id}/files/${f.id}/download`, name: f.file_name })
+                      ? setVideoModal({ url: fileUrlOf ? fileUrlOf(f.id) : `/api/entities/${card.id}/files/${f.id}/download`, name: f.file_name })
                       : handleDownloadFile(f.id, f.file_name)
                   }
                   title={/\.(mp4|mov|avi|webm|m4v)$/i.test(f.file_name) ? "Смотреть видео" : "Скачать"}

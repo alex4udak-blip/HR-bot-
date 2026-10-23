@@ -122,3 +122,18 @@ async def test_entity_trash_rows_still_say_entity(client, db_session, admin_user
     assert row["kind"] == "entity"
     rec = (await db_session.execute(select(DeletedEntity).where(DeletedEntity.entity_id == eid))).scalar_one()
     assert (rec.kind or "entity") == "entity"
+
+
+async def test_removed_application_opens_as_card(client, db_session, admin_user, in_funnel):
+    """Удалённую из воронки заявку тоже можно открыть: живая карточка + блок
+    этой воронки с историей из слепка (23.10.2026)."""
+    H = _h(admin_user)
+    eid, app_id = in_funnel["eid"], in_funnel["app_id"]
+    await _remove(client, H, app_id)
+    item = await _trash_item(client, H, eid)
+    view = (await client.get(f"/api/entities/trash/{item['id']}/card", headers=H)).json()
+    assert view["card"]["name"] == "Иванов Иван"
+    assert view["trash"]["kind"] == "application"
+    [block] = view["blocks"]
+    assert (block["vacancy_title"], block["current_stage"]) == ("Трафик", "interview")
+    assert [ev["comment"] for ev in block["events"]] == ["прислал тестовое"]

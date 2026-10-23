@@ -135,6 +135,26 @@ export const restoreEntityFromTrash = async (
   return data;
 };
 
+/** Удалённый кандидат «как обычная карточка» (23.10.2026): поля карточки,
+ *  блоки воронок с историей из слепка корзины, список файлов без байтов. */
+export interface TrashCardView {
+  card: import('./candidates').KanbanCard & { status?: string; photo_url?: string };
+  blocks: VacancyActivityBlock[];
+  files: EntityFile[];
+  trash: TrashItem;
+}
+
+export const getTrashCard = async (trashId: number): Promise<TrashCardView> => {
+  const { data } = await deduplicatedGet<TrashCardView>(`/entities/trash/${trashId}/card`);
+  return data;
+};
+
+/** Файл удалённого кандидата — из слепка корзины. */
+export const downloadTrashFile = async (trashId: number, fileId: number): Promise<Blob> => {
+  const { data } = await api.get(`/entities/trash/${trashId}/files/${fileId}`, { responseType: 'blob' });
+  return data as Blob;
+};
+
 /**
  * Quick status update for Kanban drag & drop
  */

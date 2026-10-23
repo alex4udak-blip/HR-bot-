@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { RotateCcw, Trash2 } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Eye, RotateCcw, Trash2 } from 'lucide-react';
+import { DeletedCandidateCard } from '@/components/candidates/DeletedCandidateCard';
 import toast from 'react-hot-toast';
 import { getEntityTrash, restoreEntityFromTrash, type TrashItem } from '@/services/api/entities';
 import { parseServerDate } from '@/utils/date';
@@ -16,6 +17,10 @@ import { useAuthStore } from '@/stores/authStore';
 // С 21.10.2026 здесь же «Удалить с воронки»: кандидат убран из ОДНОЙ воронки
 // (карточка осталась), а этап, чей был, история переводов и комментарии к ним
 // лежат 7 дней и возвращаются кнопкой — прямо в ту воронку.
+//
+// С 23.10.2026 (владелец): корзина — всем рекрутёрам, а удалённого можно
+// ОТКРЫТЬ как обычную карточку (только просмотр, файлы скачиваются):
+// `?open=<номер записи>` — F5 оставляет карточку открытой.
 
 const fmt = (iso: string | null) =>
   iso
@@ -43,6 +48,15 @@ export default function DeletedCandidatesPage() {
   const observer = useAuthStore((s) => s.user?.is_readonly === true);
   const [items, setItems] = useState<TrashItem[] | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [params, setParams] = useSearchParams();
+  const openId = Number(params.get('open')) || null;
+  const openCard = (id: number | null) =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set('open', String(id));
+      else next.delete('open');
+      return next;
+    });
 
   const load = useCallback(async () => {
     try {
@@ -85,6 +99,25 @@ export default function DeletedCandidatesPage() {
     }
   };
 
+  if (openId) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto">
+        <button
+          type="button"
+          onClick={() => openCard(null)}
+          className="mb-4 inline-flex items-center gap-1.5 text-sm text-dark-400 hover:text-white"
+        >
+          <ArrowLeft className="w-4 h-4" /> Ко всем удалённым
+        </button>
+        <DeletedCandidateCard
+          trashId={openId}
+          restoring={busyId === openId}
+          onRestore={observer ? undefined : (item) => restore(item)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="mb-6">
@@ -92,8 +125,8 @@ export default function DeletedCandidatesPage() {
         <p className="text-dark-400 text-sm mt-1">
           Удалённый кандидат хранится 7 дней целиком — с воронками, историей, комментариями и
           файлами. Так же 7 дней хранится «Удалить с воронки»: этап, чей был кандидат и история
-          переводов в этой воронке. За это время всё можно вернуть как было. Кто и когда
-          удалял — видно здесь всегда.
+          переводов в этой воронке. За это время карточку можно открыть и вернуть как
+          было. Кто и когда удалял — видно здесь всегда.
         </p>
       </div>
 
@@ -133,7 +166,17 @@ export default function DeletedCandidatesPage() {
                       <div className="text-xs text-dark-400 mt-1">{summaryText(item.summary)}</div>
                     )}
               </div>
-              <div className="shrink-0 text-right">
+              <div className="shrink-0 text-right flex items-start gap-2">
+                {!item.purged_at && !item.restored_at && (
+                  <button
+                    type="button"
+                    onClick={() => openCard(item.id)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl border border-dark-600 text-white text-sm font-medium hover:bg-dark-700"
+                  >
+                    <Eye className="w-4 h-4" />
+                    Открыть
+                  </button>
+                )}
                 {item.restored_at ? (
                   <span className="text-sm text-dark-400">
                     Возвращён: {item.restored_by_name || '—'}, {fmt(item.restored_at)}

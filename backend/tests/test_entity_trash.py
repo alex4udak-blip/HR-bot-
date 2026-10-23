@@ -136,10 +136,48 @@ async def test_restore_skips_rows_whose_parent_is_gone(client, db_session, admin
     assert (await db_session.execute(select(Entity).where(Entity.id == eid))).scalar() is not None
 
 
-async def test_trash_is_admins_only(client, db_session, admin_user, regular_user, org_member, second_user, doomed):
+async def test_trash_is_closed_to_non_hr(client, db_session, admin_user, regular_user, org_member, second_user, doomed):
+    # Сотрудник без HR (role=member) корзину не видит; рекрутёры — видят
+    # (владелец, 23.10.2026), см. test_recruiter_opens_deleted_card.
     e, *_ = doomed
     res = await _delete(client, admin_user, e.id)
     r = await client.get("/api/entities/trash", headers=_h(second_user))
     assert r.status_code == 403
     r = await client.post(f"/api/entities/trash/{res['trash_id']}/restore", headers=_h(second_user))
     assert r.status_code == 403
+
+
+async def test_recruiter_opens_deleted_card(client, db_session, organization, admin_user, doomed):
+    """Владелец, 23.10.2026: корзина — всем рекрутёрам, удалённая карточка
+    открывается как обычная (только чтение) и её файлы скачиваются."""
+    from api.models.database import OrgMember, OrgRole, User
+    e, v, app, call = doomed
+    eid = e.id
+    recruiter = User(email="hr.trash@test.local", name="Рекрутёр Корзины", password_hash="x", is_active=True)
+    db_session.add(recruiter)
+    await db_session.commit()
+    db_session.add(OrgMember(org_id=organization.id, user_id=recruiter.id, role=OrgRole.hr))
+    await db_session.commit()
+    H = _h(recruiter)
+
+    res = await _delete(client, admin_user, eid)
+    tid = res["trash_id"]
+    items = (await client.get("/api/entities/trash", headers=H)).json()["items"]
+    assert any(i["id"] == tid for i in items)
+
+    view = (await client.get(f"/api/entities/trash/{tid}/card", headers=H)).json()
+    assert view["card"]["name"] == "Муравьева Елизавета" and view["card"]["email"] == "liza@example.com"
+    assert [n["text"] for n in view["card"]["extra_data"]["notes"]] == ["созвон прошёл"]
+    block = view["blocks"][0]
+    assert (block["vacancy_title"], block["current_stage"]) == ("Трафик", "screening")
+    assert [(ev["to_stage"], ev["comment"]) for ev in block["events"]] == [("screening", "ТЗ выдано")]
+    assert view["trash"]["restorable"] is True
+    f = view["files"][0]
+    assert f["file_name"] == "cv.pdf" and "file_data" not in f
+
+    r = await client.get(f"/api/entities/trash/{tid}/files/{f['id']}", headers=H)
+    assert r.status_code == 200 and r.content == b"%PDF-1.4 resume"
+    assert (await client.get(f"/api/entities/trash/{tid}/files/999999", headers=H)).status_code == 404
+
+    r = await client.post(f"/api/entities/trash/{tid}/restore", headers=H)
+    assert r.status_code == 200, r.text

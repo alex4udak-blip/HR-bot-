@@ -1,9 +1,13 @@
 """
 Корзина кандидатов: список удалённых и возврат (20.10.2026, services/entity_trash.py).
 
-Смотреть и возвращать — админам HR (владелец, админ орга, суперадмин): им же
-доступно и удаление чужих карточек. Подключается РАНЬШЕ crud: иначе
-GET /entities/{entity_id} перехватил бы /entities/trash.
+Смотреть, открывать и возвращать — ВСЕМ рекрутёрам (владелец, 23.10.2026;
+до этого — только админам HR): удалить кандидата может любой, кто с ним
+работает, значит и вернуть должен мочь каждый. Человек со скоупом по
+воронкам видит только записи своих воронок. Удалённую карточку можно открыть
+как обычную (`/trash/{id}/card`, только чтение) и скачать её файлы.
+Подключается РАНЬШЕ crud: иначе GET /entities/{entity_id} перехватил бы
+/entities/trash.
 """
 from datetime import datetime, timedelta
 
@@ -12,8 +16,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .common import (
-    logger, get_db, User, UserRole, get_current_user, get_user_org, has_full_database_access,
+    logger, get_db, User, UserRole, get_current_user, get_user_org, get_user_org_role,
 )
+from ...models.database import OrgRole
 from ...models.database import DeletedEntity
 
 router = APIRouter()
@@ -24,12 +29,41 @@ JOURNAL_DAYS = 90
 
 
 async def _admin_org(db: AsyncSession, user: User):
+    """Организация человека, если он в HR (рекрутёр, админ, владелец)."""
     org = await get_user_org(user, db)
     if user.role == UserRole.superadmin:
         return org
-    if not org or not await has_full_database_access(user, org.id, db):
-        raise HTTPException(403, "Корзина доступна только админам HR")
+    role = await get_user_org_role(user, org.id, db) if org else None
+    if role not in (OrgRole.owner, OrgRole.admin, OrgRole.hr):
+        raise HTTPException(403, "Корзина доступна только рекрутёрам")
     return org
+
+
+def _snapshot_vacancy_ids(r: DeletedEntity) -> set:
+    rows = ((r.snapshot or {}).get("tables") or {}).get("vacancy_applications") or []
+    return {row.get("vacancy_id") for row in rows if row.get("vacancy_id") is not None}
+
+
+def _in_scope(r: DeletedEntity, scope_ids) -> bool:
+    """Скоуп по воронкам: запись видна, только если касается разрешённой воронки."""
+    if scope_ids is None:
+        return True
+    if (r.kind or "entity") == "application":
+        return r.vacancy_id in scope_ids
+    return bool(_snapshot_vacancy_ids(r) & set(scope_ids))
+
+
+async def _record_for(db: AsyncSession, trash_id: int, user: User, org, *, lock: bool = False) -> DeletedEntity:
+    from ...services.vacancy_scope import get_scope_vacancy_ids
+    q = select(DeletedEntity).where(DeletedEntity.id == trash_id)
+    if lock:
+        q = q.with_for_update()
+    record = (await db.execute(q)).scalar_one_or_none()
+    if record is None or (
+        user.role != UserRole.superadmin and org is not None and record.org_id != org.id
+    ) or not _in_scope(record, await get_scope_vacancy_ids(user, db)):
+        raise HTTPException(404, "Запись корзины не найдена")
+    return record
 
 
 def _row(r: DeletedEntity, now: datetime) -> dict:
@@ -74,7 +108,56 @@ async def list_trash(
     elif org is not None:
         q = q.where(or_(DeletedEntity.org_id == org.id, DeletedEntity.org_id.is_(None)))
     rows = (await db.execute(q.order_by(DeletedEntity.deleted_at.desc()))).scalars().all()
-    return {"items": [_row(r, now) for r in rows]}
+    from ...services.vacancy_scope import get_scope_vacancy_ids
+    scope_ids = await get_scope_vacancy_ids(current_user, db)
+    return {"items": [_row(r, now) for r in rows if _in_scope(r, scope_ids)]}
+
+
+@router.get("/trash/{trash_id}/card")
+async def trash_card(
+    trash_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Удалённый кандидат как обычная карточка, только для чтения: поля
+    карточки, воронки с историей переводов, комментарии, файлы (без байтов).
+    Для «Удалить с воронки» — живая карточка + удалённая заявка из слепка."""
+    from ...services.entity_trash import trash_card_view
+
+    current_user = await db.merge(current_user)
+    org = await _admin_org(db, current_user)
+    record = await _record_for(db, trash_id, current_user, org)
+    if not record.snapshot:
+        raise HTTPException(410, "Слепок уже стёрт — прошло больше 7 дней")
+    view = await trash_card_view(db, record)
+    view["trash"] = _row(record, datetime.utcnow())
+    return view
+
+
+@router.get("/trash/{trash_id}/files/{file_id}")
+async def trash_file(
+    trash_id: int,
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Файл удалённого кандидата — байты из слепка корзины."""
+    from fastapi.responses import Response
+    from urllib.parse import quote
+    from ...services.entity_trash import trash_file_bytes
+
+    current_user = await db.merge(current_user)
+    org = await _admin_org(db, current_user)
+    record = await _record_for(db, trash_id, current_user, org)
+    found = trash_file_bytes(record, file_id)
+    if found is None:
+        raise HTTPException(404, "Файла нет в корзине")
+    data, name, mime = found
+    return Response(
+        content=data,
+        media_type=mime or "application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name or 'file')}"},
+    )
 
 
 @router.post("/trash/{trash_id}/restore")
@@ -89,13 +172,7 @@ async def restore_trash(
 
     current_user = await db.merge(current_user)
     org = await _admin_org(db, current_user)
-    record = (await db.execute(
-        select(DeletedEntity).where(DeletedEntity.id == trash_id).with_for_update()
-    )).scalar_one_or_none()
-    if record is None or (
-        current_user.role != UserRole.superadmin and org is not None and record.org_id != org.id
-    ):
-        raise HTTPException(404, "Запись корзины не найдена")
+    record = await _record_for(db, trash_id, current_user, org, lock=True)
     if record.purge_after <= datetime.utcnow() and not record.restored_at:
         raise HTTPException(410, "Срок хранения в корзине истёк — вернуть уже нельзя")
     kind = record.kind or "entity"

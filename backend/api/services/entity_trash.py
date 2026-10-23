@@ -339,3 +339,133 @@ def snapshot_summary(snapshot: Optional[dict]) -> Dict[str, Any]:
         "history": len(t.get("stage_transitions") or []),
         "files": len(t.get("entity_files") or []),
     }
+
+
+# --- просмотр удалённой карточки (23.10.2026) --------------------------------
+# Владелец: «пусть открывается как обычная карточка». Карточку собираем из
+# слепка в тех же полях, что строка «Все кандидаты» + блоки воронок (как
+# /entities/{id}/activity), чтобы фронт нарисовал её теми же компонентами.
+
+def _plain(value: Any) -> Any:
+    """Значение слепка для ответа: даты — ISO-строкой, байты не отдаём."""
+    if isinstance(value, dict) and len(value) == 1:
+        (tag, raw), = value.items()
+        if tag in ("__dt", "__d", "__dec"):
+            return raw
+        if tag == "__b":
+            return None
+    return value
+
+
+def _rows(record: DeletedEntity, table: str) -> List[Dict[str, Any]]:
+    rows = ((record.snapshot or {}).get("tables") or {}).get(table) or []
+    return [{k: _plain(v) for k, v in r.items()} for r in rows]
+
+
+def _card_fields(ent: Dict[str, Any], owner_name: Optional[str]) -> Dict[str, Any]:
+    from .similarity import first_real_telegram
+    extra = ent.get("extra_data") if isinstance(ent.get("extra_data"), dict) else {}
+    return {
+        "id": ent.get("id"),
+        "name": ent.get("name") or "",
+        "email": ent.get("email"),
+        "phone": ent.get("phone"),
+        "emails": ent.get("emails") or [],
+        "phones": ent.get("phones") or [],
+        "telegram_username": first_real_telegram(ent.get("telegram_usernames") or []),
+        "telegram_usernames": ent.get("telegram_usernames") or [],
+        "position": ent.get("position"),
+        "company": ent.get("company"),
+        "status": ent.get("status"),
+        "created_at": ent.get("created_at"),
+        "recruiter_id": ent.get("created_by"),
+        "recruiter_name": owner_name,
+        "source": extra.get("source"),
+        "source_url": extra.get("source_url"),
+        "city": extra.get("city") or extra.get("location"),
+        "age": extra.get("age"),
+        "salary": extra.get("salary"),
+        "total_experience": extra.get("total_experience"),
+        "tags": ent.get("tags") or [],
+        "extra_data": extra,
+    }
+
+
+async def trash_card_view(db: AsyncSession, record: DeletedEntity) -> Dict[str, Any]:
+    """Карточка из корзины: поля карточки, блоки воронок с историей, файлы."""
+    from ..models.database import Entity, User, Vacancy
+
+    kind = record.kind or KIND_ENTITY
+    if kind == KIND_APPLICATION:
+        # Убрали только из воронки: сама карточка живая — берём её как есть.
+        live = await db.get(Entity, record.entity_id)
+        ent = {c.name: _plain(_encode(getattr(live, c.name))) for c in Entity.__table__.columns} if live else {
+            "id": record.entity_id, "name": record.entity_name,
+        }
+    else:
+        ent = (_rows(record, ROOT_TABLE) or [{"id": record.entity_id, "name": record.entity_name}])[0]
+
+    apps = _rows(record, APPLICATION_TABLE)
+    transitions = _rows(record, "stage_transitions")
+    files = _rows(record, "entity_files")
+
+    user_ids = {t.get("changed_by") for t in transitions} | {ent.get("created_by")} | {a.get("created_by") for a in apps}
+    user_ids = {u for u in user_ids if u}
+    names = dict((await db.execute(select(User.id, User.name).where(User.id.in_(user_ids)))).all()) if user_ids else {}
+    vac_ids = {a.get("vacancy_id") for a in apps if a.get("vacancy_id")}
+    titles = dict((await db.execute(select(Vacancy.id, Vacancy.title).where(Vacancy.id.in_(vac_ids)))).all()) if vac_ids else {}
+
+    blocks = []
+    for a in apps:
+        events = sorted(
+            (t for t in transitions if t.get("application_id") == a.get("id")),
+            key=lambda t: t.get("created_at") or "",
+        )
+        blocks.append({
+            "application_id": a.get("id"),
+            "vacancy_id": a.get("vacancy_id"),
+            "vacancy_title": titles.get(a.get("vacancy_id")) or record.vacancy_title or f"Вакансия #{a.get('vacancy_id')}",
+            "current_stage": a.get("stage") or "applied",
+            "applied_at": a.get("applied_at"),
+            "last_stage_change_at": a.get("last_stage_change_at"),
+            "recruiter_name": names.get(a.get("created_by")),
+            "pinned_entry_key": a.get("pinned_entry_key"),
+            "events": [{
+                "id": t.get("id"), "from_stage": t.get("from_stage"), "to_stage": t.get("to_stage"),
+                "comment": t.get("comment"), "changed_by_name": names.get(t.get("changed_by")),
+                "created_at": t.get("created_at"),
+                "edited_at": t.get("edited_at"), "edited_by_name": names.get(t.get("edited_by")),
+            } for t in events],
+        })
+
+    card = _card_fields(ent, names.get(ent.get("created_by")))
+    if kind == KIND_APPLICATION:
+        # Из ленты живой карточки — только комментарии этой воронки.
+        notes = (card["extra_data"] or {}).get("notes") or []
+        card["extra_data"] = {**card["extra_data"], "notes": [
+            n for n in notes if isinstance(n, dict) and n.get("vacancy_id") == record.vacancy_id
+        ]}
+    file_list = [{
+        "id": f.get("id"), "file_name": f.get("file_name"), "file_type": f.get("file_type"),
+        "mime_type": f.get("mime_type"), "file_size": f.get("file_size"),
+        "description": f.get("description"), "created_at": f.get("created_at"),
+    } for f in files]
+    photo = next((f for f in file_list
+                  if (f["mime_type"] or "").startswith("image/") and (f["file_name"] or "").lower().startswith("фото")), None)
+    if photo:
+        card["photo_url"] = f"/api/entities/trash/{record.id}/files/{photo['id']}"
+    elif isinstance(card["extra_data"].get("photo_url"), str):
+        card["photo_url"] = card["extra_data"]["photo_url"]
+    return {"card": card, "blocks": blocks, "files": file_list}
+
+
+def trash_file_bytes(record: DeletedEntity, file_id: int):
+    """(байты, имя, тип) файла из слепка или None."""
+    for r in ((record.snapshot or {}).get("tables") or {}).get("entity_files") or []:
+        if r.get("id") == file_id:
+            raw = r.get("file_data")
+            data = base64.b64decode(raw["__b"]) if isinstance(raw, dict) and "__b" in raw else None
+            if data is None:
+                return None
+            return data, r.get("file_name"), r.get("mime_type")
+    return None
