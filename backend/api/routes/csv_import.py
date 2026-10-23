@@ -19,9 +19,9 @@ from ..database import get_db
 from ..models.database import (
     Entity, EntityType, EntityStatus,
     VacancyApplication, ApplicationStage,
-    User,
+    OrgRole, User, UserRole,
 )
-from ..services.auth import get_current_user, get_user_org
+from ..services.auth import get_current_user, get_user_org, get_user_org_role
 
 logger = logging.getLogger("hr-analyzer.csv-import")
 
@@ -472,10 +472,27 @@ async def _run_clickup_combine(
 # Endpoints
 # ---------------------------------------------------------------------------
 
+async def _import_admin(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Импорт — только админам HR (владелец, админы, суперадмин), как и страница
+    `/import` (`RoleRoute hr_admin`). До 23.10.2026 сервер проверял один вход:
+    любой участник организации, даже сотрудник без HR, мог прямым запросом
+    залить в базу кандидатов из файла."""
+    if current_user.role == UserRole.superadmin:
+        return current_user
+    org = await get_user_org(current_user, db)
+    role = await get_user_org_role(current_user, org.id, db) if org else None
+    if role not in (OrgRole.owner, OrgRole.admin):
+        raise HTTPException(status_code=403, detail="Импорт кандидатов доступен только админам HR")
+    return current_user
+
+
 @router.post("/preview", response_model=PreviewResponse)
 async def import_preview(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_import_admin),
 ):
     """Parse uploaded CSV and return column preview with auto-detected mapping."""
     if not file.filename or not file.filename.lower().endswith(".csv"):
@@ -519,7 +536,7 @@ async def import_execute(
     vacancy_id: Optional[int] = Form(None),
     skip_duplicates: bool = Form(True),
     replace_existing: bool = Form(False),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_import_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Import candidates from CSV using the provided column mapping.
@@ -829,7 +846,7 @@ async def import_execute_bulk(
     skip_duplicates: bool = Form(True),   # combine дедупит сам; принят для совместимости формы
     replace_existing: bool = Form(False),
     vacancy_id: Optional[int] = Form(None),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_import_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Пакетный импорт: несколько ClickUp-CSV за один запрос, один коммит.
@@ -917,7 +934,7 @@ async def import_execute_bulk(
 
 @router.get("/templates", response_model=List[TemplateMapping])
 async def import_templates(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_import_admin),
 ):
     """Return predefined column mapping templates for common CSV sources."""
     return [

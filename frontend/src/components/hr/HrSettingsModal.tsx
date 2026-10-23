@@ -34,6 +34,7 @@ const HR_SETTINGS_ORG_ITEMS: HrSettingsItem[] = [
     icon: FileText,
     color: "text-[var(--hf-status-cyan)]",
     path: "/import",
+    adminOnly: true,
   },
   {
     // Корзина (20.10.2026): кто и когда удалял кандидатов, вернуть в течение 7 дней.
