@@ -583,6 +583,11 @@ async def get_entity(
         )
         transferred_to_name = transferred_to_result.scalar()
 
+    # Кто добавил — окно сравнения дублей пишет «добавлена 22 окт · Мария».
+    owner_name = None
+    if entity.created_by:
+        owner_name = (await db.execute(select(User.name).where(User.id == entity.created_by))).scalar()
+
     # Скоуп по воронкам: из карточки убираем следы чужих воронок (метки
     # «HR: Имя · Воронка» и заметки, привязанные к ним).
     from ...services.vacancy_scope import get_scope_vacancy_ids
@@ -598,6 +603,7 @@ async def get_entity(
         "transferred_at": entity.transferred_at.isoformat() if entity.transferred_at else None,
         # Ownership info for frontend permissions
         "owner_id": entity.created_by,
+        "owner_name": owner_name,
         "is_mine": entity.created_by == current_user.id,
         "chats": [
             {

@@ -765,6 +765,9 @@ class ApplicationResponse(BaseModel):
     # Яркие теги-ярлыки у имени (extra_data.headline_tags=[{text,color}]) — чтобы
     # показывать их в воронке так же, как в «Все кандидаты».
     entity_headline_tags: Optional[List[dict]] = None
+    # «Был отказ»: отказ этого человека в ДРУГОЙ воронке, в другой его карточке
+    # или в архиве ClickUp — services/prior_rejection.py (22.10.2026).
+    prior_rejection: Optional[dict] = None
     stage: ApplicationStage
     stage_order: int = 0
     rating: Optional[int] = None

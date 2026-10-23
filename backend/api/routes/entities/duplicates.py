@@ -848,3 +848,77 @@ async def compare_candidates_report(
                 "Content-Disposition": f'attachment; filename="comparison_{entity_id}_vs_{other_entity_id}.md"'
             }
         )
+
+
+@router.get("/{entity_id}/prior-rejections")
+async def get_prior_rejections(
+    entity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Все прошлые отказы человека: свои воронки + связанные карточки-дубли +
+    архив ClickUp (services/prior_rejection.py). Карточка рисует по ним плашку
+    «Уже был у нас — отказ …», окна «Добавить в воронку» / «Забрать» —
+    вопрос «Всё равно добавить?» (владелец, 22.10.2026)."""
+    from ...services.prior_rejection import prior_rejections
+    from ...services.vacancy_scope import get_scope_vacancy_ids
+
+    current_user = await db.merge(current_user)
+    org = await get_user_org(current_user, db)
+    if not org:
+        raise HTTPException(403, "No organization access")
+    entity = (await db.execute(
+        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
+    )).scalar_one_or_none()
+    if not entity or not await check_entity_access(entity, current_user, org.id, db, required_level=None):
+        raise HTTPException(404, "Entity not found")
+
+    # Связи на два шага: пометка дубля у этой карточки и у той, на кого она
+    # указывает (у старой копии пометка бывает на третью карточку того же человека).
+    ed = entity.extra_data if isinstance(entity.extra_data, dict) else {}
+    linked: set = set()
+    try:
+        first = int(ed["hidden_duplicate_id"]) if ed.get("hidden_duplicate_id") else None
+    except (TypeError, ValueError):
+        first = None
+    if first and first != entity.id:
+        linked.add(first)
+        other = (await db.execute(select(Entity.extra_data).where(
+            Entity.id == first, Entity.org_id == org.id,
+        ))).scalar_one_or_none()
+        second = (other or {}).get("hidden_duplicate_id") if isinstance(other, dict) else None
+        try:
+            if second and int(second) != entity.id:
+                linked.add(int(second))
+        except (TypeError, ValueError):
+            pass
+
+    found = await prior_rejections(
+        db, [entity], own_except_vacancy={entity.id: None},
+        scope_ids=await get_scope_vacancy_ids(current_user, db),
+        extra_links={entity.id: linked},
+    )
+    return {"items": found.get(entity.id, [])}
+
+
+@router.post("/check-duplicate")
+async def check_duplicate_before_create(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Проверка ДО создания карточки — окна «Новый кандидат» и «Загрузка из
+    файла» (22.10.2026). Те же правила и тот же ответ, что у расширения
+    (`/magic-button/check-duplicate`): активные совпадения с этапами по
+    воронкам, архив, «возможно тот же», «Был отказ». До этого окно загрузки
+    искало похожих обычным поиском по имени (без архива, а рядовой рекрутёр —
+    только среди своих), а ручная форма не проверяла ничего."""
+    from ..magic_button import DuplicateCheckRequest, check_duplicate
+    req = DuplicateCheckRequest(
+        full_name=(data.get("full_name") or "").strip() or "—",
+        email=data.get("email") or None,
+        phone=data.get("phone") or None,
+        telegram=data.get("telegram") or None,
+        source_url=data.get("source_url") or None,
+    )
+    return await check_duplicate(req, db=db, current_user=current_user)

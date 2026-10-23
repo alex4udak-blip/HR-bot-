@@ -6,6 +6,7 @@ import { HeadlineTagChip } from "@/components/entities/headlineTags";
 import { buildListRowStages, type CandidateListFields } from "@/components/entities/candidateDetail/model";
 import { STAGE_CHIP_BRIGHT_BY_STAGE } from "@/constants/hrStages";
 import { formatDateFull, formatDateShort } from "@/components/candidates/candidateFormat";
+import { PriorRejectionChip } from "@/components/candidates/priorRejection";
 
 // Строка списка «Все кандидаты»: аватар/галочка выбора, имя с тегами, должность,
 // этапы по воронкам, компания/дата и поля из настроек списка
@@ -208,6 +209,13 @@ export function CandidateListRow({
                 +{listFunnelsHidden}
               </span>
             )}
+          </div>
+        )}
+        {/* «Был отказ» — человек уже отклонён в другой своей карточке или в
+            архиве (владелец, 22.10.2026): видно, не открывая карточку. */}
+        {card.prior_rejection && (
+          <div className="mt-[3px] flex min-w-0">
+            <PriorRejectionChip pr={card.prior_rejection} />
           </div>
         )}
         <div className="hf-candidate-row-meta">

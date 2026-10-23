@@ -13,6 +13,7 @@ import { formatSalary } from "@/utils";
 import { isVacancyParticipant } from "@/utils/vacancy";
 import { useAuthStore } from "@/stores/authStore";
 import { backdropClose } from '@/utils/backdropClose';
+import { usePriorRejectionGate } from '@/components/candidates/priorRejection';
 
 interface AddToVacancyModalProps {
   entityId: number;
@@ -142,13 +143,23 @@ export default function AddToVacancyModal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [loading, onClose]);
 
+  const priorGate = usePriorRejectionGate();
+
   const handleSubmit = async () => {
     if (!selectedVacancy) {
       toast.error("Выберите вакансию");
       return;
     }
-
+    // «Этот кандидат уже получал отказ» — спрашиваем по одному кандидату; при
+    // массовом добавлении вопрос на каждого был бы пыткой, там метка видна в
+    // строках списка (владелец, 22.10.2026: предупреждать, не запрещать).
+    const isBulkAdd = (bulkEntities && bulkEntities.length > 0) || (bulkEntityIds && bulkEntityIds.length > 0);
+    // Кнопка сразу в «Добавление…» — проверка на отказ идёт по сети.
     setLoading(true);
+    if (!isBulkAdd && entityId && !(await priorGate.gate(entityId))) {
+      setLoading(false);
+      return;
+    }
 
     // Кого добавляем (с именами для тостов): bulkEntities → bulkEntityIds →
     // одиночный entity.
@@ -463,6 +474,7 @@ export default function AddToVacancyModal({
           )}
         </div>
       </motion.div>
+      {priorGate.element}
     </motion.div>,
     document.body,
   );

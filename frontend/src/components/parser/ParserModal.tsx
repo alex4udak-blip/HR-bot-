@@ -1,12 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Search, Upload, Loader2, AlertCircle, UserCheck, Plus, Briefcase, MessageSquare } from 'lucide-react';
+import { X, Search, Upload, Loader2, AlertCircle, Plus, Briefcase, MessageSquare } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import type { ParsedResume, ParsedVacancy } from '@/services/api';
 import {
   parseResumeFromFile,
-  getEntities,
   createEntity,
   uploadEntityFile,
   getAllVacancies,
@@ -14,10 +13,16 @@ import {
 } from '@/services/api';
 import { addEntityNote } from '@/services/api/entities';
 import ParsedDataPreview from './ParsedDataPreview';
-import type { Entity, Vacancy } from '@/types';
+import type { Vacancy } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 import { isVacancyParticipant } from '@/utils/vacancy';
 import { backdropClose } from '@/utils/backdropClose';
+import { useNavigate } from 'react-router-dom';
+import {
+  ExistingCandidatesPanel,
+  checkDuplicateBeforeCreate,
+  type DuplicateCheckResult,
+} from '@/components/candidates/ExistingCandidatesPanel';
 
 interface ParserModalProps {
   type: 'resume' | 'vacancy';
@@ -45,7 +50,8 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Candidate matching state
-  const [matchedCandidates, setMatchedCandidates] = useState<Entity[]>([]);
+  const [dupCheck, setDupCheck] = useState<DuplicateCheckResult | null>(null);
+  const navigate = useNavigate();
   const [isSearchingCandidates, setIsSearchingCandidates] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isAttaching, setIsAttaching] = useState(false);
@@ -102,39 +108,36 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
 
   const isResume = type === 'resume';
 
-  // Search for matching candidates when resume is parsed
+  // «Уже есть в базе» — общий матчер дублей (как у расширения), с архивом и
+  // «Был отказ» (22.10.2026). Раньше — обычный поиск по имени/почте: архив не
+  // видел, рядовой рекрутёр — только своих, статус не показывался.
   useEffect(() => {
     if (!parsedData || type !== 'resume') return;
-    const resumeData = parsedData as ParsedResume;
-    if (!resumeData.name && !resumeData.email) return;
-
-    const searchMatches = async () => {
-      setIsSearchingCandidates(true);
-      try {
-        const candidatesMap = new Map<number, Entity>();
-
-        // Search by name
-        if (resumeData.name) {
-          const byName = await getEntities({ search: resumeData.name, type: 'candidate', limit: 10 });
-          byName.forEach(c => candidatesMap.set(c.id, c));
-        }
-
-        // Search by email
-        if (resumeData.email) {
-          const byEmail = await getEntities({ search: resumeData.email, type: 'candidate', limit: 10 });
-          byEmail.forEach(c => candidatesMap.set(c.id, c));
-        }
-
-        setMatchedCandidates(Array.from(candidatesMap.values()));
-      } catch (err) {
-        console.error('Error searching candidates:', err);
-      } finally {
-        setIsSearchingCandidates(false);
-      }
+    const r = parsedData as ParsedResume;
+    if (!r.name && !r.email && !r.phone && !r.telegram) return;
+    let alive = true;
+    setIsSearchingCandidates(true);
+    checkDuplicateBeforeCreate({
+      full_name: r.name || undefined,
+      email: r.email || undefined,
+      phone: r.phone || undefined,
+      telegram: r.telegram || undefined,
+    })
+      .then((res) => alive && setDupCheck(res))
+      .catch((err) => console.error('Duplicate check failed:', err))
+      .finally(() => alive && setIsSearchingCandidates(false));
+    return () => {
+      alive = false;
     };
-
-    searchMatches();
   }, [parsedData, type]);
+
+  // «Открыть» найденного: живого — тем же путём, что после «Прикрепить»
+  // (страница открывает его карточку), архивного — ссылкой с ?archived=1.
+  const openExisting = (entityId: number, archived?: boolean) => {
+    if (archived || !onAttachedToEntity) navigate(`/all-candidates?entity=${entityId}${archived ? '&archived=1' : ''}`);
+    else onAttachedToEntity(entityId);
+    onClose();
+  };
 
   // Attach resume file to existing candidate
   const handleAttachToCandidate = async (candidateId: number) => {
@@ -185,7 +188,7 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
     setError(null);
     setParsedData(null);
     setUploadedFile(file);
-    setMatchedCandidates([]);
+    setDupCheck(null);
 
     try {
       // Реальный % отправки файла; на 100% сервер начинает AI-разбор → переключаемся на
@@ -549,47 +552,16 @@ export default function ParserModal({ type, onClose, onParsed, onJobStarted: _on
                 </div>
               )}
 
-              {/* Matched candidates section for resume */}
-              {isResume && (isSearchingCandidates || matchedCandidates.length > 0) && (
+              {/* «Уже есть в базе» — до «Создать нового кандидата» */}
+              {isResume && (isSearchingCandidates || dupCheck) && (
                 <div className="border-t border-slate-200 pt-4">
-                  <h3 className="text-sm font-medium text-slate-600 mb-3 flex items-center gap-2">
-                    <UserCheck className="w-4 h-4" />
-                    {isSearchingCandidates ? 'Поиск совпадений...' : `Найденные кандидаты (${matchedCandidates.length})`}
-                  </h3>
-                  {isSearchingCandidates ? (
-                    <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Поиск существующих кандидатов...
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                      {matchedCandidates.map((candidate) => (
-                        <div
-                          key={candidate.id}
-                          className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-slate-900 truncate">{candidate.name}</p>
-                            <p className="text-xs text-slate-400 truncate">
-                              {[candidate.email, candidate.phone, candidate.position].filter(Boolean).join(' · ')}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => handleAttachToCandidate(candidate.id)}
-                            disabled={isAttaching}
-                            className="flex-shrink-0 ml-3 px-3 py-1.5 text-xs font-medium bg-[var(--hf-green-600)] hover:bg-[var(--hf-green-500)] text-slate-900 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                          >
-                            {isAttaching ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Upload className="w-3 h-3" />
-                            )}
-                            Прикрепить
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <ExistingCandidatesPanel
+                    result={dupCheck}
+                    loading={isSearchingCandidates}
+                    onOpen={openExisting}
+                    onAttach={handleAttachToCandidate}
+                    attaching={isAttaching}
+                  />
                 </div>
               )}
             </div>

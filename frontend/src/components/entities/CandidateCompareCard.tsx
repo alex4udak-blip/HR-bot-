@@ -1,17 +1,26 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { KanbanCard } from "@/services/api/candidates";
 import type { EntityWithRelations } from "@/types";
 import { STATUS_LABELS } from "@/types";
 import { sanitizeHtml } from "@/utils/sanitizeHtml";
 import { CompareResumePreview } from "./CompareResumePreview";
 import { pickTelegram } from "./candidateDetail/model";
+import { getEntityActivity, type VacancyActivityBlock } from "@/services/api/entities";
+import { parseServerDate } from "@/utils/date";
+import { STAGE_CHIP_BRIGHT_BY_STAGE, STAGE_LABEL_BY_STAGE } from "@/constants/hrStages";
+
+const stageLabel = (stage: string): string =>
+  (STAGE_LABEL_BY_STAGE as Record<string, string>)[stage] || stage;
+import {
+  getPriorRejections,
+  priorRejectionWhere,
+  type PriorRejection,
+} from "@/components/candidates/priorRejection";
 
 /**
- * Презентационная «карточка сравнения кандидата» + её типы, билдеры данных и
- * хелперы. ОДИН компонент рендерит и левую «Новый кандидат», и каждую правую
- * «Старую анкету (дубликат)». Для дубликатов опционально показывает бейдж
- * уверенности (%) и чипы совпавших полей. Markup и Tailwind-классы намеренно
- * сохранены байт-в-байт, чтобы рендер карточки не изменился.
+ * Окно сравнения дублей: данные двух анкет (Side и билдеры), сверка полей
+ * (matchKindOf по сигналам бэка) и сама таблица «поле в строку» (CompareTable,
+ * с 22.10.2026 вместо двух независимых карточек рядом).
  */
 
 export interface ResumeDemo {
@@ -60,6 +69,12 @@ export type Side = {
   resumeText: string;
   resumeExtra: ResumeExtra;
   notes: Array<{ text?: string; author?: string; date?: string }>;
+  /** Навыки списком — окно подсвечивает общие. */
+  skills: string[];
+  /** Последние места работы строками «должность | компания | период». */
+  jobs: string[];
+  /** Откуда резюме: ссылка hh/LinkedIn (если добавлен расширением). */
+  sourceUrl: string;
 };
 
 export type FieldKey =
@@ -74,35 +89,6 @@ export type MatchKind = "exact" | "partial" | null;
 const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
 const normPhone = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
 const normTg = (v: unknown) => String(v ?? "").trim().replace(/^@/, "").toLowerCase();
-const HL = "bg-amber-100 text-amber-900 rounded px-1.5 py-0.5";
-// Частичное совпадение (мягкий сигнал: 7 цифр телефона, возраст ±1) НЕ должно
-// выглядеть как точное — иначе разные номера подсвечены одинаково и кажется,
-// что система ошиблась.
-const HL_PARTIAL =
-  "rounded px-1.5 py-0.5 text-amber-900 underline decoration-dashed decoration-amber-400 underline-offset-4";
-
-function hlClass(kind: MatchKind): string {
-  if (kind === "exact") return HL;
-  if (kind === "partial") return HL_PARTIAL;
-  return "";
-}
-
-const FIELDS: { key: FieldKey; label: string }[] = [
-  { key: "salary", label: "Зарплата" },
-  { key: "phone", label: "Телефон" },
-  { key: "email", label: "Эл. почта" },
-  { key: "telegram", label: "Telegram" },
-  // Дата рождения — видимое поле: мягкий тир часто держится ИМЕННО на ней, а
-  // проверить её в карточке было негде (владелец 17.09.2026: «справа нет никакой
-  // инфы, но всё равно есть совпадение»).
-  { key: "birthDate", label: "Дата рождения" },
-  { key: "age", label: "Возраст" },
-  { key: "city", label: "Город" },
-  { key: "experience", label: "Опыт" },
-  { key: "source", label: "Источник" },
-  { key: "tags", label: "Метки" },
-];
-
 /** Дата рождения из extra_data в едином виде ДД.ММ.ГГГГ (источники пишут
  *  и «1990-05-14», и «14.05.1990»). */
 function birthParts(birthDate?: string): { y: number; m: number; d: number } | null {
@@ -187,6 +173,16 @@ function resumeExtraFrom(extra: Record<string, unknown> | undefined): ResumeExtr
   };
 }
 
+function skillsFrom(extra: Record<string, unknown>): string[] {
+  const v = extra.skills;
+  return Array.isArray(v) ? (v as unknown[]).filter((x): x is string => typeof x === "string" && !!x.trim()) : [];
+}
+
+function jobsFrom(extra: Record<string, unknown>): string[] {
+  const v = extra.experience_summary;
+  return typeof v === "string" ? v.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 3) : [];
+}
+
 function notesFrom(extra: Record<string, unknown> | undefined): Array<{ text?: string; author?: string; date?: string }> {
   const ns = extra?.notes;
   if (!Array.isArray(ns)) return [];
@@ -228,6 +224,9 @@ export function sideFromCard(card: KanbanCard, statusKey?: string): Side {
     resumeText: resumeTextFrom(extra),
     resumeExtra: resumeExtraFrom(extra),
     notes: notesFrom(extra),
+    skills: skillsFrom(extra),
+    jobs: jobsFrom(extra),
+    sourceUrl: card.source_url || String(extra.source_url || ""),
   };
 }
 
@@ -268,6 +267,9 @@ export function sideFromEntity(e: EntityWithRelations): Side {
     resumeText: resumeTextFrom(extra),
     resumeExtra: resumeExtraFrom(extra),
     notes: notesFrom(extra),
+    skills: skillsFrom(extra),
+    jobs: jobsFrom(extra),
+    sourceUrl: String(extra.source_url || ""),
   };
 }
 
@@ -303,6 +305,11 @@ export function matchKindOf(
   if (signals && signals.length > 0) {
     const hit = signals.find((s) => SIGNAL_FIELD_TO_SIDE[s.field] === key);
     if (!hit) return null;
+    // Контакт с бэка (телефон по E.164, почта, Telegram) — совпадение, даже
+    // если написан по-разному: «80291234567» и «+375291234567» — один номер.
+    // ФИО бэк сводит с транслитом и опечаткой, поэтому ✓ только при той же
+    // фамилии и имени; «Алина» / «Алиса» — ≈ (похоже), а не ✓.
+    if (hit.identity && key !== "name") return "exact";
     return sameValue() ? "exact" : "partial";
   }
   return sameValue() ? "exact" : null;
@@ -317,6 +324,12 @@ export function matchSide(left: Side, right: Side | null, key: FieldKey | "name"
   if (!a || !b) return false;
   if (key === "phone") return normPhone(a).length > 0 && normPhone(a) === normPhone(b);
   if (key === "telegram") return normTg(a) === normTg(b);
+  if (key === "name") {
+    // Фамилия + имя, порядок и отчество не важны: «Демидова Алина» =
+    // «Демидова Алина Игоревна» = «Алина Демидова».
+    const two = (v: string) => norm(v).replace(/ё/g, "е").split(/\s+/).slice(0, 2).sort().join(" ");
+    return two(a) === two(b);
+  }
   return norm(a) === norm(b);
 }
 
@@ -324,93 +337,60 @@ function initialsOf(name: string) {
   return name.split(" ").filter(Boolean).slice(0, 2).map((s) => s[0]).join("").toUpperCase();
 }
 
-function StatusBlock({ side, vacancies }: { side: Side; vacancies?: SystemHrTag[] }) {
-  if (!side.statusLabel && side.history.length === 0 && (!vacancies || vacancies.length === 0)) return null;
+// Отказы ЭТОЙ анкеты — воронки (когда, кто, с какого этапа, комментарий,
+// причина), отказ вне воронок, статус прохождения ClickUp. До 22.10.2026 блок
+// читал extra_data.timeline_events, которого не пишет никто, и строка
+// «отклонён {дата}» не появлялась никогда; причина у второй анкеты тоже не
+// доходила — она лежит у заявки, а не у карточки.
+function useOwnRejections(entityId?: number): PriorRejection[] {
+  const [items, setItems] = useState<PriorRejection[]>([]);
+  useEffect(() => {
+    if (!entityId) return;
+    let alive = true;
+    getPriorRejections(entityId)
+      .then((list) => alive && setItems(list.filter((r) => r.entity_id === entityId)))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [entityId]);
+  return items;
+}
+
+function NotesList({ notes }: { notes: Side["notes"] }) {
+  if (notes.length === 0) return <div className="text-xs text-slate-300">нет</div>;
   return (
-    <div className={`rounded-lg p-2.5 mb-3 ${side.isRejected ? "bg-red-50" : "bg-slate-50"}`}>
-      <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">Статус</div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <span
-          className={`text-xs font-medium rounded px-2 py-0.5 ${
-            side.isRejected ? "bg-red-200 text-red-800" : "bg-blue-100 text-blue-800"
-          }`}
-        >
-          {side.statusLabel || "—"}
-        </span>
-        {vacancies && vacancies.length > 0 && (
-          <span className="text-xs text-slate-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-            {vacancies.map((v) => v.vacancy_title || "Без вакансии").join(", ")}
-          </span>
-        )}
-        {side.isRejected && side.rejectedAt && (
-          <span className="text-xs text-red-600">отклонён {side.rejectedAt}</span>
-        )}
-      </div>
-      {side.isRejected && side.rejectReason && (
-        <div className="text-xs text-slate-700 mt-1.5">
-          <span className="text-slate-400">Причина:</span> {side.rejectReason}
+    <div className="space-y-1.5">
+      {notes.map((n, i) => (
+        <div key={i} className="rounded-lg bg-slate-50 p-2 text-xs">
+          <div
+            className="text-slate-800 whitespace-pre-wrap hf-rich-content"
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(n.text) }}
+          />
+          <div className="text-slate-400 mt-1">{[n.author, n.date?.replace("T", " ").slice(0, 16)].filter(Boolean).join(" · ")}</div>
         </div>
-      )}
-      {side.history.length > 0 && (
-        <div className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-          {side.history
-            .slice(-4)
-            .map((h) => [h.date, h.title].filter(Boolean).join(" "))
-            .filter(Boolean)
-            .join(" → ")}
-        </div>
-      )}
+      ))}
     </div>
   );
 }
 
-function NotesBlock({ notes }: { notes: Array<{ text?: string; author?: string; date?: string }> }) {
-  if (notes.length === 0) return null;
-  return (
-    <div className="mt-3 pt-3 border-t border-slate-200">
-      <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">Заметки</div>
-      <div className="space-y-1.5">
-        {notes.map((n, i) => (
-          <div key={i} className="rounded-lg bg-slate-50 p-2 text-xs">
-            <div
-              className="text-slate-800 whitespace-pre-wrap hf-rich-content"
-              dangerouslySetInnerHTML={{ __html: sanitizeHtml(n.text) }}
-            />
-            <div className="text-slate-400 mt-1">{[n.author, n.date].filter(Boolean).join(" · ")}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Фото из hh — временные ссылки, протухают. На ошибку загрузки показываем
-// инициалы вместо «битой картинки». Крупный портрет (как на эталоне сравнения).
-function Avatar({ photo, name }: { photo: string; name: string }) {
+// Фото из hh — временные ссылки, протухают: на ошибку показываем инициалы.
+function Avatar({ photo, name, muted }: { photo: string; name: string; muted?: boolean }) {
   const [failed, setFailed] = useState(false);
   if (photo && !failed) {
     return (
-      <img
-        src={photo}
-        alt={name}
-        className="w-28 h-32 rounded-xl object-cover shrink-0"
-        onError={() => setFailed(true)}
-      />
+      <img src={photo} alt="" className="h-9 w-9 rounded-full object-cover shrink-0" onError={() => setFailed(true)} />
     );
   }
   return (
-    <div className="w-28 h-32 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 text-3xl font-semibold shrink-0">
+    <div
+      className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
+        muted ? "bg-slate-100 text-slate-500" : "bg-[#bfeeff] text-[#0b6f9a]"
+      }`}
+    >
       {initialsOf(name) || "?"}
     </div>
   );
-}
-
-// Цвет бейджа уверенности: красный — только «точный» уровень (совпало ≥2
-// признака), как у плашки. Одиночное совпадение с высоким % — не красное.
-function confidenceBadgeClass(confidence: number, level?: "exact" | "possible"): string {
-  if (level === "exact") return "bg-red-100 text-red-700";
-  if (confidence >= 60) return "bg-orange-100 text-orange-700";
-  return "bg-amber-100 text-amber-700";
 }
 
 export type SystemHrTag = {
@@ -420,117 +400,536 @@ export type SystemHrTag = {
   vacancy_title?: string;
 };
 
-export function CandidateCompareCard({
-  title,
-  side,
-  matched,
-  confidence,
-  level,
-  signals,
-  entityId,
-  vacancies,
-  extraData,
-}: {
-  title: string;
-  side: Side | null;
-  matched: (key: FieldKey | "name") => MatchKind;
-  confidence?: number;
-  /** Уровень пары с бэка: exact — красный бейдж, possible — оранжевый/жёлтый. */
-  level?: "exact" | "possible";
-  /** Сигналы пары с бэка: из них строится блок «почему совпало». */
-  signals?: DupSignalLike[];
-  entityId?: number;
+/** Одна сторона сравнения: данные + откуда они. */
+export type CompareSide = {
+  side: Side;
+  entityId: number;
+  caption: string;
+  archived?: boolean;
   vacancies?: SystemHrTag[];
-  /** extra_data анкеты — из неё берутся распарсенные версии резюме. */
   extraData?: Record<string, unknown>;
-}) {
-  if (!side) {
-    return <div className="rounded-xl border border-slate-200 p-4 text-slate-400">—</div>;
-  }
-  const subtitle = [side.position, side.company].filter(Boolean).join(" · ");
+  /** Когда и кем добавлена — строка «Добавлена» группы «У нас». */
+  createdAt?: string | null;
+  createdBy?: string | null;
+};
+
+type RowKey = FieldKey | "name" | "position";
+
+// Строки по группам. Пустая у обеих сторон строка не рисуется.
+const GROUPS: { title: string; rows: { key: RowKey; label: string }[] }[] = [
+  {
+    title: "Личность и контакты",
+    rows: [
+      { key: "name", label: "ФИО" },
+      { key: "birthDate", label: "Дата рождения" },
+      { key: "age", label: "Возраст" },
+      { key: "city", label: "Город" },
+      { key: "phone", label: "Телефон" },
+      { key: "email", label: "Почта" },
+      { key: "telegram", label: "Telegram" },
+    ],
+  },
+  {
+    title: "Работа",
+    rows: [
+      { key: "position", label: "Должность" },
+      { key: "experience", label: "Стаж" },
+      { key: "salary", label: "Зарплата" },
+    ],
+  },
+];
+
+function valueOf(side: Side, key: RowKey): string {
+  if (key === "position") return [side.position, side.company].filter(Boolean).join(" · ");
+  return String((side as unknown as Record<string, unknown>)[key] ?? "");
+}
+
+// Название поля для короткой причины в карусели и строке-выводе.
+const SIGNAL_WORD: Record<string, string> = {
+  name: "имя", phone: "телефон", email: "почта", telegram: "Telegram",
+  birth_date: "дата рождения", age: "возраст", city: "город",
+  source: "ссылка на резюме", resume_text: "текст резюме", company: "компания",
+};
+
+export function signalWords(signals?: DupSignalLike[]): string {
+  return [...new Set((signals || []).map((sg) => SIGNAL_WORD[sg.field] || sg.label))].join(" + ");
+}
+
+function useActivity(entityId?: number): VacancyActivityBlock[] {
+  const [blocks, setBlocks] = useState<VacancyActivityBlock[]>([]);
+  useEffect(() => {
+    if (!entityId) return;
+    let alive = true;
+    setBlocks([]);
+    getEntityActivity(entityId).then((b) => alive && setBlocks(b || [])).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [entityId]);
+  return blocks;
+}
+
+function shortDate(iso?: string | null): string {
+  if (!iso) return "";
+  const d = parseServerDate(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("ru", { day: "numeric", month: "short", year: "numeric" }).replace(" г.", "");
+}
+
+function StageChip({ stage }: { stage: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 p-4 min-w-0">
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <span className="text-[11px] uppercase tracking-wide text-slate-400">{title}</span>
-        {entityId && (
-          <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-            ID: {entityId}
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STAGE_CHIP_BRIGHT_BY_STAGE[stage] || "bg-[var(--hf-status-gray)] text-[#111827]"}`}>
+      {stageLabel(stage)}
+    </span>
+  );
+}
+
+function FunnelsCell({ blocks, fallback }: { blocks: VacancyActivityBlock[]; fallback: Side }) {
+  if (!blocks.length) {
+    return (
+      <div className="flex items-center gap-1.5">
+        {fallback.statusLabel && (
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${fallback.isRejected ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800"}`}>
+            {fallback.statusLabel}
           </span>
         )}
-        {confidence != null && (
-          <span className={`text-[11px] font-semibold rounded px-1.5 py-0.5 ${confidenceBadgeClass(confidence, level)}`}>
-            {confidence}%
-          </span>
-        )}
+        <span className="text-slate-400">не в воронке</span>
       </div>
-      {/* Шапка: крупное портретное фото сверху, под ним — большое имя и
-          должность·компания (как на эталоне сравнения). */}
-      <div className="mb-4">
-        <Avatar photo={side.photo} name={side.name} />
-        <div className="min-w-0 mt-3">
-          <span className={`text-2xl font-bold leading-tight ${hlClass(matched("name")) || "text-slate-900"}`}>
-            {side.name || "—"}
-          </span>
-          {subtitle && <div className="text-sm text-slate-500 mt-1.5">{subtitle}</div>}
-          {signals && signals.length > 0 && (
-            /* Почему пара считается дублем — с конкретными значениями обеих
-               сторон. Раньше тут были чипы с одним лишь названием поля, и по
-               ним нельзя было понять, что «Телефон» — это совпавшие последние
-               7 цифр у РАЗНЫХ номеров, а «Дата рождения» вообще не показана. */
-            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/60 p-2">
-              <div className="text-[10px] uppercase tracking-wide text-amber-700/80 mb-1">
-                Почему считаем дублем
-              </div>
-              <div className="space-y-1">
-                {signals.map((sig) => (
-                  <div key={`${sig.field}-${sig.label}`} className="flex items-start gap-1.5 text-[11px]">
-                    <span
-                      className={`mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full ${
-                        sig.identity ? "bg-red-500" : "bg-amber-400"
-                      }`}
-                    />
-                    <span className="text-slate-700">{sig.label}</span>
-                  </div>
-                ))}
-              </div>
-              {signals.some((sig) => !sig.identity) && (
-                <div className="mt-1.5 text-[10px] leading-snug text-amber-700/70">
-                  Оранжевым — косвенные признаки: сами по себе они не доказывают,
-                  что это один человек.
-                </div>
-              )}
+    );
+  }
+  return (
+    <div className="space-y-1">
+      {blocks.map((b) => (
+        <div key={b.application_id} className="flex flex-wrap items-center gap-1.5">
+          <StageChip stage={b.current_stage} />
+          <span className="text-slate-800">{b.vacancy_title}</span>
+          <span className="text-[11px] text-slate-400">{shortDate(b.last_stage_change_at || b.applied_at)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HistoryCell({ blocks }: { blocks: VacancyActivityBlock[] }) {
+  const withEvents = blocks.filter((b) => b.events.length);
+  if (!withEvents.length) return <span className="text-slate-300">—</span>;
+  return (
+    <div className="space-y-1.5 text-[12px]">
+      {withEvents.map((b) => {
+        const evs = [...b.events].sort((x, y) => x.created_at.localeCompare(y.created_at));
+        const last = evs[evs.length - 1];
+        return (
+          <div key={b.application_id}>
+            {withEvents.length > 1 && <div className="text-[11px] text-slate-400">{b.vacancy_title}</div>}
+            <div className="text-slate-700">
+              {evs.map((e, i) => (
+                <span key={e.id} className={e.to_stage === "rejected" ? "text-red-700 font-semibold" : ""}>
+                  {i ? " → " : ""}{stageLabel(e.to_stage)}
+                </span>
+              ))}
             </div>
-          )}
+            {last?.comment && last.comment !== "Первичная заявка" && (
+              <div className={last.to_stage === "rejected" ? "text-red-700" : "text-slate-500"}>
+                {last.changed_by_name ? `${last.changed_by_name}: ` : ""}«{last.comment}»
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RejectionCell({ items }: { items: PriorRejection[] }) {
+  if (!items.length) return <span className="text-slate-300">нет</span>;
+  return (
+    <div className="space-y-1 text-[12px]" style={{ color: "#791f1f" }}>
+      {items.slice(0, 2).map((r, i) => (
+        <div key={i}>
+          <b className="font-semibold">{priorRejectionWhere(r)}</b>
+          {r.comment && <div style={{ color: "#a32d2d" }}>«{r.comment}»</div>}
+          {r.reason && <div style={{ color: "#a32d2d" }}>Причина: {r.reason}</div>}
+        </div>
+      ))}
+      {items.length > 2 && <div>и ещё {items.length - 2}</div>}
+    </div>
+  );
+}
+
+function SkillsCell({ mine, other }: { mine: string[]; other: string[] }) {
+  if (!mine.length) return <span className="text-slate-300">нет</span>;
+  const otherSet = new Set(other.map((x) => x.toLowerCase()));
+  const sorted = [...mine].sort((a, b) => Number(otherSet.has(b.toLowerCase())) - Number(otherSet.has(a.toLowerCase())));
+  return (
+    <div className="flex flex-wrap gap-1">
+      {sorted.slice(0, 12).map((sk) => (
+        <span
+          key={sk}
+          className={`rounded-full px-2 py-0.5 text-[11px] ${otherSet.has(sk.toLowerCase()) ? "bg-[#eaf3de] text-[#27500a] font-semibold" : "bg-slate-100 text-slate-600"}`}
+        >
+          {sk}
+        </span>
+      ))}
+      {sorted.length > 12 && <span className="text-[11px] text-slate-400">+{sorted.length - 12}</span>}
+    </div>
+  );
+}
+
+function SideHead({ s }: { s: CompareSide }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <Avatar photo={s.side.photo} name={s.side.name} muted={s.caption !== "Открыта сейчас"} />
+      <div className="min-w-0">
+        <div className="font-semibold text-slate-900 truncate" title={s.side.name}>{s.side.name || "—"}</div>
+        <div className="text-[11px] text-slate-400">
+          {s.caption} · ID {s.entityId}
+          {s.archived && <span className="ml-1 rounded bg-slate-100 px-1 text-slate-500">архив</span>}
         </div>
       </div>
+    </div>
+  );
+}
 
-      <StatusBlock side={side} vacancies={vacancies} />
+const GRID = "grid grid-cols-[112px_minmax(0,1fr)_32px_minmax(0,1fr)]";
 
-      {/* Поля: лейбл над значением, слева — как на эталоне сравнения. Совпавшие
-          значения подсвечены янтарём (HL); незаполненные — серый прочерк. */}
-      <div className="space-y-3">
-        {FIELDS.map(({ key, label }) => (
-          <div key={key}>
-            <div className="text-[13px] text-slate-400 mb-0.5">{label}</div>
-            <div className="text-[15px] leading-snug">
-              <span
-                className={hlClass(matched(key)) || (side[key] ? "text-slate-800" : "text-slate-300")}
-                title={matched(key) === "partial" ? "Совпало частично — сверьте значения" : undefined}
-              >
-                {side[key] || "—"}
-              </span>
-            </div>
-          </div>
-        ))}
+function Mark({ kind, differs }: { kind: MatchKind; differs?: boolean }) {
+  const title = kind === "exact" ? "Совпадает" : kind === "partial" ? "Похоже — сверьте значения" : differs ? "Отличается" : undefined;
+  return (
+    <div className="text-center text-sm pt-2" title={title}>
+      {kind === "exact" ? <span className="text-[#3b6d11]">✓</span>
+        : kind === "partial" ? <span className="text-amber-600">≈</span>
+        : differs ? <span className="text-slate-300">≠</span> : null}
+    </div>
+  );
+}
+
+function Row({ label, a, b, kind = null, differs, tone }: {
+  label: string;
+  a: ReactNode;
+  b: ReactNode;
+  kind?: MatchKind;
+  differs?: boolean;
+  tone?: string;
+}) {
+  return (
+    <div className={`${GRID} border-t border-slate-100 text-[13px] ${kind === "partial" ? "bg-amber-50" : tone || ""}`}>
+      <div className="px-3 py-2 text-[12px] text-slate-400">{label}</div>
+      <div className="px-3 py-2 min-w-0 break-words">{a}</div>
+      <Mark kind={kind} differs={differs} />
+      <div className="px-3 py-2 min-w-0 break-words">{b}</div>
+    </div>
+  );
+}
+
+const empty = <span className="text-slate-300">нет</span>;
+
+/**
+ * Окно сравнения дублей — ТАБЛИЦА «поле в строку» (владелец, 22.10.2026).
+ * Раньше это были две независимые карточки рядом: строки не совпадали по
+ * высоте, статус и отказ уезжали за край, треть высоты занимали аватары
+ * 200×200. Теперь каждое поле — одна строка, слева и справа на одном уровне,
+ * посередине — ✓ совпадает, ≈ похоже, ≠ разное. Вторая версия (по просьбе
+ * «мало информативности»): строка-вывод сверху и группы «Личность и контакты /
+ * У нас / Работа» — кто и когда добавил, воронки с этапами, история
+ * переводов, отказ, места работы, общие навыки, ссылка на резюме.
+ */
+export function CompareTable({
+  left,
+  right,
+  matched,
+  signals,
+  level,
+}: {
+  left: CompareSide;
+  right: CompareSide | null;
+  matched: (key: FieldKey | "name") => MatchKind;
+  signals?: DupSignalLike[];
+  level?: "exact" | "possible";
+}) {
+  const leftRej = useOwnRejections(left.entityId);
+  const rightRej = useOwnRejections(right?.entityId);
+  const leftAct = useActivity(left.entityId);
+  const rightAct = useActivity(right?.entityId);
+  const [showResume, setShowResume] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  if (!right) {
+    return <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-slate-400">Загружаем анкету…</div>;
+  }
+  // Отметка строки: признак с бэка (matched) или просто одинаковые значения —
+  // «Минск / Минск» тоже ✓, хотя город в дубль не засчитывается.
+  const kindOf = (key: RowKey, a: string, b: string): MatchKind => {
+    const same = !!a && !!b && norm(a) === norm(b);
+    if (key === "position") return same ? "exact" : null;
+    return matched(key) ?? (same ? "exact" : null);
+  };
+  const rowsOf = (group: (typeof GROUPS)[number]) =>
+    group.rows
+      .map(({ key, label }) => {
+        const a = valueOf(left.side, key);
+        const b = valueOf(right.side, key);
+        const kind = kindOf(key, a, b);
+        return { key, label, a, b, kind, differs: !kind && !!a && !!b && norm(a) !== norm(b) };
+      })
+      .filter((r) => r.a || r.b);
+  const allRows = GROUPS.flatMap(rowsOf);
+  const same = allRows.filter((r) => r.kind === "exact").map((r) => r.label.toLowerCase());
+  const alike = allRows.filter((r) => r.kind === "partial").map((r) => r.label.toLowerCase());
+  const diff = allRows.filter((r) => r.differs).map((r) => r.label.toLowerCase());
+  const fieldSignals = new Set(Object.values(SIGNAL_FIELD_TO_SIDE));
+  const extraSignals = (signals || []).filter((sg) => !fieldSignals.has(SIGNAL_FIELD_TO_SIDE[sg.field]));
+  const verdict = level === "exact" ? "Скорее всего, это один человек" : "Возможно, это один человек — сверьте";
+  const rejectedSide = rightRej.length ? "справа" : leftRej.length ? "слева" : "";
+  const lastRej = (rightRej[0] || leftRej[0]) as PriorRejection | undefined;
+
+  const resumeLink = (s: Side) =>
+    s.sourceUrl ? (
+      <a href={s.sourceUrl} target="_blank" rel="noreferrer" className="text-[var(--hf-cyan-700)] hover:underline break-all">
+        {s.sourceUrl.replace(/^https?:\/\/(www\.)?/, "").replace(/\?.*$/, "").slice(0, 48)} ↗
+      </a>
+    ) : empty;
+  const added = (s: CompareSide) =>
+    s.createdAt || s.createdBy ? (
+      <span>{[shortDate(s.createdAt), s.createdBy, s.side.source].filter(Boolean).join(" · ")}</span>
+    ) : empty;
+  const jobs = (s: Side) =>
+    s.jobs.length ? (
+      <div className="space-y-0.5 text-[12px] text-slate-700">{s.jobs.map((j, i) => <div key={i}>{j}</div>)}</div>
+    ) : empty;
+  const commonJob = left.side.jobs.some((j) => {
+    const company = norm(j.split("|")[1] || "");
+    return company && right.side.jobs.some((k) => norm(k.split("|")[1] || "") === company);
+  });
+
+  return (
+    <div className="space-y-2.5">
+      {/* Вывод одной строкой: что совпало, что разное, был ли отказ. */}
+      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px]">
+        <span className="font-semibold text-slate-900 mr-1">{verdict}</span>
+        {same.length > 0 && (
+          <span className="rounded-full bg-[#eaf3de] px-2 py-0.5 text-[12px] text-[#27500a]">совпало: {same.join(", ")}</span>
+        )}
+        {alike.length > 0 && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[12px] text-amber-800">похоже: {alike.join(", ")}</span>
+        )}
+        {extraSignals.length > 0 && (
+          <span className="rounded-full bg-[#eaf3de] px-2 py-0.5 text-[12px] text-[#27500a]">{extraSignals.map((sg) => sg.label.toLowerCase()).join(", ")}</span>
+        )}
+        {diff.length > 0 && (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] text-slate-600">отличается: {diff.join(", ")}</span>
+        )}
+        {lastRej && (
+          <span className="rounded-full px-2 py-0.5 text-[12px]" style={{ background: "#fdecec", color: "#a32d2d" }}>
+            {rejectedSide} {lastRej.kind === "no_show" ? "не пришёл" : "отказ"} {shortDate(lastRej.date)}
+          </span>
+        )}
       </div>
 
-      {/* Само загруженное резюме (PDF/сканы), с откатом на текстовую версию. */}
-      <CompareResumePreview
-        entityId={entityId}
-        extraData={extraData}
-        parts={{ resumes: side.resumes, text: side.resumeText, extra: side.resumeExtra }}
-      />
-      <NotesBlock notes={side.notes} />
+      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+        <div className={`${GRID} items-center`}>
+          <div />
+          <div className="p-3"><SideHead s={left} /></div>
+          <div />
+          <div className="p-3"><SideHead s={right} /></div>
+        </div>
+
+        {GROUPS.slice(0, 1).map((g) => (
+          <div key={g.title}>
+            <div className="border-t border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--hf-cyan-700)]">{g.title}</div>
+            {rowsOf(g).map((r) => (
+              <Row key={r.key} label={r.label} kind={r.kind} differs={r.differs}
+                a={r.a || empty} b={r.b || empty} />
+            ))}
+            {(left.side.sourceUrl || right.side.sourceUrl) && (
+              <Row label="Резюме" a={resumeLink(left.side)} b={resumeLink(right.side)}
+                kind={matched("source") ?? null} />
+            )}
+          </div>
+        ))}
+
+        <div className="border-t border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--hf-cyan-700)]">У нас</div>
+        <Row label="Добавлена" a={added(left)} b={added(right)} />
+        <Row label="Воронки" a={<FunnelsCell blocks={leftAct} fallback={left.side} />} b={<FunnelsCell blocks={rightAct} fallback={right.side} />} />
+        {(leftAct.some((b) => b.events.length) || rightAct.some((b) => b.events.length)) && (
+          <Row label="История" a={<HistoryCell blocks={leftAct} />} b={<HistoryCell blocks={rightAct} />} />
+        )}
+        {(leftRej.length > 0 || rightRej.length > 0) && (
+          <Row label="Отказ" a={<RejectionCell items={leftRej} />} b={<RejectionCell items={rightRej} />} tone="bg-[#fff7f7]" />
+        )}
+        <Row
+          label="Комментарии"
+          a={<span className={left.side.notes.length ? "" : "text-slate-300"}>{left.side.notes.length}</span>}
+          b={
+            <span className="flex items-center gap-2">
+              <span className={right.side.notes.length ? "" : "text-slate-300"}>{right.side.notes.length}</span>
+              {left.side.notes.length + right.side.notes.length > 0 && (
+                <button type="button" className="text-[var(--hf-cyan-700)] hover:underline" onClick={() => setShowNotes((v) => !v)}>
+                  {showNotes ? "скрыть" : "показать ▸"}
+                </button>
+              )}
+            </span>
+          }
+        />
+        {showNotes && (
+          <div className={`${GRID} border-t border-slate-100`}>
+            <div />
+            <div className="p-3"><NotesList notes={left.side.notes} /></div>
+            <div />
+            <div className="p-3"><NotesList notes={right.side.notes} /></div>
+          </div>
+        )}
+
+        {GROUPS.slice(1).map((g) => (
+          <div key={g.title}>
+            <div className="border-t border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--hf-cyan-700)]">{g.title}</div>
+            {rowsOf(g).map((r) => (
+              <Row key={r.key} label={r.label} kind={r.kind} differs={r.differs}
+                a={r.a || empty} b={r.b || empty} />
+            ))}
+            {(left.side.jobs.length > 0 || right.side.jobs.length > 0) && (
+              <Row label="Места работы" a={jobs(left.side)} b={jobs(right.side)} kind={commonJob ? "exact" : null} />
+            )}
+            {(left.side.skills.length > 0 || right.side.skills.length > 0) && (
+              <Row label="Навыки"
+                a={<SkillsCell mine={left.side.skills} other={right.side.skills} />}
+                b={<SkillsCell mine={right.side.skills} other={left.side.skills} />} />
+            )}
+          </div>
+        ))}
+
+        <div className="border-t border-slate-200 px-3 py-2 text-[13px]">
+          <button type="button" className="text-[var(--hf-cyan-700)] hover:underline" onClick={() => setShowResume((v) => !v)}>
+            {showResume ? "Скрыть резюме" : "Открыть резюме обеих анкет ▸"}
+          </button>
+        </div>
+        {showResume && (
+          <div className="grid grid-cols-2 gap-4 border-t border-slate-100 p-3">
+            {[left, right].map((sd) => (
+              <div key={sd.entityId} className="min-w-0">
+                <CompareResumePreview
+                  entityId={sd.entityId}
+                  extraData={sd.extraData}
+                  parts={{ resumes: sd.side.resumes, text: sd.side.resumeText, extra: sd.side.resumeExtra }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Одна карточка карусели похожих анкет. */
+export type CarouselItem = {
+  id: number;
+  name: string;
+  confidence: number;
+  level?: "exact" | "possible";
+  strength?: string;
+  reason: string;
+  decision?: "merged" | "dismissed";
+  /** Короткая метка состояния: «Был отказ», этап… */
+  badge?: { text: string; tone: "red" | "blue" | "gray" } | null;
+};
+
+function Ring({ value, tone }: { value: number; tone: string }) {
+  const v = Math.max(0, Math.min(100, Math.round(value)));
+  return (
+    <div
+      className="h-10 w-10 shrink-0 rounded-full p-[3px]"
+      style={{ background: `conic-gradient(${tone} ${v}%, #ececec 0)` }}
+      aria-label={`Уверенность ${v}%`}
+    >
+      <div className="flex h-full w-full items-center justify-center rounded-full bg-white text-[11px] font-bold" style={{ color: tone }}>
+        {v}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Карусель похожих анкет — карточки с кольцом уверенности, причиной («имя +
+ * телефон») и состоянием («Был отказ», «объединена»). Выбранная — в рамке.
+ * Не влезают — горизонтальная прокрутка со стрелками по краям.
+ */
+export function DupCarousel({
+  items,
+  selectedId,
+  onSelect,
+}: {
+  items: CarouselItem[];
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const update = () => {
+    const el = ref.current;
+    if (!el) return;
+    setEdges({ left: el.scrollLeft > 4, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+  };
+  useEffect(() => {
+    update();
+    const el = ref.current;
+    el?.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [items.length]);
+  useEffect(() => {
+    ref.current?.querySelector(`[data-dup="${selectedId}"]`)?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+  }, [selectedId]);
+  const scrollBy = (dx: number) => ref.current?.scrollBy({ left: dx, behavior: "smooth" });
+  return (
+    <div className="relative">
+      {edges.left && (
+        <button type="button" aria-label="Назад" onClick={() => scrollBy(-260)}
+          className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white px-2 py-1 text-slate-500 shadow">‹</button>
+      )}
+      <div ref={ref} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+        {items.map((it) => {
+          const current = it.id === selectedId;
+          const tone = it.level === "exact" ? "#e24b4a" : "#ef9f27";
+          const badge = it.decision === "merged"
+            ? { text: "объединена", cls: "bg-lime-100 text-lime-800" }
+            : it.decision === "dismissed"
+              ? { text: "другой человек", cls: "bg-slate-100 text-slate-500" }
+              : it.badge
+                ? { text: it.badge.text, cls: it.badge.tone === "red" ? "bg-[#fdecec] text-[#a32d2d]" : it.badge.tone === "blue" ? "bg-blue-50 text-blue-800" : "bg-slate-100 text-slate-600" }
+                : null;
+          return (
+            <button
+              key={it.id}
+              data-dup={it.id}
+              type="button"
+              onClick={() => onSelect(it.id)}
+              className={`flex w-[230px] shrink-0 items-center gap-2.5 rounded-xl border bg-white px-3 py-2 text-left transition ${
+                current ? "border-[var(--hf-cyan-700)] ring-2 ring-[var(--hf-cyan-700)]/30" : "border-slate-200 hover:border-slate-300"
+              } ${it.decision ? "opacity-60" : ""}`}
+            >
+              {it.decision ? (
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm ${it.decision === "merged" ? "bg-lime-100 text-lime-700" : "bg-slate-100 text-slate-500"}`}>
+                  {it.decision === "merged" ? "✓" : "✕"}
+                </div>
+              ) : (
+                <Ring value={it.confidence} tone={tone} />
+              )}
+              <div className="min-w-0">
+                <div className="truncate text-[13px] font-semibold text-slate-900" title={it.name}>{it.name}</div>
+                <div className="truncate text-[11px] text-slate-500">
+                  {it.level === "exact" ? "точно · " : "возможно · "}{it.reason || "совпадение"}
+                </div>
+                {badge && <span className={`mt-0.5 inline-block rounded-full px-2 py-[1px] text-[11px] font-semibold ${badge.cls}`}>{badge.text}</span>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {edges.right && (
+        <button type="button" aria-label="Дальше" onClick={() => scrollBy(260)}
+          className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white px-2 py-1 text-slate-500 shadow">›</button>
+      )}
     </div>
   );
 }

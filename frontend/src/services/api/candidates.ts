@@ -1,3 +1,4 @@
+import type { PriorRejection } from '@/components/candidates/priorRejection';
 import api, { deduplicatedGet, debouncedMutation } from './client';
 
 // ============================================================
@@ -175,6 +176,9 @@ export interface KanbanCard {
   rejection_reason?: string;
   /** Карточка из теневой базы — приходит в выдачу ТОЛЬКО при поиске, метится «Архив». */
   is_archived?: boolean;
+  /** «Был отказ»: последний отказ человека в другой его карточке / архиве
+   *  (+ count) — components/candidates/priorRejection.tsx. */
+  prior_rejection?: PriorRejection | null;
   /** Версия для оптимистичной блокировки: форма правки шлёт её в PUT /entities,
    *  бэк отвечает 409, если кандидата успел изменить кто-то ещё. */
   version?: number;

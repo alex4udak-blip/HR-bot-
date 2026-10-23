@@ -538,6 +538,16 @@ async def init_database():
     except Exception as e:
         logger.warning(f"Service email cleanup failed (non-critical): {e}")
 
+    # Пометки дубля на удалённые (влитые) карточки — разово снять (22.10.2026,
+    # services/duplicate_flags.py); при открытии карточки дубль найдётся заново.
+    try:
+        from ..services.duplicate_flags import clear_dangling_once
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await clear_dangling_once(session)
+    except Exception as e:
+        logger.warning(f"Dangling duplicate flags cleanup failed (non-critical): {e}")
+
     # hh_b2b и прочие каналы порталов в telegram_usernames — одноразово (22.09.2026).
     try:
         from ..services.service_email_cleanup import remove_junk_telegram_once

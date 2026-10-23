@@ -55,6 +55,7 @@ import { createApplication } from '@/services/api/vacancies';
 
 import type { KanbanCard } from '@/services/api/candidates';
 import ShadowDuplicateBanner from '@/components/entities/ShadowDuplicateBanner';
+import { PriorRejectionPanel, usePriorRejectionGate, useVisiblePriorRejections } from '@/components/candidates/priorRejection';
 import CandidateVacancyCard from '@/components/entities/CandidateVacancyCard';
 
 import ResumeTab from '@/components/entities/candidateDetail/ResumeTab';
@@ -628,9 +629,15 @@ export default function RecruiterFunnelsPage() {
     setEditingCandidateCard(null);
   }, [editingCandidateCard]);
 
+  // «Этот кандидат уже получал отказ — всё равно добавить?» (22.10.2026).
+  const priorGate = usePriorRejectionGate();
+  const priorGateFn = priorGate.gate;
+  const funnelPriorRejections = useVisiblePriorRejections(selectedCandidate?.entity_id, selectedCandidate?.vacancy_id);
+
   // Handle adding candidate to another vacancy
   const handleAddToVacancy = useCallback(async (targetVacancyId: number) => {
     if (!selectedCandidate?.entity_id) return;
+    if (!(await priorGateFn(selectedCandidate.entity_id))) return;
     setAddingToVacancy(true);
     try {
       // ADD (не MOVE): кандидат ДОБАВЛЯЕТСЯ в вакансию, НЕ снимаясь с других —
@@ -653,12 +660,13 @@ export default function RecruiterFunnelsPage() {
     } finally {
       setAddingToVacancy(false);
     }
-  }, [selectedCandidate?.entity_id, vacancies, fetchVacancies, selectedVacancyId, loadCandidates]);
+  }, [selectedCandidate?.entity_id, vacancies, fetchVacancies, selectedVacancyId, loadCandidates, priorGateFn]);
 
   // ==================== Render ====================
 
   return (
     <div className="h-full flex overflow-hidden relative">
+      {priorGate.element}
       {/* Mobile sidebar overlay (admin only) */}
       {isHrAdmin && mobileSidebar && (
         <div
@@ -850,13 +858,22 @@ export default function RecruiterFunnelsPage() {
                           <div className="p-[var(--hf-space-xxl)] max-w-[1220px]">
                               {/* Копипаст резюме (Feature B) идёт через этот же баннер
                                   (strength === "text") — отдельного серого бейджа больше нет. */}
-                              {dupCard && (
+                              {/* Одна плашка: отказ + дубль + «Сравнить» (22.10.2026). */}
+                              {dupCard ? (
                                 <ShadowDuplicateBanner
                                   card={dupCard}
                                   status={selectedCandidate.stage as string}
                                   onResolved={() => setDupCard(null)}
+                                  rejections={funnelPriorRejections}
                                 />
-                              )}
+                              ) : selectedCandidate.entity_id ? (
+                                <div className="mb-3">
+                                  <PriorRejectionPanel
+                                    entityId={selectedCandidate.entity_id}
+                                    ownFunnelsExcept={selectedCandidate.vacancy_id}
+                                  />
+                                </div>
+                              ) : null}
                               {/* Top action buttons — Huntflow style */}
                               <div className="hf-profile-action-bar">
                                 {selectedCandidate.entity_id && (

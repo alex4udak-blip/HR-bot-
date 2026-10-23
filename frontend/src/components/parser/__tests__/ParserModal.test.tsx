@@ -4,11 +4,13 @@
  * Сценарий сейчас такой: резюме грузят ТОЛЬКО файлом (режим «по ссылке» убран),
  * AI разбирает его, рекрутёр правит поля и либо создаёт нового кандидата —
  * сразу с комментарием в ленту и на выбранную воронку, — либо прикрепляет файл
- * к уже существующему кандидату из «Найденных».
+ * к уже существующему кандидату из «Уже есть в базе» (общий матчер дублей,
+ * POST /entities/check-duplicate — с 22.10.2026, раньше был поиск по имени).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import ParserModal from '../ParserModal';
 import type { ParsedResume } from '@/services/api';
 
@@ -23,6 +25,11 @@ vi.mock('@/services/api', () => ({
 
 vi.mock('@/services/api/entities', () => ({
   addEntityNote: vi.fn(),
+}));
+
+vi.mock('@/components/candidates/ExistingCandidatesPanel', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/candidates/ExistingCandidatesPanel')>()),
+  checkDuplicateBeforeCreate: vi.fn(),
 }));
 
 vi.mock('react-hot-toast', () => ({
@@ -46,6 +53,12 @@ import {
   createApplication,
 } from '@/services/api';
 import { addEntityNote } from '@/services/api/entities';
+import { checkDuplicateBeforeCreate } from '@/components/candidates/ExistingCandidatesPanel';
+
+const NO_MATCH = {
+  is_duplicate: false, duplicates: [], has_archive_match: false, archive_match_id: null,
+  soft_match: false, soft_confidence: 0, soft_reasons: [], soft_match_id: null, prior_rejection: null,
+};
 import toast from 'react-hot-toast';
 
 const parsed: ParsedResume = {
@@ -90,14 +103,16 @@ function renderModal(props: Partial<React.ComponentProps<typeof ParserModal>> = 
   const onAttachedToEntity = vi.fn();
   const onCreated = vi.fn();
   const utils = render(
-    <ParserModal
-      type="resume"
-      onClose={onClose}
-      onParsed={onParsed}
-      onAttachedToEntity={onAttachedToEntity}
-      onCreated={onCreated}
-      {...props}
-    />,
+    <MemoryRouter>
+      <ParserModal
+        type="resume"
+        onClose={onClose}
+        onParsed={onParsed}
+        onAttachedToEntity={onAttachedToEntity}
+        onCreated={onCreated}
+        {...props}
+      />
+    </MemoryRouter>,
   );
   return { ...utils, onClose, onParsed, onAttachedToEntity, onCreated };
 }
@@ -123,6 +138,7 @@ describe('ParserModal — загрузка резюме файлом', () => {
     authState.user = { id: 7, role: 'member', org_role: 'hr' };
     mockFn(parseResumeFromFile).mockResolvedValue(parsed);
     mockFn(getEntities).mockResolvedValue([]);
+    mockFn(checkDuplicateBeforeCreate).mockResolvedValue(NO_MATCH);
     mockFn(getAllVacancies).mockResolvedValue(vacancies);
     mockFn(createEntity).mockResolvedValue({ id: 501 });
     mockFn(uploadEntityFile).mockResolvedValue({});
@@ -340,18 +356,25 @@ describe('ParserModal — загрузка резюме файлом', () => {
     });
   });
 
-  describe('найденные кандидаты', () => {
-    it('ищет совпадения по имени и почте и позволяет прикрепить файл', async () => {
-      mockFn(getEntities).mockResolvedValue([
-        { id: 77, name: 'Иванов Иван', email: 'ivan@example.com', type: 'candidate' },
-      ]);
+  describe('уже есть в базе', () => {
+    it('проверяет общим матчером дублей и позволяет прикрепить файл', async () => {
+      mockFn(checkDuplicateBeforeCreate).mockResolvedValue({
+        ...NO_MATCH,
+        is_duplicate: true,
+        duplicates: [{
+          entity_id: 77, name: 'Иванов Иван', email: 'ivan@example.com', status: 'Новый',
+          status_key: 'new', applications: [{ vacancy_title: 'Трафик', stage: 'Интервью с HR', stage_key: 'phone_screen' }],
+        }],
+      });
       const { onAttachedToEntity, onClose } = renderModal();
       const file = pdf();
       await uploadAndParse(file);
 
-      expect(await screen.findByText('Найденные кандидаты (1)')).toBeInTheDocument();
-      expect(getEntities).toHaveBeenCalledWith({ search: parsed.name, type: 'candidate', limit: 10 });
-      expect(getEntities).toHaveBeenCalledWith({ search: parsed.email, type: 'candidate', limit: 10 });
+      expect(await screen.findByText('Уже есть в базе')).toBeInTheDocument();
+      expect(screen.getByText('Интервью с HR')).toBeInTheDocument();
+      expect(checkDuplicateBeforeCreate).toHaveBeenCalledWith({
+        full_name: parsed.name, email: parsed.email, phone: parsed.phone, telegram: parsed.telegram,
+      });
 
       fireEvent.click(screen.getByText('Прикрепить'));
       await waitFor(() =>
@@ -360,6 +383,24 @@ describe('ParserModal — загрузка резюме файлом', () => {
       expect(onAttachedToEntity).toHaveBeenCalledWith(77);
       expect(onClose).toHaveBeenCalled();
       expect(createEntity).not.toHaveBeenCalled();
+    });
+
+    it('предупреждает, что человек уже получал отказ', async () => {
+      mockFn(checkDuplicateBeforeCreate).mockResolvedValue({
+        ...NO_MATCH,
+        has_archive_match: true,
+        archive_match_id: 90,
+        prior_rejection: {
+          kind: 'rejected', source: 'archive', entity_id: 90, vacancy_title: 'UA Manager',
+          date: '2025-03-12T10:41:00', recruiter_name: 'Влада', from_stage: 'собес (1): нет', archived: true,
+        },
+      });
+      const { onClose } = renderModal();
+      await uploadAndParse();
+      expect(await screen.findByText(/Уже был у нас — отказ/)).toBeInTheDocument();
+      expect(screen.getByText(/ClickUp: собес \(1\): нет/)).toBeInTheDocument();
+      fireEvent.click(screen.getByText('Открыть карточку из архива'));
+      expect(onClose).toHaveBeenCalled();
     });
   });
 

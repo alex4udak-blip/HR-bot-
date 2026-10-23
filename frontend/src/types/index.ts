@@ -647,6 +647,8 @@ export interface VacancyApplication {
   // Яркие теги у ФИО — свой справочник, отдельный от меток (с 21.09.2026).
   // text оставлен для старых данных из extra_data, пока прод не устаканится.
   entity_headline_tags?: { name?: string; text?: string; color: string }[] | null;
+  // «Был отказ» в другой воронке / карточке-дубле / архиве (22.10.2026).
+  prior_rejection?: import('@/components/candidates/priorRejection').PriorRejection | null;
   stage: ApplicationStage;
   stage_order: number;
   rating?: number;

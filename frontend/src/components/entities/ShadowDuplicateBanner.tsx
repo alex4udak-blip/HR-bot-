@@ -1,6 +1,8 @@
 import { backdropClose } from '@/utils/backdropClose';
 import { useState, useEffect, useRef, useCallback } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { CandidateAlertCard, type PriorRejection } from "@/components/candidates/priorRejection";
 import toast from "react-hot-toast";
 import type { KanbanCard } from "@/services/api/candidates";
 import type { EntityWithRelations } from "@/types";
@@ -13,32 +15,42 @@ import {
   type HiddenDuplicateMeta,
 } from "@/services/api/entities";
 import { clearCompareFilesCache } from "./CompareResumePreview";
+import { STATUS_LABELS } from "@/types";
 import {
-  CandidateCompareCard,
+  CompareTable,
+  DupCarousel,
+  signalWords,
+  type CarouselItem,
   sideFromCard,
   sideFromEntity,
   matchSide,
   matchKindOf,
   type FieldKey,
   type MatchKind,
+  type SystemHrTag,
 } from "./CandidateCompareCard";
 
 /**
- * Баннер «Похожий кандидат есть в базе» + БЕЛЫЙ экран сравнения двух анкет
- * целиком: шапка, блок статуса (этап + причина/дата отказа + история этапов),
- * поля профиля и резюме. Совпадения подсвечены. Объединить / Разные / Закрыть.
+ * Баннер «Похожий кандидат есть в базе» + окно сравнения.
  *
- * Презентационная карточка сравнения вынесена в CandidateCompareCard — ОДИН
- * компонент рендерит и левую «Новый кандидат», и каждую правую «Старую анкету».
+ * Окно (переделано 22.10.2026, владелец: «не нравится, как выглядит»): сверху
+ * вкладки похожих анкет («точно» / «возможно N%» / решение), в середине
+ * таблица «поле в строку» (CompareTable), внизу — что сделает «Объединить» и
+ * три кнопки. Раньше: две карточки рядом с несовпадающими строками, карусель
+ * со стрелками И чипами снизу, обрезанная третья карточка у края.
  */
 
 interface ShadowDuplicateBannerProps {
   card: KanbanCard;
   status?: string; // текущий этап открытой карточки (ключ EntityStatus)
   onResolved?: () => void;
+  /** «Был отказ» этого человека (useVisiblePriorRejections) — рисуются в той
+   *  же карточке, что и дубль: одна плашка вместо двух (22.10.2026). */
+  rejections?: PriorRejection[];
 }
 
-export default function ShadowDuplicateBanner({ card, status, onResolved }: ShadowDuplicateBannerProps) {
+export default function ShadowDuplicateBanner({ card, status, onResolved, rejections = [] }: ShadowDuplicateBannerProps) {
+  const navigate = useNavigate();
   const hiddenId = (card.extra_data?.hidden_duplicate_id as number | undefined) ?? null;
   const meta = (card.extra_data?.hidden_duplicate_meta ?? null) as HiddenDuplicateMeta | null;
   // Красный — только когда совпало НЕСКОЛЬКО признаков личности (level=exact).
@@ -47,14 +59,6 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   // считаем «возможными», пока карточка не пересчитает их при открытии.
   const isText = meta?.strength === "text";
   const isExact = meta?.level === "exact";
-  const bannerBg = isExact ? "bg-red-600" : "bg-amber-500";
-  const bannerTitle = isExact
-    ? "Точное совпадение — кандидат уже в базе"
-    : !meta
-      ? "Возможно тот же человек" // флаг без меты (старый) — процента не знаем
-      : isText
-        ? `Текст резюме совпадает · ${Math.round(meta.confidence)}%`
-        : `Возможно тот же человек · ${Math.round(meta.confidence)}%`;
   const bannerReasons = meta?.reasons ?? [];
   const [resolved, setResolved] = useState(false);
   const [open, setOpen] = useState(false);
@@ -72,14 +76,6 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
   // Кэш тех же профилей в ref — для СИНХРОННого сидинга (предвыбор/triggerEntity),
   // чтобы трек не моргал спиннером там, где профиль уже под рукой.
   const entityCache = useRef<Map<number, EntityWithRelations>>(new Map());
-  // Трек карусели: нативный scroll-snap вместо transform. Даёт настоящий свайп
-  // (тачпад, тач, drag) и «подглядывание» следующей анкеты краем — по прежнему
-  // треку на translateX было не видно, что анкет несколько (жалоба Эльвиры:
-  // пролистала, не поняв, что решение принимается по одной).
-  const trackRef = useRef<HTMLDivElement | null>(null);
-  const slideRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-  // Скролл, который мы вызвали сами, не должен тут же перевыбирать анкету.
-  const scrollingTo = useRef<number | null>(null);
   // Решения ПО ПАРАМ (2026-09-15, Эльвира): кнопки действуют только на анкету,
   // открытую справа. Решённые помечаются и пропускаются, окно закрывается само,
   // только когда решены все — раньше решение по последней в карусели закрывало
@@ -119,62 +115,7 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     }
   }, []);
 
-  // Скролл трека к анкете (снап её отцентрирует).
-  const scrollToId = useCallback((id: number, behavior: ScrollBehavior = "smooth") => {
-    scrollingTo.current = id;
-    slideRefs.current.get(id)?.scrollIntoView({ behavior, inline: "center", block: "nearest" });
-  }, []);
-
-  // Свайп/скролл трека выбирает анкету сам: решение всегда относится к той, что
-  // стоит по центру. Иначе рекрутёр листает, а кнопки действуют на другую пару.
-  useEffect(() => {
-    const el = trackRef.current;
-    if (!el || !open) return;
-    let timer: number | undefined;
-    const onScroll = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        // Центры считаем по getBoundingClientRect: у слайдов свой offsetParent
-        // (они position:relative), поэтому offsetLeft лежит в другой системе
-        // координат и выбор «залипал» на первой анкете.
-        const trackRect = el.getBoundingClientRect();
-        const center = trackRect.left + trackRect.width / 2;
-        let bestId: number | null = null;
-        let bestDist = Number.POSITIVE_INFINITY;
-        slideRefs.current.forEach((node, id) => {
-          const r = node.getBoundingClientRect();
-          const dist = Math.abs(r.left + r.width / 2 - center);
-          if (dist < bestDist) {
-            bestDist = dist;
-            bestId = id;
-          }
-        });
-        if (bestId != null) {
-          scrollingTo.current = null;
-          setSelectedDupId((prev) => (prev === bestId ? prev : bestId));
-          if (bestId != null && !entityCache.current.has(bestId)) void loadSelected(bestId);
-        }
-      }, 120);
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      window.clearTimeout(timer);
-    };
-    // loading — обязательная зависимость: пока крутится спиннер, трека в DOM нет
-    // и вешать слушатель не на что. Без неё эффект отрабатывал вхолостую один раз
-    // при открытии, и свайп не переключал анкету.
-  }, [open, loading, duplicates.length, loadSelected]);
-
-  // Выбор поменялся не скроллом (открытие окна, переход к следующей непроверенной
-  // после решения) — подводим трек к нужной анкете.
-  useEffect(() => {
-    if (!open || selectedDupId == null) return;
-    const node = slideRefs.current.get(selectedDupId);
-    if (node) scrollToId(selectedDupId, scrollingTo.current == null ? "auto" : "smooth");
-  }, [open, loading, selectedDupId, duplicates.length, scrollToId]);
-
-  // Стрелки клавиатуры — привычный способ листать карусель.
+  // Стрелки клавиатуры листают вкладки похожих анкет.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -183,14 +124,29 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
       const next = Math.max(0, Math.min(duplicates.length - 1, pos + (e.key === "ArrowRight" ? 1 : -1)));
       if (next === pos || !duplicates[next]) return;
       e.preventDefault();
-      scrollToId(duplicates[next].entity_id);
       void loadSelected(duplicates[next].entity_id);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, duplicates, selectedDupId, scrollToId, loadSelected]);
+  }, [open, duplicates, selectedDupId, loadSelected]);
 
-  if (!hiddenId || resolved) return null;
+  // Дубля нет (или решён) — остаётся только отказ, со ссылкой на ту карточку.
+  const rejectionOnly = () => {
+    const top = rejections[0];
+    if (!top) return null;
+    const other = top.entity_id !== card.id ? top.entity_id : null;
+    return (
+      <div className="mb-3">
+        <CandidateAlertCard
+          rejections={rejections}
+          actionLabel={other ? (top.archived ? "Открыть из архива" : "Открыть ту карточку") : undefined}
+          onAction={other ? () => navigate(`/all-candidates?entity=${other}${top.archived ? "&archived=1" : ""}`) : undefined}
+        />
+      </div>
+    );
+  };
+
+  if (!hiddenId || resolved) return rejectionOnly();
 
   // Профиль ВЫБРАННОГО в треке дубликата (центрированная правая карточка). Дерайвится
   // из entities-state по selectedDupId; до подгрузки — fallback на triggerEntity
@@ -324,50 +280,30 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
     matchKindOf(selectedSignals, key, () => matchSide(left, right, key));
 
   // Баннер показываем только если есть triggerEntity (найден возможный дубликат)
-  if (!triggerEntity) return null;
+  if (!triggerEntity) return rejectionOnly();
 
-  // Индекс показанного справа дубликата — для нав-стрелок «перебираем карточки».
-  const idx = Math.max(0, duplicates.findIndex((d) => d.entity_id === selectedDupId));
   const selectedDecision = selectedDupId != null ? decisions[selectedDupId] : undefined;
   const undecidedCount = duplicates.filter((d) => !decisions[d.entity_id]).length;
-  const selectedName = duplicates[idx]?.entity_name || archived?.name || "";
-  // Показать анкету по индексу: доскроллить трек и выбрать её для решения.
-  const goToIndex = (target: number) => {
-    if (target < 0 || target >= duplicates.length) return;
-    const id = duplicates[target].entity_id;
-    scrollToId(id);
-    if (id !== selectedDupId) void loadSelected(id);
+  const selectedDup = duplicates.find((d) => d.entity_id === selectedDupId);
+  const rightId = selectedDupId ?? hiddenId;
+  const hrTags = (extra: unknown): SystemHrTag[] | undefined => {
+    const t = (extra as { system_hr_tags?: unknown } | null | undefined)?.system_hr_tags;
+    return Array.isArray(t) ? (t as SystemHrTag[]) : undefined;
   };
-  const goToDup = (delta: number) => goToIndex(idx + delta);
 
   return (
     <>
-      {/* Баннер над action-баром карточки */}
-      <div className={`flex flex-col gap-1.5 ${bannerBg} px-5 py-3 mb-4 shadow-sm`}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 text-white">
-            <AlertTriangle className="w-5 h-5 shrink-0" />
-            <span className="font-medium">{bannerTitle}</span>
-          </div>
-          <button
-            onClick={openModal}
-            className="shrink-0 rounded-lg bg-white px-4 py-1.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition-colors"
-          >
-            Проверить
-          </button>
-        </div>
-        {bannerReasons.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pl-8">
-            {bannerReasons.map((r) => (
-              <span key={r} className="rounded-full bg-white/25 px-2 py-0.5 text-xs text-white">
-                {r}
-              </span>
-            ))}
-          </div>
-        )}
+      {/* Одна мягкая карточка над action-баром: отказ + дубль + «Сравнить». */}
+      <div className="mb-3">
+        <CandidateAlertCard
+          rejections={rejections}
+          duplicate={{ exact: isExact, confidence: meta?.confidence, text: isText, reasons: bannerReasons }}
+          actionLabel="Сравнить"
+          onAction={openModal}
+        />
       </div>
 
-      {/* Модальное окно сравнения */}
+      {/* Окно сравнения */}
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -379,213 +315,108 @@ export default function ShadowDuplicateBanner({ card, status, onResolved }: Shad
             </div>
           ) : (
             <div
-              className="bg-gray-50 rounded-2xl shadow-2xl flex flex-col w-full max-w-6xl max-h-[90vh] overflow-hidden"
+              className="bg-[#f2f2f2] rounded-2xl shadow-2xl flex flex-col w-full max-w-5xl max-h-[90vh] overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* BODY: Прозрачные колонки */}
-              <div className="flex-1 flex gap-6 p-6 overflow-hidden">
-
-                {/* ЛЕВАЯ КОЛОНКА - полностью прозрачная обертка */}
-                <div className="w-1/2 flex flex-col overflow-y-auto relative" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                  <style>{`
-                    div::-webkit-scrollbar { display: none; }
-                  `}</style>
-                  {/* Заголовок слева, симметрично справа */}
-                  <h3 className="text-sm font-semibold text-gray-800 mb-3 px-1 shrink-0">Новый кандидат</h3>
-                  {/* Компонент имеет собственные: bg-white border border-gray-200 rounded-xl shadow-sm p-6 */}
-                  <CandidateCompareCard
-                    title=""
-                    side={left}
-                    matched={matched}
-                    entityId={card.id}
-                    vacancies={Array.isArray((card.extra_data as any)?.system_hr_tags) ? (card.extra_data as any).system_hr_tags : undefined}
-                    extraData={card.extra_data as Record<string, unknown> | undefined}
-                  />
+              {/* Карусель похожих анкет — единственная навигация. */}
+              <div className="shrink-0 px-5 pt-4 pb-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-[15px] font-semibold text-slate-900">Похожие анкеты</span>
+                  <span className="text-[12px] text-slate-400">
+                    {duplicates.length > 1
+                      ? `${duplicates.length} · ${undecidedCount > 0 ? `не проверено ${undecidedCount}` : "все проверены"}`
+                      : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => !busy && closeModal()}
+                    className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700"
+                    aria-label="Закрыть"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
                 </div>
-
-                {/* ПРАВАЯ КОЛОНКА - полностью прозрачная обертка */}
-                <div className="w-1/2 flex flex-col overflow-hidden">
-
-                  {/* Шапка просто висит в воздухе над карточкой (без рамок и фонов) */}
-                  <div className="flex justify-between items-center mb-3 px-1 shrink-0">
-                    <h3 className="text-sm font-semibold text-gray-800">Похожие анкеты</h3>
-                    {duplicates.length > 1 && (
-                      <div className="text-sm text-gray-500 font-medium flex items-center gap-2">
-                        <button
-                          onClick={() => goToDup(-1)}
-                          disabled={idx <= 0}
-                          className="disabled:opacity-30 cursor-pointer"
-                          aria-label="Предыдущая"
-                        >
-                          &lt;
-                        </button>
-                        <span className="tabular-nums min-w-[50px] text-center">
-                          {idx + 1} из {duplicates.length}
-                          {" · "}
-                          {undecidedCount > 0 ? `не проверено: ${undecidedCount}` : "все проверены"}
-                        </span>
-                        <button
-                          onClick={() => goToDup(1)}
-                          disabled={idx >= duplicates.length - 1}
-                          className="disabled:opacity-30 cursor-pointer"
-                          aria-label="Следующая"
-                        >
-                          &gt;
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Трек карусели: горизонтальный скролл со снапом */}
-                  <div className="flex-1 overflow-hidden relative flex flex-col">
-                    <div
-                      ref={trackRef}
-                      className="flex h-full gap-3 overflow-x-auto snap-x snap-mandatory overscroll-x-contain"
-                      style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-                    >
-                      {duplicates.length > 0 ? (
-                        duplicates.map((d) => {
-                          const ent = entities[d.entity_id];
-                          const dupSide = ent ? sideFromEntity(ent) : null;
-                          return (
-                            /* Слайд - прозрачный */
-                            <div
-                              key={d.entity_id}
-                              ref={(el) => {
-                                if (el) slideRefs.current.set(d.entity_id, el);
-                                else slideRefs.current.delete(d.entity_id);
-                              }}
-                              data-dup-id={d.entity_id}
-                              // Чуть уже колонки, когда анкет несколько: справа
-                              // выглядывает край следующей — видно, что она есть.
-                              className={`h-full flex-shrink-0 flex flex-col overflow-y-auto pb-2 pr-2 relative snap-center transition-opacity ${
-                                duplicates.length > 1 ? "w-[94%]" : "w-full"
-                              } ${d.entity_id === selectedDupId ? "opacity-100" : "opacity-60"}`}
-                              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-                            >
-                              <style>{`
-                                div::-webkit-scrollbar { display: none; }
-                              `}</style>
-                              {/* Карточка дубля с собственными стилями: bg-white border border-gray-200 rounded-xl shadow-sm p-6 */}
-                              {decisions[d.entity_id] && (
-                                <div
-                                  className={`mb-2 rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                                    decisions[d.entity_id] === "merged"
-                                      ? "bg-lime-100 text-lime-800"
-                                      : "bg-red-50 text-red-700"
-                                  }`}
-                                >
-                                  {decisions[d.entity_id] === "merged"
-                                    ? "Объединена с новым кандидатом"
-                                    : "Отмечено: другой человек"}
-                                </div>
-                              )}
-                              {dupSide ? (
-                                <CandidateCompareCard
-                                  title=""
-                                  side={dupSide}
-                                  matched={(k) => matchKindOf(d.signals, k, () => matchSide(left, dupSide, k))}
-                                  confidence={d.confidence}
-                                  level={d.level}
-                                  signals={d.signals}
-                                  entityId={d.entity_id}
-                                  vacancies={Array.isArray((ent?.extra_data as any)?.system_hr_tags) ? (ent?.extra_data as any).system_hr_tags : undefined}
-                                  extraData={ent?.extra_data as Record<string, unknown> | undefined}
-                                />
-                              ) : (
-                                <div className="flex items-center justify-center text-gray-400 h-full">
-                                  <Loader2 className="w-6 h-6 animate-spin" />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-400">
-                          <Loader2 className="w-6 h-6 animate-spin" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Лента анкет: видно ВСЕ похожие сразу — кто уже решён, кто ждёт,
-                      и на какой мы стоим. Клик листает трек к нужной. */}
-                  {duplicates.length > 1 && (
-                    <div className="shrink-0 flex gap-1.5 overflow-x-auto pt-2 pb-0.5" style={{ scrollbarWidth: "none" }}>
-                      {duplicates.map((d, i) => {
-                        const decided = decisions[d.entity_id];
-                        const isCurrent = d.entity_id === selectedDupId;
-                        return (
-                          <button
-                            key={d.entity_id}
-                            onClick={() => goToIndex(i)}
-                            title={d.entity_name}
-                            className={`shrink-0 max-w-[150px] rounded-lg border px-2 py-1 text-left transition-colors ${
-                              isCurrent
-                                ? "border-gray-800 bg-white"
-                                : "border-gray-200 bg-white/60 hover:bg-white"
-                            }`}
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <span
-                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                                  decided === "merged"
-                                    ? "bg-lime-500"
-                                    : decided === "dismissed"
-                                      ? "bg-red-500"
-                                      : "bg-amber-400"
-                                }`}
-                              />
-                              <span className="truncate text-[11px] font-medium text-gray-700">
-                                {d.entity_name || `Анкета ${i + 1}`}
-                              </span>
-                            </div>
-                            <div className="pl-3 text-[10px] text-gray-400">
-                              {decided ? (decided === "merged" ? "объединена" : "другой человек") : `${d.confidence}%`}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                </div>
-
+                <DupCarousel
+                  items={(duplicates.length ? duplicates : [{ entity_id: hiddenId, entity_name: archived?.name || "", confidence: meta?.confidence ?? 0, level: meta?.level } as DuplicateCandidateResult]).map((d): CarouselItem => {
+                    const ent = entities[d.entity_id] as (EntityWithRelations & { is_archived?: boolean }) | undefined;
+                    const st = (ent?.status as string | undefined) || "";
+                    return {
+                      id: d.entity_id,
+                      name: d.entity_name || ent?.name || `Анкета ${d.entity_id}`,
+                      confidence: d.confidence,
+                      level: d.level,
+                      strength: d.strength,
+                      reason: signalWords(d.signals),
+                      decision: decisions[d.entity_id],
+                      badge: ent?.is_archived
+                        ? { text: "архив", tone: "gray" }
+                        : st === "rejected"
+                          ? { text: "Был отказ", tone: "red" }
+                          : st
+                            ? { text: (STATUS_LABELS as Record<string, string>)[st] || st, tone: "blue" }
+                            : null,
+                    };
+                  })}
+                  selectedId={rightId}
+                  onSelect={(id) => id !== selectedDupId && void loadSelected(id)}
+                />
               </div>
 
-              {/* FOOTER - белый низ с кнопками */}
-              <div className="shrink-0 p-4 bg-white border-t border-gray-200 flex flex-col items-center gap-3">
-                {duplicates.length > 1 && (
-                  <div className="text-sm text-gray-600 text-center">
-                    {selectedDecision
-                      ? "По этой анкете решение уже принято — пролистайте к непроверенной"
-                      : <>Решение только по анкете {idx + 1} из {duplicates.length}{selectedName ? <>: <b>{selectedName}</b></> : null}</>}
-                  </div>
-                )}
-                <div className="flex justify-center items-center gap-4">
+              <div className="flex-1 overflow-y-auto px-5 pb-4">
+                <CompareTable
+                  left={{
+                    side: left,
+                    entityId: card.id,
+                    caption: "Открыта сейчас",
+                    createdAt: card.created_at,
+                    createdBy: card.recruiter_name,
+                    vacancies: hrTags(card.extra_data),
+                    extraData: card.extra_data as Record<string, unknown> | undefined,
+                  }}
+                  right={right && rightId != null ? {
+                    side: right,
+                    entityId: rightId,
+                    caption: "похожая анкета",
+                    archived: Boolean((archived as unknown as { is_archived?: boolean })?.is_archived),
+                    createdAt: archived?.created_at,
+                    createdBy: (archived as unknown as { owner_name?: string | null })?.owner_name,
+                    vacancies: hrTags(archived?.extra_data),
+                    extraData: archived?.extra_data as Record<string, unknown> | undefined,
+                  } : null}
+                  matched={matched}
+                  signals={selectedDup?.signals}
+                  level={selectedDup?.level ?? meta?.level}
+                />
+              </div>
+
+              <div className="shrink-0 flex items-center gap-3 border-t border-slate-200 bg-white px-5 py-3 flex-wrap">
+                <span className="flex-1 min-w-[240px] text-[13px] text-slate-500">
+                  {selectedDecision
+                    ? "По этой анкете решение уже принято — выберите непроверенную вкладку сверху."
+                    : <>«Объединить»: останется открытая карточка (ID {card.id}). Воронки, история, комментарии и отказы из ID {rightId} переедут в неё.</>}
+                </span>
                 <button
-                  disabled={busy || !!selectedDecision}
-                  onClick={handleMerge}
-                  className="inline-flex items-center justify-center gap-2 bg-lime-500 hover:bg-lime-600 text-white rounded-lg px-6 py-2.5 text-sm font-semibold disabled:opacity-50"
+                  disabled={busy}
+                  onClick={closeModal}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
-                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {duplicates.length > 1 ? "Объединить с этой анкетой" : "Завершить объединение"}
+                  Закрыть
                 </button>
                 <button
                   disabled={busy || !!selectedDecision}
                   onClick={handleDismiss}
-                  className="inline-flex items-center justify-center gap-2 border-2 border-red-500 bg-white text-red-600 hover:bg-red-50 rounded-lg px-6 py-2.5 text-sm font-semibold disabled:opacity-50"
+                  className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
                 >
-                  {duplicates.length > 1 ? "Это другой человек" : "Нет, это разные люди"}
+                  Это разные люди
                 </button>
                 <button
-                  disabled={busy}
-                  onClick={closeModal}
-                  className="inline-flex items-center justify-center gap-2 bg-white text-black hover:bg-gray-100 rounded-lg px-6 py-2.5 text-sm font-semibold border-2 border-black disabled:opacity-50"
+                  disabled={busy || !!selectedDecision}
+                  onClick={handleMerge}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[var(--hf-cyan-700)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
                 >
-                  Закрыть
+                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Объединить
                 </button>
-                </div>
               </div>
             </div>
           )}

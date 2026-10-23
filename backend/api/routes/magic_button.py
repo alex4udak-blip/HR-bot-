@@ -3,8 +3,8 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy import select, or_, String, func
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, field_validator
 from typing import Optional
@@ -90,38 +90,6 @@ class MagicButtonResponse(BaseModel):
     has_hidden_duplicate: bool = False  # похож на кандидата в архиве (superadmin-only) — деталей не раскрываем
     message: str
 
-class UpdatePhotoRequest(BaseModel):
-    photo_url: str
-
-
-@router.post("/entity/{entity_id}/photo")
-async def update_entity_photo(
-    entity_id: int,
-    data: UpdatePhotoRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Update the photo_url stored in an entity's extra_data.
-
-    Used by the Chrome extension to backfill a photo on an already-added
-    candidate without going through the full /parse flow.
-    """
-    org = await get_user_org(current_user, db)
-    if not org:
-        raise HTTPException(400, "User not in organization")
-    result = await db.execute(
-        select(Entity).where(Entity.id == entity_id, Entity.org_id == org.id)
-    )
-    entity = result.scalar_one_or_none()
-    if not entity:
-        raise HTTPException(404, "Candidate not found")
-    ed = dict(entity.extra_data or {})
-    ed["photo_url"] = data.photo_url
-    entity.extra_data = ed
-    await db.commit()
-    return {"success": True, "photo_url": data.photo_url}
-
-
 class DuplicateCheckRequest(BaseModel):
     full_name: str
     email: Optional[str] = None
@@ -154,6 +122,10 @@ class DuplicateCheckResponse(BaseModel):
     soft_confidence: int = 0
     soft_reasons: list = []
     soft_match_id: Optional[int] = None
+    # «Был отказ» (22.10.2026): последний отказ среди ВСЕХ найденных совпадений —
+    # активных, архивного (ClickUp «…: нет»/«неявка») и мягкого. Попап рисует
+    # красную плашку ДО нажатия «Добавить». Поля — services/prior_rejection.py.
+    prior_rejection: Optional[dict] = None
 
 @router.post("/check-duplicate")
 async def check_duplicate(
@@ -188,6 +160,14 @@ async def check_duplicate(
     has_archive_match = archive_match_id is not None
     soft = next((m for m in matches if m.strength == "soft"), None)
 
+    from ..services.prior_rejection import sort_key, rejections_by_entity, summary
+    from ..services.vacancy_scope import get_scope_vacancy_ids
+    matched_ids = set(active_ids) | {archive_match_id} | {soft.entity_id if soft else None}
+    rej = await rejections_by_entity(
+        db, [i for i in matched_ids if i], scope_ids=await get_scope_vacancy_ids(current_user, db),
+    )
+    prior = summary(sorted((r for lst in rej.values() for r in lst), key=sort_key, reverse=True))
+
     if not active_ids:
         return DuplicateCheckResponse(
             is_duplicate=False, duplicates=[],
@@ -196,6 +176,7 @@ async def check_duplicate(
             soft_confidence=soft.confidence if soft else 0,
             soft_reasons=soft.reasons if soft else [],
             soft_match_id=soft.entity_id if soft else None,
+            prior_rejection=prior,
         )
 
     dup_result = await db.execute(
@@ -203,22 +184,31 @@ async def check_duplicate(
     )
     duplicates = dup_result.scalars().all()
 
+    # Подписи — из общего справочника (services/hr_stages.py). В `status` и
+    # `stage` уходит САМА ПОДПИСЬ, ключ — в `status_key`/`stage_key`: у расширения
+    # был свой старый словарь («Практика» вместо «Интервью с HR», «Интервью
+    # назначено»…), а попап прошлых версий показывает значение как есть, если не
+    # нашёл его в словаре, — так верные подписи видны и без переустановки (22.10.2026).
+    from ..services.hr_stages import STATUS_LABELS, stage_label
+
     # For each duplicate, load their work history: vacancy applications + recent stage transitions
     result_list = []
     for d in duplicates:
-        # All vacancy applications for this candidate
+        # Заявки кандидата — без удалённых воронок (их нет нигде в интерфейсе).
         apps_result = await db.execute(
             select(VacancyApplication, Vacancy.title)
             .join(Vacancy, Vacancy.id == VacancyApplication.vacancy_id)
-            .where(VacancyApplication.entity_id == d.id)
+            .where(VacancyApplication.entity_id == d.id, Vacancy.deleted_at.is_(None))
             .order_by(VacancyApplication.applied_at.desc())
         )
         applications = []
         for app, vacancy_title in apps_result.all():
+            stage_key = app.stage.value if app.stage else "applied"
             applications.append({
                 "vacancy_id": app.vacancy_id,
                 "vacancy_title": vacancy_title,
-                "stage": app.stage.value if app.stage else "applied",
+                "stage": stage_label(stage_key),
+                "stage_key": stage_key,
                 "rating": app.rating,
                 "applied_at": app.applied_at.isoformat() if app.applied_at else None,
                 "last_stage_change_at": app.last_stage_change_at.isoformat() if app.last_stage_change_at else None,
@@ -240,12 +230,14 @@ async def check_duplicate(
             for t in trans_result.scalars().all()
         ]
 
+        status_key = d.status.value if d.status else "unknown"
         result_list.append({
             "entity_id": d.id,
             "name": d.name,
             "email": d.email,
             "phone": d.phone,
-            "status": d.status.value if d.status else "unknown",
+            "status": STATUS_LABELS.get(status_key, status_key),
+            "status_key": status_key,
             "created_at": d.created_at.isoformat() if d.created_at else None,
             "applications": applications,
             "recent_transitions": transitions,
@@ -260,11 +252,13 @@ async def check_duplicate(
         soft_confidence=soft.confidence if soft else 0,
         soft_reasons=soft.reasons if soft else [],
         soft_match_id=soft.entity_id if soft else None,
+        prior_rejection=prior,
     )
 
 @router.post("/parse")
 async def magic_button_parse(
     data: MagicButtonData,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -272,79 +266,104 @@ async def magic_button_parse(
     """Process a resume parsed by the Chrome extension."""
     import traceback
     try:
-        return await _do_magic_parse(data, db, current_user, background_tasks)
+        return await _do_magic_parse(data, db, current_user, background_tasks, request)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Magic button error: {e}\n{traceback.format_exc()}")
         raise HTTPException(500, detail=f"Error: {str(e)}")
 
-async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTasks):
+
+def _parse_salary(salary: Optional[str], source: Optional[str]):
+    """«от 150 000 ₽» → (min, max, валюта). Валюта по умолчанию — страна сайта:
+    rabota.by — BYN, остальное — RUB (до 22.10.2026 стоял KZT, и у кандидата без
+    зарплаты в карточке висела валюта «тенге»)."""
+    import re
+    currency = "BYN" if "rabota.by" in (source or "") else "RUB"
+    if not salary:
+        return None, None, currency
+    sal_text = salary.lower()
+    if 'usd' in sal_text or '$' in sal_text:
+        currency = 'USD'
+    elif 'eur' in sal_text or '€' in sal_text:
+        currency = 'EUR'
+    elif 'byn' in sal_text or 'br' in sal_text or 'бел' in sal_text:
+        currency = 'BYN'
+    elif 'руб' in sal_text or '₽' in sal_text:
+        currency = 'RUB'
+    elif 'тенге' in sal_text or 'kzt' in sal_text or '₸' in sal_text:
+        currency = 'KZT'
+
+    # hh разделяет разряды разными пробелами (обычный, U+00A0, U+2009, U+202F).
+    def _to_int(s):
+        cleaned = re.sub(r'\D', '', s)
+        return int(cleaned) if cleaned else 0
+    numbers = re.findall(r'[\d\s   ]+', salary)
+    nums = [_to_int(n) for n in numbers if any(c.isdigit() for c in n)]
+    # Отбрасываем мусорные числа: слишком мелкие и больше INT-предела Postgres
+    # (иначе expected_salary_* падали на commit → 500 при добавлении из расширения).
+    nums = [n for n in nums if 100 < n <= 2_147_483_647]
+    if len(nums) >= 2:
+        return min(nums), max(nums), currency
+    if len(nums) == 1:
+        if 'от' in sal_text:
+            return nums[0], None, currency
+        if 'до' in sal_text:
+            return None, nums[0], currency
+        return nums[0], nums[0], currency
+    return None, None, currency
+
+
+async def _target_vacancy(db: AsyncSession, vacancy_id: int, current_user: User, org) -> Vacancy:
+    """Воронка, в которую кладём кандидата, — те же проверки, что у «Добавить в
+    воронку» (create_application): своя организация, не удалена, есть доступ,
+    не вне скоупа. До 22.10.2026 проверялась только организация."""
+    from .vacancies.common import can_access_vacancy
+    from ..services.vacancy_scope import ensure_vacancy_visible
+
+    vacancy = (await db.execute(
+        select(Vacancy).where(
+            Vacancy.id == vacancy_id, Vacancy.org_id == org.id, Vacancy.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if vacancy is None:
+        raise HTTPException(404, "Vacancy not found")
+    await ensure_vacancy_visible(vacancy.id, current_user, db)
+    if not await can_access_vacancy(vacancy, current_user, org, db):
+        raise HTTPException(403, "Access denied to this vacancy")
+    return vacancy
+
+
+async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTasks, request: Request):
     org = await get_user_org(current_user, db)
     if not org:
         raise HTTPException(400, "User not in organization")
 
-    # Log incoming photo_url so Railway logs show whether extension sent it
     logger.info(
         f"magic-button parse: source={data.source} url={data.source_url} "
         f"photo_url={'<yes>' if data.photo_url else '<no>'} "
         f"({(data.photo_url or '')[:100]})"
     )
 
-    # Check for duplicates — prefer source_url (unique per resume, reliable
-    # even when contacts are hidden on hh.ru), then fall back to contact-based
-    # matching. Name-based matching is skipped if the name looks like a generic
-    # placeholder so we don't collapse all "Кандидат" entries into one record.
-    from ..services.similarity import normalize_source_url
+    # Воронку проверяем ДО создания кандидата: отказ не должен оставлять его без
+    # воронки, которую рекрутёр выбрал.
+    vacancy = await _target_vacancy(db, data.vacancy_id, current_user, org) if data.vacancy_id else None
+
+    from ..services.similarity import build_dup_keys, find_duplicate_matches, normalize_source_url
     source_key = normalize_source_url(data.source_url or "")
-    duplicate = None
-    if data.source_url:
-        # Сравниваем по нормализованному ключу (без волатильных query-параметров
-        # hh: ?t=…&vacancyId=…) И по сырому URL — иначе одно и то же резюме,
-        # открытое дважды, считается разным и добавляется повторно.
-        url_conds = [Entity.extra_data.op('->>')('source_url') == data.source_url]
-        if source_key:
-            url_conds.append(Entity.extra_data.op('->>')('source_key') == source_key)
-        dup_by_url = await db.execute(
-            select(Entity).where(
-                Entity.org_id == org.id,
-                Entity.type == EntityType.candidate,
-                Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
-                or_(*url_conds),
-            ).limit(1)
-        )
-        duplicate = dup_by_url.scalar_one_or_none()
 
-    if duplicate is None:
-        from ..services.similarity import is_matchable_telegram, looks_like_person_name
-        conditions = []
-        if data.email:
-            conditions.append(Entity.email == data.email)
-        if data.phone:
-            conditions.append(Entity.phone == data.phone)
-        # Telegram — только реальный хэндл, не мусорный ярлык источника («hh_b2b»,
-        # «telegram»): иначе «дубликат найден» срабатывает на десятках разных людей.
-        if data.telegram and is_matchable_telegram(data.telegram):
-            conditions.append(Entity.telegram_usernames.cast(String).ilike(f"%{data.telegram.lower()}%"))
-        # Имя — только если похоже на ФИО, а не должность («Flutter Developer, …»)
-        # и не placeholder («Кандидат …»).
-        name_lower = (data.full_name or "").strip().lower()
-        is_placeholder_name = name_lower.startswith("кандидат") or name_lower.startswith("candidate")
-        if data.full_name and not is_placeholder_name and looks_like_person_name(data.full_name):
-            conditions.append(Entity.name.ilike(f"%{data.full_name}%"))
-
-        if conditions:
-            dup_result = await db.execute(
-                select(Entity).where(
-                    Entity.org_id == org.id,
-                    Entity.type == EntityType.candidate,
-                    Entity.is_archived.is_not(True),  # архив — отдельный теневой флоу
-                    or_(*conditions)
-                ).limit(1)
-            )
-            duplicate = dup_result.scalar_one_or_none()
-
+    # «Добавлен (дубликат)» — тем же матчером, что плашка «Уже в базе» в попапе
+    # (check-duplicate). Раньше здесь была своя копия на сырых SQL-сравнениях:
+    # телефон в другом формате не совпадал, а `name ILIKE %…%` ловил чужих.
+    # Мягкое совпадение — не «дубликат» (это лишь «возможно тот же»).
+    matches = await find_duplicate_matches(db, org.id, build_dup_keys(
+        name=data.full_name, email=data.email, phone=data.phone,
+        telegram=data.telegram, source_url=data.source_url,
+    ))
+    exact = next((m for m in matches if not m.is_archived and m.strength != "soft"), None)
+    duplicate = await db.get(Entity, exact.entity_id) if exact else None
     is_duplicate = duplicate is not None
     duplicate_info = None
-
     if is_duplicate:
         duplicate_info = {
             "entity_id": duplicate.id,
@@ -357,7 +376,6 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     # Create entity (even if duplicate — per TZ "can still add again")
     tg_list = [data.telegram.lower().lstrip('@')] if data.telegram else []
 
-    # Build extra_data with all parsed fields
     extra = {
         "source": data.source,
         "source_url": data.source_url,
@@ -365,88 +383,37 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
         "magic_button": True,
         "comment": data.comment,
     }
-    # Если рекрут написал коммент в попапе расширения — кладём его в notes-массив
-    # (тот же формат что использует /all-candidates → блок "Комментарии").
-    # Иначе коммент висит только в extra_data.comment и нигде не отображается.
-    if data.comment and data.comment.strip():
+    comment = (data.comment or "").strip()
+    # Комментарий из попапа. Есть воронка — он уходит в первую запись истории
+    # заявки (как комментарий окна смены этапа): в ленте одна строка «Новый —
+    # текст». До 22.10.2026 он ложился отдельной заметкой без воронки: рядом с
+    # «Новый — Первичная заявка» получалась вторая строка «Новый», и заметка
+    # показывалась в ЛЮБОЙ воронке, куда кандидата добавят потом. Без воронки —
+    # заметка-этап, как у кандидата вне воронок.
+    if comment and vacancy is None:
         import uuid
         from datetime import timezone as _tz
         extra["notes"] = [{
             "id": str(uuid.uuid4()),
-            "text": data.comment.strip(),
+            "text": comment,
             "date": datetime.now(_tz.utc).isoformat(),
             "stage": "new",
             "stage_label": "Новый",
             "author_id": current_user.id,
             "author_name": current_user.name,
         }]
-    if data.photo_url:
-        extra["photo_url"] = data.photo_url
-    if data.city:
-        extra["city"] = data.city
-    if data.age:
-        extra["age"] = data.age
-    if data.birthday:
-        extra["birth_date"] = data.birthday
-    if data.gender:
-        extra["gender"] = data.gender
-    if data.salary:
-        extra["salary"] = data.salary
-    if data.experience_summary:
-        extra["experience_summary"] = data.experience_summary
-    if data.total_experience:
-        extra["total_experience"] = data.total_experience
-    if data.experience_descriptions:
-        extra["experience_descriptions"] = data.experience_descriptions
-    if data.skills:
-        extra["skills"] = data.skills
-    if data.languages:
-        extra["languages"] = data.languages
-    if data.education:
-        extra["education"] = data.education
-    if data.certifications:
-        extra["certifications"] = data.certifications
-    if data.summary:
-        extra["summary"] = data.summary
+    for key, value in (
+        ("photo_url", data.photo_url), ("city", data.city), ("age", data.age),
+        ("birth_date", data.birthday), ("gender", data.gender), ("salary", data.salary),
+        ("experience_summary", data.experience_summary), ("total_experience", data.total_experience),
+        ("experience_descriptions", data.experience_descriptions), ("skills", data.skills),
+        ("languages", data.languages), ("education", data.education),
+        ("certifications", data.certifications), ("summary", data.summary),
+    ):
+        if value:
+            extra[key] = value
 
-    # Parse salary into min/max if possible
-    salary_min = None
-    salary_max = None
-    salary_currency = 'KZT'
-    if data.salary:
-        import re
-        # Detect currency
-        sal_text = data.salary.lower()
-        if 'usd' in sal_text or '$' in sal_text:
-            salary_currency = 'USD'
-        elif 'eur' in sal_text or '€' in sal_text:
-            salary_currency = 'EUR'
-        elif 'руб' in sal_text or '₽' in sal_text:
-            salary_currency = 'RUB'
-        elif 'тенге' in sal_text or 'kzt' in sal_text or '₸' in sal_text:
-            salary_currency = 'KZT'
-        # Extract numbers — HH formats with various whitespace separators
-        # (regular space, U+00A0 no-break, U+2009 thin space, U+202F narrow nbsp)
-        # so we strip all whitespace-ish chars before int().
-        def _to_int(s):
-            cleaned = re.sub(r'\D', '', s)
-            return int(cleaned) if cleaned else 0
-        numbers = re.findall(r'[\d\s\u00A0\u2009\u202F]+', data.salary)
-        nums = [_to_int(n) for n in numbers if any(c.isdigit() for c in n)]
-        # Отбрасываем мусорные числа: слишком мелкие и больше INT-предела Postgres
-        # (иначе expected_salary_* падали на commit → 500 при добавлении из расширения).
-        nums = [n for n in nums if 100 < n <= 2_147_483_647]
-        if len(nums) >= 2:
-            salary_min = min(nums)
-            salary_max = max(nums)
-        elif len(nums) == 1:
-            if 'от' in sal_text:
-                salary_min = nums[0]
-            elif 'до' in sal_text:
-                salary_max = nums[0]
-            else:
-                salary_min = nums[0]
-                salary_max = nums[0]
+    salary_min, salary_max, salary_currency = _parse_salary(data.salary, data.source_url or data.source)
 
     entity = Entity(
         org_id=org.id,
@@ -467,54 +434,32 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     db.add(entity)
     await db.flush()
 
-    # Add to vacancy/funnel if specified.
-    # ОБЩАЯ ВОРОНКА (модель без клонов): кандидат добавляется НАПРЯМУЮ в
-    # выбранную вакансию — как в apply-to-vacancy («взять на вакансию»).
-    # РАНЬШЕ здесь был редирект на легаси-клон этой заявки, созданный текущим
-    # рекрутёром (Vacancy.created_by==self + extra_data.cloned_from_request_id).
-    # Из-за него парсинг с hh улетал в orphan-клон рекрутёра, и кандидат «не
-    # добавлялся» в общую воронку (напр. «Трафик»), хотя перемещением он
-    # добавлялся. Клонов в новой модели нет — редирект убран (2026-07-13).
-    target_vacancy_id = data.vacancy_id
-    if target_vacancy_id:
-        # Org-граница: целевая вакансия должна быть в орг вызывающего — иначе
-        # vacancy_id из тела позволял создать заявку в чужой воронке. org здесь
-        # гарантированно не None (выше entity создаётся с org.id).
-        target_vac = await db.get(Vacancy, target_vacancy_id)
-        if not target_vac or target_vac.org_id != org.id:
-            raise HTTPException(404, "Vacancy not found")
-
-        # Маша: новый кандидат должен оказываться вверху колонки, а не в
-        # хвосте. Аналогично applications.create_application: stage_order =
-        # min - 1000, чтобы при сортировке ORDER BY stage_order ASC новый
-        # был самым первым. Без этого новый получал default=0 и падал
-        # ниже existing рядов с отрицательным stage_order.
-        min_order_q = await db.execute(
+    # ОБЩАЯ ВОРОНКА: кандидат кладётся прямо в выбранную вакансию, наверх колонки
+    # «Новый» (stage_order = min - 1000, как в create_application). Клон-редирект
+    # убран 2026-07-13 — см. get_my_vacancies_for_extension.
+    application = None
+    if vacancy is not None:
+        min_order = (await db.execute(
             select(func.min(VacancyApplication.stage_order)).where(
-                VacancyApplication.vacancy_id == target_vacancy_id,
+                VacancyApplication.vacancy_id == vacancy.id,
                 VacancyApplication.stage == ApplicationStage.applied,
             )
-        )
-        min_order = min_order_q.scalar()
-        new_order = (min_order - 1000) if min_order is not None else 0
-
-        app = VacancyApplication(
-            vacancy_id=target_vacancy_id,
+        )).scalar()
+        application = VacancyApplication(
+            vacancy_id=vacancy.id,
             entity_id=entity.id,
             stage=ApplicationStage.applied,
-            stage_order=new_order,
+            stage_order=(min_order - 1000) if min_order is not None else 0,
             source=data.source,
             created_by=current_user.id,  # кто добавил → авто-метка HR
         )
-        db.add(app)
-        # Первая запись истории — как у «Добавить в воронку»: без неё у
-        # кандидата из расширения лента воронки начиналась ни с чего (20.10.2026).
+        db.add(application)
         await db.flush()
         from ..services.stage_transitions import record_transition
         await record_transition(
-            db, application_id=app.id, entity_id=entity.id, from_stage=None,
+            db, application_id=application.id, entity_id=entity.id, from_stage=None,
             to_stage=ApplicationStage.applied.value, changed_by_id=current_user.id,
-            comment="Первичная заявка",
+            comment=comment or "Первичная заявка",
         )
 
     # Теневая дедупликация: сверяем нового кандидата с архивом до коммита.
@@ -529,44 +474,49 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
             _extra["hidden_duplicate_id"] = _hidden_dup
             entity.extra_data = _extra
     except Exception:
-        import logging
-        logging.getLogger("hr-analyzer.magic-button").warning(
-            "shadow-dedup detect failed (non-critical)", exc_info=True
-        )
+        logger.warning("shadow-dedup detect failed (non-critical)", exc_info=True)
 
     # Детектор «копипаст текста резюме» (Feature B) — независим от детектора
     # личности выше. Best-effort: ошибка не должна ломать создание кандидата.
     try:
         from ..services.resume_text_twin import detect_resume_text_twin
-        _twin_id, _sim = await detect_resume_text_twin(db, entity)
+        await detect_resume_text_twin(db, entity)
     except Exception:
-        import logging
-        logging.getLogger("hr-analyzer.magic-button").warning(
-            "resume-text-twin detect failed (non-critical)", exc_info=True
-        )
+        logger.warning("resume-text-twin detect failed (non-critical)", exc_info=True)
 
     await db.commit()
 
-    # --- Notification: new candidate from magic button ---
-    if target_vacancy_id:
-        try:
-            from ..services.hr_notifications import notify_new_candidate
-            vac_result = await db.execute(
-                select(Vacancy).where(Vacancy.id == target_vacancy_id)
-            )
-            vacancy = vac_result.scalar_one_or_none()
-            if vacancy:
-                await notify_new_candidate(db, entity, vacancy, current_user)
-        except Exception:
-            import logging
-            logging.getLogger("hr-analyzer.magic-button").exception(
-                "notify_new_candidate failed (non-critical)"
-            )
-
-    # --- Generate AI resume PDF + JPEG in background ---
     entity_id = entity.id
     org_id = org.id
     user_id = current_user.id
+    # Журнал действий: номер нового кандидата в адресе запроса не виден.
+    request.state.audit_extra = {
+        "entity_id": entity_id,
+        "vacancy_id": vacancy.id if vacancy else None,
+        "application_id": application.id if application else None,
+    }
+
+    if vacancy is not None:
+        # Метка «HR: …» сразу, а не после первого открытия карточки (как в
+        # create_application).
+        try:
+            from ..services.hr_tags import sync_for_entity
+            await sync_for_entity(db, entity_id)
+        except Exception:
+            logger.exception("HR-tags sync failed after magic-button add (non-critical)")
+        try:
+            from ..services.hr_notifications import notify_new_candidate
+            await notify_new_candidate(db, entity, vacancy, current_user)
+        except Exception:
+            logger.exception("notify_new_candidate failed (non-critical)")
+
+    # Фон после ответа (Starlette выполняет задачи по порядку): сначала фото —
+    # оно быстрое и нужно аватарке в списке, потом ИИ-профиль (Claude + PDF,
+    # 10–20 с). До 22.10.2026 порядок был обратный, и фото ждало ИИ.
+    if data.photo_url:
+        background_tasks.add_task(
+            _download_candidate_photo_eager, entity_id, org_id, user_id, data.photo_url, data.full_name
+        )
     candidate_data = {
         "full_name": data.full_name,
         "position": data.position,
@@ -591,17 +541,10 @@ async def _do_magic_parse(data, db, current_user, background_tasks: BackgroundTa
     background_tasks.add_task(
         _generate_resume_files, entity_id, org_id, user_id, candidate_data
     )
-    # Отдельный быстрый таск: скачать фото и сохранить как EntityFile.
-    # AI-резюме длится дольше и может упасть (нет API-ключа, парс ошибки и т.д.) —
-    # фото так бы пропало. Этот таск делает только photo download → fast.
-    if data.photo_url:
-        background_tasks.add_task(
-            _download_candidate_photo_eager, entity_id, org_id, user_id, data.photo_url, data.full_name
-        )
 
     return MagicButtonResponse(
         success=True,
-        entity_id=entity.id,
+        entity_id=entity_id,
         is_duplicate=is_duplicate,
         duplicate_info=duplicate_info,
         has_hidden_duplicate=bool(_hidden_dup),
@@ -718,8 +661,15 @@ async def _generate_resume_files(
 
         # 4. Save to DB
         async with AsyncSessionLocal() as db:
-            # Save candidate photo as a standalone image file (when available)
-            if photo_bytes and photo_mime:
+            # Фото отдельным файлом — если его ещё не сохранила быстрая задача
+            # _download_candidate_photo_eager (она идёт раньше этой).
+            has_photo = (await db.execute(
+                select(EntityFile.id).where(
+                    EntityFile.entity_id == entity_id,
+                    EntityFile.mime_type.startswith("image/"),
+                ).limit(1)
+            )).scalar() is not None
+            if photo_bytes and photo_mime and not has_photo:
                 ext = {
                     "image/jpeg": "jpg",
                     "image/jpg": "jpg",

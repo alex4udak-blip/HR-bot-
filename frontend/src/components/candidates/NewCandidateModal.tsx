@@ -26,6 +26,13 @@ import {
   CANDIDATE_SOURCE_OPTIONS,
 } from "@/components/candidates/candidateValidation";
 import { backdropClose } from '@/utils/backdropClose';
+import { useNavigate } from "react-router-dom";
+import {
+  ExistingCandidatesPanel,
+  checkDuplicateBeforeCreate,
+  hasAnyMatch,
+  type DuplicateCheckResult,
+} from "@/components/candidates/ExistingCandidatesPanel";
 
 // Окно «Новый кандидат» (вынесено из AllCandidatesPage, 20.10.2026).
 
@@ -114,6 +121,23 @@ export function NewCandidateModal({
 
   const markTouched = (_field: string) => undefined;
 
+  // «Уже есть в базе» до создания (22.10.2026): первая «Сохранить» проверяет
+  // общим матчером дублей; нашлось — показываем, кнопка становится «Всё равно
+  // создать». Поменяли ФИО/контакты — проверяем заново.
+  const navigate = useNavigate();
+  const [dupCheck, setDupCheck] = useState<DuplicateCheckResult | null>(null);
+  const [dupCheckedFor, setDupCheckedFor] = useState<string | null>(null);
+  const dupSignature = JSON.stringify([fullName.trim(), email.trim(), phone.trim(), telegram.trim()]);
+  const dupWarned = dupCheckedFor === dupSignature && hasAnyMatch(dupCheck);
+  const openExisting = (entityId: number, archived?: boolean) => {
+    if (archived) {
+      onClose();
+      navigate(`/all-candidates?entity=${entityId}&archived=1`);
+    } else {
+      onSaved(entityId);
+    }
+  };
+
   const handleSave = async () => {
     setTouched({
       name: true,
@@ -132,6 +156,22 @@ export function NewCandidateModal({
     try {
       const normalizedPhone = phone.trim() ? normalizePhone(phone) : undefined;
       const cleanTelegram = telegram.trim().replace(/^@/, "");
+      if (dupCheckedFor !== dupSignature) {
+        let res: DuplicateCheckResult | null = null;
+        try {
+          res = await checkDuplicateBeforeCreate({
+            full_name: fullName,
+            email: email.trim() || undefined,
+            phone: normalizedPhone,
+            telegram: cleanTelegram || undefined,
+          });
+        } catch {
+          res = null; // проверка — подсказка, не замок: сбой не мешает создать
+        }
+        setDupCheck(res);
+        setDupCheckedFor(dupSignature);
+        if (hasAnyMatch(res)) return;
+      }
       const trimmedBirthDate = birthDate.trim();
       const created = await createEntity({
         type: "candidate",
@@ -461,6 +501,11 @@ export function NewCandidateModal({
           </div>
         </div>
 
+        {dupWarned && (
+          <div className="px-6 pb-3">
+            <ExistingCandidatesPanel result={dupCheck} onOpen={openExisting} />
+          </div>
+        )}
         <div className="hf-candidate-modal-footer">
           <button
             onClick={handleSave}
@@ -472,7 +517,7 @@ export function NewCandidateModal({
                 size="var(--hf-loading-spinner-size-sm)"
                 stroke="var(--hf-loading-spinner-border)"
               />
-            ) : "Сохранить"}
+            ) : dupWarned ? "Всё равно создать" : "Сохранить"}
           </button>
           <button onClick={onClose} className="hf-candidate-secondary-btn">
             Отмена

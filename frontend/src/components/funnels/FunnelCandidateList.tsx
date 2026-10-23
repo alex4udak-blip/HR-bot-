@@ -5,6 +5,7 @@ import clsx from 'clsx';
 
 import type { VacancyApplication } from '@/types';
 import { readHeadlineTags, HeadlineTagChip } from '@/components/entities/headlineTags';
+import { PriorRejectionChip } from '@/components/candidates/priorRejection';
 
 import { BulkSelectionBar } from '@/components/entities/BulkSelectionBar';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
@@ -158,6 +159,12 @@ export function FunnelCandidateList({
                 {candidate.entity_position && (
                   <div className="hf-candidate-row-subtitle">
                     {candidate.entity_position}
+                  </div>
+                )}
+                {/* «Был отказ» в другой воронке / карточке / архиве (22.10.2026). */}
+                {candidate.prior_rejection && (
+                  <div className="mt-[3px] flex min-w-0">
+                    <PriorRejectionChip pr={candidate.prior_rejection} />
                   </div>
                 )}
                 <div className="hf-candidate-row-meta">

@@ -254,6 +254,22 @@ async def list_applications(
     photo_file_map = await _load_photo_file_map(db, entity_ids)
     headline_map = await _load_headline_tag_map(db, entity_ids)
 
+    # «Был отказ» — у тех, кто в этой воронке НЕ на «Отказе»: отказы в других
+    # воронках, в других карточках того же человека и в архиве.
+    prior_map: dict = {}
+    try:
+        from ...services.prior_rejection import prior_rejections, summary
+        from ...services.vacancy_scope import get_scope_vacancy_ids
+        live_ids = {a.entity_id for a in applications if a.stage != ApplicationStage.rejected}
+        live = [entities_map[i] for i in live_ids if i in entities_map]
+        found = await prior_rejections(
+            db, live, own_except_vacancy={i: vacancy_id for i in live_ids},
+            scope_ids=await get_scope_vacancy_ids(current_user, db),
+        )
+        prior_map = {eid: summary(items) for eid, items in found.items()}
+    except Exception:
+        logger.warning("Prior rejection query failed (non-critical)", exc_info=True)
+
     # Точка отсчёта «серии» — момент последнего переоткрытия вакансии. Константа
     # для всех откликов (vacancy уже загружен выше), поэтому флаг считаем в этом
     # же цикле, а не отдельным SQL — сравнение x < const, O(1) на строку.
@@ -295,6 +311,7 @@ async def list_applications(
             updated_at=app.updated_at,
             is_previous_series=is_previous_series,
             created_by=app.created_by,
+            prior_rejection=prior_map.get(app.entity_id),
         ))
 
     return responses

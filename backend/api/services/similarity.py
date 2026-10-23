@@ -1646,6 +1646,10 @@ class SimilarityService:
         # иначе каскад по внешнему ключу снесёт их, и пары всплывут снова.
         from .duplicate_decisions import repoint_on_merge
         await repoint_on_merge(db, source_entity.id, target_entity.id)
+        # Пометки дубля у других карточек, смотревшие на влитую, — на выжившую
+        # (иначе после удаления они вели в никуда, services/duplicate_flags.py).
+        from .duplicate_flags import repoint_on_merge as repoint_flags_on_merge
+        await repoint_flags_on_merge(db, source_entity.id, target_entity.id, target_entity.org_id)
 
         # Удаляем исходную сущность
         await db.delete(source_entity)

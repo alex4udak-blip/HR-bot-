@@ -12,6 +12,7 @@ import {
 import type { Vacancy } from "@/types";
 import { isVacancyParticipant } from "@/utils/vacancy";
 import { useAuthStore } from "@/stores/authStore";
+import { usePriorRejectionGate } from "@/components/candidates/priorRejection";
 
 /**
  * «Забрать» кандидата: сперва КОМУ отдать (любой рекрутёр), затем В КАКУЮ воронку
@@ -103,11 +104,15 @@ export default function TakeCandidateButton({
     setOpenMenu(null);
   };
 
+  const priorGate = usePriorRejectionGate();
+
   const submit = async () => {
     if (!vacancyId || !recruiterId) {
       toast.error("Выберите рекрутёра и воронку");
       return;
     }
+    // Был отказ — спросить (владелец, 22.10.2026: предупреждать, не запрещать).
+    if (!(await priorGate.gate(entityId))) return;
     setSaving(true);
     try {
       await takeApplication(Number(vacancyId), {
@@ -140,6 +145,7 @@ export default function TakeCandidateButton({
 
   return (
     <div className="relative" ref={ref}>
+      {priorGate.element}
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={saving}

@@ -896,6 +896,10 @@ class KanbanCard(BaseModel):
     # Отдаём прямо в карточке — список слева рисует их на каждой строке, и
     # дозагружать по одному было бы N+1.
     headline_tags: list[dict] = []
+    # «Был отказ»: последний отказ ЭТОГО ЧЕЛОВЕКА в другой его карточке или в
+    # архиве ClickUp (+ count) — services/prior_rejection.py. Строка списка
+    # рисует метку «Был отказ · 28 авг · Трафик» (владелец, 22.10.2026).
+    prior_rejection: Optional[dict] = None
 
     class Config:
         from_attributes = True
@@ -1138,6 +1142,21 @@ async def get_candidates_kanban(
     except Exception as exc:
         logger.warning(f"Headline tags query failed (non-critical): {exc}")
 
+    # «Был отказ» — только у тех, кто сейчас не во вкладке «Отказ»: там метка
+    # ничего не добавляет. Связи — пометки дублей (по ним уже сверено, что это
+    # тот же человек); свои воронки не берём — их этапы видны чипами в строке.
+    prior_map: dict[int, dict] = {}
+    try:
+        from ..services.prior_rejection import prior_rejections, summary
+        live_entities = [
+            e for e in display_entities
+            if board_column(e.status.value if hasattr(e.status, "value") else str(e.status)) != "rejected"
+        ]
+        for eid, items in (await prior_rejections(db, live_entities, scope_ids=scope_ids)).items():
+            prior_map[eid] = summary(items)
+    except Exception as exc:
+        logger.warning(f"Prior rejection query failed (non-critical): {exc}")
+
     # Group by status (display_entities уже обрезаны до per_column на колонку)
     grouped: dict[str, list] = {s: [] for s in BOARD_COLUMNS}
     for e in display_entities:
@@ -1186,6 +1205,7 @@ async def get_candidates_kanban(
                 extra_data=filter_extra_for_scope(ed, scope_ids) if ed else None,
                 version=getattr(e, "version", None) or 1,
                 headline_tags=headline_map.get(e.id, []),
+                prior_rejection=prior_map.get(e.id),
             ))
         except Exception as exc:
             logger.warning(f"Skipping entity {e.id} in kanban: {exc}")

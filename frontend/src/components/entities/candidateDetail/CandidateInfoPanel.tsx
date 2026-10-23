@@ -30,6 +30,7 @@ import SendEmailModal from "@/components/entities/SendEmailModal";
 import TakeCandidateButton from "@/components/entities/TakeCandidateButton";
 import TagPicker from "@/components/entities/TagPicker";
 import ShadowDuplicateBanner from "@/components/entities/ShadowDuplicateBanner";
+import { useVisiblePriorRejections } from "@/components/candidates/priorRejection";
 import { useAuthStore } from "@/stores/authStore";
 
 import { HuntflowInfoRow as InfoRow } from "@/components/hr/HuntflowControls";
@@ -96,6 +97,7 @@ export const InfoTab = memo(function InfoTab({
   const [, setShowActionMenu] = useState(false);
   const [anketaOpen, setAnketaOpen] = useState(false);
   const anketaCount = useFormBadgeStore((s) => s.counts[card.id] ?? 0);
+  const priorRejections = useVisiblePriorRejections(card.id);
   const setAnketaCount = useFormBadgeStore((s) => s.setCount);
   const clearAnketaBadge = useFormBadgeStore((s) => s.clear);
   // Источники резюме: каждое резюме — отдельная вкладка верхнего уровня рядом
@@ -465,7 +467,9 @@ export const InfoTab = memo(function InfoTab({
       {/* Теневой дубль: баннер «Похожий кандидат есть в базе» над action-баром.
           Копипаст резюме (Feature B) теперь тоже идёт через этот же баннер
           (strength === "text") — отдельного серого бейджа больше нет. */}
-      <ShadowDuplicateBanner card={card} status={status} onResolved={onMerged} />
+      {/* Одна плашка: «Уже был у нас — отказ …» + дубль + «Сравнить»
+          (владелец, 22.10.2026 — две плашки занимали полэкрана). */}
+      <ShadowDuplicateBanner card={card} status={status} onResolved={onMerged} rejections={priorRejections} />
 
       {/* ---- Top action buttons (Huntflow: Взять на вакансию | Редактировать) ---- */}
       <div className="hf-profile-action-bar">

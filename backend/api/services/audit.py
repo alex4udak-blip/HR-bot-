@@ -71,12 +71,17 @@ ACTIONS: Tuple[Tuple[str, str, str], ...] = (
     ("POST", rf"/api/entities/{_N}/archive", "Отправил в архив"),
     ("POST", rf"/api/entities/{_N}/unarchive", "Вернул из архива"),
     ("POST", rf"/api/entities/{_N}/transfer", "Передал кандидата"),
+    ("POST", r"/api/entities/check-duplicate", "Проверил дубли перед добавлением"),
     ("POST", r"/api/entities", "Создал кандидата"),
     ("PUT", rf"/api/entities/{_N}", "Изменил карточку кандидата"),
     ("DELETE", rf"/api/entities/{_N}", "Удалил кандидата (в корзину)"),
     ("PATCH", rf"/api/candidates/{_N}/status", "Сменил статус кандидата"),
     ("POST", r"/api/parser/resume/file", "Загрузил резюме на разбор"),
-    ("POST", r"/api/magic-button.*", "Добавил кандидата расширением hh.ru"),
+    # Проверка дублей — чтение (POST из-за тела): попап шлёт её при КАЖДОМ
+    # открытии. Под общей подписью «Добавил кандидата» журнал показывал втрое
+    # больше «добавлений», чем было (22.10.2026).
+    ("POST", r"/api/magic-button/check-duplicate", "Расширение: проверил дубли"),
+    ("POST", r"/api/magic-button/parse", "Добавил кандидата расширением"),
     # Метки, анкеты, доска «Штат»
     (".*", r"/api/tags/.*", "Метки / теги"),
     ("POST", rf"/api/forms/{_N}/dispatch", "Отправил анкету кандидату"),
