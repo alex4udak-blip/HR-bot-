@@ -3882,6 +3882,9 @@ async def evening_digest_task():
             now = _dt.now(ev.MSK)
             if now.hour == ev.DIGEST_HOUR_MSK:
                 today = now.date().isoformat()
+                # Выходной: про вечерний отчёт молчим (владелец, 25.10.2026),
+                # см. ev.is_day_off.
+                day_off = ev.is_day_off(now.date())
                 async with async_session() as session:
                     chats = (await session.execute(
                         select(_Chat).where(
@@ -3899,6 +3902,10 @@ async def evening_digest_task():
                         has_report = await ev.report_exists_today(session, tg_id)
 
                         if not has_report and not comments:
+                            if day_off:
+                                # Тихий выходной: ни итога, ни напоминания.
+                                sent_on[chat.id] = today
+                                continue
                             # Тихий день: незачем слать пустой итог, но про отчёт напомним
                             text = (
                                 "🌙 День закончился, а вечернего отчёта нет.\n"
@@ -3926,7 +3933,7 @@ async def evening_digest_task():
                             text += ev.format_readiness_block(
                                 await ev.stale_readiness(session, tg_id)
                             )
-                            if not has_report:
+                            if not has_report and not day_off:
                                 text += "\n\n📝 Вечернего отчёта сегодня не было — пришлите с тегом «вечерний отчёт»."
 
                         try:

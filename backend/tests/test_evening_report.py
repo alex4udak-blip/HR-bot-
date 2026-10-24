@@ -236,3 +236,15 @@ async def test_edited_report_updates_same_record(db_session, organization, admin
     assert updated.id == first.id
     assert updated.summary["done"] == ["А", "Б"]
     assert "и Б" in updated.raw_text
+
+
+def test_no_report_reminder_on_weekends():
+    """По выходным бот про вечерний отчёт не пишет (владелец, 25.10.2026).
+
+    Неделя 19–25.10.2026: пн–пт — рабочие, сб 24 и вс 25 — выходные.
+    """
+    from datetime import date
+
+    week = {date(2026, 10, d): d in (24, 25) for d in range(19, 26)}
+    for day, off in week.items():
+        assert ev.is_day_off(day) is off, day
