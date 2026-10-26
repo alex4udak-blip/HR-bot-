@@ -304,25 +304,41 @@ class TestHelperFunctions:
 class TestCommandHandlers:
     """Tests for bot command handlers."""
 
+    @staticmethod
+    def _patch_session(db_session):
+        """async_session бота → тестовая сессия (иначе бот ходит в пустую БД
+        приложения: «no such table: users»)."""
+        p = patch('api.bot.async_session')
+        maker = p.start()
+        maker.return_value.__aenter__ = AsyncMock(return_value=db_session)
+        maker.return_value.__aexit__ = AsyncMock(return_value=False)
+        return p
+
+    @staticmethod
+    def _private_message(chat, from_user, text):
+        message = MagicMock(spec=TelegramMessage)
+        message.chat = chat
+        message.from_user = from_user
+        message.text = text
+        message.answer = AsyncMock()
+        return message
+
     @pytest.mark.asyncio
-    async def test_cmd_start_private_chat(self, telegram_private_chat, telegram_user):
-        """Test /start command in private chat."""
+    async def test_cmd_start_private_chat(self, db_session: AsyncSession, telegram_private_chat, telegram_user):
+        """Test /start command in private chat — приветствие и меню."""
         from api.bot import cmd_start
 
-        # Create mock message
-        message = MagicMock(spec=TelegramMessage)
-        message.chat = telegram_private_chat
-        message.from_user = telegram_user
-        message.text = "/start"
-        message.answer = AsyncMock()
-
-        await cmd_start(message)
+        p = self._patch_session(db_session)
+        try:
+            message = self._private_message(telegram_private_chat, telegram_user, "/start")
+            await cmd_start(message)
+        finally:
+            p.stop()
 
         message.answer.assert_called_once()
         call_args = message.answer.call_args[0][0]
-        assert "Чат Аналитика" in call_args
-        assert "/bind" in call_args
-        assert "/settype" in call_args
+        assert "Добро пожаловать" in call_args
+        assert "/menu" in call_args
 
     @pytest.mark.asyncio
     async def test_cmd_start_group_chat(self, telegram_chat, telegram_user):
@@ -342,60 +358,72 @@ class TestCommandHandlers:
         message.answer.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_cmd_start_deep_link(self, db_session: AsyncSession, telegram_private_chat, telegram_user, db_user_no_telegram: User):
-        """Test /start command with deep link binding."""
+    async def test_cmd_start_legacy_bind_link_rejected(self, db_session: AsyncSession, telegram_private_chat, telegram_user, db_user_no_telegram: User):
+        """«/start bind_<id>» больше не привязывает: id перебирались, и любой мог
+        забрать чужой аккаунт (вплоть до суперадмина). Ответ — «ссылка
+        устарела», привязки нет."""
         from api.bot import cmd_start
 
-        # Patch async_session to use our test session
-        with patch('api.bot.async_session') as mock_session_maker:
-            mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=db_session)
-            mock_session_maker.return_value.__aexit__ = AsyncMock()
-
-            # Create mock message with deep link
-            message = MagicMock(spec=TelegramMessage)
-            message.chat = telegram_private_chat
-            message.from_user = telegram_user
-            message.text = f"/start bind_{db_user_no_telegram.id}"
-            message.answer = AsyncMock()
-
+        p = self._patch_session(db_session)
+        try:
+            message = self._private_message(
+                telegram_private_chat, telegram_user, f"/start bind_{db_user_no_telegram.id}"
+            )
             await cmd_start(message)
+        finally:
+            p.stop()
 
-            message.answer.assert_called_once()
-            call_args = message.answer.call_args[0][0]
-            assert "успешно привязан" in call_args
-            assert db_user_no_telegram.email in call_args
-
-            # Verify user was bound
-            await db_session.refresh(db_user_no_telegram)
-            assert db_user_no_telegram.telegram_id == telegram_user.id
+        message.answer.assert_called_once()
+        assert "устарела" in message.answer.call_args[0][0]
+        await db_session.refresh(db_user_no_telegram)
+        assert db_user_no_telegram.telegram_id is None
 
     @pytest.mark.asyncio
-    async def test_cmd_bind_success(self, db_session: AsyncSession, telegram_private_chat, telegram_user, db_user_no_telegram: User):
-        """Test /bind command - successful binding."""
+    async def test_cmd_start_with_bind_token_binds(self, db_session: AsyncSession, telegram_private_chat, telegram_user, db_user_no_telegram: User):
+        """Рабочий путь привязки — одноразовый токен из личного кабинета:
+        привязывает и сразу гасит токен."""
+        from datetime import timedelta
+        from api.bot import cmd_start
+
+        token = "t" * 32
+        db_user_no_telegram.telegram_bind_token = token
+        db_user_no_telegram.telegram_bind_expires = datetime.utcnow() + timedelta(minutes=10)
+        await db_session.commit()
+
+        p = self._patch_session(db_session)
+        try:
+            message = self._private_message(telegram_private_chat, telegram_user, f"/start {token}")
+            await cmd_start(message)
+        finally:
+            p.stop()
+
+        message.answer.assert_called_once()
+        call_args = message.answer.call_args[0][0]
+        assert "привязан" in call_args
+        assert db_user_no_telegram.email in call_args
+        await db_session.refresh(db_user_no_telegram)
+        assert db_user_no_telegram.telegram_id == telegram_user.id
+        assert db_user_no_telegram.telegram_bind_token is None
+
+    @pytest.mark.asyncio
+    async def test_cmd_bind_by_email_disabled(self, db_session: AsyncSession, telegram_private_chat, telegram_user, db_user_no_telegram: User):
+        """/bind <email> отключён: по одной почте без пароля привязывался чужой
+        аккаунт. Ответ — «отключена», привязки нет."""
         from api.bot import cmd_bind
 
-        # Patch async_session to use our test session
-        with patch('api.bot.async_session') as mock_session_maker:
-            mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=db_session)
-            mock_session_maker.return_value.__aexit__ = AsyncMock()
-
-            # Create mock message
-            message = MagicMock(spec=TelegramMessage)
-            message.chat = telegram_private_chat
-            message.from_user = telegram_user
-            message.text = f"/bind {db_user_no_telegram.email}"
-            message.answer = AsyncMock()
-
+        p = self._patch_session(db_session)
+        try:
+            message = self._private_message(
+                telegram_private_chat, telegram_user, f"/bind {db_user_no_telegram.email}"
+            )
             await cmd_bind(message)
+        finally:
+            p.stop()
 
-            message.answer.assert_called_once()
-            call_args = message.answer.call_args[0][0]
-            assert "успешно привязан" in call_args
-            assert db_user_no_telegram.email in call_args
-
-            # Verify user was bound
-            await db_session.refresh(db_user_no_telegram)
-            assert db_user_no_telegram.telegram_id == telegram_user.id
+        message.answer.assert_called_once()
+        assert "отключена" in message.answer.call_args[0][0]
+        await db_session.refresh(db_user_no_telegram)
+        assert db_user_no_telegram.telegram_id is None
 
     @pytest.mark.asyncio
     async def test_cmd_bind_no_args(self, telegram_private_chat, telegram_user):
@@ -416,55 +444,26 @@ class TestCommandHandlers:
         assert "Использование: /bind <email>" in call_args
 
     @pytest.mark.asyncio
-    async def test_cmd_bind_user_not_found(self, db_session: AsyncSession, telegram_private_chat, telegram_user):
-        """Test /bind command with non-existent email."""
+    async def test_cmd_bind_unknown_and_bound_email_same_answer(self, db_session: AsyncSession, telegram_private_chat, telegram_user, db_user: User):
+        """Ответ /bind не зависит от того, есть ли такой email и привязан ли он
+        (раньше было «не найден» / «уже привязан» — по ним перебирались почты)."""
         from api.bot import cmd_bind
 
-        # Patch async_session to use our test session
-        with patch('api.bot.async_session') as mock_session_maker:
-            mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=db_session)
-            mock_session_maker.return_value.__aexit__ = AsyncMock()
+        answers = []
+        p = self._patch_session(db_session)
+        try:
+            for email in ("nonexistent@example.com", db_user.email):
+                message = self._private_message(telegram_private_chat, telegram_user, f"/bind {email}")
+                await cmd_bind(message)
+                message.answer.assert_called_once()
+                answers.append(message.answer.call_args[0][0])
+        finally:
+            p.stop()
 
-            # Create mock message
-            message = MagicMock(spec=TelegramMessage)
-            message.chat = telegram_private_chat
-            message.from_user = telegram_user
-            message.text = "/bind nonexistent@example.com"
-            message.answer = AsyncMock()
-
-            await cmd_bind(message)
-
-            message.answer.assert_called_once()
-            call_args = message.answer.call_args[0][0]
-            assert "не найден" in call_args
-
-    @pytest.mark.asyncio
-    async def test_cmd_bind_already_bound(self, db_session: AsyncSession, telegram_private_chat, db_user: User):
-        """Test /bind command when user already bound to another Telegram."""
-        from api.bot import cmd_bind
-
-        # Patch async_session to use our test session
-        with patch('api.bot.async_session') as mock_session_maker:
-            mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=db_session)
-            mock_session_maker.return_value.__aexit__ = AsyncMock()
-
-            # Create a different Telegram user
-            other_telegram_user = MagicMock(spec=TelegramUser)
-            other_telegram_user.id = 111111111
-            other_telegram_user.username = "other_user"
-
-            # Create mock message
-            message = MagicMock(spec=TelegramMessage)
-            message.chat = telegram_private_chat
-            message.from_user = other_telegram_user
-            message.text = f"/bind {db_user.email}"
-            message.answer = AsyncMock()
-
-            await cmd_bind(message)
-
-            message.answer.assert_called_once()
-            call_args = message.answer.call_args[0][0]
-            assert "уже привязан" in call_args
+        assert answers[0] == answers[1]
+        assert "отключена" in answers[0]
+        await db_session.refresh(db_user)
+        assert db_user.telegram_id == 987654321
 
     @pytest.mark.asyncio
     async def test_cmd_bind_in_group(self, telegram_chat, telegram_user):
@@ -485,93 +484,74 @@ class TestCommandHandlers:
         assert "только в личных сообщениях" in call_args
 
     @pytest.mark.asyncio
-    async def test_handle_deep_link_bind_user_not_found(self, db_session: AsyncSession, telegram_private_chat, telegram_user):
-        """Test deep link binding with invalid user ID."""
-        from api.bot import handle_deep_link_bind
+    async def test_handle_bind_token_invalid(self, db_session: AsyncSession, telegram_private_chat, telegram_user):
+        """Токен, которого нет (или мусор короче 20 символов), — «недействительна»."""
+        from api.bot import handle_bind_token
 
-        # Patch async_session to use our test session
-        with patch('api.bot.async_session') as mock_session_maker:
-            mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=db_session)
-            mock_session_maker.return_value.__aexit__ = AsyncMock()
-
-            # Create mock message
-            message = MagicMock(spec=TelegramMessage)
-            message.chat = telegram_private_chat
-            message.from_user = telegram_user
-            message.answer = AsyncMock()
-
-            await handle_deep_link_bind(message, 99999)  # Non-existent user ID
-
-            message.answer.assert_called_once()
-            call_args = message.answer.call_args[0][0]
-            assert "недействительна" in call_args or "устарела" in call_args
+        p = self._patch_session(db_session)
+        try:
+            for token in ("short", "x" * 32):
+                message = self._private_message(telegram_private_chat, telegram_user, "/start")
+                await handle_bind_token(message, token)
+                message.answer.assert_called_once()
+                assert "недействительна" in message.answer.call_args[0][0]
+        finally:
+            p.stop()
 
     @pytest.mark.asyncio
-    async def test_handle_deep_link_bind_already_bound_to_another(
+    async def test_handle_bind_token_expired(self, db_session: AsyncSession, telegram_private_chat, telegram_user, db_user_no_telegram: User):
+        """Просроченный токен не привязывает."""
+        from datetime import timedelta
+        from api.bot import handle_bind_token
+
+        token = "e" * 32
+        db_user_no_telegram.telegram_bind_token = token
+        db_user_no_telegram.telegram_bind_expires = datetime.utcnow() - timedelta(minutes=1)
+        await db_session.commit()
+
+        p = self._patch_session(db_session)
+        try:
+            message = self._private_message(telegram_private_chat, telegram_user, "/start")
+            await handle_bind_token(message, token)
+        finally:
+            p.stop()
+
+        assert "устарела" in message.answer.call_args[0][0]
+        await db_session.refresh(db_user_no_telegram)
+        assert db_user_no_telegram.telegram_id is None
+
+    @pytest.mark.asyncio
+    async def test_handle_bind_token_telegram_already_bound_to_another(
         self,
         db_session: AsyncSession,
         telegram_private_chat,
         db_user: User,
         db_user_no_telegram: User
     ):
-        """Test deep link binding when Telegram is already bound to another user."""
-        from api.bot import handle_deep_link_bind
+        """Telegram уже занят другим аккаунтом — молча не «переезжает»."""
+        from datetime import timedelta
+        from api.bot import handle_bind_token
 
-        # Patch async_session to use our test session
-        with patch('api.bot.async_session') as mock_session_maker:
-            mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=db_session)
-            mock_session_maker.return_value.__aexit__ = AsyncMock()
+        token = "b" * 32
+        db_user_no_telegram.telegram_bind_token = token
+        db_user_no_telegram.telegram_bind_expires = datetime.utcnow() + timedelta(minutes=10)
+        await db_session.commit()
 
-            # Create telegram user that matches db_user's telegram_id
-            telegram_user = MagicMock(spec=TelegramUser)
-            telegram_user.id = db_user.telegram_id  # Already bound to db_user
-            telegram_user.username = "testuser"
+        telegram_user = MagicMock(spec=TelegramUser)
+        telegram_user.id = db_user.telegram_id  # уже у db_user
+        telegram_user.username = "testuser"
 
-            # Create mock message
-            message = MagicMock(spec=TelegramMessage)
-            message.chat = telegram_private_chat
-            message.from_user = telegram_user
-            message.answer = AsyncMock()
+        p = self._patch_session(db_session)
+        try:
+            message = self._private_message(telegram_private_chat, telegram_user, "/start")
+            await handle_bind_token(message, token)
+        finally:
+            p.stop()
 
-            # Try to bind to db_user_no_telegram
-            await handle_deep_link_bind(message, db_user_no_telegram.id)
-
-            message.answer.assert_called_once()
-            call_args = message.answer.call_args[0][0]
-            assert "уже привязан к другому аккаунту" in call_args
-
-    @pytest.mark.asyncio
-    async def test_handle_deep_link_bind_target_has_different_telegram(
-        self,
-        db_session: AsyncSession,
-        telegram_private_chat,
-        db_user: User
-    ):
-        """Test deep link binding when target user already has different Telegram."""
-        from api.bot import handle_deep_link_bind
-
-        # Patch async_session to use our test session
-        with patch('api.bot.async_session') as mock_session_maker:
-            mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=db_session)
-            mock_session_maker.return_value.__aexit__ = AsyncMock()
-
-            # Create different telegram user
-            telegram_user = MagicMock(spec=TelegramUser)
-            telegram_user.id = 111111111  # Different from db_user.telegram_id
-            telegram_user.username = "other_user"
-
-            # Create mock message
-            message = MagicMock(spec=TelegramMessage)
-            message.chat = telegram_private_chat
-            message.from_user = telegram_user
-            message.answer = AsyncMock()
-
-            # Try to bind to db_user (who already has a different telegram_id)
-            await handle_deep_link_bind(message, db_user.id)
-
-            message.answer.assert_called_once()
-            call_args = message.answer.call_args[0][0]
-            assert "уже привязан к другому Telegram" in call_args
+        message.answer.assert_called_once()
+        assert "уже привязан к другому аккаунту" in message.answer.call_args[0][0]
+        await db_session.refresh(db_user_no_telegram)
+        assert db_user_no_telegram.telegram_id is None
 
     @pytest.mark.asyncio
     async def test_cmd_chats_with_chats(self, db_session: AsyncSession, telegram_private_chat, telegram_user, db_user: User, db_chat: Chat):
@@ -1731,12 +1711,18 @@ class TestBotLifecycle:
         """Test successful bot startup."""
         from api.bot import start_bot
 
+        # Перед стартом бот регистрирует команды и кнопку мини-аппа — это
+        # await-вызовы, у голого MagicMock их нет («can't be used in 'await'»).
+        mock_bot.set_my_commands = AsyncMock()
+        mock_bot.set_chat_menu_button = AsyncMock()
+
         with patch('api.bot.get_bot', return_value=mock_bot), \
              patch('api.bot.dp') as mock_dp:
             mock_dp.start_polling = AsyncMock()
 
             await start_bot()
 
+            mock_bot.set_my_commands.assert_called_once()
             mock_bot.get_me.assert_called_once()
             mock_dp.start_polling.assert_called_once_with(mock_bot)
 

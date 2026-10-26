@@ -190,10 +190,10 @@ class TestEntityAIService:
         with pytest.raises(ValueError, match="ANTHROPIC_API_KEY не настроен"):
             _ = service.client
 
-    def test_build_entity_context_basic(self, sample_entity):
+    async def test_build_entity_context_basic(self, sample_entity):
         """Test building entity context with basic info."""
         service = EntityAIService()
-        context = service._build_entity_context(sample_entity, [], [])
+        context = await service._build_entity_context(sample_entity, [], [])
 
         assert "John Doe" in context
         assert "candidate" in context
@@ -203,12 +203,13 @@ class TestEntityAIService:
         assert "john@example.com" in context
         assert "+1234567890" in context
         assert "python, senior" in context
-        assert "К этому контакту пока не привязаны чаты или звонки" in context
+        # Подсказка теперь упоминает и файлы.
+        assert "К этому контакту пока не привязаны чаты, звонки или файлы" in context
 
-    def test_build_entity_context_with_chats(self, sample_entity, sample_chat):
+    async def test_build_entity_context_with_chats(self, sample_entity, sample_chat):
         """Test building entity context with chat messages."""
         service = EntityAIService()
-        context = service._build_entity_context(sample_entity, [sample_chat], [])
+        context = await service._build_entity_context(sample_entity, [sample_chat], [])
 
         assert "ПЕРЕПИСКИ:" in context
         assert "Interview with John" in context
@@ -218,10 +219,10 @@ class TestEntityAIService:
         assert "John Doe" in context
         assert "HR Manager" in context
 
-    def test_build_entity_context_with_calls(self, sample_entity, sample_call):
+    async def test_build_entity_context_with_calls(self, sample_entity, sample_call):
         """Test building entity context with call recordings."""
         service = EntityAIService()
-        context = service._build_entity_context(sample_entity, [], [sample_call])
+        context = await service._build_entity_context(sample_entity, [], [sample_call])
 
         assert "ЗВОНКИ:" in context
         assert "Technical Interview" in context
@@ -231,7 +232,7 @@ class TestEntityAIService:
         assert "Worked on microservices architecture" in context
         assert "Tell me about your Python experience" in context
 
-    def test_build_entity_context_with_long_messages(self, sample_entity, sample_chat):
+    async def test_build_entity_context_with_long_messages(self, sample_entity, sample_chat):
         """Test building entity context truncates long messages."""
         # Add a very long message
         long_message = Message(
@@ -249,25 +250,30 @@ class TestEntityAIService:
         sample_chat.messages.append(long_message)
 
         service = EntityAIService()
-        context = service._build_entity_context(sample_entity, [sample_chat], [])
+        context = await service._build_entity_context(sample_entity, [sample_chat], [])
 
-        # Message should be truncated to 500 chars
-        assert "A" * 500 in context
-        assert "A" * 501 not in context
+        # Длинное сообщение режется smart_truncate до 400 знаков: начало +
+        # «[пропущено N символов]» + конец (format_messages_optimized).
+        assert "пропущено" in context
+        assert "A" * 400 not in context
+        assert "A" * 200 in context
 
-    def test_build_entity_context_with_long_transcript(self, sample_entity, sample_call):
+    async def test_build_entity_context_with_long_transcript(self, sample_entity, sample_call):
         """Test building entity context truncates long transcripts."""
-        # Create a call with very long transcript
-        sample_call.transcript = "B" * 6000
+        # Контекст звонка собирает build_smart_context: короткий звонок
+        # (до 30 мин) идёт целиком, у длинного транскрипт больше 40 000 знаков
+        # режется на начало и конец с пометкой «пропущено».
+        sample_call.transcript = "B" * 50000
+        sample_call.duration_seconds = 3600
 
         service = EntityAIService()
-        context = service._build_entity_context(sample_entity, [], [sample_call])
+        context = await service._build_entity_context(sample_entity, [], [sample_call])
 
-        # Transcript should be truncated to 5000 chars
-        assert "B" * 5000 in context
-        assert "(транскрипт обрезан)" in context
+        assert "B" * 20000 in context
+        assert "B" * 50000 not in context
+        assert "пропущено" in context
 
-    def test_build_entity_context_message_without_name(self, sample_entity, sample_chat):
+    async def test_build_entity_context_message_without_name(self, sample_entity, sample_chat):
         """Test building entity context with message without name."""
         # Add message without first/last name or username
         message = Message(
@@ -285,12 +291,13 @@ class TestEntityAIService:
         sample_chat.messages.append(message)
 
         service = EntityAIService()
-        context = service._build_entity_context(sample_entity, [sample_chat], [])
+        context = await service._build_entity_context(sample_entity, [sample_chat], [])
 
-        assert "Unknown" in context
+        # Безымянный участник подписывается по telegram id (participants.py).
+        assert "User105" in context
         assert "Test message" in context
 
-    def test_build_entity_context_media_message(self, sample_entity, sample_chat):
+    async def test_build_entity_context_media_message(self, sample_entity, sample_chat):
         """Test building entity context with media message without content."""
         # Add media message without text content
         message = Message(
@@ -308,14 +315,18 @@ class TestEntityAIService:
         sample_chat.messages.append(message)
 
         service = EntityAIService()
-        context = service._build_entity_context(sample_entity, [sample_chat], [])
+        context = await service._build_entity_context(sample_entity, [sample_chat], [])
 
-        assert "[медиа]" in context
+        # Фото без текста ничего не даёт текстовому анализу — такие сообщения
+        # пропускаются (format_messages_optimized), а не подписываются «[медиа]».
+        assert "[медиа]" not in context
+        assert "10:30" not in context
+        assert "I have 5 years of Python development experience." in context
 
-    def test_build_system_prompt(self, sample_entity):
+    async def test_build_system_prompt(self, sample_entity):
         """Test building system prompt."""
         service = EntityAIService()
-        context = service._build_entity_context(sample_entity, [], [])
+        context = await service._build_entity_context(sample_entity, [], [])
         system_prompt = service._build_system_prompt(context)
 
         assert "AI-ассистент для HR-аналитики" in system_prompt
@@ -792,7 +803,9 @@ class TestPasswordPolicy:
         """Test password without a letter."""
         is_valid, error = validate_password("98765432")
         assert is_valid is False
-        assert "at least one letter" in error
+        # Политика требует заглавную и строчную букву отдельно — первой
+        # срабатывает проверка заглавной.
+        assert "uppercase letter" in error
 
     def test_validate_password_common_password(self):
         """Test common passwords are rejected."""

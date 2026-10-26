@@ -6,7 +6,7 @@ Tests cover:
 2. can_access_feature for owner (always true)
 3. can_access_feature for regular user (checks db)
 4. Default features (chats, contacts) always accessible
-5. Restricted features (vacancies) require enablement
+5. Restricted features (candidate_database) require enablement
 6. Department-specific settings override org-wide
 7. set_department_feature
 8. get_org_features
@@ -40,8 +40,8 @@ class TestFeatureConstants:
         assert "dashboard" in DEFAULT_FEATURES
 
     def test_restricted_features_include_expected(self):
-        """Restricted features should include vacancies, ai_analysis."""
-        assert "vacancies" in RESTRICTED_FEATURES
+        """Restricted features should include candidate_database, ai_analysis."""
+        assert "candidate_database" in RESTRICTED_FEATURES
         assert "ai_analysis" in RESTRICTED_FEATURES
 
     def test_all_features_is_union(self):
@@ -99,7 +99,7 @@ class TestCanAccessFeatureSuperadmin:
             db_session,
             data["superadmin"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is True
 
@@ -176,7 +176,7 @@ class TestCanAccessFeatureOwner:
             db_session,
             data["owner"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is True
 
@@ -265,7 +265,7 @@ class TestCanAccessFeatureRegularUser:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is False
 
@@ -280,7 +280,7 @@ class TestCanAccessFeatureRegularUser:
         feature_setting = DepartmentFeature(
             org_id=data["org"].id,
             department_id=None,  # org-wide
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature_setting)
@@ -290,7 +290,7 @@ class TestCanAccessFeatureRegularUser:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is True
 
@@ -453,7 +453,7 @@ class TestRestrictedFeaturesAccess:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is False
 
@@ -483,7 +483,7 @@ class TestRestrictedFeaturesAccess:
         feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature)
@@ -493,7 +493,7 @@ class TestRestrictedFeaturesAccess:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is True
 
@@ -508,7 +508,7 @@ class TestRestrictedFeaturesAccess:
         feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=False
         )
         db_session.add(feature)
@@ -518,7 +518,7 @@ class TestRestrictedFeaturesAccess:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is False
 
@@ -577,7 +577,7 @@ class TestDepartmentSpecificSettings:
         org_feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=False
         )
         db_session.add(org_feature)
@@ -586,7 +586,7 @@ class TestDepartmentSpecificSettings:
         dept_feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=data["dept1"].id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(dept_feature)
@@ -596,7 +596,7 @@ class TestDepartmentSpecificSettings:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is True
 
@@ -611,7 +611,7 @@ class TestDepartmentSpecificSettings:
         org_feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(org_feature)
@@ -620,7 +620,7 @@ class TestDepartmentSpecificSettings:
         dept_feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=data["dept1"].id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=False
         )
         db_session.add(dept_feature)
@@ -630,7 +630,7 @@ class TestDepartmentSpecificSettings:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is False
 
@@ -645,7 +645,7 @@ class TestDepartmentSpecificSettings:
         dept1_feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=data["dept1"].id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(dept1_feature)
@@ -654,7 +654,7 @@ class TestDepartmentSpecificSettings:
         dept2_feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=data["dept2"].id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=False
         )
         db_session.add(dept2_feature)
@@ -665,7 +665,7 @@ class TestDepartmentSpecificSettings:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies",
+            "candidate_database",
             department_id=data["dept1"].id
         )
         assert can_access_dept1 is True
@@ -675,7 +675,7 @@ class TestDepartmentSpecificSettings:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies",
+            "candidate_database",
             department_id=data["dept2"].id
         )
         assert can_access_dept2 is False
@@ -691,7 +691,7 @@ class TestDepartmentSpecificSettings:
         org_feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(org_feature)
@@ -701,7 +701,7 @@ class TestDepartmentSpecificSettings:
             db_session,
             data["user"].id,
             data["org"].id,
-            "vacancies"
+            "candidate_database"
         )
         assert can_access is True
 
@@ -732,14 +732,14 @@ class TestSetDepartmentFeature:
         result = await set_department_feature(
             db_session,
             data["org"].id,
-            "vacancies",
+            "candidate_database",
             True,
             department_id=None
         )
 
         assert result.org_id == data["org"].id
         assert result.department_id is None
-        assert result.feature_name == "vacancies"
+        assert result.feature_name == "candidate_database"
         assert result.enabled is True
 
     @pytest.mark.asyncio
@@ -752,14 +752,14 @@ class TestSetDepartmentFeature:
         result = await set_department_feature(
             db_session,
             data["org"].id,
-            "vacancies",
+            "candidate_database",
             True,
             department_id=data["dept"].id
         )
 
         assert result.org_id == data["org"].id
         assert result.department_id == data["dept"].id
-        assert result.feature_name == "vacancies"
+        assert result.feature_name == "candidate_database"
         assert result.enabled is True
 
     @pytest.mark.asyncio
@@ -773,7 +773,7 @@ class TestSetDepartmentFeature:
         await set_department_feature(
             db_session,
             data["org"].id,
-            "vacancies",
+            "candidate_database",
             True,
             department_id=None
         )
@@ -782,7 +782,7 @@ class TestSetDepartmentFeature:
         result = await set_department_feature(
             db_session,
             data["org"].id,
-            "vacancies",
+            "candidate_database",
             False,
             department_id=None
         )
@@ -843,13 +843,13 @@ class TestGetOrgFeatures:
             DepartmentFeature(
                 org_id=org.id,
                 department_id=None,
-                feature_name="vacancies",
+                feature_name="candidate_database",
                 enabled=True
             ),
             DepartmentFeature(
                 org_id=org.id,
                 department_id=dept1.id,
-                feature_name="vacancies",
+                feature_name="candidate_database",
                 enabled=False
             ),
             DepartmentFeature(
@@ -875,7 +875,7 @@ class TestGetOrgFeatures:
 
         assert len(features) == 3
         feature_names = [f["feature_name"] for f in features]
-        assert "vacancies" in feature_names
+        assert "candidate_database" in feature_names
         assert "ai_analysis" in feature_names
 
     @pytest.mark.asyncio
@@ -932,7 +932,7 @@ class TestDeleteDepartmentFeature:
         feature = DepartmentFeature(
             org_id=org.id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature)
@@ -1021,14 +1021,14 @@ class TestBulkSetDepartmentFeatures:
         results = await bulk_set_department_features(
             db_session,
             data["org"].id,
-            "vacancies",
+            "candidate_database",
             True,
             department_ids=dept_ids
         )
 
         assert len(results) == 3
         for r in results:
-            assert r.feature_name == "vacancies"
+            assert r.feature_name == "candidate_database"
             assert r.enabled is True
             assert r.department_id in dept_ids
 
@@ -1042,7 +1042,7 @@ class TestBulkSetDepartmentFeatures:
         results = await bulk_set_department_features(
             db_session,
             data["org"].id,
-            "vacancies",
+            "candidate_database",
             True,
             department_ids=None
         )
@@ -1062,7 +1062,7 @@ class TestBulkSetDepartmentFeatures:
         results = await bulk_set_department_features(
             db_session,
             data["org"].id,
-            "vacancies",
+            "candidate_database",
             False,
             department_ids=dept_ids
         )
@@ -1119,7 +1119,7 @@ class TestGetUserFeatures:
         assert "contacts" in features
         assert "calls" in features
         assert "dashboard" in features
-        assert "vacancies" not in features
+        assert "candidate_database" not in features
 
     @pytest.mark.asyncio
     async def test_get_features_includes_enabled_restricted(
@@ -1132,7 +1132,7 @@ class TestGetUserFeatures:
         feature = DepartmentFeature(
             org_id=data["org"].id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature)
@@ -1144,7 +1144,7 @@ class TestGetUserFeatures:
             data["org"].id
         )
 
-        assert "vacancies" in features
+        assert "candidate_database" in features
 
     @pytest.mark.asyncio
     async def test_superadmin_gets_all_features(

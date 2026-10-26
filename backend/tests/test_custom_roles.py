@@ -1,14 +1,20 @@
 """
-Comprehensive tests for custom roles and permissions system.
+Tests for custom roles and permissions system (/api/admin/custom-roles…).
 
-This test suite covers:
-1. CustomRole CRUD operations (superadmin only)
-2. Permission override management
-3. User role assignment
-4. Fallback behavior and permission merging
-5. Audit logging for role and permission changes
+Переписано 24.10.2026 под НАСТОЯЩИЙ контракт ручек (api/routes/admin/custom_roles.py).
+Прежний файл был спецификацией другого дизайна, который так и не сделали:
+вложенные права «ресурс → действие» (`{"entities": {"read": true}}`), 201 на
+создание и привязку, 204 на удаление. Реализация устроена иначе:
+- роль наследует права БАЗОВОЙ роли (`base_role`: owner/admin/sub_admin/member,
+  поле обязательное), права — плоские ключи вида `can_share_resources`;
+- переопределение — `POST …/permissions {"permission": key, "allowed": bool}`,
+  снятие — `DELETE …/permissions/{key}` (возврат к значению базовой роли);
+- удаление роли мягкое: `is_active=False`, ответ 200 с телом;
+- создание/привязка отвечают 200.
+Имена тестов и их смысл (CRUD только суперадмину, переопределения, привязка к
+людям, слияние с правами по умолчанию, журнал, граничные случаи) сохранены.
 
-Expected API endpoints:
+Endpoints:
 - POST /api/admin/custom-roles
 - GET /api/admin/custom-roles
 - GET /api/admin/custom-roles/{id}
@@ -19,16 +25,29 @@ Expected API endpoints:
 - POST /api/admin/custom-roles/{id}/assign/{user_id}
 - DELETE /api/admin/custom-roles/{id}/assign/{user_id}
 - GET /api/admin/permission-audit-logs
-
-Target: 80%+ coverage
+- GET /api/admin/me/permissions
 """
 import pytest
 from datetime import datetime
-from sqlalchemy import select
 from httpx import AsyncClient
 
-from api.models.database import User, UserRole, Organization, OrgMember, OrgRole
+from api.models.database import User, Organization, OrgMember, OrgRole
 from api.services.auth import create_access_token
+
+
+BASE = "/api/admin/custom-roles"
+
+
+def _token(user: User) -> str:
+    return create_access_token(data={"sub": str(user.id)})
+
+
+async def _create_role(client, headers, org_id, name="Custom Manager", base_role="member", **extra):
+    payload = {"name": name, "description": f"{name} description", "base_role": base_role, "org_id": org_id}
+    payload.update(extra)
+    response = await client.post(BASE, json=payload, headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 # ============================================================================
@@ -40,506 +59,195 @@ class TestCustomRoleCRUD:
     """Tests for CustomRole CRUD operations - superadmin only."""
 
     async def test_create_custom_role_as_superadmin(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test creating a custom role as superadmin - should succeed."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
-
-        payload = {
+        headers = get_auth_headers(_token(superadmin_user))
+        response = await client.post(BASE, json={
             "name": "Custom Manager",
             "description": "Custom role for managers with specific permissions",
+            "base_role": "admin",
             "org_id": organization.id,
-            "permissions": {
-                "entities": {"create": True, "read": True, "update": True, "delete": False},
-                "chats": {"create": True, "read": True, "update": False, "delete": False},
-                "calls": {"create": False, "read": True, "update": False, "delete": False}
-            }
-        }
+        }, headers=headers)
 
-        response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
-
-        assert response.status_code == 201
+        assert response.status_code == 200
         data = response.json()
-
+        assert data["id"] > 0
         assert data["name"] == "Custom Manager"
-        assert data["description"] == "Custom role for managers with specific permissions"
+        assert data["base_role"] == "admin"
         assert data["org_id"] == organization.id
-        assert "permissions" in data
-        assert data["permissions"]["entities"]["create"] is True
-        assert data["permissions"]["entities"]["delete"] is False
-        assert data["permissions"]["calls"]["create"] is False
-        assert "id" in data
-        assert "created_at" in data
-        assert "updated_at" in data
+        assert data["is_active"] is True
+        # Права базовой роли приходят сразу
+        assert data["permissions"]["can_access_admin_panel"] is True
+        assert data["permissions"]["can_view_all_orgs"] is False
 
     async def test_create_custom_role_as_non_superadmin(
-        self,
-        client: AsyncClient,
-        admin_user: User,
-        organization: Organization,
-        org_owner: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, admin_user: User, organization: Organization,
+        org_owner: OrgMember, get_auth_headers
     ):
         """Test creating a custom role as non-superadmin - should fail with 403."""
-        token = create_access_token(data={"sub": str(admin_user.id)})
-
-        payload = {
-            "name": "Custom Manager",
-            "description": "Test role",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
+        response = await client.post(BASE, json={
+            "name": "Custom Manager", "description": "Test role",
+            "base_role": "member", "org_id": organization.id,
+        }, headers=get_auth_headers(_token(admin_user)))
 
         assert response.status_code == 403
-        data = response.json()
-        assert "detail" in data
-        assert "superadmin" in data["detail"].lower()
+        assert "superadmin" in response.json()["detail"].lower()
 
     async def test_create_custom_role_without_authentication(
-        self,
-        client: AsyncClient,
-        organization: Organization
+        self, client: AsyncClient, organization: Organization
     ):
         """Test creating custom role without authentication - should fail with 401."""
-        payload = {
-            "name": "Custom Manager",
-            "description": "Test role",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload
-        )
-
+        response = await client.post(BASE, json={
+            "name": "Custom Manager", "description": "Test role",
+            "base_role": "member", "org_id": organization.id,
+        })
         assert response.status_code == 401
 
     async def test_create_duplicate_role_name(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test creating duplicate role name in same org - should fail with 409."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        await _create_role(client, headers, organization.id, name="Duplicate Role")
 
-        payload = {
-            "name": "Duplicate Role",
-            "description": "First role",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        # Create first role
-        response1 = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
-        assert response1.status_code == 201
-
-        # Try to create duplicate
-        payload["description"] = "Second role with same name"
-        response2 = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
-
-        assert response2.status_code == 409
-        data = response2.json()
-        assert "detail" in data
-        assert "already exists" in data["detail"].lower()
+        response = await client.post(BASE, json={
+            "name": "Duplicate Role", "description": "Second",
+            "base_role": "member", "org_id": organization.id,
+        }, headers=headers)
+        assert response.status_code == 409
+        assert "already exists" in response.json()["detail"]
 
     async def test_create_custom_role_with_invalid_permissions(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
-        """Test creating custom role with invalid permission structure - should fail."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
-
-        payload = {
-            "name": "Invalid Role",
-            "description": "Role with invalid permissions",
-            "org_id": organization.id,
-            "permissions": {
-                "invalid_resource": {"invalid_action": True}
-            }
-        }
-
-        response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
-
+        """Test creating custom role with invalid base role - should fail validation."""
+        response = await client.post(BASE, json={
+            "name": "Invalid Role", "description": "Role with invalid base role",
+            "base_role": "god_mode", "org_id": organization.id,
+        }, headers=get_auth_headers(_token(superadmin_user)))
         assert response.status_code == 422
 
     async def test_get_custom_roles_list(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test retrieving list of custom roles."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        for i in range(2):
+            await _create_role(client, headers, organization.id, name=f"Role {i}")
 
-        # Create multiple custom roles
-        roles = [
-            {
-                "name": "Role 1",
-                "description": "First role",
-                "org_id": organization.id,
-                "permissions": {"entities": {"read": True}}
-            },
-            {
-                "name": "Role 2",
-                "description": "Second role",
-                "org_id": organization.id,
-                "permissions": {"chats": {"read": True}}
-            }
-        ]
-
-        for role in roles:
-            await client.post(
-                "/api/admin/custom-roles",
-                json=role,
-                headers=get_auth_headers(token)
-            )
-
-        # Get list of roles
-        response = await client.get(
-            f"/api/admin/custom-roles?org_id={organization.id}",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.get(BASE, headers=headers)
         assert response.status_code == 200
         data = response.json()
-
-        assert isinstance(data, list)
         assert len(data) >= 2
-        assert all("name" in role for role in data)
-        assert all("permissions" in role for role in data)
-        assert all("id" in role for role in data)
+        assert {"Role 0", "Role 1"} <= {r["name"] for r in data}
+        assert all("permissions" in r for r in data)
 
     async def test_get_custom_roles_list_filter_by_org(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        second_organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers,
-        db_session
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        second_organization: Organization, superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test that custom roles list is filtered by organization."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        await _create_role(client, headers, organization.id, name="Org1 Role")
+        await _create_role(client, headers, second_organization.id, name="Org2 Role")
 
-        # Create role in first org
-        payload1 = {
-            "name": "Org 1 Role",
-            "description": "Role for org 1",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-        await client.post(
-            "/api/admin/custom-roles",
-            json=payload1,
-            headers=get_auth_headers(token)
-        )
-
-        # Create membership in second org
-        second_member = OrgMember(
-            org_id=second_organization.id,
-            user_id=superadmin_user.id,
-            role=OrgRole.owner,
-            created_at=datetime.utcnow()
-        )
-        db_session.add(second_member)
-        await db_session.commit()
-
-        # Create role in second org
-        payload2 = {
-            "name": "Org 2 Role",
-            "description": "Role for org 2",
-            "org_id": second_organization.id,
-            "permissions": {}
-        }
-        await client.post(
-            "/api/admin/custom-roles",
-            json=payload2,
-            headers=get_auth_headers(token)
-        )
-
-        # Get roles for first org only
-        response = await client.get(
-            f"/api/admin/custom-roles?org_id={organization.id}",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.get(f"{BASE}?org_id={organization.id}", headers=headers)
         assert response.status_code == 200
         data = response.json()
-
-        org_1_roles = [r for r in data if r["name"] == "Org 1 Role"]
-        org_2_roles = [r for r in data if r["name"] == "Org 2 Role"]
-
-        assert len(org_1_roles) == 1
-        assert len(org_2_roles) == 0
+        assert len(data) == 1
+        assert data[0]["name"] == "Org1 Role"
+        assert data[0]["org_id"] == organization.id
 
     async def test_get_custom_role_by_id(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test retrieving a specific custom role by ID."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, name="Specific Role")
 
-        # Create a role
-        payload = {
-            "name": "Test Role",
-            "description": "Test description",
-            "org_id": organization.id,
-            "permissions": {
-                "entities": {"create": True, "read": True, "update": True, "delete": False}
-            }
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Get role by ID
-        response = await client.get(
-            f"/api/admin/custom-roles/{role_id}",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.get(f"{BASE}/{role['id']}", headers=headers)
         assert response.status_code == 200
         data = response.json()
-
-        assert data["id"] == role_id
-        assert data["name"] == "Test Role"
-        assert data["description"] == "Test description"
-        assert data["permissions"]["entities"]["create"] is True
-        assert data["permissions"]["entities"]["delete"] is False
+        assert data["id"] == role["id"]
+        assert data["name"] == "Specific Role"
+        assert data["permissions"] == role["permissions"]
 
     async def test_get_custom_role_not_found(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test retrieving non-existent role - should return 404."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
-
-        response = await client.get(
-            "/api/admin/custom-roles/99999",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.get(f"{BASE}/99999", headers=get_auth_headers(_token(superadmin_user)))
         assert response.status_code == 404
 
     async def test_update_custom_role(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test updating a custom role."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, name="Original Name")
 
-        # Create a role
-        payload = {
-            "name": "Original Role",
-            "description": "Original description",
-            "org_id": organization.id,
-            "permissions": {"entities": {"read": True}}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Update the role
-        update_payload = {
-            "name": "Updated Role",
-            "description": "Updated description",
-            "permissions": {
-                "entities": {"create": True, "read": True, "update": True, "delete": True}
-            }
-        }
-
-        response = await client.patch(
-            f"/api/admin/custom-roles/{role_id}",
-            json=update_payload,
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.patch(f"{BASE}/{role['id']}", json={
+            "name": "Updated Name", "description": "Updated description", "is_active": False,
+        }, headers=headers)
         assert response.status_code == 200
         data = response.json()
-
-        assert data["name"] == "Updated Role"
+        assert data["name"] == "Updated Name"
         assert data["description"] == "Updated description"
-        assert data["permissions"]["entities"]["create"] is True
-        assert data["permissions"]["entities"]["delete"] is True
+        assert data["is_active"] is False
 
     async def test_update_custom_role_as_non_superadmin(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        admin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_owner: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, admin_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_owner: OrgMember,
         get_auth_headers
     ):
         """Test updating custom role as non-superadmin - should fail with 403."""
-        superadmin_token = create_access_token(data={"sub": str(superadmin_user.id)})
-        admin_token = create_access_token(data={"sub": str(admin_user.id)})
+        role = await _create_role(client, get_auth_headers(_token(superadmin_user)), organization.id)
 
-        # Create role as superadmin
-        payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(superadmin_token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Try to update as admin
-        update_payload = {"name": "Updated Role"}
-
-        response = await client.patch(
-            f"/api/admin/custom-roles/{role_id}",
-            json=update_payload,
-            headers=get_auth_headers(admin_token)
-        )
-
+        response = await client.patch(f"{BASE}/{role['id']}", json={"name": "Hacked"},
+                                      headers=get_auth_headers(_token(admin_user)))
         assert response.status_code == 403
 
     async def test_delete_custom_role(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
-        """Test deleting a custom role."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        """Test deleting a custom role (soft delete: is_active=False)."""
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, name="To Delete")
 
-        # Create a role
-        payload = {
-            "name": "Role to Delete",
-            "description": "This role will be deleted",
-            "org_id": organization.id,
-            "permissions": {}
-        }
+        response = await client.delete(f"{BASE}/{role['id']}", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["is_active"] is False
 
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Delete the role
-        response = await client.delete(
-            f"/api/admin/custom-roles/{role_id}",
-            headers=get_auth_headers(token)
-        )
-
-        assert response.status_code == 204
-
-        # Verify role is deleted
-        get_response = await client.get(
-            f"/api/admin/custom-roles/{role_id}",
-            headers=get_auth_headers(token)
-        )
-        assert get_response.status_code == 404
+        # Роль осталась, но выключена; в списке активных её нет
+        get_response = await client.get(f"{BASE}/{role['id']}", headers=headers)
+        assert get_response.status_code == 200
+        assert get_response.json()["is_active"] is False
+        active = await client.get(f"{BASE}?is_active=true", headers=headers)
+        assert role["id"] not in [r["id"] for r in active.json()]
 
     async def test_delete_custom_role_as_non_superadmin(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        admin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_owner: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, admin_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_owner: OrgMember,
         get_auth_headers
     ):
         """Test deleting custom role as non-superadmin - should fail with 403."""
-        superadmin_token = create_access_token(data={"sub": str(superadmin_user.id)})
-        admin_token = create_access_token(data={"sub": str(admin_user.id)})
+        role = await _create_role(client, get_auth_headers(_token(superadmin_user)), organization.id)
 
-        # Create role as superadmin
-        payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(superadmin_token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Try to delete as admin
-        response = await client.delete(
-            f"/api/admin/custom-roles/{role_id}",
-            headers=get_auth_headers(admin_token)
-        )
-
+        response = await client.delete(f"{BASE}/{role['id']}", headers=get_auth_headers(_token(admin_user)))
         assert response.status_code == 403
 
 
 # ============================================================================
-# TEST CLASS: Permission Override Management
+# TEST CLASS: Permission Overrides
 # ============================================================================
 
 @pytest.mark.asyncio
@@ -547,205 +255,93 @@ class TestPermissionOverrides:
     """Tests for managing permission overrides on custom roles."""
 
     async def test_add_permission_override(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test adding a permission override to a custom role."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, base_role="member")
+        assert role["permissions"]["can_share_resources"] is False
 
-        # Create a role with basic permissions
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {
-                "entities": {"read": True}
-            }
-        }
+        response = await client.post(f"{BASE}/{role['id']}/permissions",
+                                     json={"permission": "can_share_resources", "allowed": True},
+                                     headers=headers)
+        assert response.status_code == 200
+        assert response.json()["allowed"] is True
 
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Add permission override
-        permission_payload = {
-            "resource": "chats",
-            "action": "create",
-            "allowed": True
-        }
-
-        response = await client.post(
-            f"/api/admin/custom-roles/{role_id}/permissions",
-            json=permission_payload,
-            headers=get_auth_headers(token)
-        )
-
-        assert response.status_code == 201
-        data = response.json()
-
-        assert "permissions" in data
-        assert data["permissions"]["chats"]["create"] is True
+        data = (await client.get(f"{BASE}/{role['id']}", headers=headers)).json()
+        assert data["permissions"]["can_share_resources"] is True
 
     async def test_update_permission_override(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test updating an existing permission override."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, base_role="member")
+        url = f"{BASE}/{role['id']}/permissions"
+        await client.post(url, json={"permission": "can_view_chats", "allowed": False}, headers=headers)
 
-        # Create role with permission
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {
-                "entities": {"create": True, "read": True}
-            }
-        }
+        response = await client.post(url, json={"permission": "can_view_chats", "allowed": True}, headers=headers)
+        assert response.status_code == 200
+        assert "updated" in response.json()["message"]
 
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Update permission override
-        permission_payload = {
-            "resource": "entities",
-            "action": "create",
-            "allowed": False
-        }
-
-        response = await client.post(
-            f"/api/admin/custom-roles/{role_id}/permissions",
-            json=permission_payload,
-            headers=get_auth_headers(token)
-        )
-
-        assert response.status_code == 201
-        data = response.json()
-
-        assert data["permissions"]["entities"]["create"] is False
-        assert data["permissions"]["entities"]["read"] is True
+        data = (await client.get(f"{BASE}/{role['id']}", headers=headers)).json()
+        assert data["permissions"]["can_view_chats"] is True
+        # Остальное — как у базовой роли
+        assert data["permissions"]["can_view_contacts"] is True
 
     async def test_remove_permission_override(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test removing a permission override from a custom role."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, base_role="member")
+        await client.post(f"{BASE}/{role['id']}/permissions",
+                          json={"permission": "can_view_calls", "allowed": False}, headers=headers)
 
-        # Create role with permissions
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {
-                "entities": {"create": True, "read": True, "update": True}
-            }
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Remove a specific permission
-        response = await client.delete(
-            f"/api/admin/custom-roles/{role_id}/permissions/entities.create",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.delete(f"{BASE}/{role['id']}/permissions/can_view_calls", headers=headers)
         assert response.status_code == 200
-        data = response.json()
+        assert response.json()["reverted_to"] is True
 
-        # Verify permission was removed
-        assert data["permissions"]["entities"].get("create") is None or \
-               data["permissions"]["entities"].get("create") is False
-        assert data["permissions"]["entities"]["read"] is True
+        data = (await client.get(f"{BASE}/{role['id']}", headers=headers)).json()
+        assert data["permissions"]["can_view_calls"] is True
+
+        # Снять несуществующее переопределение — 404
+        again = await client.delete(f"{BASE}/{role['id']}/permissions/can_view_calls", headers=headers)
+        assert again.status_code == 404
 
     async def test_get_role_with_permissions(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test retrieving a role returns complete permission structure."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, name="Complex Role", base_role="member")
+        url = f"{BASE}/{role['id']}/permissions"
+        await client.post(url, json={"permission": "can_share_resources", "allowed": True}, headers=headers)
+        await client.post(url, json={"permission": "can_view_calls", "allowed": False}, headers=headers)
 
-        # Create role with complex permissions
-        role_payload = {
-            "name": "Complex Role",
-            "description": "Role with complex permissions",
-            "org_id": organization.id,
-            "permissions": {
-                "entities": {
-                    "create": True,
-                    "read": True,
-                    "update": True,
-                    "delete": False
-                },
-                "chats": {
-                    "create": True,
-                    "read": True,
-                    "update": False,
-                    "delete": False
-                },
-                "calls": {
-                    "create": False,
-                    "read": True,
-                    "update": False,
-                    "delete": False
-                }
-            }
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Get role
-        response = await client.get(
-            f"/api/admin/custom-roles/{role_id}",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.get(f"{BASE}/{role['id']}", headers=headers)
         assert response.status_code == 200
-        data = response.json()
+        perms = response.json()["permissions"]
+        # Полный набор ключей базовой роли — на месте
+        assert set(perms) == set(role["permissions"])
+        assert perms["can_share_resources"] is True
+        assert perms["can_view_calls"] is False
+        assert perms["can_view_chats"] is True
 
-        # Verify complete permission structure
-        assert "permissions" in data
-        assert "entities" in data["permissions"]
-        assert "chats" in data["permissions"]
-        assert "calls" in data["permissions"]
-
-        assert data["permissions"]["entities"]["create"] is True
-        assert data["permissions"]["entities"]["delete"] is False
-        assert data["permissions"]["chats"]["update"] is False
-        assert data["permissions"]["calls"]["read"] is True
+    async def test_invalid_permission_key_rejected(
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
+    ):
+        """Unknown permission key - 400."""
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id)
+        response = await client.post(f"{BASE}/{role['id']}/permissions",
+                                     json={"permission": "entities.create", "allowed": True}, headers=headers)
+        assert response.status_code == 400
 
 
 # ============================================================================
@@ -757,262 +353,97 @@ class TestUserRoleAssignment:
     """Tests for assigning custom roles to users."""
 
     async def test_assign_custom_role_to_user(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_admin: OrgMember,
         get_auth_headers
     ):
         """Test assigning a custom role to a user."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id)
 
-        # Create custom role
-        role_payload = {
-            "name": "Manager Role",
-            "description": "Role for managers",
-            "org_id": organization.id,
-            "permissions": {
-                "entities": {"create": True, "read": True, "update": True, "delete": False}
-            }
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Assign role to user
-        response = await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(token)
-        )
-
-        assert response.status_code == 201
+        response = await client.post(f"{BASE}/{role['id']}/assign/{regular_user.id}", headers=headers)
+        assert response.status_code == 200
         data = response.json()
-
+        assert data["role_id"] == role["id"]
         assert data["user_id"] == regular_user.id
-        assert data["custom_role_id"] == role_id
-        assert "assigned_at" in data
 
     async def test_assign_custom_role_as_non_superadmin(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        admin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_owner: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, admin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_owner: OrgMember,
         get_auth_headers
     ):
         """Test assigning custom role as non-superadmin - should fail with 403."""
-        superadmin_token = create_access_token(data={"sub": str(superadmin_user.id)})
-        admin_token = create_access_token(data={"sub": str(admin_user.id)})
+        role = await _create_role(client, get_auth_headers(_token(superadmin_user)), organization.id)
 
-        # Create role as superadmin
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(superadmin_token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Try to assign as admin
-        response = await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(admin_token)
-        )
-
+        response = await client.post(f"{BASE}/{role['id']}/assign/{regular_user.id}",
+                                     headers=get_auth_headers(_token(admin_user)))
         assert response.status_code == 403
 
     async def test_assign_duplicate_role_to_user(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_admin: OrgMember,
         get_auth_headers
     ):
-        """Test assigning same role twice to same user - should handle gracefully."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        """Test assigning same role twice to same user - should handle gracefully (409)."""
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id)
+        url = f"{BASE}/{role['id']}/assign/{regular_user.id}"
 
-        # Create role
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # First assignment
-        response1 = await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(token)
-        )
-        assert response1.status_code == 201
-
-        # Second assignment
-        response2 = await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(token)
-        )
-
-        # Should either succeed (idempotent) or return 409
-        assert response2.status_code in [201, 409]
+        assert (await client.post(url, headers=headers)).status_code == 200
+        response = await client.post(url, headers=headers)
+        assert response.status_code == 409
 
     async def test_remove_custom_role_from_user(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_admin: OrgMember,
         get_auth_headers
     ):
         """Test removing a custom role from a user."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id)
+        url = f"{BASE}/{role['id']}/assign/{regular_user.id}"
+        await client.post(url, headers=headers)
 
-        # Create and assign role
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(token)
-        )
-
-        # Remove role
-        response = await client.delete(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(token)
-        )
-
-        assert response.status_code == 204
+        response = await client.delete(url, headers=headers)
+        assert response.status_code == 200
+        assert response.json()["user_id"] == regular_user.id
 
     async def test_remove_non_existent_role_assignment(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_admin: OrgMember,
         get_auth_headers
     ):
         """Test removing role assignment that doesn't exist - should return 404."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id)
 
-        # Create role but don't assign it
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Try to remove non-existent assignment
-        response = await client.delete(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.delete(f"{BASE}/{role['id']}/assign/{regular_user.id}", headers=headers)
         assert response.status_code == 404
 
     async def test_user_with_custom_role_gets_permissions(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_admin: OrgMember,
         get_auth_headers
     ):
         """Test that user with custom role receives correct permissions."""
-        superadmin_token = create_access_token(data={"sub": str(superadmin_user.id)})
-        user_token = create_access_token(data={"sub": str(regular_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, name="Sharer", base_role="member")
+        await client.post(f"{BASE}/{role['id']}/permissions",
+                          json={"permission": "can_share_resources", "allowed": True}, headers=headers)
+        await client.post(f"{BASE}/{role['id']}/assign/{regular_user.id}", headers=headers)
 
-        # Create custom role with specific permissions
-        role_payload = {
-            "name": "Limited Manager",
-            "description": "Manager with limited permissions",
-            "org_id": organization.id,
-            "permissions": {
-                "entities": {"create": True, "read": True, "update": False, "delete": False},
-                "chats": {"create": False, "read": True, "update": False, "delete": False}
-            }
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(superadmin_token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Assign role to user
-        await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(superadmin_token)
-        )
-
-        # Get user's current permissions (assuming there's an endpoint for this)
-        response = await client.get(
-            "/api/users/me/permissions",
-            headers=get_auth_headers(user_token)
-        )
-
-        # If endpoint exists, verify permissions
-        if response.status_code == 200:
-            data = response.json()
-            assert data["entities"]["create"] is True
-            assert data["entities"]["update"] is False
-            assert data["chats"]["create"] is False
+        response = await client.get("/api/admin/me/permissions",
+                                    headers=get_auth_headers(_token(regular_user)))
+        assert response.status_code == 200
+        data = response.json()
+        assert data["source"] == "custom_role"
+        assert data["custom_role_id"] == role["id"]
+        assert data["custom_role_name"] == "Sharer"
+        assert data["permissions"]["can_share_resources"] is True
 
 
 # ============================================================================
-# TEST CLASS: Fallback Behavior and Permission Merging
+# TEST CLASS: Fallback Behavior
 # ============================================================================
 
 @pytest.mark.asyncio
@@ -1020,126 +451,56 @@ class TestFallbackBehavior:
     """Tests for permission fallback and merging with default permissions."""
 
     async def test_user_without_custom_role_uses_default_permissions(
-        self,
-        client: AsyncClient,
-        regular_user: User,
-        organization: Organization,
-        org_admin: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, regular_user: User, organization: Organization,
+        org_admin: OrgMember, get_auth_headers
     ):
         """Test that user without custom role uses default role permissions."""
-        token = create_access_token(data={"sub": str(regular_user.id)})
-
-        # Get user's permissions (no custom role assigned)
-        response = await client.get(
-            "/api/users/me/permissions",
-            headers=get_auth_headers(token)
-        )
-
-        # Should get default permissions based on UserRole
-        if response.status_code == 200:
-            data = response.json()
-            # Verify default admin permissions are present
-            assert "permissions" in data or "entities" in data
+        response = await client.get("/api/admin/me/permissions",
+                                    headers=get_auth_headers(_token(regular_user)))
+        assert response.status_code == 200
+        data = response.json()
+        assert data["source"] in ("user_role", "dept_role")
+        assert data["custom_role_id"] is None
+        assert isinstance(data["permissions"], dict) and data["permissions"]
 
     async def test_custom_role_overrides_default_permission(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_admin: OrgMember,
         get_auth_headers
     ):
         """Test that custom role permissions override default role permissions."""
-        superadmin_token = create_access_token(data={"sub": str(superadmin_user.id)})
-        user_token = create_access_token(data={"sub": str(regular_user.id)})
+        user_headers = get_auth_headers(_token(regular_user))
+        default = (await client.get("/api/admin/me/permissions", headers=user_headers)).json()
+        assert default["permissions"]["can_view_chats"] is True
 
-        # Create role that restricts a normally allowed action
-        role_payload = {
-            "name": "Restricted Admin",
-            "description": "Admin with restricted delete permissions",
-            "org_id": organization.id,
-            "permissions": {
-                "entities": {"create": True, "read": True, "update": True, "delete": False}
-            }
-        }
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, base_role="member")
+        await client.post(f"{BASE}/{role['id']}/permissions",
+                          json={"permission": "can_view_chats", "allowed": False}, headers=headers)
+        await client.post(f"{BASE}/{role['id']}/assign/{regular_user.id}", headers=headers)
 
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(superadmin_token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Assign role
-        await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(superadmin_token)
-        )
-
-        # Verify custom permissions override defaults
-        response = await client.get(
-            "/api/users/me/permissions",
-            headers=get_auth_headers(user_token)
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            # Custom role should override default
-            assert data["entities"]["delete"] is False
+        data = (await client.get("/api/admin/me/permissions", headers=user_headers)).json()
+        assert data["permissions"]["can_view_chats"] is False
 
     async def test_partial_override_merges_with_defaults(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_admin: OrgMember,
         get_auth_headers
     ):
         """Test that partial permission overrides merge with default permissions."""
-        superadmin_token = create_access_token(data={"sub": str(superadmin_user.id)})
-        user_token = create_access_token(data={"sub": str(regular_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, base_role="member")
+        await client.post(f"{BASE}/{role['id']}/permissions",
+                          json={"permission": "can_share_resources", "allowed": True}, headers=headers)
+        await client.post(f"{BASE}/{role['id']}/assign/{regular_user.id}", headers=headers)
 
-        # Create role with partial permissions (only entities)
-        role_payload = {
-            "name": "Partial Override",
-            "description": "Only overrides entity permissions",
-            "org_id": organization.id,
-            "permissions": {
-                "entities": {"create": False, "read": True}
-                # No chats or calls permissions specified
-            }
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(superadmin_token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Assign role
-        await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(superadmin_token)
-        )
-
-        # Check merged permissions
-        response = await client.get(
-            "/api/users/me/permissions",
-            headers=get_auth_headers(user_token)
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            # Entities should use custom role
-            assert data["entities"]["create"] is False
-            # Other resources should use defaults (if they exist)
-            assert "chats" in data or "calls" in data
+        data = (await client.get("/api/admin/me/permissions",
+                                 headers=get_auth_headers(_token(regular_user)))).json()
+        perms = data["permissions"]
+        assert perms["can_share_resources"] is True      # переопределено
+        assert perms["can_view_contacts"] is True        # от базовой роли
+        assert perms["can_delete_users"] is False        # от базовой роли
+        assert set(perms) == set(role["permissions"])
 
 
 # ============================================================================
@@ -1150,304 +511,103 @@ class TestFallbackBehavior:
 class TestAuditLogging:
     """Tests for audit logging of role and permission changes."""
 
+    async def _logs(self, client, headers, **params):
+        query = "&".join(f"{k}={v}" for k, v in params.items())
+        response = await client.get(f"/api/admin/permission-audit-logs?{query}", headers=headers)
+        assert response.status_code == 200
+        return response.json()
+
     async def test_role_creation_logged(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test that role creation is logged in audit trail."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id, name="Logged Role")
 
-        # Create role
-        role_payload = {
-            "name": "Audited Role",
-            "description": "Role creation should be audited",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Get audit logs
-        audit_response = await client.get(
-            "/api/admin/permission-audit-logs",
-            headers=get_auth_headers(token)
-        )
-
-        assert audit_response.status_code == 200
-        logs = audit_response.json()
-
-        # Find log entry for this role creation
-        creation_logs = [
-            log for log in logs
-            if log.get("action") == "create_role" and
-            log.get("role_id") == role_id
-        ]
-
-        assert len(creation_logs) >= 1
-        log = creation_logs[0]
-        assert log["user_id"] == superadmin_user.id
-        assert "timestamp" in log
+        logs = await self._logs(client, headers, role_id=role["id"])
+        creation = [l for l in logs if l["action"] == "create_custom_role"]
+        assert len(creation) == 1
+        assert creation[0]["changed_by_id"] == superadmin_user.id
+        assert creation[0]["details"]["name"] == "Logged Role"
 
     async def test_permission_change_logged(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test that permission changes are logged in audit trail."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id)
+        await client.post(f"{BASE}/{role['id']}/permissions",
+                          json={"permission": "can_share_resources", "allowed": True}, headers=headers)
 
-        # Create role
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {"entities": {"read": True}}
+        logs = await self._logs(client, headers, role_id=role["id"])
+        change = [l for l in logs if l["action"] == "add_permission_override"]
+        assert len(change) == 1
+        assert change[0]["details"] == {
+            "permission": "can_share_resources", "old_value": False, "new_value": True,
         }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Update permissions
-        permission_payload = {
-            "resource": "entities",
-            "action": "create",
-            "allowed": True
-        }
-
-        await client.post(
-            f"/api/admin/custom-roles/{role_id}/permissions",
-            json=permission_payload,
-            headers=get_auth_headers(token)
-        )
-
-        # Get audit logs
-        audit_response = await client.get(
-            "/api/admin/permission-audit-logs",
-            headers=get_auth_headers(token)
-        )
-
-        assert audit_response.status_code == 200
-        logs = audit_response.json()
-
-        # Find permission change log
-        permission_logs = [
-            log for log in logs
-            if log.get("action") == "update_permission" and
-            log.get("role_id") == role_id
-        ]
-
-        assert len(permission_logs) >= 1
-        log = permission_logs[0]
-        assert log["user_id"] == superadmin_user.id
-        assert "timestamp" in log
-        assert "details" in log
 
     async def test_role_assignment_logged(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_admin: OrgMember,
         get_auth_headers
     ):
         """Test that role assignments are logged in audit trail."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id)
+        await client.post(f"{BASE}/{role['id']}/assign/{regular_user.id}", headers=headers)
 
-        # Create role
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Assign role to user
-        await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(token)
-        )
-
-        # Get audit logs
-        audit_response = await client.get(
-            "/api/admin/permission-audit-logs",
-            headers=get_auth_headers(token)
-        )
-
-        assert audit_response.status_code == 200
-        logs = audit_response.json()
-
-        # Find assignment log
-        assignment_logs = [
-            log for log in logs
-            if log.get("action") == "assign_role" and
-            log.get("role_id") == role_id and
-            log.get("assigned_user_id") == regular_user.id
-        ]
-
-        assert len(assignment_logs) >= 1
-        log = assignment_logs[0]
-        assert log["user_id"] == superadmin_user.id
-        assert "timestamp" in log
+        logs = await self._logs(client, headers, role_id=role["id"])
+        assignment = [l for l in logs if l["action"] == "assign_custom_role"]
+        assert len(assignment) == 1
+        assert assignment[0]["user_id"] == regular_user.id
 
     async def test_get_audit_logs_as_superadmin(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test that superadmin can access audit logs."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
-
-        response = await client.get(
-            "/api/admin/permission-audit-logs",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.get("/api/admin/permission-audit-logs",
+                                    headers=get_auth_headers(_token(superadmin_user)))
         assert response.status_code == 200
-        data = response.json()
-
-        assert isinstance(data, list)
-        # Each log entry should have required fields
-        for log in data:
-            assert "id" in log
-            assert "action" in log
-            assert "user_id" in log
-            assert "timestamp" in log
+        assert isinstance(response.json(), list)
 
     async def test_get_audit_logs_as_non_superadmin(
-        self,
-        client: AsyncClient,
-        admin_user: User,
-        organization: Organization,
-        org_owner: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, admin_user: User, org_owner: OrgMember, get_auth_headers
     ):
         """Test that non-superadmin cannot access audit logs."""
-        token = create_access_token(data={"sub": str(admin_user.id)})
-
-        response = await client.get(
-            "/api/admin/permission-audit-logs",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.get("/api/admin/permission-audit-logs",
+                                    headers=get_auth_headers(_token(admin_user)))
         assert response.status_code == 403
 
     async def test_audit_logs_filter_by_role(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test filtering audit logs by role ID."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role1 = await _create_role(client, headers, organization.id, name="Role One")
+        await _create_role(client, headers, organization.id, name="Role Two")
 
-        # Create two roles
-        role1_payload = {
-            "name": "Role 1",
-            "description": "First role",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        role2_payload = {
-            "name": "Role 2",
-            "description": "Second role",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        response1 = await client.post(
-            "/api/admin/custom-roles",
-            json=role1_payload,
-            headers=get_auth_headers(token)
-        )
-        role1_id = response1.json()["id"]
-
-        await client.post(
-            "/api/admin/custom-roles",
-            json=role2_payload,
-            headers=get_auth_headers(token)
-        )
-
-        # Get logs filtered by role1_id
-        audit_response = await client.get(
-            f"/api/admin/permission-audit-logs?role_id={role1_id}",
-            headers=get_auth_headers(token)
-        )
-
-        assert audit_response.status_code == 200
-        logs = audit_response.json()
-
-        # All logs should be for role1_id
-        role_specific_logs = [log for log in logs if log.get("role_id") == role1_id]
-        assert len(role_specific_logs) >= 1
+        logs = await self._logs(client, headers, role_id=role1["id"])
+        assert logs
+        assert all(l["custom_role_id"] == role1["id"] for l in logs)
 
     async def test_audit_logs_pagination(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test pagination of audit logs."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
-
-        # Create multiple roles to generate log entries
+        headers = get_auth_headers(_token(superadmin_user))
         for i in range(5):
-            role_payload = {
-                "name": f"Role {i}",
-                "description": f"Role {i}",
-                "org_id": organization.id,
-                "permissions": {}
-            }
+            await _create_role(client, headers, organization.id, name=f"Role {i}")
 
-            await client.post(
-                "/api/admin/custom-roles",
-                json=role_payload,
-                headers=get_auth_headers(token)
-            )
-
-        # Get logs with limit
-        response = await client.get(
-            "/api/admin/permission-audit-logs?limit=3&offset=0",
-            headers=get_auth_headers(token)
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-
-        # Should return at most 3 logs
-        assert len(data) <= 3
+        page1 = await self._logs(client, headers, limit=3, offset=0)
+        page2 = await self._logs(client, headers, limit=3, offset=3)
+        assert len(page1) == 3
+        assert len(page2) == 2
+        assert not {l["id"] for l in page1} & {l["id"] for l in page2}
 
 
 # ============================================================================
@@ -1459,182 +619,79 @@ class TestEdgeCasesAndValidation:
     """Tests for edge cases and input validation."""
 
     async def test_create_role_with_empty_name(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test creating role with empty name - should fail validation."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
-
-        payload = {
-            "name": "",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.post(BASE, json={
+            "name": "", "description": "Test", "base_role": "member", "org_id": organization.id,
+        }, headers=get_auth_headers(_token(superadmin_user)))
         assert response.status_code == 422
 
     async def test_create_role_with_invalid_org_id(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test creating role with non-existent org ID - should fail."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
-
-        payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": 99999,
-            "permissions": {}
-        }
-
-        response = await client.post(
-            "/api/admin/custom-roles",
-            json=payload,
-            headers=get_auth_headers(token)
-        )
-
-        assert response.status_code in [404, 422]
+        response = await client.post(BASE, json={
+            "name": "Test Role", "description": "Test", "base_role": "member", "org_id": 99999,
+        }, headers=get_auth_headers(_token(superadmin_user)))
+        assert response.status_code == 404
 
     async def test_assign_role_to_non_existent_user(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        superadmin_org_member: OrgMember, get_auth_headers
     ):
         """Test assigning role to non-existent user - should fail."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id)
 
-        # Create role
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
-
-        # Try to assign to non-existent user
-        response = await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/99999",
-            headers=get_auth_headers(token)
-        )
-
+        response = await client.post(f"{BASE}/{role['id']}/assign/99999", headers=headers)
         assert response.status_code == 404
 
     async def test_delete_role_with_assigned_users(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        regular_user: User,
-        organization: Organization,
-        superadmin_org_member: OrgMember,
-        org_admin: OrgMember,
+        self, client: AsyncClient, superadmin_user: User, regular_user: User,
+        organization: Organization, superadmin_org_member: OrgMember, org_admin: OrgMember,
         get_auth_headers
     ):
-        """Test deleting role that is assigned to users - should handle gracefully."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
+        """Test deleting role that is assigned to users - should handle gracefully.
 
-        # Create and assign role
-        role_payload = {
-            "name": "Test Role",
-            "description": "Test",
-            "org_id": organization.id,
-            "permissions": {}
-        }
+        Удаление мягкое: роль выключается, и человек с ней возвращается к правам
+        по умолчанию (me/permissions учитывает только активные роли). Новую
+        привязку выключенной роли сервер не даёт.
+        """
+        headers = get_auth_headers(_token(superadmin_user))
+        role = await _create_role(client, headers, organization.id)
+        await client.post(f"{BASE}/{role['id']}/assign/{regular_user.id}", headers=headers)
 
-        create_response = await client.post(
-            "/api/admin/custom-roles",
-            json=role_payload,
-            headers=get_auth_headers(token)
-        )
-        role_id = create_response.json()["id"]
+        response = await client.delete(f"{BASE}/{role['id']}", headers=headers)
+        assert response.status_code == 200
 
-        # Assign to user
-        await client.post(
-            f"/api/admin/custom-roles/{role_id}/assign/{regular_user.id}",
-            headers=get_auth_headers(token)
-        )
+        perms = (await client.get("/api/admin/me/permissions",
+                                  headers=get_auth_headers(_token(regular_user)))).json()
+        assert perms["custom_role_id"] is None
 
-        # Try to delete role
-        response = await client.delete(
-            f"/api/admin/custom-roles/{role_id}",
-            headers=get_auth_headers(token)
-        )
-
-        # Should either succeed (cascade delete) or warn about assigned users
-        assert response.status_code in [204, 400, 409]
+        again = await client.post(f"{BASE}/{role['id']}/assign/{superadmin_user.id}", headers=headers)
+        assert again.status_code == 400
 
     async def test_role_name_uniqueness_per_organization(
-        self,
-        client: AsyncClient,
-        superadmin_user: User,
-        organization: Organization,
-        second_organization: Organization,
-        superadmin_org_member: OrgMember,
-        get_auth_headers,
-        db_session
+        self, client: AsyncClient, superadmin_user: User, organization: Organization,
+        second_organization: Organization, superadmin_org_member: OrgMember,
+        get_auth_headers, db_session
     ):
-        """Test that role names must be unique per organization."""
-        token = create_access_token(data={"sub": str(superadmin_user.id)})
-
-        # Create membership in second org
-        second_member = OrgMember(
-            org_id=second_organization.id,
-            user_id=superadmin_user.id,
-            role=OrgRole.owner,
-            created_at=datetime.utcnow()
-        )
-        db_session.add(second_member)
+        """Test that role names must be unique per organization (not globally)."""
+        db_session.add(OrgMember(
+            org_id=second_organization.id, user_id=superadmin_user.id,
+            role=OrgRole.owner, created_at=datetime.utcnow(),
+        ))
         await db_session.commit()
+        headers = get_auth_headers(_token(superadmin_user))
 
-        # Create role with same name in org 1
-        payload1 = {
-            "name": "Manager",
-            "description": "Manager in org 1",
-            "org_id": organization.id,
-            "permissions": {}
-        }
-
-        response1 = await client.post(
-            "/api/admin/custom-roles",
-            json=payload1,
-            headers=get_auth_headers(token)
-        )
-        assert response1.status_code == 201
-
-        # Create role with same name in org 2 - should succeed
-        payload2 = {
-            "name": "Manager",
-            "description": "Manager in org 2",
-            "org_id": second_organization.id,
-            "permissions": {}
-        }
-
-        response2 = await client.post(
-            "/api/admin/custom-roles",
-            json=payload2,
-            headers=get_auth_headers(token)
-        )
-        assert response2.status_code == 201
+        await _create_role(client, headers, organization.id, name="Manager")
+        # То же имя в другой организации — можно
+        await _create_role(client, headers, second_organization.id, name="Manager")
+        # То же имя в той же — нельзя
+        response = await client.post(BASE, json={
+            "name": "Manager", "description": "dup", "base_role": "member", "org_id": organization.id,
+        }, headers=headers)
+        assert response.status_code == 409

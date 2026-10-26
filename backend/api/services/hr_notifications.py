@@ -264,24 +264,57 @@ async def notify_request_assigned(
 # 1b. Form answer received (dispatch submitted by candidate)
 # ---------------------------------------------------------------------------
 
-async def notify_form_submitted(db: AsyncSession, dispatch, entity, form) -> None:
-    """Уведомить отправителя анкеты о полученном ответе кандидата."""
+async def form_answer_recipients(db: AsyncSession, dispatch, entity) -> list[int]:
+    """Кому сообщить об ответе на анкету: отправителю ссылки и ТЕКУЩЕМУ
+    рекрутёру кандидата — каждому по одному разу (владелец, 24.10.2026).
+
+    Раньше уведомление уходило только отправителю: забрал кандидата другой
+    рекрутёр — об ответе узнавал прежний. «Текущий рекрутёр» — по тому же
+    правилу, что метка «HR: …» (services/hr_tags.py: автор живой заявки, без
+    автора — владелец воронки, плюс со-рекрутёры); у кандидата без живых
+    заявок — тот, за кем карточка. Один и тот же человек — одно уведомление.
+    """
+    from .hr_tags import compute_hr_tags
+
+    recipients: list[int] = []
+
+    def add(user_id) -> None:
+        if user_id and user_id not in recipients:
+            recipients.append(user_id)
+
+    add(getattr(dispatch, "created_by", None))
+    current = await compute_hr_tags(db, dispatch.entity_id)
+    for tag in current:
+        add(tag.get("hr_id"))
+    if not current and entity is not None:
+        add(getattr(entity, "created_by", None))
+    return recipients
+
+
+async def notify_form_submitted(db: AsyncSession, dispatch, entity, form) -> list[int]:
+    """Уведомить об ответе кандидата на анкету (см. form_answer_recipients).
+    Возвращает, кому ушло, — тем же людям страница шлёт realtime-событие."""
     try:
-        if not dispatch.created_by:
+        recipients = await form_answer_recipients(db, dispatch, entity)
+        if not recipients:
             logger.warning(
-                "notify_form_submitted: dispatch %s has no created_by — recruiter not notified",
+                "notify_form_submitted: dispatch %s — no sender and no current recruiter, nobody notified",
                 getattr(dispatch, "id", None),
             )
-            return
+            return []
         title = "Ответ на анкету"
         cand = (entity.name if entity else None) or "Кандидат"
         message = f"{cand} заполнил(а) анкету «{form.title}»"
         link = f"/all-candidates?entity={dispatch.entity_id}&tab=anketa"
-        await _create_notification(db, dispatch.created_by, "form_submitted", title, message, link)
+        for user_id in recipients:
+            await _create_notification(db, user_id, "form_submitted", title, message, link)
         await db.commit()
+        logger.info("FORM_ANSWER_NOTIFY dispatch=%s entity=%s to=%s", dispatch.id, dispatch.entity_id, recipients)
+        return recipients
     except Exception:
         logger.exception("notify_form_submitted failed")
         await db.rollback()
+        return []
 
 
 # ---------------------------------------------------------------------------

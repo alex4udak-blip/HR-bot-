@@ -71,6 +71,7 @@ class TestCrossOrgSharing:
         admin_user: User,
         department: Department,
         entity: Entity,
+        org_owner: OrgMember,  # admin_user — владелец своей орги, иначе 403 ещё на праве шаринга
         get_auth_headers
     ):
         """Test that sharing to a user in a different organization is blocked with 403."""
@@ -124,6 +125,7 @@ class TestCrossOrgSharing:
         second_organization: Organization,
         admin_user: User,
         chat: Chat,
+        org_owner: OrgMember,  # admin_user — владелец своей орги, иначе 403 ещё на праве шаринга
         get_auth_headers
     ):
         """Test that sharing chats to users in different organizations is blocked."""
@@ -175,6 +177,7 @@ class TestCrossOrgSharing:
         second_organization: Organization,
         admin_user: User,
         call_recording: CallRecording,
+        org_owner: OrgMember,  # admin_user — владелец своей орги, иначе 403 ещё на праве шаринга
         get_auth_headers
     ):
         """Test that sharing calls to users in different organizations is blocked."""
@@ -283,7 +286,7 @@ class TestCrossOrgSharing:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_member_cannot_share_outside_department(
+    async def test_member_can_share_outside_department(
         self,
         client: AsyncClient,
         db_session: AsyncSession,
@@ -372,9 +375,10 @@ class TestCrossOrgSharing:
             headers=headers
         )
 
-        # Should be blocked - members can only share within their department
-        assert response.status_code == 403
-        assert "организации" in response.json()["detail"] or "отделе" in response.json()["detail"]
+        # Рядовой участник шарит любому в СВОЕЙ организации, отдел не важен
+        # (permissions.can_share_to, e9ee64f5: «только свой отдел» оказалось
+        # слишком строго для HR). Граница — организация, её проверяют тесты выше.
+        assert response.status_code == 200
 
     @pytest.mark.asyncio
     async def test_member_can_share_within_department(
@@ -480,17 +484,13 @@ class TestCrossOrgSharing:
         admin_user: User,
         department: Department,
         second_department: Department,
+        org_owner: OrgMember,
         get_auth_headers
     ):
         """Test that organization owners can share with anyone in the organization."""
-        # Make admin_user an owner
-        org_owner_result = await db_session.execute(
-            f"SELECT * FROM org_members WHERE user_id = {admin_user.id} AND org_id = {organization.id}"
-        )
-        # Update role to owner
-        await db_session.execute(
-            f"UPDATE org_members SET role = 'owner' WHERE user_id = {admin_user.id} AND org_id = {organization.id}"
-        )
+        # admin_user — владелец через фикстуру org_owner. Раньше тут были сырые
+        # строки SQL без text() (SQLAlchemy 2.0 их не принимает) и UPDATE строки
+        # org_members, которой не существовало.
 
         # Create user in different department
         other_dept_user = User(
@@ -605,6 +605,7 @@ class TestCrossOrgSharing:
             headers=headers
         )
 
-        # Should fail - user not in org
+        # Should fail - user not in org. Отказ приходит раньше — на праве
+        # шаринга ресурса («You don't have permission…»): без организации у
+        # человека нет доступа к карточке вовсе.
         assert response.status_code == 403
-        assert "организации" in response.json()["detail"]

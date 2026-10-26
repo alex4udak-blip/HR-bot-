@@ -147,10 +147,11 @@ class TestEmptyDataHandling:
 
     @pytest.mark.asyncio
     async def test_update_entity_with_empty_fields(
-        self, db_session, client, admin_token, entity
+        self, db_session, client, admin_token, entity, org_owner
     ):
         """Test updating entity with empty optional fields."""
-        response = await client.patch(
+        # Правка карточки — PUT /entities/{id} (PATCH такой ручки нет — 405).
+        response = await client.put(
             f"/api/entities/{entity.id}",
             json={
                 "phone": "",
@@ -437,8 +438,9 @@ class TestBoundaryValues:
             cookies={"access_token": admin_token}
         )
 
-        # Should either cap the limit or accept it
-        assert response.status_code == 200
+        # Лимит ограничен в Query(le=…): слишком большой отклоняется валидацией
+        # (422), а не роняет сервер и не выгружает всю базу.
+        assert response.status_code in [200, 422]
 
     @pytest.mark.asyncio
     async def test_entity_with_minimal_required_fields(

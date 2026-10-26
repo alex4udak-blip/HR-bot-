@@ -393,7 +393,9 @@ class TestEdgeCases:
             headers=auth_headers(auth_token)
         )
         assert response.status_code == 400
-        assert "кандидатов" in response.json()["detail"].lower()
+        # Ручка похожих отвечает по-английски («only available for candidates»).
+        detail = response.json()["detail"].lower()
+        assert "кандидат" in detail or "candidates" in detail
 
     async def test_recommended_vacancies_for_non_candidate(
         self, client: AsyncClient, auth_token, client_entity
@@ -427,7 +429,9 @@ class TestEdgeCases:
             json={"source_entity_id": candidate_entity.id, "keep_source_data": False}
         )
         assert response.status_code == 400
-        assert "саму с собой" in response.json()["detail"].lower()
+        # Слияние отвечает по-английски («Cannot merge entity with itself»).
+        detail = response.json()["detail"].lower()
+        assert "саму с собой" in detail or "itself" in detail
 
 
     async def test_global_search_no_results(

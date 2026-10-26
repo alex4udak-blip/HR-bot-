@@ -103,7 +103,9 @@ router.add_api_route("/applications/{application_id}/pin", set_pinned_entry, met
 
 # Applications update/delete by ID: /applications/{application_id}
 router.add_api_route("/applications/{application_id}", update_application, methods=["PUT"], tags=["vacancy-applications"])
-router.add_api_route("/applications/{application_id}", delete_application, methods=["DELETE"], tags=["vacancy-applications"])
+# 204, как объявлено в декораторе applications.py: тут регистрация без него
+# отдавала 200 с телом null.
+router.add_api_route("/applications/{application_id}", delete_application, methods=["DELETE"], status_code=204, tags=["vacancy-applications"])
 
 # Assignable users for responsible dropdown (must be before /{vacancy_id})
 router.add_api_route("/assignable-users", get_assignable_users, methods=["GET"], tags=["vacancies"])

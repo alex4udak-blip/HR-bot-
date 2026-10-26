@@ -327,7 +327,7 @@ class TestParseResumeEndpoint:
             return mock_parsed
 
         monkeypatch.setattr(
-            "api.routes.entities.resume_parser_service.parse_resume",
+            "api.services.resume_parser.resume_parser_service.parse_resume",
             mock_parse_resume
         )
 
@@ -371,7 +371,7 @@ class TestParseResumeEndpoint:
         )
 
         assert response.status_code == 400
-        assert "Неподдерживаемый формат" in response.json()["detail"]
+        assert "Unsupported file format" in response.json()["detail"]  # текст ручки — по-английски
 
     @pytest.mark.asyncio
     async def test_parse_resume_file_too_large(
@@ -432,7 +432,7 @@ class TestCreateEntityFromResumeEndpoint:
             return mock_parsed
 
         monkeypatch.setattr(
-            "api.routes.entities.resume_parser_service.parse_resume",
+            "api.services.resume_parser.resume_parser_service.parse_resume",
             mock_parse_resume
         )
 
@@ -493,7 +493,7 @@ class TestCreateEntityFromResumeEndpoint:
             return mock_parsed
 
         monkeypatch.setattr(
-            "api.routes.entities.resume_parser_service.parse_resume",
+            "api.services.resume_parser.resume_parser_service.parse_resume",
             mock_parse_resume
         )
 
@@ -530,7 +530,7 @@ class TestCreateEntityFromResumeEndpoint:
             return mock_parsed
 
         monkeypatch.setattr(
-            "api.routes.entities.resume_parser_service.parse_resume",
+            "api.services.resume_parser.resume_parser_service.parse_resume",
             mock_parse_resume
         )
 
@@ -567,7 +567,7 @@ class TestCreateEntityFromResumeEndpoint:
             return mock_parsed
 
         monkeypatch.setattr(
-            "api.routes.entities.resume_parser_service.parse_resume",
+            "api.services.resume_parser.resume_parser_service.parse_resume",
             mock_parse_resume
         )
 
@@ -586,7 +586,7 @@ class TestCreateEntityFromResumeEndpoint:
         )
 
         assert response.status_code == 400
-        assert "отдел" in response.json()["detail"].lower()
+        assert "invalid department" in response.json()["detail"].lower()  # текст ручки — по-английски
 
     @pytest.mark.asyncio
     async def test_create_entity_from_resume_parse_error(
@@ -598,7 +598,7 @@ class TestCreateEntityFromResumeEndpoint:
             raise ValueError("Не удалось извлечь текст из файла")
 
         monkeypatch.setattr(
-            "api.routes.entities.resume_parser_service.parse_resume",
+            "api.services.resume_parser.resume_parser_service.parse_resume",
             mock_parse_resume
         )
 

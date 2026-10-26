@@ -337,12 +337,14 @@ class TestAIMessage:
 
     @pytest.mark.asyncio
     async def test_ai_message_access_denied(
-        self, client, second_chat, admin_token, get_auth_headers, org_owner
+        self, client, chat, second_user_token, get_auth_headers, org_owner, org_member
     ):
         """Test AI message access denied for non-owner."""
+        # Чужой чат открывает обычный член орга (member), а не владелец орга:
+        # владелец организации видит все её чаты (permissions.can_access_resource).
         response = await client.post(
-            f"/api/chats/{second_chat.id}/ai/message",
-            headers=get_auth_headers(admin_token),
+            f"/api/chats/{chat.id}/ai/message",
+            headers=get_auth_headers(second_user_token),
             json={"message": "Test"}
         )
 
@@ -459,12 +461,14 @@ class TestAIHistory:
 
     @pytest.mark.asyncio
     async def test_get_ai_history_access_denied(
-        self, client, second_chat, admin_token, get_auth_headers, org_owner
+        self, client, chat, second_user_token, get_auth_headers, org_owner, org_member
     ):
         """Test access denied for AI history."""
+        # Чужой чат открывает обычный член орга (member), а не владелец орга:
+        # владелец организации видит все её чаты (permissions.can_access_resource).
         response = await client.get(
-            f"/api/chats/{second_chat.id}/ai/history",
-            headers=get_auth_headers(admin_token)
+            f"/api/chats/{chat.id}/ai/history",
+            headers=get_auth_headers(second_user_token)
         )
 
         assert response.status_code == 403
@@ -508,12 +512,14 @@ class TestClearAIHistory:
 
     @pytest.mark.asyncio
     async def test_clear_ai_history_access_denied(
-        self, client, second_chat, admin_token, get_auth_headers, org_owner
+        self, client, chat, second_user_token, get_auth_headers, org_owner, org_member
     ):
         """Test access denied when clearing history."""
+        # Чужой чат открывает обычный член орга (member), а не владелец орга:
+        # владелец организации видит все её чаты (permissions.can_access_resource).
         response = await client.delete(
-            f"/api/chats/{second_chat.id}/ai/history",
-            headers=get_auth_headers(admin_token)
+            f"/api/chats/{chat.id}/ai/history",
+            headers=get_auth_headers(second_user_token)
         )
 
         assert response.status_code == 403
@@ -607,12 +613,14 @@ class TestAnalyzeChat:
 
     @pytest.mark.asyncio
     async def test_analyze_chat_access_denied(
-        self, client, second_chat, admin_token, get_auth_headers, org_owner
+        self, client, chat, second_user_token, get_auth_headers, org_owner, org_member
     ):
         """Test access denied for analysis."""
+        # Чужой чат открывает обычный член орга (member), а не владелец орга:
+        # владелец организации видит все её чаты (permissions.can_access_resource).
         response = await client.post(
-            f"/api/chats/{second_chat.id}/analyze",
-            headers=get_auth_headers(admin_token),
+            f"/api/chats/{chat.id}/analyze",
+            headers=get_auth_headers(second_user_token),
             json={"report_type": "standard"}
         )
 
@@ -802,12 +810,14 @@ class TestGenerateReportFile:
 
     @pytest.mark.asyncio
     async def test_generate_report_access_denied(
-        self, client, second_chat, admin_token, get_auth_headers, org_owner
+        self, client, chat, second_user_token, get_auth_headers, org_owner, org_member
     ):
         """Test access denied for report generation."""
+        # Чужой чат открывает обычный член орга (member), а не владелец орга:
+        # владелец организации видит все её чаты (permissions.can_access_resource).
         response = await client.post(
-            f"/api/chats/{second_chat.id}/report",
-            headers=get_auth_headers(admin_token),
+            f"/api/chats/{chat.id}/report",
+            headers=get_auth_headers(second_user_token),
             json={"format": "pdf"}
         )
 

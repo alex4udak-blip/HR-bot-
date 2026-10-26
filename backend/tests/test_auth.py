@@ -93,7 +93,7 @@ class TestJWTTokens:
         decoded = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
 
         assert "exp" in decoded
-        exp_time = datetime.fromtimestamp(decoded["exp"])
+        exp_time = datetime.utcfromtimestamp(decoded["exp"])  # exp — UTC; fromtimestamp сдвигал на пояс машины
         assert exp_time > datetime.utcnow()
 
     def test_create_access_token_custom_expiration(self):
@@ -104,7 +104,7 @@ class TestJWTTokens:
 
         decoded = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
 
-        exp_time = datetime.fromtimestamp(decoded["exp"])
+        exp_time = datetime.utcfromtimestamp(decoded["exp"])  # exp — UTC; fromtimestamp сдвигал на пояс машины
         expected_exp = datetime.utcnow() + expires_delta
 
         # Allow 1 minute tolerance
@@ -181,9 +181,10 @@ class TestLoginEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        # Tokens are now set in httpOnly cookies, response contains user data
-        assert "id" in data
-        assert data["email"] == "admin@test.com"
+        # Ответ — TokenResponse: данные человека в "user" (токен в теле —
+        # для расширения), вебу токен приходит httpOnly-кукой.
+        assert "id" in data["user"]
+        assert data["user"]["email"] == "admin@test.com"
         # Check that access_token cookie is set
         assert "access_token" in response.cookies
 

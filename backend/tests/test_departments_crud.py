@@ -13,6 +13,7 @@ Tests cover:
 - Cross-department access control
 """
 import pytest
+import pytest_asyncio
 from datetime import datetime
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,21 @@ from api.models.database import (
     DeptRole, OrgRole, UserRole
 )
 from api.services.auth import create_access_token
+
+
+@pytest_asyncio.fixture
+async def plain_org_member(db_session, org_admin):
+    """regular_user — РЯДОВОЙ член организации, а не её админ.
+
+    Фикстура org_admin делает regular_user админом орга, а админ/владелец орга
+    управляет любым отделом (is_org_admin_or_owner в ручках отделов). Тестам
+    «рядовой участник / саб-админ / лид другого отдела не может…» нужен
+    человек без орг-админства — иначе проверка отдела вообще не наступает.
+    """
+    from api.models.database import OrgRole
+    org_admin.role = OrgRole.member
+    await db_session.commit()
+    return org_admin
 
 
 # =============================================================================
@@ -426,15 +442,13 @@ class TestListDepartments:
         department: Department, second_department: Department,
         organization: Organization, org_admin: OrgMember, get_auth_headers
     ):
-        """Test admin sees own department with full details, others minimal."""
-        # Make regular_user member of first department
-        dept_member = DepartmentMember(
-            department_id=department.id,
-            user_id=regular_user.id,
-            role=DeptRole.member,
-            created_at=datetime.utcnow()
-        )
+        """Org admin sees ALL departments with full details.
 
+        Раньше админ орга видел свой отдел полностью, а чужие — только id и
+        имя. Теперь owner и org-admin видят все отделы целиком (list_departments:
+        нужно, например, пикеру отдела в «Взять в штат» — у HR-админов без
+        своего отдела он был пустым). Имя теста оставлено для истории.
+        """
         response = await client.get(
             "/api/departments",
             headers=get_auth_headers(user_token)
@@ -443,21 +457,12 @@ class TestListDepartments:
         assert response.status_code == 200
         data = response.json()
 
-        # Find own department and other department
         own_dept = next((d for d in data if d["id"] == department.id), None)
         other_dept = next((d for d in data if d["id"] == second_department.id), None)
-
-        # Own department should have full details
-        if own_dept:
-            assert "members_count" in own_dept
-            assert "entities_count" in own_dept
-
-        # Other department should be minimal (only id and name)
-        if other_dept:
-            assert "id" in other_dept
-            assert "name" in other_dept
-            # Minimal response doesn't have these fields
-            assert "members_count" not in other_dept or other_dept == own_dept
+        assert own_dept is not None and other_dept is not None
+        for d in (own_dept, other_dept):
+            assert "members_count" in d
+            assert "entities_count" in d
 
     async def test_member_sees_only_own_department(
         self, client: AsyncClient, regular_user: User, user_token: str,
@@ -1128,7 +1133,7 @@ class TestAddDepartmentMember:
     async def test_regular_member_cannot_add_member(
         self, client: AsyncClient, regular_user: User, user_token: str,
         department: Department, second_user: User, organization: Organization,
-        org_admin: OrgMember, org_member: OrgMember, dept_member: DepartmentMember,
+        plain_org_member: OrgMember, org_member: OrgMember, dept_member: DepartmentMember,
         get_auth_headers
     ):
         """Test regular member cannot add member to department."""
@@ -1354,7 +1359,7 @@ class TestUpdateDepartmentMember:
     async def test_regular_member_cannot_update_roles(
         self, db_session: AsyncSession, client: AsyncClient, regular_user: User,
         user_token: str, department: Department, second_user: User,
-        organization: Organization, org_admin: OrgMember, org_member: OrgMember,
+        organization: Organization, plain_org_member: OrgMember, org_member: OrgMember,
         dept_member: DepartmentMember, get_auth_headers
     ):
         """Test regular member cannot update roles."""
@@ -1476,7 +1481,7 @@ class TestRemoveDepartmentMember:
     async def test_regular_member_cannot_remove_member(
         self, db_session: AsyncSession, client: AsyncClient, regular_user: User,
         user_token: str, department: Department, second_user: User,
-        organization: Organization, org_admin: OrgMember, org_member: OrgMember,
+        organization: Organization, plain_org_member: OrgMember, org_member: OrgMember,
         dept_member: DepartmentMember, get_auth_headers
     ):
         """Test regular member cannot remove members."""
@@ -1592,7 +1597,7 @@ class TestDepartmentRoleHierarchy:
     async def test_sub_admin_has_limited_permissions(
         self, db_session: AsyncSession, client: AsyncClient, regular_user: User,
         user_token: str, department: Department, organization: Organization,
-        org_admin: OrgMember, get_auth_headers
+        plain_org_member: OrgMember, get_auth_headers
     ):
         """Test sub_admin role has limited permissions.
 
@@ -1626,14 +1631,14 @@ class TestDepartmentRoleHierarchy:
         # Sub_admin cannot add sub_admin or lead
         add_sub_admin_resp = await client.post(
             f"/api/departments/{department.id}/members",
-            json={"user_id": org_admin.user_id, "role": "sub_admin"},
+            json={"user_id": plain_org_member.user_id, "role": "sub_admin"},
             headers=get_auth_headers(user_token)
         )
         assert add_sub_admin_resp.status_code == 403
 
         add_lead_resp = await client.post(
             f"/api/departments/{department.id}/members",
-            json={"user_id": org_admin.user_id, "role": "lead"},
+            json={"user_id": plain_org_member.user_id, "role": "lead"},
             headers=get_auth_headers(user_token)
         )
         assert add_lead_resp.status_code == 403
@@ -2121,11 +2126,12 @@ class TestNestedDepartmentHierarchy:
         )
         child = response2.json()
 
-        # Make regular_user lead of parent only
+        # Make regular_user lead of parent only. В орге — рядовой член:
+        # админ орга управляет любым отделом, и проверка вложенности не наступила бы.
         org_member1 = OrgMember(
             org_id=organization.id,
             user_id=regular_user.id,
-            role=OrgRole.admin,
+            role=OrgRole.member,
             created_at=datetime.utcnow()
         )
         db_session.add(org_member1)
@@ -2419,7 +2425,7 @@ class TestCrossDepartmentAccess:
     async def test_lead_cannot_add_members_to_other_department(
         self, db_session: AsyncSession, client: AsyncClient, organization: Organization,
         department: Department, second_department: Department, regular_user: User,
-        second_user: User, org_admin: OrgMember, org_member: OrgMember, get_auth_headers
+        second_user: User, plain_org_member: OrgMember, org_member: OrgMember, get_auth_headers
     ):
         """Test lead of Dept A cannot add members to Dept B."""
         # Make regular_user lead of first department

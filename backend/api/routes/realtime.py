@@ -608,5 +608,6 @@ async def broadcast_call_failed(org_id: int, call_data: Dict[str, Any]):
 
 
 async def broadcast_form_submission(user_id: int, payload: Dict[str, Any]):
-    """Notify ONLY the recruiter who sent the form (dispatch.created_by)."""
+    """Ответ на анкету — одному человеку (зовётся по каждому из
+    hr_notifications.form_answer_recipients)."""
     await manager.broadcast_to_user(user_id, "form.submission", payload)

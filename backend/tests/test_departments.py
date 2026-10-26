@@ -2,9 +2,25 @@
 Tests for departments functionality.
 """
 import pytest
+import pytest_asyncio
 from datetime import datetime
 
 from api.models.database import Department, DepartmentMember, DeptRole
+
+
+@pytest_asyncio.fixture
+async def plain_org_member(db_session, org_admin):
+    """regular_user — РЯДОВОЙ член организации, а не её админ.
+
+    Фикстура org_admin делает regular_user админом орга, а админ/владелец орга
+    управляет любым отделом (is_org_admin_or_owner в ручках отделов). Тестам
+    «рядовой участник / саб-админ / лид другого отдела не может…» нужен
+    человек без орг-админства — иначе проверка отдела вообще не наступает.
+    """
+    from api.models.database import OrgRole
+    org_admin.role = OrgRole.member
+    await db_session.commit()
+    return org_admin
 
 
 class TestCreateDepartment:
@@ -191,7 +207,7 @@ class TestDepartmentMembers:
 
     @pytest.mark.asyncio
     async def test_regular_member_cannot_add_member(
-        self, client, regular_user, user_token, department, second_user, get_auth_headers, org_admin, dept_member, org_member
+        self, client, regular_user, user_token, department, second_user, get_auth_headers, plain_org_member, dept_member, org_member
     ):
         """Test that regular member cannot add member to department."""
         response = await client.post(
@@ -531,8 +547,14 @@ class TestDepartmentAdminEntityVisibility:
         """
         Test that regular department member cannot see entities created by other members.
         Only lead/sub_admin should have this privilege.
+
+        admin_user здесь — РЯДОВОЙ член орга (фикстура org_owner сделала бы его
+        владельцем, а владелец видит всё в организации), а сущность — не
+        кандидат: кандидаты общие для организации (модель «общий пул HR»).
         """
-        from api.models.database import Entity, EntityType, EntityStatus
+        from api.models.database import Entity, EntityType, EntityStatus, OrgRole
+        org_owner.role = OrgRole.member
+        await db_session.commit()
 
         # Both are regular members
         member1 = DepartmentMember(
@@ -559,7 +581,7 @@ class TestDepartmentAdminEntityVisibility:
             created_by=second_user.id,
             name="Private Entity",
             email="private@test.com",
-            type=EntityType.candidate,
+            type=EntityType.partner,
             status=EntityStatus.active,
             created_at=datetime.utcnow()
         )

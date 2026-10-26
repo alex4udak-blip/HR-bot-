@@ -17,6 +17,18 @@ from api.models.database import Message, Chat, SharedAccess, AccessLevel, Resour
 # MESSAGE FIXTURES
 # ============================================================================
 
+
+@pytest.fixture
+def real_aiofiles(monkeypatch):
+    """Настоящий aiofiles.open для тестов Range-запросов.
+
+    conftest автоматически подменяет aiofiles.open заглушкой, которая на любой
+    read() отдаёт b"mock file content" — отрезок файла по Range в таких
+    тестах проверить нельзя. Здесь возвращаем настоящее чтение с диска.
+    """
+    import aiofiles.threadpool
+    monkeypatch.setattr("aiofiles.open", aiofiles.threadpool.open)
+
 @pytest_asyncio.fixture
 async def message(db_session, chat):
     """Create a test text message."""
@@ -306,7 +318,7 @@ class TestGetMessages:
     ):
         """Test messages are returned in reverse chronological order."""
         response = await client.get(
-            f"/api/chats/{chat.id}/messages?limit=1000",
+            f"/api/chats/{chat.id}/messages?limit=500",  # limit ограничен 500 (Query le=500)
             headers=get_auth_headers(admin_token)
         )
 
@@ -702,7 +714,7 @@ class TestGetLocalFile:
 
     @pytest.mark.asyncio
     async def test_get_local_file_range_request(
-        self, client, admin_user, admin_token, chat, get_auth_headers, org_owner
+        self, client, admin_user, admin_token, chat, get_auth_headers, org_owner, real_aiofiles
     ):
         """Test range request for video streaming."""
         uploads_dir = Path(__file__).parent.parent / "uploads"

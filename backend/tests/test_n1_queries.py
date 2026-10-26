@@ -412,6 +412,7 @@ class TestResourceSharesNoNPlusOne:
         admin_user,
         admin_token,
         organization,
+        org_owner,  # без членства в орге доступ к чату — 403
         get_auth_headers
     ):
         """

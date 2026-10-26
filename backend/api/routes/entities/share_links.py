@@ -8,8 +8,9 @@ GET /entities/public/candidate-preview/{token} — БЕЗ авторизации
 import secrets
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
+from ...limiter import PUBLIC_FILE_LIMIT, PUBLIC_PAGE_LIMIT, limiter
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,7 +133,9 @@ async def create_share_link(
 
 
 @router.get("/public/candidate-preview/{token}")
+@limiter.limit(PUBLIC_PAGE_LIMIT)
 async def public_candidate_preview(
+    request: Request,
     token: str,
     db: AsyncSession = Depends(get_db),
 ):
@@ -269,7 +272,9 @@ async def public_candidate_preview(
 
 
 @router.get("/public/candidate-preview/{token}/photo")
+@limiter.limit(PUBLIC_FILE_LIMIT)
 async def public_candidate_photo(
+    request: Request,
     token: str,
     db: AsyncSession = Depends(get_db),
 ):
@@ -282,7 +287,9 @@ async def public_candidate_photo(
 
 
 @router.get("/public/candidate-preview/{token}/files/{file_id}")
+@limiter.limit(PUBLIC_FILE_LIMIT)
 async def public_candidate_file(
+    request: Request,
     token: str,
     file_id: int,
     db: AsyncSession = Depends(get_db),

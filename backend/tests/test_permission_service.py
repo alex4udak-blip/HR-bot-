@@ -345,14 +345,18 @@ class TestPermissionServiceDepartmentAdmin:
 
     @pytest.mark.asyncio
     async def test_member_cannot_access_other_member_entity(self, db_session: AsyncSession, setup_department):
-        """Regular member CANNOT access other member's entity (only lead/sub_admin can)."""
+        """Regular member reads a colleague's entity in the same dept, but can't modify it.
+
+        Раньше рядовой участник отдела не видел чужого вовсе. Теперь у него
+        read-only доступ по отделу (_check_department_access: «For MEMBER:
+        read-only department access»); править/удалять — нет.
+        """
         data = setup_department
         permissions = PermissionService(db_session)
 
-        # Member should NOT see lead's entity unless shared
         lead_entity = Entity(
             name="Lead Entity",
-            type=EntityType.candidate,
+            type=EntityType.partner,
             status=EntityStatus.active,
             org_id=data["org"].id,
             department_id=data["dept"].id,
@@ -361,12 +365,9 @@ class TestPermissionServiceDepartmentAdmin:
         db_session.add(lead_entity)
         await db_session.flush()
 
-        can_access = await permissions.can_access_resource(
-            data["member"],
-            lead_entity,
-            "read"
-        )
-        assert can_access is False
+        assert await permissions.can_access_resource(data["member"], lead_entity, "read") is True
+        assert await permissions.can_access_resource(data["member"], lead_entity, "write") is False
+        assert await permissions.can_access_resource(data["member"], lead_entity, "delete") is False
 
 
 class TestPermissionServiceSharedAccess:
@@ -671,16 +672,23 @@ class TestPermissionServiceCanShareTo:
 
     @pytest.mark.asyncio
     async def test_member_cannot_share_outside_dept(self, db_session: AsyncSession, setup_can_share):
-        """Member CANNOT share outside their department."""
+        """Member shares with anyone in the org, but not outside it.
+
+        Раньше участник делился только внутри своего отдела — для HR это
+        оказалось слишком строго (can_share_to: «MEMBER can share with anyone
+        in the same organization»). Граница — организация.
+        """
         data = setup_can_share
         permissions = PermissionService(db_session)
 
-        can_share = await permissions.can_share_to(
-            data["member1"],
-            data["member2"],  # Member2 is in different dept
-            data["org"].id
-        )
-        assert can_share is False
+        # Другой отдел той же организации — можно
+        assert await permissions.can_share_to(data["member1"], data["member2"], data["org"].id) is True
+
+        # Человек вне организации — нельзя
+        stranger = User(email="stranger@test.com", password_hash="x", name="Stranger", role=UserRole.member)
+        db_session.add(stranger)
+        await db_session.flush()
+        assert await permissions.can_share_to(data["member1"], stranger, data["org"].id) is False
 
 
 class TestPermissionServiceGetAccessibleIds:
@@ -758,7 +766,23 @@ class TestPermissionServiceGetAccessibleIds:
             data["org"].id
         )
 
-        # Member should see only own entities
+        # Member should see own entities
         assert data["member_entity"].id in accessible_ids
         assert data["member_entity_no_dept"].id in accessible_ids
-        assert data["lead_entity"].id not in accessible_ids
+        # Кандидаты — общий пул организации (get_accessible_ids, модель A):
+        # кандидат лида виден и рядовому участнику.
+        assert data["lead_entity"].id in accessible_ids
+
+        # А не-кандидат человека вне отдела (партнёр) по-прежнему закрыт.
+        outsider = User(email="outsider-batch@test.com", password_hash="x", name="Outsider", role=UserRole.member)
+        db_session.add(outsider)
+        await db_session.flush()
+        db_session.add(OrgMember(org_id=data["org"].id, user_id=outsider.id, role=OrgRole.member))
+        partner = Entity(
+            name="Outsider Partner", type=EntityType.partner, status=EntityStatus.active,
+            org_id=data["org"].id, created_by=outsider.id,
+        )
+        db_session.add(partner)
+        await db_session.flush()
+        accessible_ids = await permissions.get_accessible_ids(data["member"], "entity", data["org"].id)
+        assert partner.id not in accessible_ids

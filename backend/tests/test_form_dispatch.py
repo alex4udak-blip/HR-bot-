@@ -158,7 +158,8 @@ async def test_submitted_answer_visible_in_entity_dispatches(client, db_session,
 
 @pytest.mark.asyncio
 async def test_notification_only_to_sender(client, db_session, organization, admin_user, second_user):
-    # Уведомление о заполнении идёт ТОЛЬКО отправителю (dispatch.created_by), не другим HR.
+    # Уведомление о заполнении — отправителю и текущему рекрутёру кандидата
+    # (24.10.2026, test_form_answer_recipients.py), но не посторонним HR.
     form = FormTemplate(org_id=organization.id, created_by=admin_user.id, title="S", slug="scr-only", fields=[])
     entity = Entity(org_id=organization.id, type=EntityType.candidate, name="Анна", status=EntityStatus.new)
     db_session.add_all([form, entity])

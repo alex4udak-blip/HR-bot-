@@ -58,7 +58,7 @@ class TestUserResponseSchema:
             id=1,
             email="test@test.com",
             name="Test User",
-            role="user",
+            role="member",  # роли «user» в UserRole нет: обычный пользователь — member
             is_active=True,
             telegram_id=None,
             telegram_username=None,
@@ -76,7 +76,7 @@ class TestUserResponseSchema:
             id=1,
             email="test@test.com",
             name="Test User",
-            role="user",
+            role="member",  # роли «user» в UserRole нет: обычный пользователь — member
             is_active=True,
             telegram_id=large_telegram_id,
             telegram_username="testuser",

@@ -102,7 +102,9 @@ def _get_client_ip(request: Request) -> str:
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("20/minute")  # ослаблено с 5/мин: несколько HR за одним офисным IP
+# Лимита попыток входа нет — решение владельца (24.10.2026): вход не должен
+# запирать человека. До этого «20/мин» на деле считалось одним на всю компанию
+# (адрес прокси Saturn), см. api/limiter.py.
 async def login(
     request: Request,
     response: Response,

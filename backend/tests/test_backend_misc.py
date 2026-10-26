@@ -32,16 +32,13 @@ class TestConfigSecurity:
         with open(invitations_file, 'r') as f:
             content = f.read()
 
-        # Check for hardcoded bot username (specific bot name)
-        assert 'enceladus_mst_bot' in content, "Expected hardcoded bot name to exist (known issue)"
-
-        # The issue: Line 379 has hardcoded bot username
-        # Should be: os.getenv('TELEGRAM_BOT_USERNAME', 'bot')
-        # This test documents the issue
-
-        # Verify it's in the problematic line context
-        assert 't.me/enceladus_mst_bot?start=bind_' in content, \
-            "Hardcoded telegram bot username found (security issue)"
+        # Раньше ссылка была «t.me/enceladus_mst_bot?start=bind_<user_id>» — сырой
+        # id без проверки, любой мог привязать чужой аккаунт. Теперь имя бота
+        # берётся из настроек (имя — только запасное), а в ссылке одноразовый токен.
+        assert 'settings.telegram_bot_username' in content, \
+            "Bot username should come from settings"
+        assert 'start=bind_{' not in content, \
+            "Bind link must use a one-time token, not a raw user id"
 
     def test_should_use_env_for_bot_username(self):
         """Document that bot username should come from environment."""
@@ -64,7 +61,8 @@ class TestSQLInjection:
 
     async def test_no_fstring_sql_injection_in_migrations(self):
         """Check that SQL queries don't use f-strings with user input."""
-        main_file = BACKEND_ROOT / 'main.py'
+        # Инициализация базы переехала из main.py в api/db/init.py.
+        main_file = BACKEND_ROOT / 'api' / 'db' / 'init.py'
         with open(main_file, 'r') as f:
             content = f.read()
 
@@ -96,14 +94,15 @@ class TestSQLInjection:
 
     async def test_migration_enum_values_are_hardcoded(self):
         """Verify that migration enum values come from hardcoded list, not user input."""
-        main_file = BACKEND_ROOT / 'main.py'
+        # Список enum'ов теперь — ENUM_DEFINITIONS в api/db/migrations.py
+        # (его перебирает init_database в api/db/init.py).
+        main_file = BACKEND_ROOT / 'api' / 'db' / 'migrations.py'
         with open(main_file, 'r') as f:
             lines = f.readlines()
 
-        # Find the new_enums definition (around line 60)
         found_hardcoded_enums = False
         for i, line in enumerate(lines):
-            if 'new_enums = [' in line:
+            if 'ENUM_DEFINITIONS = [' in line:
                 # Check next few lines contain hardcoded tuples
                 next_lines = ''.join(lines[i:i+10])
                 if '("entitytype"' in next_lines and '("entitystatus"' in next_lines:

@@ -130,110 +130,44 @@ class TestRateLimiting:
         # Check that limiter is attached to app state
         assert hasattr(app.state, 'limiter'), "Rate limiter should be configured in app.state"
 
+    # Блокировка аккаунта после неудачных входов УБРАНА по решению владельца
+    # (routes/auth.py, login: «запирала HR-пользователей на 15 минут… мешало
+    # больше, чем защищало»). Прежние тесты «5 ошибок → 423», «лок истекает»,
+    # «сообщение о локе» проверяли удалённое поведение; вместо них — то, что
+    # осталось: ошибки не запирают вход, а успешный вход снимает старый лок.
+
     @pytest.mark.asyncio
     async def test_account_lockout_after_failed_attempts(self, client, admin_user):
-        """
-        Test that accounts are locked after X failed login attempts.
-
-        EXPECTED: After 5 failed attempts, account should be temporarily locked
-        """
-        # Attempt 5 failed logins
-        for attempt in range(5):
+        """Failed attempts no longer lock the account: the right password still works."""
+        for _ in range(5):
             response = await client.post("/api/auth/login", json={
                 "email": "admin@test.com",
                 "password": "wrongpassword"
             })
+            assert response.status_code == 401
 
-            # First 4 attempts should fail with 401
-            if attempt < 4:
-                assert response.status_code == 401, f"Attempt {attempt + 1} should return 401"
-            else:
-                # 5th attempt should lock the account
-                assert response.status_code == 423, f"Account should be locked after 5 failed attempts"
-                data = response.json()
-                assert "locked" in data.get("detail", "").lower(), "Error message should indicate account is locked"
+        response = await client.post("/api/auth/login", json={
+            "email": "admin@test.com",
+            "password": "Admin123"
+        })
+        assert response.status_code == 200, response.text
 
     @pytest.mark.asyncio
     async def test_lockout_expires_after_timeout(self, client, admin_user, db_session):
-        """
-        Test that account lockout expires after a timeout period.
-
-        EXPECTED: Locked accounts should automatically unlock after 15 minutes
-        NOTE: Rate limiter (429) may trigger before account lockout (423) - both are valid security responses
-        """
-        from datetime import datetime, timedelta
-        from api.limiter import limiter
-
-        # Reset rate limiter to ensure clean state
-        limiter._storage.reset()
-
-        # Lock the account by making 5 failed attempts
-        for attempt in range(5):
-            await client.post("/api/auth/login", json={
-                "email": "admin@test.com",
-                "password": "wrongpassword"
-            })
-
-        # Verify account is locked or rate limited (both are security responses)
-        response = await client.post("/api/auth/login", json={
-            "email": "admin@test.com",
-            "password": "wrongpassword"
-        })
-        assert response.status_code in (423, 429), f"Expected lockout (423) or rate limit (429), got {response.status_code}"
-
-        # Reset rate limiter and unlock account for the expiry test
-        limiter._storage.reset()
-        await db_session.refresh(admin_user)
-        admin_user.locked_until = datetime.utcnow() - timedelta(minutes=1)
-        admin_user.failed_login_attempts = 0
+        """A lock left in the DB from before is ignored and cleared by a successful login."""
+        admin_user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+        admin_user.failed_login_attempts = 5
         await db_session.commit()
 
-        # Try to login again - should succeed with correct password now
         response = await client.post("/api/auth/login", json={
             "email": "admin@test.com",
-            "password": "Admin123"  # Correct password from fixture
+            "password": "Admin123"
         })
-        assert response.status_code == 200, f"Account should unlock after timeout expires: {response.text}"
+        assert response.status_code == 200, response.text
 
-    @pytest.mark.asyncio
-    async def test_lockout_notification(self, client, admin_user):
-        """
-        Test that users are notified when their account is locked.
-
-        EXPECTED: Clear error message indicating account is locked and when it will unlock
-        NOTE: Rate limiter (429) may trigger before account lockout (423) - both are valid security responses
-        """
-        from api.limiter import limiter
-
-        # Reset rate limiter to ensure clean state
-        limiter._storage.reset()
-
-        # Lock the account by making 5 failed attempts
-        for attempt in range(5):
-            await client.post("/api/auth/login", json={
-                "email": "admin@test.com",
-                "password": "wrongpassword"
-            })
-
-        # Try to login again with wrong password
-        response = await client.post("/api/auth/login", json={
-            "email": "admin@test.com",
-            "password": "wrongpassword"
-        })
-
-        # Accept either lockout (423) or rate limit (429) - both are valid security responses
-        assert response.status_code in (423, 429), f"Expected lockout (423) or rate limit (429), got {response.status_code}"
-        data = response.json()
-
-        if response.status_code == 423:
-            detail = data.get("detail", "").lower()
-            # Check for clear notification
-            assert "locked" in detail, "Message should indicate account is locked"
-            assert "minutes" in detail, "Message should indicate when to try again"
-        else:
-            # Rate limit response
-            error = data.get("error", "").lower()
-            assert "rate limit" in error or "exceeded" in error, "Rate limit message should be clear"
+        await db_session.refresh(admin_user)
+        assert admin_user.locked_until is None
+        assert admin_user.failed_login_attempts == 0
 
 
 class TestPasswordSecurity:
@@ -703,7 +637,14 @@ class TestSecurityHeaders:
         - Strict-Transport-Security: max-age=31536000; includeSubDomains
         - Content-Security-Policy: appropriate policy
         """
+        # JSON-ответы (/api/*, /health) получают только nosniff + no-store
+        # (middleware/security.py: CSP и прочее браузер к JSON не применяет).
         response = await client.get("/health")
+        assert response.headers.get("x-content-type-options") == "nosniff"
+        assert "no-store" in response.headers.get("cache-control", "")
+
+        # Полный набор — у страниц вне API.
+        response = await client.get("/not-an-api-page")
 
         # Check that all required security headers are present
         assert response.headers.get("x-content-type-options") == "nosniff", \

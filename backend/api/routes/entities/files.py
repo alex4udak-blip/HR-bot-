@@ -938,6 +938,7 @@ async def download_entity_file(
     entity_id: int,
     file_id: int,
     download: bool = Query(False),
+    thumb: bool = Query(False, description="Превью картинки для списков (services/image_thumbs.py)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1017,6 +1018,23 @@ async def download_entity_file(
         "video/mp4", "video/quicktime", "video/webm", "video/x-msvideo",
     }
     disposition = "inline" if (_inline_ok and not download) else "attachment"
+
+    # Аватарка в строке списка — уменьшенная копия вместо полного фото.
+    if thumb and not download and serve_mime.startswith("image/"):
+        raw = None
+        try:
+            raw = file_path.read_bytes() if disk_exists else getattr(entity_file, "file_data", None)
+        except Exception as e:
+            file_logger.warning(f"FILE_DOWNLOAD: thumb source read failed: {e}")
+        if raw:
+            from ...services.image_thumbs import thumbnail_bytes
+            small = await asyncio.to_thread(thumbnail_bytes, file_id, bytes(raw))
+            if small:
+                return Response(
+                    content=small,
+                    media_type="image/jpeg",
+                    headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"},
+                )
 
     if disk_exists:
         return FileResponse(

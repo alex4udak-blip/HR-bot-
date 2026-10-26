@@ -39,7 +39,8 @@ class TestEntityMemoryServiceInit:
         service = EntityMemoryService()
 
         with patch('api.services.entity_memory.settings') as mock_settings:
-            mock_settings.ANTHROPIC_API_KEY = "test-key"
+            # Сервис читает settings.anthropic_api_key (строчными).
+            mock_settings.anthropic_api_key = "test-key"
 
             with patch('api.services.entity_memory.anthropic.AsyncAnthropic') as mock_anthropic:
                 mock_client = MagicMock()
@@ -489,9 +490,10 @@ class TestBuildMemoryContext:
         # Should show last 10 (events 10-19)
         assert "Event 19" in context
         assert "Event 10" in context
-        # Should not show first 9
-        assert "Event 1" not in context
-        assert "Event 9" not in context
+        # Should not show first 9 (сравнение по строкам: «Event 1» — подстрока «Event 19»)
+        import re
+        shown = {int(n) for n in re.findall(r"Event (\d+)$", context, re.M)}
+        assert shown == set(range(10, 20))
 
     def test_build_memory_context_event_emojis(self):
         """Test that different event types get correct emojis."""
@@ -516,10 +518,12 @@ class TestBuildMemoryContext:
 
         context = service.build_memory_context(entity)
 
-        # Only last 10 events shown, so check those
-        assert "✅" in context  # hired (if in last 10)
+        # Only last 10 events shown: hired и fired (первые два) не попадают
+        assert "✅" not in context  # hired
+        assert "❌" not in context  # fired
         assert "⬆️" in context  # promotion
         assert "🎤" in context  # interview
+        assert "📌" in context  # unknown → значок по умолчанию
 
     def test_build_memory_context_event_without_details(self):
         """Test event formatting when details are missing."""

@@ -30,15 +30,12 @@ from ...services.red_flags import red_flags_service
 from ...services.cache import scoring_cache
 from ...models.sharing import ShareRequestWithRelated as ShareRequest
 from ..realtime import broadcast_entity_created, broadcast_entity_updated, broadcast_entity_deleted
-from ...limiter import limiter
+from ...limiter import limiter, user_or_ip
 
 
 def _get_rate_limit_key(request: Request) -> str:
-    """Get rate limit key based on authenticated user ID."""
-    user = getattr(request.state, '_rate_limit_user', None)
-    if user and hasattr(user, 'id'):
-        return f"user:{user.id}"
-    return request.client.host if request.client else "unknown"
+    """Лимит на пользователя (номер из токена), без входа — на адрес; см. limiter.user_or_ip."""
+    return user_or_ip(request)
 
 
 # Ownership filter type

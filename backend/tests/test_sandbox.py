@@ -137,8 +137,9 @@ class TestSandboxCreation:
         # Verify correct counts
         assert len(data["users"]) == 4
         assert len(data["entities"]) == 5
-        assert len(data["chats"]) == 3
-        assert len(data["calls"]) == 2
+        # Набор песочницы расширили: 7 чатов и 6 звонков (api/routes/admin/sandbox.py)
+        assert len(data["chats"]) == 7
+        assert len(data["calls"]) == 6
 
     async def test_non_superadmin_cannot_create_sandbox(
         self,
@@ -257,7 +258,7 @@ class TestSandboxCreation:
         superadmin_user,
         organization
     ):
-        """Test that sandbox creates 3 chats."""
+        """Test that sandbox creates its chats (7 — по набору в sandbox.py)."""
         token = create_access_token(data={"sub": str(superadmin_user.id)})
 
         response = await client.post(
@@ -270,7 +271,7 @@ class TestSandboxCreation:
         data = response.json()
 
         chats = data["chats"]
-        assert len(chats) == 3
+        assert len(chats) == 7
 
         # Verify chats are owned by sandbox users
         sandbox_user_ids = [u["id"] for u in data["users"]]
@@ -284,7 +285,7 @@ class TestSandboxCreation:
         superadmin_user,
         organization
     ):
-        """Test that sandbox creates 2 call recordings."""
+        """Test that sandbox creates its call recordings (6 — по набору в sandbox.py)."""
         token = create_access_token(data={"sub": str(superadmin_user.id)})
 
         response = await client.post(
@@ -297,7 +298,7 @@ class TestSandboxCreation:
         data = response.json()
 
         calls = data["calls"]
-        assert len(calls) == 2
+        assert len(calls) == 6
 
         # Verify calls are owned by sandbox users
         sandbox_user_ids = [u["id"] for u in data["users"]]
@@ -574,7 +575,9 @@ class TestSandboxSwitch:
         assert response.status_code == 200
         data = response.json()
 
-        assert "access_token" in data
+        # Токен имперсонации теперь только в httpOnly-куке (как у логина)
+        assert "access_token" in response.cookies
+        assert "access_token" not in data
         assert "user" in data
         assert data["user"]["id"] == owner_user["id"]
 
@@ -608,7 +611,8 @@ class TestSandboxSwitch:
         assert response.status_code == 200
         data = response.json()
 
-        assert "access_token" in data
+        # Токен имперсонации теперь только в httpOnly-куке (как у логина)
+        assert "access_token" in response.cookies
         assert data["user"]["id"] == admin_user["id"]
 
     async def test_can_switch_to_sandbox_member(
@@ -641,7 +645,8 @@ class TestSandboxSwitch:
         assert response.status_code == 200
         data = response.json()
 
-        assert "access_token" in data
+        # Токен имперсонации теперь только в httpOnly-куке (как у логина)
+        assert "access_token" in response.cookies
         assert data["user"]["id"] == member_user["id"]
 
     async def test_cannot_switch_to_non_sandbox_user(
@@ -695,7 +700,7 @@ class TestSandboxSwitch:
         )
 
         assert switch_response.status_code == 200
-        impersonation_token = switch_response.json()["access_token"]
+        impersonation_token = switch_response.cookies["access_token"]  # токен — в httpOnly-куке, не в теле
 
         # Try to use the impersonation token
         me_response = await client.get(
@@ -1050,7 +1055,7 @@ class TestSandboxDataIsolation:
             f"/api/admin/sandbox/switch/{sandbox_user['email']}",
             headers={"Authorization": f"Bearer {superadmin_token}"}
         )
-        sandbox_token = switch_response.json()["access_token"]
+        sandbox_token = switch_response.cookies["access_token"]  # токен — в httpOnly-куке, не в теле
 
         # Sandbox user tries to access real entity
         real_entity_id = real_user_with_data['entity'].id
@@ -1168,7 +1173,7 @@ class TestSandboxRolePermissions:
             f"/api/admin/sandbox/switch/{owner['email']}",
             headers={"Authorization": f"Bearer {superadmin_token}"}
         )
-        owner_token = switch_response.json()["access_token"]
+        owner_token = switch_response.cookies["access_token"]  # токен — в httpOnly-куке, не в теле
 
         # Owner lists entities
         response = await client.get(
@@ -1211,7 +1216,7 @@ class TestSandboxRolePermissions:
                 f"/api/admin/sandbox/switch/{admin['email']}",
                 headers={"Authorization": f"Bearer {superadmin_token}"}
             )
-            admin_token = switch_response.json()["access_token"]
+            admin_token = switch_response.cookies["access_token"]  # токен — в httpOnly-куке, не в теле
 
             # Admin lists entities
             response = await client.get(
@@ -1257,7 +1262,7 @@ class TestSandboxRolePermissions:
                 f"/api/admin/sandbox/switch/{member['email']}",
                 headers={"Authorization": f"Bearer {superadmin_token}"}
             )
-            member_token = switch_response.json()["access_token"]
+            member_token = switch_response.cookies["access_token"]  # токен — в httpOnly-куке, не в теле
 
             # Member lists entities
             response = await client.get(
@@ -1311,7 +1316,7 @@ class TestSandboxRolePermissions:
                 f"/api/admin/sandbox/switch/{user2['email']}",
                 headers={"Authorization": f"Bearer {superadmin_token}"}
             )
-            user2_token = switch_response.json()["access_token"]
+            user2_token = switch_response.cookies["access_token"]  # токен — в httpOnly-куке, не в теле
 
             # User2 should be able to access the shared resource
             if share.resource_type == ResourceType.entity:
@@ -1355,7 +1360,7 @@ class TestSandboxRolePermissions:
                     f"/api/admin/sandbox/switch/{member['email']}",
                     headers={"Authorization": f"Bearer {superadmin_token}"}
                 )
-                member_token = switch_response.json()["access_token"]
+                member_token = switch_response.cookies["access_token"]  # токен — в httpOnly-куке, не в теле
 
                 # Try to delete other's entity
                 response = await client.delete(

@@ -164,13 +164,16 @@ async def fuzzy_match_name(
     if not first_name and not last_name:
         return None
 
-    full_name = f"{first_name or ''} {last_name or ''}".strip().lower()
+    search_name = f"{first_name or ''} {last_name or ''}".strip()
+    full_name = search_name.lower()
 
-    # Try exact match on Entity.name
+    # Try exact match on Entity.name. Шаблон — в исходном регистре: в тестовой
+    # SQLite ILIKE/LOWER не знают кириллицы («иван» не находит «Иван Петров»),
+    # в Postgres регистр всё равно не важен.
     result = await db.execute(
         select(Entity).where(
             Entity.org_id == org_id,
-            Entity.name.ilike(f"%{full_name}%")
+            Entity.name.ilike(f"%{search_name}%")
         )
     )
     entity = result.scalar_one_or_none()
@@ -607,9 +610,27 @@ class TestIdentifyParticipants:
     async def test_identifies_target_entity(
         self,
         db_session: AsyncSession,
-        chat_linked_to_entity: Chat
+        chat_linked_to_entity: Chat,
+        entity: Entity
     ):
         """Identify target entity (chat.entity_id)."""
+        # У общей фикстуры entity нет telegram_user_id, поэтому в чате нет ни
+        # одного сообщения от неё и участников не было вовсе. Даём кандидату
+        # Telegram и его сообщение в чате.
+        entity.telegram_user_id = 555000111
+        db_session.add(Message(
+            chat_id=chat_linked_to_entity.id,
+            telegram_message_id=30001,
+            telegram_user_id=entity.telegram_user_id,
+            username="entity_user",
+            first_name="Test",
+            last_name="Contact",
+            content="Hello from entity",
+            content_type="text",
+            timestamp=datetime.utcnow(),
+        ))
+        await db_session.commit()
+
         participants = await identify_participants(db_session, chat_linked_to_entity)
 
         # Find target entity
@@ -742,7 +763,11 @@ class TestRoleIcons:
 # ============================================================================
 
 class TestEntityMultipleIdentifiers:
-    """Tests for Entity API with multiple emails, telegram_usernames, phones."""
+    """Tests for Entity API with multiple emails, telegram_usernames, phones.
+
+    Ручек /api/organizations/{id}/entities нет: кандидаты живут на /api/entities,
+    организация — текущая у пользователя.
+    """
 
     @pytest.mark.asyncio
     async def test_create_entity_with_multiple_emails(
@@ -764,7 +789,7 @@ class TestEntityMultipleIdentifiers:
         }
 
         response = await client.post(
-            f"/api/organizations/{organization.id}/entities",
+            "/api/entities",  # организация берётся из пользователя
             json=payload,
             headers=get_auth_headers(admin_token)
         )
@@ -794,7 +819,7 @@ class TestEntityMultipleIdentifiers:
         }
 
         response = await client.post(
-            f"/api/organizations/{organization.id}/entities",
+            "/api/entities",  # организация берётся из пользователя
             json=payload,
             headers=get_auth_headers(admin_token)
         )
@@ -818,7 +843,8 @@ class TestEntityMultipleIdentifiers:
             "telegram_usernames": ["new_username", "another_one"]
         }
 
-        response = await client.patch(
+        # Правка карточки — PUT (PATCH у /entities/{id} нет).
+        response = await client.put(
             f"/api/entities/{entity.id}",
             json=payload,
             headers=get_auth_headers(admin_token)
@@ -842,7 +868,7 @@ class TestEntityMultipleIdentifiers:
         """Search Entity by any of its emails."""
         # Search by secondary email
         response = await client.get(
-            f"/api/organizations/{organization.id}/entities?search=b@test.com",
+            "/api/entities?search=b@test.com",  # организация берётся из пользователя
             headers=get_auth_headers(admin_token)
         )
 
@@ -872,7 +898,7 @@ class TestEntityMultipleIdentifiers:
         }
 
         response = await client.post(
-            f"/api/organizations/{organization.id}/entities",
+            "/api/entities",  # организация берётся из пользователя
             json=payload,
             headers=get_auth_headers(admin_token)
         )
@@ -902,7 +928,7 @@ class TestEntityMultipleIdentifiers:
         }
 
         response = await client.post(
-            f"/api/organizations/{organization.id}/entities",
+            "/api/entities",  # организация берётся из пользователя
             json=payload,
             headers=get_auth_headers(admin_token)
         )

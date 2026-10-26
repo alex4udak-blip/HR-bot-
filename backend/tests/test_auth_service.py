@@ -182,7 +182,7 @@ class TestJWTTokenCreation:
         token = create_access_token(data)
 
         decoded = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-        exp_time = datetime.fromtimestamp(decoded["exp"])
+        exp_time = datetime.utcfromtimestamp(decoded["exp"])  # exp — UTC; fromtimestamp давал сдвиг на пояс машины
         expected_exp = datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
 
         # Allow 2 minute tolerance
@@ -230,7 +230,7 @@ class TestImpersonationToken:
         )
 
         decoded = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-        exp_time = datetime.fromtimestamp(decoded["exp"])
+        exp_time = datetime.utcfromtimestamp(decoded["exp"])  # exp — UTC; fromtimestamp давал сдвиг на пояс машины
         expected_exp = datetime.utcnow() + timedelta(hours=1)
 
         # Allow 2 minute tolerance
@@ -251,6 +251,22 @@ class TestImpersonationToken:
 # USER RETRIEVAL AND AUTHENTICATION
 # ============================================================================
 
+
+def _request(credentials):
+    """Запрос с заголовком Authorization.
+
+    get_current_user теперь берёт токен из cookie или заголовка запроса
+    (сигнатура request, access_token, db), а не из HTTPAuthorizationCredentials.
+    """
+    from starlette.requests import Request
+    headers = []
+    if credentials is not None:
+        headers.append((b"authorization", f"Bearer {credentials.credentials}".encode()))
+    return Request({
+        "type": "http", "method": "GET", "path": "/api/test",
+        "headers": headers, "query_string": b"",
+    })
+
 class TestGetCurrentUser:
     """Tests for get_current_user dependency."""
 
@@ -260,7 +276,7 @@ class TestGetCurrentUser:
         token = create_access_token(data={"sub": str(admin_user.id), "token_version": 0})
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-        user = await get_current_user(credentials, db_session)
+        user = await get_current_user(_request(credentials), None, db_session)
 
         assert user is not None
         assert user.id == admin_user.id
@@ -275,7 +291,7 @@ class TestGetCurrentUser:
         token = create_access_token(data={"sub": str(admin_user.id), "token_version": 5})
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-        user = await get_current_user(credentials, db_session)
+        user = await get_current_user(_request(credentials), None, db_session)
         assert user.id == admin_user.id
 
     @pytest.mark.asyncio
@@ -289,7 +305,7 @@ class TestGetCurrentUser:
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(credentials, db_session)
+            await get_current_user(_request(credentials), None, db_session)
 
         assert exc_info.value.status_code == 401
         assert "invalidated" in exc_info.value.detail.lower()
@@ -304,7 +320,7 @@ class TestGetCurrentUser:
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(credentials, db_session)
+            await get_current_user(_request(credentials), None, db_session)
 
         assert exc_info.value.status_code == 401
         assert "inactive" in exc_info.value.detail.lower()
@@ -316,7 +332,7 @@ class TestGetCurrentUser:
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(credentials, db_session)
+            await get_current_user(_request(credentials), None, db_session)
 
         assert exc_info.value.status_code == 401
 
@@ -329,7 +345,7 @@ class TestGetCurrentUser:
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(credentials, db_session)
+            await get_current_user(_request(credentials), None, db_session)
 
         assert exc_info.value.status_code == 401
         assert "invalid" in exc_info.value.detail.lower()
@@ -341,7 +357,7 @@ class TestGetCurrentUser:
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(credentials, db_session)
+            await get_current_user(_request(credentials), None, db_session)
 
         assert exc_info.value.status_code == 401
 
@@ -382,14 +398,14 @@ class TestGetCurrentUserOptional:
         token = create_access_token(data={"sub": str(admin_user.id), "token_version": 0})
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-        user = await get_current_user_optional(credentials, db_session)
+        user = await get_current_user_optional(_request(credentials), None, db_session)
         assert user is not None
         assert user.id == admin_user.id
 
     @pytest.mark.asyncio
     async def test_get_current_user_optional_without_token(self, db_session):
         """Test optional auth without token returns None."""
-        user = await get_current_user_optional(None, db_session)
+        user = await get_current_user_optional(_request(None), None, db_session)
         assert user is None
 
     @pytest.mark.asyncio
@@ -400,7 +416,7 @@ class TestGetCurrentUserOptional:
             credentials="invalid.token"
         )
 
-        user = await get_current_user_optional(credentials, db_session)
+        user = await get_current_user_optional(_request(credentials), None, db_session)
         assert user is None
 
     @pytest.mark.asyncio
@@ -412,7 +428,7 @@ class TestGetCurrentUserOptional:
         token = create_access_token(data={"sub": str(admin_user.id), "token_version": 0})
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-        user = await get_current_user_optional(credentials, db_session)
+        user = await get_current_user_optional(_request(credentials), None, db_session)
         assert user is None
 
     @pytest.mark.asyncio
@@ -424,7 +440,7 @@ class TestGetCurrentUserOptional:
         token = create_access_token(data={"sub": str(admin_user.id), "token_version": 3})
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
-        user = await get_current_user_optional(credentials, db_session)
+        user = await get_current_user_optional(_request(credentials), None, db_session)
         assert user is None
 
 

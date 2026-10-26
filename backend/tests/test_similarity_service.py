@@ -415,7 +415,7 @@ class TestSimilarityEndpoints:
         )
 
         assert response.status_code == 400
-        assert "только для кандидатов" in response.json()["detail"].lower()
+        assert "only available for candidates" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_get_duplicates_endpoint(
@@ -458,7 +458,7 @@ class TestSimilarityEndpoints:
         )
 
         assert response.status_code == 400
-        assert "саму с собой" in response.json()["detail"].lower()
+        assert "with itself" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_merge_entities_endpoint(
@@ -495,7 +495,7 @@ class TestSimilarityEndpoints:
         )
 
         assert response.status_code == 400
-        assert "саму с собой" in response.json()["detail"].lower()
+        assert "with itself" in response.json()["detail"].lower()
 
 
 class TestMergeEntities:

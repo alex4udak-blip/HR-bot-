@@ -38,7 +38,7 @@ from ..services.parser import (
 from ..services.auth import get_current_user, get_user_org
 from ..database import get_db
 from ..models.database import User, Entity, EntityType, EntityStatus
-from ..limiter import limiter
+from ..limiter import limiter, user_or_ip
 from ..utils.zip_security import validate_zip_file, sanitize_zip_filename, safe_extract_file
 
 logger = logging.getLogger(__name__)
@@ -241,13 +241,8 @@ def validate_and_sanitize_url(url: str) -> str:
 
 
 def _get_rate_limit_key(request: Request) -> str:
-    """Get rate limit key based on authenticated user ID."""
-    # The user is injected via Depends, we need to extract it from request state
-    # For rate limiting, we use user_id if available, otherwise IP
-    user = getattr(request.state, '_rate_limit_user', None)
-    if user:
-        return f"parser_user_{user.id}"
-    return f"parser_ip_{request.client.host if request.client else 'unknown'}"
+    """Лимит на пользователя (номер из токена), без входа — на адрес; см. limiter.user_or_ip."""
+    return f"parser_{user_or_ip(request)}"
 
 
 class UrlRequest(BaseModel):

@@ -314,38 +314,32 @@ class TestFetchVacancyFromApi:
             "key_skills": [{"name": "Python"}, {"name": "Django"}]
         }
 
-        # Create a proper async context manager
-        class MockAsyncClient:
+        # Запрос идёт через общий клиент get_http_client() (не через
+        # `async with httpx.AsyncClient()`), поэтому подменяем его. Прежняя
+        # подмена httpx.AsyncClient до общего клиента не доставала — тест мог
+        # уйти в настоящий hh.ru.
+        class FakeClient:
             def __init__(self):
                 self.get_called = False
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
+                self.kwargs = None
 
             async def get(self, *args, **kwargs):
                 self.get_called = True
+                self.kwargs = kwargs
                 resp = MagicMock()
                 resp.json.return_value = mock_response_data
                 resp.raise_for_status = MagicMock()
                 return resp
 
-        mock_client = MockAsyncClient()
+        mock_client = FakeClient()
 
-        # Patch at the module level
-        original_client = hh_module.httpx.AsyncClient
-        hh_module.httpx.AsyncClient = lambda: mock_client
-
-        try:
+        with patch.object(hh_module, "get_http_client", return_value=mock_client):
             result = await fetch_vacancy_from_api("12345678")
 
-            assert result["id"] == 12345678
-            assert result["name"] == "Python Developer"
-            assert mock_client.get_called
-        finally:
-            hh_module.httpx.AsyncClient = original_client
+        assert result["id"] == 12345678
+        assert result["name"] == "Python Developer"
+        assert mock_client.get_called
+        assert mock_client.kwargs.get("timeout")  # запрос к hh.ru — с таймаутом
 
     @pytest.mark.asyncio
     async def test_fetch_vacancy_http_error(self):
@@ -364,29 +358,17 @@ class TestFetchVacancyFromApi:
             response=mock_response_obj
         )
 
-        # Create a proper async context manager
-        class MockAsyncClient:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
+        class FakeClient:
             async def get(self, *args, **kwargs):
                 resp = MagicMock()
                 resp.status_code = 404
                 resp.raise_for_status = MagicMock(side_effect=http_error)
                 return resp
 
-        # Patch at the module level
-        original_client = hh_module.httpx.AsyncClient
-        hh_module.httpx.AsyncClient = MockAsyncClient
-
-        try:
+        # Подменяем общий клиент get_http_client() (см. test_fetch_vacancy_success).
+        with patch.object(hh_module, "get_http_client", return_value=FakeClient()):
             with pytest.raises(HTTPStatusError):
                 await fetch_vacancy_from_api("99999999")
-        finally:
-            hh_module.httpx.AsyncClient = original_client
 
 
 # ============================================================================

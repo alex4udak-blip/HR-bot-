@@ -1479,7 +1479,8 @@ class TestChatEdgeCases:
     ):
         """Test pagination with offset beyond available results."""
         response = await client.get(
-            "/api/chats?offset=10000",
+            # offset ограничен 5000 (Query le=5000): больше — 422.
+            "/api/chats?offset=5000",
             headers=get_auth_headers(admin_token)
         )
 

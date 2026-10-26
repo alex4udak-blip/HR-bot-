@@ -11,13 +11,14 @@ Provides:
 import secrets
 from typing import List, Optional
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, EmailStr
 
 from ..database import get_db
+from ..limiter import PUBLIC_TOKEN_LIMIT, limiter
 from ..models.database import (
     User, UserRole, Organization, OrgMember, OrgRole,
     Department, DepartmentMember, DeptRole, Invitation, Employee
@@ -282,7 +283,9 @@ async def list_invitations(
 
 
 @router.get("/validate/{token}", response_model=InvitationValidateResponse)
+@limiter.limit(PUBLIC_TOKEN_LIMIT)
 async def validate_invitation(
+    request: Request,
     token: str,
     db: AsyncSession = Depends(get_db)
 ):
@@ -323,7 +326,9 @@ async def validate_invitation(
 
 
 @router.post("/accept/{token}", response_model=AcceptInvitationResponse)
+@limiter.limit(PUBLIC_TOKEN_LIMIT)
 async def accept_invitation(
+    request: Request,
     token: str,
     data: AcceptInvitationRequest,
     db: AsyncSession = Depends(get_db)

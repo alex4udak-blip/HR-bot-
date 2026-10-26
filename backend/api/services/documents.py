@@ -552,6 +552,12 @@ class DocumentParser:
         detected = chardet.detect(file_bytes)
         detected_encoding = detected.get('encoding', 'utf-8') or 'utf-8'
         confidence = detected.get('confidence', 0)
+        # chardet уверенно (0.99) принимает русский cp1251 за MacCyrillic: буквы
+        # почти те же, но «П» → «ѕ», «я» → «€», и резюме в .txt из Windows
+        # приходило кракозябрами («ѕривет… €зыке»). Mac-кириллицу сейчас не
+        # пишет никто — читаем такие файлы как cp1251 (24.10.2026).
+        if detected_encoding.lower().replace('-', '').replace('_', '') in ('maccyrillic', 'xmaccyrillic'):
+            detected_encoding = 'cp1251'
 
         # List of encodings to try in order
         encodings_to_try = []

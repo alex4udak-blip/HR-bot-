@@ -34,6 +34,15 @@ from api.models.database import CallRecording, CallStatus, CallSource
 # FIXTURES
 # ============================================================================
 
+def _api_connection_error():
+    """Сбой Claude так, как его отдаёт SDK. Процессор ловит APIError /
+    APIConnectionError, а не любой Exception (голый Exception — это уже баг
+    кода, ему лучше упасть громко)."""
+    import httpx
+    from anthropic import APIConnectionError
+    return APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+
+
 @pytest.fixture
 def mock_settings():
     """Mock settings with API keys."""
@@ -277,7 +286,9 @@ class TestAudioConversion:
         """Test that exceptions during conversion are handled."""
         processor = CallProcessor()
 
-        with patch('asyncio.create_subprocess_exec', AsyncMock(side_effect=Exception("ffmpeg not found"))):
+        # Ловятся конкретные ошибки ОС: нет ffmpeg = FileNotFoundError (так
+        # create_subprocess_exec сообщает о ненайденной программе).
+        with patch('asyncio.create_subprocess_exec', AsyncMock(side_effect=FileNotFoundError("ffmpeg not found"))):
             result = await processor._convert_to_wav("/tmp/audio.mp3")
 
             # Should return original file on exception
@@ -548,9 +559,11 @@ class TestAnalyzeSingle:
 
         result = await processor._analyze_single("test")
 
-        # Should return fallback with transcript preview
+        # Возвращается явное «Ошибка анализа…», а не кусок транскрипта: иначе
+        # транскрипт выглядел как готовое резюме созвона.
         assert "summary" in result
-        assert "test" in result["summary"]
+        assert result["summary"].startswith("Ошибка анализа")
+        assert result["key_points"] == []
 
 
 # ============================================================================
@@ -599,7 +612,7 @@ class TestAnalyzeChunked:
         mock_anthropic_client.messages.create = AsyncMock(
             side_effect=[
                 MagicMock(content=[MagicMock(text='{"topics": [], "details": [], "key_points": [], "action_items": [], "profiles": [], "decisions": [], "open_questions": []}')]),
-                Exception("API error"),
+                _api_connection_error(),
                 MagicMock(content=[MagicMock(text='{"topics": [], "details": [], "key_points": [], "action_items": [], "profiles": [], "decisions": [], "open_questions": []}')]),
                 MagicMock(content=[MagicMock(text='{"summary": "Final", "key_points": [], "action_items": []}')])
             ]
@@ -667,14 +680,14 @@ class TestCombineChunkAnalyses:
 
         result = await processor._combine_chunk_analyses([], 1000)
 
-        assert result["summary"] == "Analysis failed"
+        assert result["summary"].startswith("Ошибка анализа")
         assert result["key_points"] == []
 
     @pytest.mark.asyncio
     async def test_combine_chunk_analyses_synthesis_error(self, mock_anthropic_client):
         """Test fallback when synthesis fails."""
         processor = CallProcessor()
-        mock_anthropic_client.messages.create = AsyncMock(side_effect=Exception("Synthesis failed"))
+        mock_anthropic_client.messages.create = AsyncMock(side_effect=_api_connection_error())
         processor.anthropic = mock_anthropic_client
 
         chunk_analyses = [
@@ -756,7 +769,7 @@ class TestProcessCall:
                  "key_points": ["Point 1"],
                  "action_items": ["Task 1"]
              })) as mock_analyze, \
-             patch('api.database.AsyncSessionLocal') as mock_session_class:
+             patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
 
             # Configure mock session
             mock_session = AsyncMock()
@@ -787,7 +800,7 @@ class TestProcessCall:
         """Test processing non-existent call."""
         processor = CallProcessor()
 
-        with patch('api.database.AsyncSessionLocal') as mock_session_class:
+        with patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=db_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
@@ -804,7 +817,7 @@ class TestProcessCall:
 
         processor = CallProcessor()
 
-        with patch('api.database.AsyncSessionLocal') as mock_session_class:
+        with patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=db_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
@@ -823,7 +836,7 @@ class TestProcessCall:
 
         with patch.object(processor, '_convert_to_wav', AsyncMock(return_value="/tmp/test.wav")), \
              patch.object(processor, '_transcribe', AsyncMock(side_effect=Exception("Transcription failed"))), \
-             patch('api.database.AsyncSessionLocal') as mock_session_class:
+             patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
 
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=db_session)
@@ -853,7 +866,7 @@ class TestProcessCall:
              patch.object(processor, '_transcribe', AsyncMock(return_value="Test")), \
              patch.object(processor, '_get_duration', AsyncMock(return_value=100)), \
              patch.object(processor, '_analyze', AsyncMock(return_value={"summary": "Test", "key_points": [], "action_items": []})), \
-             patch('api.database.AsyncSessionLocal') as mock_session_class, \
+             patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class, \
              patch.object(db_session, 'commit', mock_commit):
 
             mock_session = AsyncMock()
@@ -888,7 +901,7 @@ class TestProcessCall:
                  patch.object(processor, '_transcribe', AsyncMock(return_value="Test")), \
                  patch.object(processor, '_get_duration', AsyncMock(return_value=100)), \
                  patch.object(processor, '_analyze', AsyncMock(return_value={"summary": "Test", "key_points": [], "action_items": []})), \
-                 patch('api.database.AsyncSessionLocal') as mock_session_class:
+                 patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
 
                 mock_session = AsyncMock()
                 mock_session.__aenter__ = AsyncMock(return_value=db_session)
@@ -928,7 +941,7 @@ class TestAnalyzeTranscript:
             "key_points": ["Point 1"],
             "action_items": ["Task 1"]
         })), \
-             patch('api.database.AsyncSessionLocal') as mock_session_class:
+             patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
 
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=db_session)
@@ -961,7 +974,7 @@ class TestAnalyzeTranscript:
         }
 
         with patch.object(processor, '_analyze', AsyncMock()) as mock_analyze, \
-             patch('api.database.AsyncSessionLocal') as mock_session_class:
+             patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
 
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=db_session)
@@ -1000,7 +1013,7 @@ class TestAnalyzeTranscript:
             "key_points": [],
             "action_items": []
         })) as mock_analyze, \
-             patch('api.database.AsyncSessionLocal') as mock_session_class:
+             patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
 
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=db_session)
@@ -1025,7 +1038,7 @@ class TestAnalyzeTranscript:
         """Test analyzing transcript for non-existent call."""
         processor = CallProcessor()
 
-        with patch('api.database.AsyncSessionLocal') as mock_session_class:
+        with patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=db_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
@@ -1046,7 +1059,7 @@ class TestAnalyzeTranscript:
         processor = CallProcessor()
 
         with patch.object(processor, '_analyze', AsyncMock(side_effect=Exception("Analysis failed"))), \
-             patch('api.database.AsyncSessionLocal') as mock_session_class:
+             patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class:
 
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=db_session)
@@ -1168,7 +1181,7 @@ class TestEdgeCasesAndErrors:
              patch.object(processor, '_transcribe', AsyncMock(return_value="Test")), \
              patch.object(processor, '_get_duration', AsyncMock(return_value=100)), \
              patch.object(processor, '_analyze', AsyncMock(return_value={"summary": "Test", "key_points": [], "action_items": []})), \
-             patch('api.database.AsyncSessionLocal') as mock_session_class, \
+             patch('api.services.call_processor.AsyncSessionLocal') as mock_session_class, \
              patch.object(db_session, 'commit', safe_commit):
 
             # Each call to AsyncSessionLocal() should return a new mock session

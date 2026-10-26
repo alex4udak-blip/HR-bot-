@@ -72,6 +72,8 @@ import {
 } from '@/services/api/forms';
 import { AnketaResponses } from '@/features/forms/AnketaResponses';
 import { FunnelRecruiterFilter } from '@/components/funnels/FunnelRecruiterFilter';
+import { useMobileMasterDetail } from '@/components/candidates/useMobileMasterDetail';
+import { MobileBackToList } from '@/components/candidates/MobileBackToList';
 
 const AnketaDrawer = lazy(() =>
   import('@/features/forms/AnketaDrawer').then((m) => ({ default: m.AnketaDrawer })),
@@ -131,6 +133,7 @@ export default function RecruiterFunnelsPage() {
   const [showHandover, setShowHandover] = useState(false);
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null);
   const [mobileSidebar, setMobileSidebar] = useState(false);
+  const mobile = useMobileMasterDetail('hf-mobile-view:funnels');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Список вакансий: фильтры, группы рекрутёров, меню (useFunnelVacancyList).
@@ -826,7 +829,7 @@ export default function RecruiterFunnelsPage() {
                   </div>
                 ) : (
                 /* Master-Detail split */
-                <div className="hf-candidates-master">
+                <div className="hf-candidates-master" data-mobile-view={mobile.view}>
                   {/* Left: candidate list */}
                   <FunnelCandidateList
                     anySelected={anySelected}
@@ -842,7 +845,10 @@ export default function RecruiterFunnelsPage() {
                     selectedVacancyId={selectedVacancyId}
                     setDetailTab={setDetailTab}
                     setSearchParams={setSearchParams}
-                    setSelectedCandidateId={setSelectedCandidateId}
+                    setSelectedCandidateId={(id) => {
+                      setSelectedCandidateId(id);
+                      if (id != null) mobile.showCard();
+                    }}
                     setSelectedIds={setSelectedIds}
                     tabFilteredCandidates={tabFilteredCandidates}
                     toggleCandidateSelection={toggleCandidateSelection}
@@ -850,6 +856,7 @@ export default function RecruiterFunnelsPage() {
 
                   {/* Right: detail panel */}
                   <div className="hf-candidates-detail-panel hf-vacancy-detail flex-1 bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)] rounded-hf-l flex flex-col overflow-hidden">
+                    <MobileBackToList onClick={mobile.showList} />
                     {selectedCandidate ? (
                       <>
                         {/* Tab content — единый профиль (как «Все кандидаты»):

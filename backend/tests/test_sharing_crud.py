@@ -389,7 +389,7 @@ class TestCreateShareErrors:
         )
 
         assert response.status_code == 404
-        assert "user" in response.json()["detail"].lower()
+        assert "пользователь не найден" in response.json()["detail"].lower()  # текст ручки — по-русски
 
     @pytest.mark.asyncio
     async def test_create_share_not_owner(
@@ -450,7 +450,7 @@ class TestCreateShareErrors:
         )
 
         assert response.status_code == 403
-        assert "organization" in response.json()["detail"].lower()
+        assert "другой организации" in response.json()["detail"].lower()  # текст ручки — по-русски
 
     @pytest.mark.asyncio
     async def test_create_share_invalid_access_level(

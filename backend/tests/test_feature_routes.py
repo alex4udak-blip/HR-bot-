@@ -35,7 +35,7 @@ class TestGetFeatureSettings:
         feature = DepartmentFeature(
             org_id=organization.id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature)
@@ -60,7 +60,7 @@ class TestGetFeatureSettings:
 
         # Check that vacancies is in the features list
         feature_names = [f["feature_name"] for f in data["features"]]
-        assert "vacancies" in feature_names
+        assert "candidate_database" in feature_names
 
     @pytest.mark.asyncio
     async def test_org_owner_can_get_features(
@@ -124,7 +124,7 @@ class TestGetFeatureSettings:
         feature = DepartmentFeature(
             org_id=organization.id,
             department_id=department.id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature)
@@ -168,7 +168,7 @@ class TestSetFeatureAccess:
         })
 
         response = await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": True, "department_ids": None}
         )
@@ -178,7 +178,7 @@ class TestSetFeatureAccess:
         assert "features" in data
 
         # Verify the feature was created
-        org_wide = [f for f in data["features"] if f["department_id"] is None and f["feature_name"] == "vacancies"]
+        org_wide = [f for f in data["features"] if f["department_id"] is None and f["feature_name"] == "candidate_database"]
         assert len(org_wide) == 1
         assert org_wide[0]["enabled"] is True
 
@@ -199,7 +199,7 @@ class TestSetFeatureAccess:
         })
 
         response = await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": True, "department_ids": [department.id]}
         )
@@ -283,7 +283,7 @@ class TestSetFeatureAccess:
         })
 
         response = await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": True, "department_ids": None}
         )
@@ -308,7 +308,7 @@ class TestDeleteFeatureSetting:
         feature = DepartmentFeature(
             org_id=organization.id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature)
@@ -320,13 +320,14 @@ class TestDeleteFeatureSetting:
         })
 
         response = await client.delete(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"}
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["success"] is True
+        # Ответ ручки теперь {"message": "…успешно удалена"}, без "success".
+        assert "успешно удалена" in data["message"]
 
     @pytest.mark.asyncio
     async def test_owner_can_delete_department_feature(
@@ -343,7 +344,7 @@ class TestDeleteFeatureSetting:
         feature = DepartmentFeature(
             org_id=organization.id,
             department_id=department.id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature)
@@ -355,13 +356,14 @@ class TestDeleteFeatureSetting:
         })
 
         response = await client.delete(
-            f"/api/admin/features/vacancies?department_id={department.id}",
+            f"/api/admin/features/candidate_database?department_id={department.id}",
             headers={"Authorization": f"Bearer {token}"}
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["success"] is True
+        # Ответ ручки теперь {"message": "…успешно удалена"}, без "success".
+        assert "успешно удалена" in data["message"]
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_feature_returns_404(
@@ -379,7 +381,7 @@ class TestDeleteFeatureSetting:
         })
 
         response = await client.delete(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"}
         )
 
@@ -399,7 +401,7 @@ class TestDeleteFeatureSetting:
         feature = DepartmentFeature(
             org_id=organization.id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature)
@@ -411,7 +413,7 @@ class TestDeleteFeatureSetting:
         })
 
         response = await client.delete(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"}
         )
 
@@ -438,7 +440,7 @@ class TestFeatureAccessIntegration:
 
         # Enable vacancies
         await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": True, "department_ids": None}
         )
@@ -454,7 +456,7 @@ class TestFeatureAccessIntegration:
 
         # Vacancies should be in the features list
         feature_names = [f["feature_name"] for f in data["features"]]
-        assert "vacancies" in feature_names
+        assert "candidate_database" in feature_names
 
     @pytest.mark.asyncio
     async def test_toggle_feature_updates_settings(
@@ -473,24 +475,24 @@ class TestFeatureAccessIntegration:
 
         # Enable vacancies
         response1 = await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": True, "department_ids": None}
         )
         assert response1.status_code == 200
 
         # Verify enabled
-        org_wide1 = [f for f in response1.json()["features"] if f["department_id"] is None and f["feature_name"] == "vacancies"]
+        org_wide1 = [f for f in response1.json()["features"] if f["department_id"] is None and f["feature_name"] == "candidate_database"]
         assert org_wide1[0]["enabled"] is True
 
         # Disable vacancies
         response2 = await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": False, "department_ids": None}
         )
         assert response2.status_code == 200
 
         # Verify disabled
-        org_wide2 = [f for f in response2.json()["features"] if f["department_id"] is None and f["feature_name"] == "vacancies"]
+        org_wide2 = [f for f in response2.json()["features"] if f["department_id"] is None and f["feature_name"] == "candidate_database"]
         assert org_wide2[0]["enabled"] is False

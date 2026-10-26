@@ -26,6 +26,29 @@ from api.services.ai_scoring import (
 from tests.conftest import auth_headers
 
 
+@pytest.fixture(autouse=True)
+def scoring_env(monkeypatch, mock_anthropic_client):
+    """Окружение скоринга: без живого Redis и с мок-клиентом Claude.
+
+    1. Кэш скоринга сначала ходит в Redis (redis://localhost:6379 по
+       умолчанию). На машине разработчика Redis запущен, и тесты писали ключи
+       в настоящую базу локального бэкенда, а счётчики «сброшено 3» видели
+       хвосты прошлых прогонов и соседних тестов (8, 6, 5). Выключаем Redis и
+       даём каждому тесту пустой запасной кэш.
+    2. ai_scoring импортирует AsyncAnthropic при загрузке модуля, поэтому
+       подмена anthropic.AsyncAnthropic в общей фикстуре до него не доходит, а
+       без ключа клиент падает и скоринг отдаёт запасные 50 баллов. Отдаём
+       синглтону мок напрямую.
+    """
+    import api.services.redis_cache as rc
+    monkeypatch.setattr(rc, "_redis_available", False)
+    monkeypatch.setattr(rc, "_redis_client", None)
+    # Без Redis RedisCacheService падает в СВОЙ in-memory слой, который
+    # clear_all_sync() кэша скоринга не чистит, — свежий на каждый тест.
+    monkeypatch.setattr(rc.RedisCacheService, "_memory_cache", {})
+    monkeypatch.setattr(ai_scoring_service, "_client", mock_anthropic_client)
+
+
 # ============================================================================
 # FIXTURES
 # ============================================================================
@@ -908,7 +931,7 @@ class TestScoringCacheService:
         assert cached is None
 
     @pytest.mark.asyncio
-    async def test_cache_ttl_expiry(self):
+    async def test_cache_ttl_expiry(self, monkeypatch):
         """Test that cache entries expire after TTL."""
         from datetime import datetime, timedelta
 
@@ -917,10 +940,18 @@ class TestScoringCacheService:
         # Set with very short TTL (already expired)
         await ScoringCacheService.set_cached_score(1, 2, score_data, ttl_seconds=1)
 
-        # Manually expire the entry
-        cache_key = ScoringCacheService.make_score_key(1, 2)
-        async with ScoringCacheService._get_lock():
-            ScoringCacheService._cache[cache_key]['expires_at'] = datetime.utcnow() - timedelta(seconds=10)
+        # Запись лежит в ДВУХ слоях: основном (Redis или его запасной
+        # in-memory) и резервном ScoringCacheService._cache, а читается сначала
+        # основной — поэтому «состарить» только _cache (как было) мало.
+        # Переводим часы модуля кэша на 10 секунд вперёд: истекают оба слоя.
+        import api.services.cache as cache_module
+
+        class _Later(datetime):
+            @classmethod
+            def utcnow(cls):
+                return datetime.utcnow() + timedelta(seconds=10)
+
+        monkeypatch.setattr(cache_module, "datetime", _Later)
 
         # Should return None (expired)
         cached = await ScoringCacheService.get_cached_score(1, 2)
@@ -1175,7 +1206,8 @@ class TestScoringCacheInvalidation:
         assert cached is not None
 
         # Update entity with scoring-relevant field (tags/skills)
-        response = await client.patch(
+        # Правка карточки/вакансии — PUT (PATCH-ручек нет, был 405).
+        response = await client.put(
             f"/api/entities/{candidate_for_scoring.id}",
             json={
                 "tags": ["python", "fastapi", "docker", "kubernetes"]
@@ -1208,7 +1240,8 @@ class TestScoringCacheInvalidation:
         )
 
         # Update entity salary
-        response = await client.patch(
+        # Правка карточки/вакансии — PUT (PATCH-ручек нет, был 405).
+        response = await client.put(
             f"/api/entities/{candidate_for_scoring.id}",
             json={
                 "expected_salary_min": 300000,
@@ -1242,7 +1275,8 @@ class TestScoringCacheInvalidation:
         )
 
         # Update entity with non-scoring field (phone)
-        response = await client.patch(
+        # Правка карточки/вакансии — PUT (PATCH-ручек нет, был 405).
+        response = await client.put(
             f"/api/entities/{candidate_for_scoring.id}",
             json={
                 "phone": "+7 999 888 7777"
@@ -1280,7 +1314,8 @@ class TestScoringCacheInvalidation:
         )
 
         # Update vacancy with scoring-relevant field
-        response = await client.patch(
+        # Правка карточки/вакансии — PUT (PATCH-ручек нет, был 405).
+        response = await client.put(
             f"/api/vacancies/{vacancy.id}",
             json={
                 "requirements": "7+ years of Python experience, team leadership"
@@ -1316,7 +1351,8 @@ class TestScoringCacheInvalidation:
         )
 
         # Update vacancy salary
-        response = await client.patch(
+        # Правка карточки/вакансии — PUT (PATCH-ручек нет, был 405).
+        response = await client.put(
             f"/api/vacancies/{vacancy.id}",
             json={
                 "salary_min": 250000,
@@ -1350,7 +1386,8 @@ class TestScoringCacheInvalidation:
         )
 
         # Update vacancy with non-scoring field (location)
-        response = await client.patch(
+        # Правка карточки/вакансии — PUT (PATCH-ручек нет, был 405).
+        response = await client.put(
             f"/api/vacancies/{vacancy.id}",
             json={
                 "location": "Saint Petersburg"

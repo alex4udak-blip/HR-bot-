@@ -25,7 +25,7 @@ class TestProcessURLEndpoint:
 
     @pytest.mark.asyncio
     async def test_process_fireflies_url_returns_immediately(
-        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user, org_owner  # без членства в орге ручка отвечает 400
     ):
         """Test that Fireflies URL processing returns immediately with pending status."""
         url = "https://app.fireflies.ai/view/TEST123"
@@ -54,7 +54,7 @@ class TestProcessURLEndpoint:
 
     @pytest.mark.asyncio
     async def test_duplicate_url_returns_existing_call(
-        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user, org_owner  # без членства в орге ручка отвечает 400
     ):
         """Test that submitting the same URL within 5 minutes returns existing call."""
         url = "https://app.fireflies.ai/view/DUPLICATE123"
@@ -88,7 +88,7 @@ class TestProcessURLEndpoint:
 
     @pytest.mark.asyncio
     async def test_old_duplicate_url_creates_new_call(
-        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user
+        self, client: AsyncClient, admin_token, get_auth_headers, db_session, organization, admin_user, org_owner  # без членства в орге ручка отвечает 400
     ):
         """Test that same URL after 5 minutes creates new call."""
         url = "https://app.fireflies.ai/view/OLD123"

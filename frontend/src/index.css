@@ -6621,6 +6621,76 @@ body.performance-mode .glass-card:hover {
   container-name: hf-candidate-detail;
 }
 
+/* Телефон: «список ИЛИ карточка» (24.10.2026, useMobileMasterDetail). */
+.hf-mobile-back-to-list {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .hf-candidates-master {
+    padding-right: var(--hf-space-s);
+  }
+
+  .hf-candidates-master .hf-candidates-list-panel {
+    width: 100%;
+    flex: 1 1 0;
+  }
+
+  .hf-candidates-master[data-mobile-view="list"] .hf-candidates-detail-panel,
+  .hf-candidates-master[data-mobile-view="card"] .hf-candidates-list-panel {
+    display: none;
+  }
+
+  .hf-mobile-back-to-list {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+    margin: var(--hf-space-m) var(--hf-space-l) 0;
+    border-radius: var(--hf-radius-m);
+    padding: 6px 10px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--hf-cyan-700);
+    align-self: flex-start;
+  }
+
+  .hf-mobile-back-to-list:hover {
+    background: var(--hf-main-50);
+  }
+
+  /* Заголовок этапа и «Сменить этап подбора» не помещались в строку:
+     кнопка сжималась в серый квадрат поверх названия этапа. */
+  .hf-candidates-detail-panel .hf-stage-card-head-row {
+    flex-wrap: wrap;
+    gap: var(--hf-space-s);
+  }
+
+  .hf-candidates-detail-panel .hf-stage-change-btn {
+    margin-right: 0;
+    white-space: nowrap;
+  }
+
+  /* Окно смены этапа — на весь экран, в одну колонку: этапы сверху,
+     комментарий и «Сохранить» под ними. Рядом 600 px не помещаются, а
+     выпадашкой под кнопкой низ окна уезжал за край прокрутки. Префикс
+     панели — чтобы перебить базовые правила ниже по файлу. */
+  .hf-candidates-detail-panel .hf-stage-picker {
+    position: fixed;
+    inset: var(--hf-space-s);
+    width: auto;
+    height: auto;
+    flex-direction: column;
+  }
+
+  .hf-candidates-detail-panel .hf-stage-picker-list {
+    width: 100%;
+    max-height: 45%;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+}
+
 .hf-candidate-row {
   display: flex;
   cursor: pointer;

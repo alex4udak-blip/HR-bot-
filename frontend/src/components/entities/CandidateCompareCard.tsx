@@ -574,12 +574,21 @@ function SkillsCell({ mine, other }: { mine: string[]; other: string[] }) {
   );
 }
 
-function SideHead({ s }: { s: CompareSide }) {
+// Отказ — у той анкеты, где он был, прямо у имени (владелец, 24.10.2026:
+// строка «слева отказ …» в выводе заставляла соображать, где это «слева»).
+function SideHead({ s, rejection }: { s: CompareSide; rejection?: PriorRejection }) {
   return (
     <div className="flex min-w-0 items-center gap-2.5">
       <Avatar photo={s.side.photo} name={s.side.name} muted={s.caption !== "Открыта сейчас"} />
       <div className="min-w-0">
-        <div className="font-semibold text-slate-900 truncate" title={s.side.name}>{s.side.name || "—"}</div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="font-semibold text-slate-900 truncate" title={s.side.name}>{s.side.name || "—"}</span>
+          {rejection && (
+            <span className="shrink-0 rounded-full px-2 py-[1px] text-[11px] font-semibold" style={{ background: "#fdecec", color: "#a32d2d" }}>
+              {rejection.kind === "no_show" ? "Не пришёл" : "Отказ"}{rejection.date ? ` · ${shortDate(rejection.date)}` : ""}
+            </span>
+          )}
+        </div>
         <div className="text-[11px] text-slate-400">
           {s.caption} · ID {s.entityId}
           {s.archived && <span className="ml-1 rounded bg-slate-100 px-1 text-slate-500">архив</span>}
@@ -587,6 +596,34 @@ function SideHead({ s }: { s: CompareSide }) {
       </div>
     </div>
   );
+}
+
+// «a, b и c» — вывод сравнения читается одним предложением.
+function listRu(items: string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} и ${items[items.length - 1]}`;
+}
+
+// Подпись признака с сервера → кусок фразы: «та же компания + похожие навыки»
+// → «та же компания и похожие навыки», «совпадает (100%)» → «совпадает на 100%».
+function signalPhrase(label: string): string {
+  return label.toLowerCase().replace(/\s*\+\s*/g, " и ").replace(/\s*\((\d+)%\)/g, " на $1%");
+}
+
+export function compareVerdictText(parts: {
+  same: string[];
+  alike: string[];
+  extra: string[];
+  diff: string[];
+}): string {
+  const clauses: string[] = [];
+  if (parts.same.length) clauses.push(`${parts.same.length > 1 ? "совпадают" : "совпадает"} ${listRu(parts.same)}`);
+  if (parts.alike.length) clauses.push(`похоже: ${listRu(parts.alike)}`);
+  clauses.push(...parts.extra.map(signalPhrase));
+  const sentences: string[] = [];
+  if (clauses.length) sentences.push(clauses.join("; "));
+  if (parts.diff.length) sentences.push(`отличается: ${listRu(parts.diff)}`);
+  return sentences.map((t) => `${t.charAt(0).toUpperCase()}${t.slice(1)}.`).join(" ");
 }
 
 const GRID = "grid grid-cols-[112px_minmax(0,1fr)_32px_minmax(0,1fr)]";
@@ -671,14 +708,20 @@ export function CompareTable({
       })
       .filter((r) => r.a || r.b);
   const allRows = GROUPS.flatMap(rowsOf);
-  const same = allRows.filter((r) => r.kind === "exact").map((r) => r.label.toLowerCase());
-  const alike = allRows.filter((r) => r.kind === "partial").map((r) => r.label.toLowerCase());
-  const diff = allRows.filter((r) => r.differs).map((r) => r.label.toLowerCase());
+  // «ФИО» остаётся заглавными, остальное — строчными внутри фразы.
+  const word = (label: string) => (label === label.toUpperCase() ? label : label.toLowerCase());
+  const same = allRows.filter((r) => r.kind === "exact").map((r) => word(r.label));
+  const alike = allRows.filter((r) => r.kind === "partial").map((r) => word(r.label));
+  const diff = allRows.filter((r) => r.differs).map((r) => word(r.label));
   const fieldSignals = new Set(Object.values(SIGNAL_FIELD_TO_SIDE));
   const extraSignals = (signals || []).filter((sg) => !fieldSignals.has(SIGNAL_FIELD_TO_SIDE[sg.field]));
   const verdict = level === "exact" ? "Скорее всего, это один человек" : "Возможно, это один человек — сверьте";
-  const rejectedSide = rightRej.length ? "справа" : leftRej.length ? "слева" : "";
-  const lastRej = (rightRej[0] || leftRej[0]) as PriorRejection | undefined;
+  const verdictText = compareVerdictText({
+    same,
+    alike,
+    extra: extraSignals.map((sg) => sg.label),
+    diff,
+  });
 
   const resumeLink = (s: Side) =>
     s.sourceUrl ? (
@@ -701,34 +744,24 @@ export function CompareTable({
 
   return (
     <div className="space-y-2.5">
-      {/* Вывод одной строкой: что совпало, что разное, был ли отказ. */}
-      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px]">
-        <span className="font-semibold text-slate-900 mr-1">{verdict}</span>
-        {same.length > 0 && (
-          <span className="rounded-full bg-[#eaf3de] px-2 py-0.5 text-[12px] text-[#27500a]">совпало: {same.join(", ")}</span>
-        )}
-        {alike.length > 0 && (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[12px] text-amber-800">похоже: {alike.join(", ")}</span>
-        )}
-        {extraSignals.length > 0 && (
-          <span className="rounded-full bg-[#eaf3de] px-2 py-0.5 text-[12px] text-[#27500a]">{extraSignals.map((sg) => sg.label.toLowerCase()).join(", ")}</span>
-        )}
-        {diff.length > 0 && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[12px] text-slate-600">отличается: {diff.join(", ")}</span>
-        )}
-        {lastRej && (
-          <span className="rounded-full px-2 py-0.5 text-[12px]" style={{ background: "#fdecec", color: "#a32d2d" }}>
-            {rejectedSide} {lastRej.kind === "no_show" ? "не пришёл" : "отказ"} {shortDate(lastRej.date)}
-          </span>
-        )}
-      </div>
+      {/* Вывод — одним предложением (владелец, 24.10.2026: плашки-обрывки
+          читались как одна фраза, зачем-то разрезанная). Отказ — у имени анкеты. */}
+      <p
+        className="rounded-xl border px-3 py-2 text-[13px] leading-relaxed"
+        style={level === "exact"
+          ? { background: "#f3f8ec", borderColor: "#cfe3b4", color: "#27500a" }
+          : { background: "#fff8e8", borderColor: "#f2d58f", color: "#713f00" }}
+      >
+        <span className="font-semibold">{verdict}.</span>
+        {verdictText && <> {verdictText}</>}
+      </p>
 
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         <div className={`${GRID} items-center`}>
           <div />
-          <div className="p-3"><SideHead s={left} /></div>
+          <div className="p-3"><SideHead s={left} rejection={leftRej[0]} /></div>
           <div />
-          <div className="p-3"><SideHead s={right} /></div>
+          <div className="p-3"><SideHead s={right} rejection={rightRej[0]} /></div>
         </div>
 
         {GROUPS.slice(0, 1).map((g) => (
@@ -829,17 +862,19 @@ export type CarouselItem = {
   decision?: "merged" | "dismissed";
   /** Короткая метка состояния: «Был отказ», этап… */
   badge?: { text: string; tone: "red" | "blue" | "gray" } | null;
+  /** Кто это: должность · город · когда добавлена — чтобы различать анкеты, не открывая. */
+  details?: string;
 };
 
 function Ring({ value, tone }: { value: number; tone: string }) {
   const v = Math.max(0, Math.min(100, Math.round(value)));
   return (
     <div
-      className="h-10 w-10 shrink-0 rounded-full p-[3px]"
+      className="h-11 w-11 shrink-0 rounded-full p-[3px]"
       style={{ background: `conic-gradient(${tone} ${v}%, #ececec 0)` }}
       aria-label={`Уверенность ${v}%`}
     >
-      <div className="flex h-full w-full items-center justify-center rounded-full bg-white text-[11px] font-bold" style={{ color: tone }}>
+      <div className="flex h-full w-full items-center justify-center rounded-full bg-white text-[12.5px] font-bold" style={{ color: tone }}>
         {v}
       </div>
     </div>
@@ -904,23 +939,29 @@ export function DupCarousel({
               data-dup={it.id}
               type="button"
               onClick={() => onSelect(it.id)}
-              className={`flex w-[230px] shrink-0 items-center gap-2.5 rounded-xl border bg-white px-3 py-2 text-left transition ${
+              title={it.details ? `${it.name} — ${it.details}` : it.name}
+              className={`flex w-[330px] shrink-0 items-center gap-3 rounded-xl border bg-white px-3 py-2 text-left transition ${
                 current ? "border-[var(--hf-cyan-700)] ring-2 ring-[var(--hf-cyan-700)]/30" : "border-slate-200 hover:border-slate-300"
               } ${it.decision ? "opacity-60" : ""}`}
             >
               {it.decision ? (
-                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm ${it.decision === "merged" ? "bg-lime-100 text-lime-700" : "bg-slate-100 text-slate-500"}`}>
+                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base ${it.decision === "merged" ? "bg-lime-100 text-lime-700" : "bg-slate-100 text-slate-500"}`}>
                   {it.decision === "merged" ? "✓" : "✕"}
                 </div>
               ) : (
                 <Ring value={it.confidence} tone={tone} />
               )}
               <div className="min-w-0">
-                <div className="truncate text-[13px] font-semibold text-slate-900" title={it.name}>{it.name}</div>
-                <div className="truncate text-[11px] text-slate-500">
+                {/* Тот же состав, что был (кольцо, имя, этап, причина, «кто это»),
+                    но плотнее: этап — рядом с именем, «кто это» — одной строкой. */}
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[13.5px] font-semibold text-slate-900">{it.name}</span>
+                  {badge && <span className={`shrink-0 rounded-full px-1.5 py-[1px] text-[10.5px] font-semibold ${badge.cls}`}>{badge.text}</span>}
+                </div>
+                <div className="truncate text-[12px] text-slate-600">
                   {it.level === "exact" ? "точно · " : "возможно · "}{it.reason || "совпадение"}
                 </div>
-                {badge && <span className={`mt-0.5 inline-block rounded-full px-2 py-[1px] text-[11px] font-semibold ${badge.cls}`}>{badge.text}</span>}
+                {it.details && <div className="truncate text-[11.5px] text-slate-400">{it.details}</div>}
               </div>
             </button>
           );

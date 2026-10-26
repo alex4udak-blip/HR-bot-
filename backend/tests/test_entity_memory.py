@@ -124,8 +124,10 @@ class TestEntityMemoryService:
         # Should contain last 10, not first 4
         assert "Meeting 14" in result
         assert "Meeting 5" in result
-        # Should not contain first events
-        assert "Meeting 1" not in result
+        # Should not contain first events (по строкам: «Meeting 1» — подстрока «Meeting 14»)
+        import re
+        shown = {int(n) for n in re.findall(r"Meeting (\d+)$", result, re.M)}
+        assert shown == set(range(5, 15))
 
     def test_event_emojis(self):
         """Should use correct emojis for event types."""
@@ -151,7 +153,7 @@ class TestEntityMemoryService:
 class TestEntityAIIntegration:
     """Tests for entity AI integration with memory."""
 
-    def test_entity_context_includes_memory(self):
+    async def test_entity_context_includes_memory(self):
         """Verify entity AI context includes memory when available."""
         from api.services.entity_ai import EntityAIService
 
@@ -171,7 +173,7 @@ class TestEntityAIIntegration:
             {"date": "2024-01-15", "event": "hired", "details": "Hired as developer"}
         ]
 
-        context = service._build_entity_context(entity, [], [])
+        context = await service._build_entity_context(entity, [], [])
 
         # Should include memory sections
         assert "📋 Резюме контакта" in context
@@ -179,7 +181,7 @@ class TestEntityAIIntegration:
         assert "📅 Ключевые события" in context
         assert "Hired as developer" in context
 
-    def test_entity_context_without_memory(self):
+    async def test_entity_context_without_memory(self):
         """Verify entity AI works without memory."""
         from api.services.entity_ai import EntityAIService
 
@@ -197,7 +199,7 @@ class TestEntityAIIntegration:
         entity.ai_summary = None
         entity.key_events = None
 
-        context = service._build_entity_context(entity, [], [])
+        context = await service._build_entity_context(entity, [], [])
 
         # Should not include memory sections
         assert "📋 Резюме контакта" not in context

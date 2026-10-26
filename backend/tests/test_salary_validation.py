@@ -154,7 +154,7 @@ class TestSalaryRangeValidation:
         token = create_access_token(data={"sub": str(salary_test_user.id)})
 
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json={
                 "title": "Python Developer",
                 "salary_min": 150000,
@@ -179,7 +179,7 @@ class TestSalaryRangeValidation:
         token = create_access_token(data={"sub": str(salary_test_user.id)})
 
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json={
                 "title": "Invalid Salary Vacancy",
                 "salary_min": 300000,
@@ -262,7 +262,7 @@ class TestNegativeSalaryValidation:
         token = create_access_token(data={"sub": str(salary_test_user.id)})
 
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json={
                 "title": "Negative Min Vacancy",
                 "salary_min": -50000,
@@ -284,7 +284,7 @@ class TestNegativeSalaryValidation:
         token = create_access_token(data={"sub": str(salary_test_user.id)})
 
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json={
                 "title": "Negative Max Vacancy",
                 "salary_min": 50000,
@@ -344,7 +344,7 @@ class TestCurrencyValidation:
         token = create_access_token(data={"sub": str(salary_test_user.id)})
 
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json={
                 "title": "USD Vacancy",
                 "salary_min": 5000,
@@ -368,7 +368,7 @@ class TestCurrencyValidation:
         token = create_access_token(data={"sub": str(salary_test_user.id)})
 
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json={
                 "title": "EUR Vacancy",
                 "salary_min": 4000,
@@ -392,7 +392,7 @@ class TestCurrencyValidation:
         token = create_access_token(data={"sub": str(salary_test_user.id)})
 
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json={
                 "title": "Default Currency Vacancy",
                 "salary_min": 100000,
@@ -676,7 +676,7 @@ class TestSalaryEdgeCases:
         token = create_access_token(data={"sub": str(salary_test_user.id)})
 
         response = await client.get(
-            "/api/vacancies/",
+            "/api/vacancies",
             headers=auth_headers(token)
         )
 

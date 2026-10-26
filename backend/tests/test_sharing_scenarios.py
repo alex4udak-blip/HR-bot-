@@ -306,7 +306,7 @@ class TestCrossDepartmentSharing:
             },
             headers=get_auth_headers(user_dept1_token)
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
 
         # Verify dept2 member can access via shared-with-me
         user_dept2_token = create_access_token(data={"sub": str(user_dept2.id)})
@@ -1043,7 +1043,7 @@ class TestOrganizationBoundaries:
             headers=get_auth_headers(admin_token)
         )
         assert response.status_code == 403
-        assert "outside your organization" in response.json()["detail"].lower()
+        assert "другой организации" in response.json()["detail"].lower()  # текст ручки — по-русски
 
     @pytest.mark.asyncio
     async def test_superadmin_can_access_across_orgs(

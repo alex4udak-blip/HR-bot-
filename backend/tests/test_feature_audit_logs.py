@@ -39,7 +39,7 @@ class TestFeatureAuditLogCreation:
 
         # Enable vacancies feature
         response = await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": True, "department_ids": None}
         )
@@ -50,7 +50,7 @@ class TestFeatureAuditLogCreation:
         result = await db_session.execute(
             select(FeatureAuditLog).where(
                 FeatureAuditLog.org_id == organization.id,
-                FeatureAuditLog.feature_name == "vacancies"
+                FeatureAuditLog.feature_name == "candidate_database"
             )
         )
         audit_log = result.scalar()
@@ -82,7 +82,7 @@ class TestFeatureAuditLogCreation:
 
         # First enable the feature
         await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": True, "department_ids": None}
         )
@@ -92,7 +92,7 @@ class TestFeatureAuditLogCreation:
 
         # Now disable it
         response = await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": False, "department_ids": None}
         )
@@ -103,7 +103,7 @@ class TestFeatureAuditLogCreation:
         result = await db_session.execute(
             select(FeatureAuditLog).where(
                 FeatureAuditLog.org_id == organization.id,
-                FeatureAuditLog.feature_name == "vacancies"
+                FeatureAuditLog.feature_name == "candidate_database"
             ).order_by(FeatureAuditLog.created_at.desc())
         )
         audit_logs = result.scalars().all()
@@ -134,7 +134,7 @@ class TestFeatureAuditLogCreation:
         })
 
         response = await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": True, "department_ids": [department.id]}
         )
@@ -145,7 +145,7 @@ class TestFeatureAuditLogCreation:
         result = await db_session.execute(
             select(FeatureAuditLog).where(
                 FeatureAuditLog.org_id == organization.id,
-                FeatureAuditLog.feature_name == "vacancies",
+                FeatureAuditLog.feature_name == "candidate_database",
                 FeatureAuditLog.department_id == department.id
             )
         )
@@ -169,7 +169,7 @@ class TestFeatureAuditLogCreation:
         feature = DepartmentFeature(
             org_id=organization.id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(feature)
@@ -181,7 +181,7 @@ class TestFeatureAuditLogCreation:
         })
 
         response = await client.delete(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"}
         )
 
@@ -191,7 +191,7 @@ class TestFeatureAuditLogCreation:
         result = await db_session.execute(
             select(FeatureAuditLog).where(
                 FeatureAuditLog.org_id == organization.id,
-                FeatureAuditLog.feature_name == "vacancies",
+                FeatureAuditLog.feature_name == "candidate_database",
                 FeatureAuditLog.action == "delete"
             )
         )
@@ -220,7 +220,7 @@ class TestGetFeatureAuditLogs:
         audit_log = FeatureAuditLog(
             org_id=organization.id,
             changed_by=superadmin_user.id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             action="enable",
             department_id=None,
             old_value=None,
@@ -246,7 +246,7 @@ class TestGetFeatureAuditLogs:
         assert len(data) >= 1
         log_entry = data[0]
 
-        assert log_entry["feature_name"] == "vacancies"
+        assert log_entry["feature_name"] == "candidate_database"
         assert log_entry["action"] == "enable"
         assert log_entry["changed_by"] == superadmin_user.id
         assert log_entry["changed_by_name"] == superadmin_user.name
@@ -326,7 +326,7 @@ class TestGetFeatureAuditLogs:
         log1 = FeatureAuditLog(
             org_id=organization.id,
             changed_by=superadmin_user.id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             action="enable",
             new_value=True
         )
@@ -346,7 +346,7 @@ class TestGetFeatureAuditLogs:
         })
 
         response = await client.get(
-            "/api/admin/features/audit-logs?feature_name=vacancies",
+            "/api/admin/features/audit-logs?feature_name=candidate_database",
             headers={"Authorization": f"Bearer {token}"}
         )
 
@@ -355,7 +355,7 @@ class TestGetFeatureAuditLogs:
 
         # Should only have vacancies logs
         for log in data:
-            assert log["feature_name"] == "vacancies"
+            assert log["feature_name"] == "candidate_database"
 
     @pytest.mark.asyncio
     async def test_audit_logs_pagination(
@@ -372,7 +372,7 @@ class TestGetFeatureAuditLogs:
             log = FeatureAuditLog(
                 org_id=organization.id,
                 changed_by=superadmin_user.id,
-                feature_name="vacancies",
+                feature_name="candidate_database",
                 action="enable" if i % 2 == 0 else "disable",
                 new_value=i % 2 == 0
             )
@@ -421,7 +421,7 @@ class TestGetFeatureAuditLogs:
         audit_log = FeatureAuditLog(
             org_id=organization.id,
             changed_by=superadmin_user.id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             action="enable",
             department_id=department.id,
             new_value=True,
@@ -468,27 +468,27 @@ class TestAuditLogIntegration:
 
         # Enable feature
         await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": True, "department_ids": None}
         )
 
         # Disable feature
         await client.put(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"},
             json={"enabled": False, "department_ids": None}
         )
 
         # Delete feature
         await client.delete(
-            "/api/admin/features/vacancies",
+            "/api/admin/features/candidate_database",
             headers={"Authorization": f"Bearer {token}"}
         )
 
         # Get audit logs
         response = await client.get(
-            "/api/admin/features/audit-logs?feature_name=vacancies",
+            "/api/admin/features/audit-logs?feature_name=candidate_database",
             headers={"Authorization": f"Bearer {token}"}
         )
 

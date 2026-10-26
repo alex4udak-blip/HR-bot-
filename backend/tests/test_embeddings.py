@@ -444,7 +444,7 @@ class TestEmbeddingService:
             mock_get.return_value = None
 
             with patch.object(embedding_service, '_set_cached_embedding', new_callable=AsyncMock) as mock_set:
-                with patch.object(embedding_service, 'client') as mock_client:
+                with patch.object(embedding_service, '_client', MagicMock()) as mock_client:  # client — свойство без deleter, патчим то, что оно отдаёт
                     mock_client.embeddings.create = AsyncMock(return_value=mock_response)
 
                     result = await embedding_service.generate_embedding("test text")
@@ -485,7 +485,7 @@ class TestEmbeddingService:
             MagicMock(embedding=sample_embedding)
         ]
 
-        with patch.object(embedding_service, 'client') as mock_client:
+        with patch.object(embedding_service, '_client', MagicMock()) as mock_client:  # client — свойство без deleter, патчим то, что оно отдаёт
             mock_client.embeddings.create = AsyncMock(return_value=mock_response)
 
             with patch.object(embedding_service, '_set_cached_embedding', new_callable=AsyncMock):
@@ -699,7 +699,8 @@ class TestEdgeCases:
         assert SimilarityResult(1, "a", 0.0, "e").to_dict()["score"] == 0
         assert SimilarityResult(1, "a", 0.5, "e").to_dict()["score"] == 50
         assert SimilarityResult(1, "a", 1.0, "e").to_dict()["score"] == 100
-        assert SimilarityResult(1, "a", 0.856, "e").to_dict()["score"] == 86  # Rounded
+        # Проценты отбрасывают дробную часть (int), как и в test_similarity_result_score_rounding (0.999 → 99)
+        assert SimilarityResult(1, "a", 0.856, "e").to_dict()["score"] == 85
 
 
 # =============================================================================

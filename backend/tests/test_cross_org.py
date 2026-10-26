@@ -317,7 +317,7 @@ class TestCrossOrgEntityAccess:
         token = create_access_token(data={"sub": str(user_org_a.id)})
 
         response = await client.get(
-            "/api/vacancies/",
+            "/api/vacancies",
             headers=auth_headers(token)
         )
 
@@ -593,7 +593,7 @@ class TestVacancyIsolation:
         token = create_access_token(data={"sub": str(user_org_a.id)})
 
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json={
                 "title": "New Position",
                 "description": "A new role"

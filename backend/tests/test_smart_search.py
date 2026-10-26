@@ -32,8 +32,9 @@ class TestParsedSearchQuery:
         """Test to_dict with empty query."""
         parsed = ParsedSearchQuery()
         result = parsed.to_dict()
-        # Should return empty dict (no None values, empty lists excluded)
-        assert result == {}
+        # None и пустые списки не попадают; original_query (строка, по
+        # умолчанию "") поле не-None — оно остаётся всегда.
+        assert result == {"original_query": ""}
 
     def test_to_dict_with_values(self):
         """Test to_dict with populated values."""
@@ -124,7 +125,8 @@ class TestRuleBasedParsing:
         parsed = service._rule_based_parse("React TypeScript Node.js developer")
         assert "React" in parsed.skills
         assert "Typescript" in parsed.skills
-        assert "Nodejs" in parsed.skills
+        # «Node.js» ловится словом «node» (в списке ключей «nodejs» — слитно).
+        assert any(s.startswith("Node") for s in parsed.skills)
 
         # Case insensitive
         parsed = service._rule_based_parse("GOLANG developer")
@@ -154,9 +156,11 @@ class TestRuleBasedParsing:
         parsed = service._rule_based_parse("новые кандидаты Python")
         assert parsed.status == "new"
 
-        # Interview
+        # Собеседование = этап «Интервью с HR» (practice); падеж не мешает
         parsed = service._rule_based_parse("кандидаты на собеседовании")
-        assert parsed.status == "interview"
+        assert parsed.status == "practice"
+        parsed = service._rule_based_parse("кандидаты в отказе")
+        assert parsed.status == "rejected"
 
     def test_parse_complex_query(self):
         """Test parsing complex multi-criteria query."""
@@ -212,8 +216,8 @@ class TestFilterBuilding:
 
         conditions = service.build_search_filters(parsed, org_id=1)
 
-        # Should only have org_id filter
-        assert len(conditions) == 1
+        # Фильтр орги + «архив не участвует» (теневая база, is_archived).
+        assert len(conditions) == 2
 
 
 class TestResultRanking:
@@ -310,6 +314,10 @@ class TestAIParsing:
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text='{"skills": ["Python", "Django"], "experience_min_years": 3}')]
         mock_anthropic_client.messages.create = AsyncMock(return_value=mock_response)
+        # smart_search импортирует AsyncAnthropic при загрузке модуля, поэтому
+        # подмена anthropic.AsyncAnthropic в фикстуре сюда не доходит, а без
+        # ключа client падает «ANTHROPIC_API_KEY not configured». Отдаём мок прямо.
+        service._client = mock_anthropic_client
 
         parsed = await service._ai_parse_query("Python разработчик с опытом от 3 лет")
 

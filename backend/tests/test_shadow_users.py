@@ -255,7 +255,16 @@ class TestMigration:
 
     def test_migration_has_correct_revision(self):
         """Test that migration has correct revision ID."""
-        from alembic.versions.add_shadow_users import revision, down_revision
+        # Папка backend/alembic — не пакет: «import alembic» берёт установленную
+        # библиотеку alembic, где versions нет. Грузим файл миграции по пути.
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).parent.parent / "alembic" / "versions" / "add_shadow_users.py"
+        spec = importlib.util.spec_from_file_location("add_shadow_users", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        revision, down_revision = module.revision, module.down_revision
 
         assert revision == 'add_shadow_users'
         assert down_revision == 'add_embeddings'

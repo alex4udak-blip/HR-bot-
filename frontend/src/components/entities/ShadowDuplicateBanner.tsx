@@ -81,6 +81,47 @@ export default function ShadowDuplicateBanner({ card, status, onResolved, reject
   // только когда решены все — раньше решение по последней в карусели закрывало
   // окно, и непролистанные анкеты молча оставались непроверенными.
   const [decisions, setDecisions] = useState<Record<number, "merged" | "dismissed">>({});
+  // Карусель сворачивается, когда таблицу прокрутили вниз, и возвращается,
+  // когда прокрутили до самого верха (владелец, 24.10.2026: «больше места»).
+  // Сворачиваем, только если таблица длиннее окна с запасом на высоту самой
+  // карусели — иначе свёрнутая карусель освобождает место, прокрутка
+  // обнуляется, карусель разворачивается, и так по кругу.
+  const [carouselCollapsed, setCarouselCollapsed] = useState(false);
+  const carouselRef = useRef<HTMLDivElement | null>(null);
+  const compareScrollRef = useRef<HTMLDivElement | null>(null);
+  // Раскрыли руками («сравниваем с: … ▾») внизу таблицы — не сворачиваем
+  // обратно, пока человек сам не прокрутит дальше вниз. Иначе раскрытие
+  // сдвигало прокрутку, срабатывало сворачивание, и полоса тут же исчезала
+  // (владелец, 24.10.2026).
+  const keepOpenUntilRef = useRef<number | null>(null);
+  const onCompareScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop <= 2) {
+      keepOpenUntilRef.current = null;
+      setCarouselCollapsed(false);
+      return;
+    }
+    if (keepOpenUntilRef.current != null) {
+      if (el.scrollTop < keepOpenUntilRef.current) return;
+      keepOpenUntilRef.current = null;
+    }
+    const spare = el.scrollHeight - el.clientHeight;
+    const carouselH = carouselRef.current?.offsetHeight ?? 0;
+    if (el.scrollTop > 24 && spare > carouselH + 48) setCarouselCollapsed(true);
+  }, []);
+  const expandCarousel = useCallback(() => {
+    // Пока полоса раскрывается, браузер сам сдвигает прокрутку (на высоту
+    // полосы), а клик по тачпаду даёт мелкую прокрутку — считать от позиции
+    // ДО раскрытия нельзя: полоса тут же сворачивалась от клика по карточке.
+    // Поэтому порог ставим, когда раскрытие закончилось, и с запасом.
+    keepOpenUntilRef.current = Number.POSITIVE_INFINITY;
+    setCarouselCollapsed(false);
+    window.setTimeout(() => {
+      if (keepOpenUntilRef.current === Number.POSITIVE_INFINITY) {
+        keepOpenUntilRef.current = (compareScrollRef.current?.scrollTop ?? 0) + 200;
+      }
+    }, 350);
+  }, []);
 
   // Подгружаем профиль дубля сразу (не только по клику «Проверить»), чтобы заранее
   // понять — это реальное совпадение или мусорный/устаревший флаг. Баннер по-прежнему
@@ -315,18 +356,30 @@ export default function ShadowDuplicateBanner({ card, status, onResolved, reject
             </div>
           ) : (
             <div
-              className="bg-[#f2f2f2] rounded-2xl shadow-2xl flex flex-col w-full max-w-5xl max-h-[90vh] overflow-hidden"
+              className="bg-[#f2f2f2] rounded-2xl shadow-2xl flex flex-col w-full max-w-6xl max-h-[94vh] overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Карусель похожих анкет — единственная навигация. */}
-              <div className="shrink-0 px-5 pt-4 pb-3">
-                <div className="mb-2 flex items-center gap-2">
+              {/* Карусель компактная (владелец, 24.10.2026: крупная съедала место
+                  у самого сравнения; вид карточки при этом нравился — оставлен). */}
+              <div className="shrink-0 px-5 pt-3 pb-2.5">
+                <div className={`flex items-center gap-2 transition-[margin] duration-200 ${carouselCollapsed ? "mb-0" : "mb-2"}`}>
                   <span className="text-[15px] font-semibold text-slate-900">Похожие анкеты</span>
                   <span className="text-[12px] text-slate-400">
                     {duplicates.length > 1
                       ? `${duplicates.length} · ${undecidedCount > 0 ? `не проверено ${undecidedCount}` : "все проверены"}`
                       : ""}
                   </span>
+                  {carouselCollapsed && (
+                    <button
+                      type="button"
+                      onClick={expandCarousel}
+                      className="min-w-0 truncate rounded-full bg-white px-2.5 py-0.5 text-[12px] text-slate-600 hover:text-slate-900"
+                      title="Показать похожие анкеты"
+                    >
+                      сравниваем с: {(rightId != null && (duplicates.find((d) => d.entity_id === rightId)?.entity_name || entities[rightId]?.name)) || "—"} ▾
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => !busy && closeModal()}
@@ -336,6 +389,12 @@ export default function ShadowDuplicateBanner({ card, status, onResolved, reject
                     <X className="h-5 w-5" />
                   </button>
                 </div>
+                <div
+                  ref={carouselRef}
+                  className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${carouselCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"}`}
+                  aria-hidden={carouselCollapsed}
+                >
+                <div className="min-h-0 overflow-hidden">
                 <DupCarousel
                   items={(duplicates.length ? duplicates : [{ entity_id: hiddenId, entity_name: archived?.name || "", confidence: meta?.confidence ?? 0, level: meta?.level } as DuplicateCandidateResult]).map((d): CarouselItem => {
                     const ent = entities[d.entity_id] as (EntityWithRelations & { is_archived?: boolean }) | undefined;
@@ -348,6 +407,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved, reject
                       strength: d.strength,
                       reason: signalWords(d.signals),
                       decision: decisions[d.entity_id],
+                      details: [
+                        ent?.position,
+                        ((ent as unknown as { city?: string } | undefined)?.city) || ((ent?.extra_data as { city?: string } | undefined)?.city),
+                        ent?.created_at ? `добавлена ${new Date(ent.created_at).toLocaleDateString("ru", { day: "numeric", month: "short", year: "numeric" })}` : null,
+                      ].filter(Boolean).join(" · ") || undefined,
                       badge: ent?.is_archived
                         ? { text: "архив", tone: "gray" }
                         : st === "rejected"
@@ -360,9 +424,11 @@ export default function ShadowDuplicateBanner({ card, status, onResolved, reject
                   selectedId={rightId}
                   onSelect={(id) => id !== selectedDupId && void loadSelected(id)}
                 />
+                </div>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-5 pb-4">
+              <div ref={compareScrollRef} className="flex-1 overflow-y-auto px-5 pb-4" onScroll={onCompareScroll}>
                 <CompareTable
                   left={{
                     side: left,

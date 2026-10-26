@@ -746,7 +746,14 @@ class TestActualRolePermissions:
         setup_org_structure,
         member_user
     ):
-        """Test ADMIN can only see entities in their department."""
+        """ADMIN of the org sees all entities; department isolation applies to members.
+
+        Админ организации (OrgRole.admin) — полный доступ к базе
+        (has_full_database_access: owner/admin), поэтому видит и чужой отдел.
+        Изоляция по отделам осталась у рядового участника — проверяем на нём.
+        Сущности — партнёры: кандидаты общие для организации (модель «общий
+        пул HR») и видны всем её членам независимо от отдела.
+        """
         setup = setup_org_structure
 
         # Create entity in dept1
@@ -756,7 +763,7 @@ class TestActualRolePermissions:
             created_by=member_user.id,
             name="Dept1 Entity",
             email="dept1@entity.com",
-            type=EntityType.candidate,
+            type=EntityType.partner,
             status=EntityStatus.active
         )
         db_session.add(entity1)
@@ -768,24 +775,31 @@ class TestActualRolePermissions:
             created_by=setup['sub_admin'].id,
             name="Dept2 Entity",
             email="dept2@entity.com",
-            type=EntityType.candidate,
+            type=EntityType.partner,
             status=EntityStatus.active
         )
         db_session.add(entity2)
         await db_session.commit()
 
-        # Admin in dept1 should only see dept1 entities
+        # Org admin sees both departments
         admin_token = create_access_token(data={"sub": str(setup['admin'].id)})
         response = await client.get(
             "/api/entities",
             headers={"Authorization": f"Bearer {admin_token}"}
         )
-
         assert response.status_code == 200
-        entities = response.json()
+        entity_names = [e['name'] for e in response.json()]
+        assert "Dept1 Entity" in entity_names
+        assert "Dept2 Entity" in entity_names
 
-        # Should see dept1 entity, not dept2
-        entity_names = [e['name'] for e in entities]
+        # Regular member of dept1 sees own dept1 entity, not dept2
+        member_token = create_access_token(data={"sub": str(member_user.id)})
+        response = await client.get(
+            "/api/entities",
+            headers={"Authorization": f"Bearer {member_token}"}
+        )
+        assert response.status_code == 200
+        entity_names = [e['name'] for e in response.json()]
         assert "Dept1 Entity" in entity_names
         assert "Dept2 Entity" not in entity_names
 

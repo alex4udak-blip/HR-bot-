@@ -91,11 +91,16 @@ class TestFunnelStages:
         """Test that stage labels are in Russian."""
         from api.routes.analytics.funnel import STAGE_LABELS
 
-        # Check some expected Russian labels
+        # Подписи — из общего справочника этапов (services/hr_stages.py), а не
+        # свой словарь: «Скрининг» переименован в «Выполняет ТЗ», «Принят» —
+        # в «Оффер принят».
+        from api.services.hr_stages import STAGE_LABELS as HR_STAGE_LABELS
         assert STAGE_LABELS.get("applied") == "Новый"
-        assert STAGE_LABELS.get("screening") == "Скрининг"
-        assert STAGE_LABELS.get("hired") == "Принят"
+        assert STAGE_LABELS.get("screening") == "Выполняет ТЗ"
+        assert STAGE_LABELS.get("hired") == "Оффер принят"
         assert STAGE_LABELS.get("rejected") == "Отказ"
+        for stage, label in STAGE_LABELS.items():
+            assert label == HR_STAGE_LABELS.get(stage, label)
 
 
 class TestDashboardSchemas:

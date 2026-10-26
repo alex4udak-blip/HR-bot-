@@ -189,11 +189,23 @@ class TestEntityNoAccess:
 
     @pytest.mark.asyncio
     async def test_no_access_user_cannot_view_entity(
-        self, client, second_user, second_user_token, entity, get_auth_headers, org_member
+        self, db_session, client, second_user, second_user_token, entity, get_auth_headers, org_member
     ):
-        """Test that user without share cannot view entity (not in their dept)."""
-        # Note: This depends on whether user is in same department
-        # If entity is in different department and no share exists:
+        """Test that user without share cannot view a non-candidate entity (not in their dept).
+
+        Кандидат (фикстура entity) — общий для организации: его читает любой
+        член орга (модель «общий пул HR»). Закрытым без шаринга остаётся
+        контакт другого типа.
+        """
+        response = await client.get(
+            f"/api/entities/{entity.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+        assert response.status_code == 200
+
+        entity.type = EntityType.partner
+        await db_session.commit()
+
         response = await client.get(
             f"/api/entities/{entity.id}",
             headers=get_auth_headers(second_user_token)
@@ -377,7 +389,8 @@ class TestEntityDepartmentAccess:
             org_id=organization.id,
             department_id=second_department.id,
             name="Other Dept Contact",
-            type="candidate",
+            # Не кандидат: кандидаты общие для орга и видны из любого отдела.
+            type="partner",
             status="active",
             created_by=admin_user.id,
             created_at=datetime.utcnow()
@@ -560,7 +573,7 @@ class TestDepartmentAdminContactVisibility:
     @pytest.mark.asyncio
     async def test_dept_lead_sees_contacts_with_department_id(
         self, db_session, client, organization, department, admin_user, admin_token,
-        get_auth_headers
+        get_auth_headers, second_user
     ):
         """
         Test that department lead can see contacts explicitly assigned to their department.
@@ -589,7 +602,9 @@ class TestDepartmentAdminContactVisibility:
         dept_entity = Entity(
             org_id=organization.id,
             department_id=department.id,  # Explicitly in the department
-            created_by=999,  # Some other user
+            # Другой, но СУЩЕСТВУЮЩИЙ пользователь: в тестовой SQLite включены
+            # внешние ключи, и несуществующий id 999 ронял вставку.
+            created_by=second_user.id,
             name="Dept Contact",
             email="dept-contact@test.com",
             type=EntityType.partner,

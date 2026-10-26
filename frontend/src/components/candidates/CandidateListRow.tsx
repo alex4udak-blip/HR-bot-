@@ -7,6 +7,7 @@ import { buildListRowStages, type CandidateListFields } from "@/components/entit
 import { STAGE_CHIP_BRIGHT_BY_STAGE } from "@/constants/hrStages";
 import { formatDateFull, formatDateShort } from "@/components/candidates/candidateFormat";
 import { PriorRejectionChip } from "@/components/candidates/priorRejection";
+import { avatarThumbUrl } from "@/utils/avatarThumb";
 
 // Строка списка «Все кандидаты»: аватар/галочка выбора, имя с тегами, должность,
 // этапы по воронкам, компания/дата и поля из настроек списка
@@ -98,7 +99,7 @@ export function CandidateListRow({
           card.photo_url ? (
             <div className="hf-candidate-avatar-check">
               <img
-                src={card.photo_url}
+                src={avatarThumbUrl(card.photo_url)}
                 alt={card.name}
                 referrerPolicy="no-referrer"
                 className="hf-candidate-avatar-check-img"
@@ -121,7 +122,7 @@ export function CandidateListRow({
           <>
             {card.photo_url ? (
               <img
-                src={card.photo_url}
+                src={avatarThumbUrl(card.photo_url)}
                 alt={card.name}
                 loading="lazy"
                 decoding="async"

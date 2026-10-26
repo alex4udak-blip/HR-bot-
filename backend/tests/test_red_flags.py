@@ -783,7 +783,7 @@ async def org_owner(db_session, organization, admin_user):
 @pytest_asyncio.fixture
 async def admin_token(admin_user) -> str:
     """Create auth token for admin user."""
-    return create_access_token(admin_user.id)
+    return create_access_token(data={"sub": str(admin_user.id)})  # API: create_access_token(data: dict)
 
 
 @pytest_asyncio.fixture

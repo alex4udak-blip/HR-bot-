@@ -150,7 +150,7 @@ class TestVacancyCRUD:
         """Test listing vacancies when none exist."""
         token = create_access_token(data={"sub": str(admin_user.id)})
         response = await client.get(
-            "/api/vacancies/",
+            "/api/vacancies",
             headers=auth_headers(token)
         )
         assert response.status_code == 200
@@ -180,7 +180,7 @@ class TestVacancyCRUD:
             "tags": ["python", "api"]
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -205,7 +205,7 @@ class TestVacancyCRUD:
             "status": "draft"
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -306,12 +306,19 @@ class TestVacancyCRUD:
         )
         assert response.status_code == 204
 
-        # Verify deleted
+        # Удаление мягкое (deleted_at): вакансия уходит из рабочего списка,
+        # но открывается по id и видна в фильтре «Удалённые» — её можно вернуть.
         response = await client.get(
-            f"/api/vacancies/{vacancy.id}",
+            "/api/vacancies",
             headers=auth_headers(token)
         )
-        assert response.status_code == 404
+        assert response.status_code == 200
+        assert vacancy.id not in [v["id"] for v in response.json()]
+        response = await client.get(
+            "/api/vacancies?deleted=true",
+            headers=auth_headers(token)
+        )
+        assert vacancy.id in [v["id"] for v in response.json()]
 
     async def test_list_vacancies_with_filter(
         self,
@@ -326,7 +333,7 @@ class TestVacancyCRUD:
 
         # Filter by open status
         response = await client.get(
-            "/api/vacancies/?status=open",
+            "/api/vacancies?status=open",
             headers=auth_headers(token)
         )
         assert response.status_code == 200
@@ -336,7 +343,7 @@ class TestVacancyCRUD:
 
         # Filter by draft status
         response = await client.get(
-            "/api/vacancies/?status=draft",
+            "/api/vacancies?status=draft",
             headers=auth_headers(token)
         )
         assert response.status_code == 200
@@ -354,7 +361,7 @@ class TestVacancyCRUD:
         """Test searching vacancies by title."""
         token = create_access_token(data={"sub": str(admin_user.id)})
         response = await client.get(
-            "/api/vacancies/?search=Python",
+            "/api/vacancies?search=Python",
             headers=auth_headers(token)
         )
         assert response.status_code == 200
@@ -415,7 +422,8 @@ class TestVacancyApplications:
             headers=auth_headers(token)
         )
         assert response.status_code == 400
-        assert "already applied" in response.json()["detail"].lower()
+        # Сообщения сервера теперь по-русски.
+        assert "уже добавлен" in response.json()["detail"].lower()
 
     async def test_list_applications(
         self,
@@ -631,7 +639,7 @@ class TestVacancyAuthorization:
 
     async def test_unauthorized_access(self, client: AsyncClient):
         """Test that unauthorized requests are rejected."""
-        response = await client.get("/api/vacancies/")
+        response = await client.get("/api/vacancies")
         assert response.status_code == 401
 
     async def test_vacancy_with_stage_counts(
@@ -697,7 +705,7 @@ class TestVacancyValidation:
             "status": "draft"
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -718,7 +726,7 @@ class TestVacancyValidation:
             "status": "draft"
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -758,7 +766,7 @@ class TestVacancyValidation:
             "salary_min": -1000
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -779,7 +787,7 @@ class TestVacancyValidation:
             "salary_max": -5000
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -801,7 +809,7 @@ class TestVacancyValidation:
             "salary_max": 100000
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -877,7 +885,7 @@ class TestVacancyValidation:
             "priority": -1
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -898,7 +906,7 @@ class TestVacancyValidation:
             "priority": 5
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -938,7 +946,7 @@ class TestVacancyValidation:
                 "priority": priority
             }
             response = await client.post(
-                "/api/vacancies/",
+                "/api/vacancies",
                 json=vacancy_data,
                 headers=auth_headers(token)
             )
@@ -963,7 +971,7 @@ class TestVacancyValidation:
             "closes_at": past_date
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -1005,7 +1013,7 @@ class TestVacancyValidation:
             "closes_at": future_date
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -1028,7 +1036,7 @@ class TestVacancyValidation:
             "tags": None
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -1049,7 +1057,7 @@ class TestVacancyValidation:
             "extra_data": None
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -1070,7 +1078,7 @@ class TestVacancyValidation:
             "tags": "not_a_list"
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -1090,7 +1098,7 @@ class TestVacancyValidation:
             "extra_data": "not_a_dict"
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -1162,7 +1170,7 @@ class TestVacancyValidation:
             "department_id": department.id
         }
         response = await client.post(
-            "/api/vacancies/",
+            "/api/vacancies",
             json=vacancy_data,
             headers=auth_headers(token)
         )
@@ -1219,7 +1227,8 @@ class TestKanbanColumnPagination:
         assert response.status_code == 200
         data = response.json()
         assert data["stage"] == "applied"
-        assert data["title"] == "Отклики"
+        # Подпись — из справочника этапов (services/hr_stages.py).
+        assert data["title"] == "Новый"
         assert data["count"] >= 1
         assert "applications" in data
         assert "total_count" in data

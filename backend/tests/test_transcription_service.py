@@ -191,12 +191,19 @@ class TestChunkCombination:
 
         # Mock chunk splitting to return 2 chunks
         async def mock_split(audio_path, chunk_duration_sec=600):
+            # Куски — в СВОЕЙ временной папке, как у настоящего
+            # _split_audio_chunks: после расшифровки сервис удаляет папку
+            # кусков целиком (shutil.rmtree(dirname(chunk))). Раньше куски
+            # лежали прямо в системном TMPDIR, и сервис пытался снести весь
+            # TMPDIR (на macOS — «Operation not permitted»).
             import tempfile
+            chunk_dir = tempfile.mkdtemp(prefix="test_chunks_")
             chunks = []
             for i in range(2):
-                with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
+                path = os.path.join(chunk_dir, f"chunk_{i}.ogg")
+                with open(path, "wb") as f:
                     f.write(b'\x00' * 100)
-                    chunks.append(f.name)
+                chunks.append(path)
             return chunks
 
         service._split_audio_chunks = mock_split

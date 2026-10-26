@@ -1196,7 +1196,13 @@ class TestAcceptInvitation:
         data = response.json()
         assert data["telegram_bind_url"] is not None
         assert "enceladus_mst_bot" in data["telegram_bind_url"]
-        assert f"bind_{data['user_id']}" in data["telegram_bind_url"]
+        # Ссылка несёт ОДНОРАЗОВЫЙ токен пользователя, а не «bind_<id>»: id
+        # перебирается, и чужой мог привязать свой Telegram к новому аккаунту.
+        user = await db_session.get(User, data["user_id"])
+        await db_session.refresh(user)
+        assert user.telegram_bind_token
+        assert data["telegram_bind_url"].endswith(f"?start={user.telegram_bind_token}")
+        assert f"bind_{data['user_id']}" not in data["telegram_bind_url"]
 
     async def test_accept_invitation_admin_role(
         self,

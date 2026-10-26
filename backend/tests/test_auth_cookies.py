@@ -11,6 +11,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.models.database import User, Organization, OrgMember, UserRole, OrgRole
 
 
+
+def _plain(jar):
+    """Куки ответа как обычный словарь.
+
+    Сервер ставит куке флаг Secure (is_secure_context), а тестовый клиент ходит
+    по http://test — httpx такие куки из jar обратно не отправляет, и /me
+    отвечал 401. Браузер на проде ходит по https, там кука уходит.
+    """
+    return dict(jar)
+
 class TestAuthCookies:
     """Tests for cookie-based authentication."""
 
@@ -30,13 +40,13 @@ class TestAuthCookies:
 
         assert response.status_code == 200
 
-        # Check that response contains user info but NO token
+        # Тело — TokenResponse: токен в теле есть НАМЕРЕННО (его берёт
+        # расширение Chrome, у него нет кук сайта), данные человека — в "user".
+        # Вебу токен приходит httpOnly-кукой (проверено ниже).
         data = response.json()
-        assert "id" in data
-        assert "email" in data
-        assert data["email"] == "admin@test.com"
-        assert "access_token" not in data  # Token should NOT be in response body
-        assert "token" not in data
+        assert "id" in data["user"]
+        assert data["user"]["email"] == "admin@test.com"
+        assert data.get("refresh_token") is None  # refresh в теле — только по include_refresh
 
         # Check that cookie is set
         cookies = response.cookies
@@ -48,7 +58,7 @@ class TestAuthCookies:
         set_cookie_header = response.headers.get("set-cookie", "")
         assert "access_token=" in set_cookie_header
         assert "HttpOnly" in set_cookie_header
-        assert "SameSite=lax" in set_cookie_header.lower()
+        assert "samesite=lax" in set_cookie_header.lower()  # сравнение — в нижнем регистре
 
     async def test_authenticated_request_with_cookie_works(
         self,
@@ -67,7 +77,7 @@ class TestAuthCookies:
         assert login_response.status_code == 200
 
         # Extract cookie from response
-        cookies = login_response.cookies
+        cookies = _plain(login_response.cookies)
 
         # Make authenticated request using cookie
         me_response = await client.get(
@@ -106,7 +116,7 @@ class TestAuthCookies:
             json={"email": "admin@test.com", "password": "Admin123"}
         )
         assert login_response.status_code == 200
-        cookies = login_response.cookies
+        cookies = _plain(login_response.cookies)
 
         # Logout
         logout_response = await client.post(
@@ -153,7 +163,7 @@ class TestAuthCookies:
             json={"email": "admin@test.com", "password": "Admin123"}
         )
         assert login_response.status_code == 200
-        cookies = login_response.cookies
+        cookies = _plain(login_response.cookies)
 
         # Test /auth/me endpoint
         me_response = await client.get("/api/auth/me", cookies=cookies)
@@ -202,7 +212,7 @@ class TestAuthCookies:
             json={"email": "admin@test.com", "password": "Admin123"}
         )
         assert login_response.status_code == 200
-        old_cookies = login_response.cookies
+        old_cookies = _plain(login_response.cookies)
 
         # Verify cookie works
         me_response = await client.get("/api/auth/me", cookies=old_cookies)
@@ -230,7 +240,7 @@ class TestAuthCookies:
             json={"email": "admin@test.com", "password": "NewPassword123"}
         )
         assert new_login_response.status_code == 200
-        new_cookies = new_login_response.cookies
+        new_cookies = _plain(new_login_response.cookies)
 
         # New cookie should work
         me_response_new = await client.get("/api/auth/me", cookies=new_cookies)
@@ -285,7 +295,7 @@ class TestAuthCookies:
             json={"email": "admin@test.com", "password": "Admin123"}
         )
         assert login_response.status_code == 200
-        cookies = login_response.cookies
+        cookies = _plain(login_response.cookies)
 
         # Make request with cookie but WITHOUT Authorization header
         # (in the old system, this would fail)
@@ -313,7 +323,7 @@ class TestAuthCookies:
             json={"email": "admin@test.com", "password": "Admin123"}
         )
         assert login_response.status_code == 200
-        cookies = login_response.cookies
+        cookies = _plain(login_response.cookies)
 
         # Make request with BOTH cookie AND invalid Authorization header
         # The cookie should be used, not the header

@@ -66,7 +66,8 @@ class TestPasswordResetFlow:
 
         assert login_response.status_code == 200
         data = login_response.json()
-        assert data["must_change_password"] is True
+        # Флаг — в данных человека (TokenResponse.user)
+        assert data["user"]["must_change_password"] is True
 
     @pytest.mark.asyncio
     async def test_password_change_after_reset_keeps_token_valid(

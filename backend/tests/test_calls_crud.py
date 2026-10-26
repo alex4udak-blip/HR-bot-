@@ -1843,9 +1843,9 @@ class TestSuperadminPermissions:
             headers=get_auth_headers(superadmin_token)
         )
 
-        # Will fail because superadmin has no org
-        # This tests the actual behavior
-        assert response.status_code == 404
+        # Суперадмин без OrgMember-записи получает самую старую организацию
+        # (get_user_org), поэтому звонок ему открывается.
+        assert response.status_code == 200
 
 
 # ============================================================================
@@ -4263,8 +4263,10 @@ class TestDownloadAudio:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 404
-        assert "audio file not available" in response.json()["detail"].lower()
+        # Аудио нет ни в БД, ни на диске — честный 410 «потеряно» (транскрипт и
+        # анализ звонка при этом остаются), а не 404 «звонка нет».
+        assert response.status_code == 410
+        assert "недоступен" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_download_audio_file_missing_on_disk(
@@ -4292,8 +4294,9 @@ class TestDownloadAudio:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 404
-        assert "not found" in response.json()["detail"].lower()
+        # Путь есть, файла на диске нет и байтов в БД нет — тот же 410.
+        assert response.status_code == 410
+        assert "недоступен" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_download_audio_content_type_mp4(
@@ -4491,9 +4494,17 @@ class TestCallPermissions:
         await db_session.commit()
         await db_session.refresh(call)
 
-        # Second member cannot access
+        # Рядовой участник отдела ЧИТАЕТ звонки коллег по отделу
+        # (PermissionService._check_department_access: «For MEMBER: read-only
+        # department access»), но не меняет и не удаляет их.
         second_user_token = create_access_token(data={"sub": str(second_user.id)})
         response = await client.get(
+            f"/api/calls/{call.id}",
+            headers=get_auth_headers(second_user_token)
+        )
+        assert response.status_code == 200
+
+        response = await client.delete(
             f"/api/calls/{call.id}",
             headers=get_auth_headers(second_user_token)
         )

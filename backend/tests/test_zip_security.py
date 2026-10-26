@@ -72,7 +72,10 @@ class TestSanitizeFilename:
 
     def test_removes_dangerous_chars(self):
         """Should remove dangerous characters."""
-        assert sanitize_zip_filename('file<>:"/\\|?*.txt') == "file_________.txt"
+        assert sanitize_zip_filename('file<>:"|?*.txt') == "file_______.txt"
+        # «/» и «\\» — разделители пути: сначала берётся последний компонент
+        # (см. test_removes_path), поэтому от такого имени остаётся хвост.
+        assert sanitize_zip_filename('file<>:"/\\|?*.txt') == "___.txt"
 
     def test_removes_traversal(self):
         """Should remove path traversal."""

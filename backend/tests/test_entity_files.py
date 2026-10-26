@@ -16,6 +16,47 @@ from api.models.database import (
 from api.services.auth import create_access_token
 
 
+@pytest.fixture(autouse=True)
+def no_upload_background(monkeypatch):
+    """Фоновые шаги после загрузки файла в тестах не запускаем.
+
+    1. AI-профиль: files.py ставит `add_task(asyncio.create_task, coro)` —
+       Starlette зовёт синхронный create_task в пуле потоков, где нет event
+       loop, → «no running event loop». На проде ответ к этому моменту уже
+       ушёл (загрузка работает, падает только профиль — владелец 19.10.2026
+       решил это не чинить). В тестах ASGITransport пробрасывает ошибку фоновой
+       задачи в сам запрос, поэтому create_task в модуле ручек — «выбросить
+       корутину», остальной asyncio — настоящий.
+    2. «PDF → вкладка Резюме» и OCR открывают своё соединение с базой
+       (AsyncSessionLocal — другая in-memory SQLite, «no such table»).
+
+    Константы загрузки (ENTITY_FILES_DIR, MAX_FILE_SIZE…) тесты подменяют в
+    модуле `api.routes.entities.files`, где их читает ручка: подмена в пакете
+    `api.routes.entities` (как было) не действовала, и файлы ложились в
+    настоящий backend/uploads.
+    """
+    import asyncio as _asyncio
+    import importlib
+    files_routes = importlib.import_module("api.routes.entities.files")
+    import api.services.resume_autopromote as ra
+    import api.services.resume_text_extract as rte
+
+    class _AsyncioNoTasks:
+        def __getattr__(self, name):
+            return getattr(_asyncio, name)
+
+        @staticmethod
+        def create_task(coro, *a, **k):
+            coro.close()
+
+    async def _noop(*a, **k):
+        return None
+
+    monkeypatch.setattr(files_routes, "asyncio", _AsyncioNoTasks())
+    monkeypatch.setattr(ra, "promote_pdf_to_resume_if_needed", _noop)
+    monkeypatch.setattr(rte, "ocr_and_store", _noop)
+
+
 # ============================================================================
 # FIXTURES
 # ============================================================================
@@ -244,7 +285,7 @@ class TestUploadEntityFile:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -279,7 +320,7 @@ class TestUploadEntityFile:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -310,7 +351,7 @@ class TestUploadEntityFile:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -342,7 +383,7 @@ class TestUploadEntityFile:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -374,11 +415,11 @@ class TestUploadEntityFile:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
         # Set max file size to 1KB for testing
-        monkeypatch.setattr("api.routes.entities.MAX_FILE_SIZE", 1024)
+        monkeypatch.setattr("api.routes.entities.files.MAX_FILE_SIZE", 1024)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Create content larger than 1KB
@@ -406,7 +447,7 @@ class TestUploadEntityFile:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -429,30 +470,45 @@ class TestUploadEntityFile:
         organization: Organization,
         department: Department,
         second_user: User,
+        regular_user: User,
         entity_for_files: Entity,
         org_member,
         tmp_path: Path,
         monkeypatch
     ):
-        """Test file upload without edit permission."""
+        """Загрузка файла: член организации может, посторонний — нет.
+
+        Добавить файл (как и комментарий) может ЛЮБОЙ член организации — это
+        решение (upload_entity_file: раньше требовался edit, и HR не мог
+        прикрепить резюме «чужому» кандидату). Без членства в орге — 403.
+        """
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
-        # second_user is only org_member, should not have edit access
-        token = create_access_token(data={"sub": str(second_user.id)})
         file_content = b"test content"
 
+        # second_user — рядовой член организации: загрузка разрешена.
+        token = create_access_token(data={"sub": str(second_user.id)})
         response = await client.post(
             f"/api/entities/{entity_for_files.id}/files",
             files={"file": ("test.txt", BytesIO(file_content), "text/plain")},
             data={"file_type": "other"},
             headers=auth_headers(token)
         )
+        assert response.status_code == 200
 
+        # regular_user не состоит в организации — отказ.
+        token = create_access_token(data={"sub": str(regular_user.id)})
+        response = await client.post(
+            f"/api/entities/{entity_for_files.id}/files",
+            files={"file": ("test.txt", BytesIO(file_content), "text/plain")},
+            data={"file_type": "other"},
+            headers=auth_headers(token)
+        )
         assert response.status_code == 403
 
 
@@ -630,8 +686,10 @@ class TestDownloadEntityFile:
             headers=auth_headers(token)
         )
 
-        assert response.status_code == 404
-        assert "not found on disk" in response.json()["detail"].lower()
+        # 410 Gone: запись есть, а содержимого нет ни на диске, ни в базе
+        # (file_data) — фронт предлагает пересоздать резюме.
+        assert response.status_code == 410
+        assert response.json()["detail"]["code"] == "file_content_lost"
 
     async def test_download_file_view_permission_sufficient(
         self,
@@ -689,7 +747,7 @@ class TestFileTypeValidation:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -731,11 +789,11 @@ class TestMaxFileSize:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
         # Set max file size to 1KB for testing
-        monkeypatch.setattr("api.routes.entities.MAX_FILE_SIZE", 1024)
+        monkeypatch.setattr("api.routes.entities.files.MAX_FILE_SIZE", 1024)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Create content exactly at 1KB
@@ -763,11 +821,11 @@ class TestMaxFileSize:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
         # Set max file size to 1KB for testing
-        monkeypatch.setattr("api.routes.entities.MAX_FILE_SIZE", 1024)
+        monkeypatch.setattr("api.routes.entities.files.MAX_FILE_SIZE", 1024)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Create content 1 byte over 1KB
@@ -859,11 +917,11 @@ class TestFileLimit:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
         # Set a low limit for testing
-        monkeypatch.setattr("api.routes.entities.MAX_FILES_PER_ENTITY", 5)
+        monkeypatch.setattr("api.routes.entities.files.MAX_FILES_PER_ENTITY", 5)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         file_content = b"test content"
@@ -891,11 +949,11 @@ class TestFileLimit:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
         # Set a low limit for testing
-        monkeypatch.setattr("api.routes.entities.MAX_FILES_PER_ENTITY", 3)
+        monkeypatch.setattr("api.routes.entities.files.MAX_FILES_PER_ENTITY", 3)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         file_content = b"test content"
@@ -935,11 +993,11 @@ class TestFileLimit:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
         # Set a low limit for testing
-        monkeypatch.setattr("api.routes.entities.MAX_FILES_PER_ENTITY", 2)
+        monkeypatch.setattr("api.routes.entities.files.MAX_FILES_PER_ENTITY", 2)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         file_content = b"test content"
@@ -1005,7 +1063,7 @@ class TestDiskSpace:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -1014,7 +1072,7 @@ class TestDiskSpace:
             return False, 50  # Only 50MB free, need 100MB
 
         monkeypatch.setattr(
-            "api.routes.entities.check_disk_space",
+            "api.routes.entities.files.check_disk_space",
             mock_check_disk_space
         )
 
@@ -1044,7 +1102,7 @@ class TestDiskSpace:
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -1053,7 +1111,7 @@ class TestDiskSpace:
             return True, 500  # 500MB free
 
         monkeypatch.setattr(
-            "api.routes.entities.check_disk_space",
+            "api.routes.entities.files.check_disk_space",
             mock_check_disk_space
         )
 
@@ -1094,7 +1152,7 @@ class TestOrphanedFilesCleanup:
         entity_dir = upload_dir / str(entity_for_files.id)
         entity_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -1133,7 +1191,7 @@ class TestOrphanedFilesCleanup:
         """Test cleanup when no orphaned files exist."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -1217,7 +1275,7 @@ class TestOrphanedFilesCleanup:
         entity_dir = upload_dir / str(entity_for_files.id)
         entity_dir.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 
@@ -1254,7 +1312,7 @@ class TestOrphanedFilesCleanup:
         # The entity_file fixture creates files in tmp_path / "entity_files"
         upload_dir = tmp_path / "entity_files"
         monkeypatch.setattr(
-            "api.routes.entities.ENTITY_FILES_DIR",
+            "api.routes.entities.files.ENTITY_FILES_DIR",
             upload_dir
         )
 

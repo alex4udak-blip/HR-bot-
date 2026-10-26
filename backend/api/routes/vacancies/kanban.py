@@ -20,6 +20,8 @@ from .common import (
 )
 from ...services.auth import get_user_org
 
+from ...services.hr_stages import STAGE_LABELS_BY_ENUM, stage_label
+
 router = APIRouter()
 
 
@@ -80,16 +82,9 @@ async def get_kanban_board(
 
     # Default labels for ApplicationStage (если у орги нет кастомизации
     # — берутся отсюда). Должны совпадать с дефолтами /all-candidates.
-    _DEFAULTS = {
-        ApplicationStage.applied: "Новый",
-        ApplicationStage.screening: "Скрининг",
-        ApplicationStage.phone_screen: "Практика",
-        ApplicationStage.interview: "Тех-практика",
-        ApplicationStage.assessment: "ИС",
-        ApplicationStage.offer: "Оффер",
-        ApplicationStage.hired: "Принят",
-        ApplicationStage.rejected: "Отклонён",
-    }
+    # Справочник этапов — services/hr_stages.py (свой словарь здесь разъехался
+    # с /all-candidates: «Практика» вместо «Интервью с HR», «Отклонён» вместо «Отказ»).
+    _DEFAULTS = STAGE_LABELS_BY_ENUM
     default_stage_config = [
         (s, _label_for(s, _DEFAULTS[s]), [s]) for s in [
             ApplicationStage.applied, ApplicationStage.screening,
@@ -276,19 +271,6 @@ async def get_kanban_column(
     if not await can_access_vacancy(vacancy, current_user, org, db):
         raise HTTPException(status_code=403, detail="Access denied to this vacancy")
 
-    # Define stage titles (HR Pipeline stages - using existing DB enum values)
-    stage_titles = {
-        ApplicationStage.applied: "Novyj",
-        ApplicationStage.screening: "Skrining",
-        ApplicationStage.phone_screen: "Praktika",
-        ApplicationStage.interview: "Tekh-praktika",
-        ApplicationStage.assessment: "IS",
-        ApplicationStage.offer: "Offer",
-        ApplicationStage.hired: "Prinyat",
-        ApplicationStage.rejected: "Otkaz",
-        ApplicationStage.withdrawn: "Otozvan",
-    }
-
     # Приватность воронки (как в get_kanban_board): обычный рекрутёр видит в
     # колонке только своих кандидатов; иначе бесконечный скролл стал бы дырой.
     # «Видна коллегам» (visible_to_all) → видят всех (по запросу юзера 2026-08-04).
@@ -360,7 +342,9 @@ async def get_kanban_column(
 
     return KanbanColumn(
         stage=stage,
-        title=stage_titles.get(stage, str(stage.value)),
+        # Подпись — из справочника этапов (раньше тут был свой словарь
+        # транслитом: «Novyj», «Otkaz»).
+        title=stage_label(stage),
         applications=app_responses,
         count=len(app_responses),
         total_count=total_count,

@@ -13,6 +13,11 @@ from api.models.database import (
 class TestEntityMultipleIdentifiers:
     """Tests for Entity multiple identifiers (telegram_usernames, emails, phones)."""
 
+    @pytest.fixture(autouse=True)
+    def _admin_in_org(self, org_owner):
+        """admin_user — владелец организации. Без членства в орге ручки
+        /entities отвечают 403 (создание, карточка) или пустым списком."""
+
     @pytest.mark.asyncio
     async def test_create_entity_with_multiple_identifiers(
         self, client, admin_user, admin_token, organization, department, get_auth_headers
@@ -33,7 +38,7 @@ class TestEntityMultipleIdentifiers:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201  # создание отвечает 201 Created
         data = response.json()
 
         # Verify normalized telegram usernames (lowercase, without @)
@@ -84,7 +89,7 @@ class TestEntityMultipleIdentifiers:
             headers=get_auth_headers(admin_token)
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 201  # создание отвечает 201 Created
         data = response.json()
 
         # All duplicates should be removed
@@ -185,8 +190,10 @@ class TestEntityMultipleIdentifiers:
         await db_session.commit()
 
         # Search by phone in array
+        # Через params: «+» в сыром адресе — это пробел, и искался «9876543210».
         response = await client.get(
-            "/api/entities?identifier=+9876543210",
+            "/api/entities",
+            params={"identifier": "+9876543210"},
             headers=get_auth_headers(admin_token)
         )
 

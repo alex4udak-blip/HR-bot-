@@ -265,8 +265,8 @@ class TestOrgMemberRoles:
         self, client, admin_user, admin_token, organization, second_user, get_auth_headers, org_owner, org_member
     ):
         """Test that owner can change member role."""
-        response = await client.put(
-            f"/api/organizations/current/members/{second_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{second_user.id}/role",
             json={"role": "admin"},
             headers=get_auth_headers(admin_token)
         )
@@ -278,8 +278,8 @@ class TestOrgMemberRoles:
         self, client, regular_user, user_token, organization, second_user, get_auth_headers, org_admin, org_member
     ):
         """Test that admin cannot promote member to owner."""
-        response = await client.put(
-            f"/api/organizations/current/members/{second_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{second_user.id}/role",
             json={"role": "owner"},
             headers=get_auth_headers(user_token)
         )

@@ -6,7 +6,7 @@ Tests all endpoints in /api/routes/organizations.py:
 - PUT /organizations/current - Update organization settings
 - GET /organizations/current/members - List organization members
 - POST /organizations/current/members - Invite new member
-- PUT /organizations/current/members/{user_id} - Update member role
+- PATCH /organizations/current/members/{user_id}/role - Update member role
 - DELETE /organizations/current/members/{user_id} - Remove member
 - GET /organizations/current/my-role - Get current user's role
 """
@@ -888,8 +888,8 @@ class TestUpdateMemberRole:
         db_session.add(member)
         await db_session.commit()
 
-        response = await client.put(
-            f"/api/organizations/current/members/{second_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{second_user.id}/role",
             json={"role": "admin"},
             headers=get_auth_headers(admin_token)
         )
@@ -915,8 +915,8 @@ class TestUpdateMemberRole:
         db_session.add(admin)
         await db_session.commit()
 
-        response = await client.put(
-            f"/api/organizations/current/members/{second_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{second_user.id}/role",
             json={"role": "member"},
             headers=get_auth_headers(admin_token)
         )
@@ -941,8 +941,8 @@ class TestUpdateMemberRole:
         db_session.add(member)
         await db_session.commit()
 
-        response = await client.put(
-            f"/api/organizations/current/members/{second_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{second_user.id}/role",
             json={"role": "owner"},
             headers=get_auth_headers(admin_token)
         )
@@ -967,8 +967,8 @@ class TestUpdateMemberRole:
         db_session.add(owner2)
         await db_session.commit()
 
-        response = await client.put(
-            f"/api/organizations/current/members/{second_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{second_user.id}/role",
             json={"role": "admin"},
             headers=get_auth_headers(admin_token)
         )
@@ -993,8 +993,8 @@ class TestUpdateMemberRole:
         db_session.add(member)
         await db_session.commit()
 
-        response = await client.put(
-            f"/api/organizations/current/members/{second_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{second_user.id}/role",
             json={"role": "admin"},
             headers=get_auth_headers(user_token)
         )
@@ -1019,8 +1019,8 @@ class TestUpdateMemberRole:
         db_session.add(member)
         await db_session.commit()
 
-        response = await client.put(
-            f"/api/organizations/current/members/{second_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{second_user.id}/role",
             json={"role": "owner"},
             headers=get_auth_headers(user_token)
         )
@@ -1035,8 +1035,8 @@ class TestUpdateMemberRole:
         admin_user: User, org_owner: OrgMember, get_auth_headers
     ):
         """Test that admin cannot demote owner."""
-        response = await client.put(
-            f"/api/organizations/current/members/{admin_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{admin_user.id}/role",
             json={"role": "member"},
             headers=get_auth_headers(user_token)
         )
@@ -1060,8 +1060,8 @@ class TestUpdateMemberRole:
         db_session.add(member2)
         await db_session.commit()
 
-        response = await client.put(
-            f"/api/organizations/current/members/{regular_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{regular_user.id}/role",
             json={"role": "admin"},
             headers=get_auth_headers(second_user_token)
         )
@@ -1074,8 +1074,8 @@ class TestUpdateMemberRole:
         organization: Organization, org_owner: OrgMember, get_auth_headers
     ):
         """Test that user cannot change their own role."""
-        response = await client.put(
-            f"/api/organizations/current/members/{admin_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{admin_user.id}/role",
             json={"role": "member"},
             headers=get_auth_headers(admin_token)
         )
@@ -1089,8 +1089,8 @@ class TestUpdateMemberRole:
         organization: Organization, org_owner: OrgMember, get_auth_headers
     ):
         """Test that updating non-existent member returns 404."""
-        response = await client.put(
-            "/api/organizations/current/members/99999",
+        response = await client.patch(
+            "/api/organizations/current/members/99999/role",
             json={"role": "admin"},
             headers=get_auth_headers(admin_token)
         )
@@ -1114,8 +1114,8 @@ class TestUpdateMemberRole:
         db_session.add(member)
         await db_session.commit()
 
-        response = await client.put(
-            f"/api/organizations/current/members/{second_user.id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{second_user.id}/role",
             json={"role": "invalid_role"},
             headers=get_auth_headers(admin_token)
         )
@@ -1205,9 +1205,14 @@ class TestRemoveMember:
     async def test_admin_can_remove_member(
         self, db_session: AsyncSession, client: AsyncClient, regular_user: User,
         user_token: str, organization: Organization, org_admin: OrgMember,
-        second_user: User, get_auth_headers
+        second_user: User, department: Department, get_auth_headers
     ):
-        """Test that admin can remove member."""
+        """Test that admin can remove member of their own department.
+
+        Админ орга удаляет только участников СВОЕГО отдела (remove_member:
+        «Admin can only remove members from their own department»), поэтому
+        оба стоят в одном отделе.
+        """
         # Create member
         member = OrgMember(
             org_id=organization.id,
@@ -1215,6 +1220,12 @@ class TestRemoveMember:
             role=OrgRole.member
         )
         db_session.add(member)
+        db_session.add(DepartmentMember(
+            department_id=department.id, user_id=regular_user.id, role=DeptRole.lead,
+        ))
+        db_session.add(DepartmentMember(
+            department_id=department.id, user_id=second_user.id, role=DeptRole.member,
+        ))
         await db_session.commit()
 
         response = await client.delete(
@@ -1654,8 +1665,8 @@ class TestOrganizationPermissions:
         new_user_id = response.json()["user_id"]
 
         # Update role
-        response = await client.put(
-            f"/api/organizations/current/members/{new_user_id}",
+        response = await client.patch(
+            f"/api/organizations/current/members/{new_user_id}/role",
             json={"role": "admin"},
             headers=get_auth_headers(admin_token)
         )

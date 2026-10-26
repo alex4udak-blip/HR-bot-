@@ -11,6 +11,7 @@ import { BulkSelectionBar } from '@/components/entities/BulkSelectionBar';
 import AddToVacancyModal from '@/components/entities/AddToVacancyModal';
 
 import type { SetURLSearchParams } from 'react-router-dom';
+import { avatarThumbUrl } from '@/utils/avatarThumb';
 
 // Список кандидатов воронки слева: строки, выбор галочками, массовые действия
 // («Перенести», «Удалить с воронки») — вынесено из RecruiterFunnelsPage, 20.10.2026.
@@ -105,7 +106,7 @@ export function FunnelCandidateList({
                   (candidate as { entity_photo?: string }).entity_photo ? (
                     <div className="hf-candidate-avatar-check">
                       <img
-                        src={(candidate as { entity_photo?: string }).entity_photo}
+                        src={avatarThumbUrl((candidate as { entity_photo?: string }).entity_photo)}
                         alt={candidate.entity_name || ''}
                         referrerPolicy="no-referrer"
                         className="hf-candidate-avatar-check-img"
@@ -124,8 +125,10 @@ export function FunnelCandidateList({
                   <>
                     {(candidate as { entity_photo?: string }).entity_photo ? (
                       <img
-                        src={(candidate as { entity_photo?: string }).entity_photo}
+                        src={avatarThumbUrl((candidate as { entity_photo?: string }).entity_photo)}
                         alt={candidate.entity_name || ''}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         className="hf-candidate-avatar"
                         onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}

@@ -208,13 +208,19 @@ class SmartSearchService:
                 break
 
         # Extract entity status keywords
+        # Основы слов, а не формы: «на собеседовании», «в отказе», «новых».
+        # Статусы — настоящие этапы HR (hr_stages); прежние interview/active у
+        # кандидатов не встречаются, и фильтр по ним находил пустоту (24.10.2026).
         status_keywords = {
-            'new': ['новый', 'new', 'новые'],
-            'screening': ['скрининг', 'screening'],
-            'interview': ['интервью', 'interview', 'собеседование'],
+            'new': ['новы', 'новог', 'new'],
+            'screening': ['тестов', 'выполняет тз', 'скрининг', 'screening'],
+            'practice': ['собеседовани', 'интервью с hr', 'interview'],
+            'tech_practice': ['интервью с заказчик'],
             'offer': ['оффер', 'offer'],
-            'hired': ['принят', 'hired', 'нанят'],
-            'active': ['активный', 'active', 'активные'],
+            'probation': ['практик', 'стажир'],
+            'hired': ['принят', 'нанят', 'hired'],
+            'rejected': ['отказ', 'rejected'],
+            'reserve': ['резерв', 'reserve'],
         }
         for status, keywords in status_keywords.items():
             for kw in keywords:

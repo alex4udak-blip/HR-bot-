@@ -94,8 +94,10 @@ class TestEmailValidation:
         )
 
         # Should validate each email in the array
-        # May accept all, reject all, or partially validate
-        assert response.status_code in [200, 201, 422]
+        # May accept all, reject all, or partially validate.
+        # Неверный адрес в массиве — 400 «Invalid email format»
+        # (normalize_and_validate_identifiers, см. test_entities_multiple_identifiers).
+        assert response.status_code in [200, 201, 400, 422]
 
 
 class TestPhoneNumberValidation:
@@ -198,8 +200,10 @@ class TestEnumValidation:
 
     @pytest.mark.asyncio
     async def test_all_valid_entity_statuses(
-        self, db_session, client, admin_token, entity
+        self, db_session, client, admin_token, entity, org_owner
     ):
+        # Правка карточки — PUT /entities/{id} (PATCH на этом адресе нет, 405);
+        # org_owner — без членства в организации ручка отвечает 403.
         """Test entity update with all valid status values."""
         valid_statuses = [
             "new", "screening", "interview", "offer", "hired", "rejected",
@@ -207,7 +211,7 @@ class TestEnumValidation:
         ]
 
         for status in valid_statuses:
-            response = await client.patch(
+            response = await client.put(
                 f"/api/entities/{entity.id}",
                 json={"status": status},
                 cookies={"access_token": admin_token}
@@ -266,28 +270,36 @@ class TestRequiredFieldValidation:
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_user_registration_missing_email(self, client):
+    async def test_user_registration_missing_email(self, client, superadmin_token):
         """Test user registration without email."""
+        # Публичная регистрация отключена (/auth/register всегда 403), аккаунты
+        # заводит суперадмин — проверяем ту же валидацию на POST /api/users.
         response = await client.post(
-            "/api/auth/register",
+            "/api/users",
             json={
                 "password": "Password123",
-                "name": "Test User"
-            }
+                "name": "Test User",
+                "role": "member"
+            },
+            cookies={"access_token": superadmin_token}
         )
 
         # Should reject missing email
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_user_registration_missing_password(self, client):
+    async def test_user_registration_missing_password(self, client, superadmin_token):
         """Test user registration without password."""
+        # Публичная регистрация отключена (/auth/register всегда 403), аккаунты
+        # заводит суперадмин — проверяем ту же валидацию на POST /api/users.
         response = await client.post(
-            "/api/auth/register",
+            "/api/users",
             json={
                 "email": "test@example.com",
-                "name": "Test User"
-            }
+                "name": "Test User",
+                "role": "member"
+            },
+            cookies={"access_token": superadmin_token}
         )
 
         # Should reject missing password
@@ -359,7 +371,7 @@ class TestPasswordValidation:
     """Test password validation rules."""
 
     @pytest.mark.asyncio
-    async def test_weak_password(self, client):
+    async def test_weak_password(self, client, superadmin_token):
         """Test user registration with weak password."""
         weak_passwords = [
             "123",  # Too short
@@ -368,30 +380,36 @@ class TestPasswordValidation:
             "abcdefgh",  # Only lowercase
         ]
 
+        # Публичная регистрация отключена — аккаунты заводит суперадмин через
+        # POST /api/users, там и действует политика паролей.
         for password in weak_passwords:
             response = await client.post(
-                "/api/auth/register",
+                "/api/users",
                 json={
                     "email": f"test_{password}@example.com",
                     "password": password,
-                    "name": "Test User"
-                }
+                    "name": "Test User",
+                    "role": "member"
+                },
+                cookies={"access_token": superadmin_token}
             )
 
-            # Should reject weak passwords based on policy
-            # Or accept them if no policy is enforced
-            assert response.status_code in [200, 201, 422]
+            # Слабый пароль отклоняется: схемой (422) или политикой (400).
+            assert response.status_code in [400, 422], f"Should reject weak password: {password}"
 
     @pytest.mark.asyncio
-    async def test_strong_password(self, client):
+    async def test_strong_password(self, client, superadmin_token):
         """Test user registration with strong password."""
+        # Публичная регистрация отключена — создание через POST /api/users.
         response = await client.post(
-            "/api/auth/register",
+            "/api/users",
             json={
                 "email": "strong@example.com",
                 "password": "StrongP@ssw0rd123",
-                "name": "Test User"
-            }
+                "name": "Test User",
+                "role": "member"
+            },
+            cookies={"access_token": superadmin_token}
         )
 
         # Should accept strong password
@@ -413,10 +431,12 @@ class TestURLValidation:
             "javascript:alert('xss')",
         ]
 
+        # Запуск записи — POST /api/calls/start-bot, поле source_url
+        # (адреса /calls/fireflies/start больше нет).
         for url in invalid_urls:
             response = await client.post(
-                "/api/calls/fireflies/start",
-                json={"meeting_url": url},
+                "/api/calls/start-bot",
+                json={"source_url": url},
                 cookies={"access_token": admin_token}
             )
 
@@ -425,7 +445,7 @@ class TestURLValidation:
 
     @pytest.mark.asyncio
     async def test_valid_meeting_urls(
-        self, client, admin_token, organization, org_owner
+        self, client, admin_token, organization, org_owner, monkeypatch
     ):
         """Test Fireflies start with valid meeting URLs."""
         valid_urls = [
@@ -434,15 +454,23 @@ class TestURLValidation:
             "https://teams.microsoft.com/l/meetup-join/...",
         ]
 
+        # Бот Fireflies в тестах не запускаем — это внешний сервис.
+        from api.services.call_recorder import call_recorder
+
+        async def _fake_start(*args, **kwargs):
+            return {"success": True}
+
+        monkeypatch.setattr(call_recorder, "start_recording", _fake_start)
+
         for url in valid_urls:
             response = await client.post(
-                "/api/calls/fireflies/start",
-                json={"meeting_url": url},
+                "/api/calls/start-bot",
+                json={"source_url": url},
                 cookies={"access_token": admin_token}
             )
 
-            # Should accept valid URLs (may still fail for other reasons)
-            assert response.status_code in [200, 201, 400, 422, 500]
+            # Поддерживаемый адрес встречи принимается
+            assert response.status_code in [200, 201], f"Should accept URL: {url}"
 
 
 class TestArrayValidation:
@@ -597,10 +625,11 @@ class TestUnknownFieldHandling:
 
     @pytest.mark.asyncio
     async def test_entity_update_with_unknown_fields(
-        self, db_session, client, admin_token, entity
+        self, db_session, client, admin_token, entity, org_owner
     ):
         """Test entity update with unknown fields."""
-        response = await client.patch(
+        # Правка карточки — PUT (PATCH на этом адресе нет).
+        response = await client.put(
             f"/api/entities/{entity.id}",
             json={
                 "name": "Updated Name",
@@ -617,7 +646,8 @@ class TestNumericValidation:
     """Test validation of numeric fields."""
 
     @pytest.mark.asyncio
-    async def test_negative_entity_id(self, client, admin_token):
+    async def test_negative_entity_id(self, client, admin_token, org_owner):
+        # org_owner: без членства в организации /entities отвечает 403 раньше поиска.
         """Test accessing entity with negative ID."""
         response = await client.get(
             "/api/entities/-1",
@@ -628,7 +658,8 @@ class TestNumericValidation:
         assert response.status_code in [404, 422]
 
     @pytest.mark.asyncio
-    async def test_zero_entity_id(self, client, admin_token):
+    async def test_zero_entity_id(self, client, admin_token, org_owner):
+        # org_owner: без членства в организации /entities отвечает 403 раньше поиска.
         """Test accessing entity with ID of 0."""
         response = await client.get(
             "/api/entities/0",
@@ -639,7 +670,8 @@ class TestNumericValidation:
         assert response.status_code in [404, 422]
 
     @pytest.mark.asyncio
-    async def test_very_large_entity_id(self, client, admin_token):
+    async def test_very_large_entity_id(self, client, admin_token, org_owner):
+        # org_owner: без членства в организации /entities отвечает 403 раньше поиска.
         """Test accessing entity with very large ID."""
         response = await client.get(
             "/api/entities/999999999999",

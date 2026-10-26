@@ -26,9 +26,17 @@ from api.models.database import Entity, EntityType, EntityStatus
 # ============================================================================
 
 @pytest.fixture
-def profile_service():
-    """Fresh EntityProfileService instance for each test."""
-    return EntityProfileService()
+def profile_service(mock_anthropic_client):
+    """Fresh EntityProfileService instance for each test.
+
+    Клиент Claude подставляем сразу: сервис импортирует AsyncAnthropic по
+    имени (`from anthropic import AsyncAnthropic`), поэтому общий мок из
+    conftest его не подменяет, а без ключа в окружении свойство client
+    падает «ANTHROPIC_API_KEY не настроен». В сеть тесты не ходят.
+    """
+    service = EntityProfileService()
+    service._client = mock_anthropic_client
+    return service
 
 
 @pytest.fixture
@@ -129,7 +137,8 @@ class TestCalculateSimilarity:
         assert result["score"] == 100
         assert len(result["matches"]) > 0
         assert len(result["differences"]) == 0
-        assert result["summary"] == "Очень похожие кандидаты"
+        # Подписи итога сменились вместе с новой шкалой (≥80 — «Отличное совпадение»).
+        assert result["summary"] == "Отличное совпадение профилей"
 
     def test_completely_different_profiles_low_score(
         self, profile_service, sample_profile_backend_senior, sample_profile_frontend_junior
@@ -143,8 +152,8 @@ class TestCalculateSimilarity:
         # Should be low due to different skills, level, salary, location
         assert result["score"] < 40
         assert len(result["differences"]) > 0
-        # Different level: senior vs junior
-        assert any("уровень" in d.lower() for d in result["differences"])
+        # Different level: senior vs junior («Большой разрыв уровней: …»)
+        assert any("уровн" in d.lower() for d in result["differences"])
 
     def test_partial_skills_match(self, profile_service):
         """Partial skills overlap should return moderate score."""
@@ -184,11 +193,17 @@ class TestCalculateSimilarity:
         assert "Общие навыки" in str(result["matches"])
 
     def test_empty_profiles(self, profile_service):
-        """Empty profiles should return 0 score."""
+        """Empty profiles get only neutral points and no matches.
+
+        По текущей шкале неизвестное поле даёт нейтральную часть баллов (навыки
+        17, уровень 12, специализация 10, зарплата 5, формат 2, локация 2), а
+        не 0: «не знаем» не должно выглядеть как «разные».
+        """
         result = profile_service.calculate_similarity({}, {})
 
-        assert result["score"] == 0
-        assert result["summary"] == "Разные профили"
+        assert result["score"] == 48
+        assert result["matches"] == []
+        assert result["summary"] == "Есть общие черты"
 
     def test_one_empty_profile(self, profile_service, sample_profile_backend_senior):
         """One empty profile should return low score."""
@@ -197,7 +212,10 @@ class TestCalculateSimilarity:
             {}
         )
 
-        assert result["score"] < 30
+        # Пустой второй профиль — без совпадений, балл ниже «Есть общие черты» (35).
+        assert result["score"] < 35
+        assert result["matches"] == []
+        assert "не указаны навыки" in str(result["differences"])
 
 
 # ============================================================================
@@ -311,9 +329,9 @@ class TestLevelMatching:
 
         result = profile_service.calculate_similarity(p1, p2)
 
-        # Should be in differences with "близкий" wording
-        assert "Близкий уровень" in str(result["differences"]) or \
-               any("уровень" in d.lower() for d in result["differences"])
+        # Соседние уровни — совместимые (LEVEL_COMPATIBILITY = 15): это
+        # совпадение «Совместимые уровни», а не отличие.
+        assert "Совместимые уровни: middle ↔ senior" in result["matches"]
 
     def test_far_levels_no_score(self, profile_service):
         """Far apart levels (junior/lead) should get zero level score."""
@@ -322,8 +340,8 @@ class TestLevelMatching:
 
         result = profile_service.calculate_similarity(p1, p2)
 
-        # Should be marked as different
-        assert any("уровень" in d.lower() for d in result["differences"])
+        # Should be marked as different («Несовместимые уровни: junior vs lead»)
+        assert any("несовместимые уровни" in d.lower() for d in result["differences"])
         # Score should be lower
         assert result["score"] < 80
 
@@ -399,7 +417,7 @@ class TestSpecializationMatching:
 
         result = profile_service.calculate_similarity(p1, p2)
 
-        assert "специализация" in str(result["differences"]).lower()
+        assert "разные специализации" in str(result["differences"]).lower()
 
 
 # ============================================================================
@@ -463,7 +481,8 @@ class TestProfileGeneration:
 
     @pytest.mark.asyncio
     async def test_profile_generation_minimal(
-        self, profile_service, db_session, organization, department, admin_user
+        self, profile_service, db_session, organization, department, admin_user,
+        mock_anthropic_client
     ):
         """Test profile generation with minimal entity data."""
         # Create minimal entity
@@ -480,7 +499,13 @@ class TestProfileGeneration:
         await db_session.commit()
         await db_session.refresh(entity)
 
-        # Mock is provided by conftest.py autouse fixture
+        # Общий мок conftest отвечает обычным текстом — а это ветка «не JSON»
+        # (её проверяет test_profile_generation_json_parse_error). Здесь нужен
+        # успешный разбор, поэтому — минимальный JSON.
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text=json.dumps({"skills": [], "level": "unknown"}))]
+        mock_anthropic_client.messages.create = AsyncMock(return_value=mock_response)
+
         profile = await profile_service.generate_profile(
             entity=entity,
             chats=[],
@@ -762,36 +787,20 @@ class TestFindSimilar:
 # ============================================================================
 
 class TestExperienceMatching:
-    """Tests for experience years matching."""
+    """Стаж (experience_years) отдельно НЕ оценивается: он уже отражён в уровне
+    (calculate_similarity, «to avoid double-counting»). Раньше тут проверялись
+    подписи «опыт» в совпадениях/отличиях — их больше нет."""
 
-    def test_same_experience(self, profile_service):
-        """Same experience years should match."""
-        p1 = {"experience_years": 5, "skills": []}
-        p2 = {"experience_years": 5, "skills": []}
+    @pytest.mark.parametrize("years1,years2", [(5, 5), (5, 6), (2, 10)])
+    def test_experience_not_scored(self, profile_service, years1, years2):
+        base = profile_service.calculate_similarity({"skills": []}, {"skills": []})
+        result = profile_service.calculate_similarity(
+            {"experience_years": years1, "skills": []},
+            {"experience_years": years2, "skills": []},
+        )
 
-        result = profile_service.calculate_similarity(p1, p2)
-
-        assert "опыт" in str(result["matches"]).lower()
-
-    def test_close_experience(self, profile_service):
-        """Close experience (within 1-3 years) should partially match."""
-        p1 = {"experience_years": 5, "skills": []}
-        p2 = {"experience_years": 6, "skills": []}
-
-        result = profile_service.calculate_similarity(p1, p2)
-
-        # Should be close match
-        assert "опыт" in str(result["matches"]).lower()
-
-    def test_far_experience(self, profile_service):
-        """Very different experience should not match."""
-        p1 = {"experience_years": 2, "skills": []}
-        p2 = {"experience_years": 10, "skills": []}
-
-        result = profile_service.calculate_similarity(p1, p2)
-
-        # Should be in differences
-        assert "опыт" in str(result["differences"]).lower()
+        assert result["score"] == base["score"]
+        assert "опыт" not in str(result["matches"] + result["differences"]).lower()
 
 
 # ============================================================================

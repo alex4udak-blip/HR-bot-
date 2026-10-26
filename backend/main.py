@@ -11,11 +11,10 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from sqlalchemy import text
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
-from slowapi import _rate_limit_exceeded_handler
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
@@ -29,6 +28,7 @@ from api.db import init_database, run_alembic_migrations_sync
 from api.middleware import SecurityHeadersMiddleware, CorrelationMiddleware
 from api.utils.logging import setup_logging, get_logger
 from api.services.redis_cache import get_redis, close_redis
+from api.services.auth import get_superadmin
 
 # Configure structured logging
 # Use JSON format in production, pretty format in development
@@ -603,7 +603,18 @@ app = FastAPI(
 
 # Rate limiting
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """429 с понятным текстом в `detail`: фронт и публичная анкета показывают
+    именно его (стандартный ответ slowapi — английское «Rate limit exceeded»
+    в поле `error`, которое никто не читал). Маркер RATE_LIMIT — для логов."""
+    from api.limiter import RATE_LIMIT_MESSAGE, client_ip
+    logger.warning("RATE_LIMIT %s %s ip=%s limit=%s", request.method, request.url.path, client_ip(request), exc.detail)
+    return JSONResponse(status_code=429, content={"detail": RATE_LIMIT_MESSAGE}, headers={"Retry-After": "60"})
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 # CORS - use allowed origins from settings (not wildcard)
 # Chrome extensions use chrome-extension:// origins — allow all extension origins
@@ -918,7 +929,10 @@ async def health_check_deep():
     return health
 
 
-@app.get("/debug/routes")
+# Отладочные адреса — только суперадмину (24.10.2026): раньше открывались без
+# входа; autotasks-test при каждом вызове тратил деньги на Claude, autotasks-log
+# показывал тексты сообщений, debug/routes — карту всего API.
+@app.get("/debug/routes", dependencies=[Depends(get_superadmin)])
 async def debug_routes():
     """Debug endpoint to list all registered routes."""
     routes = []
@@ -979,14 +993,14 @@ async def playwright_health_check():
     return result
 
 
-@app.get("/health/autotasks-log")
+@app.get("/health/autotasks-log", dependencies=[Depends(get_superadmin)])
 async def autotasks_log():
     """Read the in-memory auto-tasks debug log."""
     from api.bot import _autotasks_debug_log
     return {"log": list(_autotasks_debug_log), "count": len(_autotasks_debug_log)}
 
 
-@app.get("/health/autotasks-test")
+@app.get("/health/autotasks-test", dependencies=[Depends(get_superadmin)])
 async def autotasks_test_pipeline():
     """Test the full auto-tasks pipeline with a sample message to see where it fails."""
     from api.database import AsyncSessionLocal

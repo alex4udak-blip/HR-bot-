@@ -182,7 +182,7 @@ class TestResponseConsistency:
             },
             headers=get_auth_headers(admin_token)
         )
-        assert response.status_code == 200
+        assert response.status_code == 201  # создание отвечает 201 Created
         data = response.json()
         assert isinstance(data, dict)
         assert "id" in data
@@ -197,7 +197,7 @@ class TestResponseConsistency:
             },
             headers=get_auth_headers(admin_token)
         )
-        assert response.status_code == 200
+        assert response.status_code == 201  # создание отдела — 201 Created
         data = response.json()
         assert isinstance(data, dict)
         assert "id" in data
@@ -259,8 +259,9 @@ class TestErrorResponseConsistency:
     @pytest.mark.asyncio
     async def test_403_response_format(self, client, second_user_token, get_auth_headers, entity, org_member):
         """Test that 403 responses have consistent format."""
-        # Try to access entity without permission (no share, not owner)
-        response = await client.get(f"/api/entities/{entity.id}", headers=get_auth_headers(second_user_token))
+        # Кандидаты общие для организации — чтение открыто любому члену орга,
+        # поэтому отказ проверяем на удалении (оно — у автора и админов).
+        response = await client.delete(f"/api/entities/{entity.id}", headers=get_auth_headers(second_user_token))
         # Should be 403 or 404 (both acceptable for security)
         assert response.status_code in [403, 404]
         if response.status_code == 403:
@@ -356,7 +357,7 @@ class TestHTTPMethods:
             },
             headers=get_auth_headers(admin_token)
         )
-        assert response1.status_code == 200
+        assert response1.status_code == 201  # создание отвечает 201 Created
         data1 = response1.json()
 
         # Second POST with same data
@@ -370,7 +371,7 @@ class TestHTTPMethods:
             },
             headers=get_auth_headers(admin_token)
         )
-        assert response2.status_code == 200
+        assert response2.status_code == 201
         data2 = response2.json()
 
         # Should create different resources (different IDs)
@@ -420,7 +421,7 @@ class TestEdgeCases:
             },
             headers=get_auth_headers(admin_token)
         )
-        assert response.status_code == 200
+        assert response.status_code == 201  # создание отвечает 201 Created
         data = response.json()
         assert data["name"] == "Minimal Entity"
         assert data["type"] == "candidate"
@@ -449,7 +450,7 @@ class TestEdgeCases:
             headers=get_auth_headers(admin_token)
         )
         # Should either accept or reject with validation error
-        assert response.status_code in [200, 422]
+        assert response.status_code in [201, 422]  # создание отвечает 201 Created
 
     @pytest.mark.asyncio
     async def test_unicode_in_name(self, client, admin_token, get_auth_headers, org_owner, department):
@@ -464,7 +465,7 @@ class TestEdgeCases:
             },
             headers=get_auth_headers(admin_token)
         )
-        assert response.status_code == 200
+        assert response.status_code == 201  # создание отвечает 201 Created
         data = response.json()
         assert data["name"] == unicode_name
 

@@ -61,6 +61,12 @@ def mock_call_recording():
     call.action_items = None
     call.key_points = None
     call.error_message = None
+    # Поля, которые обработка Fireflies теперь читает (статистика спикеров,
+    # длительность). У Mock(spec=…) без значения это Mock, и обработка падала
+    # на «'Mock' object is not iterable».
+    call.speakers = None
+    call.duration_seconds = None
+    call.speaker_stats = None
     return call
 
 
@@ -269,8 +275,15 @@ class TestContentTypeConversion:
 class TestFileDownload:
     """Tests for file download functionality."""
 
+    @pytest.fixture
+    def real_aiofiles(self, monkeypatch):
+        """Настоящий aiofiles.open: conftest подменяет его заглушкой, которая
+        ничего не пишет на диск, и os.path.getsize после «скачивания» падал."""
+        import aiofiles.threadpool
+        monkeypatch.setattr("aiofiles.open", aiofiles.threadpool.open)
+
     @pytest.mark.asyncio
-    async def test_download_success(self, processor):
+    async def test_download_success(self, processor, real_aiofiles):
         """Test successful file download."""
         mock_response = AsyncMock()
         mock_response.status = 200
@@ -334,7 +347,7 @@ class TestFileDownload:
         assert file_path is None
 
     @pytest.mark.asyncio
-    async def test_download_uses_extension_from_filename(self, processor):
+    async def test_download_uses_extension_from_filename(self, processor, real_aiofiles):
         """Test that extension from filename is used as fallback."""
         mock_response = AsyncMock()
         mock_response.status = 200
@@ -1655,12 +1668,17 @@ class TestAsyncFirefliesProcessing:
         mock_session_cm.__aenter__ = AsyncMock(return_value=mock_db)
         mock_session_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('api.database.AsyncSessionLocal', return_value=mock_session_cm):
-            await processor._update_progress(123, 50, "Processing...")
+        # org_id передаём сами: без него _update_progress вторым запросом
+        # достаёт org_id звонка (для рассылки прогресса по WebSocket).
+        with patch('api.database.AsyncSessionLocal', return_value=mock_session_cm), \
+             patch('api.routes.realtime.broadcast_call_progress', AsyncMock()) as mock_broadcast:
+            await processor._update_progress(123, 50, "Processing...", org_id=1)
 
         # Verify execute was called with update statement
         mock_db.execute.assert_called_once()
+        assert "UPDATE" in str(mock_db.execute.call_args[0][0]).upper()
         mock_db.commit.assert_called_once()
+        mock_broadcast.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_process_fireflies_async_updates_progress(self, processor):
@@ -1670,7 +1688,8 @@ class TestAsyncFirefliesProcessing:
         # Track progress updates
         progress_updates = []
 
-        async def mock_update_progress(call_id, progress, stage):
+        # Прогресс теперь передаёт и org_id (для рассылки по WebSocket).
+        async def mock_update_progress(call_id, progress, stage, org_id=None):
             progress_updates.append((call_id, progress, stage))
 
         mock_call = MagicMock()

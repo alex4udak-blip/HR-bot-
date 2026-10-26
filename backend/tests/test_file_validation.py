@@ -23,6 +23,47 @@ from api.routes.entities import (
 )
 
 
+@pytest.fixture(autouse=True)
+def no_upload_background(monkeypatch):
+    """Фоновые шаги после загрузки файла в тестах не запускаем.
+
+    1. AI-профиль: files.py ставит `add_task(asyncio.create_task, coro)` —
+       Starlette зовёт синхронный create_task в пуле потоков, где нет event
+       loop, → «no running event loop». На проде ответ к этому моменту уже
+       ушёл (загрузка работает, падает только профиль — владелец 19.10.2026
+       решил это не чинить). В тестах ASGITransport пробрасывает ошибку фоновой
+       задачи в сам запрос, поэтому create_task в модуле ручек — «выбросить
+       корутину», остальной asyncio — настоящий.
+    2. «PDF → вкладка Резюме» и OCR открывают своё соединение с базой
+       (AsyncSessionLocal — другая in-memory SQLite, «no such table»).
+
+    Константы загрузки (ENTITY_FILES_DIR, MAX_FILE_SIZE…) тесты подменяют в
+    модуле `api.routes.entities.files`, где их читает ручка: подмена в пакете
+    `api.routes.entities` (как было) не действовала, и файлы ложились в
+    настоящий backend/uploads.
+    """
+    import asyncio as _asyncio
+    import importlib
+    files_routes = importlib.import_module("api.routes.entities.files")
+    import api.services.resume_autopromote as ra
+    import api.services.resume_text_extract as rte
+
+    class _AsyncioNoTasks:
+        def __getattr__(self, name):
+            return getattr(_asyncio, name)
+
+        @staticmethod
+        def create_task(coro, *a, **k):
+            coro.close()
+
+    async def _noop(*a, **k):
+        return None
+
+    monkeypatch.setattr(files_routes, "asyncio", _AsyncioNoTasks())
+    monkeypatch.setattr(ra, "promote_pdf_to_resume_if_needed", _noop)
+    monkeypatch.setattr(rte, "ocr_and_store", _noop)
+
+
 # ============================================================================
 # FIXTURES
 # ============================================================================
@@ -130,7 +171,7 @@ class TestExtensionWhitelist:
         """Test uploading file with valid extension via API."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         file_content = b"%PDF-1.4 test content"
@@ -156,7 +197,7 @@ class TestExtensionWhitelist:
         """Test uploading file with invalid extension via API."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         file_content = b"malicious content"
@@ -191,7 +232,7 @@ class TestMagicBytesValidation:
         """Test that valid PDF with correct magic bytes is accepted."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Valid PDF magic bytes: %PDF
@@ -218,7 +259,7 @@ class TestMagicBytesValidation:
         """Test that PDF with incorrect magic bytes is rejected."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Invalid: not starting with %PDF
@@ -246,7 +287,7 @@ class TestMagicBytesValidation:
         """Test that valid JPEG with correct magic bytes is accepted."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Valid JPEG magic bytes: FF D8 FF
@@ -273,7 +314,7 @@ class TestMagicBytesValidation:
         """Test that JPEG with incorrect magic bytes is rejected."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Invalid: not starting with JPEG magic bytes
@@ -301,7 +342,7 @@ class TestMagicBytesValidation:
         """Test that valid PNG with correct magic bytes is accepted."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Valid PNG magic bytes: 89 50 4E 47 (89 PNG)
@@ -328,7 +369,7 @@ class TestMagicBytesValidation:
         """Test that PNG with incorrect magic bytes is rejected."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Invalid: not starting with PNG magic bytes
@@ -356,7 +397,7 @@ class TestMagicBytesValidation:
         """Test that valid ZIP with correct magic bytes is accepted."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Valid ZIP magic bytes: PK (50 4B)
@@ -383,7 +424,7 @@ class TestMagicBytesValidation:
         """Test that ZIP with incorrect magic bytes is rejected."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Invalid: not starting with PK
@@ -411,7 +452,7 @@ class TestMagicBytesValidation:
         """Test that text files work without magic bytes validation."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         # Plain text doesn't have magic bytes requirement
@@ -517,7 +558,7 @@ class TestDangerousPatterns:
         """Test uploading file with dangerous double extension via API."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
         file_content = b"malicious content"
@@ -585,7 +626,7 @@ class TestFileValidationIntegration:
         """Test complete file upload flow with all validations."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
 
@@ -614,7 +655,7 @@ class TestFileValidationIntegration:
         """Test that multiple validation issues are caught."""
         upload_dir = tmp_path / "uploads" / "entity_files"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("api.routes.entities.ENTITY_FILES_DIR", upload_dir)
+        monkeypatch.setattr("api.routes.entities.files.ENTITY_FILES_DIR", upload_dir)
 
         token = create_access_token(data={"sub": str(admin_user.id)})
 

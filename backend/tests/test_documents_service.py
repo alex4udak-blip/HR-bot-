@@ -4,6 +4,7 @@ Tests all document parsing functions, file upload handling, and error scenarios.
 """
 import pytest
 import asyncio
+import os  # нужен тестам TestResourceManagement (os.listdir/os.path)
 import io
 import json
 import tempfile
@@ -523,7 +524,9 @@ class TestConversionParsing:
             result = await parser.parse(b"doc content", "test.doc")
 
         assert result.status == "failed"
-        assert "conversion failed" in result.error.lower()
+        # Конвертер теперь перебирает несколько способов и пишет, какие пробовал:
+        # «All conversion methods failed (libreoffice, antiword, …)».
+        assert "conversion methods failed" in result.error.lower()
 
 
 # ============================================================================
@@ -838,9 +841,11 @@ class TestImageOCR:
         mock_response = Mock()
         mock_response.content = [mock_content]
 
-        parser.client.messages.create = Mock(return_value=mock_response)
-
-        result = await parser.parse(image_bytes, "test.jpg")
+        # OCR идёт асинхронным клиентом get_async_anthropic_client(), а не parser.client.
+        vision = MagicMock()
+        vision.messages.create = AsyncMock(return_value=mock_response)
+        with patch('api.services.documents.get_async_anthropic_client', return_value=vision):
+            result = await parser.parse(image_bytes, "test.jpg")
 
         assert result.status == "parsed"
         assert "Extracted text from image" in result.content
@@ -856,7 +861,9 @@ class TestImageOCR:
         mock_response = Mock()
         mock_response.content = [mock_content]
 
-        parser.client.messages.create = Mock(return_value=mock_response)
+        # OCR идёт асинхронным клиентом get_async_anthropic_client(), а не parser.client.
+        vision = MagicMock()
+        vision.messages.create = AsyncMock(return_value=mock_response)
 
         # Test different formats
         formats = {
@@ -868,10 +875,11 @@ class TestImageOCR:
         }
 
         for filename, expected_type in formats.items():
-            await parser.parse(image_bytes, filename)
+            with patch('api.services.documents.get_async_anthropic_client', return_value=vision):
+                await parser.parse(image_bytes, filename)
 
             # Check the call was made with correct media type
-            call_args = parser.client.messages.create.call_args
+            call_args = vision.messages.create.call_args
             content = call_args[1]["messages"][0]["content"]
             image_content = [c for c in content if c.get("type") == "image"][0]
             assert image_content["source"]["media_type"] == expected_type
@@ -881,9 +889,11 @@ class TestImageOCR:
         """Test OCR error handling when API fails."""
         image_bytes = b"fake image data"
 
-        parser.client.messages.create = Mock(side_effect=Exception("API error"))
-
-        result = await parser.parse(image_bytes, "test.jpg")
+        # OCR идёт асинхронным клиентом get_async_anthropic_client(), а не parser.client.
+        vision = MagicMock()
+        vision.messages.create = AsyncMock(side_effect=Exception("API error"))
+        with patch('api.services.documents.get_async_anthropic_client', return_value=vision):
+            result = await parser.parse(image_bytes, "test.jpg")
 
         assert result.status == "failed"
         assert "OCR failed" in result.error

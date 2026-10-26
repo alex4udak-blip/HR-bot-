@@ -32,7 +32,7 @@ class TestMigrationInfrastructure:
         EXPECTED TO FAIL: No Alembic configuration has been set up.
         This documents the missing migration infrastructure.
         """
-        backend_dir = Path("/home/user/HR-bot-/backend")
+        backend_dir = Path(__file__).resolve().parent.parent
         alembic_ini = backend_dir / "alembic.ini"
 
         assert alembic_ini.exists(), (
@@ -46,7 +46,7 @@ class TestMigrationInfrastructure:
 
         EXPECTED TO FAIL: No migrations directory exists yet.
         """
-        backend_dir = Path("/home/user/HR-bot-/backend")
+        backend_dir = Path(__file__).resolve().parent.parent
         migrations_dir = backend_dir / "alembic"
         versions_dir = backend_dir / "alembic" / "versions"
 
@@ -64,7 +64,7 @@ class TestMigrationInfrastructure:
         EXPECTED TO FAIL: No migration files exist yet.
         This is critical - without migrations, schema changes are not tracked.
         """
-        backend_dir = Path("/home/user/HR-bot-/backend")
+        backend_dir = Path(__file__).resolve().parent.parent
         versions_dir = backend_dir / "alembic" / "versions"
 
         # First check directory exists
@@ -91,7 +91,7 @@ class TestMigrationInfrastructure:
 
         EXPECTED TO FAIL: Alembic hasn't been initialized.
         """
-        backend_dir = Path("/home/user/HR-bot-/backend")
+        backend_dir = Path(__file__).resolve().parent.parent
         env_py = backend_dir / "alembic" / "env.py"
 
         assert env_py.exists(), (
@@ -112,7 +112,7 @@ class TestMigrationInfrastructure:
 
         This template is used to generate new migration files.
         """
-        backend_dir = Path("/home/user/HR-bot-/backend")
+        backend_dir = Path(__file__).resolve().parent.parent
         script_mako = backend_dir / "alembic" / "script.py.mako"
 
         assert script_mako.exists(), (
@@ -480,7 +480,12 @@ class TestMigrationWorkflow:
         """
         import shutil
 
-        alembic_path = shutil.which('alembic')
+        import sys
+        # Тесты запускают .venv/bin/python напрямую — bin окружения может не
+        # быть в PATH, поэтому ищем и рядом с интерпретатором.
+        alembic_path = shutil.which('alembic') or shutil.which(
+            'alembic', path=str(Path(sys.executable).parent)
+        )
         assert alembic_path is not None, (
             "alembic command not found. Install with: pip install alembic\n"
             "Alembic should be in requirements.txt"
@@ -494,7 +499,7 @@ class TestMigrationWorkflow:
         EXPECTED TO FAIL: Documentation for migrations likely doesn't exist.
         Developers need to know how to create and apply migrations.
         """
-        backend_dir = Path("/home/user/HR-bot-/backend")
+        backend_dir = Path(__file__).resolve().parent.parent
 
         # Check for README files
         readme_files = list(backend_dir.glob("README*"))

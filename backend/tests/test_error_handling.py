@@ -18,6 +18,36 @@ from api.models.database import (
 )
 
 
+async def _get_with_failing_db(path, token, exc_factory):
+    """GET, при котором сессия базы падает.
+
+    Раньше тест подменял атрибут api.database.get_db, но FastAPI держит ссылку
+    на функцию в Depends, а фикстура client и так переопределяет её через
+    dependency_overrides — подмена ничего не меняла (200). Переопределяем ту же
+    зависимость; клиент с raise_app_exceptions=False, чтобы получить 500, как
+    его отдаёт сервер, а не исключение из транспорта.
+    """
+    from httpx import AsyncClient, ASGITransport
+    from api.database import get_db
+    from main import app
+
+    async def failing_db():
+        await exc_factory()
+        yield None  # pragma: no cover
+
+    prev = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = failing_db
+    try:
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            return await ac.get(path, cookies={"access_token": token})
+    finally:
+        if prev is None:
+            app.dependency_overrides.pop(get_db, None)
+        else:
+            app.dependency_overrides[get_db] = prev
+
+
 class TestDatabaseErrorHandling:
     """Test graceful handling of database errors."""
 
@@ -27,13 +57,7 @@ class TestDatabaseErrorHandling:
         async def mock_db_error():
             raise OperationalError("Database connection failed", None, None)
 
-        # Mock the database session to raise error
-        monkeypatch.setattr("api.database.get_db", mock_db_error)
-
-        response = await client.get(
-            "/api/entities",
-            cookies={"access_token": admin_token}
-        )
+        response = await _get_with_failing_db("/api/entities", admin_token, mock_db_error)
 
         # Should return 500 Internal Server Error
         assert response.status_code == 500
@@ -75,12 +99,7 @@ class TestDatabaseErrorHandling:
             await asyncio.sleep(0.1)
             raise OperationalError("Query timeout", None, None)
 
-        monkeypatch.setattr("api.database.get_db", mock_timeout)
-
-        response = await client.get(
-            "/api/entities",
-            cookies={"access_token": admin_token}
-        )
+        response = await _get_with_failing_db("/api/entities", admin_token, mock_timeout)
 
         assert response.status_code == 500
 
@@ -108,113 +127,67 @@ class TestDatabaseErrorHandling:
 
 
 class TestAnthropicAPIErrorHandling:
-    """Test handling when Anthropic Claude API fails."""
+    """Test handling when Anthropic Claude API fails.
 
-    @pytest.mark.asyncio
-    async def test_anthropic_api_connection_error(
-        self, client, admin_token, chat, organization, org_owner, monkeypatch
-    ):
-        """Test handling when Anthropic API is unreachable."""
-        # Mock Anthropic client to raise connection error
-        async def create_stream_error(*args, **kwargs):
-            raise ConnectionError("Unable to connect to Anthropic API")
+    Ручка чата с ИИ — POST /api/chats/{id}/ai/message (адреса /ai/chat нет).
+    Ответ — поток SSE: он начинается со статусом 200, а сбой Claude приходит
+    внутри потока событием с "error": true (строка «Ошибка AI: …»), а не кодом
+    ответа. Ошибку подставляем в ai_service.chat_stream — клиент Anthropic
+    создаётся при старте сервиса, подмена anthropic.AsyncAnthropic до него не
+    доходила, и тест ушёл бы в настоящий Claude.
+    """
 
-        mock_client = MagicMock()
-        mock_client.messages = MagicMock()
-        mock_client.messages.stream = MagicMock(side_effect=create_stream_error)
+    @staticmethod
+    def _failing_stream(exc):
+        async def chat_stream(*args, **kwargs):
+            if False:  # pragma: no cover — делает функцию async-генератором
+                yield ""
+            raise exc
+        return chat_stream
 
-        monkeypatch.setattr("anthropic.AsyncAnthropic", lambda *args, **kwargs: mock_client)
-
-        response = await client.post(
-            f"/api/chats/{chat.id}/ai/chat",
+    async def _send(self, client, chat, admin_token):
+        return await client.post(
+            f"/api/chats/{chat.id}/ai/message",
             json={"message": "test"},
             cookies={"access_token": admin_token}
         )
 
-        # Should handle error gracefully
-        assert response.status_code in [500, 503]
-
     @pytest.mark.asyncio
-    async def test_anthropic_api_rate_limit_error(
-        self, client, admin_token, chat, organization, org_owner, monkeypatch
+    @pytest.mark.parametrize("exc", [
+        ConnectionError("Unable to connect to Anthropic API"),
+        RuntimeError("Rate limit exceeded"),
+        asyncio.TimeoutError("Request timed out"),
+    ], ids=["connection_error", "rate_limit_error", "timeout"])
+    async def test_anthropic_api_error_reported_in_stream(
+        self, client, admin_token, chat, organization, org_owner, monkeypatch, exc
     ):
-        """Test handling when Anthropic API rate limit is exceeded."""
-        # Mock Anthropic client to raise rate limit error
-        class RateLimitError(Exception):
-            pass
+        """Сбой Claude не роняет запрос: в потоке — событие об ошибке и [DONE]."""
+        from api.routes import ai as ai_routes
+        monkeypatch.setattr(ai_routes.ai_service, "chat_stream", self._failing_stream(exc))
 
-        async def create_stream_rate_limit(*args, **kwargs):
-            raise RateLimitError("Rate limit exceeded")
+        response = await self._send(client, chat, admin_token)
 
-        mock_client = MagicMock()
-        mock_client.messages = MagicMock()
-        mock_client.messages.stream = MagicMock(side_effect=create_stream_rate_limit)
-
-        monkeypatch.setattr("anthropic.AsyncAnthropic", lambda *args, **kwargs: mock_client)
-
-        response = await client.post(
-            f"/api/chats/{chat.id}/ai/chat",
-            json={"message": "test"},
-            cookies={"access_token": admin_token}
-        )
-
-        # Should handle error gracefully
-        assert response.status_code in [429, 500, 503]
+        assert response.status_code == 200
+        assert '"error": true' in response.text
+        assert "data: [DONE]" in response.text
 
     @pytest.mark.asyncio
     async def test_anthropic_api_invalid_response(
         self, client, admin_token, chat, organization, org_owner, monkeypatch
     ):
         """Test handling when Anthropic API returns malformed response."""
-        # Create a stream that yields invalid data
-        async def mock_invalid_stream():
-            yield None  # Invalid chunk
+        from api.routes import ai as ai_routes
 
-        def create_invalid_stream(*args, **kwargs):
-            mock_stream = MagicMock()
-            mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
-            mock_stream.__aexit__ = AsyncMock(return_value=None)
-            mock_stream.text_stream = mock_invalid_stream()
-            return mock_stream
+        async def chat_stream(*args, **kwargs):
+            yield None  # Invalid chunk — склейка строки с None упадёт
 
-        mock_client = MagicMock()
-        mock_client.messages = MagicMock()
-        mock_client.messages.stream = MagicMock(side_effect=create_invalid_stream)
+        monkeypatch.setattr(ai_routes.ai_service, "chat_stream", chat_stream)
 
-        monkeypatch.setattr("anthropic.AsyncAnthropic", lambda *args, **kwargs: mock_client)
-
-        response = await client.post(
-            f"/api/chats/{chat.id}/ai/chat",
-            json={"message": "test"},
-            cookies={"access_token": admin_token}
-        )
+        response = await self._send(client, chat, admin_token)
 
         # Should handle error gracefully
-        assert response.status_code in [200, 500]
-
-    @pytest.mark.asyncio
-    async def test_anthropic_api_timeout(
-        self, client, admin_token, chat, organization, org_owner, monkeypatch
-    ):
-        """Test handling when Anthropic API request times out."""
-        async def create_stream_timeout(*args, **kwargs):
-            await asyncio.sleep(0.1)
-            raise asyncio.TimeoutError("Request timed out")
-
-        mock_client = MagicMock()
-        mock_client.messages = MagicMock()
-        mock_client.messages.stream = MagicMock(side_effect=create_stream_timeout)
-
-        monkeypatch.setattr("anthropic.AsyncAnthropic", lambda *args, **kwargs: mock_client)
-
-        response = await client.post(
-            f"/api/chats/{chat.id}/ai/chat",
-            json={"message": "test"},
-            cookies={"access_token": admin_token}
-        )
-
-        # Should handle timeout gracefully
-        assert response.status_code in [500, 504]
+        assert response.status_code == 200
+        assert '"error": true' in response.text
 
 
 class TestOpenAIAPIErrorHandling:
@@ -277,15 +250,17 @@ class TestFirefliesAPIErrorHandling:
         self, client, admin_token, organization, org_owner, monkeypatch
     ):
         """Test handling when Fireflies API is unreachable."""
-        mock_client = MagicMock()
-        mock_client.start_bot = AsyncMock(side_effect=ConnectionError("Unable to connect"))
+        # Запуск записи — POST /api/calls/start-bot (source_url), бота
+        # отправляет call_recorder.start_recording.
+        from api.services.call_recorder import call_recorder
+        monkeypatch.setattr(
+            call_recorder, "start_recording",
+            AsyncMock(side_effect=ConnectionError("Unable to connect")),
+        )
 
-        monkeypatch.setattr("api.services.fireflies_client.fireflies_client", mock_client)
-
-        # Try to start a Fireflies bot
         response = await client.post(
-            "/api/calls/fireflies/start",
-            json={"meeting_url": "https://meet.google.com/abc-defg-hij"},
+            "/api/calls/start-bot",
+            json={"source_url": "https://meet.google.com/abc-defg-hij"},
             cookies={"access_token": admin_token}
         )
 
@@ -297,9 +272,10 @@ class TestFirefliesAPIErrorHandling:
         self, client, admin_token, organization, org_owner
     ):
         """Test handling when Fireflies receives invalid meeting URL."""
+        # Адрес /calls/fireflies/start убран — запуск через /calls/start-bot.
         response = await client.post(
-            "/api/calls/fireflies/start",
-            json={"meeting_url": "not-a-valid-url"},
+            "/api/calls/start-bot",
+            json={"source_url": "not-a-valid-url"},
             cookies={"access_token": admin_token}
         )
 
@@ -364,8 +340,9 @@ class TestConcurrentRequestHandling:
         assert response.status_code in [200, 201]
         entity_id = response.json()["id"]
 
+        # Правка карточки — PUT /entities/{id} (PATCH на этом адресе нет, 405).
         async def update_entity(status):
-            return await client.patch(
+            return await client.put(
                 f"/api/entities/{entity_id}",
                 json={"status": status},
                 cookies={"access_token": admin_token}
@@ -385,12 +362,20 @@ class TestConcurrentRequestHandling:
 
     @pytest.mark.asyncio
     async def test_concurrent_chat_message_creation(
-        self, client, admin_token, chat, organization, org_owner
+        self, client, admin_token, chat, organization, org_owner, monkeypatch
     ):
         """Test sending multiple messages to same chat concurrently."""
+        # Ручка — /ai/message; Claude подменяем, чтобы тест не ходил в сеть.
+        from api.routes import ai as ai_routes
+
+        async def chat_stream(*args, **kwargs):
+            yield "ok"
+
+        monkeypatch.setattr(ai_routes.ai_service, "chat_stream", chat_stream)
+
         async def send_message(i):
             return await client.post(
-                f"/api/chats/{chat.id}/ai/chat",
+                f"/api/chats/{chat.id}/ai/message",
                 json={"message": f"Concurrent message {i}"},
                 cookies={"access_token": admin_token}
             )

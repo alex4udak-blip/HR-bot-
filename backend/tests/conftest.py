@@ -11,6 +11,7 @@ os.environ["SUPERADMIN_EMAIL"] = "test-superadmin@test.com"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
 import asyncio
+import re
 import pytest
 import pytest_asyncio
 from typing import AsyncGenerator, Generator
@@ -48,6 +49,41 @@ def event_loop() -> Generator:
     loop.close()
 
 
+_JSONB_CONTAINS = re.compile(r"([\w.]+|\?)::jsonb\s*@>\s*('[^']*'|\?)::jsonb")
+# Тот же «@>», который SQLAlchemy строит из Column.contains([x]) у JSONB:
+# «entities.emails @> jsonb_build_array(?)» (поиск по второму email/телефону).
+_JSONB_ARRAY_CONTAINS = re.compile(r"([\w.]+)\s*@>\s*jsonb_build_array\((\?)\)")
+
+
+def _install_sqlite_jsonb_shim(engine) -> None:
+    """Переводит постгресовое «X::jsonb @> '[N]'::jsonb» (и «X @> jsonb_build_array(?)») на язык SQLite.
+
+    В коде несколько сырых text()-условий «назначен ли юзер на вакансию»
+    (assigned_to — JSON-массив id). На проде это Postgres, в тестах — SQLite,
+    который такой синтаксис не разбирает вовсе («unrecognized token: ':'»), и
+    любой запрос через эти ветки падал. Смысл тот же: каждый элемент правого
+    массива есть в левом.
+    """
+    from sqlalchemy import event
+
+    @event.listens_for(engine.sync_engine, "before_cursor_execute", retval=True)
+    def _rewrite(conn, cursor, statement, parameters, context, executemany):
+        if "jsonb_build_array" in statement:
+            statement = _JSONB_ARRAY_CONTAINS.sub(
+                lambda m: f"EXISTS (SELECT 1 FROM json_each({m.group(1)}) AS _a WHERE _a.value = {m.group(2)})",
+                statement,
+            )
+        if "::jsonb" in statement:
+            statement = _JSONB_CONTAINS.sub(
+                lambda m: (
+                    f"(NOT EXISTS (SELECT 1 FROM json_each({m.group(2)}) AS _r "
+                    f"WHERE _r.value NOT IN (SELECT _l.value FROM json_each({m.group(1)}) AS _l)))"
+                ),
+                statement,
+            )
+        return statement, parameters
+
+
 @pytest_asyncio.fixture(scope="function")
 async def async_engine():
     """Create async SQLite engine for testing."""
@@ -57,6 +93,7 @@ async def async_engine():
         poolclass=StaticPool,
         echo=False
     )
+    _install_sqlite_jsonb_shim(engine)
 
     async with engine.begin() as conn:
         # Enable foreign key constraints in SQLite

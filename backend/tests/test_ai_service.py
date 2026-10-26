@@ -21,6 +21,8 @@ def mock_settings():
     """Mock settings with API key."""
     with patch('api.services.ai.settings') as mock_settings:
         mock_settings.anthropic_api_key = "test-api-key-12345"
+        # Модель берётся из settings.claude_model (а не зашита в сервис).
+        mock_settings.claude_model = "claude-sonnet-4-6"
         yield mock_settings
 
 
@@ -395,7 +397,9 @@ class TestBuildSystemPrompt:
         assert "HR expert analyzing candidate conversations" in result
         assert "Candidate Interview" in result
         assert "Communication Skills" in result
-        assert "ПЕРЕПИСКА:" in result
+        # Переписка теперь в теге <chat_transcript> (защита от prompt injection),
+        # а не под заголовком «ПЕРЕПИСКА:».
+        assert "<chat_transcript>" in result
         assert "John Doe" in result
         assert "ПРАВИЛА:" in result
 

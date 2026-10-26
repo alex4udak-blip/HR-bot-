@@ -1,10 +1,11 @@
-"""Кандидат в двух воронках: общий статус не переписывается из одной из них.
+"""Кандидат в двух воронках: как считается общий статус.
 
-Entity.status — ОДНО поле, заявок может быть несколько. Обратное направление
-синка (Entity.status -> stage) давно отказывается работать при нескольких
-откликах, прямое такой проверки не имело: перенос в ОДНОЙ воронке переписывал
-общий статус, и на «Статусах»/«Всех кандидатах» человек уезжал в этап, верный
-лишь для одной из воронок.
+Entity.status — ОДНО поле, заявок может быть несколько. Правило сейчас
+(services/stage_change.settle_entities, CLAUDE.md «Кандидат в нескольких
+воронках»): общий статус = этап «актуальной» заявки — самой свежей ЖИВОЙ;
+отказ/резерв учитываются, только когда живых не осталось. Поэтому перевод
+в одной воронке двигает общий статус, а отказ в одной воронке не уводит
+кандидата в «Отказ», пока он работается в другой.
 """
 from datetime import datetime
 
@@ -66,7 +67,8 @@ async def test_stage_change_in_one_funnel_keeps_global_status(
     client: AsyncClient, db_session: AsyncSession, admin_user: User,
     candidate_in_two_funnels,
 ):
-    """Двигаем воронку A — общий статус кандидата остаётся прежним."""
+    """Двигаем воронку A — общий статус идёт за ней (она теперь самая свежая
+    живая заявка), вторая воронка не тронута."""
     entity, app_a, app_b, _va, _vb = candidate_in_two_funnels
 
     r = await client.put(
@@ -81,8 +83,8 @@ async def test_stage_change_in_one_funnel_keeps_global_status(
     await db_session.refresh(app_b)
     assert app_a.stage == ApplicationStage.offer, "своя воронка двигается"
     assert app_b.stage == ApplicationStage.interview, "чужая воронка не тронута"
-    assert entity.status == EntityStatus.new, (
-        "общий статус не должен уезжать в «Оффер» — во второй воронке это неправда"
+    assert entity.status == EntityStatus.offer, (
+        "общий статус — по самой свежей живой заявке (A, «Оффер»)"
     )
 
 
@@ -90,7 +92,8 @@ async def test_bulk_move_keeps_global_status_for_multi_funnel(
     client: AsyncClient, db_session: AsyncSession, admin_user: User,
     candidate_in_two_funnels,
 ):
-    """То же для массового перемещения."""
+    """Массовый перевод A в «Отказ»: B ещё живая (interview), поэтому общий
+    статус — её этап, а не «Отказ»."""
     entity, app_a, app_b, _va, _vb = candidate_in_two_funnels
 
     r = await client.post(
@@ -103,7 +106,7 @@ async def test_bulk_move_keeps_global_status_for_multi_funnel(
     await db_session.refresh(entity)
     await db_session.refresh(app_a)
     assert app_a.stage == ApplicationStage.rejected
-    assert entity.status == EntityStatus.new
+    assert entity.status == EntityStatus.tech_practice  # = interview воронки B
 
 
 async def test_single_funnel_still_syncs(

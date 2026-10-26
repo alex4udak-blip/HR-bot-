@@ -443,8 +443,10 @@ async def update_chat(
         has_criteria=False,
     )
 
-    # Broadcast update to users with access only
-    await broadcast_chat_updated(org.id, response.model_dump(), db=db)
+    # Broadcast update to users with access only. mode="json": в ответе есть
+    # datetime (created_at, last_activity), а realtime делает json.dumps — без
+    # этого правка чата сохранялась, но ручка отвечала 500.
+    await broadcast_chat_updated(org.id, response.model_dump(mode="json"), db=db)
 
     return response
 

@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from ..config import get_settings
 from ..database import get_db
+from ..limiter import PUBLIC_PAGE_LIMIT, PUBLIC_REPORT_LIMIT, PUBLIC_SUBMIT_LIMIT, limiter
 from ..models.database import (
     FormTemplate, FormSubmission, FormVacancy, FormDispatch,
     Entity, EntityFile, EntityFileType, AccessLevel,
@@ -1069,7 +1070,9 @@ async def mark_entity_dispatches_seen(entity_id: int, db: AsyncSession = Depends
 # ============================================================
 
 @router.get("/public/{slug}")
+@limiter.limit(PUBLIC_PAGE_LIMIT)
 async def get_public_form(
+    request: Request,
     slug: str,
     db: AsyncSession = Depends(get_db),
 ):
@@ -1097,7 +1100,8 @@ async def get_public_form(
 
 
 @router.post("/public/{slug}/submit")
-async def submit_public_form(slug: str):
+@limiter.limit(PUBLIC_SUBMIT_LIMIT)
+async def submit_public_form(request: Request, slug: str):
     """Отправка по общему адресу анкеты отключена: анкету заполняет СУЩЕСТВУЮЩИЙ
     кандидат по персональной ссылке (токен). Раньше каждый такой ответ плодил
     нового кандидата. Ручку оставили, чтобы старые ссылки получали понятный отказ."""
@@ -1105,7 +1109,8 @@ async def submit_public_form(slug: str):
 
 
 @router.post("/public/{slug}/submit-with-files")
-async def submit_public_form_with_files(slug: str):
+@limiter.limit(PUBLIC_SUBMIT_LIMIT)
+async def submit_public_form_with_files(request: Request, slug: str):
     raise HTTPException(status_code=403, detail=_SLUG_SUBMIT_OFF)
 
 
@@ -1242,7 +1247,8 @@ class PublicClientErrorSchema(BaseModel):
 
 
 @router.post("/public/client-error", status_code=204)
-async def report_public_form_client_error(body: PublicClientErrorSchema, request: Request):
+@limiter.limit(PUBLIC_REPORT_LIMIT)
+async def report_public_form_client_error(request: Request, body: PublicClientErrorSchema):
     """Браузер кандидата сообщает, что отправка анкеты не удалась.
 
     17.10.2026 кандидат пять раз жал «Отправить» и видел ошибку, а у нас не
@@ -1264,7 +1270,9 @@ async def report_public_form_client_error(body: PublicClientErrorSchema, request
 
 
 @router.get("/public/d/{token}")
+@limiter.limit(PUBLIC_PAGE_LIMIT)
 async def get_public_form_by_token(
+    request: Request,
     token: str,
     db: AsyncSession = Depends(get_db),
     viewer: Optional[User] = Depends(get_current_user_optional),
@@ -1401,15 +1409,15 @@ async def _submit_by_token(
     try:
         entity = (await db.execute(select(Entity).where(Entity.id == dispatch.entity_id))).scalar_one_or_none()
         from ..services.hr_notifications import notify_form_submitted
-        await notify_form_submitted(db, dispatch, entity, form)
+        recipients = await notify_form_submitted(db, dispatch, entity, form)
         from .realtime import broadcast_form_submission
-        if dispatch.created_by:
-            await broadcast_form_submission(dispatch.created_by, {
+        # Тем же людям, что получили уведомление: отправителю и текущему
+        # рекрутёру кандидата, каждому один раз.
+        for user_id in recipients:
+            await broadcast_form_submission(user_id, {
                 "entity_id": dispatch.entity_id, "form_id": form.id, "dispatch_id": dispatch.id,
                 "form_title": form.title, "candidate_name": entity.name if entity else None,
             })
-        else:
-            logger.warning("form.submission: dispatch %s has no created_by — no realtime sent", dispatch.id)
     except Exception:
         logger.error("form.submission notify/broadcast FAILED for dispatch %s", dispatch.id, exc_info=True)
 
@@ -1428,7 +1436,9 @@ async def _submit_by_token(
 
 
 @router.post("/public/d/{token}/submit")
+@limiter.limit(PUBLIC_SUBMIT_LIMIT)
 async def submit_public_form_by_token(
+    request: Request,
     token: str,
     body: PublicSubmitSchema,
     db: AsyncSession = Depends(get_db),
@@ -1438,7 +1448,9 @@ async def submit_public_form_by_token(
 
 
 @router.post("/public/d/{token}/submit-with-files")
+@limiter.limit(PUBLIC_SUBMIT_LIMIT)
 async def submit_public_form_by_token_with_files(
+    request: Request,
     token: str,
     background_tasks: BackgroundTasks,
     data: str = Form(..., description="JSON string with form data {field_id: value}"),

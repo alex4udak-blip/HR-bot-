@@ -195,7 +195,9 @@ class TestDepartmentAPIContracts:
         # Verify field types
         assert isinstance(data["id"], int)
         assert isinstance(data["name"], str)
-        assert isinstance(data["org_id"], int)
+        # org_id в DepartmentResponse нет (отдел и так из орга запросившего).
+        if "org_id" in data:
+            assert isinstance(data["org_id"], int)
 
     @pytest.mark.asyncio
     async def test_departments_list_response_format(
@@ -232,7 +234,8 @@ class TestEntityAPIContracts:
         self,
         client: AsyncClient,
         admin_user: User,
-        entity: Entity
+        entity: Entity,
+        org_owner: OrgMember  # без членства в орге /entities отвечает 403
     ):
         """Test entity response has all required fields."""
         admin_token = create_access_token(data={"sub": str(admin_user.id)})
@@ -597,7 +600,8 @@ class TestErrorResponseContracts:
     """Test error responses have consistent format."""
 
     @pytest.mark.asyncio
-    async def test_404_error_format(self, client: AsyncClient, admin_token: str):
+    async def test_404_error_format(self, client: AsyncClient, admin_token: str, org_owner: OrgMember):
+        # org_owner: без членства в организации ручка отвечает 403 раньше поиска.
         """Test 404 errors return consistent format."""
         response = await client.get(
             "/api/entities/99999",
@@ -674,7 +678,8 @@ class TestFieldTypeConsistency:
         self,
         client: AsyncClient,
         admin_user: User,
-        entity: Entity
+        entity: Entity,
+        org_owner: OrgMember  # без членства в орге /entities отвечает 403
     ):
         """Test that datetime fields use consistent ISO format."""
         admin_token = create_access_token(data={"sub": str(admin_user.id)})
@@ -703,7 +708,8 @@ class TestFieldTypeConsistency:
         self,
         client: AsyncClient,
         admin_user: User,
-        entity: Entity
+        entity: Entity,
+        org_owner: OrgMember  # без членства в орге /entities отвечает 403
     ):
         """Test that enum fields return string values."""
         admin_token = create_access_token(data={"sub": str(admin_user.id)})

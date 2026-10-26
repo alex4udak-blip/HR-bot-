@@ -411,8 +411,12 @@ class TestURLParsing:
             assert result.company_name == "TechCorp"
             assert result.employment_type == "full-time"
             assert result.experience_level == "senior"
-            assert result.requirements == "Python, FastAPI, PostgreSQL"
-            assert method == "api"
+            # Навыки hh.ru — отдельным полем skills; requirements/responsibilities
+            # теперь даёт ИИ-разбор описания, и только если оно длиннее 100
+            # символов (здесь короткое — Claude не зовётся, полей нет).
+            assert result.skills == ["Python", "FastAPI", "PostgreSQL"]
+            assert result.requirements is None
+            assert method == "api+ai"
 
 
 # ============================================================================
@@ -1481,8 +1485,12 @@ class TestUrlSanitization:
         with pytest.raises(HTTPException) as exc_info:
             validate_and_sanitize_url("ftp://hh.ru/resume/123")
 
+        # Адрес без http(s):// валидатор дополняет «https://», и «ftp://hh.ru»
+        # превращается в хост «ftp:» — отказ приходит как «domain not allowed»,
+        # а не «scheme». Главное — такой адрес не проходит.
         assert exc_info.value.status_code == 400
-        assert "scheme" in exc_info.value.detail.lower()
+        detail = exc_info.value.detail.lower()
+        assert "scheme" in detail or "domain not allowed" in detail
 
     def test_validate_and_sanitize_url_handles_port(self):
         """Test that URLs with ports are handled correctly."""
@@ -1673,7 +1681,9 @@ class TestFileUploadSecurity:
 
         # Try to upload file with path traversal in filename
         malicious_filename = "../../../etc/passwd.pdf"
-        files = {"file": (malicious_filename, io.BytesIO(b"fake pdf content"), "application/pdf")}
+        # Содержимое — с настоящей сигнатурой PDF: теперь файл сверяется по
+        # magic bytes, и «fake pdf content» отбивался 400 ещё до имени файла.
+        files = {"file": (malicious_filename, io.BytesIO(b"%PDF-1.4\n%fake pdf content\n%%EOF"), "application/pdf")}
 
         with patch('api.services.parser.document_parser') as mock_doc_parser:
             with patch('api.services.parser._get_ai_client') as mock_client:

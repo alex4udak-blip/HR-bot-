@@ -17,6 +17,7 @@ sys.path.insert(0, '/home/user/HR-bot-/backend')
 
 from api.services.participants import (
     identify_participants_from_objects,
+    get_role_icon,  # класс TestGetRoleIcon проверяет его, а импорта не было
     get_role_label,
     format_participant_list,
     format_message_with_role

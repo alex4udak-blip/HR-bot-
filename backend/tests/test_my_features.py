@@ -149,7 +149,7 @@ class TestMyFeatures:
         org_feature = DepartmentFeature(
             org_id=organization.id,
             department_id=None,  # Org-wide
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(org_feature)
@@ -169,7 +169,7 @@ class TestMyFeatures:
         data = response.json()
 
         # Member should have vacancies feature now
-        assert "vacancies" in data["features"]
+        assert "candidate_database" in data["features"]
 
     async def test_member_dept_feature_override(
         self,
@@ -193,7 +193,7 @@ class TestMyFeatures:
         org_feature = DepartmentFeature(
             org_id=organization.id,
             department_id=None,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(org_feature)
@@ -202,7 +202,7 @@ class TestMyFeatures:
         dept_feature = DepartmentFeature(
             org_id=organization.id,
             department_id=department.id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=False
         )
         db_session.add(dept_feature)
@@ -222,7 +222,7 @@ class TestMyFeatures:
         data = response.json()
 
         # Member should NOT have vacancies feature (dept override disabled it)
-        assert "vacancies" not in data["features"]
+        assert "candidate_database" not in data["features"]
 
     async def test_user_not_in_org_gets_default_features(
         self,
@@ -290,7 +290,7 @@ class TestMyFeatures:
         dept_feature = DepartmentFeature(
             org_id=organization.id,
             department_id=department.id,
-            feature_name="vacancies",
+            feature_name="candidate_database",
             enabled=True
         )
         db_session.add(dept_feature)
@@ -310,4 +310,4 @@ class TestMyFeatures:
         data = response.json()
 
         # User should have vacancies (enabled in one of their departments)
-        assert "vacancies" in data["features"]
+        assert "candidate_database" in data["features"]

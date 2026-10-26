@@ -70,14 +70,18 @@ class TestRateLimiting:
 class TestBruteForceProtection:
     """Test brute-force protection (account lockout after failed attempts)."""
 
+    # Блокировку аккаунта после неудачных попыток УБРАЛИ намеренно (комментарий
+    # в routes/auth.py login): она запирала HR на 15 минут из-за автозаполненного
+    # пароля. Счётчик на входе не растёт и не читается; успешный вход обнуляет
+    # failed_login_attempts/locked_until, снимая старый лок. От перебора
+    # остаётся лимит частоты запросов на /login.
+
     @pytest.mark.asyncio
-    async def test_failed_login_increments_counter(self, client: AsyncClient, admin_user: User, db_session):
-        """Test that failed login attempts increment the counter."""
-        # Initial state - no failed attempts
+    async def test_failed_login_does_not_increment_counter(self, client: AsyncClient, admin_user: User, db_session):
+        """Неудачный вход — 401, счётчик попыток не растёт (lockout убран)."""
         assert admin_user.failed_login_attempts == 0
         assert admin_user.locked_until is None
 
-        # Attempt login with wrong password
         response = await client.post("/api/auth/login", json={
             "email": "admin@test.com",
             "password": "wrongpassword"
@@ -86,11 +90,9 @@ class TestBruteForceProtection:
         assert response.status_code == 401
         assert response.json()["detail"] == "Invalid credentials"
 
-        # Refresh user from database
         await db_session.refresh(admin_user)
-
-        # Failed attempts should be incremented
-        assert admin_user.failed_login_attempts == 1
+        assert admin_user.failed_login_attempts == 0
+        assert admin_user.locked_until is None
 
     @pytest.mark.asyncio
     async def test_successful_login_resets_counter(self, client: AsyncClient, admin_user: User, db_session):
@@ -115,50 +117,41 @@ class TestBruteForceProtection:
         assert admin_user.locked_until is None
 
     @pytest.mark.asyncio
-    async def test_account_lockout_after_5_failed_attempts(self, client: AsyncClient, admin_user: User, db_session):
-        """Test that account is locked for 15 minutes after 5 failed login attempts."""
-        # Attempt 5 failed logins
-        for i in range(5):
+    async def test_no_lockout_after_5_failed_attempts(self, client: AsyncClient, admin_user: User, db_session):
+        """После 5 неудачных попыток аккаунт не запирается: верный пароль впускает."""
+        for _ in range(5):
             response = await client.post("/api/auth/login", json={
                 "email": "admin@test.com",
                 "password": "wrongpassword"
             })
+            assert response.status_code == 401
+            assert response.json()["detail"] == "Invalid credentials"
 
-            if i < 4:
-                # First 4 attempts should return 401
-                assert response.status_code == 401
-                assert response.json()["detail"] == "Invalid credentials"
-            else:
-                # 5th attempt should lock the account and return 423
-                assert response.status_code == 423
-                assert "locked" in response.json()["detail"].lower()
-                assert "15 minutes" in response.json()["detail"]
-
-        # Refresh user from database
         await db_session.refresh(admin_user)
+        assert admin_user.locked_until is None
 
-        # Account should be locked
-        assert admin_user.failed_login_attempts >= 5
-        assert admin_user.locked_until is not None
-        assert admin_user.locked_until > datetime.utcnow()
+        response = await client.post("/api/auth/login", json={
+            "email": "admin@test.com",
+            "password": "Admin123"
+        })
+        assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_locked_account_cannot_login_with_correct_password(self, client: AsyncClient, admin_user: User, db_session):
-        """Test that locked account cannot login even with correct password."""
-        # Lock the account
+    async def test_old_lock_is_cleared_by_correct_password(self, client: AsyncClient, admin_user: User, db_session):
+        """Лок, выставленный раньше (до отмены блокировки), вход не держит и снимается."""
         admin_user.failed_login_attempts = 5
         admin_user.locked_until = datetime.utcnow() + timedelta(minutes=15)
         await db_session.commit()
 
-        # Try to login with correct password
         response = await client.post("/api/auth/login", json={
             "email": "admin@test.com",
             "password": "Admin123"
         })
 
-        # Should be rejected due to lockout
-        assert response.status_code == 423
-        assert "locked" in response.json()["detail"].lower()
+        assert response.status_code == 200
+        await db_session.refresh(admin_user)
+        assert admin_user.failed_login_attempts == 0
+        assert admin_user.locked_until is None
 
     @pytest.mark.asyncio
     async def test_lockout_expires_after_15_minutes(self, client: AsyncClient, admin_user: User, db_session):
@@ -390,7 +383,9 @@ class TestPasswordPolicyFunction:
         """Test password validation when password matches email username."""
         from api.services.password_policy import validate_password
 
-        is_valid, error = validate_password("admin", "admin@test.com")
+        # «admin» сам по себе в списке частых паролей, а эта проверка идёт
+        # первой — для проверки «совпадает с именем почты» нужен нечастый логин.
+        is_valid, error = validate_password("johnsmith2024", "johnsmith2024@test.com")
         assert not is_valid
         assert "email username" in error.lower()
 

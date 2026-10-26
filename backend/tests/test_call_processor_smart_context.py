@@ -327,6 +327,9 @@ class TestIdentifyParticipantRoles:
             {"speaker": "John (john@company.com)", "start": 0, "end": 60}
         ]
         call.owner_id = 1
+        # identify_participant_roles считает статистику спикеров по длительности
+        # звонка — у голого MagicMock это MagicMock, а не число.
+        call.duration_seconds = 60
         call.entity_id = None
 
         # Mock owner user
@@ -358,6 +361,9 @@ class TestIdentifyParticipantRoles:
             {"speaker": "Unknown Speaker", "start": 0, "end": 60}
         ]
         call.owner_id = None
+        # identify_participant_roles считает статистику спикеров по длительности
+        # звонка — у голого MagicMock это MagicMock, а не число.
+        call.duration_seconds = 60
         call.entity_id = None
 
         db = AsyncMock()

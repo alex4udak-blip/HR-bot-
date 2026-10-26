@@ -38,7 +38,9 @@ async def test_hire_creates_user_employee_and_moves_to_transferred(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["user_existed"] is False
-    assert body["temporary_password"]
+    # Пароль при оформлении НЕ выдаётся (решение с Марией 27.07.2026, см.
+    # routes/entities/hire.py): временный — позже, reset-password в Factorial.
+    assert "temporary_password" not in body
     assert body["employee_id"]
 
     emp = (await db_session.execute(

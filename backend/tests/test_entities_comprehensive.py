@@ -393,7 +393,9 @@ class TestTransferEntityComprehensive:
         assert frozen_copy.transferred_to_id == second_user.id
         assert frozen_copy.created_by == admin_user.id  # Still owned by original owner
         assert frozen_copy.transferred_at is not None
-        assert "[Передан →" in frozen_copy.name  # Marked as transferred
+        # Метка копии — «[Transferred -> …]»: по ней candidate_search прячет
+        # замороженные копии (тот же формат проверяет test_entities.py).
+        assert "[Transferred ->" in frozen_copy.name  # Marked as transferred
 
     @pytest.mark.asyncio
     async def test_transfer_moves_ownership(

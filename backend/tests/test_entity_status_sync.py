@@ -265,9 +265,10 @@ class TestCreateApplicationSync:
         await db_session.refresh(test_candidate)
 
         # Create application
+        # vacancy_id в теле обязателен (ApplicationCreate), без него — 422.
         response = await client.post(
             f"/api/vacancies/{test_vacancy.id}/applications",
-            json={"entity_id": test_candidate.id},
+            json={"vacancy_id": test_vacancy.id, "entity_id": test_candidate.id},
             headers=auth_headers(token)
         )
         assert response.status_code == 201
@@ -321,10 +322,12 @@ class TestDeleteApplicationSync:
 # TEST: ONE CANDIDATE ONE VACANCY RESTRICTION
 # ============================================================================
 
-class TestOneCandidateOneVacancy:
-    """Tests for the one-candidate-one-active-vacancy restriction."""
+class TestOneCandidateSeveralVacancies:
+    """Кандидат может быть в нескольких воронках сразу — это норма
+    (CLAUDE.md, «Модель работы HR»). Прежнее правило «один кандидат — одна
+    активная вакансия» снято; повторно в ТУ ЖЕ воронку — по-прежнему 400."""
 
-    async def test_cannot_add_candidate_to_second_vacancy(
+    async def test_can_add_candidate_to_second_vacancy(
         self,
         client: AsyncClient,
         admin_user: User,
@@ -334,18 +337,23 @@ class TestOneCandidateOneVacancy:
         test_application: VacancyApplication,
         org_owner
     ):
-        """Should reject adding candidate to second active vacancy."""
         token = create_access_token(data={"sub": str(admin_user.id)})
 
-        # Try to add same candidate to second vacancy
         response = await client.post(
             f"/api/vacancies/{second_vacancy.id}/applications",
-            json={"entity_id": test_candidate.id},
+            json={"vacancy_id": second_vacancy.id, "entity_id": test_candidate.id},
+            headers=auth_headers(token)
+        )
+        assert response.status_code == 201
+
+        # В ту же воронку второй раз — отказ.
+        response = await client.post(
+            f"/api/vacancies/{test_vacancy.id}/applications",
+            json={"vacancy_id": test_vacancy.id, "entity_id": test_candidate.id},
             headers=auth_headers(token)
         )
         assert response.status_code == 400
         assert "уже добавлен" in response.json()["detail"].lower()
-
 
 
 # ============================================================================

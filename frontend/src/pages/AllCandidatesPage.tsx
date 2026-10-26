@@ -40,6 +40,8 @@ import { InfoTab } from "@/components/entities/candidateDetail/CandidateInfoPane
 import { NewCandidateModal } from "@/components/candidates/NewCandidateModal";
 import { EditCandidateModal } from "@/components/candidates/EditCandidateModal";
 import { ListSettingsModal } from "@/components/candidates/ListSettingsModal";
+import { useMobileMasterDetail } from "@/components/candidates/useMobileMasterDetail";
+import { MobileBackToList } from "@/components/candidates/MobileBackToList";
 import { type DetailSection } from "@/components/entities/candidateDetail/model";
 import { boardColumnOf } from "@/constants/hrStages";
 
@@ -213,6 +215,7 @@ export default function AllCandidatesPage() {
   // «то есть, то нет», хотя локально цепочка срабатывала. Человек успел
   // кликнуть другого — не перебиваем (pendingCreatedRef сбрасывает клик).
   const pendingCreatedRef = useRef<number | null>(null);
+  const mobile = useMobileMasterDetail("hf-mobile-view:all-candidates");
   const selectCreatedRef = useRef<(card: KanbanCard, status: string) => void>(() => {});
   const forceOpenCreated = useCallback((entityId: number) => {
     pendingCreatedRef.current = entityId;
@@ -385,10 +388,12 @@ export default function AllCandidatesPage() {
     pendingCreatedRef.current = null;
     selectCandidate(card, status);
     setDetailTab("resume");
-  }, [selectCandidate]);
+    mobile.showCard();
+  }, [selectCandidate, mobile.showCard]);
   selectCreatedRef.current = (card, status) => {
     selectCandidate(card, status);
     setDetailTab("resume");
+    mobile.showCard();
   };
   // Открыли карточку — проверить дубль и подтянуть свежие данные кандидата.
   useOpenedCandidateRefresh(selectedCard, setSelectedCard, setSelectedStatus, observer);
@@ -534,7 +539,7 @@ export default function AllCandidatesPage() {
       {(loading && !board) || staleFiltered ? (
         <HfCandidatesLoadingLayout />
       ) : (
-        <div className="hf-candidates-master">
+        <div className="hf-candidates-master" data-mobile-view={mobile.view}>
           {/* LEFT: Candidate list — white card */}
           <div className="hf-candidates-list-panel">
             {showMentorStats && (
@@ -626,6 +631,7 @@ export default function AllCandidatesPage() {
 
           {/* RIGHT: Detail panel */}
           <div className="hf-candidates-detail-panel flex-1 bg-[var(--hf-white)] hf-dark-disabled:bg-[var(--hf-bg-dark)] rounded-hf-l flex flex-col overflow-hidden">
+            <MobileBackToList onClick={mobile.showList} />
             {selectedCard ? (
               <div className="flex-1 overflow-y-auto">
                 <InfoTab

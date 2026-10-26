@@ -422,12 +422,49 @@ async def check_vacancy_access(
             detail="Candidate Database feature is not enabled for your department"
         )
 
+    # Чужая организация — «не найдено», как у кандидатов (24.10.2026). Раньше
+    # вакансия другой организации отвечала 403 «нет доступа», а несуществующая —
+    # 404, и по разнице перебором номеров было видно, какие вакансии есть.
+    # Наблюдатель и рекрутёры своей организации этим не затронуты.
+    await _ensure_path_in_org(request, current_user, org.id, db)
+
     # Скоуп по воронкам — здесь, одним горлышком на все ручки вакансий: раньше
     # он стоял только на чтении, и человек со скоупом (например, наблюдатель,
     # которого потом сделали рекрутёром — скоуп при этом остаётся) мог по id
     # двигать, править и удалять заявки чужих воронок (20.10.2026).
     await _ensure_path_in_scope(request, current_user, db)
     return current_user
+
+
+async def _path_vacancy_id(params: dict, db: AsyncSession) -> Optional[int]:
+    """Номер вакансии из адреса: прямо (`vacancy_id`) или через заявку."""
+    raw = params.get("vacancy_id")
+    if raw is not None:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+    try:
+        app_id = int(params["application_id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (await db.execute(
+        select(VacancyApplication.vacancy_id).where(VacancyApplication.id == app_id)
+    )).scalar()
+
+
+async def _ensure_path_in_org(request: Request, user: User, org_id: int, db: AsyncSession) -> None:
+    if user.role == UserRole.superadmin:
+        return
+    params = request.path_params or {}
+    if "vacancy_id" not in params and "application_id" not in params:
+        return
+    vacancy_id = await _path_vacancy_id(params, db)
+    if vacancy_id is None:
+        return  # нет такой — ответит сама ручка (404)
+    vacancy_org = (await db.execute(select(Vacancy.org_id).where(Vacancy.id == vacancy_id))).scalar()
+    if vacancy_org is not None and vacancy_org != org_id:
+        raise HTTPException(status_code=404, detail="Vacancy not found")
 
 
 async def _ensure_path_in_scope(request: Request, user: User, db: AsyncSession) -> None:

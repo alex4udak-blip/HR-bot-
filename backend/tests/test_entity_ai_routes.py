@@ -33,9 +33,14 @@ async def entity_with_data(
     db_session,
     organization: Organization,
     department: Department,
-    admin_user: User
+    admin_user: User,
+    org_owner,
 ) -> Entity:
-    """Create an entity with some data."""
+    """Create an entity with some data.
+
+    admin_user — владелец организации (org_owner): без членства в орге ручки
+    /entities/{id}/ai/* отвечают 403.
+    """
     entity = Entity(
         org_id=organization.id,
         department_id=department.id,
@@ -835,7 +840,8 @@ class TestBatchUpdateSummaries:
         db_session,
         organization: Organization,
         department: Department,
-        admin_user: User
+        admin_user: User,
+        org_owner,  # пакетное обновление — только админам орга (owner/admin)
     ):
         """Test batch updating AI summaries."""
         # Create entities owned by admin_user
@@ -875,7 +881,8 @@ class TestBatchUpdateSummaries:
     async def test_batch_update_with_limit(
         self,
         client: AsyncClient,
-        admin_user: User
+        admin_user: User,
+        org_owner,  # пакетное обновление — только админам орга (owner/admin)
     ):
         """Test batch update respects limit parameter."""
         token = create_access_token(data={
@@ -901,7 +908,8 @@ class TestBatchUpdateSummaries:
         db_session,
         organization: Organization,
         department: Department,
-        admin_user: User
+        admin_user: User,
+        org_owner,  # пакетное обновление — только админам орга (owner/admin)
     ):
         """Test batch update only processes entities without summaries."""
         # Create entity with existing summary
@@ -938,7 +946,8 @@ class TestBatchUpdateSummaries:
     async def test_batch_update_max_limit(
         self,
         client: AsyncClient,
-        admin_user: User
+        admin_user: User,
+        org_owner,  # пакетное обновление — только админам орга (owner/admin)
     ):
         """Test that batch update enforces maximum limit of 50."""
         token = create_access_token(data={
@@ -990,7 +999,8 @@ class TestBatchUpdateSummaries:
     async def test_batch_update_empty_result(
         self,
         client: AsyncClient,
-        admin_user: User
+        admin_user: User,
+        org_owner,  # пакетное обновление — только админам орга (owner/admin)
     ):
         """Test batch update when user has no entities."""
         token = create_access_token(data={

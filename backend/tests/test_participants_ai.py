@@ -39,6 +39,14 @@ from api.models.database import (
 # UNIT TESTS - Extended ParticipantRole Enum
 # ============================================================================
 
+
+def _api_connection_error():
+    """Сбой Claude так, как его отдаёт SDK."""
+    import httpx
+    from anthropic import APIConnectionError
+    return APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+
+
 class TestExtendedParticipantRole:
     """Tests for extended ParticipantRole enum with AI roles."""
 
@@ -265,6 +273,14 @@ class TestIdentifyParticipantsWithAI:
 class TestAIIdentifyUnknownParticipants:
     """Tests for AI-powered participant identification function."""
 
+    @pytest.fixture(autouse=True)
+    def _anthropic_key(self, monkeypatch):
+        """Ключ «настроен»: без него функция сразу возвращает участников как есть
+        и ни одна ветка разбора ответа Claude не проверяется (сам Claude замокан)."""
+        from api.services import participants
+        monkeypatch.setattr(participants.settings, "anthropic_api_key", "test-key")
+
+
     @pytest_asyncio.fixture
     async def test_chat_with_messages(self, db_session: AsyncSession) -> Chat:
         """Create test chat with interview messages."""
@@ -463,7 +479,8 @@ class TestAIIdentifyUnknownParticipants:
         """Test that API errors are handled gracefully."""
         with patch('api.services.participants.AsyncAnthropic') as mock_anthropic:
             mock_client = AsyncMock()
-            mock_client.messages.create = AsyncMock(side_effect=Exception("API Error"))
+            # Ловятся ошибки SDK (APIError / APIConnectionError), а не любой Exception.
+            mock_client.messages.create = AsyncMock(side_effect=_api_connection_error())
             mock_anthropic.return_value = mock_client
 
             unknown = [
@@ -661,7 +678,12 @@ class TestHelperFunctions:
 # ============================================================================
 
 class TestAICallSpeakerIdentification:
-    """Tests for ai_identify_call_speakers function."""
+    """Tests for ai_identify_call_speakers function.
+
+    Модуль читает `settings` один раз при импорте, поэтому подменяем именно
+    `participants.settings` (а не get_settings). У спикера звонка нет Telegram —
+    telegram_user_id/username у IdentifiedParticipant обязательные, передаём None.
+    """
 
     @pytest.mark.asyncio
     async def test_identifies_speakers_by_transcript_context(self):
@@ -682,6 +704,8 @@ Speaker 2: FastAPI, Django, Flask. Последние 2 года работаю 
 
         unknown_speakers = [
             IdentifiedParticipant(
+                telegram_user_id=None,
+                username=None,
                 display_name="Speaker 2",
                 role=ParticipantRole.unknown,
                 confidence=0.5
@@ -690,6 +714,8 @@ Speaker 2: FastAPI, Django, Flask. Последние 2 года работаю 
 
         known_speakers = [
             IdentifiedParticipant(
+                telegram_user_id=None,
+                username=None,
                 display_name="HR Manager",
                 role=ParticipantRole.system_user,
                 confidence=1.0
@@ -701,9 +727,9 @@ Speaker 2: FastAPI, Django, Flask. Последние 2 года работаю 
             text='[{"speaker_name": "Speaker 2", "role": "candidate", "confidence": 0.75, "reasoning": "Отвечает на вопросы про опыт работы"}]'
         )]
 
-        with patch('api.services.participants.get_settings') as mock_settings, \
+        with patch('api.services.participants.settings') as mock_settings, \
              patch('api.services.participants.AsyncAnthropic') as mock_anthropic:
-            mock_settings.return_value.anthropic_api_key = "test-key"
+            mock_settings.anthropic_api_key = "test-key"
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_response)
             mock_anthropic.return_value = mock_client
@@ -730,13 +756,15 @@ Speaker 2: FastAPI, Django, Flask. Последние 2 года работаю 
 
         unknown_speakers = [
             IdentifiedParticipant(
+                telegram_user_id=None,
+                username=None,
                 display_name="Unknown Speaker",
                 role=ParticipantRole.unknown
             )
         ]
 
-        with patch('api.services.participants.get_settings') as mock_settings:
-            mock_settings.return_value.anthropic_api_key = None
+        with patch('api.services.participants.settings') as mock_settings:
+            mock_settings.anthropic_api_key = None
 
             result = await ai_identify_call_speakers(
                 call=mock_call,
@@ -759,16 +787,18 @@ Speaker 2: FastAPI, Django, Flask. Последние 2 года работаю 
 
         unknown_speakers = [
             IdentifiedParticipant(
+                telegram_user_id=None,
+                username=None,
                 display_name="Speaker",
                 role=ParticipantRole.unknown
             )
         ]
 
-        with patch('api.services.participants.get_settings') as mock_settings, \
+        with patch('api.services.participants.settings') as mock_settings, \
              patch('api.services.participants.AsyncAnthropic') as mock_anthropic:
-            mock_settings.return_value.anthropic_api_key = "test-key"
+            mock_settings.anthropic_api_key = "test-key"
             mock_client = AsyncMock()
-            mock_client.messages.create = AsyncMock(side_effect=Exception("API Error"))
+            mock_client.messages.create = AsyncMock(side_effect=_api_connection_error())
             mock_anthropic.return_value = mock_client
 
             result = await ai_identify_call_speakers(
@@ -810,13 +840,15 @@ Speaker 2: FastAPI, Django, Flask. Последние 2 года работаю 
 
         unknown_speakers = [
             IdentifiedParticipant(
+                telegram_user_id=None,
+                username=None,
                 display_name="Speaker",
                 role=ParticipantRole.unknown
             )
         ]
 
-        with patch('api.services.participants.get_settings') as mock_settings:
-            mock_settings.return_value.anthropic_api_key = "test-key"
+        with patch('api.services.participants.settings') as mock_settings:
+            mock_settings.anthropic_api_key = "test-key"
 
             result = await ai_identify_call_speakers(
                 call=mock_call,

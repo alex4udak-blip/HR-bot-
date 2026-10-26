@@ -13,6 +13,26 @@ from api.models.database import (
 )
 
 
+@pytest.fixture(autouse=True)
+def no_profile_regen(monkeypatch):
+    """Фоновый AI-профиль после привязки чата/звонка в тестах не запускаем.
+
+    link-chat / link-call ставят в фон `add_task(asyncio.create_task, coro)`:
+    Starlette зовёт синхронный create_task в пуле потоков, там нет event loop —
+    «no running event loop». На проде ответ к этому моменту уже ушёл (привязка
+    работает, падает только профиль — владелец 19.10.2026 решил это не чинить:
+    профиль нигде не виден, а чинить = платить за Claude на каждую привязку).
+    В тестах ASGITransport пробрасывает ошибку фоновой задачи в сам запрос,
+    поэтому подменяем create_task в модуле ручек на «выбросить корутину».
+    """
+    import types
+    from api.routes.entities import memory
+
+    monkeypatch.setattr(
+        memory, "asyncio", types.SimpleNamespace(create_task=lambda coro: coro.close())
+    )
+
+
 # ============================================================================
 # GET /api/entities - LIST ENTITIES
 # ============================================================================
@@ -905,12 +925,15 @@ class TestGetEntity:
     ):
         """Test that user cannot access entity without permission."""
         # Create entity owned by admin_user (not second_user)
+        # Не кандидат: кандидаты общие для организации (модель «общий пул HR»,
+        # check_entity_access 3.5) — их читает любой член орга. Закрытым
+        # остаётся контакт другого типа.
         entity = Entity(
             org_id=organization.id,
             department_id=None,  # No department
             created_by=admin_user.id,
             name="Private Contact",
-            type=EntityType.candidate,
+            type=EntityType.partner,
             status=EntityStatus.active
         )
         db_session.add(entity)
@@ -2906,7 +2929,8 @@ class TestEntitySharingPermissions:
             department_id=department.id,
             created_by=admin_user.id,
             name="Shared Entity",
-            type=EntityType.candidate,
+            # Не кандидат: кандидата член орга читает и без шаринга (общий пул).
+            type=EntityType.partner,
             status=EntityStatus.active
         )
         db_session.add(entity)

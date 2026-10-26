@@ -97,8 +97,11 @@ async def _proxy_prometheus(path: str, params: Optional[dict] = None):
     return response.json()
 
 
+# Список практикантов, аналитика и достижения из Prometheus — только после входа
+# (24.10.2026): раньше эти три адреса отдавали персональные данные любому, кто
+# знал адрес. Страница «Практиканты» и так открывается после входа.
 @router.get("")
-async def get_interns():
+async def get_interns(current_user: User = Depends(get_current_user)):
     """
     Proxy endpoint: fetches interns list from Prometheus.
 
@@ -166,6 +169,7 @@ async def get_interns():
 
 @router.get("/analytics")
 async def get_analytics(
+    current_user: User = Depends(get_current_user),
     trail: str = Query(default="all", description="Trail ID or 'all'"),
     period: str = Query(default="30", description="Number of days for analysis"),
 ):
@@ -181,7 +185,7 @@ async def get_analytics(
 
 
 @router.get("/student-achievements/{student_id}")
-async def get_student_achievements(student_id: str):
+async def get_student_achievements(student_id: str, current_user: User = Depends(get_current_user)):
     """
     Proxy endpoint: fetches achievements for a specific student from Prometheus.
 

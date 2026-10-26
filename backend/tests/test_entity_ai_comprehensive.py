@@ -10,7 +10,7 @@ Tests:
 - Entity without data scenarios
 """
 import pytest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from api.services.entity_ai import EntityAIService, ENTITY_QUICK_ACTIONS, entity_ai_service
@@ -67,7 +67,7 @@ class TestEntityAIServiceInitialization:
 class TestBuildEntityContext:
     """Tests for _build_entity_context method."""
 
-    def test_build_context_basic_entity(self):
+    async def test_build_context_basic_entity(self):
         """Test building context with basic entity info."""
         service = EntityAIService()
 
@@ -83,7 +83,7 @@ class TestBuildEntityContext:
         entity.ai_summary = None
         entity.key_events = None
 
-        context = service._build_entity_context(entity, [], [])
+        context = await service._build_entity_context(entity, [], [])
 
         assert "John Doe" in context
         assert "candidate" in context
@@ -95,7 +95,7 @@ class TestBuildEntityContext:
         assert "python" in context
         assert "senior" in context
 
-    def test_build_context_with_chats(self):
+    async def test_build_context_with_chats(self):
         """Test building context with linked chats."""
         service = EntityAIService()
 
@@ -132,13 +132,13 @@ class TestBuildEntityContext:
 
         chat.messages = [msg]
 
-        context = service._build_entity_context(entity, [chat], [])
+        context = await service._build_entity_context(entity, [chat], [])
 
         assert "ПЕРЕПИСКИ:" in context
         assert "Interview Chat" in context
         assert "Hello from chat" in context
 
-    def test_build_context_with_calls(self):
+    async def test_build_context_with_calls(self):
         """Test building context with call recordings."""
         service = EntityAIService()
 
@@ -162,7 +162,7 @@ class TestBuildEntityContext:
         call.key_points = ["Strong Python skills", "5 years experience"]
         call.transcript = "Interviewer: Tell me about yourself. Candidate: I have been..."
 
-        context = service._build_entity_context(entity, [], [call])
+        context = await service._build_entity_context(entity, [], [call])
 
         assert "ЗВОНКИ:" in context
         assert "Phone Interview" in context
@@ -171,7 +171,7 @@ class TestBuildEntityContext:
         assert "Strong Python skills" in context
         assert "I have been..." in context
 
-    def test_build_context_truncates_long_transcript(self):
+    async def test_build_context_truncates_long_transcript(self):
         """Test that long call transcripts are truncated."""
         service = EntityAIService()
 
@@ -193,14 +193,19 @@ class TestBuildEntityContext:
         call.duration_seconds = 3600
         call.summary = None
         call.key_points = []
-        call.transcript = "A" * 10000  # Very long transcript
+        call.transcript = "A" * 50000  # Very long transcript
+        call.participant_roles = None
+        call.speaker_stats = None
 
-        context = service._build_entity_context(entity, [], [call])
+        context = await service._build_entity_context(entity, [], [call])
 
-        # Should be truncated to 5000 chars
-        assert "транскрипт обрезан" in context
+        # build_smart_context: у длинного звонка транскрипт больше 40 000 знаков
+        # режется на начало и конец с пометкой «пропущено» (раньше — 5000 и
+        # «транскрипт обрезан»).
+        assert "пропущено" in context
+        assert "A" * 50000 not in context
 
-    def test_build_context_with_memory(self):
+    async def test_build_context_with_memory(self):
         """Test that context includes AI memory (summary + key events)."""
         service = EntityAIService()
 
@@ -218,7 +223,7 @@ class TestBuildEntityContext:
             {"date": "2024-01-15", "event": "hired", "details": "Started as Junior"}
         ]
 
-        context = service._build_entity_context(entity, [], [])
+        context = await service._build_entity_context(entity, [], [])
 
         # Should include memory sections
         assert "📋 Резюме контакта" in context
@@ -226,8 +231,8 @@ class TestBuildEntityContext:
         assert "📅 Ключевые события" in context
         assert "Started as Junior" in context
 
-    def test_build_context_limits_messages_per_chat(self):
-        """Test that only last 100 messages per chat are included."""
+    async def test_build_context_limits_messages_per_chat(self):
+        """Test that only last 300 messages per chat are included."""
         service = EntityAIService()
 
         entity = MagicMock()
@@ -251,9 +256,9 @@ class TestBuildEntityContext:
         chat.org_id = 1
         chat.owner_id = 1
 
-        # Create 150 messages
+        # 350 сообщений: в контекст идут последние 300 (было 100)
         messages = []
-        for i in range(150):
+        for i in range(350):
             msg = MagicMock()
             msg.telegram_user_id = 123
             msg.username = "user"
@@ -261,22 +266,24 @@ class TestBuildEntityContext:
             msg.last_name = ""
             msg.content = f"Message {i}"
             msg.content_type = "text"
-            msg.timestamp = datetime(2025, 1, 1, 10, i % 60)
+            msg.timestamp = datetime(2025, 1, 1, 10, 0) + timedelta(minutes=i)
             msg.file_name = None
             messages.append(msg)
 
         chat.messages = messages
 
-        context = service._build_entity_context(entity, [chat], [])
+        context = await service._build_entity_context(entity, [chat], [])
 
-        # Should include last 100 messages (Message 50 onwards)
-        assert "Message 149" in context
-        assert "Message 50" in context
-        # Should not include first messages
-        assert "Message 0" not in context
-        assert "Message 49" not in context
+        import re
+        shown = {int(n) for n in re.findall(r"Message (\d+)$", context, re.M)}
+        # Последние 300 (Message 50 onwards)
+        assert 349 in shown
+        assert 50 in shown
+        # Первые 50 не попадают
+        assert 0 not in shown
+        assert 49 not in shown
 
-    def test_build_context_no_chats_or_calls(self):
+    async def test_build_context_no_chats_or_calls(self):
         """Test context when entity has no linked chats or calls."""
         service = EntityAIService()
 
@@ -292,10 +299,11 @@ class TestBuildEntityContext:
         entity.ai_summary = None
         entity.key_events = None
 
-        context = service._build_entity_context(entity, [], [])
+        context = await service._build_entity_context(entity, [], [])
 
         # Should have warning message
-        assert "не привязаны чаты или звонки" in context
+        # Подсказка теперь упоминает и файлы.
+        assert "не привязаны чаты, звонки или файлы" in context
 
 
 class TestBuildSystemPrompt:
@@ -644,7 +652,7 @@ class TestEntityQuickActionPrompts:
 class TestEdgeCases:
     """Tests for edge cases."""
 
-    def test_build_context_with_empty_chat_messages(self):
+    async def test_build_context_with_empty_chat_messages(self):
         """Test context building with chat that has no messages."""
         service = EntityAIService()
 
@@ -669,12 +677,12 @@ class TestEdgeCases:
         chat.owner_id = 1
         chat.messages = []  # No messages
 
-        context = service._build_entity_context(entity, [chat], [])
+        context = await service._build_entity_context(entity, [chat], [])
 
         assert "Empty Chat" in context
         assert "(нет сообщений)" in context
 
-    def test_build_context_with_none_optional_fields(self):
+    async def test_build_context_with_none_optional_fields(self):
         """Test context building with None values in optional fields."""
         service = EntityAIService()
 
@@ -690,14 +698,14 @@ class TestEdgeCases:
         entity.ai_summary = None
         entity.key_events = None
 
-        context = service._build_entity_context(entity, [], [])
+        context = await service._build_entity_context(entity, [], [])
 
         # Should handle None gracefully
         assert "Test" in context
         assert "Не указана" in context  # For None company
         assert "Не указан" in context   # For None email
 
-    def test_build_context_call_without_optional_fields(self):
+    async def test_build_context_call_without_optional_fields(self):
         """Test building context with call missing optional fields."""
         service = EntityAIService()
 
@@ -721,13 +729,13 @@ class TestEdgeCases:
         call.key_points = None
         call.transcript = None
 
-        context = service._build_entity_context(entity, [], [call])
+        context = await service._build_entity_context(entity, [], [call])
 
         # Should handle None values
         assert "ЗВОНКИ:" in context
         assert "дата неизвестна" in context or "Звонок" in context
 
-    def test_build_context_limits_key_points(self):
+    async def test_build_context_limits_key_points(self):
         """Test that only first 10 key points are included."""
         service = EntityAIService()
 
@@ -751,7 +759,7 @@ class TestEdgeCases:
         call.key_points = [f"Point {i}" for i in range(20)]  # 20 points
         call.transcript = None
 
-        context = service._build_entity_context(entity, [], [call])
+        context = await service._build_entity_context(entity, [], [call])
 
         # Should include first 10 points
         assert "Point 0" in context

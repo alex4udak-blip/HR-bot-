@@ -109,10 +109,11 @@ class TestDetectResumeTextTwin:
         assert twin_id is None
 
     @pytest.mark.asyncio
-    async def test_drives_shared_banner_when_no_identity_match(self, db_session):
-        """Unified banner (Feature A/B merge): a text-twin with no pre-existing
-        identity dup must set hidden_duplicate_id/meta so ShadowDuplicateBanner
-        picks it up, with strength == "text"."""
+    async def test_text_twin_does_not_raise_merge_banner(self, db_session):
+        """Похожий текст резюме — только мягкая пометка text_twin, БЕЗ плашки
+        дубля (hidden_duplicate_id/meta). Решение ec2d0dd2: у разных людей
+        анкеты по одному шаблону дают высокий Жаккар, и баннер предлагал
+        слить трёх разных «Никит». Дубли ловит identity-детектор."""
         from api.services.resume_text_twin import detect_resume_text_twin
         org = Organization(name="BannerOrg", slug="banner-org")
         db_session.add(org)
@@ -129,13 +130,9 @@ class TestDetectResumeTextTwin:
         twin_id, sim = await detect_resume_text_twin(db_session, b)
         assert twin_id == a.id
         be = b.extra_data or {}
-        assert be.get("hidden_duplicate_id") == a.id
-        meta = be.get("hidden_duplicate_meta") or {}
-        assert meta.get("strength") == "text"
-        assert meta.get("matched_id") == a.id
-        pct = round(sim * 100)
-        assert meta.get("confidence") == pct
-        assert meta.get("reasons") == [f"Текст резюме совпадает ({pct}%)"]
+        assert be.get("text_twin", {}).get("twin_id") == a.id
+        assert "hidden_duplicate_id" not in be
+        assert "hidden_duplicate_meta" not in be
 
     @pytest.mark.asyncio
     async def test_does_not_clobber_existing_identity_match(self, db_session):
@@ -176,10 +173,9 @@ class TestDetectResumeTextTwin:
         assert be.get("hidden_duplicate_meta") == seeded_meta
 
     @pytest.mark.asyncio
-    async def test_sets_backreference_on_twin(self, db_session):
-        """The twin (a) should also get hidden_duplicate_id/meta pointing back at
-        the entity that triggered detection (b), so the banner shows on BOTH cards
-        — mirroring detect_archived_duplicate's backreference behavior."""
+    async def test_no_backreference_on_twin(self, db_session):
+        """Обратной плашки дубля на найденном двойнике (a) тоже нет: текстовое
+        сходство merge не предлагает ни с одной стороны (ec2d0dd2)."""
         from api.services.resume_text_twin import detect_resume_text_twin
         org = Organization(name="BackrefOrg", slug="backref-org")
         db_session.add(org)
@@ -195,10 +191,8 @@ class TestDetectResumeTextTwin:
 
         await detect_resume_text_twin(db_session, b)
         ae = a.extra_data or {}
-        assert ae.get("hidden_duplicate_id") == b.id
-        ameta = ae.get("hidden_duplicate_meta") or {}
-        assert ameta.get("strength") == "text"
-        assert ameta.get("matched_id") == b.id
+        assert "hidden_duplicate_id" not in ae
+        assert "hidden_duplicate_meta" not in ae
 
     @pytest.mark.asyncio
     async def test_backreference_does_not_clobber_twins_identity_match(self, db_session):

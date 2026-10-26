@@ -31,7 +31,7 @@ from ..services.auth import get_current_user, get_user_org, get_user_org_role
 from ..services.entity_ai import entity_ai_service
 from ..services.reports import generate_pdf_report, generate_docx_report
 from ..services.permissions import PermissionService
-from ..limiter import limiter
+from ..limiter import limiter, user_or_ip
 
 logger = logging.getLogger("hr-analyzer.entity-ai-routes")
 
@@ -39,11 +39,8 @@ router = APIRouter()
 
 
 def _get_rate_limit_key(request: Request) -> str:
-    """Get rate limit key based on authenticated user ID."""
-    user = getattr(request.state, '_rate_limit_user', None)
-    if user and hasattr(user, 'id'):
-        return f"user:{user.id}"
-    return request.client.host if request.client else "unknown"
+    """Лимит на пользователя (номер из токена), без входа — на адрес; см. limiter.user_or_ip."""
+    return user_or_ip(request)
 
 
 class EntityAIMessageRequest(BaseModel):
