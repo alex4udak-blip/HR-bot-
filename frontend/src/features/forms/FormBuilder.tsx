@@ -525,7 +525,9 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
       )}
       {/* Header (light bar) */}
       <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-6 py-3 flex items-center gap-3">
+        {/* На телефоне кнопки не помещались в строку, «Сохранить» уезжал за край
+            (24.10.2026): подсказка прячется, у «Предпросмотра» остаётся значок. */}
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-3">
           <button
             onClick={handleBack}
             className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
@@ -533,7 +535,7 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 hidden sm:block">
             {/* Раньше здесь была «Скопировать ссылку» на общий адрес анкеты, а
                 сервер отправку по нему всегда отклоняет (403: анкета заполняется
                 по ПЕРСОНАЛЬНОЙ ссылке). Кандидат заполнял всё и упирался в отказ
@@ -545,7 +547,7 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2 min-w-0">
             <button
               onClick={() => setIsActive(!isActive)}
               className={clsx(
@@ -560,10 +562,12 @@ export function FormBuilder({ formId, onClose, saveAsTemplate = true, autosave =
             </button>
             <button
               onClick={() => window.open(`${publicUrl}?preview=1`, '_blank')}
+              title="Предпросмотр"
+              aria-label="Предпросмотр"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm transition-colors"
             >
               <Eye className="w-4 h-4" />
-              Предпросмотр
+              <span className="hidden sm:inline">Предпросмотр</span>
             </button>
             {autosave ? (
               // Разовая анкета: автосейв — индикатор вместо кнопки «Сохранить».

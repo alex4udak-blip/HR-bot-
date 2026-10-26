@@ -6626,7 +6626,9 @@ body.performance-mode .glass-card:hover {
   display: none;
 }
 
-@media (max-width: 767px) {
+/* До 900 px, а не только телефон: на планшете стоя (768–899 px) список рядом с
+   карточкой выходил шириной ~200 px — имена и этапы обрезались (26.10.2026). */
+@media (max-width: 899px) {
   .hf-candidates-master {
     padding-right: var(--hf-space-s);
   }
@@ -10825,3 +10827,45 @@ body.performance-mode .glass-card:hover {
 .hf-statuses-status-hired { background: #dbeafe; color: #1e40af; }
 .hf-statuses-chip-offer { background: #ede9fe; color: #5b21b6; }
 .hf-statuses-chip-hired { background: #dbeafe; color: #1e40af; }
+
+/* «Заявки» на ноутбуке/планшете (768–1280 px): фильтры не помещались в одну
+   строку, «Фильтры» и «Все назначения» уходили под обрез — переносим строку. */
+.hf-vacancies-toolbar {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding-block: 4px;
+}
+
+/* Телефон: остальные страницы HR (26.10.2026). Блок в конце файла, чтобы
+   перебить базовые правила этих страниц, объявленные выше. */
+@media (max-width: 767px) {
+  /* «Аналитика»: фильтры прилипали к верху и закрывали полэкрана при прокрутке. */
+  .hf-analytics-header {
+    position: static;
+  }
+
+  /* «Заявки»: фильтры шли столбиком по центру на весь экран — теперь сетка
+     в две колонки, поиск на всю ширину, подписи слева. */
+  .hf-vacancies-toolbar {
+    display: grid;
+    /* Две колонки, а на самых узких экранах (320 px) — одна: «Все назначения»
+       со значком в половину ширины не помещается. */
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .hf-vacancies-toolbar > .hf-funnels-search {
+    grid-column: 1 / -1;
+  }
+
+  .hf-vacancies-toolbar .hf-vacancies-select,
+  .hf-vacancies-toolbar .hf-vacancies-toolbar-button,
+  .hf-vacancies-toolbar > .relative > button {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    padding-inline: 10px;
+    text-align: left;
+  }
+}

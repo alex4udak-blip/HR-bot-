@@ -161,8 +161,11 @@ function FABButton({
 }) {
   const [open, setOpen] = useState(false);
 
+  // Над нижним меню, а не поверх него: кнопка закрывала пункт «Заявки»,
+  // и на телефоне до него было не дотянуться (26.10.2026). Показывается только
+  // там, где есть нижнее меню (lg:hidden в Layout).
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed right-4 bottom-[calc(84px+env(safe-area-inset-bottom,0px))] z-50">
       {open && (
         <div className="absolute bottom-16 right-0 flex flex-col gap-2 items-end mb-2">
           <button
@@ -2402,7 +2405,9 @@ export default function Layout() {
             data-tour={pathToTourAttribute[item.path]}
             className={({ isActive }) =>
               clsx(
-                "flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all duration-200",
+                // min-w-0: пункты делят ширину поровну; без него «Все кандидаты»
+                // растягивал свой пункт, и на 320 px последний уезжал за край.
+                "flex-1 min-w-0 flex flex-col items-center gap-1 px-1 sm:px-2 py-2 rounded-xl transition-all duration-200",
                 isHrSidebar
                   ? isActive
                     ? "hf-hr-mobile-bottom-item-active"
@@ -2415,7 +2420,7 @@ export default function Layout() {
             aria-label={item.label}
           >
             <item.icon className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
-            <span className="text-xs truncate max-w-full">{item.label}</span>
+            <span className="text-[11px] sm:text-xs leading-tight text-center line-clamp-2 max-w-full">{item.label}</span>
           </NavLink>
         ))}
       </nav>

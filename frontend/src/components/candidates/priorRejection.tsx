@@ -239,7 +239,7 @@ export function CandidateAlertCard({
   if (rejections.length > 1) second.push(`всего отказов: ${rejections.length}`);
   return (
     <div
-      className="flex items-start gap-3 rounded-xl border-[1.5px] px-3.5 py-2.5 text-[13px] leading-snug shadow-[0_1px_6px_rgba(220,38,38,0.12)]"
+      className="flex flex-wrap items-start gap-3 rounded-xl border-[1.5px] px-3.5 py-2.5 text-[13px] leading-snug shadow-[0_1px_6px_rgba(220,38,38,0.12)]"
       style={{ background: palette.bg, borderColor: palette.border, color: palette.strong }}
       role="status"
     >
@@ -250,7 +250,8 @@ export function CandidateAlertCard({
       >
         <History className="h-4 w-4" />
       </span>
-      <div className="min-w-0 flex-1">
+      {/* На узком экране кнопка уходит под текст, а не сжимает его в столбик. */}
+      <div className="min-w-[170px] flex-1">
         <div className="flex flex-wrap items-baseline gap-x-1.5">
           <span className="text-[14px] font-bold">{title}</span>
           {meta && <span style={{ color: palette.soft }}>· {meta}</span>}
@@ -277,7 +278,7 @@ export function CandidateAlertCard({
         <button
           type="button"
           onClick={onAction}
-          className="shrink-0 self-center rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
+          className="ml-auto shrink-0 self-center rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
           style={{ background: palette.accent }}
         >
           {actionLabel}
