@@ -9627,6 +9627,12 @@ body.performance-mode .glass-card:hover {
   justify-content: flex-end;
   gap: var(--hf-space-s);
 }
+/* Подсказка слева от кнопки в окне периодов. */
+.hf-statuses-modal-foot .hf-statuses-modal-note {
+  flex: 1;
+  align-self: center;
+  margin: 0;
+}
 .hf-statuses-modal-cancel,
 .hf-statuses-modal-save {
   display: inline-flex;
@@ -9898,6 +9904,16 @@ body.performance-mode .glass-card:hover {
   white-space: nowrap;
 }
 .hf-statuses-export-btn:hover { border-color: var(--hf-main-400); }
+/* «Выгрузить» + стрелка «по периодам» — одна кнопка из двух половинок. */
+.hf-statuses-export-split { display: inline-flex; }
+.hf-statuses-export-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.hf-statuses-export-more {
+  margin-left: -1px;
+  padding: 0 var(--hf-space-xs);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.hf-statuses-export-split .hf-statuses-export-btn:hover { position: relative; z-index: 1; }
 
 .hf-statuses-filters-btn {
   display: inline-flex;

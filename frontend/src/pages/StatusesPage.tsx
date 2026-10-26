@@ -883,7 +883,9 @@ export default function StatusesPage() {
 
     
     if (!total) {
-      toast("Выгружать нечего — под выбранные периоды никто не подошёл");
+      toast(plan
+        ? "Выгружать нечего — под выбранные периоды никто не подошёл"
+        : "Выгружать нечего — на экране никого нет. Проверьте фильтры и поиск");
       return;
     }
     const today = new Date().toISOString().slice(0, 10);
@@ -897,13 +899,16 @@ export default function StatusesPage() {
    *  «когда фильтры применялись, этот столбец в конце писал сумму всех»). */
   const salaryTotal = useMemo(() => {
     if (!canSeeSalary) return null;
+    // Люди, а не строки: человек в песочнице и в отделе — две строки.
+    const people = new Set<number>();
     const seen = new Map<number, number>();
     for (const r of visible) {
+      people.add(r.entity_id);
       if (r.salary != null) seen.set(r.entity_id, r.salary);
     }
     let sum = 0;
     seen.forEach((v) => { sum += v; });
-    return { sum, people: seen.size };
+    return { sum, people: people.size, withSalary: seen.size };
   }, [visible, canSeeSalary]);
 
   const grouped = useMemo(
@@ -999,14 +1004,30 @@ export default function StatusesPage() {
             )}
           </button>
 
-          <button
-            className="hf-statuses-export-btn"
-            onClick={() => setShowExport(true)}
-            title="Выгрузить в Excel: то, что на экране, или сразу несколько периодов"
-          >
-            <Download size={15} />
-            Выгрузить
-          </button>
+          {/* «Выгрузить» сразу отдаёт в Excel тех, кто на экране после
+              фильтров (владелец, 26.10.2026: «кнопка должна выгружать всех
+              кандидатов по фильтрам, а не открывать модалку»). Раньше она
+              открывала окно периодов, где главная чёрная кнопка была
+              неактивна, пока не отмечен месяц, — Мария жала её и думала, что
+              выгрузка сломана. Книга по месяцам и вехам — за стрелкой рядом. */}
+          <div className="hf-statuses-export-split">
+            <button
+              className="hf-statuses-export-btn hf-statuses-export-main"
+              onClick={() => exportToExcel()}
+              title="Выгрузить в Excel всех, кто сейчас на экране — с учётом фильтров, поиска и вкладки"
+            >
+              <Download size={15} />
+              Выгрузить
+            </button>
+            <button
+              className="hf-statuses-export-btn hf-statuses-export-more"
+              onClick={() => setShowExport(true)}
+              title="Выгрузить по периодам: лист на каждый месяц выхода в отдел и на вехи стажа"
+              aria-label="Выгрузить по периодам"
+            >
+              <ChevronDown size={14} />
+            </button>
+          </div>
 
           <div className="hf-statuses-filters-picker">
             <button
@@ -1205,7 +1226,6 @@ export default function StatusesPage() {
               months={months}
               onClose={() => setShowExport(false)}
               onExport={(plan) => { exportToExcel(plan); setShowExport(false); }}
-              onExportScreen={() => { exportToExcel(); setShowExport(false); }}
             />
           )}
 
@@ -1309,7 +1329,9 @@ export default function StatusesPage() {
                 })}
               </tbody>
 
-              {salaryTotal && (
+              {/* Колонку «Сумма» спрятали в «Виде» — итог без суммы ничего не
+                  говорит («Итого · 0 чел.» читалось как «никого не нашли»). */}
+              {salaryTotal && visibleColumns.some((c) => c.key === "salary") && (
                 <tfoot className="hf-statuses-foot">
                   <tr>
                     {visibleColumns.map((c, i) => (
@@ -1323,7 +1345,10 @@ export default function StatusesPage() {
                         {c.key === "salary"
                           ? <strong>{formatMoney(salaryTotal.sum)}</strong>
                           : i === 0
-                            ? `Итого по отбору · ${salaryTotal.people} чел.`
+                            ? `Итого по отбору · ${salaryTotal.people} чел.` +
+                              (salaryTotal.withSalary < salaryTotal.people
+                                ? ` (сумма указана у ${salaryTotal.withSalary})`
+                                : "")
                             : null}
                       </td>
                     ))}
@@ -1765,12 +1790,11 @@ function ViewModal({
  *  Месяцы и вехи — по листу на каждый: «мне бы хотелось за месяц, за два
  *  месяца, за три месяца работы, за год работы» (Мария, 07.10.2026). */
 function ExportModal({
-  months, onClose, onExport, onExportScreen,
+  months, onClose, onExport,
 }: {
   months: { label: string; from: string; to: string }[];
   onClose: () => void;
   onExport: (plan: ExportPlan) => void;
-  onExportScreen: () => void;
 }) {
   const [picked, setPicked] = useState<string[]>([]);
   const [marks, setMarks] = useState<MilestoneKey[]>([]);
@@ -1781,7 +1805,7 @@ function ExportModal({
     <div className="hf-statuses-modal-back" onClick={onClose}>
       <div className="hf-statuses-modal" onClick={(e) => e.stopPropagation()}>
         <div className="hf-statuses-modal-head">
-          <h3>Выгрузить в Excel</h3>
+          <h3>Выгрузка по периодам</h3>
           <button className="hf-statuses-folder-action" onClick={onClose} title="Закрыть">
             <X size={16} />
           </button>
@@ -1822,16 +1846,18 @@ function ExportModal({
         </div>
 
         <div className="hf-statuses-modal-foot">
-          <button className="hf-statuses-modal-cancel" onClick={onExportScreen}>
-            Как на экране
-          </button>
+          <span className="hf-statuses-modal-note">
+            {picked.length || marks.length
+              ? "Листы соберутся из тех, кто сейчас на экране, — фильтры учитываются."
+              : "Отметьте месяцы или вехи. Просто выгрузить экран — кнопка «Выгрузить»."}
+          </span>
           <button
             className="hf-statuses-modal-save"
             onClick={() => onExport({ months: picked, marks })}
             disabled={!picked.length && !marks.length}
           >
             <Download size={14} />
-            Выгрузить
+            Выгрузить по периодам
           </button>
         </div>
       </div>
