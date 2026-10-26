@@ -40,7 +40,6 @@ interface EntityState {
   createEntity: (data: Parameters<typeof api.createEntity>[0]) => Promise<Entity>;
   updateEntity: (id: number, data: Parameters<typeof api.updateEntity>[1]) => Promise<void>;
   deleteEntity: (id: number) => Promise<void>;
-  transferEntity: (entityId: number, toUserId: number, comment?: string) => Promise<void>;
   setFilters: (filters: Partial<EntityFilters>) => void;
   clearFilters: () => void;
   clearCurrentEntity: () => void;
@@ -182,20 +181,6 @@ export const useEntityStore = create<EntityState>((set, get) => ({
       }));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete entity';
-      set({ error: message, isLoading: false });
-      throw err;
-    }
-  },
-
-  transferEntity: async (entityId, toUserId, comment) => {
-    set({ isLoading: true, error: null });
-    try {
-      await api.transferEntity(entityId, { to_user_id: toUserId, comment });
-      // Refresh entity to get updated transfers (fetchEntity sets isLoading: false)
-      await get().fetchEntity(entityId);
-      set({ isLoading: false });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to transfer entity';
       set({ error: message, isLoading: false });
       throw err;
     }

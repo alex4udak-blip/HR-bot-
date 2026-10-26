@@ -1,7 +1,10 @@
-"""Тесты «Передать всё от X к Y» (POST /api/users/reassign-ownership).
+"""Передача дел уходящего рекрутёра (POST /api/users/reassign-split).
 
-Уходящий рекрутёр X → живой рекрутёр Y: заявки, вакансии, кандидаты и участие в
+Уходящий X → живой Y по воронкам: заявки, вакансии, кандидаты и участие в
 воронках меняют владельца, HR-метки пересчитываются. Строго в рамках орга.
+С 26.10.2026 — вливание в такую же воронку получателя, итог «без изменений»
+(dry_run), получатель только рекрутёр/админ (не наблюдатель). «Передать всё»
+(reassign-ownership) удалена: интерфейс её не вызывал.
 """
 from datetime import datetime
 
@@ -138,94 +141,198 @@ async def test_split_rejects_cross_org_recipient(
 
 
 @pytest.mark.asyncio
-async def test_reassign_moves_ownership_and_hr_tags(
+async def test_split_moves_ownership_and_hr_tags(
     client, db_session, organization, admin_user, org_owner, admin_token,
 ):
     org = organization.id
-    x = await _member(db_session, org, "Уходящий X", "x@t.co")
-    y = await _member(db_session, org, "Живой Y", "y@t.co")
-
-    # Воронку вёл только X: своя вакансия + свой кандидат + своя заявка.
+    x = await _member(db_session, org, "Уходящий X", "x@t.co", OrgRole.hr)
+    y = await _member(db_session, org, "Живой Y", "y@t.co", OrgRole.hr)
     v_solo = await _vac(db_session, org, x.id, "Solo X")
     c1 = await _cand(db_session, org, x.id, "Кандидат Один")
     a1 = await _app(db_session, v_solo.id, c1.id, x.id)
-
     # Общая воронка Y, куда X добавил кандидата (заявка X, ведущий — Y).
     v_shared = await _vac(db_session, org, y.id, "Shared Y", assigned_to=[x.id, y.id])
     c2 = await _cand(db_session, org, x.id, "Кандидат Два")
     a2 = await _app(db_session, v_shared.id, c2.id, x.id)
-    a1_id, a2_id, v_solo_id, v_shared_id, c1_id, c2_id = (
-        a1.id, a2.id, v_solo.id, v_shared.id, c1.id, c2.id
-    )
+    ids = dict(a1=a1.id, a2=a2.id, solo=v_solo.id, shared=v_shared.id, c1=c1.id, c2=c2.id, x=x.id, y=y.id)
+    await db_session.commit()
+    await sync_for_entity(db_session, ids["c1"])
+    await sync_for_entity(db_session, ids["c2"])
     await db_session.commit()
 
-    # HR-метки исходно указывают на X.
-    await sync_for_entity(db_session, c1_id)
-    await sync_for_entity(db_session, c2_id)
-    await db_session.commit()
-    yid, xid = y.id, x.id
-
-    r = await client.post(
-        "/api/users/reassign-ownership",
-        json={"from_user_id": xid, "to_user_id": yid}, headers=_h(admin_token),
-    )
+    r = await client.post("/api/users/reassign-split", json={
+        "from_user_id": ids["x"],
+        "assignments": [{"vacancy_id": ids["solo"], "to_user_id": ids["y"]},
+                        {"vacancy_id": ids["shared"], "to_user_id": ids["y"]}],
+    }, headers=_h(admin_token))
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["applications"] == 2, body
-    assert body["candidates"] == 2, body
-    assert body["vacancies"] == 1, body  # только solo был создан X
+    assert body["applications"] == 2 and body["candidates"] == 2, body
+    assert body["per_recipient"] == {str(ids["y"]): 2}, body
 
-    # Заявки → Y
-    for aid in (a1_id, a2_id):
-        a = await db_session.get(VacancyApplication, aid)
-        await db_session.refresh(a)
-        assert a.created_by == yid, (aid, a.created_by)
-    # Кандидаты → Y + HR-метки перешли на Y
-    for cid in (c1_id, c2_id):
-        e = await db_session.get(Entity, cid)
-        await db_session.refresh(e)
-        assert e.created_by == yid
+    for aid in (ids["a1"], ids["a2"]):
+        a = await db_session.get(VacancyApplication, aid, populate_existing=True)
+        assert a.created_by == ids["y"]
+    for cid in (ids["c1"], ids["c2"]):
+        e = await db_session.get(Entity, cid, populate_existing=True)
+        assert e.created_by == ids["y"]
         tags = (e.extra_data or {}).get(EXTRA_KEY) or []
-        assert tags and all(t["hr_id"] == yid for t in tags), tags
-    # Вакансия solo → Y как создатель
-    vsolo = await db_session.get(Vacancy, v_solo_id)
-    await db_session.refresh(vsolo)
-    assert vsolo.created_by == yid
-    # X убран из участников общей воронки, Y остался
-    vs = await db_session.get(Vacancy, v_shared_id)
-    await db_session.refresh(vs)
-    assert xid not in (vs.assigned_to or [])
-    assert yid in (vs.assigned_to or [])
+        assert tags and all(t["hr_id"] == ids["y"] for t in tags), tags
+    vs = await db_session.get(Vacancy, ids["shared"], populate_existing=True)
+    assert ids["x"] not in (vs.assigned_to or []) and ids["y"] in (vs.assigned_to or [])
 
 
 @pytest.mark.asyncio
-async def test_reassign_rejects_cross_org_receiver(
-    client, db_session, organization, second_organization, admin_user, org_owner, admin_token,
-):
-    x = await _member(db_session, organization.id, "X", "x2@t.co")
-    y_other = await _member(db_session, second_organization.id, "Y чужой", "yo@t.co")
-    await db_session.commit()
-
-    r = await client.post(
-        "/api/users/reassign-ownership",
-        json={"from_user_id": x.id, "to_user_id": y_other.id}, headers=_h(admin_token),
-    )
-    assert r.status_code == 400, r.text  # принимающий не в той же орг
-
-
-@pytest.mark.asyncio
-async def test_reassign_requires_admin(
-    client, db_session, organization, admin_user, org_owner,
-):
+async def test_split_requires_admin(client, db_session, organization, admin_user, org_owner):
     from api.services.auth import create_access_token
-    x = await _member(db_session, organization.id, "X", "x3@t.co")
+    x = await _member(db_session, organization.id, "X", "x3@t.co", OrgRole.hr)
     plain = await _member(db_session, organization.id, "Обычный", "plain@t.co", role=OrgRole.member)
-    y = await _member(db_session, organization.id, "Y", "y3@t.co")
+    y = await _member(db_session, organization.id, "Y", "y3@t.co", OrgRole.hr)
+    v = await _vac(db_session, organization.id, x.id, "V", assigned_to=[x.id])
+    xid, yid, vid = x.id, y.id, v.id
+    await db_session.commit()
+    token = create_access_token({"sub": str(plain.id), "token_version": 0})
+    r = await client.post("/api/users/reassign-split", json={
+        "from_user_id": xid, "assignments": [{"vacancy_id": vid, "to_user_id": yid}],
+    }, headers=_h(token))
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_observer_or_member_is_not_a_recipient(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    org = organization.id
+    x = await _member(db_session, org, "X", "x4@t.co", OrgRole.hr)
+    obs = await _member(db_session, org, "Наблюдатель", "obs@t.co", OrgRole.admin)
+    member = await _member(db_session, org, "Сотрудник", "mem@t.co", OrgRole.member)
+    (await db_session.execute(select(OrgMember).where(OrgMember.user_id == obs.id))).scalar_one().is_readonly = True
+    v = await _vac(db_session, org, x.id, "V", assigned_to=[x.id])
+    xid, vid, oid, mid = x.id, v.id, obs.id, member.id
+    await db_session.commit()
+    for to in (oid, mid):
+        r = await client.post("/api/users/reassign-split", json={
+            "from_user_id": xid, "assignments": [{"vacancy_id": vid, "to_user_id": to}],
+        }, headers=_h(admin_token))
+        assert r.status_code == 400, r.text
+
+
+async def _twin_funnels(db, org):
+    """У X и Y по своей воронке «Трафик». Анна — в обеих: у X её довели дальше
+    и позже (Интервью), у Y она на «Новом» давно. Борис — только у X."""
+    from datetime import timedelta
+    x = await _member(db, org, "Пётр", "petr@t.co", OrgRole.hr)
+    y = await _member(db, org, "Мария", "maria@t.co", OrgRole.hr)
+    vx = await _vac(db, org, x.id, "Трафик", assigned_to=[x.id], extra_data={"accepted_by": [x.id]})
+    vy = await _vac(db, org, y.id, "трафик ", assigned_to=[y.id], extra_data={"accepted_by": [y.id]})
+    anna = await _cand(db, org, x.id, "Анна")
+    boris = await _cand(db, org, x.id, "Борис")
+    old = datetime.utcnow() - timedelta(days=10)
+    ay = VacancyApplication(vacancy_id=vy.id, entity_id=anna.id, stage=ApplicationStage.applied,
+                            stage_order=0, created_by=y.id, applied_at=old, last_stage_change_at=old, updated_at=old)
+    db.add(ay)
+    ax = await _app(db, vx.id, anna.id, x.id)          # interview, сейчас
+    bx = await _app(db, vx.id, boris.id, x.id)
+    await db.flush()
+    return x, y, vx, vy, anna, boris, ax, ay, bx
+
+
+@pytest.mark.asyncio
+async def test_merge_into_receivers_twin_funnel(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    from api.models.database import StageTransition
+    x, y, vx, vy, anna, boris, ax, ay, bx = await _twin_funnels(db_session, organization.id)
+    ids = dict(x=x.id, y=y.id, vx=vx.id, vy=vy.id, anna=anna.id, boris=boris.id, ay=ay.id)
     await db_session.commit()
 
-    token = create_access_token({"sub": str(plain.id), "token_version": 0})
-    r = await client.post(
-        "/api/users/reassign-ownership",
-        json={"from_user_id": x.id, "to_user_id": y.id}, headers=_h(token),
-    )
-    assert r.status_code == 403, r.text
+    # Сводка: у воронки X есть «такая же» у Y, с Y среди участников.
+    summ = (await client.get(f"/api/users/{ids['x']}/handover-summary", headers=_h(admin_token))).json()
+    f = next(f for f in summ["funnels"] if f["vacancy_id"] == ids["vx"])
+    m = next(m for m in f["matches"] if m["vacancy_id"] == ids["vy"])
+    assert ids["y"] in m["participants"]
+
+    req = {"from_user_id": ids["x"], "assignments": [
+        {"vacancy_id": ids["vx"], "to_user_id": ids["y"], "merge_into_vacancy_id": ids["vy"]}]}
+    # Итог без изменений: 2 кандидата, Анна уже есть — останется её более свежий этап.
+    pre = (await client.post("/api/users/reassign-split", json={**req, "dry_run": True}, headers=_h(admin_token))).json()
+    assert pre["per_recipient"] == {str(ids["y"]): 2}, pre
+    assert pre["merges"][0]["overlapping"] == [{"entity_id": ids["anna"], "name": "Анна", "stage": "interview"}]
+    assert (await db_session.get(Vacancy, ids["vx"], populate_existing=True)).status == VacancyStatus.open
+
+    r = await client.post("/api/users/reassign-split", json=req, headers=_h(admin_token))
+    assert r.status_code == 200, r.text
+    # Копия X закрыта, всё в воронке Марии; у Анны одна заявка с этапом Интервью.
+    assert (await db_session.get(Vacancy, ids["vx"], populate_existing=True)).status == VacancyStatus.closed
+    apps = (await db_session.execute(select(VacancyApplication).where(
+        VacancyApplication.entity_id.in_([ids["anna"], ids["boris"]])).execution_options(populate_existing=True))).scalars().all()
+    assert {(a.entity_id, a.vacancy_id) for a in apps} == {(ids["anna"], ids["vy"]), (ids["boris"], ids["vy"])}
+    anna_app = next(a for a in apps if a.entity_id == ids["anna"])
+    assert anna_app.id == ids["ay"] and anna_app.stage == ApplicationStage.interview
+    last = (await db_session.execute(select(StageTransition).where(
+        StageTransition.application_id == ids["ay"]).order_by(StageTransition.id.desc()))).scalars().first()
+    assert last.to_stage == "interview" and "объединены" in (last.comment or "")
+    assert all(a.created_by == ids["y"] for a in apps)
+
+
+@pytest.mark.asyncio
+async def test_merge_keeps_shared_funnel_for_others(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    """В воронке X работает ещё и W — переезжают только кандидаты X, воронка
+    остаётся у W открытой, Мария в ней не участник (иначе снова две копии)."""
+    x, y, vx, vy, anna, boris, ax, ay, bx = await _twin_funnels(db_session, organization.id)
+    w = await _member(db_session, organization.id, "Влад", "w@t.co", OrgRole.hr)
+    vx.assigned_to = [x.id, w.id]
+    cw = await _cand(db_session, organization.id, w.id, "Кандидат W")
+    aw = await _app(db_session, vx.id, cw.id, w.id)
+    ids = dict(x=x.id, y=y.id, vx=vx.id, vy=vy.id, boris=boris.id, aw=aw.id)
+    await db_session.commit()
+
+    r = await client.post("/api/users/reassign-split", json={"from_user_id": ids["x"], "assignments": [
+        {"vacancy_id": ids["vx"], "to_user_id": ids["y"], "merge_into_vacancy_id": ids["vy"]}]},
+        headers=_h(admin_token))
+    assert r.status_code == 200, r.text
+    v = await db_session.get(Vacancy, ids["vx"], populate_existing=True)
+    assert v.status == VacancyStatus.open
+    assert ids["y"] not in (v.assigned_to or []) and ids["y"] not in ((v.extra_data or {}).get("accepted_by") or [])
+    assert (await db_session.get(VacancyApplication, ids["aw"], populate_existing=True)).vacancy_id == ids["vx"]
+    boris_app = (await db_session.execute(select(VacancyApplication).where(
+        VacancyApplication.entity_id == ids["boris"]).execution_options(populate_existing=True))).scalar_one()
+    assert boris_app.vacancy_id == ids["vy"]
+
+
+@pytest.mark.asyncio
+async def test_merge_only_into_receivers_own_funnel(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    x, y, vx, vy, *_ = await _twin_funnels(db_session, organization.id)
+    z = await _member(db_session, organization.id, "Чужой", "z@t.co", OrgRole.hr)
+    ids = dict(x=x.id, vx=vx.id, vy=vy.id, z=z.id)
+    await db_session.commit()
+    r = await client.post("/api/users/reassign-split", json={"from_user_id": ids["x"], "assignments": [
+        {"vacancy_id": ids["vx"], "to_user_id": ids["z"], "merge_into_vacancy_id": ids["vy"]}]},
+        headers=_h(admin_token))
+    assert r.status_code == 400, r.text
+
+
+@pytest.mark.asyncio
+async def test_pool_includes_cards_outside_own_funnels(
+    client, db_session, organization, admin_user, org_owner, admin_token,
+):
+    """Карточка X, которую потом добавила в свою воронку Мария, — тоже его:
+    раньше она не попадала ни в воронки, ни в «без воронки» и не передавалась."""
+    org = organization.id
+    x = await _member(db_session, org, "X", "x5@t.co", OrgRole.hr)
+    y = await _member(db_session, org, "Y", "y5@t.co", OrgRole.hr)
+    vy = await _vac(db_session, org, y.id, "Чужая", assigned_to=[y.id])
+    c = await _cand(db_session, org, x.id, "Добавлен Марией")
+    await _app(db_session, vy.id, c.id, y.id)
+    ids = dict(x=x.id, y=y.id, c=c.id)
+    await db_session.commit()
+    summ = (await client.get(f"/api/users/{ids['x']}/handover-summary", headers=_h(admin_token))).json()
+    assert summ["pool_candidates"] == 1, summ
+    r = await client.post("/api/users/reassign-split", json={
+        "from_user_id": ids["x"], "assignments": [], "pool_to_user_id": ids["y"]}, headers=_h(admin_token))
+    assert r.status_code == 200, r.text
+    assert (await db_session.get(Entity, ids["c"], populate_existing=True)).created_by == ids["y"]

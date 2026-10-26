@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 
@@ -7,7 +7,7 @@ from ..database import get_db
 from ..models.database import (
     User, UserRole, Chat, DepartmentMember, DeptRole, OrgMember, OrgRole, SharedAccess,
     AnalysisHistory, AIConversation, Entity, EntityAIConversation, EntityAnalysis,
-    EntityTransfer, CallRecording, Invitation, CriteriaPreset, ReportSubscription
+    EntityTransfer, CallRecording, Invitation, CriteriaPreset, ReportSubscription, Vacancy
 )
 from ..models.schemas import UserCreate, UserUpdate, UserProfileUpdate, UserResponse
 from ..services.auth import (
@@ -549,59 +549,6 @@ async def update_user(
     )
 
 
-class ReassignOwnershipRequest(BaseModel):
-    from_user_id: int   # уходящий рекрутёр
-    to_user_id: int     # кому передаём
-
-
-@router.post("/reassign-ownership")
-async def reassign_ownership(
-    data: ReassignOwnershipRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """«Передать всё от X к Y»: воронки + кандидаты уходящего рекрутёра → живому.
-
-    Готовит увольнение: после переноса аккаунт X можно удалять, ничего не
-    осиротеет. Доступно админам/владельцам/суперадмину. Строго в рамках орга
-    уходящего рекрутёра.
-    """
-    current_user = await db.merge(current_user)
-    if data.from_user_id == data.to_user_id:
-        raise HTTPException(status_code=400, detail="Нельзя передать самому себе")
-
-    # Орг определяем по уходящему рекрутёру — так работает и для админа, и для СА.
-    from_org_id = (await db.execute(
-        select(OrgMember.org_id).where(OrgMember.user_id == data.from_user_id)
-    )).scalars().first()
-    if from_org_id is None:
-        raise HTTPException(status_code=404, detail="Уходящий рекрутёр не найден в организации")
-
-    # Права: суперадмин ИЛИ owner/admin этой организации.
-    if current_user.role != UserRole.superadmin and not await has_full_database_access(
-        current_user, from_org_id, db
-    ):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
-
-    # Принимающий — тоже участник ЭТОЙ организации (без утечки между орг).
-    to_ok = (await db.execute(
-        select(OrgMember.user_id).where(
-            OrgMember.org_id == from_org_id, OrgMember.user_id == data.to_user_id
-        )
-    )).scalars().first()
-    if to_ok is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Принимающий рекрутёр должен быть в той же организации",
-        )
-
-    from ..services.recruiter_transfer import reassign_recruiter_ownership
-    counts = await reassign_recruiter_ownership(
-        db, from_org_id, data.from_user_id, data.to_user_id
-    )
-    return {"success": True, **counts}
-
-
 async def _resolve_handover_org(current_user: User, from_user_id: int, db: AsyncSession) -> int:
     """Орг уходящего рекрутёра + проверка прав (admin/owner/суперадмин). Общая
     для сводки и раздельного переноса."""
@@ -634,51 +581,79 @@ async def handover_summary(
 class HandoverAssignment(BaseModel):
     vacancy_id: int
     to_user_id: int
+    # Такая же воронка получателя: влить кандидатов в неё, а не заводить ему
+    # вторую одинаковую (владелец, 26.10.2026).
+    merge_into_vacancy_id: Optional[int] = None
 
 
 class ReassignSplitRequest(BaseModel):
     from_user_id: int
     assignments: List[HandoverAssignment] = []
     pool_to_user_id: Optional[int] = None
+    # Только посчитать итог для окна, ничего не меняя.
+    dry_run: bool = False
 
 
 @router.post("/reassign-split")
 async def reassign_split(
     data: ReassignSplitRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Раздельная передача: каждую воронку уходящего — своему получателю,
-    кандидатов вне воронок — отдельному. Права/орг — как у «Передать всё»."""
+    """Передача дел уходящего: каждую его воронку — своему получателю (с
+    вливанием в такую же воронку получателя), его остальных кандидатов —
+    отдельному. Только админы HR и суперадмин."""
     current_user = await db.merge(current_user)
+    actor_id = current_user.id
     from_org_id = await _resolve_handover_org(current_user, data.from_user_id, db)
 
-    # Все получатели — участники ЭТОЙ орг (без утечки между орг).
+    from ..services.hr_notifications import (
+        notify_candidates_handed_over, valid_handover_recipients,
+    )
+    from ..services.recruiter_transfer import is_vacancy_participant, reassign_recruiter_split
+
+    # Получатели — рекрутёры и админы ЭТОЙ организации, не наблюдатели.
     recipient_ids = {a.to_user_id for a in data.assignments}
     if data.pool_to_user_id:
         recipient_ids.add(data.pool_to_user_id)
     recipient_ids.discard(data.from_user_id)
-    if recipient_ids:
-        ok = set((await db.execute(
-            select(OrgMember.user_id).where(
-                OrgMember.org_id == from_org_id,
-                OrgMember.user_id.in_(recipient_ids),
-            )
-        )).scalars().all())
-        bad = recipient_ids - ok
-        if bad:
+    if recipient_ids - await valid_handover_recipients(db, from_org_id, recipient_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="Отдать кандидатов можно только рекрутёру или админу этой организации",
+        )
+
+    # Вливать — только в воронку, где получатель сам работает.
+    for a in data.assignments:
+        if not a.merge_into_vacancy_id:
+            continue
+        target = await db.get(Vacancy, a.merge_into_vacancy_id)
+        if (
+            target is None or target.org_id != from_org_id or target.deleted_at is not None
+            or target.id == a.vacancy_id or not is_vacancy_participant(target, a.to_user_id)
+        ):
             raise HTTPException(
                 status_code=400,
-                detail="Получатели должны быть в той же организации",
+                detail="Влить можно только в воронку, в которой работает получатель",
             )
 
-    from ..services.recruiter_transfer import reassign_recruiter_split
-    counts = await reassign_recruiter_split(
+    from_name = (await db.execute(select(User.name).where(User.id == data.from_user_id))).scalar() or "Коллега"
+    result = await reassign_recruiter_split(
         db, from_org_id, data.from_user_id,
-        [{"vacancy_id": a.vacancy_id, "to_user_id": a.to_user_id} for a in data.assignments],
+        [a.model_dump() for a in data.assignments],
         data.pool_to_user_id,
+        dry_run=data.dry_run, acted_by=actor_id,
     )
-    return {"success": True, **counts}
+    if data.dry_run:
+        request.state.audit_action = "Посмотрел, что передастся от уходящего (без изменений)"
+        return {"success": True, **result}
+
+    request.state.audit_action = f"Передал кандидатов уходящего: {from_name}"
+    for uid, n in (result.get("per_recipient") or {}).items():
+        await notify_candidates_handed_over(db, int(uid), from_name, int(n), actor_id)
+    await db.commit()
+    return {"success": True, **result}
 
 
 @router.delete("/{user_id}", status_code=204)

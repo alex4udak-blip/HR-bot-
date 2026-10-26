@@ -192,12 +192,6 @@ class EntityUpdate(BaseModel):
         return out
 
 
-class TransferCreate(BaseModel):
-    to_user_id: int
-    to_department_id: Optional[int] = None
-    comment: Optional[str] = None
-
-
 class EntityResponse(BaseModel):
     id: int
     type: EntityType
@@ -234,24 +228,6 @@ class EntityResponse(BaseModel):
     # Vacancy tracking for candidates
     vacancies_count: int = 0
     vacancy_names: List[str] = []  # Names of vacancies (first 3)
-
-    class Config:
-        from_attributes = True
-
-
-class TransferResponse(BaseModel):
-    id: int
-    entity_id: int
-    from_user_id: Optional[int] = None
-    to_user_id: Optional[int] = None
-    from_department_id: Optional[int] = None
-    to_department_id: Optional[int] = None
-    from_department_name: Optional[str] = None
-    to_department_name: Optional[str] = None
-    comment: Optional[str] = None
-    created_at: datetime
-    from_user_name: Optional[str] = None
-    to_user_name: Optional[str] = None
 
     class Config:
         from_attributes = True

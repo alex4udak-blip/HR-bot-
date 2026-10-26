@@ -26,7 +26,6 @@ export {
   getUsers,
   createUser,
   deleteUser,
-  reassignOwnership,
   getHandoverSummary,
   reassignSplit,
   adminResetPassword,
@@ -135,7 +134,6 @@ export {
   updateEntity,
   deleteEntity,
   updateEntityStatus,
-  transferEntity,
   linkChatToEntity,
   unlinkChatFromEntity,
   // Red flags

@@ -239,7 +239,7 @@ async def test_practice_notification_fires_on_probation_not_on_hr_interview(
 
 
 async def test_transfer_moves_co_recruiter_rows_and_null_author_tags(db_session, organization, team):
-    from api.services.recruiter_transfer import reassign_recruiter_ownership
+    from api.services.recruiter_transfer import reassign_recruiter_split
     v = await _vac(db_session, organization, team["anna"], "Уходящей")
     e1 = await _cand(db_session, organization, team["anna"], "Без автора")
     a1 = VacancyApplication(vacancy_id=v.id, entity_id=e1.id, stage=ApplicationStage.applied,
@@ -252,7 +252,11 @@ async def test_transfer_moves_co_recruiter_rows_and_null_author_tags(db_session,
     await db_session.commit()
 
     ids, a2_id, eids = team["ids"], a2.id, (e1.id, e2.id)
-    await reassign_recruiter_ownership(db_session, organization.id, ids["anna"], ids["petr"])
+    # «Передать всё» (reassign-ownership) удалена 26.10.2026 — передача идёт по воронкам.
+    await reassign_recruiter_split(
+        db_session, organization.id, ids["anna"],
+        [{"vacancy_id": v.id, "to_user_id": ids["petr"]}, {"vacancy_id": other.id, "to_user_id": ids["petr"]}],
+    )
     co = (await db_session.execute(
         select(ApplicationCoRecruiter.user_id).where(ApplicationCoRecruiter.application_id == a2_id)
     )).scalars().all()

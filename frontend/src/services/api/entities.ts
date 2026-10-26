@@ -171,15 +171,6 @@ export const updateEntityStatus = async (id: number, status: EntityStatus): Prom
   return data;
 };
 
-export const transferEntity = async (entityId: number, transferData: {
-  to_user_id: number;
-  to_department_id?: number;
-  comment?: string;
-}): Promise<{ success: boolean; transfer_id: number }> => {
-  const { data } = await debouncedMutation<{ success: boolean; transfer_id: number }>('post', `/entities/${entityId}/transfer`, transferData);
-  return data;
-};
-
 export const linkChatToEntity = async (entityId: number, chatId: number): Promise<void> => {
   await debouncedMutation<void>('post', `/entities/${entityId}/link-chat/${chatId}`);
 };
@@ -548,6 +539,9 @@ export interface VacancyActivityBlock {
   /** Закреплённая запись этой воронки: «e:<id>» (перевод) или «n:<uuid>»
    *  (комментарий). Одна на воронку — у кандидата в двух воронках их две. */
   pinned_entry_key?: string | null;
+  /** Кто ведёт кандидата в этой воронке (для окна «Забрать»). */
+  owner_id?: number | null;
+  owner_name?: string | null;
 }
 
 export const getEntityActivity = async (

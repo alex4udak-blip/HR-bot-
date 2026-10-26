@@ -15,17 +15,36 @@
   • HR-метки пересчитываются (дубль «HR: Имя · Вакансия» уходит сам).
 
 dry_run собирает тот же отчёт, ничего не меняя.
+
+Передача дел уходящего рекрутёра (26.10.2026) вливает его воронку в такую же
+воронку получателя этим же слиянием, с двумя отличиями:
+  • `only_application_ids` — переезжают только заявки уходящего, если в
+    воронке работает ещё кто-то: тогда она остаётся у них и не закрывается;
+  • `prefer_fresher` — у кандидата в обеих воронках остаётся этап, до которого
+    его довели ПОЗЖЕ (работа уходящего не теряется); перевод пишется в историю.
 """
+import logging
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Collection, Dict, List, Optional
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.database import (
-    ApplicationCoRecruiter, Entity, FormTemplate, FormVacancy, SharedAccess,
+    ApplicationCoRecruiter, Entity, FormTemplate, FormVacancy, OrgMember, SharedAccess,
     StageTransition, Vacancy, VacancyApplication, VacancyStatus,
 )
+
+logger = logging.getLogger("hr-analyzer.vacancy-merge")
+
+
+def _source_is_fresher(src: VacancyApplication, tgt: VacancyApplication) -> bool:
+    """Исходная заявка двигалась позже целевой (по дате последнего перевода)."""
+    s = src.last_stage_change_at or src.applied_at
+    t = tgt.last_stage_change_at or tgt.applied_at
+    if s is None:
+        return False
+    return t is None or s > t
 
 
 def _stage(app: VacancyApplication) -> Optional[str]:
@@ -46,8 +65,15 @@ def _merge_text(target: Optional[str], source: Optional[str]) -> Optional[str]:
 async def merge_vacancies(
     db: AsyncSession, org_id: int, source_id: int, target_id: int,
     *, dry_run: bool = True, merged_by: Optional[int] = None,
+    only_application_ids: Optional[Collection[int]] = None,
+    prefer_fresher: bool = False,
+    commit: bool = True,
 ) -> Dict[str, object]:
-    """Влить вакансию source_id в target_id. Коммитит сам (если не dry_run)."""
+    """Влить вакансию source_id в target_id. Коммитит сам (если не dry_run и commit).
+
+    only_application_ids — переносить только эти заявки исходной (частичное
+    слияние: исходная остаётся открытой со своими участниками).
+    """
     if source_id == target_id:
         raise ValueError("Нельзя слить вакансию саму с собой")
 
@@ -57,9 +83,11 @@ async def merge_vacancies(
         if v is None or v.org_id != org_id or v.deleted_at is not None:
             raise LookupError(f"Вакансия ({label}) не найдена")
 
-    src_apps = (await db.execute(
-        select(VacancyApplication).where(VacancyApplication.vacancy_id == source_id)
-    )).scalars().all()
+    src_query = select(VacancyApplication).where(VacancyApplication.vacancy_id == source_id)
+    if only_application_ids is not None:
+        src_query = src_query.where(VacancyApplication.id.in_(list(only_application_ids) or [-1]))
+    src_apps = (await db.execute(src_query)).scalars().all()
+    partial = only_application_ids is not None
     tgt_by_entity = {
         a.entity_id: a for a in (await db.execute(
             select(VacancyApplication).where(VacancyApplication.vacancy_id == target_id)
@@ -83,10 +111,13 @@ async def merge_vacancies(
                 "stage": _stage(a), "application_id": a.id,
             })
         else:
+            take_source = prefer_fresher and a.stage != t.stage and _source_is_fresher(a, t)
             overlapping.append({
                 "entity_id": a.entity_id, "name": names.get(a.entity_id),
                 "target_stage": _stage(t), "source_stage": _stage(a),
                 "same_stage": t.stage == a.stage,
+                # Этап, который останется у кандидата после слияния.
+                "result_stage": _stage(a) if take_source else _stage(t),
                 "target_application_id": t.id, "source_application_id": a.id,
             })
 
@@ -123,6 +154,7 @@ async def merge_vacancies(
 
     report: Dict[str, object] = {
         "dry_run": dry_run,
+        "partial": partial,
         "source": {"id": source.id, "title": source.title, "status": source.status.value if source.status else None},
         "target": {"id": target.id, "title": target.title, "status": target.status.value if target.status else None},
         "moved_count": len(moved),
@@ -149,7 +181,21 @@ async def merge_vacancies(
             .where(StageTransition.application_id == src_app_id)
             .values(application_id=tgt_app.id)
         )).rowcount or 0
-        if reattached:
+        if o["result_stage"] != o["target_stage"]:
+            # Кандидата в исходной довели дальше (позже) — этот этап и остаётся.
+            # Запись в истории описывает перевод; она последняя, поэтому корзина
+            # у неё честно вернёт прежний этап главной.
+            old_stage = tgt_app.stage
+            tgt_app.stage = src_app.stage
+            tgt_app.stage_order = src_app.stage_order
+            tgt_app.last_stage_change_at = src_app.last_stage_change_at or datetime.utcnow()
+            db.add(StageTransition(
+                application_id=tgt_app.id, entity_id=tgt_app.entity_id,
+                from_stage=old_stage.value if old_stage else None, to_stage=src_app.stage.value,
+                changed_by=merged_by,
+                comment=f"Карточки объединены: этап из воронки «{source.title}»",
+            ))
+        elif reattached:
             # Последней записью ленты могла стать запись дубля: корзина у неё
             # («отмена перевода») вернула бы заявку на этап, где она в главной
             # воронке никогда не была (ревью 20.10.2026). Отметка слияния —
@@ -178,6 +224,12 @@ async def merge_vacancies(
             db.add(ApplicationCoRecruiter(application_id=tgt_app.id, user_id=co.user_id))
             tgt_co.add(co.user_id)
 
+        # Закреп главной важнее; нет его — переносим закреп исходной (его запись
+        # истории только что переехала сюда же, ключ остаётся рабочим).
+        if not tgt_app.pinned_entry_key and src_app.pinned_entry_key:
+            tgt_app.pinned_entry_key = src_app.pinned_entry_key
+        if tgt_app.next_interview_at is None and src_app.next_interview_at is not None:
+            tgt_app.next_interview_at = src_app.next_interview_at
         tgt_app.notes = _merge_text(tgt_app.notes, src_app.notes)
         tgt_app.interview_summary = _merge_text(tgt_app.interview_summary, src_app.interview_summary)
         if tgt_app.rating is None and src_app.rating is not None:
@@ -209,6 +261,13 @@ async def merge_vacancies(
             {**n, "vacancy_id": target_id} if _is_source_note(n) else n for n in notes
         ]
         e.extra_data = extra
+
+    if partial:
+        # Частичное слияние: исходная остаётся у своих участников — её анкеты,
+        # доступы и состав не трогаем и не закрываем.
+        await db.flush()
+        db.expire_all()
+        return await _finish(db, overlapping, entity_ids, report, commit)
 
     # 4. Анкеты и шаринги, привязанные к исходной вакансии.
     await db.execute(
@@ -264,11 +323,25 @@ async def merge_vacancies(
     source.extra_data = sed
     source.status = VacancyStatus.closed
 
+    # Скоуп «вижу только эти воронки»: у кого была исходная — теперь главная,
+    # иначе человек терял её кандидатов вместе с закрытой копией.
+    for m in (await db.execute(
+        select(OrgMember).where(OrgMember.org_id == org_id, OrgMember.scope_vacancy_ids.isnot(None))
+    )).scalars().all():
+        ids = list(m.scope_vacancy_ids or [])
+        if source_id in ids:
+            ids = [target_id if i == source_id else i for i in ids]
+            m.scope_vacancy_ids = list(dict.fromkeys(ids))
+
     await db.flush()
     # Заявки меняли bulk-запросами мимо ORM: сбрасываем кэш сессии, чтобы пересчёт
     # статуса и меток читал из базы, а не старые vacancy_id.
     db.expire_all()
 
+    return await _finish(db, overlapping, entity_ids, report, commit)
+
+
+async def _finish(db: AsyncSession, overlapping, entity_ids, report, commit: bool):
     # 7. Общий статус кандидата (у пересечений пропала одна из заявок) и HR-метки.
     from ..routes.vacancies.common import recompute_entity_status
     from .hr_tags import sync_for_entity
@@ -276,10 +349,14 @@ async def merge_vacancies(
     for o in overlapping:
         await recompute_entity_status(db, o["entity_id"])
     for eid in entity_ids:
+        # Без savepoint упавший запрос в Postgres обрывает всю транзакцию, и
+        # «except: pass» только прятал причину — коммит всё равно падал.
         try:
-            await sync_for_entity(db, eid, commit=False)
+            async with db.begin_nested():
+                await sync_for_entity(db, eid, commit=False)
         except Exception:  # noqa: BLE001 — одна битая карточка не должна валить слияние
-            pass
+            logger.exception("VACANCY_MERGE hr-tags sync failed entity=%s", eid)
 
-    await db.commit()
+    if commit:
+        await db.commit()
     return report

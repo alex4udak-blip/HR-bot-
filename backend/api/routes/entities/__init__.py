@@ -3,7 +3,6 @@ Entities module - combines all entity-related routers.
 
 This module provides a combined router that aggregates all entity endpoints:
 - CRUD operations (create, read, update, delete)
-- Transfer operations
 - File upload/download operations
 - Memory/notes operations (profiles, sharing, linking)
 - Search and filter operations
@@ -15,7 +14,6 @@ from .crud import router as crud_router
 from .trash import router as trash_router
 from .notes import router as notes_router
 from .archive import router as archive_router
-from .transfers import router as transfers_router
 from .hire import router as hire_router
 from .files import router as files_router
 from .memory import router as memory_router
@@ -30,8 +28,6 @@ from .common import (
     EntityCreate,
     EntityUpdate,
     EntityResponse,
-    TransferCreate,
-    TransferResponse,
     StatusUpdate,
     normalize_telegram_username,
     validate_email,
@@ -69,9 +65,6 @@ router.include_router(crud_router, tags=["entities-crud"])
 router.include_router(notes_router, tags=["entities-crud"])
 router.include_router(archive_router, tags=["entities-crud"])
 
-# Transfer operations
-router.include_router(transfers_router, tags=["entities-transfers"])
-
 # Hire operations (кандидат → сотрудник Factorial)
 router.include_router(hire_router, tags=["entities-hire"])
 
@@ -103,8 +96,6 @@ __all__ = [
     "EntityCreate",
     "EntityUpdate",
     "EntityResponse",
-    "TransferCreate",
-    "TransferResponse",
     "StatusUpdate",
     "OwnershipFilter",
     # Helper functions

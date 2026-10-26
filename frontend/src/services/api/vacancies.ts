@@ -140,8 +140,10 @@ export interface AssignableUser {
   name: string;
 }
 
-export const getAssignableUsers = async (): Promise<AssignableUser[]> => {
-  const { data } = await deduplicatedGet<AssignableUser[]>('/vacancies/assignable-users');
+export const getAssignableUsers = async (opts?: { includeOwners?: boolean }): Promise<AssignableUser[]> => {
+  const { data } = await deduplicatedGet<AssignableUser[]>(
+    opts?.includeOwners ? '/vacancies/assignable-users?include_owners=true' : '/vacancies/assignable-users',
+  );
   return data;
 };
 

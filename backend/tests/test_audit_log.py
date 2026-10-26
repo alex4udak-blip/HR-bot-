@@ -109,3 +109,11 @@ async def test_journal_is_for_hr_admins_only(client, db_session, setup):
     assert items and items[0]["entity_name"] == "Кандидат Журнала"
     users = (await client.get("/api/audit/users", headers=_h(setup["admin"]))).json()["items"]
     assert any(u["user_id"] == setup["admin"] for u in users)
+
+
+def test_vacancy_merge_report_is_not_logged_as_merge():
+    # 26.10.2026: отчёт «без изменений» записался как «Слил вакансию-дубль».
+    from api.services.audit import describe
+    assert describe("POST", "/api/vacancies/1/merge-from/19", "dry_run=true").startswith("Посмотрел отчёт")
+    assert describe("POST", "/api/vacancies/1/merge-from/19").startswith("Посмотрел отчёт")
+    assert describe("POST", "/api/vacancies/1/merge-from/19", "dry_run=false") == "Слил вакансию-дубль"

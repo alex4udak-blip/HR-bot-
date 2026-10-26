@@ -48,6 +48,10 @@ class VacancyActivityBlockResponse(BaseModel):
     events: List[ActivityEventResponse] = []
     # Закреплённая запись этой воронки («e:<id>» / «n:<uuid>») — одна на блок.
     pinned_entry_key: Optional[str] = None
+    # Кто ведёт кандидата в этой воронке (автор заявки, без автора — владелец
+    # воронки; правило метки «HR: …»). Нужно окну «Забрать» (26.10.2026).
+    owner_id: Optional[int] = None
+    owner_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -202,9 +206,14 @@ async def get_entity_activity(
         .order_by(StageTransition.created_at.desc())
     )).scalars().all()
 
+    def _owner(a) -> Optional[int]:
+        v = vacancies_map.get(a.vacancy_id)
+        return a.created_by or (v.created_by if v else None)
+
     user_ids = list(
         {t.changed_by for t in transitions if t.changed_by}
         | {t.edited_by for t in transitions if t.edited_by}
+        | {o for o in (_owner(a) for a in apps) if o}
     )
     user_names = {}
     if user_ids:
@@ -238,6 +247,8 @@ async def get_entity_activity(
             last_stage_change_at=a.last_stage_change_at,
             events=events_by_app.get(a.id, []),
             pinned_entry_key=a.pinned_entry_key,
+            owner_id=_owner(a),
+            owner_name=user_names.get(_owner(a)),
         ))
     return blocks
 

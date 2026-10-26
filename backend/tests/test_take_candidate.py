@@ -167,3 +167,40 @@ async def test_take_to_current_owner_changes_nothing(client, db_session, admin_u
     await db_session.refresh(s["e"])
     assert s["app"].created_by == s["maria"].id
     assert s["e"].created_by == s["maria"].id
+
+
+# --- 26.10.2026: «Забрать» говорит, что сделал, оставляет след и проверяет получателя ---
+
+@pytest.mark.asyncio
+async def test_take_transfer_leaves_trace_and_notifies(client, db_session, admin_user, setup):
+    from api.models.database import Notification, StageTransition
+    s = setup
+    body = await _take(client, admin_user, s, s["petr"])
+    assert body["take_outcome"] == "transferred" and body["taken_from"] == s["maria"].id
+    last = (await db_session.execute(
+        select(StageTransition).where(StageTransition.application_id == s["app"].id)
+        .order_by(StageTransition.id.desc())
+    )).scalars().first()
+    assert last.comment == "Сменился рекрутёр: теперь Пётр, раньше Мария"
+    assert last.from_stage == last.to_stage == "probation"  # этап не двигали
+    for uid, title in ((s["maria"].id, "Кандидата забрали"), (s["petr"].id, "Вам передали кандидата")):
+        n = (await db_session.execute(select(Notification).where(
+            Notification.user_id == uid, Notification.type == "candidate_taken"))).scalars().all()
+        assert [x.title for x in n] == [title]
+
+    again = await _take(client, admin_user, s, s["petr"])
+    assert again["take_outcome"] == "unchanged"
+
+
+@pytest.mark.asyncio
+async def test_take_rejects_observer_recipient(client, db_session, admin_user, setup):
+    s = setup
+    m = (await db_session.execute(select(OrgMember).where(OrgMember.user_id == s["oleg"].id))).scalar_one()
+    m.is_readonly = True
+    await db_session.commit()
+    r = await client.post(
+        f"/api/vacancies/{s['v'].id}/applications/take",
+        json={"entity_id": s["e"].id, "recruiter_id": s["oleg"].id},
+        headers=_h(admin_user),
+    )
+    assert r.status_code == 400, r.text

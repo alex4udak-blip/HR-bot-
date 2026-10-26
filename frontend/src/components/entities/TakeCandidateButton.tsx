@@ -9,16 +9,21 @@ import {
   takeApplication,
   type AssignableUser,
 } from "@/services/api/vacancies";
+import { getEntityActivity, type VacancyActivityBlock } from "@/services/api/entities";
+import { STAGE_LABEL_BY_STAGE } from "@/constants/hrStages";
 import type { Vacancy } from "@/types";
 import { isVacancyParticipant } from "@/utils/vacancy";
 import { useAuthStore } from "@/stores/authStore";
 import { usePriorRejectionGate } from "@/components/candidates/priorRejection";
 
 /**
- * «Забрать» кандидата: сперва КОМУ отдать (любой рекрутёр), затем В КАКУЮ воронку
- * — и в списке воронок только те, где ВЫБРАННЫЙ рекрутёр участник (его воронки +
- * общие). Идемпотентно: нет заявки → создаём на выбранного; есть → добавляем
- * со-рекрутёра (не снимая владельца). Кастомные дропдауны (нативный select уродлив).
+ * «Забрать» кандидата: сперва КОМУ (рекрутёр или админ, не наблюдатель), затем
+ * В КАКУЮ воронку — только те, где выбранный работает (его воронки + общие).
+ * Нет кандидата в воронке — добавится на «Новый»; есть у другого рекрутёра —
+ * ПЕРЕЙДЁТ к выбранному с этапом и историей, прежний получит уведомление.
+ * С 26.10.2026 окно заранее говорит, что из этого произойдёт (раньше одна
+ * кнопка молча делала то одно, то другое). Имена в текстах — только в
+ * именительном падеже: склонять их мы не умеем.
  *
  * Кнопку показываем ТОЛЬКО если кандидат уже в ≥1 воронке (забота вызывающего).
  */
@@ -40,6 +45,11 @@ export default function TakeCandidateButton({
   const [vacancyId, setVacancyId] = useState<number | "">("");
   const [openMenu, setOpenMenu] = useState<null | "rec" | "vac">(null);
   const [saving, setSaving] = useState(false);
+  // Где кандидат сейчас и кто его ведёт — чтобы сказать, что произойдёт.
+  const [blocks, setBlocks] = useState<VacancyActivityBlock[]>([]);
+  // Окно шириной 320 px: у правого края экрана открываем его влево, иначе
+  // оно уезжало за край (узкое окно, планшет).
+  const [alignRight, setAlignRight] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,11 +62,16 @@ export default function TakeCandidateButton({
         if (!cancelled) setVacancies(vs);
       })
       .catch(() => toast.error("Не удалось загрузить воронки"));
-    getAssignableUsers()
+    getAssignableUsers({ includeOwners: true })
       .then((us) => {
         if (!cancelled) setRecruiters(us);
       })
       .catch(() => { /* некритично */ });
+    getEntityActivity(entityId)
+      .then((bs) => {
+        if (!cancelled) setBlocks(bs);
+      })
+      .catch(() => { /* без этого окно просто не предупредит */ });
     // По умолчанию — «я».
     setRecruiterId(user?.id ?? "");
     setVacancyId("");
@@ -64,7 +79,7 @@ export default function TakeCandidateButton({
     return () => {
       cancelled = true;
     };
-  }, [open, user?.id]);
+  }, [open, user?.id, entityId]);
 
   // «Кому отдать»: assignable-users отдаёт только admin/hr из HR-отдела —
   // владельца/себя-вне-HR-отдела там нет, и «передать себе» было невозможно.
@@ -106,23 +121,45 @@ export default function TakeCandidateButton({
 
   const priorGate = usePriorRejectionGate();
 
+  const isSelf = recruiterId !== "" && recruiterId === user?.id;
+  const recipientName = recruiterOptions.find((r) => r.id === recruiterId)?.name || "";
+  // Что произойдёт при нажатии: добавится / перейдёт / ничего.
+  const current = vacancyId === "" ? undefined : blocks.find((b) => b.vacancy_id === vacancyId);
+  const outcome: "added" | "transferred" | "unchanged" | null =
+    vacancyId === "" || recruiterId === ""
+      ? null
+      : !current
+        ? "added"
+        : current.owner_id === recruiterId
+          ? "unchanged"
+          : "transferred";
+  const stageName = current
+    ? (STAGE_LABEL_BY_STAGE as Record<string, string>)[current.current_stage] || current.current_stage
+    : "";
+
   const submit = async () => {
     if (!vacancyId || !recruiterId) {
-      toast.error("Выберите рекрутёра и воронку");
+      toast.error("Выберите, кому и в какую воронку");
       return;
     }
-    // Был отказ — спросить (владелец, 22.10.2026: предупреждать, не запрещать).
-    if (!(await priorGate.gate(entityId))) return;
+    // Был отказ — спросить, только когда кандидат заново попадает в воронку
+    // (при смене рекрутёра он уже здесь, вопрос лишний).
+    if (outcome === "added" && !(await priorGate.gate(entityId))) return;
     setSaving(true);
     try {
-      await takeApplication(Number(vacancyId), {
+      const res = await takeApplication(Number(vacancyId), {
         entity_id: entityId,
         recruiter_id: Number(recruiterId),
       });
-      const vt = vacancies.find((v) => v.id === vacancyId)?.title || "воронку";
-      const rn =
-        recruiterOptions.find((r) => r.id === recruiterId)?.name || "рекрутёра";
-      toast.success(`Забрали к ${rn} → «${vt}»`);
+      const vt = vacancies.find((v) => v.id === vacancyId)?.title || "";
+      const who = isSelf ? "вы" : recipientName;
+      if (res.take_outcome === "transferred") {
+        toast.success(isSelf ? "Готово. Кандидата теперь ведёте вы" : `Готово. Кандидата теперь ведёт: ${who}`);
+      } else if (res.take_outcome === "unchanged") {
+        toast(isSelf ? "Кандидат уже у вас, ничего не изменилось" : `Кандидат уже у этого рекрутёра: ${who}`);
+      } else {
+        toast.success(`Кандидат добавлен в воронку «${vt}»`);
+      }
       setOpen(false);
       onDone?.({ vacancyId: Number(vacancyId), recruiterId: Number(recruiterId) });
     } catch (e) {
@@ -147,7 +184,11 @@ export default function TakeCandidateButton({
     <div className="relative" ref={ref}>
       {priorGate.element}
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const r = ref.current?.getBoundingClientRect();
+          setAlignRight(!!r && r.left + 336 > window.innerWidth);
+          setOpen((o) => !o);
+        }}
         disabled={saving}
         className="hf-profile-action-btn disabled:opacity-50"
         title="Забрать кандидата: выбрать рекрутёра и воронку"
@@ -161,7 +202,10 @@ export default function TakeCandidateButton({
       </button>
       {open && (
         <div
-          className="hf-profile-vacancy-menu absolute top-full left-0 mt-1 w-80 z-50 p-3"
+          className={clsx(
+            "hf-profile-vacancy-menu absolute top-full mt-1 w-80 max-w-[calc(100vw-24px)] z-50 p-3",
+            alignRight ? "right-0" : "left-0",
+          )}
           style={{ overflow: "visible" }}
         >
           <div className="mb-2 text-[13px] font-semibold text-[var(--hf-main-900)] hf-dark-disabled:text-[var(--hf-white)]">
@@ -169,7 +213,7 @@ export default function TakeCandidateButton({
           </div>
 
           {/* 1) Кому отдать */}
-          <label className={labelCls}>Кому отдать</label>
+          <label className={labelCls}>Кому</label>
           <div className="relative mb-3">
             <button
               type="button"
@@ -249,13 +293,40 @@ export default function TakeCandidateButton({
             )}
           </div>
 
+          {outcome && (
+            <div
+              className={clsx(
+                "mb-3 rounded-hf-s px-3 py-2 text-[12.5px] leading-snug",
+                outcome === "transferred"
+                  ? "bg-[var(--hf-status-yellow-bg)] text-[var(--hf-main-900)]"
+                  : "bg-[var(--hf-bg-panel)] text-[var(--hf-main-700)] hf-dark-disabled:bg-[var(--hf-white-alpha-06)] hf-dark-disabled:text-[var(--hf-white-alpha-70)]",
+              )}
+              data-testid="take-outcome"
+            >
+              {outcome === "added" && (
+                <>Кандидат появится в этой воронке на этапе «Новый». В других воронках всё останется как было.</>
+              )}
+              {outcome === "transferred" && (
+                <>
+                  Сейчас в этой воронке кандидата ведёт {current?.owner_name || "другой рекрутёр"}
+                  {stageName ? `, этап «${stageName}»` : ""}.{" "}
+                  {isSelf ? "Вести его будете вы" : `Вести его будет ${recipientName}`}, этап и история сохранятся.{" "}
+                  {current?.owner_name || "Прежний рекрутёр"} получит уведомление.
+                </>
+              )}
+              {outcome === "unchanged" && (
+                <>{isSelf ? "Вы уже ведёте этого кандидата в этой воронке." : `${recipientName} уже ведёт этого кандидата в этой воронке.`}</>
+              )}
+            </div>
+          )}
+
           <button
             onClick={submit}
-            disabled={saving || !vacancyId || !recruiterId}
+            disabled={saving || !vacancyId || !recruiterId || outcome === "unchanged"}
             className="w-full rounded-hf-s py-2 text-sm font-semibold text-white disabled:opacity-50"
             style={{ background: "var(--hf-status-green)" }}
           >
-            {saving ? "Забираю…" : "Забрать"}
+            {saving ? "Секунду…" : isSelf ? "Забрать себе" : "Передать"}
           </button>
         </div>
       )}

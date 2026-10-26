@@ -683,6 +683,7 @@ async def delete_vacancy(
 
 @router.get("/assignable-users")
 async def get_assignable_users(
+    include_owners: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -711,10 +712,15 @@ async def get_assignable_users(
     hr_dept_ids = [row[0] for row in hr_depts_result.all()]
 
     # 2. Базовый фильтр — всегда только HR org_role
+    # Наблюдатели (is_readonly) только смотрят — назначать и передавать им
+    # кандидатов нельзя. include_owners — для «Забрать»: владельцу организации
+    # (Настя) тоже можно отдать кандидата (26.10.2026).
+    roles = [OrgRole.owner, OrgRole.admin, OrgRole.hr] if include_owners else [OrgRole.admin, OrgRole.hr]
     base_conds = [
         OrgMember.org_id == org.id,
         User.is_active == True,
-        OrgMember.role.in_([OrgRole.admin, OrgRole.hr]),
+        OrgMember.role.in_(roles),
+        OrgMember.is_readonly.isnot(True),
     ]
 
     if hr_dept_ids:
@@ -741,7 +747,20 @@ async def get_assignable_users(
         )
         logger.info("No HR departments found — falling back to OrgRole filter")
 
-    users = result.all()
+    users = list(result.all())
+    if include_owners:
+        # Владелец может не состоять в HR-отделе — добавляем отдельно.
+        seen = {u[0] for u in users}
+        owners = (await db.execute(
+            select(User.id, User.name, OrgMember.role)
+            .join(OrgMember, OrgMember.user_id == User.id)
+            .where(
+                OrgMember.org_id == org.id, User.is_active == True,
+                OrgMember.role == OrgRole.owner, OrgMember.is_readonly.isnot(True),
+            )
+        )).all()
+        users += [o for o in owners if o[0] not in seen]
+        users.sort(key=lambda r: (r[1] or "").lower())
     logger.info(f"Assignable HR block ({len(users)}): {[(r[1], r[2]) for r in users]}")
     return [{"id": row[0], "name": row[1], "role": row[2]} for row in users]
 

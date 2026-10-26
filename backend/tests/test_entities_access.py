@@ -103,24 +103,6 @@ class TestEntityViewAccess:
             f"SECURITY BUG: View-only user was able to delete entity! Got {response.status_code}"
 
     @pytest.mark.asyncio
-    async def test_view_user_cannot_transfer_entity(
-        self, client, second_user, second_user_token, entity, entity_share_view,
-        get_auth_headers, org_member, regular_user
-    ):
-        """
-        CRITICAL TEST: User with view-only access should NOT be able to transfer entity.
-        """
-        response = await client.post(
-            f"/api/entities/{entity.id}/transfer",
-            json={"to_user_id": regular_user.id, "comment": "stealing"},
-            headers=get_auth_headers(second_user_token)
-        )
-
-        # Expected: 403 Forbidden
-        assert response.status_code == 403, \
-            f"SECURITY BUG: View-only user was able to transfer entity! Got {response.status_code}"
-
-    @pytest.mark.asyncio
     async def test_view_user_cannot_link_chat(
         self, client, second_user, second_user_token, entity, entity_share_view,
         get_auth_headers, org_member, chat

@@ -72,6 +72,60 @@ async def _create_notification(
 _MENTION_UID_RE = re.compile(r'data-uid=["\']?(\d+)', re.IGNORECASE)
 
 
+async def valid_handover_recipients(db: AsyncSession, org_id: int, user_ids) -> set[int]:
+    """Кому можно отдать кандидатов: рекрутёры и админы организации (owner /
+    admin / hr), но не наблюдатели — те только смотрят (ревью 26.10.2026: Егору
+    и Владу с правами админа и флагом наблюдателя можно было «передать» людей)."""
+    from ..models.database import OrgMember, OrgRole
+    ids = [u for u in set(user_ids) if u]
+    if not ids:
+        return set()
+    rows = (await db.execute(
+        select(OrgMember.user_id).where(
+            OrgMember.org_id == org_id,
+            OrgMember.user_id.in_(ids),
+            OrgMember.role.in_([OrgRole.owner, OrgRole.admin, OrgRole.hr]),
+            OrgMember.is_readonly.isnot(True),
+        )
+    )).scalars().all()
+    return set(rows)
+
+
+async def notify_candidates_handed_over(
+    db: AsyncSession, recipient_id: int, from_name: str, count: int, actor_id: Optional[int],
+) -> None:
+    """Получателю передачи дел: сколько кандидатов перешло и от кого. Имена —
+    только в именительном падеже: склонять их мы не умеем."""
+    if not recipient_id or not count or recipient_id == actor_id:
+        return
+    word = "кандидата" if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14 else (
+        "кандидат" if count % 10 == 1 and count % 100 != 11 else "кандидатов")
+    await _create_notification(
+        db, recipient_id, "handover", "Вам передали кандидатов",
+        f"Передано {count} {word}. Прежний рекрутёр: {from_name}", "/my-funnels",
+    )
+
+
+async def notify_candidate_taken(
+    db: AsyncSession, *, entity_id: int, entity_name: str, vacancy_title: str,
+    prev_owner_id: Optional[int], new_owner_id: int, new_owner_name: str,
+    actor_id: int, actor_name: str,
+) -> None:
+    """«Забрать» с переносом: прежнему рекрутёру — что кандидата теперь ведёт
+    другой, новому (если отдал кто-то другой) — что ему передали."""
+    link = f"/all-candidates?entity={entity_id}"
+    if prev_owner_id and prev_owner_id != actor_id:
+        await _create_notification(
+            db, prev_owner_id, "candidate_taken", "Кандидата забрали",
+            f"{entity_name}, воронка «{vacancy_title}». Теперь ведёт: {new_owner_name}", link,
+        )
+    if new_owner_id != actor_id:
+        await _create_notification(
+            db, new_owner_id, "candidate_taken", "Вам передали кандидата",
+            f"{entity_name}, воронка «{vacancy_title}». Кто передал: {actor_name}", link,
+        )
+
+
 async def notify_comment_mentions(
     db: AsyncSession,
     *,

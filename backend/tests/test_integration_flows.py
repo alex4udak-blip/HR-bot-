@@ -603,7 +603,7 @@ class TestEntityLifecycleFlow:
         org_owner: OrgMember,
         department: Department
     ):
-        """Test entity lifecycle: Create → Update status → Transfer → Archive."""
+        """Test entity lifecycle: Create → Update status → Hired."""
 
         admin_token = create_access_token(data={"sub": str(admin_user.id)})
 
@@ -639,48 +639,27 @@ class TestEntityLifecycleFlow:
         )
         assert interview_response.status_code == 200
 
-        # Step 4: Create second user for transfer
-        second_user, second_token = await create_user_with_token(
-            db_session,
-            email="manager@test.com",
-            name="Hiring Manager"
-        )
-        await add_user_to_org(db_session, second_user, organization, OrgRole.member)
-        await add_user_to_dept(db_session, second_user, department, DeptRole.member)
-
-        # Step 5: Transfer entity to hiring manager
-        transfer_response = await client.post(
-            f"/api/entities/{entity_id}/transfer",
-            json={
-                "to_user_id": second_user.id,
-                "comment": "Transferring to hiring manager for final decision"
-            },
-            headers=make_auth_headers(admin_token)
-        )
-        assert transfer_response.status_code in [200, 201]
-
-        # Step 6: Make offer
+        # Step 4: Make offer
         offer_response = await client.patch(
             f"/api/entities/{entity_id}",
             json={"status": "offer"},
-            headers=make_auth_headers(second_token)
+            headers=make_auth_headers(admin_token)
         )
         assert offer_response.status_code == 200
 
-        # Step 7: Finalize as hired
+        # Step 5: Finalize as hired
         hired_response = await client.patch(
             f"/api/entities/{entity_id}",
             json={"status": "hired"},
-            headers=make_auth_headers(second_token)
+            headers=make_auth_headers(admin_token)
         )
         assert hired_response.status_code == 200
 
-        # Step 8: Verify final state
+        # Step 6: Verify final state
         final_response = await client.get(
             f"/api/entities/{entity_id}",
-            headers=make_auth_headers(second_token)
+            headers=make_auth_headers(admin_token)
         )
         assert final_response.status_code == 200
         final_entity = final_response.json()
         assert final_entity["status"] == "hired"
-        assert final_entity.get("is_transferred") is True or final_entity.get("transferred_to_id") == second_user.id

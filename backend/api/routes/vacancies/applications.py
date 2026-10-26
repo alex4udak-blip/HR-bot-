@@ -18,7 +18,7 @@ from .common import (
     BaseModel, OrgMember, OrgRole, UserRole,
 )
 from ...services.auth import get_user_org
-from ...models.database import ApplicationCoRecruiter, EntityStatus
+from ...models.database import ApplicationCoRecruiter, EntityStatus, StageTransition
 
 router = APIRouter()
 
@@ -424,6 +424,10 @@ async def create_application(
     entity = entity_result.scalar()
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found in your organization")
+    # Скоуп по воронкам: чужого кандидата (вне своих воронок) по номеру не
+    # добавить — иначе после добавления он становился виден целиком (26.10.2026).
+    from ...services.vacancy_scope import ensure_entity_visible
+    await ensure_entity_visible(entity.id, current_user, db)
 
     # Security: Explicit cross-organization check
     if vacancy.org_id != entity.org_id:
@@ -574,6 +578,7 @@ class ApplicationTake(BaseModel):
 async def take_application(
     vacancy_id: int,
     data: ApplicationTake,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(check_vacancy_access),
 ):
@@ -604,17 +609,23 @@ async def take_application(
     )).scalar()
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found in your organization")
+    from ...services.vacancy_scope import ensure_entity_visible, get_scope_vacancy_ids
+    await ensure_entity_visible(entity.id, current_user, db)
 
-    # Новый владелец — из пула рекрутёров орга (owner/admin/hr). «Любой кому угодно»,
-    # но не произвольный user_id (защита от мусора / чужих орг).
-    valid_ids = {r[0] for r in (await db.execute(
-        select(OrgMember.user_id).where(
-            OrgMember.org_id == org.id,
-            OrgMember.role.in_([OrgRole.owner, OrgRole.admin, OrgRole.hr]),
-        )
-    )).all()}
-    if data.recruiter_id not in valid_ids:
-        raise HTTPException(status_code=400, detail="Недопустимый рекрутёр")
+    # Новый владелец — рекрутёр или админ орга, не наблюдатель (ревью 26.10.2026).
+    from ...services.hr_notifications import valid_handover_recipients
+    if data.recruiter_id not in await valid_handover_recipients(db, org.id, [data.recruiter_id]):
+        raise HTTPException(status_code=400, detail="Отдать кандидата можно только рекрутёру или админу")
+    # И он должен видеть эту воронку (то же правило доступа, что у него самого)
+    # и не иметь ограничения, в которое она не входит. Иначе кандидат
+    # становился «его» в воронке, которую он не может открыть.
+    recipient = await db.get(User, data.recruiter_id)
+    if not await can_access_vacancy(vacancy, recipient, org, db):
+        raise HTTPException(status_code=400, detail="Этому рекрутёру закрыта выбранная воронка")
+    recipient_scope = await get_scope_vacancy_ids(recipient, db)
+    if recipient_scope is not None and vacancy_id not in recipient_scope:
+        raise HTTPException(status_code=400, detail="Этому рекрутёру закрыта выбранная воронка")
+    actor_id, actor_name = current_user.id, current_user.name or "Коллега"
 
     # Лочим кандидата — сериализуем конкурентные «Забрать» одного человека.
     await db.execute(select(Entity.id).where(Entity.id == data.entity_id).with_for_update())
@@ -627,12 +638,15 @@ async def take_application(
     )).scalar()
 
     created = False
+    outcome = "unchanged"
+    prev_owner = None
     if application:
         # Уже в воронке — ПЕРЕНОС к новому рекрутёру. Раньше (28.08) было
         # аддитивно: новый добавлялся со-рекрутёром, прежний оставался, и
         # «Забрать» у уходящего рекрутёра ничего у него не забирало.
         prev_owner = application.created_by
         if prev_owner != data.recruiter_id:
+            outcome = "transferred"
             application.created_by = data.recruiter_id
             # Новый мог быть со-рекрутёром — теперь он владелец, запись лишняя.
             # Остальных со-рекрутёров не трогаем.
@@ -656,6 +670,7 @@ async def take_application(
         application.updated_at = datetime.utcnow()
     else:
         created = True
+        outcome = "added"
         # В воронку, куда кандидата забрали, он всегда приходит на «Новый»: это
         # новый подбор (решение владельца 20.10.2026). До этого этап копировался
         # из общего статуса — из «Отказа» в другой воронке кандидат приходил
@@ -696,6 +711,37 @@ async def take_application(
             comment="Забрал в воронку",
         )
         await db.commit()
+    elif outcome == "transferred":
+        # След в ленте карточки: кто кому передал (раньше перенос был виден только
+        # в логе сервера, а он живёт до перезапуска). Этап тот же — отмена этой
+        # записи ничего не двигает.
+        names = dict((await db.execute(
+            select(User.id, User.name).where(User.id.in_([u for u in (prev_owner, data.recruiter_id) if u]))
+        )).all())
+        new_name = names.get(data.recruiter_id) or "новый рекрутёр"
+        prev_part = f", раньше {names[prev_owner]}" if names.get(prev_owner) else ""
+        db.add(StageTransition(
+            application_id=application.id, entity_id=application.entity_id,
+            from_stage=application.stage.value, to_stage=application.stage.value,
+            changed_by=actor_id,
+            # Имена не склоняем — только именительный падеж.
+            comment=f"Сменился рекрутёр: теперь {new_name}{prev_part}",
+        ))
+        from ...services.hr_notifications import notify_candidate_taken
+        await notify_candidate_taken(
+            db, entity_id=application.entity_id, entity_name=entity.name or "Кандидат",
+            vacancy_title=vacancy.title, prev_owner_id=prev_owner,
+            new_owner_id=data.recruiter_id, new_owner_name=new_name,
+            actor_id=actor_id, actor_name=actor_name,
+        )
+        await db.commit()
+
+    request.state.audit_action = {
+        "added": "Забрал кандидата в воронку",
+        "transferred": "Передал кандидата другому рекрутёру",
+        "unchanged": "Забрать: кандидат уже у этого рекрутёра",
+    }[outcome]
+    request.state.audit_extra = {"application_id": application.id, "entity_id": application.entity_id}
 
     # HR-метки: владелец сменился → пересчитать закреплённых рекрутёров.
     try:
@@ -718,6 +764,8 @@ async def take_application(
         last_stage_change_at=application.last_stage_change_at,
         updated_at=application.updated_at,
         created_by=application.created_by,
+        take_outcome=outcome,
+        taken_from=prev_owner if outcome == "transferred" else None,
     )
 
 

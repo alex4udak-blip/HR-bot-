@@ -108,56 +108,80 @@ export const deleteUser = async (id: number): Promise<void> => {
   await debouncedMutation<void>('delete', `/users/${id}`);
 };
 
-export interface ReassignOwnershipResult {
-  success: boolean;
-  applications: number;
-  vacancies: number;
+export interface HandoverMatch {
+  vacancy_id: number;
+  title: string;
+  status: string | null;
   candidates: number;
-  funnels_participation: number;
+  /** Кто работает в этой воронке — по нему окно ищет «такую же у получателя». */
+  participants: number[];
 }
 
-/** «Передать всё от X к Y»: воронки + кандидаты уходящего рекрутёра → живому. */
-export const reassignOwnership = async (
-  fromUserId: number,
-  toUserId: number,
-): Promise<ReassignOwnershipResult> => {
-  const { data } = await debouncedMutation<ReassignOwnershipResult>(
-    'post',
-    '/users/reassign-ownership',
-    { from_user_id: fromUserId, to_user_id: toUserId },
-  );
-  return data as ReassignOwnershipResult;
-};
-
 export interface HandoverSummary {
-  funnels: { vacancy_id: number; title: string; candidates: number }[];
+  funnels: {
+    vacancy_id: number;
+    title: string;
+    status: string | null;
+    candidates: number;
+    /** Кто в ней работает: получателю из этого списка сливать незачем. */
+    participants: number[];
+    /** Воронки с тем же названием — куда можно влить кандидатов у получателя. */
+    matches: HandoverMatch[];
+  }[];
   pool_candidates: number;
 }
 
-/** Что можно передать от уходящего: его воронки + кандидаты вне воронок. */
+/** Что можно передать от уходящего: его воронки + его остальные кандидаты. */
 export const getHandoverSummary = async (fromUserId: number): Promise<HandoverSummary> => {
   const { data } = await api.get<HandoverSummary>(`/users/${fromUserId}/handover-summary`);
   return data;
 };
+
+export interface HandoverAssignment {
+  vacancy_id: number;
+  to_user_id: number;
+  /** Влить в такую же воронку получателя, а не заводить ему вторую. */
+  merge_into_vacancy_id?: number | null;
+}
 
 export interface ReassignSplitResult {
   success: boolean;
   vacancies: number;
   applications: number;
   candidates: number;
+  merged: number;
+  pool: number;
+  /** user_id (строкой) → сколько кандидатов ему перейдёт. */
+  per_recipient: Record<string, number>;
+  merges: {
+    vacancy_id: number;
+    into_vacancy_id: number;
+    into_title: string;
+    to_user_id: number;
+    /** Уже есть в воронке, куда вливаем: этап, который останется. */
+    overlapping: { entity_id: number; name: string | null; stage: string | null }[];
+  }[];
 }
 
-/** Раздельная передача: каждой воронке — свой получатель, пул — отдельный. */
+/** Передача дел уходящего: каждой воронке — свой получатель, остальные — отдельно.
+ *  dryRun — только посчитать итог для окна, ничего не меняя. */
 export const reassignSplit = async (
   fromUserId: number,
-  assignments: { vacancy_id: number; to_user_id: number }[],
+  assignments: HandoverAssignment[],
   poolToUserId?: number | null,
+  dryRun = false,
 ): Promise<ReassignSplitResult> => {
-  const { data } = await debouncedMutation<ReassignSplitResult>(
-    'post',
-    '/users/reassign-split',
-    { from_user_id: fromUserId, assignments, pool_to_user_id: poolToUserId ?? null },
-  );
+  const body = {
+    from_user_id: fromUserId, assignments,
+    pool_to_user_id: poolToUserId ?? null, dry_run: dryRun,
+  };
+  if (dryRun) {
+    // Итог пересчитывается на каждое изменение в окне — без «защиты от двойного
+    // клика», иначе свежий запрос отбрасывался бы как повтор.
+    const { data } = await api.post<ReassignSplitResult>('/users/reassign-split', body);
+    return data;
+  }
+  const { data } = await debouncedMutation<ReassignSplitResult>('post', '/users/reassign-split', body);
   return data as ReassignSplitResult;
 };
 

@@ -70,7 +70,6 @@ ACTIONS: Tuple[Tuple[str, str, str], ...] = (
     ("POST", rf"/api/entities/{_N}/merge", "Объединил дубли"),
     ("POST", rf"/api/entities/{_N}/archive", "Отправил в архив"),
     ("POST", rf"/api/entities/{_N}/unarchive", "Вернул из архива"),
-    ("POST", rf"/api/entities/{_N}/transfer", "Передал кандидата"),
     ("POST", r"/api/entities/check-duplicate", "Проверил дубли перед добавлением"),
     ("POST", r"/api/entities", "Создал кандидата"),
     ("PUT", rf"/api/entities/{_N}", "Изменил карточку кандидата"),
@@ -93,6 +92,7 @@ ACTIONS: Tuple[Tuple[str, str, str], ...] = (
     # Вход
     ("POST", r"/api/auth/login", "Вход"),
     ("POST", r"/api/auth/logout", "Выход"),
+    ("POST", r"/api/users/reassign-split", "Передача кандидатов уходящего рекрутёра"),
     (".*", r"/api/users.*", "Пользователи"),
     (".*", r"/api/organizations.*", "Организация / участники"),
 )
@@ -116,7 +116,17 @@ def should_audit(method: str, path: str) -> bool:
     return not any(p.match(path) for p in SKIP_PATHS)
 
 
-def describe(method: str, path: str) -> str:
+_VACANCY_MERGE = re.compile(rf"^/api/vacancies/{_N}/merge-from/{_N}$")
+
+
+def describe(method: str, path: str, query: str = "") -> str:
+    # Слияние вакансий по умолчанию идёт «без изменений» (dry_run=true) — это
+    # только отчёт; «Слил» пишем, лишь когда dry_run=false (26.10.2026: отчёт
+    # записался в журнал как настоящее слияние).
+    if method == "POST" and _VACANCY_MERGE.match(path):
+        dry = (parse_qs(query).get("dry_run") or ["true"])[0].lower()
+        if dry not in ("false", "0", "no"):
+            return "Посмотрел отчёт о слиянии вакансий (без изменений)"
     for m, p, label in _COMPILED:
         if m.fullmatch(method) and p.match(path):
             return label

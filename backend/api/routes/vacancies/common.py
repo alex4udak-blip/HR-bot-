@@ -805,6 +805,9 @@ class ApplicationResponse(BaseModel):
     # «Был отказ»: отказ этого человека в ДРУГОЙ воронке, в другой его карточке
     # или в архиве ClickUp — services/prior_rejection.py (22.10.2026).
     prior_rejection: Optional[dict] = None
+    # Только ответ «Забрать»: added | transferred | unchanged и у кого забрали.
+    take_outcome: Optional[str] = None
+    taken_from: Optional[int] = None
     stage: ApplicationStage
     stage_order: int = 0
     rating: Optional[int] = None

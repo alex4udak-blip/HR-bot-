@@ -276,10 +276,6 @@ export interface Entity {
   is_mine?: boolean;
   is_shared?: boolean;
   access_level?: 'view' | 'edit' | 'full';
-  is_transferred?: boolean;
-  transferred_to_id?: number;
-  transferred_to_name?: string;
-  transferred_at?: string;
   department_id?: number;
   department_name?: string;
   created_at: string;
@@ -662,6 +658,9 @@ export interface VacancyApplication {
   updated_at: string;
   // «В предыдущих сериях»: отклик старше последнего переоткрытия вакансии.
   is_previous_series?: boolean;
+  /** Только ответ «Забрать»: что произошло и у кого забрали. */
+  take_outcome?: 'added' | 'transferred' | 'unchanged' | null;
+  taken_from?: number | null;
   // Рекрутёр-владелец заявки (кто добавил) — для авто-метки HR.
   created_by?: number | null;
   // Общий статус кандидата ПОСЛЕ смены этапа (считает сервер по «актуальной»

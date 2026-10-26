@@ -10,7 +10,6 @@ vi.mock('@/services/api', () => ({
   createEntity: vi.fn(),
   updateEntity: vi.fn(),
   deleteEntity: vi.fn(),
-  transferEntity: vi.fn(),
 }));
 
 const initialTypeCounts = {
@@ -442,75 +441,6 @@ describe('entityStore', () => {
       vi.mocked(api.deleteEntity).mockRejectedValueOnce(new Error(errorMessage));
 
       await expect(useEntityStore.getState().deleteEntity(1)).rejects.toThrow(errorMessage);
-
-      expect(useEntityStore.getState().error).toBe(errorMessage);
-      expect(useEntityStore.getState().isLoading).toBe(false);
-    });
-  });
-
-  describe('transferEntity', () => {
-    it('should transfer entity successfully', async () => {
-      const mockEntity: EntityWithRelations = {
-        id: 1,
-        type: 'candidate',
-        name: 'John Doe',
-        status: 'new',
-        tags: [],
-        extra_data: {},
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z',
-        chats: [],
-        calls: [],
-        transfers: [],
-        analyses: [],
-      };
-
-      vi.mocked(api.transferEntity).mockResolvedValueOnce(undefined);
-      vi.mocked(api.getEntity).mockResolvedValueOnce(mockEntity);
-
-      await useEntityStore.getState().transferEntity(1, 2, 'Transfer comment');
-
-      expect(api.transferEntity).toHaveBeenCalledWith(1, {
-        to_user_id: 2,
-        comment: 'Transfer comment',
-      });
-      expect(api.getEntity).toHaveBeenCalledWith(1);
-      expect(useEntityStore.getState().isLoading).toBe(false);
-      expect(useEntityStore.getState().error).toBeNull();
-    });
-
-    it('should transfer entity without comment', async () => {
-      const mockEntity: EntityWithRelations = {
-        id: 1,
-        type: 'candidate',
-        name: 'John Doe',
-        status: 'new',
-        tags: [],
-        extra_data: {},
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z',
-        chats: [],
-        calls: [],
-        transfers: [],
-        analyses: [],
-      };
-
-      vi.mocked(api.transferEntity).mockResolvedValueOnce(undefined);
-      vi.mocked(api.getEntity).mockResolvedValueOnce(mockEntity);
-
-      await useEntityStore.getState().transferEntity(1, 2);
-
-      expect(api.transferEntity).toHaveBeenCalledWith(1, {
-        to_user_id: 2,
-        comment: undefined,
-      });
-    });
-
-    it('should handle transfer entity error', async () => {
-      const errorMessage = 'Failed to transfer entity';
-      vi.mocked(api.transferEntity).mockRejectedValueOnce(new Error(errorMessage));
-
-      await expect(useEntityStore.getState().transferEntity(1, 2)).rejects.toThrow(errorMessage);
 
       expect(useEntityStore.getState().error).toBe(errorMessage);
       expect(useEntityStore.getState().isLoading).toBe(false);

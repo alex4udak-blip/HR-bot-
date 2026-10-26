@@ -94,7 +94,7 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
                     "path": path[:500],
                     "status": response.status_code,
                     "duration_ms": int(duration_ms),
-                    "action": describe(method, path)[:200],
+                    "action": (getattr(request.state, "audit_action", None) or describe(method, path, request.url.query))[:200],
                     "body": body,
                     "correlation_id": correlation_id,
                     **ids,
