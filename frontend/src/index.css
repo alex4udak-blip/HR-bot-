@@ -10327,6 +10327,7 @@ body.performance-mode .glass-card:hover {
 .hf-statuses-fchip-pop .hf-statuses-filter-section { border-top: 0; }
 .hf-statuses-fchip-pop-foot {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: var(--hf-space-s);
   margin-top: var(--hf-space-xs);
@@ -10335,7 +10336,6 @@ body.performance-mode .glass-card:hover {
   font-size: var(--hf-fs-5xs);
   color: var(--hf-main-600);
 }
-.hf-statuses-fchip-pop-foot span { flex: 1; min-width: 0; line-height: 1.4; }
 .hf-statuses-fchip-pop-foot button {
   flex: none;
   padding: 4px var(--hf-space-s);

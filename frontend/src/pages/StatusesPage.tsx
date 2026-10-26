@@ -1174,8 +1174,11 @@ export default function StatusesPage() {
                             onRange={(from, to) => setDateRange(key, from, to)}
                             onClear={() => { clearKey(key); setChipEdit(null); }}
                           />
+                          {/* Без фразы «Показываем тех, у кого…»: в маленьком
+                              окошке она растягивалась на пол-экрана и мешала
+                              (владелец, 26.10.2026: «вот это убери»). Фраза
+                              осталась в большой панели «Фильтры». */}
                           <div className="hf-statuses-fchip-pop-foot">
-                            <span>{describeFilters(filters)}</span>
                             <button type="button" onClick={() => setChipEdit(null)}>Готово</button>
                           </div>
                         </div>
