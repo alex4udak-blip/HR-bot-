@@ -178,23 +178,47 @@ interface BoardFilters {
   values: Partial<Record<FilterKey, string[]>>;
   /** колонка-дата → границы «с» и «по» */
   dates: Partial<Record<FilterKey, { from: string; to: string }>>;
-  /** Условия, помеченные «или» (кнопка у условия в панели). Остальные —
-   *  обязательные. Правило: все обязательные должны совпасть, а из
-   *  помеченных «или» достаточно ОДНОГО.
+  /** Условия, помеченные «и» — обязательные. Остальные — «или».
+   *  Правило: все «и» должны совпасть, а из «или» достаточно ОДНОГО.
    *
-   *  Было два режима на всю панель — «любое» / «все сразу» (владелец,
-   *  07.10.2026: «надо ||, чтобы массово выгружать»). Один общий переключатель
-   *  не выражает того, что нужно на деле: Мария отметила четыре отдела И
-   *  октябрь, получила всех подряд и решила, что фильтр сломан (21.10.2026).
-   *  Теперь выбор у КАЖДОГО условия, по умолчанию — обязательное (как в
-   *  обычных таблицах), а панель вслух пишет, что получилось. */
+   *  ПО УМОЛЧАНИЮ — «ИЛИ» (Мария, 26.10.2026: «нужно, чтобы всегда было
+   *  ИЛИ»): доску фильтруют, чтобы массово отобрать людей под выгрузку —
+   *  «из SEO или из Push», «уволенные или перевёдшиеся». «И» ставят руками
+   *  там, где условие обязательное, например «И вышел в октябре».
+   *
+   *  История: до 21.10 был один режим на всю панель («любое / все сразу»),
+   *  с 21.10 по 26.10 — пометка у каждого условия, но по умолчанию «и». */
+  andKeys?: FilterKey[];
+  /** Старые поля — только для чтения сохранённого фильтра, см. readSavedFilters. */
   orKeys?: FilterKey[];
-  /** Старое поле: один режим на всю панель. Только для чтения сохранённого
-   *  фильтра — при загрузке переводится в orKeys. */
   mode?: "any" | "all";
 }
 
-const EMPTY_FILTERS: BoardFilters = { values: {}, dates: {}, orKeys: [] };
+const EMPTY_FILTERS: BoardFilters = { values: {}, dates: {}, andKeys: [] };
+
+/** Сохранённый в браузере фильтр → текущий формат.
+ *
+ *  Старые сохранения переводятся так, чтобы у человека не осталось «и»,
+ *  которого он сам не ставил: с 21.10 по 26.10 «и» стояло само по умолчанию —
+ *  такие условия становятся «или». Явный старый режим «все сразу» был выбором
+ *  человека — он остаётся «и» у всех условий.
+ */
+export function readSavedFilters(raw: unknown): BoardFilters {
+  if (!raw || typeof raw !== "object") return EMPTY_FILTERS;
+  const parsed = raw as BoardFilters;
+  const base: BoardFilters = {
+    values: parsed.values || {},
+    dates: parsed.dates || {},
+    andKeys: [],
+  };
+  if (Array.isArray(parsed.andKeys)) base.andKeys = parsed.andKeys;
+  else if (parsed.mode === "all") base.andKeys = activeFilterKeys(base);
+  return base;
+}
+
+/** Условие обязательное («и»)? По умолчанию — нет, «или». */
+const isAndKey = (filters: BoardFilters, key: FilterKey) =>
+  (filters.andKeys || []).includes(key);
 
 /** Проходит ли строка под фильтры панели. Условий нет — проходит всё.
  *
@@ -203,10 +227,10 @@ const EMPTY_FILTERS: BoardFilters = { values: {}, dates: {}, orKeys: [] };
  *  это «SEO или Push».
  */
 export function rowMatchesFilters(row: BoardRow, filters: BoardFilters): boolean {
-  const orKeys = new Set(filters.orKeys || []);
+  const andKeys = new Set(filters.andKeys || []);
   const must: boolean[] = [];
   const some: boolean[] = [];
-  const put = (key: FilterKey, ok: boolean) => (orKeys.has(key) ? some : must).push(ok);
+  const put = (key: FilterKey, ok: boolean) => (andKeys.has(key) ? must : some).push(ok);
 
   for (const [key, chosen] of Object.entries(filters.values) as [FilterKey, string[]][]) {
     if (!chosen?.length) continue;
@@ -245,10 +269,10 @@ export function activeFilterKeys(filters: BoardFilters): FilterKey[] {
  *  режима «любое / все сразу» человек читает готовую фразу и видит, что
  *  получилось из его галочек. */
 export function describeFilters(filters: BoardFilters): string {
-  const orKeys = new Set(filters.orKeys || []);
+  const andKeys = new Set(filters.andKeys || []);
   const must: string[] = [];
   const some: string[] = [];
-  const add = (key: FilterKey, text: string) => (orKeys.has(key) ? some : must).push(text);
+  const add = (key: FilterKey, text: string) => (andKeys.has(key) ? must : some).push(text);
 
   for (const [key, chosen] of Object.entries(filters.values) as [FilterKey, string[]][]) {
     if (!chosen?.length) continue;
@@ -263,6 +287,8 @@ export function describeFilters(filters: BoardFilters): string {
   }
 
   if (!must.length && !some.length) return "Ничего не отмечено — показываем всех.";
+  // Одни «или» — без скобок: «у кого Отдел — SEO или Выход в отдел — октябрь».
+  if (!must.length) return `Показываем тех, у кого ${some.join(" или ")}.`;
   const parts = [...must];
   if (some.length) parts.push(some.length > 1 ? `(${some.join(" или ")})` : some[0]);
   return `Показываем тех, у кого ${parts.join(" и ")}.`;
@@ -414,19 +440,7 @@ export default function StatusesPage() {
     try {
       const raw = localStorage.getItem(FILTERS_STORAGE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as BoardFilters;
-        if (parsed && typeof parsed === "object") {
-          const base: BoardFilters = {
-            values: parsed.values || {},
-            dates: parsed.dates || {},
-            orKeys: parsed.orKeys || [],
-          };
-          // Старый общий режим «любое из условий» = все условия «или».
-          if (!parsed.orKeys && parsed.mode === "any") {
-            base.orKeys = activeFilterKeys(base);
-          }
-          return base;
-        }
+        return readSavedFilters(JSON.parse(raw));
       }
     } catch { /* повреждённое значение — начинаем без фильтров */ }
     return EMPTY_FILTERS;
@@ -438,14 +452,14 @@ export default function StatusesPage() {
     } catch { /* приватный режим — переживём без сохранения */ }
   }, [filters]);
 
-  /** Условие обязательное ↔ «или». Кнопка стоит у самого условия: один общий
-   *  режим на панель человек не находил и не понимал (владелец, 21.10.2026). */
+  /** «или» ↔ «и» у условия. Кнопка стоит у самого условия: один общий режим
+   *  на панель человек не находил и не понимал (владелец, 21.10.2026). */
   const toggleJoin = (key: FilterKey) =>
     setFilters((f) => {
-      const cur = new Set(f.orKeys || []);
+      const cur = new Set(f.andKeys || []);
       if (cur.has(key)) cur.delete(key);
       else cur.add(key);
-      return { ...f, orKeys: [...cur] };
+      return { ...f, andKeys: [...cur] };
     });
 
   /** Отметить/снять значение колонки. */
@@ -480,12 +494,23 @@ export default function StatusesPage() {
       delete values[key];
       delete dates[key];
       // Пометка «или» без самого условия ничего не значит — снимаем вместе.
-      return { values, dates, orKeys: (f.orKeys || []).filter((k) => k !== key) };
+      return { values, dates, andKeys: (f.andKeys || []).filter((k) => k !== key) };
     });
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Какое условие раскрыть в панели: ставится кликом по чипу под шапкой.
-  const [editKey, setEditKey] = useState<FilterKey | null>(null);
+  // Условие, которое правят прямо на доске — окошко под его чипом.
+  const [chipEdit, setChipEdit] = useState<FilterKey | null>(null);
+  // Сняли в окошке последнее значение — условия больше нет, и окошко тоже
+  // закрываем: иначе оно само выскочило бы, когда условие заведут заново.
+  useEffect(() => {
+    if (chipEdit && !activeFilterKeys(filters).includes(chipEdit)) setChipEdit(null);
+  }, [filters, chipEdit]);
+  useEffect(() => {
+    if (!chipEdit) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setChipEdit(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [chipEdit]);
   // Сортировка по дате: клик по заголовку — сначала новые, второй — старые,
   // третий возвращает обычный порядок.
   // По умолчанию сортируем по выходу в отдел: сверху те, кто вышел недавно,
@@ -819,7 +844,9 @@ export default function StatusesPage() {
    *  отдела и сортировки, плюс колонку статуса: в файле групп нет. */
   /** Строки → лист: шапка как в таблице, плюс колонка со статусом. */
   const sheetFrom = (items: BoardRow[]) => {
-    const cols = COLUMNS.filter((c) => c.key !== "offer");
+    // «Сумма» — только владельцу: остальным сервер её не присылает, и в файле
+    // висела бы пустая колонка, по которой непонятно, что сломалось.
+    const cols = COLUMNS.filter((c) => c.key !== "offer" && (c.key !== "salary" || canSeeSalary));
     const header = ["Статус", ...cols.map((c) => FILTER_LABELS[c.key as FilterKey] || c.label)];
     const body: (string | number)[][] = items.map((r) => [
       STATUSES.find((s2) => (s2.members as readonly string[]).includes(r.status))?.label || r.status,
@@ -987,7 +1014,7 @@ export default function StatusesPage() {
                 "hf-statuses-filters-btn",
                 activeCount > 0 && "hf-statuses-filters-btn-on"
               )}
-              onClick={() => { setPickerOpen((v) => !v); setEditKey(null); }}
+              onClick={() => { setPickerOpen((v) => !v); setChipEdit(null); }}
             >
               <SlidersHorizontal size={15} />
               Фильтры
@@ -1000,7 +1027,7 @@ export default function StatusesPage() {
               <>
                 <div
                   className="hf-statuses-picker-backdrop"
-                  onClick={() => { setPickerOpen(false); setEditKey(null); }}
+                  onClick={() => setPickerOpen(false)}
                 />
                 <div className="hf-statuses-picker">
                   <div className="hf-statuses-picker-head">
@@ -1021,9 +1048,9 @@ export default function StatusesPage() {
                     {describeFilters(filters)}
                   </div>
                   <div className="hf-statuses-filter-hint">
-                    Отметьте, что показывать. Условие с пометкой «и» обязательно;
-                    нажмите на неё — станет «или», и хватит совпадения с любым
-                    из таких условий.
+                    Отметьте, что показывать. Условия складываются через «или» —
+                    достаточно совпасть с любым. Нажмите «или» у условия, чтобы
+                    оно стало «и» — обязательным.
                   </div>
 
                   {FILTERABLE.map((c) => (
@@ -1034,8 +1061,7 @@ export default function StatusesPage() {
                       values={filters.values[c.key] || []}
                       range={filters.dates[c.key]}
                       options={isDateKey(c.key) ? [] : valuesFor(c.key)}
-                      isOr={(filters.orKeys || []).includes(c.key)}
-                      openNow={editKey === c.key}
+                      isOr={!isAndKey(filters, c.key)}
                       onToggleJoin={() => toggleJoin(c.key)}
                       onToggle={(v) => toggleValue(c.key, v)}
                       onDate={(side, v) => setDateBound(c.key, side, v)}
@@ -1057,16 +1083,13 @@ export default function StatusesPage() {
         <div className="hf-statuses-fchips">
           {activeFilterKeys(filters)
             .slice()
-            .sort((a, b) => {
-              const or = new Set(filters.orKeys || []);
-              return Number(or.has(a)) - Number(or.has(b));
-            })
+            .sort((a, b) => Number(!isAndKey(filters, a)) - Number(!isAndKey(filters, b)))
             .map((key, i, all) => {
               // «или» имеет смысл, только когда таких условий ДВА и больше:
               // одно-единственное «или» — то же самое, что обязательное, и
               // слово «или» между чипами сбивало бы с толку.
-              const orCount = all.filter((k) => (filters.orKeys || []).includes(k)).length;
-              const isOr = orCount > 1 && (filters.orKeys || []).includes(key);
+              const orCount = all.filter((k) => !isAndKey(filters, k)).length;
+              const isOr = orCount > 1 && !isAndKey(filters, key);
               const vals = filters.values[key];
               const r = filters.dates[key];
               const text = vals?.length
@@ -1077,30 +1100,66 @@ export default function StatusesPage() {
                   {i > 0 && (
                     <span className="hf-statuses-fchip-join">{isOr ? "или" : "и"}</span>
                   )}
-                  {/* Клик по самому чипу ОТКРЫВАЕТ условие — поправить выбор
-                      (владелец, 23.10.2026: «при нажатии на него он не
-                      удаляется, а открывается и есть возможность изменить»).
-                      Снимает только крестик: раньше чип снимался целиком от
-                      любого промаха, и набранный фильтр приходилось собирать
-                      заново. */}
-                  <span className={clsx("hf-statuses-fchip", isOr && "is-or")}>
-                    <button
-                      type="button"
-                      className="hf-statuses-fchip-body"
-                      onClick={() => { setPickerOpen(true); setEditKey(key); }}
-                      title="Изменить условие"
+                  {/* Клик по чипу открывает правку ПРЯМО НА ДОСКЕ — окошко
+                      под чипом с этим же условием: значения, даты, «и/или»
+                      (Мария, 26.10.2026: «когда фильтр уже выбран — была
+                      возможность его редактировать на борде»). До этого чип
+                      открывал боковую панель со всеми колонками, и нужное
+                      место там приходилось искать. Снимает только крестик. */}
+                  <span className="hf-statuses-fchip-wrap">
+                    <span
+                      className={clsx(
+                        "hf-statuses-fchip",
+                        isOr && "is-or",
+                        chipEdit === key && "is-editing",
+                      )}
                     >
-                      <b>{filterLabel(key)}:</b> {text}
-                    </button>
-                    <button
-                      type="button"
-                      className="hf-statuses-fchip-x"
-                      onClick={() => clearKey(key)}
-                      title="Снять фильтр"
-                      aria-label={`Снять фильтр «${filterLabel(key)}»`}
-                    >
-                      <X size={12} />
-                    </button>
+                      <button
+                        type="button"
+                        className="hf-statuses-fchip-body"
+                        onClick={() => { setPickerOpen(false); setChipEdit(chipEdit === key ? null : key); }}
+                        title="Изменить условие"
+                        aria-expanded={chipEdit === key}
+                      >
+                        <b>{filterLabel(key)}:</b> {text}
+                        <ChevronDown size={12} className="hf-statuses-fchip-caret" />
+                      </button>
+                      <button
+                        type="button"
+                        className="hf-statuses-fchip-x"
+                        onClick={() => { clearKey(key); setChipEdit(null); }}
+                        title="Снять фильтр"
+                        aria-label={`Снять фильтр «${filterLabel(key)}»`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                    {chipEdit === key && (
+                      <>
+                        <div className="hf-statuses-picker-backdrop" onClick={() => setChipEdit(null)} />
+                        <div className="hf-statuses-fchip-pop" role="dialog" aria-label={`Условие «${filterLabel(key)}»`}>
+                          <FilterSection
+                            label={filterLabel(key)}
+                            column={key}
+                            values={filters.values[key] || []}
+                            range={filters.dates[key]}
+                            options={isDateKey(key) ? [] : valuesFor(key)}
+                            isOr={!isAndKey(filters, key)}
+                            openNow
+                            pinned
+                            onToggleJoin={() => toggleJoin(key)}
+                            onToggle={(v) => toggleValue(key, v)}
+                            onDate={(side, v) => setDateBound(key, side, v)}
+                            onRange={(from, to) => setDateRange(key, from, to)}
+                            onClear={() => { clearKey(key); setChipEdit(null); }}
+                          />
+                          <div className="hf-statuses-fchip-pop-foot">
+                            <span>{describeFilters(filters)}</span>
+                            <button type="button" onClick={() => setChipEdit(null)}>Готово</button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </span>
                 </Fragment>
               );
@@ -1287,7 +1346,7 @@ export default function StatusesPage() {
  *  значениями и их количеством, у дат — «с» и «по». Ни операторов, ни
  *  «равно/содержит»: отмечаешь то, что хочешь видеть. */
 function FilterSection({
-  label, column, values, range, options, isOr, openNow, onToggleJoin,
+  label, column, values, range, options, isOr, openNow, pinned, onToggleJoin,
   onToggle, onDate, onRange, onClear,
 }: {
   label: string;
@@ -1299,6 +1358,8 @@ function FilterSection({
   isOr: boolean;
   /** Раскрыть сразу — пришли сюда кликом по чипу под шапкой. */
   openNow?: boolean;
+  /** Всегда раскрыто (окошко под чипом): сворачивать там нечего. */
+  pinned?: boolean;
   onToggleJoin: () => void;
   onToggle: (v: string) => void;
   onDate: (side: "from" | "to", v: string) => void;
@@ -1328,11 +1389,17 @@ function FilterSection({
 
   return (
     <div className={clsx("hf-statuses-filter-section", active && "is-active")}>
-      <button ref={headRef} className="hf-statuses-filter-head" onClick={() => setOpen((v) => !v)}>
-        <ChevronRight
-          size={13}
-          className={clsx("hf-statuses-filter-caret", open && "is-open")}
-        />
+      <button
+        ref={headRef}
+        className="hf-statuses-filter-head"
+        onClick={() => { if (!pinned) setOpen((v) => !v); }}
+      >
+        {!pinned && (
+          <ChevronRight
+            size={13}
+            className={clsx("hf-statuses-filter-caret", open && "is-open")}
+          />
+        )}
         <span className="hf-statuses-filter-name">{label}</span>
         {active && <span className="hf-statuses-filter-summary">{summary}</span>}
         {active && (

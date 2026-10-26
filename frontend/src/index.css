@@ -10287,6 +10287,48 @@ body.performance-mode .glass-card:hover {
   cursor: pointer;
 }
 .hf-statuses-fchip-x:hover { color: var(--hf-status-red, #ef4444); }
+/* Правка условия прямо на доске: окошко под чипом (Мария, 26.10.2026). */
+.hf-statuses-fchip-wrap { position: relative; display: inline-flex; }
+.hf-statuses-fchip.is-editing { border-color: var(--hf-main-900); }
+.hf-statuses-fchip-caret { flex: none; opacity: 0.55; }
+.hf-statuses-fchip-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 41;
+  width: 320px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: var(--hf-space-xs);
+  background: var(--hf-white);
+  border: var(--hf-border-xs) solid var(--hf-main-200);
+  border-radius: var(--hf-radius-s);
+  box-shadow: 0 12px 32px rgba(16, 24, 40, .14);
+}
+/* В окошке условие одно — линия сверху у него лишняя. */
+.hf-statuses-fchip-pop .hf-statuses-filter-section { border-top: 0; }
+.hf-statuses-fchip-pop-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--hf-space-s);
+  margin-top: var(--hf-space-xs);
+  padding: var(--hf-space-xs) var(--hf-space-s) 0;
+  border-top: var(--hf-border-xs) solid var(--hf-main-100);
+  font-size: var(--hf-fs-5xs);
+  color: var(--hf-main-600);
+}
+.hf-statuses-fchip-pop-foot span { flex: 1; min-width: 0; line-height: 1.4; }
+.hf-statuses-fchip-pop-foot button {
+  flex: none;
+  padding: 4px var(--hf-space-s);
+  border: 0;
+  border-radius: 999px;
+  background: var(--hf-main-900);
+  color: var(--hf-white);
+  font-size: var(--hf-fs-5xs);
+  font-weight: 600;
+  cursor: pointer;
+}
 /* Связка между чипами — читается как фраза: «Отдел: … и Выход в отдел: …» */
 .hf-statuses-fchip-join {
   align-self: center;
