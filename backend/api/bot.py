@@ -3936,6 +3936,12 @@ async def evening_digest_task():
                             if not has_report and not day_off:
                                 text += "\n\n📝 Вечернего отчёта сегодня не было — пришлите с тегом «вечерний отчёт»."
 
+                        # Отметка в базе: перезапуск в 18-м часу не шлёт итог второй раз
+                        async with async_session() as mark_db:
+                            if not await ev.claim_digest(mark_db, tg_id, now.date()):
+                                sent_on[chat.id] = today
+                                logger.info(f"EVENING_DIGEST: чат {tg_id} — уже отправлен сегодня")
+                                continue
                         try:
                             await get_bot().send_message(
                                 chat_id=tg_id, text=text, parse_mode="HTML",
@@ -3945,6 +3951,8 @@ async def evening_digest_task():
                             logger.info(f"EVENING_DIGEST: чат {tg_id}, комментариев {len(comments)}, отчёт={has_report}")
                         except Exception as e:
                             logger.warning(f"Итог дня не доставлен в чат {tg_id}: {e}")
+                            async with async_session() as mark_db:
+                                await ev.release_digest(mark_db, tg_id, now.date())
         except Exception as e:
             logger.error(f"evening_digest_task: {e}", exc_info=True)
 

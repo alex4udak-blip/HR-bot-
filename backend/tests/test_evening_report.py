@@ -248,3 +248,24 @@ def test_no_report_reminder_on_weekends():
     week = {date(2026, 10, d): d in (24, 25) for d in range(19, 26)}
     for day, off in week.items():
         assert ev.is_day_off(day) is off, day
+
+
+@pytest.mark.asyncio
+async def test_digest_is_sent_once_per_day_even_after_restart(db_session):
+    """28.10.2026 итог дня пришёл дважды: перезапуск стёр отметку из памяти."""
+    day = datetime(2026, 10, 28).date()
+    assert await ev.claim_digest(db_session, -100500, day)
+    # «Перезапуск»: память пустая, но отметка в базе — второй раз не шлём
+    assert not await ev.claim_digest(db_session, -100500, day)
+    # Другой чат и другой день — свои отметки
+    assert await ev.claim_digest(db_session, -100501, day)
+    assert await ev.claim_digest(db_session, -100500, day + timedelta(days=1))
+
+
+@pytest.mark.asyncio
+async def test_failed_send_releases_digest_mark(db_session):
+    """Не доставили — отметку снимаем, чтобы следующая проверка отправила."""
+    day = datetime(2026, 10, 28).date()
+    assert await ev.claim_digest(db_session, -100502, day)
+    await ev.release_digest(db_session, -100502, day)
+    assert await ev.claim_digest(db_session, -100502, day)

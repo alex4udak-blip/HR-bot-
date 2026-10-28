@@ -18,7 +18,8 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("hr-analyzer.evening_report")
@@ -47,6 +48,40 @@ def is_day_off(day: date) -> bool:
     упрёка «отчёта не было».
     """
     return day.weekday() >= 5
+
+
+def _digest_mark(chat_id: int, day: date) -> str:
+    return f"EVENING_DIGEST:{chat_id}:{day.isoformat()}"
+
+
+async def claim_digest(db: AsyncSession, chat_id: int, day: date) -> bool:
+    """Застолбить итог дня за чатом: True — шлём мы, False — уже отправлен.
+
+    28.10.2026 итог дня пришёл в чат дважды (18:03 и 18:11): отметка «уже
+    отправил» жила в памяти процесса, бэкенд перезапустился в 18-м часу и
+    отправил снова. Отметка теперь в базе (`data_migration_marks`, ключ —
+    первичный), поэтому её не стирает ни перезапуск, ни вторая копия бота.
+    Сессия — отдельная и короткая: при занятом ключе её откатывают.
+    """
+    from ..models.database import DataMigrationMark
+
+    db.add(DataMigrationMark(key=_digest_mark(chat_id, day)))
+    try:
+        await db.commit()
+        return True
+    except IntegrityError:
+        await db.rollback()
+        return False
+
+
+async def release_digest(db: AsyncSession, chat_id: int, day: date) -> None:
+    """Снять отметку, если отправить не вышло: через 10 минут попробуем снова."""
+    from ..models.database import DataMigrationMark
+
+    await db.execute(delete(DataMigrationMark).where(
+        DataMigrationMark.key == _digest_mark(chat_id, day)
+    ))
+    await db.commit()
 
 
 def has_report_tag(text: str) -> bool:
