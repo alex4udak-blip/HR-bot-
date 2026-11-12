@@ -82,8 +82,8 @@ STATUS_LABELS_RU = {
     EntityStatus.hired.value: "Оффер принят",
     EntityStatus.probation.value: "Практика",
     EntityStatus.transferred.value: "Перешёл в отдел",
-    EntityStatus.dismissed.value: "Уволен",
-    EntityStatus.quit.value: "Уволился",
+    EntityStatus.dismissed.value: "Мы уволили",
+    EntityStatus.quit.value: "Сам уволился",
     EntityStatus.rejected.value: "Отказ",
     EntityStatus.withdrawn.value: "Отозван",
 }
@@ -441,8 +441,8 @@ async def _move_board_application(
         closed = (ApplicationStage.rejected, ApplicationStage.withdrawn)
         targets = [a for a in open_apps if a.stage not in closed]
         comment = (
-            "Уволен — доска «Штат»" if new_status == EntityStatus.dismissed
-            else "Уволился — доска «Штат»"
+            "Мы уволили — доска «Штат»" if new_status == EntityStatus.dismissed
+            else "Сам уволился — доска «Штат»"
         )
     else:
         primary = pick_primary_application(list(open_apps))

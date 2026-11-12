@@ -84,7 +84,7 @@ async def test_dismissal_closes_all_live_applications(
     assert {m.application_id for m in moves} == {live.id, other.id}
     assert all(m.to_stage == ApplicationStage.rejected.value for m in moves)
     # В ленте видно, почему «Отказ»: уволен на доске.
-    assert all(m.comment == "Уволен — доска «Штат»" for m in moves)
+    assert all(m.comment == "Мы уволили — доска «Штат»" for m in moves)
 
 
 @pytest.mark.asyncio

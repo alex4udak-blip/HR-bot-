@@ -44,8 +44,8 @@ BOARD_STATUSES: list[str] = [s.value for s, *_ in _STAGES]
 # (Мария, 20.10.2026: «борд и АТС — единая система: уволен на борде → отказ в
 # АТС»). Точный статус виден на доске «Штат» и в чипе.
 DEPARTED_LABELS: dict[str, str] = {
-    EntityStatus.dismissed.value: "Уволен",
-    EntityStatus.quit.value: "Уволился",
+    EntityStatus.dismissed.value: "Мы уволили",
+    EntityStatus.quit.value: "Сам уволился",
 }
 _COLUMN_OF_STATUS: dict[str, str] = {
     EntityStatus.dismissed.value: EntityStatus.rejected.value,

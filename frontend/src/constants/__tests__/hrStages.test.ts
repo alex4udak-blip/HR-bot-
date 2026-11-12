@@ -111,6 +111,6 @@ describe("boardColumnOf — вкладка «Все кандидаты» по с
     expect(boardColumnOf("dismissed")).toBe("rejected");
     expect(boardColumnOf("quit")).toBe("rejected");
     expect(boardColumnOf("active")).toBe("other");
-    expect(DEPARTED_LABELS).toEqual({ dismissed: "Уволен", quit: "Уволился" });
+    expect(DEPARTED_LABELS).toEqual({ dismissed: "Мы уволили", quit: "Сам уволился" });
   });
 });

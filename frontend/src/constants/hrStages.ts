@@ -59,8 +59,8 @@ export const BOARD_OTHER_LABEL = "Вне воронки";
  * стоят они во вкладке «Отказ». В паре с services/hr_stages.py (board_column).
  */
 export const DEPARTED_LABELS: Record<string, string> = {
-  dismissed: "Уволен",
-  quit: "Уволился",
+  dismissed: "Мы уволили",
+  quit: "Сам уволился",
 };
 const COLUMN_OF_STATUS: Record<string, string> = { dismissed: "rejected", quit: "rejected" };
 

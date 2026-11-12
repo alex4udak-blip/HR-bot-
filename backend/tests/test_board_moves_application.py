@@ -145,8 +145,8 @@ async def test_closed_funnel_and_no_funnel_keep_timeline_note(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status, note", [
-    (EntityStatus.dismissed, "Уволен — доска «Штат»"),
-    (EntityStatus.quit, "Уволился — доска «Штат»"),
+    (EntityStatus.dismissed, "Мы уволили — доска «Штат»"),
+    (EntityStatus.quit, "Сам уволился — доска «Штат»"),
 ])
 async def test_dismissal_moves_application_to_rejected(
     client, db_session, organization, department, admin_user, org_owner, status, note,
