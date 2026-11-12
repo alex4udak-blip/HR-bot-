@@ -66,6 +66,24 @@ async def get_db() -> AsyncSession:
         yield session
 
 
+LINK_FIRST_TEXT = "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»"
+
+
+def _link_problem_text(user) -> str:
+    """Почему команда бота недоступна. Раньше и непривязанный Telegram, и
+    привязанный к аккаунту БЕЗ организации получали одно «Сначала привяжите
+    аккаунт» — а у владельца всё было привязано: Telegram стоял на аккаунте
+    суперадмина, который не состоит ни в одной организации (12.11.2026)."""
+    if user is None:
+        return LINK_FIRST_TEXT
+    name = getattr(user, "name", None) or getattr(user, "email", None) or "без имени"
+    return (
+        f"Telegram привязан к аккаунту «{name}», но этот аккаунт не состоит ни в одной "
+        "организации — командам бота нужна организация. Попросите администратора "
+        "добавить вас в организацию или привяжите Telegram к рабочему аккаунту."
+    )
+
+
 async def find_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
     """Find user by their Telegram ID."""
     result = await session.execute(
@@ -663,7 +681,7 @@ async def cmd_status(message: types.Message):
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access or not access['org_id']:
-            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
+            await message.answer(_link_problem_text(access['user'] if access else None))
             return
 
         # Developer: no access
@@ -742,7 +760,7 @@ async def cmd_project(message: types.Message):
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access or not access['org_id']:
-            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
+            await message.answer(_link_problem_text(access['user'] if access else None))
             return
 
         org_id = access['org_id']
@@ -843,7 +861,7 @@ async def cmd_my_tasks(message: types.Message):
     async with async_session() as session:
         user, org_id = await _get_user_org_id(session, message.from_user.id)
         if not user or not org_id:
-            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
+            await message.answer(_link_problem_text(user))
             return
 
         # Get all active tasks assigned to this user
@@ -901,7 +919,7 @@ async def cmd_department(message: types.Message):
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access or not access['org_id']:
-            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
+            await message.answer(_link_problem_text(access['user'] if access else None))
             return
 
         org_id = access['org_id']
@@ -1409,7 +1427,7 @@ async def cb_departments(callback: CallbackQuery):
         access = await _get_user_access(session, callback.from_user.id)
         if not access or not access['org_id']:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»",
+                _link_problem_text(access['user'] if access else None),
                 reply_markup=_access_denied_kb(),
             )
             await callback.answer()
@@ -1554,7 +1572,7 @@ async def cb_projects_list(callback: CallbackQuery):
         access = await _get_user_access(session, callback.from_user.id)
         if not access or not access['org_id']:
             await callback.message.edit_text(
-                "Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»",
+                _link_problem_text(access['user'] if access else None),
                 reply_markup=_access_denied_kb(),
             )
             await callback.answer()
@@ -3666,7 +3684,7 @@ async def cmd_ai_digest(message: types.Message):
     async with async_session() as session:
         access = await _get_user_access(session, message.from_user.id)
         if not access or not access.get('org_id'):
-            await message.answer("Сначала привяжите аккаунт: откройте личный кабинет на сайте и нажмите «Привязать Telegram»")
+            await message.answer(_link_problem_text(access['user'] if access else None))
             return
         if not access.get('is_admin'):
             await message.answer(
